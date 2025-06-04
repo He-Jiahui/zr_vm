@@ -5,9 +5,9 @@
 #ifndef ZR_VM_CORE_H
 #define ZR_VM_CORE_H
 
+#include "zr_vm_core_conf.h"
 
-
-void Hello();
+ZR_CORE_API void Hello();
 
 
 #endif //ZR_VM_CORE_H

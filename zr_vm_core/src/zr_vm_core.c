@@ -3,7 +3,7 @@
 //
 #include "zr_vm_core.h"
 
-#include "zr_vm_version_info.h"
+#include "zr_vm_core_version_info.h"
 
 #include <stdio.h>
 void Hello(){

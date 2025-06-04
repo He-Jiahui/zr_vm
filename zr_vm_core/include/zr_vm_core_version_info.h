@@ -2,8 +2,8 @@
 // Created by HeJiahui on 2025/6/4.
 //
 
-#ifndef ZR_VM_VERSION_INFO_H
-#define ZR_VM_VERSION_INFO_H
+#ifndef ZR_VM_CORE_VERSION_INFO_H
+#define ZR_VM_CORE_VERSION_INFO_H
 
 
 #define ZR_VM_COPYRIGHT "Copyright (c) 2025 HeJiahui"
@@ -25,4 +25,4 @@
 #define ZR_VM_VERSION (ZR_TO_STR(ZR_VM_MAJOR_VERSION) "." ZR_TO_STR(ZR_VM_MINOR_VERSION) "." ZR_TO_STR(ZR_VM_PATCH_VERSION))
 
 
-#endif //ZR_VM_VERSION_INFO_H
+#endif //ZR_VM_CORE_VERSION_INFO_H

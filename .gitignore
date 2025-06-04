@@ -61,3 +61,5 @@ dkms.conf
 /zig-out
 /cmake-build-debug
 
+/lua
+

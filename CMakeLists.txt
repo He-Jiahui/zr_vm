@@ -24,4 +24,10 @@ option(USE_SYSTEM_PACKAGES "Use system package manager for dependencies" ON)
 
 find_package(Threads REQUIRED)  # 必选：线程库
 
+add_subdirectory("zr_vm_common")
+
 add_subdirectory("zr_vm_core")
+add_subdirectory("zr_vm_library")
+
+
+add_subdirectory("zr_vm_cli")
