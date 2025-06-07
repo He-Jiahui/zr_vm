@@ -56,10 +56,12 @@ dkms.conf
 /.idea
 /.vscode
 /*.code-workspace
+/.vs
+/CMakeSettings.json
 
 # dist dir
 /zig-out
 /cmake-build-debug
-
+/out
 /lua
 

@@ -32,7 +32,7 @@ typedef union {
 #define ZR_GC_HEADER struct ZGcObject *next;
 
 typedef struct ZGcObject {
-    ZR_GC_HEADER;
+    ZR_GC_HEADER
 } ZGcObject;
 
 #endif //ZR_TYPE_CONF_H

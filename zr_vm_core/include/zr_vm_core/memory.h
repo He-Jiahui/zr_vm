@@ -5,9 +5,8 @@
 #ifndef ZR_VM_CORE_MEMORY_H
 #define ZR_VM_CORE_MEMORY_H
 
-#include "zr_type_conf.h"
+#include "zr_vm_common/zr_type_conf.h"
 
-#include "zr_vm_core_conf.h"
 
 typedef TZrPtr (*FZrAlloc) (TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize);
 

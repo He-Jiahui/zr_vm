@@ -3,9 +3,11 @@
 //
 #include "zr_vm_core.h"
 
-#include "zr_vm_core_version_info.h"
 
 #include <stdio.h>
+
+#include "zr_vm_common/zr_version_info.h"
+
 void Hello(){
-    printf("zr_vm version is %s\n", ZR_VM_VERSION);
+    printf("zr_vm version is %s\nmodule is %s\n", ZR_VM_VERSION_FULL, ZR_CURRENT_MODULE);
 }
