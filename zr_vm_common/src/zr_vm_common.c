@@ -5,4 +5,4 @@
 
 #include <stdio.h>
 
-ZR_EMPTY_FILE(ZR_VM_COMMON)
+ZR_EMPTY_FILE(zr_vm_common)
