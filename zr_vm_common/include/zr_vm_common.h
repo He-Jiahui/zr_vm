@@ -9,8 +9,8 @@
 #include "zr_vm_common/zr_api_conf.h"
 
 
-#define ZR_EMPTY_MODULE(FILE_NAME) ZR_API void EMPTY_##FILE_NAME();
-#define ZR_EMPTY_FILE(FILE_NAME) void EMPTY_##FILE_NAME(){}
+#define ZR_EMPTY_MODULE(FILE_NAME) ZR_API void EMPTY_##FILE_NAME(void);
+#define ZR_EMPTY_FILE(FILE_NAME) void EMPTY_##FILE_NAME(void){}
 
 
 ZR_EMPTY_MODULE(zr_vm_common)

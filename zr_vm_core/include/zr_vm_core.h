@@ -7,7 +7,7 @@
 
 #include "zr_vm_core/conf.h"
 
-ZR_CORE_API void Hello();
+ZR_CORE_API void Hello(void);
 
 
 #endif //ZR_VM_CORE_H

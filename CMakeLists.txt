@@ -32,6 +32,7 @@ if(MSVC)
     add_compile_options(-DZR_PLATFORM_WIN_USE_MSVC)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic -Werror)  # Linux/macOS: 严格警告
+    add_compile_options(-Wstrict-prototypes -Wmissing-prototypes)
 endif()
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
