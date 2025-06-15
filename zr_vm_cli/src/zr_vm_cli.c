@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
 
 void zr_vm_cli_main(const int argc, char **argv) {
     printf("use argc %d\n", argc);
@@ -13,6 +14,7 @@ void zr_vm_cli_main(const int argc, char **argv) {
         printf("argv %d is '%s'\n", argc, argv[i]);
     }
     Hello();
+    printf("%p",(TZrPtr)ZrCreateString("hello world", 11));
 }
 
 int main(const int argc, char **argv) {

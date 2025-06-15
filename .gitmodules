@@ -1,0 +1,4 @@
+[submodule "third_party/zr_xx_hash/xxHash"]
+	path = third_party/zr_xx_hash/xxHash
+	url = https://github.com/Cyan4973/xxHash.git
+	branch = release

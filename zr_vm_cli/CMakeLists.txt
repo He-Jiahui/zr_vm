@@ -5,6 +5,7 @@ zr_declare_executable(${zr_curr_module_name} ON)
 
 set(zr_curr_module_exec ${zr_curr_module_name}_executable)
 
+zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_core")
 zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_library")
 
 install(TARGETS ${zr_curr_module_exec}

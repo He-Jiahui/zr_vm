@@ -11,12 +11,14 @@ struct SZrState {
     ZR_GC_HEADER
 
     TStackIndicator stackTop;
-    TStackIndicator stackTail;
+    TStackIndicator stackBottom;
     TStackIndicator stackHead;
 
     TUInt64 lastProgramCounter;
 
 };
+
+typedef struct SZrState SZrState;
 
 
 #endif //ZR_VM_CORE_STATE_H

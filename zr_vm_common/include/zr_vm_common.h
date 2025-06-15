@@ -12,6 +12,7 @@
 #define ZR_EMPTY_MODULE(FILE_NAME) ZR_API void EMPTY_##FILE_NAME(void);
 #define ZR_EMPTY_FILE(FILE_NAME) void EMPTY_##FILE_NAME(void){}
 
+#define ZR_TODO_PARAMETER(PARAMETER) ((void)PARAMETER);
 
 ZR_EMPTY_MODULE(zr_vm_common)
 

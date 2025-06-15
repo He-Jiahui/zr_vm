@@ -4,5 +4,6 @@ set(zr_curr_module_name "zr_vm_core")
 
 zr_declare_module(${zr_curr_module_name} ON)
 
+zr_include_third_party_for_module(${zr_curr_module_name} "zr_xx_hash")
 
 zr_install_module(${zr_curr_module_name})

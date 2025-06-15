@@ -65,6 +65,8 @@ message(STATUS "Compiler ID: ${CMAKE_C_COMPILER_ID}")
 message(STATUS "Compiler Version: ${CMAKE_C_COMPILER_VERSION}")
 add_compile_options(-DZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
 
+add_subdirectory("third_party")
+
 add_subdirectory("zr_vm_common")
 
 add_subdirectory("zr_vm_core")
