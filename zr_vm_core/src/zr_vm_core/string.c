@@ -8,26 +8,26 @@
 #include "xxHash/xxhash.h"
 #include "zr_vm_core/memory.h"
 
-TUInt64 ZrHashString(const TRawString string, const TZrSize length, const TUInt64 seed) {
+TUInt64 ZrHashString(TRawString string, const TZrSize length, const TUInt64 seed) {
     return XXH64(string, length, seed);
 }
 
-TConstantString* ZrCreateString(TRawString string, TZrSize length) {
-    TConstantString* constantString = ZR_NULL;
-    TZrSize totalSize = sizeof(TConstantString);
+TZrConstantString *ZrCreateString(TRawString string, TZrSize length) {
+    TZrConstantString *constantString = ZR_NULL;
+    TZrSize totalSize = sizeof(TZrConstantString);
 
     if (length <= ZR_VM_SHORT_STRING_MAX) {
         totalSize += ZR_VM_SHORT_STRING_MAX;
-        constantString = (TConstantString*)ZrMalloc(totalSize);
+        constantString = (TZrConstantString *) ZrMalloc(totalSize);
         ZrMemoryCopy(constantString->stringData, string, length);
-        ((TRawString)constantString->stringData)[length] = '\0';
-        constantString->shortStringLength = length;
+        ((TRawString) constantString->stringData)[length] = '\0';
+        constantString->shortStringLength = (TUInt8) length;
         constantString->nextShortString = ZR_NULL;
-    }else {
+    } else {
         totalSize += sizeof(TRawString);
-        constantString = (TConstantString*)ZrMalloc(totalSize);
-        TRawString* pointer = (TRawString*)&(constantString->stringData);
-        *pointer = (TRawString)ZrMalloc(length + 1);
+        constantString = (TZrConstantString *) ZrMalloc(totalSize);
+        TRawString *pointer = (TRawString *) &(constantString->stringData);
+        *pointer = (TRawString) ZrMalloc(length + 1);
         memcpy(*pointer, string, length);
         *pointer[length] = '\0';
         constantString->shortStringLength = ZR_VM_SHORT_STRING_MAX + 1;
@@ -38,5 +38,3 @@ TConstantString* ZrCreateString(TRawString string, TZrSize length) {
 }
 
 #undef MIX_MAGIC_NUMBER
-
-

@@ -10,5 +10,5 @@
 #define ZR_VM_CONSTANT_STRING_HASH_SEED (0x1234987612345678ULL)
 ZR_CORE_API TUInt64 ZrHashString(TRawString string, TZrSize length, TUInt64 seed);
 
-ZR_CORE_API TConstantString* ZrCreateString(TRawString string, TZrSize length);
+ZR_CORE_API TZrConstantString *ZrCreateString(TRawString string, TZrSize length);
 #endif //ZR_VM_CORE_STRING_H

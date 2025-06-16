@@ -10,14 +10,14 @@
 
 struct SZrValue {
     EZrValueType type;
+
     union {
-        ZGcObject *object;
+        SGcObject *object;
         TUInt64 uint64;
         TInt64 int64;
         TDouble float64;
         TFloat float32;
         TBool bool;
-
     };
 };
 

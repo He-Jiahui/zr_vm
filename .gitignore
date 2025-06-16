@@ -58,10 +58,14 @@ dkms.conf
 /*.code-workspace
 /.vs
 /CMakeSettings.json
+/.notes
 
 # dist dir
 /zig-out
 /cmake-build-debug
-/out
 /lua
+/out
+/build
+
+/.devcontainer
 

@@ -7,10 +7,15 @@
 
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/global.h"
 
-typedef TZrPtr (*FZrAlloc) (TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize);
 
-ZR_CORE_API void* ZrMalloc(TZrSize size);
+ZR_FORCE_INLINE void *ZrAlloc(SZrGlobalState *global, TZrPtr userData, TZrPtr pointer, TZrSize originalSize,
+                              TZrSize newSize) {
+    return global->alloc(userData, pointer, originalSize, newSize);
+}
+
+ZR_CORE_API void *ZrMalloc(TZrSize size);
 
 ZR_CORE_API void ZrMemoryCopy(TZrPtr destination, TZrPtr source, TZrSize size);
 
