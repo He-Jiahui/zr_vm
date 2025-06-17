@@ -4,6 +4,7 @@
 
 #ifndef ZR_VM_CORE_STACK_H
 #define ZR_VM_CORE_STACK_H
+#include "zr_vm_common.h"
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/value.h"
 
