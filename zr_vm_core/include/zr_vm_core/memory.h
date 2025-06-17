@@ -9,13 +9,14 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/global.h"
 
-
-ZR_FORCE_INLINE void *ZrAlloc(SZrGlobalState *global, TZrPtr userData, TZrPtr pointer, TZrSize originalSize,
+ZR_FORCE_INLINE void *ZrAlloc(SZrGlobalState *global, TZrPtr pointer, TZrSize originalSize,
                               TZrSize newSize) {
-    return global->alloc(userData, pointer, originalSize, newSize);
+    return global->alloc(global->userAllocArguments, pointer, originalSize, newSize);
 }
 
-ZR_CORE_API void *ZrMalloc(TZrSize size);
+ZR_FORCE_INLINE void *ZrMalloc(SZrGlobalState *global, TZrSize size) {
+    return global->alloc(global->userAllocArguments, ZR_NULL, 0, size);
+}
 
 ZR_CORE_API void ZrMemoryCopy(TZrPtr destination, TZrPtr source, TZrSize size);
 

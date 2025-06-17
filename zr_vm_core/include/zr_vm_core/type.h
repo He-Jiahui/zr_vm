@@ -4,7 +4,8 @@
 
 #ifndef ZR_VM_CORE_TYPE_H
 #define ZR_VM_CORE_TYPE_H
-typedef enum {
+
+enum EZrValueType {
     ZR_VALUE_TYPE_NULL,
     ZR_VALUE_TYPE_BOOL,
     ZR_VALUE_TYPE_INT8,
@@ -25,5 +26,7 @@ typedef enum {
     ZR_VALUE_TYPE_NATIVE,
 
     ZR_VALUE_TYPE_ENUM_MAX
-}EZrValueType;
+};
+
+typedef enum EZrValueType EZrValueType;
 #endif //ZR_VM_CORE_TYPE_H

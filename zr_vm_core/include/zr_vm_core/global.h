@@ -16,25 +16,26 @@
 #define ZR_GLOBAL_API_STR_CACHE_N 193
 #define ZR_GLOBAL_API_STR_CACHE_M 2
 
+
 struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Memory
     FZrAlloc alloc;
-    TZrPtr memoryPrivateData;
+    TZrPtr userAllocArguments;
     TZrSize allocatedMemories;
     TZrSize waitToGCMemories;
     TZrSize aliveMemories;
+    TZrConstantString *memoryErrorMessage;
 
     // State
     SZrState *mainThreadState;
 
     // String Table
     SZrConstantStringTable constantStringTable;
-    TUInt64 stringHashSeed;
     TZrConstantString *stringHashApiCache[ZR_GLOBAL_API_STR_CACHE_N][ZR_GLOBAL_API_STR_CACHE_M];
 
     // Global Module Registry
-    SZrValue loadedModulesRegistry;
-    SZrValue nullValue;
+    SZrTypeValue loadedModulesRegistry;
+    SZrTypeValue nullValue;
 
     // GC
     SGcObject *gcObjectList;
@@ -42,6 +43,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     SGcObject *waitToReleaseObjectList;
     SGcObject *releasedObjectList;
     SGcObject *permanentObjectList;
+    TBool stopGcFlag;
 
 
     // exceptions
@@ -60,4 +62,6 @@ struct ZR_STRUCT_ALIGN SZrThreadState {
 typedef struct SZrThreadState SZrThreadState;
 
 ZR_CORE_API SZrGlobalState *ZrGlobalStateNew(FZrAlloc alloc, TZrPtr memoryPrivateData);
+
+ZR_CORE_API void ZrGlobalStateFree(SZrGlobalState *global);
 #endif //ZR_VM_CORE_GLOBAL_H

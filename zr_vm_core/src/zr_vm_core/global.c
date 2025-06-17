@@ -9,3 +9,11 @@ SZrGlobalState *ZrGlobalStateNew(FZrAlloc alloc, TZrPtr memoryPrivateData) {
 
     return global;
 }
+
+void ZrGlobalStateFree(SZrGlobalState *global) {
+    FZrAlloc alloc = global->alloc;
+
+    ZrStateFree(global, global->mainThreadState);
+    // free global at last
+    alloc(global->userAllocArguments, global, sizeof(SZrGlobalState), 0);
+}

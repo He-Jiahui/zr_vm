@@ -5,7 +5,7 @@
 #ifndef ZR_VM_CORE_OPERATION_CODE_H
 #define ZR_VM_CORE_OPERATION_CODE_H
 
-typedef enum {
+enum EZrOperationCode {
     ZR_OPCODE_MOVE,
     ZR_OPCODE_LOAD_CONSTANT,
     // TODO:
@@ -30,17 +30,16 @@ typedef enum {
     ZR_OPCODE_LOGICAL_LESS_EQUAL,
 
 
-
     ZR_OPCODE_BINARY_NOT,
     ZR_OPCODE_BINARY_AND,
     ZR_OPCODE_BINARY_OR,
     ZR_OPCODE_BINARY_XOR,
 
 
-
-
     ZR_OPCODE_ENUM_MAX
-} EZrOperationCode;
+};
+
+typedef enum EZrOperationCode EZrOperationCode;
 
 
 #endif //ZR_VM_CORE_OPERATION_CODE_H

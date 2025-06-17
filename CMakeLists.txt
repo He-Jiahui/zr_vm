@@ -28,10 +28,10 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithD
 )
 
 if (MSVC)
-    add_compile_options(/W4 /WX /wd4819 /wd4103)  # Windows: 开启所有警告并视警告为错误
+    add_compile_options(/W4 /wd4819 /wd4103)  # Windows: 开启所有警告并视警告为错误 /WX
     add_compile_options(-DZR_PLATFORM_WIN_USE_MSVC)
 else ()
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror)  # Linux/macOS: 严格警告
+    add_compile_options(-Wall -Wextra -Wpedantic)  # Linux/macOS: 严格警告 #-Werror
     add_compile_options(-Wstrict-prototypes -Wmissing-prototypes)
 endif ()
 

@@ -8,6 +8,8 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdalign.h>
+#include <setjmp.h>
+#include <assert.h>
 
 #define ZR_IS_32_INT ((UINT_MAX >> 30) >= 3)
 
@@ -34,7 +36,12 @@ typedef unsigned char TBool;
 
 typedef char *TRawString;
 
+
 #define ZR_NULL NULL
+#define ZR_TRUE (1)
+#define ZR_FALSE (0)
+
+#define ZR_ASSERT(CONDITION) assert(CONDITION)
 
 #if defined(__GNUC__)
 #define ZR_COMPILER_GNU
@@ -60,10 +67,6 @@ typedef char *TRawString;
 
 //
 
-typedef union {
-    TUInt64 top;
-    TZrPtr pointer;
-} TStackIndicator;
 
 // gc object
 #define ZR_GC_HEADER struct SGcObject *next;
@@ -105,4 +108,17 @@ typedef struct SZrConstantStringTable SZrConstantStringTable;
 
 // alloc function
 typedef TZrPtr (*FZrAlloc)(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize);
+
+// TryCatch types
+typedef jmp_buf TZrExceptionLongJump;
+
+enum EZrThreadStatus {
+    ZR_THREAD_STATUS_FINE = 0,
+    ZR_THREAD_STATUS_YIELD = 1,
+    ZR_THREAD_STATUS_RUNTIME_ERROR = 2,
+    ZR_THREAD_STATUS_MEMORY_ERROR = 3,
+    ZR_THREAD_STATUS_EXCEPTION_ERROR = 4,
+};
+
+typedef enum EZrThreadStatus EZrThreadStatus;
 #endif //ZR_TYPE_CONF_H
