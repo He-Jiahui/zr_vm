@@ -4,7 +4,6 @@
 
 #ifndef ZR_VM_CORE_CALL_INFO_H
 #define ZR_VM_CORE_CALL_INFO_H
-#include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/stack.h"
 
 enum EZrCallStatus {
@@ -22,9 +21,9 @@ enum EZrCallStatus {
 
 typedef enum EZrCallStatus EZrCallStatus;
 
-struct SZrCallInfo {
-    TZrStackIndicator functionIndex;
-    TZrStackIndicator functionTop;
+struct ZR_STRUCT_ALIGN SZrCallInfo {
+    TZrStackObject functionIndex;
+    TZrStackObject functionTop;
 
     EZrCallStatus callStatus;
 

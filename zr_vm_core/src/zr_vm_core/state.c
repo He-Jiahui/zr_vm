@@ -7,24 +7,53 @@
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
-
+ZR_FORCE_INLINE void ZrStateResetDebugHookCount(SZrState *state) {
+    state->debugHookCount = state->baseDebugHookCount;
+}
 
 SZrState *ZrStateNew(SZrGlobalState *global) {
-    // FZrAlloc alloc = global->alloc;
-    SZrState *newState = ZrAlloc(global, NULL, 0, sizeof(SZrState));
-    newState->global = global;
+    // FZrAllocator allocator = global->allocator;
+    SZrState *newState = ZrAllocate(global, NULL, 0, sizeof(SZrState));
+    ZrObjectInit(&newState->super, ZR_VALUE_TYPE_THREAD);
+    ZrStateInit(newState, global);
     return newState;
+}
+
+void ZrStateInit(SZrState *state, SZrGlobalState *global) {
+    // global
+    state->global = global;
+    // stack
+    state->stackBase.valuePointer = ZR_NULL;
+    // call info
+    state->callInfoList = ZR_NULL;
+    state->callInfoListLength = 0;
+    state->nestedNativeCalls = 0;
+    // exception
+    state->exceptionRecoverPoint = ZR_NULL;
+    state->exceptionHandlingFunctionOffset = 0;
+    // debug
+    state->baseDebugHookCount = 0;
+    state->debugHook = ZR_NULL;
+    state->debugHookSignal = 0;
+    ZrStateResetDebugHookCount(state);
+    state->allowDebugHook = ZR_TRUE;
+    // closures
+    state->aliveClosureValueList = ZR_NULL;
+    state->threadWithAliveClosures = state;
+    // thread
+    state->threadStatus = ZR_THREAD_STATUS_FINE;
+    state->previousProgramCounter = 0;
 }
 
 
 void ZrStateFree(SZrGlobalState *global, SZrState *state) {
-    ZrAlloc(global, state, sizeof(SZrState), 0);
+    ZrAllocate(global, state, sizeof(SZrState), 0);
 }
 
 TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status) {
     // 重置线程状态
     // 调用栈回到创建时基础调用栈
-    SZrCallInfo *callInfo = state->currentCallInfo = &state->baseCallInfo;
+    SZrCallInfo *callInfo = state->callInfoList = &state->baseCallInfo;
     // 重置栈到基础栈
     state->stackBase.valuePointer->value.type = ZR_VALUE_TYPE_NULL;
     callInfo->functionIndex.valuePointer = state->stackBase.valuePointer;
@@ -56,7 +85,7 @@ static void ZrStateStackMarkStackAsRelative(SZrState *state) {
     state->waitToReleaseList.reusableValueOffset = ZrStateStackSaveAsOffset(
         state, state->waitToReleaseList.valuePointer);
     // todo: upval
-    for (SZrCallInfo *callInfo = state->currentCallInfo; callInfo != ZR_NULL; callInfo = callInfo->previous) {
+    for (SZrCallInfo *callInfo = state->callInfoList; callInfo != ZR_NULL; callInfo = callInfo->previous) {
         callInfo->functionIndex.reusableValueOffset = ZrStateStackSaveAsOffset(
             state, callInfo->functionIndex.valuePointer);
         callInfo->functionTop.reusableValueOffset = ZrStateStackSaveAsOffset(state, callInfo->functionTop.valuePointer);

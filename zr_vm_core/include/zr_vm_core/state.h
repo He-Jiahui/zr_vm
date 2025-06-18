@@ -4,42 +4,61 @@
 
 #ifndef ZR_VM_CORE_STATE_H
 #define ZR_VM_CORE_STATE_H
-#include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/stack.h"
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/exception.h"
+#include "zr_vm_core/debug.h"
 
 struct SZrGlobalState;
 
-struct SZrState {
-    ZR_GC_HEADER
+struct ZR_STRUCT_ALIGN SZrState {
+    SZrRawObject super;
     // reverse pointer to global
     struct SZrGlobalState *global;
+
+    SZrRawObject *gcList;
     // thread management
     EZrThreadStatus threadStatus;
-    TUInt8 allowHook;
+    TZrMemoryOffset previousProgramCounter;
 
-    SZrCallInfo *currentCallInfo;
+
+    SZrCallInfo *callInfoList;
+    TUInt32 callInfoListLength;
     SZrCallInfo baseCallInfo;
 
 
-    TZrStackIndicator stackTop;
-    TZrStackIndicator stackBottom;
-    TZrStackIndicator stackBase;
+    TZrStackObject stackTop;
+    TZrStackObject stackBottom;
+    TZrStackObject stackBase;
 
-    TZrStackIndicator waitToReleaseList;
+    TZrStackObject waitToReleaseList;
+    // closures
+    struct SZrState *threadWithAliveClosures;
+    SZrClosureValue *aliveClosureValueList;
+
+
     // for exceptions
     TUInt32 nestedNativeCalls;
     SZrExceptionLongJump *exceptionRecoverPoint;
+    TZrMemoryOffset exceptionHandlingFunctionOffset;
 
-    TUInt64 lastProgramCounter;
+
+    // debug
+    TBool allowDebugHook;
+    TUInt32 baseDebugHookCount;
+    TUInt32 debugHookCount;
+    volatile FZrDebugHook debugHook;
+    volatile TZrDebugSignal debugHookSignal;
 };
 
 typedef struct SZrState SZrState;
 
 
 ZR_CORE_API SZrState *ZrStateNew(struct SZrGlobalState *global);
+
+ZR_CORE_API void ZrStateInit(SZrState *state, struct SZrGlobalState *global);
 
 ZR_CORE_API void ZrStateFree(struct SZrGlobalState *global, SZrState *state);
 

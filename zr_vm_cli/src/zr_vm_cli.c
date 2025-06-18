@@ -4,20 +4,32 @@
 #include "zr_vm_cli.h"
 #include "zr_vm_core.h"
 #include <stdio.h>
+#include <stdlib.h>
 
-#include "zr_vm_core/state.h"
-#include "zr_vm_core/string.h"
+#include "zr_vm_core/global.h"
 
-void zr_vm_cli_main(const int argc, char **argv) {
+TZrPtr TestAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize) {
+    if (newSize == 0) {
+        free(pointer);
+        return ZR_NULL;
+    }
+    return (TZrPtr) realloc(pointer, newSize);
+}
+
+void ZrCliMain(const int argc, char **argv) {
     printf("use argc %d\n", argc);
     for (int i = 0; i < argc; i++) {
         printf("argv %d is '%s'\n", argc, argv[i]);
     }
     Hello();
     // printf("%p",(TZrPtr)ZrStringCreate("hello world", 11));
+    SZrGlobalState *global = ZrGlobalStateNew(TestAllocator, ZR_NULL);
+
+    ZrGlobalStateFree(global);
+    global = ZR_NULL;
 }
 
 int main(const int argc, char **argv) {
-    zr_vm_cli_main(argc, argv);
+    ZrCliMain(argc, argv);
     return 0;
 }

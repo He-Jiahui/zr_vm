@@ -64,8 +64,8 @@ EZrThreadStatus ZrExceptionTryStop(SZrState *state, TZrMemoryOffset level, EZrTh
     ZR_TODO_PARAMETER(status);
 
 
-    // SZrCallInfo *previousCallInfo = state->currentCallInfo;
-    // TUInt8 previousAllowHook = state->allowHook;
+    // SZrCallInfo *previousCallInfo = state->callInfoList;
+    // TUInt8 previousAllowHook = state->allowDebugHook;
     // // 持续关闭旧的上值直到不再有错误
     // for (;;) {
     //     ZR_ASSERT(ZR_FALSE);

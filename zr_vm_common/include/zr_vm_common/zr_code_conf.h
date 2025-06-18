@@ -1,9 +1,11 @@
 //
-// Created by HeJiahui on 2025/6/15.
+// Created by HeJiahui on 2025/6/19.
 //
 
-#ifndef ZR_VM_CORE_OPERATION_CODE_H
-#define ZR_VM_CORE_OPERATION_CODE_H
+#ifndef ZR_CODE_CONF_H
+#define ZR_CODE_CONF_H
+
+#include "zr_vm_common/zr_type_conf.h"
 
 enum EZrOperationCode {
     ZR_OPCODE_MOVE,
@@ -41,5 +43,5 @@ enum EZrOperationCode {
 
 typedef enum EZrOperationCode EZrOperationCode;
 
-
-#endif //ZR_VM_CORE_OPERATION_CODE_H
+typedef TUInt64 TZrInstruction;
+#endif //ZR_CODE_CONF_H

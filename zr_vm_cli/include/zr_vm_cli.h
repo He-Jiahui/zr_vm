@@ -8,6 +8,6 @@
 #include "zr_vm_common.h"
 #define ZR_CLI_API ZR_API
 
-ZR_CLI_API void zr_vm_cli_main(int argc, char **argv);
+ZR_CLI_API void ZrCliMain(int argc, char **argv);
 
 #endif //ZR_VM_CLI_H

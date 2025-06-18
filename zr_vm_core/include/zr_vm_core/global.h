@@ -4,8 +4,8 @@
 
 #ifndef ZR_VM_CORE_GLOBAL_H
 #define ZR_VM_CORE_GLOBAL_H
-#include "state.h"
-#include "zr_vm_common/zr_type_conf.h"
+#include "zr_vm_core/conf.h"
+#include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 /**
  * 全局API字符串缓存配置参数
@@ -19,30 +19,30 @@
 
 struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Memory
-    FZrAlloc alloc;
-    TZrPtr userAllocArguments;
+    FZrAllocator allocator;
+    TZrPtr userAllocationArguments;
     TZrSize allocatedMemories;
     TZrSize waitToGCMemories;
     TZrSize aliveMemories;
-    TZrConstantString *memoryErrorMessage;
+    TZrString *memoryErrorMessage;
 
     // State
     SZrState *mainThreadState;
 
     // String Table
-    SZrConstantStringTable constantStringTable;
-    TZrConstantString *stringHashApiCache[ZR_GLOBAL_API_STR_CACHE_N][ZR_GLOBAL_API_STR_CACHE_M];
+    SZrStringTable constantStringTable;
+    TZrString *stringHashApiCache[ZR_GLOBAL_API_STR_CACHE_N][ZR_GLOBAL_API_STR_CACHE_M];
 
     // Global Module Registry
     SZrTypeValue loadedModulesRegistry;
     SZrTypeValue nullValue;
 
     // GC
-    SGcObject *gcObjectList;
-    SGcObject **gcObjectListSweeper;
-    SGcObject *waitToReleaseObjectList;
-    SGcObject *releasedObjectList;
-    SGcObject *permanentObjectList;
+    SZrRawObject *gcObjectList;
+    SZrRawObject **gcObjectListSweeper;
+    SZrRawObject *waitToReleaseObjectList;
+    SZrRawObject *releasedObjectList;
+    SZrRawObject *permanentObjectList;
     TBool stopGcFlag;
 
 
@@ -61,7 +61,7 @@ struct ZR_STRUCT_ALIGN SZrThreadState {
 
 typedef struct SZrThreadState SZrThreadState;
 
-ZR_CORE_API SZrGlobalState *ZrGlobalStateNew(FZrAlloc alloc, TZrPtr memoryPrivateData);
+ZR_CORE_API SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments);
 
 ZR_CORE_API void ZrGlobalStateFree(SZrGlobalState *global);
 #endif //ZR_VM_CORE_GLOBAL_H

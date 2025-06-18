@@ -5,14 +5,13 @@
 #ifndef ZR_VM_CORE_EXCEPTION_H
 #define ZR_VM_CORE_EXCEPTION_H
 
-#include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/stack.h"
 struct SZrState;
 
 typedef void (*FZrTryFunction)(struct SZrState *state, void *userData);
 
-struct SZrExceptionLongJump {
+struct ZR_STRUCT_ALIGN SZrExceptionLongJump {
     struct SZrExceptionLongJump *previous;
     TZrExceptionLongJump jumpBuffer;
     volatile EZrThreadStatus status;
