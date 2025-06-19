@@ -94,4 +94,5 @@ typedef jmp_buf TZrExceptionLongJump;
 // Debug Signal
 typedef sig_atomic_t TZrDebugSignal;
 
+
 #endif //ZR_COMMON_CONF_H

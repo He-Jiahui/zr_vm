@@ -28,8 +28,8 @@ struct ZR_STRUCT_ALIGN SZrStringTable {
     TZrString **buckets;
     TZrSize bucketCount;
     TZrSize elementCount;
+    TZrSize capacity;
     TZrSize resizeThreshold;
-    TUInt64 seed;
 };
 
 typedef struct SZrStringTable SZrStringTable;

@@ -8,12 +8,12 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/global.h"
 
-ZR_FORCE_INLINE void *ZrAllocate(SZrGlobalState *global, TZrPtr pointer, TZrSize originalSize,
-                                 TZrSize newSize) {
+ZR_FORCE_INLINE void *ZrMemoryAllocate(SZrGlobalState *global, TZrPtr pointer, TZrSize originalSize,
+                                       TZrSize newSize) {
     return global->allocator(global->userAllocationArguments, pointer, originalSize, newSize);
 }
 
-ZR_FORCE_INLINE void *ZrMalloc(SZrGlobalState *global, TZrSize size) {
+ZR_FORCE_INLINE void *ZrMemoryMalloc(SZrGlobalState *global, TZrSize size) {
     return global->allocator(global->userAllocationArguments, ZR_NULL, 0, size);
 }
 

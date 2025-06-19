@@ -7,6 +7,10 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_core/log.h"
+#include "zr_vm_core/gc.h"
+#include "zr_vm_core/object.h"
+
 /**
  * 全局API字符串缓存配置参数
  * ZR_GLOBAL_API_STR_CACHE_N 定义主缓存桶数量（质数以优化散列）
@@ -29,8 +33,12 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // State
     SZrState *mainThreadState;
 
+    // hash
+    TUInt64 hashSeed;
+
     // String Table
-    SZrStringTable constantStringTable;
+    SZrStringTable stringTable;
+    // FOR API STRING CACHE
     TZrString *stringHashApiCache[ZR_GLOBAL_API_STR_CACHE_N][ZR_GLOBAL_API_STR_CACHE_M];
 
     // Global Module Registry
@@ -38,16 +46,17 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     SZrTypeValue nullValue;
 
     // GC
-    SZrRawObject *gcObjectList;
-    SZrRawObject **gcObjectListSweeper;
-    SZrRawObject *waitToReleaseObjectList;
-    SZrRawObject *releasedObjectList;
-    SZrRawObject *permanentObjectList;
-    TBool stopGcFlag;
+    SZrGarbageCollector garbageCollector;
+
+    // Logger
+    FZrLog logFunction;
 
 
     // exceptions
     // todo:
+    FZrPanicHandlingFunction panicHandlingFunction;
+
+    SZrObjectPrototype *basicTypeObjectPrototype[ZR_VALUE_TYPE_ENUM_MAX];
 
     TUInt8 empty;
 };
@@ -61,7 +70,8 @@ struct ZR_STRUCT_ALIGN SZrThreadState {
 
 typedef struct SZrThreadState SZrThreadState;
 
-ZR_CORE_API SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments);
+ZR_CORE_API SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments,
+                                             TUInt64 uniqueNumber);
 
 ZR_CORE_API void ZrGlobalStateFree(SZrGlobalState *global);
 #endif //ZR_VM_CORE_GLOBAL_H

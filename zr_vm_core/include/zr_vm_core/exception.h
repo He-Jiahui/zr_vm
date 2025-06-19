@@ -11,6 +11,8 @@ struct SZrState;
 
 typedef void (*FZrTryFunction)(struct SZrState *state, void *userData);
 
+typedef void (*FZrPanicHandlingFunction)(struct SZrState *state);
+
 struct ZR_STRUCT_ALIGN SZrExceptionLongJump {
     struct SZrExceptionLongJump *previous;
     TZrExceptionLongJump jumpBuffer;

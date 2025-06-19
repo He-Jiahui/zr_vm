@@ -13,7 +13,7 @@ ZR_FORCE_INLINE void ZrStateResetDebugHookCount(SZrState *state) {
 
 SZrState *ZrStateNew(SZrGlobalState *global) {
     // FZrAllocator allocator = global->allocator;
-    SZrState *newState = ZrAllocate(global, NULL, 0, sizeof(SZrState));
+    SZrState *newState = ZrMemoryAllocate(global, NULL, 0, sizeof(SZrState));
     ZrObjectInit(&newState->super, ZR_VALUE_TYPE_THREAD);
     ZrStateInit(newState, global);
     return newState;
@@ -47,7 +47,7 @@ void ZrStateInit(SZrState *state, SZrGlobalState *global) {
 
 
 void ZrStateFree(SZrGlobalState *global, SZrState *state) {
-    ZrAllocate(global, state, sizeof(SZrState), 0);
+    ZrMemoryAllocate(global, state, sizeof(SZrState), 0);
 }
 
 TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status) {
@@ -95,10 +95,10 @@ static void ZrStateStackMarkStackAsRelative(SZrState *state) {
 TBool ZrStateStackRealloc(SZrState *state, TUInt64 newSize, TBool throwError) {
     TZrSize previousStackSize = ZrStateStackGetSize(state);
     TZrStackPointer newStackPointer;
-    TBool previousStopGcFlag = state->global->stopGcFlag;
+    TBool previousStopGcFlag = state->global->garbageCollector.stopGcFlag;
     ZR_ASSERT(newSize <= ZR_VM_MAX_STACK || newSize == ZR_VM_ERROR_STACK);
     ZrStateStackMarkStackAsRelative(state);
-    state->global->stopGcFlag = ZR_TRUE;
+    state->global->garbageCollector.stopGcFlag = ZR_TRUE;
     // todo: luaD_reallocstack
     // todo: luaM_reallocvector
     // todo: newStackPointer =

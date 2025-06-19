@@ -26,5 +26,7 @@ struct ZR_STRUCT_ALIGN SZrTypeValue {
 
 typedef struct SZrTypeValue SZrTypeValue;
 
+ZR_CORE_API void ZrValueInitAsNull(SZrTypeValue *value);
+
 
 #endif //ZR_VM_CORE_VALUE_H

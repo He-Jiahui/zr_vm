@@ -9,6 +9,7 @@
 #include "zr_vm_common/zr_api_conf.h"
 #include "zr_vm_common/zr_code_conf.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_common/zr_log_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
 #include "zr_vm_common/zr_string_conf.h"
 #include "zr_vm_common/zr_thread_conf.h"

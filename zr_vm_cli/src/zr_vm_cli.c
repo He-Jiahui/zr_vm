@@ -23,7 +23,7 @@ void ZrCliMain(const int argc, char **argv) {
     }
     Hello();
     // printf("%p",(TZrPtr)ZrStringCreate("hello world", 11));
-    SZrGlobalState *global = ZrGlobalStateNew(TestAllocator, ZR_NULL);
+    SZrGlobalState *global = ZrGlobalStateNew(TestAllocator, ZR_NULL, 0x1234567890ABCDEF);
 
     ZrGlobalStateFree(global);
     global = ZR_NULL;

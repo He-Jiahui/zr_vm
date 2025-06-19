@@ -8,7 +8,7 @@
 #include "zr_vm_core/conf.h"
 struct SZrGlobalState;
 
-ZR_CORE_API TUInt64 ZrStringHash(struct SZrGlobalState *global, TNativeString string, TZrSize length);
+ZR_CORE_API void ZrStringTableInit(struct SZrGlobalState *global);
 
 ZR_CORE_API TZrString *ZrStringCreate(struct SZrGlobalState *global, TNativeString string, TZrSize length);
 #endif //ZR_VM_CORE_STRING_H
