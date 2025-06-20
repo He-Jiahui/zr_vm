@@ -9,6 +9,7 @@
 #include "zr_vm_common/zr_api_conf.h"
 #include "zr_vm_common/zr_code_conf.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_common/zr_array_conf.h"
 #include "zr_vm_common/zr_log_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
 #include "zr_vm_common/zr_string_conf.h"
@@ -22,6 +23,8 @@
 #define ZR_EMPTY_FILE(FILE_NAME) void EMPTY_##FILE_NAME(void){}
 
 #define ZR_TODO_PARAMETER(PARAMETER) ((void)PARAMETER);
+
+#define ZR_UNUSED_PARAMETER(PARAMETER) ((void)PARAMETER);
 
 ZR_EMPTY_MODULE(zr_vm_common)
 

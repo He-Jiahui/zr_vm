@@ -18,9 +18,12 @@ typedef size_t TZrSize;
 typedef ptrdiff_t TZrMemoryOffset;
 
 typedef void *TZrPtr; // 指针兼容类型
+typedef uint8_t *TBytePtr;
 
+typedef intptr_t TZrNativePtr;
 
 // c internal types
+typedef char TChar;
 typedef uint8_t TUInt8; // 1 byte
 typedef int8_t TInt8; // 1 byte
 typedef uint16_t TUInt16; // 2 bytes
@@ -60,7 +63,11 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_TRUE (1)
 #define ZR_FALSE (0)
 
-#define ZR_ASSERT(CONDITION) assert(CONDITION)
+#if defined(ZR_DEBUG)
+#define ZR_ASSERT(CONDITION) assert((CONDITION))
+#else
+#define ZR_ASSERT(CONDITION)
+#endif
 
 #if defined(__GNUC__)
 #define ZR_COMPILER_GNU

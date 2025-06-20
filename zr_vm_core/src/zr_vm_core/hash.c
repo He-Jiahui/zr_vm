@@ -14,8 +14,8 @@ ZR_FORCE_INLINE TUInt64 ZrHashSeedCreateInternal(TNativeString string, TZrSize l
 
 TUInt64 ZrHashSeedCreate(SZrGlobalState *global, TUInt64 uniqueNumber) {
 #define ZR_HASH_SEED_BUFFER_SIZE (sizeof(TUInt64) << 2)
-    TUInt8 buffer[ZR_HASH_SEED_BUFFER_SIZE];
-    TUInt64 *bufferPtr = buffer;
+    TChar buffer[ZR_HASH_SEED_BUFFER_SIZE];
+    TUInt64 *bufferPtr = ZR_CAST_UINT64_PTR(buffer);
     TUInt64 timestamp = ZR_CAST_UINT64(time(ZR_NULL));
     TUInt64 globalAddress = ZR_CAST_UINT64(global);
     bufferPtr[0] = timestamp;

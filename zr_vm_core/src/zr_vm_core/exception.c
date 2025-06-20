@@ -35,14 +35,14 @@ block \
 }
 #endif
 
-TInt32 ZrExceptionTryRun(SZrState *state, FZrTryFunction tryFunction, void *userData) {
+EZrThreadStatus ZrExceptionTryRun(SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments) {
     TUInt32 prevNestedNativeCalls = state->nestedNativeCalls;
     SZrExceptionLongJump exceptionLongJump;
     exceptionLongJump.status = ZR_THREAD_STATUS_FINE;
     exceptionLongJump.previous = state->exceptionRecoverPoint;
     state->exceptionRecoverPoint = &exceptionLongJump;
     ZR_EXCEPTION_TRY(state, &exceptionLongJump, {
-                     tryFunction(state, userData);
+                     tryFunction(state, arguments);
                      });
     state->exceptionRecoverPoint = exceptionLongJump.previous;
     state->nestedNativeCalls = prevNestedNativeCalls;
@@ -74,7 +74,7 @@ EZrThreadStatus ZrExceptionTryStop(SZrState *state, TZrMemoryOffset level, EZrTh
     return ZR_THREAD_STATUS_FINE;
 }
 
-void ZrExceptionMarkError(SZrState *state, EZrThreadStatus errorCode, TZrStackPointer previousTop) {
+void ZrExceptionMarkError(SZrState *state, EZrThreadStatus errorCode, TZrStackValuePointer previousTop) {
     switch (errorCode) {
         case ZR_THREAD_STATUS_FINE: {
             previousTop->value.type = ZR_VALUE_TYPE_NULL;

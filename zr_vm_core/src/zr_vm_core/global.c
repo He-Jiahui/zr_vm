@@ -39,11 +39,17 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     // exception
     global->panicHandlingFunction = ZR_NULL;
 
+    // reset basic type object prototype
     for (TUInt64 i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         global->basicTypeObjectPrototype[i] = ZR_NULL;
     }
-    // todo: open new state with try-catch
-
+    // launch new state with try-catch
+    if (ZrExceptionTryRun(newState, ZrStateLaunch, ZR_NULL) != ZR_THREAD_STATUS_FINE) {
+        ZrStateExit(newState);
+        ZrGlobalStateFree(global);
+        global = ZR_NULL;
+        return ZR_NULL;
+    }
     return global;
 }
 

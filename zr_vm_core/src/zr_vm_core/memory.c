@@ -8,8 +8,3 @@
 
 
 // todo:
-
-void ZrMemoryCopy(TZrPtr destination, TZrPtr source, const TZrSize size) {
-    memcpy(destination, source, size);
-}
-

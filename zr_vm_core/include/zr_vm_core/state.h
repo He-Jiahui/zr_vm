@@ -29,11 +29,11 @@ struct ZR_STRUCT_ALIGN SZrState {
     SZrCallInfo baseCallInfo;
 
 
-    TZrStackObject stackTop;
-    TZrStackObject stackBottom;
-    TZrStackObject stackBase;
+    TZrStackPointer stackTop;
+    TZrStackPointer stackEnd;
+    TZrStackPointer stackBase;
 
-    TZrStackObject waitToReleaseList;
+    TZrStackPointer waitToReleaseList;
     // closures
     struct SZrState *threadWithAliveClosures;
     SZrClosureValue *aliveClosureValueList;
@@ -60,13 +60,18 @@ ZR_CORE_API SZrState *ZrStateNew(struct SZrGlobalState *global);
 
 ZR_CORE_API void ZrStateInit(SZrState *state, struct SZrGlobalState *global);
 
+ZR_CORE_API void ZrStateLaunch(SZrState *state, TZrPtr arguments);
+
+ZR_CORE_API void ZrStateExit(SZrState *state);
+
 ZR_CORE_API void ZrStateFree(struct SZrGlobalState *global, SZrState *state);
 
 ZR_CORE_API TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status);
 
 ZR_FORCE_INLINE TZrSize ZrStateStackGetSize(SZrState *state) {
-    return state->stackTop.valuePointer - state->stackBottom.valuePointer;
+    return state->stackTop.valuePointer - state->stackEnd.valuePointer;
 }
+
 
 ZR_CORE_API TBool ZrStateStackRealloc(SZrState *state, TUInt64 newSize, TBool throwError);
 #endif //ZR_VM_CORE_STATE_H

@@ -19,7 +19,7 @@ union TZrClosureLink {
 
 struct ZR_STRUCT_ALIGN SZrClosureValue {
     SZrRawObject super;
-    TZrStackObject value;
+    TZrStackPointer value;
     union TZrClosureLink link;
 };
 

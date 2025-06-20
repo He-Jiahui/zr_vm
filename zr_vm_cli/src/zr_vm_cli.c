@@ -8,7 +8,9 @@
 
 #include "zr_vm_core/global.h"
 
-TZrPtr TestAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize) {
+static TZrPtr TestAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize) {
+    ZR_UNUSED_PARAMETER(userData);
+    ZR_UNUSED_PARAMETER(originalSize);
     if (newSize == 0) {
         free(pointer);
         return ZR_NULL;

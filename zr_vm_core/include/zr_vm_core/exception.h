@@ -9,23 +9,24 @@
 #include "zr_vm_core/stack.h"
 struct SZrState;
 
-typedef void (*FZrTryFunction)(struct SZrState *state, void *userData);
+typedef void (*FZrTryFunction)(struct SZrState *state, TZrPtr arguments);
 
 typedef void (*FZrPanicHandlingFunction)(struct SZrState *state);
 
-struct ZR_STRUCT_ALIGN SZrExceptionLongJump {
-    struct SZrExceptionLongJump *previous;
+struct SZrExceptionLongJump {
     TZrExceptionLongJump jumpBuffer;
+    struct SZrExceptionLongJump *previous;
     volatile EZrThreadStatus status;
 };
 
 typedef struct SZrExceptionLongJump SZrExceptionLongJump;
 
-ZR_CORE_API TInt32 ZrExceptionTryRun(struct SZrState *state, FZrTryFunction tryFunction, void *userData);
+ZR_CORE_API EZrThreadStatus ZrExceptionTryRun(struct SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments);
 
 ZR_CORE_API void ZrExceptionThrow(struct SZrState *state, EZrThreadStatus errorCode);
 
 ZR_CORE_API EZrThreadStatus ZrExceptionTryStop(struct SZrState *state, TZrMemoryOffset level, EZrThreadStatus status);
 
-ZR_CORE_API void ZrExceptionMarkError(struct SZrState *state, EZrThreadStatus errorCode, TZrStackPointer previousTop);
+ZR_CORE_API void ZrExceptionMarkError(struct SZrState *state, EZrThreadStatus errorCode,
+                                      TZrStackValuePointer previousTop);
 #endif //ZR_VM_CORE_EXCEPTION_H

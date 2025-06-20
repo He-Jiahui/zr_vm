@@ -16,14 +16,21 @@ struct ZR_STRUCT_ALIGN SZrTypeValueOnStack {
 
 typedef struct SZrTypeValueOnStack SZrTypeValueOnStack;
 
-typedef SZrTypeValueOnStack *TZrStackPointer;
+typedef SZrTypeValueOnStack *TZrStackValuePointer;
 
-union TZrStackObject {
-    SZrTypeValueOnStack *valuePointer;
+union TZrStackPtr {
+    TZrStackValuePointer valuePointer;
     TZrMemoryOffset reusableValueOffset;
 };
 
-typedef union TZrStackObject TZrStackObject;
+typedef union TZrStackPtr TZrStackPointer;
+
+ZR_CORE_API TZrPtr ZrStackInit(struct SZrState *state, TZrStackPointer *stack, TZrSize stackLength);
+
+ZR_FORCE_INLINE TZrSize ZrStackSize(TZrStackPointer *stackBase, TZrStackPointer *stackTop) {
+    ZR_ASSERT(stackTop->valuePointer >= stackBase->valuePointer);
+    return (TZrSize) (stackTop->valuePointer - stackBase->valuePointer);
+}
 
 ZR_FORCE_INLINE void ZrStackSetValue(struct SZrState *state, SZrTypeValueOnStack *destination, SZrTypeValue *source) {
     ZR_TODO_PARAMETER(state);
