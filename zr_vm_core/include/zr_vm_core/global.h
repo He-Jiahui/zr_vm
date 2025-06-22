@@ -73,5 +73,11 @@ typedef struct SZrThreadState SZrThreadState;
 ZR_CORE_API SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments,
                                              TUInt64 uniqueNumber);
 
+ZR_CORE_API void ZrGlobalStateInitRegistry(SZrState *state, SZrGlobalState *global);
+
 ZR_CORE_API void ZrGlobalStateFree(SZrGlobalState *global);
+
+ZR_FORCE_INLINE TBool ZrGlobalStateIsInitialized(SZrGlobalState *global) {
+    return global->nullValue.type == ZR_VALUE_TYPE_NULL;
+}
 #endif //ZR_VM_CORE_GLOBAL_H

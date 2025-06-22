@@ -11,8 +11,11 @@
 #include <assert.h>
 #include <setjmp.h>
 #include <signal.h>
+#include <stdlib.h>
 
 #define ZR_IS_32_INT ((UINT_MAX >> 30) >= 3)
+
+#define ZR_BIT_MASK(BIT) (1 << (BIT))
 
 typedef size_t TZrSize;
 typedef ptrdiff_t TZrMemoryOffset;
@@ -80,20 +83,24 @@ typedef union TZrNativeObject TZrNativeObject;
 #if defined(ZR_COMPILER_GNU)
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
 #define ZR_FORCE_INLINE __attribute__((always_inline)) inline
+#define ZR_NO_RETURN __attribute__((noreturn))
 #elif defined(ZR_COMPILER_MSVC)
 #define ZR_STRUCT_ALIGN __declspec(align(8))
 #define ZR_FORCE_INLINE __forceinline
+#define ZR_NO_RETURN __declspec(noreturn)
 #elif defined(ZR_COMPILER_CLANG)
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
 #define ZR_FORCE_INLINE inline
+#define ZR_NO_RETURN __attribute__((noreturn))
 #else
 #define ZR_STRUCT_ALIGN
 #define ZR_FORCE_INLINE inline
+#define ZR_NO_RETURN
 #endif
 
 
 // allocator function
-typedef TZrPtr (*FZrAllocator)(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize);
+typedef TZrPtr (*FZrAllocator)(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag);
 
 // TryCatch types
 typedef jmp_buf TZrExceptionLongJump;
@@ -101,5 +108,16 @@ typedef jmp_buf TZrExceptionLongJump;
 // Debug Signal
 typedef sig_atomic_t TZrDebugSignal;
 
+
+// likely and unlikely to optimize branch prediction
+#if defined(ZR_COMPILER_GNU)
+#define ZR_LIKELY(CONDITION) (__builtin_expect(((CONDITION) != ZR_FALSE), 1))
+#define ZR_UNLIKELY(CONDITION) (__builtin_expect(((CONDITION) != ZR_FALSE), 0))
+#else
+#define ZR_LIKELY(CONDITION) (CONDITION)
+#define ZR_UNLIKELY(CONDITION) (CONDITION)
+#endif
+
+#define ZR_ABORT() abort()
 
 #endif //ZR_COMMON_CONF_H

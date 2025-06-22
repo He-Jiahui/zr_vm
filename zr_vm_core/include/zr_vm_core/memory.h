@@ -13,16 +13,26 @@
 ZR_FORCE_INLINE TZrPtr ZrMemoryAllocate(SZrGlobalState *global, TZrPtr pointer, TZrSize originalSize,
                                         TZrSize newSize) {
     ZR_ASSERT((pointer != ZR_NULL && originalSize != 0) || newSize != 0);
-    return global->allocator(global->userAllocationArguments, pointer, originalSize, newSize);
+    return global->allocator(global->userAllocationArguments, pointer, originalSize, newSize, ZR_VALUE_TYPE_VM_MEMORY);
 }
 
-ZR_FORCE_INLINE TZrPtr ZrMemoryMalloc(SZrGlobalState *global, TZrSize size) {
-    return global->allocator(global->userAllocationArguments, ZR_NULL, 0, size);
+ZR_FORCE_INLINE TZrPtr ZrMemoryRawMalloc(SZrGlobalState *global, TZrSize size) {
+    return global->allocator(global->userAllocationArguments, ZR_NULL, 0, size, ZR_VALUE_TYPE_VM_MEMORY);
 }
 
-ZR_FORCE_INLINE void ZrMemoryFree(SZrGlobalState *global, TZrPtr pointer, TZrSize size) {
+ZR_FORCE_INLINE TZrPtr ZrMemoryRawMallocWithType(SZrGlobalState *global, TZrSize size, EZrValueType type) {
+    // type may be helpful for some allocator
+    ZR_UNUSED_PARAMETER(type)
+    return global->allocator(global->userAllocationArguments, ZR_NULL, 0, size, type);
+}
+
+ZR_CORE_API TZrPtr ZrMemoryGcAndMalloc(SZrState *state, EZrValueType type, TZrSize size);
+
+ZR_CORE_API TZrPtr ZrMemoryGcMalloc(SZrState *state, EZrValueType type, TZrSize size);
+
+ZR_FORCE_INLINE void ZrMemoryRawFree(SZrGlobalState *global, TZrPtr pointer, TZrSize size) {
     ZR_ASSERT(pointer != ZR_NULL && size != 0);
-    global->allocator(global->userAllocationArguments, pointer, size, 0);
+    global->allocator(global->userAllocationArguments, pointer, size, 0, ZR_VALUE_TYPE_VM_MEMORY);
 }
 
 ZR_FORCE_INLINE void ZrMemoryCopy(TZrPtr destination, TZrPtr source, TZrSize size) {

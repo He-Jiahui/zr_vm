@@ -22,22 +22,22 @@ TZrString *ZrStringCreate(SZrGlobalState *global, TNativeString string, TZrSize 
 
     if (length <= ZR_VM_SHORT_STRING_MAX) {
         totalSize += ZR_VM_SHORT_STRING_MAX;
-        constantString = (TZrString *) ZrMemoryMalloc(global, totalSize);
+        constantString = (TZrString *) ZrMemoryRawMalloc(global, totalSize);
         ZrMemoryCopy(constantString->stringDataExtend, string, length);
         ((TNativeString) constantString->stringDataExtend)[length] = '\0';
         constantString->shortStringLength = (TUInt8) length;
         constantString->nextShortString = ZR_NULL;
     } else {
         totalSize += sizeof(TNativeString);
-        constantString = (TZrString *) ZrMemoryMalloc(global, totalSize);
+        constantString = (TZrString *) ZrMemoryRawMalloc(global, totalSize);
         TNativeString *pointer = (TNativeString *) &(constantString->stringDataExtend);
-        *pointer = (TNativeString) ZrMemoryMalloc(global, length + 1);
+        *pointer = (TNativeString) ZrMemoryRawMalloc(global, length + 1);
         memcpy(*pointer, string, length);
         *pointer[length] = '\0';
         constantString->shortStringLength = ZR_VM_SHORT_STRING_MAX + 1;
         constantString->longStringLength = length;
     }
-    ZrObjectInit(&constantString->super, ZR_VALUE_TYPE_OBJECT);
+    ZrRawObjectInit(&constantString->super, ZR_VALUE_TYPE_OBJECT);
     constantString->hash = ZrHashCreate(global, string, length);
     return constantString;
 }

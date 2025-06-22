@@ -85,7 +85,7 @@ ZR_FORCE_INLINE void ZrStateResetDebugHookCount(SZrState *state) {
 SZrState *ZrStateNew(SZrGlobalState *global) {
     // FZrAllocator allocator = global->allocator;
     SZrState *newState = ZrMemoryAllocate(global, NULL, 0, sizeof(SZrState));
-    ZrObjectInit(&newState->super, ZR_VALUE_TYPE_THREAD);
+    ZrRawObjectInit(&newState->super, ZR_VALUE_TYPE_THREAD);
     ZrStateInit(newState, global);
     return newState;
 }
@@ -116,10 +116,13 @@ void ZrStateInit(SZrState *state, SZrGlobalState *global) {
     state->previousProgramCounter = 0;
 }
 
-void ZrStateLaunch(SZrState *state, TZrPtr arguments) {
+void ZrStateMainThreadLaunch(SZrState *state, TZrPtr arguments) {
     ZR_UNUSED_PARAMETER(arguments);
     SZrGlobalState *global = state->global;
     ZrStateStackInit(state, global->mainThreadState);
+    ZrGlobalStateInitRegistry(state, global);
+    // todo: string table init
+    // ...
 }
 
 void ZrStateExit(SZrState *state) {

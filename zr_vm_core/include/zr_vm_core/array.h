@@ -13,7 +13,7 @@
 
 ZR_FORCE_INLINE void ZrArrayInit(SZrState *state, SZrArray *array, TZrSize elementSize, TZrSize capacity) {
     ZR_ASSERT(array != ZR_NULL && capacity != 0 && elementSize != 0);
-    array->head = ZR_CAST_UINT8_PTR(ZrMemoryMalloc(state->global, capacity * elementSize));
+    array->head = ZR_CAST_UINT8_PTR(ZrMemoryRawMalloc(state->global, capacity * elementSize));
     array->elementSize = elementSize;
     array->length = 0;
     array->capacity = capacity;
@@ -57,7 +57,7 @@ ZR_FORCE_INLINE void ZrArrayEmpty(SZrArray *array) {
 ZR_FORCE_INLINE void ZrArrayFree(SZrState *state, SZrArray *array) {
     ZR_ASSERT(array->head != ZR_NULL);
     SZrGlobalState *global = state->global;
-    ZrMemoryFree(global, array->head, array->capacity * array->elementSize);
+    ZrMemoryRawFree(global, array->head, array->capacity * array->elementSize);
 }
 
 ZR_FORCE_INLINE void ZrArrayAppend(SZrState *state, SZrArray *array, TZrPtr elements, TZrSize length) {

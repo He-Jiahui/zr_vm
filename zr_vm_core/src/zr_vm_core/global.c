@@ -8,7 +8,8 @@
 #include "zr_vm_core/string.h"
 
 SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments, TUInt64 uniqueNumber) {
-    SZrGlobalState *global = allocator(userAllocationArguments, ZR_NULL, 0, sizeof(SZrGlobalState));
+    SZrGlobalState *global = allocator(userAllocationArguments, ZR_NULL, 0, sizeof(SZrGlobalState),
+                                       ZR_VALUE_TYPE_VM_MEMORY);
     if (global == ZR_NULL) {
         return ZR_NULL;
     }
@@ -44,7 +45,7 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
         global->basicTypeObjectPrototype[i] = ZR_NULL;
     }
     // launch new state with try-catch
-    if (ZrExceptionTryRun(newState, ZrStateLaunch, ZR_NULL) != ZR_THREAD_STATUS_FINE) {
+    if (ZrExceptionTryRun(newState, ZrStateMainThreadLaunch, ZR_NULL) != ZR_THREAD_STATUS_FINE) {
         ZrStateExit(newState);
         ZrGlobalStateFree(global);
         global = ZR_NULL;
@@ -53,10 +54,18 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     return global;
 }
 
+void ZrGlobalStateInitRegistry(SZrState *state, SZrGlobalState *global) {
+    SZrObject *object = ZrObjectNew(state, ZR_NULL);
+    ZrValueInitAsRawObject(&global->loadedModulesRegistry, ZR_CAST_RAW_OBJECT(object));
+    // todo: load state value
+    // todo: load global value
+}
+
+
 void ZrGlobalStateFree(SZrGlobalState *global) {
     FZrAllocator allocator = global->allocator;
 
     ZrStateFree(global, global->mainThreadState);
     // free global at last
-    allocator(global->userAllocationArguments, global, sizeof(SZrGlobalState), 0);
+    allocator(global->userAllocationArguments, global, sizeof(SZrGlobalState), 0, ZR_VALUE_TYPE_VM_MEMORY);
 }

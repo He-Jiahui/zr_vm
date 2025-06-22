@@ -14,6 +14,6 @@ TZrPtr ZrStackInit(SZrState *state, TZrStackPointer *stack, TZrSize stackLength)
     ZR_ASSERT(stackLength > 0);
     SZrGlobalState *global = state->global;
     TZrSize stackByteSize = sizeof(SZrTypeValueOnStack) * stackLength;
-    stack->valuePointer = ZR_CAST_STACK_OBJECT(ZrMemoryMalloc(global, stackByteSize));
+    stack->valuePointer = ZR_CAST_STACK_OBJECT(ZrMemoryRawMalloc(global, stackByteSize));
     return ZR_CAST_PTR(stack->valuePointer + stackLength);
 }

@@ -60,7 +60,7 @@ ZR_CORE_API SZrState *ZrStateNew(struct SZrGlobalState *global);
 
 ZR_CORE_API void ZrStateInit(SZrState *state, struct SZrGlobalState *global);
 
-ZR_CORE_API void ZrStateLaunch(SZrState *state, TZrPtr arguments);
+ZR_CORE_API void ZrStateMainThreadLaunch(SZrState *state, TZrPtr arguments);
 
 ZR_CORE_API void ZrStateExit(SZrState *state);
 

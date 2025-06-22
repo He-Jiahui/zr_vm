@@ -12,8 +12,8 @@
 #include "zr_vm_core/global.h"
 
 #if defined(__cplusplus) && !defined(ZR_EXCEPTION_WITH_LONG_JUMP)
-#define ZR_EXCEPTION_THROW(state, context) throw(context)
-#define ZR_EXCEPTION_TRY(state, context, block) \
+#define ZR_EXCEPTION_NATIVE_THROW(state, context) throw(context)
+#define ZR_EXCEPTION_NATIVE_TRY(state, context, block) \
 try { \
 block \
 } catch(...) {\
@@ -22,14 +22,14 @@ if((context)->status == 0) {\
 }\
 }
 #elif defined(ZR_PLATFORM_UNIX)
-#define ZR_EXCEPTION_THROW(state, context) longjmp((context)->jumpBuffer, 1)
-#define ZR_EXCEPTION_TRY(state, context, block) \
+#define ZR_EXCEPTION_NATIVE_THROW(state, context) longjmp((context)->jumpBuffer, 1)
+#define ZR_EXCEPTION_NATIVE_TRY(state, context, block) \
 if(setjmp((context)->jumpBuffer) == 0){\
 block \
 }
 #else
-#define ZR_EXCEPTION_THROW(state, context) longjmp((context)->jumpBuffer, 1)
-#define ZR_EXCEPTION_TRY(state, context, block) \
+#define ZR_EXCEPTION_NATIVE_THROW(state, context) longjmp((context)->jumpBuffer, 1)
+#define ZR_EXCEPTION_NATIVE_TRY(state, context, block) \
 if(setjmp((context)->jumpBuffer) == 0){\
 block \
 }
@@ -41,9 +41,9 @@ EZrThreadStatus ZrExceptionTryRun(SZrState *state, FZrTryFunction tryFunction, T
     exceptionLongJump.status = ZR_THREAD_STATUS_FINE;
     exceptionLongJump.previous = state->exceptionRecoverPoint;
     state->exceptionRecoverPoint = &exceptionLongJump;
-    ZR_EXCEPTION_TRY(state, &exceptionLongJump, {
-                     tryFunction(state, arguments);
-                     });
+    ZR_EXCEPTION_NATIVE_TRY(state, &exceptionLongJump, {
+                            tryFunction(state, arguments);
+                            });
     state->exceptionRecoverPoint = exceptionLongJump.previous;
     state->nestedNativeCalls = prevNestedNativeCalls;
     return exceptionLongJump.status;
@@ -52,9 +52,30 @@ EZrThreadStatus ZrExceptionTryRun(SZrState *state, FZrTryFunction tryFunction, T
 void ZrExceptionThrow(SZrState *state, EZrThreadStatus errorCode) {
     if (state->exceptionRecoverPoint) {
         state->exceptionRecoverPoint->status = errorCode;
-        ZR_EXCEPTION_THROW(state, state->exceptionRecoverPoint);
-    } else {
-        // SZrGlobalState *global = state->global;
+        ZR_EXCEPTION_NATIVE_THROW(state, state->exceptionRecoverPoint);
+    }
+    SZrGlobalState *global = state->global;
+    SZrState *mainThreadState = global->mainThreadState;
+    // throw in main thread
+    if (state != mainThreadState) {
+        // not wrapped by try catch block
+        errorCode = ZrStateResetThread(state, errorCode);
+        state->threadStatus = errorCode;
+        if (mainThreadState->exceptionRecoverPoint != ZR_NULL) {
+            // set error object to main thread
+            ZrStackCopyValue(mainThreadState, mainThreadState->stackTop.valuePointer,
+                             ZrStackGetValue(state->stackTop.valuePointer - 1));
+            mainThreadState->stackTop.valuePointer++;
+            ZrExceptionThrow(mainThreadState, errorCode);
+        }
+    } else
+    // if no catch block and throw in main thread
+    {
+        if (global->panicHandlingFunction != ZR_NULL) {
+            ZR_THREAD_UNLOCK(state);
+            global->panicHandlingFunction(state);
+        }
+        ZR_ABORT();
     }
 }
 

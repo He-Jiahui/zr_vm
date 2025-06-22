@@ -9,6 +9,13 @@
 #define ZR_THREAD_STACK_SIZE_BASIC (ZR_THREAD_STACK_SIZE_MIN * 2)
 #define ZR_THREAD_STACK_SIZE_EXTRA 5
 
+#if !defined(ZR_THREAD_LOCK)
+// default option
+// user can define ZR_THREAD_LOCK and ZR_THREAD_UNLOCK to use their own lock
+#define ZR_THREAD_LOCK(state) ((void)0)
+#define ZR_THREAD_UNLOCK(state) ((void)0)
+#endif
+
 enum EZrThreadStatus {
     ZR_THREAD_STATUS_FINE = 0,
     ZR_THREAD_STATUS_YIELD = 1,

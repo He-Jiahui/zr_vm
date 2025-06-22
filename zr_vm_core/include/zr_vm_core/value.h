@@ -28,5 +28,6 @@ typedef struct SZrTypeValue SZrTypeValue;
 
 ZR_CORE_API void ZrValueInitAsNull(SZrTypeValue *value);
 
+ZR_CORE_API void ZrValueInitAsRawObject(SZrTypeValue *value, SZrRawObject *object);
 
 #endif //ZR_VM_CORE_VALUE_H

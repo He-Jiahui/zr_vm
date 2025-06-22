@@ -26,7 +26,8 @@
 #define ZR_CAST_PTR(EXP) ZR_CAST(TZrPtr, (EXP))
 #define ZR_CAST_SIZE(EXP) ZR_CAST(TZrSize, (EXP))
 
-#define ZR_CAST_RAW_OBJECT(EXP) ZR_CAST(SZrRawObject*, &((EXP)->super))
+#define ZR_CAST_RAW_OBJECT(EXP) ZR_CAST(SZrRawObject*, (EXP))
+#define ZR_CAST_RAW_OBJECT_AS_SUPER(EXP) ZR_CAST(SZrRawObject*, &((EXP)->super))
 #define ZR_CAST_STACK_OBJECT(EXP) ZR_CAST(SZrTypeValueOnStack*, (EXP))
 
 

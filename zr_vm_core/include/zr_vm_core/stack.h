@@ -32,7 +32,11 @@ ZR_FORCE_INLINE TZrSize ZrStackSize(TZrStackPointer *stackBase, TZrStackPointer 
     return (TZrSize) (stackTop->valuePointer - stackBase->valuePointer);
 }
 
-ZR_FORCE_INLINE void ZrStackSetValue(struct SZrState *state, SZrTypeValueOnStack *destination, SZrTypeValue *source) {
+ZR_FORCE_INLINE SZrTypeValue *ZrStackGetValue(SZrTypeValueOnStack *valueOnStack) {
+    return &valueOnStack->value;
+}
+
+ZR_FORCE_INLINE void ZrStackCopyValue(struct SZrState *state, SZrTypeValueOnStack *destination, SZrTypeValue *source) {
     ZR_TODO_PARAMETER(state);
     SZrTypeValue *destinationValue = &destination->value;
     destinationValue->value.object = source->value.object;

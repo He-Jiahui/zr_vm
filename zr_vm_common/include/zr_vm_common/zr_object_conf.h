@@ -15,15 +15,27 @@
 // wait memory to 200% before starting new gc cycle
 #define ZR_GARBAGE_COLLECT_PAUSE_THRESHOLD_PERCENT 200
 
+enum EZrGarbageCollectMode {
+    ZR_GARBAGE_COLLECT_MODE_GENERATIONAL,
+    ZR_GARBAGE_COLLECT_MODE_INCREMENTAL,
+    ZR_GARBAGE_COLLECT_MODE_MAX
+};
+
+typedef enum EZrGarbageCollectMode EZrGarbageCollectMode;
+
+
 enum EZrGarbageCollectObjectStatus {
     ZR_GARBAGE_COLLECT_OBJECT_STATUS_PERMANENT,
     ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED,
     ZR_GARBAGE_COLLECT_OBJECT_STATUS_REFERENCED,
     ZR_GARBAGE_COLLECT_OBJECT_STATUS_UNREFERENCED,
     ZR_GARBAGE_COLLECT_OBJECT_STATUS_RELEASED,
+
+    ZR_GARBAGE_COLLECT_OBJECT_STATUS_MAX
 };
 
 typedef enum EZrGarbageCollectObjectStatus EZrGarbageCollectObjectStatus;
+
 
 enum EZrGarbageCollectStatus {
     ZR_GARBAGE_COLLECT_STATUS_RUNNING,
@@ -50,18 +62,26 @@ enum EZrGarbageCollectRunningStatus {
 
 typedef enum EZrGarbageCollectRunningStatus EZrGarbageCollectRunningStatus;
 
+struct SZrGarbageCollectionObjectMark {
+    EZrGarbageCollectObjectStatus status;
+    TUInt8 generations;
+};
+
+typedef struct SZrGarbageCollectionObjectMark SZrGarbageCollectionObjectMark;
+
 struct ZR_STRUCT_ALIGN SZrRawObject {
     struct SZrRawObject *next;
     EZrValueType type;
-    EZrGarbageCollectObjectStatus garbageCollectStatus;
+    SZrGarbageCollectionObjectMark garbageCollectMark;
 };
 
 typedef struct SZrRawObject SZrRawObject;
 
-ZR_FORCE_INLINE void ZrObjectInit(SZrRawObject *super, EZrValueType type) {
+ZR_FORCE_INLINE void ZrRawObjectInit(SZrRawObject *super, EZrValueType type) {
     super->next = ZR_NULL;
     super->type = type;
-    super->garbageCollectStatus = ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED;
+    super->garbageCollectMark.status = ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED;
+    super->garbageCollectMark.generations = 0;
 }
 
 #endif //ZR_OBJECT_CONF_H

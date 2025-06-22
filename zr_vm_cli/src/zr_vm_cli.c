@@ -8,9 +8,10 @@
 
 #include "zr_vm_core/global.h"
 
-static TZrPtr TestAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize) {
+static TZrPtr TestAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
+    ZR_UNUSED_PARAMETER(flag);
     if (newSize == 0) {
         free(pointer);
         return ZR_NULL;

@@ -6,6 +6,7 @@
 #define ZR_VM_CORE_OBJECT_H
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/hash.h"
+struct SZrState;
 
 struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     SZrRawObject super;
@@ -27,4 +28,7 @@ struct ZR_STRUCT_ALIGN SZrObject {
 };
 
 typedef struct SZrObject SZrObject;
+
+ZR_CORE_API SZrObject *ZrObjectNew(struct SZrState *state, SZrObjectPrototype *prototype);
+
 #endif //ZR_VM_CORE_OBJECT_H
