@@ -70,7 +70,7 @@ typedef union TZrNativeObject TZrNativeObject;
 #if defined(ZR_DEBUG)
 #define ZR_ASSERT(CONDITION) assert((CONDITION))
 #else
-#define ZR_ASSERT(CONDITION)
+#define ZR_ASSERT(CONDITION) ((void)0)
 #endif
 
 #if defined(__GNUC__)
