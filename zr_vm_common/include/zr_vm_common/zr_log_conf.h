@@ -16,4 +16,6 @@ enum EZrLogLevel {
 };
 
 typedef enum EZrLogLevel EZrLogLevel;
+
+#define ZR_ERROR_MESSAGE_NOT_ENOUGH_MEMORY "not enough memory"
 #endif //ZR_LOG_CONF_H

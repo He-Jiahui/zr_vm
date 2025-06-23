@@ -5,12 +5,12 @@
 #ifndef ZR_STRING_CONF_H
 #define ZR_STRING_CONF_H
 #include "zr_vm_common/zr_object_conf.h"
+#include "zr_vm_common/zr_hash_conf.h"
 // gc object type
-#define ZR_VM_SHORT_STRING_MAX  127U    // 短字符串最大长度
+#define ZR_VM_SHORT_STRING_MAX  127U    // 短字符串最大长度 不得超过UINT8_MAX
 
 struct ZR_STRUCT_ALIGN TZrString {
-    SZrRawObject super;
-    TUInt64 hash;
+    SZrHashRawObject super;
 
     // 尾部
     union {
@@ -19,17 +19,14 @@ struct ZR_STRUCT_ALIGN TZrString {
     };
 
     TUInt8 shortStringLength;
+
     TUInt8 stringDataExtend[1];
 };
 
 typedef struct TZrString TZrString;
 
 struct ZR_STRUCT_ALIGN SZrStringTable {
-    TZrString **buckets;
-    TZrSize bucketCount;
-    TZrSize elementCount;
-    TZrSize capacity;
-    TZrSize resizeThreshold;
+    SZrHashSet stringHashSet;
 };
 
 typedef struct SZrStringTable SZrStringTable;

@@ -15,6 +15,7 @@ struct SZrArray {
     TZrSize elementSize;
     TZrSize length;
     TZrSize capacity;
+    TBool isValid;
 };
 
 typedef struct SZrArray SZrArray;

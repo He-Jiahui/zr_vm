@@ -30,7 +30,7 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     ZrGarbageCollectorInit(global);
 
     // init string table
-    ZrStringTableInit(global);
+    ZrStringTableNew(global);
 
     // init global module registry
     ZrValueInitAsNull(&global->loadedModulesRegistry);

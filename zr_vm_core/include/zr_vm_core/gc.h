@@ -50,5 +50,15 @@ ZR_CORE_API void ZrGarbageCollectorGcFull(struct SZrState *state, TBool isImmedi
 
 ZR_CORE_API SZrRawObject *ZrRawObjectNew(struct SZrState *state, EZrValueType type, TZrSize size);
 
+// only available for latest generated object
+ZR_CORE_API void ZrRawObjectMarkAsPermanent(struct SZrState *state, SZrRawObject *object);
 
+
+ZR_FORCE_INLINE TBool ZrRawObjectIsReleased(SZrRawObject *object) {
+    return object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_OBJECT_STATUS_RELEASED;
+}
+
+ZR_FORCE_INLINE void ZrRawObjectMarkAsReferenced(SZrRawObject *object) {
+    object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_OBJECT_STATUS_REFERENCED;
+}
 #endif //ZR_VM_CORE_GC_H

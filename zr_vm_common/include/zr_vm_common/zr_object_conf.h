@@ -84,4 +84,18 @@ ZR_FORCE_INLINE void ZrRawObjectInit(SZrRawObject *super, EZrValueType type) {
     super->garbageCollectMark.generations = 0;
 }
 
+struct ZR_STRUCT_ALIGN SZrHashRawObject {
+    SZrRawObject super;
+    TUInt64 hash;
+    struct SZrHashRawObject *next;
+};
+
+typedef struct SZrHashRawObject SZrHashRawObject;
+ZR_FORCE_INLINE void ZrHashRawObjectInit(SZrHashRawObject *super, EZrValueType type, TUInt64 hash) {
+    ZrRawObjectInit(&super->super, type);
+    super->hash = hash;
+    super->next = ZR_NULL;
+}
+
+typedef struct SZrHashRawObject SZrHashRawObject;
 #endif //ZR_OBJECT_CONF_H

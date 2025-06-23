@@ -4,6 +4,7 @@
 
 #ifndef ZR_VM_CORE_GLOBAL_H
 #define ZR_VM_CORE_GLOBAL_H
+#include "zr_vm_core/string.h"
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
@@ -19,6 +20,10 @@
  */
 #define ZR_GLOBAL_API_STR_CACHE_N 193
 #define ZR_GLOBAL_API_STR_CACHE_M 2
+
+#if !defined(ZR_STRING_TABLE_INIT_SIZE_LOG2)
+#define ZR_STRING_TABLE_INIT_SIZE_LOG2 12 // 2^12 = 4KB
+#endif
 
 
 struct ZR_STRUCT_ALIGN SZrGlobalState {

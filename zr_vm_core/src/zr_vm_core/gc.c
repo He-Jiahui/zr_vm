@@ -70,3 +70,14 @@ SZrRawObject *ZrRawObjectNew(SZrState *state, EZrValueType type, TZrSize size) {
     global->garbageCollector.gcObjectList = object;
     return object;
 }
+
+void ZrRawObjectMarkAsPermanent(SZrState *state, SZrRawObject *object) {
+    ZR_ASSERT(object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED);
+    SZrGlobalState *global = state->global;
+    // we assume that the object is the first object in gc list (latest created)
+    ZR_ASSERT(global->garbageCollector.gcObjectList == object);
+    object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_OBJECT_STATUS_PERMANENT;
+    global->garbageCollector.gcObjectList = object->next;
+    object->next = global->garbageCollector.permanentObjectList;
+    global->garbageCollector.permanentObjectList = object;
+}

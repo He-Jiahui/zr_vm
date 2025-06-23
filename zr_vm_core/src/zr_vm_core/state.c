@@ -120,8 +120,10 @@ void ZrStateMainThreadLaunch(SZrState *state, TZrPtr arguments) {
     ZR_UNUSED_PARAMETER(arguments);
     SZrGlobalState *global = state->global;
     ZrStateStackInit(state, global->mainThreadState);
+    // global registry module init
     ZrGlobalStateInitRegistry(state, global);
-    // todo: string table init
+    // string table init
+    ZrStringTableInit(state);
     // ...
 }
 

@@ -9,7 +9,7 @@
 #include <time.h>
 #include "xxHash/xxhash.h"
 ZR_FORCE_INLINE TUInt64 ZrHashSeedCreateInternal(TNativeString string, TZrSize length, TUInt64 seed) {
-    return XXH64(string, length, seed);
+    return XXH3_64bits_withSeed(string, length, seed);
 }
 
 TUInt64 ZrHashSeedCreate(SZrGlobalState *global, TUInt64 uniqueNumber) {

@@ -30,15 +30,24 @@ ZR_CORE_API TZrPtr ZrMemoryGcAndMalloc(SZrState *state, EZrValueType type, TZrSi
 
 ZR_CORE_API TZrPtr ZrMemoryGcMalloc(SZrState *state, EZrValueType type, TZrSize size);
 
+ZR_FORCE_INLINE void ZrMemoryRawSet(TZrPtr destination, TByte byte, TZrSize byteCount) {
+    ZR_ASSERT(destination != ZR_NULL && byteCount != 0);
+    memset(destination, byte, byteCount);
+}
+
 ZR_FORCE_INLINE void ZrMemoryRawFree(SZrGlobalState *global, TZrPtr pointer, TZrSize size) {
     ZR_ASSERT(pointer != ZR_NULL && size != 0);
     global->allocator(global->userAllocationArguments, pointer, size, 0, ZR_VALUE_TYPE_VM_MEMORY);
 }
 
-ZR_FORCE_INLINE void ZrMemoryCopy(TZrPtr destination, TZrPtr source, TZrSize size) {
+ZR_FORCE_INLINE void ZrMemoryRawCopy(TZrPtr destination, TZrPtr source, TZrSize size) {
     ZR_ASSERT(destination != ZR_NULL && source != ZR_NULL && size != 0);
     memcpy(destination, source, size);
 }
 
+ZR_FORCE_INLINE TInt32 ZrMemoryRawCompare(TZrPtr destination, TZrPtr source, TZrSize size) {
+    ZR_ASSERT(destination != ZR_NULL && source != ZR_NULL && size != 0);
+    return memcmp(destination, source, size);
+}
 
 #endif //ZR_VM_CORE_MEMORY_H

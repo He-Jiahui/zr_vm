@@ -7,8 +7,9 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/state.h"
 
+
 SZrObject *ZrObjectNew(SZrState *state, SZrObjectPrototype *prototype) {
-    SZrRawObject *rawObject = ZrRawObjectNew(state, sizeof(SZrObject), ZR_VALUE_TYPE_OBJECT);
+    SZrRawObject *rawObject = ZrRawObjectNew(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrObject));
     SZrObject *object = ZR_CAST(SZrObject*, rawObject);
     object->prototype = prototype;
     object->gcList = ZR_NULL;

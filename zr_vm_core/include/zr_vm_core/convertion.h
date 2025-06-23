@@ -5,7 +5,6 @@
 #ifndef ZR_VM_CORE_CONVERTION_H
 #define ZR_VM_CORE_CONVERTION_H
 
-#include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/conf.h"
 
 #define ZR_CAST(TARGET_TYPE, EXPRESSION) ((TARGET_TYPE)(EXPRESSION))
@@ -21,13 +20,20 @@
 #define ZR_CAST_UINT64(EXP) ZR_CAST(TUInt64, (EXP))
 #define ZR_CAST_UINT64_PTR(EXP) ZR_CAST(TUInt64*, (EXP))
 #define ZR_CAST_FLOAT(EXP) ZR_CAST(TFloat, (EXP))
-#define ZR_CAST_STRING(EXP) ZR_CAST(TNativeString, (EXP))
+#define ZR_CAST_NATIVE_STRING(EXP) ZR_CAST(TNativeString, (EXP))
 #define ZR_CAST_MEMORY_OFFSET(EXP) ZR_CAST(TZrMemoryOffset, (EXP))
 #define ZR_CAST_PTR(EXP) ZR_CAST(TZrPtr, (EXP))
 #define ZR_CAST_SIZE(EXP) ZR_CAST(TZrSize, (EXP))
 
+#define ZR_CAST_STRING_TO_NATIVE(EXP) ZR_CAST(TNativeString, (EXP)->stringDataExtend)
+
 #define ZR_CAST_RAW_OBJECT(EXP) ZR_CAST(SZrRawObject*, (EXP))
+#define ZR_CAST_RAW_OBJECT_PTR(EXP) ZR_CAST(SZrRawObject**, (EXP))
 #define ZR_CAST_RAW_OBJECT_AS_SUPER(EXP) ZR_CAST(SZrRawObject*, &((EXP)->super))
+#define ZR_CAST_HASH_RAW_OBJECT(EXP) ZR_CAST(SZrHashRawObject*, (EXP))
+#define ZR_CAST_HASH_RAW_OBJECT_PTR(EXP) ZR_CAST(SZrHashRawObject**, (EXP))
+#define ZR_CAST_HASH_RAW_OBJECT_AS_SUPER(EXP) ZR_CAST(SZrHashRawObject*, &((EXP)->super))
+
 #define ZR_CAST_STACK_OBJECT(EXP) ZR_CAST(SZrTypeValueOnStack*, (EXP))
 
 

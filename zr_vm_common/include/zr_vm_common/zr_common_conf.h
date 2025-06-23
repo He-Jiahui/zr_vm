@@ -27,6 +27,7 @@ typedef intptr_t TZrNativePtr;
 
 // c internal types
 typedef char TChar;
+typedef unsigned char TByte;
 typedef uint8_t TUInt8; // 1 byte
 typedef int8_t TInt8; // 1 byte
 typedef uint16_t TUInt16; // 2 bytes

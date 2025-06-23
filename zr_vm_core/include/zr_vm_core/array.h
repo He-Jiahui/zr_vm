@@ -9,7 +9,9 @@
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/conf.h"
-
+ZR_FORCE_INLINE void ZrArrayNew(SZrArray *array) {
+    array->isValid = ZR_FALSE;
+}
 
 ZR_FORCE_INLINE void ZrArrayInit(SZrState *state, SZrArray *array, TZrSize elementSize, TZrSize capacity) {
     ZR_ASSERT(array != ZR_NULL && capacity != 0 && elementSize != 0);
@@ -17,6 +19,7 @@ ZR_FORCE_INLINE void ZrArrayInit(SZrState *state, SZrArray *array, TZrSize eleme
     array->elementSize = elementSize;
     array->length = 0;
     array->capacity = capacity;
+    array->isValid = ZR_TRUE;
 }
 
 ZR_FORCE_INLINE TZrPtr ZrArrayGet(SZrArray *array, TZrSize index) {
@@ -26,7 +29,7 @@ ZR_FORCE_INLINE TZrPtr ZrArrayGet(SZrArray *array, TZrSize index) {
 
 ZR_FORCE_INLINE void ZrArraySet(SZrArray *array, TZrSize index, TZrPtr element) {
     ZR_ASSERT(index < array->length);
-    ZrMemoryCopy(array->head + index * array->elementSize, element, array->elementSize);
+    ZrMemoryRawCopy(array->head + index * array->elementSize, element, array->elementSize);
 }
 
 ZR_FORCE_INLINE TZrPtr ZrArrayPop(SZrArray *array) {
@@ -46,7 +49,7 @@ ZR_FORCE_INLINE void ZrArrayPush(SZrState *state, SZrArray *array, TZrPtr elemen
         array->head = ZR_CAST_UINT8_PTR(ZrMemoryAllocate(global, array->head, previousCapacity * array->elementSize,
             array->capacity * array->elementSize));
     }
-    ZrMemoryCopy(array->head + array->length * array->elementSize, element, array->elementSize);
+    ZrMemoryRawCopy(array->head + array->length * array->elementSize, element, array->elementSize);
     array->length++;
 }
 
@@ -58,6 +61,7 @@ ZR_FORCE_INLINE void ZrArrayFree(SZrState *state, SZrArray *array) {
     ZR_ASSERT(array->head != ZR_NULL);
     SZrGlobalState *global = state->global;
     ZrMemoryRawFree(global, array->head, array->capacity * array->elementSize);
+    array->isValid = ZR_FALSE;
 }
 
 ZR_FORCE_INLINE void ZrArrayAppend(SZrState *state, SZrArray *array, TZrPtr elements, TZrSize length) {
@@ -71,8 +75,8 @@ ZR_FORCE_INLINE void ZrArrayAppend(SZrState *state, SZrArray *array, TZrPtr elem
         array->head = ZR_CAST_UINT8_PTR(ZrMemoryAllocate(global, array->head, previousCapacity * array->elementSize,
             array->capacity * array->elementSize));
     }
-    ZrMemoryCopy(array->head + array->length * array->elementSize, elements,
-                 length * array->elementSize);
+    ZrMemoryRawCopy(array->head + array->length * array->elementSize, elements,
+                    length * array->elementSize);
     array->length += length;
 }
 
