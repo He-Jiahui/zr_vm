@@ -5,14 +5,18 @@
 
 #include "zr_vm_core/convertion.h"
 #include "zr_vm_core/hash.h"
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 
-SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments, TUInt64 uniqueNumber) {
+SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments, TUInt64 uniqueNumber,
+                                 SZrCallbackGlobal *callbacks) {
     SZrGlobalState *global = allocator(userAllocationArguments, ZR_NULL, 0, sizeof(SZrGlobalState),
                                        ZR_VALUE_TYPE_VM_MEMORY);
     if (global == ZR_NULL) {
         return ZR_NULL;
     }
+    // when create and init global state, we make the global is not valid
+    global->isValid = ZR_FALSE;
     global->allocator = allocator;
     global->userAllocationArguments = userAllocationArguments;
     SZrState *newState = ZrStateNew(global);
@@ -43,6 +47,12 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     // reset basic type object prototype
     for (TUInt64 i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         global->basicTypeObjectPrototype[i] = ZR_NULL;
+    }
+    // write callbacks to  global
+    if (callbacks != ZR_NULL) {
+        global->callbacks = *callbacks;
+    } else {
+        ZrMemoryRawSet(&global->callbacks, 0, sizeof(SZrCallbackGlobal));
     }
     // launch new state with try-catch
     if (ZrExceptionTryRun(newState, ZrStateMainThreadLaunch, ZR_NULL) != ZR_THREAD_STATUS_FINE) {

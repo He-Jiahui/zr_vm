@@ -9,6 +9,7 @@
 
 // todo:
 TZrPtr ZrMemoryGcAndMalloc(SZrState *state, EZrValueType type, TZrSize size) {
+    ZR_UNUSED_PARAMETER(type);
     SZrGlobalState *global = state->global;
     // global state is initialized judge by null value
     if (ZrGlobalStateIsInitialized(global) && !global->garbageCollector.isImmediateGcFlag) {

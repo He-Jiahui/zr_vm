@@ -8,7 +8,7 @@
 #include "zr_vm_common/zr_hash_conf.h"
 // gc object type
 #define ZR_VM_SHORT_STRING_MAX  127U    // 短字符串最大长度 不得超过UINT8_MAX
-
+#define ZR_VM_LONG_STRING_FLAG (0XFF) // 长字符串最大长度 不得超过INT32_MAX
 struct ZR_STRUCT_ALIGN TZrString {
     SZrHashRawObject super;
 

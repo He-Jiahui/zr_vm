@@ -24,19 +24,22 @@ ZR_CORE_API void ZrStringTableNew(struct SZrGlobalState *global);
 
 ZR_CORE_API void ZrStringTableInit(struct SZrState *state);
 
-ZR_CORE_API TZrString *ZrStringObjectCreate(struct SZrState *state, TNativeString string, TZrSize length);
 
 ZR_CORE_API TZrString *ZrStringCreate(struct SZrState *state, TNativeString string, TZrSize length);
+
+ZR_FORCE_INLINE TZrString *ZrStringCreateFromNative(struct SZrState *state, TNativeString string) {
+    return ZrStringCreate(state, string, ZrNativeStringLength(string));
+}
 
 ZR_CORE_API TZrString *ZrStringCreateTryHitCache(struct SZrState *state, TNativeString string);
 
 ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringShort(TZrString *string) {
-    ZR_ASSERT(string->shortStringLength < 0XFF);
+    ZR_ASSERT(string->shortStringLength < ZR_VM_LONG_STRING_FLAG);
     return (TNativeString *) string->stringDataExtend;
 }
 
 ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringLong(TZrString *string) {
-    ZR_ASSERT(string->shortStringLength == 0XFF);
+    ZR_ASSERT(string->shortStringLength == ZR_VM_LONG_STRING_FLAG);
     return (TNativeString *) string->stringDataExtend;
 }
 #endif //ZR_VM_CORE_STRING_H

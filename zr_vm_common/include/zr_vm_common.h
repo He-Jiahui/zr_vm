@@ -17,6 +17,7 @@
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_common/zr_vm_conf.h"
 #include "zr_vm_common/zr_version_info.h"
+#include "zr_vm_common/zr_meta_conf.h"
 
 
 #define ZR_EMPTY_MODULE(FILE_NAME) ZR_API void EMPTY_##FILE_NAME(void);

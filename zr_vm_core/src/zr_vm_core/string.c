@@ -34,6 +34,33 @@ void ZrStringTableInit(SZrState *state) {
     }
 }
 
+static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZrSize length) {
+    SZrGlobalState *global = state->global;
+    TZrString *constantString = ZR_NULL;
+    TZrSize totalSize = sizeof(TZrString);
+
+    if (length <= ZR_VM_SHORT_STRING_MAX) {
+        totalSize += ZR_VM_SHORT_STRING_MAX;
+        constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize);
+        ZrMemoryRawCopy(constantString->stringDataExtend, string, length);
+        ((TNativeString) constantString->stringDataExtend)[length] = '\0';
+        constantString->shortStringLength = (TUInt8) length;
+        constantString->nextShortString = ZR_NULL;
+    } else {
+        totalSize += sizeof(TNativeString);
+        constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize);
+        TNativeString *pointer = (TNativeString *) &(constantString->stringDataExtend);
+        *pointer = (TNativeString) ZrMemoryRawMalloc(global, length + 1);
+        ZrMemoryRawCopy(*pointer, string, length);
+        *pointer[length] = '\0';
+        constantString->shortStringLength = ZR_VM_LONG_STRING_FLAG;
+        constantString->longStringLength = length;
+    }
+
+    ZrHashRawObjectInit(&constantString->super, ZR_VALUE_TYPE_STRING, ZrHashCreate(global, string, length));
+    return constantString;
+}
+
 static TZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZrSize length) {
     SZrGlobalState *global = state->global;
     SZrStringTable *stringTable = &global->stringTable;
@@ -56,39 +83,19 @@ static TZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZr
     }
 }
 
-TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZrSize length) {
-    SZrGlobalState *global = state->global;
-    TZrString *constantString = ZR_NULL;
-    TZrSize totalSize = sizeof(TZrString);
-
-    if (length <= ZR_VM_SHORT_STRING_MAX) {
-        totalSize += ZR_VM_SHORT_STRING_MAX;
-        constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize);
-        ZrMemoryRawCopy(constantString->stringDataExtend, string, length);
-        ((TNativeString) constantString->stringDataExtend)[length] = '\0';
-        constantString->shortStringLength = (TUInt8) length;
-        constantString->nextShortString = ZR_NULL;
-    } else {
-        totalSize += sizeof(TNativeString);
-        constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize);
-        TNativeString *pointer = (TNativeString *) &(constantString->stringDataExtend);
-        *pointer = (TNativeString) ZrMemoryRawMalloc(global, length + 1);
-        ZrMemoryRawCopy(*pointer, string, length);
-        *pointer[length] = '\0';
-        constantString->shortStringLength = 0XFF;
-        constantString->longStringLength = length;
-    }
-
-    ZrHashRawObjectInit(&constantString->super, ZR_VALUE_TYPE_STRING, ZrHashCreate(global, string, length));
-    return constantString;
+static ZR_FORCE_INLINE TZrString *ZrStringCreateLong(SZrState *state, TNativeString string, TZrSize length) {
+    ZR_ASSERT(string != ZR_NULL);
+    TZrString *newString = ZrStringObjectCreate(state, string, length);
+    return newString;
 }
+
 
 ZR_CORE_API TZrString *ZrStringCreate(SZrState *state, TNativeString string, TZrSize length) {
     if (length <= ZR_VM_SHORT_STRING_MAX) {
         return ZrStringCreateShort(state, string, length);
     } {
-        // todo: create a long string
-        return ZR_NULL;
+        // create a long string
+        return ZrStringCreateLong(state, string, length);
     }
 }
 

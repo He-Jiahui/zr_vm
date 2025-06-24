@@ -18,6 +18,8 @@
 #define ZR_BIT_MASK(BIT) (1 << (BIT))
 
 typedef size_t TZrSize;
+#define ZR_MAX_SIZE (SIZE_MAX)
+
 typedef ptrdiff_t TZrMemoryOffset;
 
 typedef void *TZrPtr; // 指针兼容类型

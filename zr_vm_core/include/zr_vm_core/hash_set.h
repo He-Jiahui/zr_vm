@@ -18,7 +18,7 @@ ZR_CORE_API void ZrHashSetRehash(struct SZrGlobalState *global, SZrHashSet *set,
 
 ZR_FORCE_INLINE void ZrHashSetInit(struct SZrGlobalState *global, SZrHashSet *set, TZrSize capacityLog2) {
     ZR_ASSERT(set != NULL && capacityLog2 != 0);
-    const TZrSize capacity = 1 << capacityLog2;
+    const TZrSize capacity = (TZrSize) 1 << capacityLog2;
     set->buckets = ZR_NULL;
     set->elementCount = 0;
     set->capacity = 0;
