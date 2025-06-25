@@ -27,6 +27,11 @@ typedef union TZrStackPtr TZrStackPointer;
 
 ZR_CORE_API TZrPtr ZrStackInit(struct SZrState *state, TZrStackPointer *stack, TZrSize stackLength);
 
+ZR_CORE_API TZrStackValuePointer ZrStackGetAddressFromOffset(struct SZrState *state, TZrMemoryOffset offset);
+
+ZR_CORE_API TBool ZrStackCheckFullAndGrow(struct SZrState *state, TZrSize space, TNativeString errorMessage);
+
+
 ZR_FORCE_INLINE TZrSize ZrStackSize(TZrStackPointer *stackBase, TZrStackPointer *stackTop) {
     ZR_ASSERT(stackTop->valuePointer >= stackBase->valuePointer);
     return (TZrSize) (stackTop->valuePointer - stackBase->valuePointer);

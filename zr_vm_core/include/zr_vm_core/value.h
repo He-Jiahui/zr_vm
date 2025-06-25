@@ -22,6 +22,7 @@ typedef union TZrPureValue TZrPureValue;
 struct ZR_STRUCT_ALIGN SZrTypeValue {
     EZrValueType type;
     TZrPureValue value;
+    TBool isNative;
 };
 
 typedef struct SZrTypeValue SZrTypeValue;
@@ -29,5 +30,15 @@ typedef struct SZrTypeValue SZrTypeValue;
 ZR_CORE_API void ZrValueInitAsNull(SZrTypeValue *value);
 
 ZR_CORE_API void ZrValueInitAsRawObject(SZrTypeValue *value, SZrRawObject *object);
+
+ZR_CORE_API SZrTypeValue *ZrValueGetStackOffsetValue(struct SZrState *state, TZrMemoryOffset offset);
+
+ZR_FORCE_INLINE EZrValueType ZrValueGetType(const SZrTypeValue *value) {
+    return value->type;
+}
+
+ZR_FORCE_INLINE TBool ZrValueIsNative(const SZrTypeValue *value) {
+    return value->isNative;
+}
 
 #endif //ZR_VM_CORE_VALUE_H

@@ -25,15 +25,12 @@ struct ZR_STRUCT_ALIGN SZrClosureValue {
 
 typedef struct SZrClosureValue SZrClosureValue;
 
-struct ZR_STRUCT_ALIGN SZrClosureInfo {
-    TUInt32 closureValueListLength;
-    SZrRawObject *closureValueList;
-};
 
 struct ZR_STRUCT_ALIGN SZrClosureNative {
     SZrRawObject super;
-    struct SZrClosureInfo closureInfo;
+    SZrRawObject *gcList;
     FZrNativeFunction nativeFunction;
+    TZrSize closureValueCount;
     SZrTypeValue closureValuesExtend[1];
 };
 
@@ -41,14 +38,16 @@ typedef struct SZrClosureNative SZrClosureNative;
 
 struct ZR_STRUCT_ALIGN SZrClosure {
     SZrRawObject super;
-    struct SZrClosureInfo closureInfo;
+    SZrRawObject *gcList;
+    // todo: closure info
+    TZrSize closureValueCount;
     SZrTypeValue closureValuesExtend[1];
 };
 
 typedef struct SZrClosure SZrClosure;
 
 union TZrClosure {
-    SZrClosureNative native;
+    SZrClosureNative nativeClosure;
     SZrClosure zrClosure;
 };
 

@@ -63,7 +63,7 @@ union TZrCallInfoYieldContext {
 typedef union TZrCallInfoYieldContext TZrCallInfoYieldContext;
 
 struct ZR_STRUCT_ALIGN SZrCallInfo {
-    TZrStackPointer functionIndex;
+    TZrStackPointer functionBase;
     TZrStackPointer functionTop;
 
     EZrCallStatus callStatus;

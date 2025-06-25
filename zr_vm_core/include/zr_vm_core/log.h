@@ -11,4 +11,6 @@ struct SZrState;
 typedef void (*FZrLog)(struct SZrState *state, EZrLogLevel level, TNativeString message);
 
 
+ZR_CORE_API void ZrLogError(struct SZrState *state, TNativeString format, ...);
+
 #endif //ZR_VM_CORE_LOG_H

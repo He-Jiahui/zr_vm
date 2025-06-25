@@ -36,5 +36,5 @@
 
 #define ZR_CAST_STACK_OBJECT(EXP) ZR_CAST(SZrTypeValueOnStack*, (EXP))
 
-
+#define ZR_CAST_NATIVE_CLOSURE(EXP) ZR_CAST(SZrClosureNative*, (EXP))
 #endif //ZR_VM_CORE_CONVERTION_H

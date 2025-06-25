@@ -11,7 +11,7 @@ void ZrCallInfoEntryNativeInit(SZrState *state, SZrCallInfo *callInfo, TZrStackP
     callInfo->next = ZR_NULL;
     callInfo->previous = previous;
     callInfo->callStatus = ZR_CALL_STATUS_NATIVE_CALL;
-    callInfo->functionIndex.valuePointer = functionIndex.valuePointer;
+    callInfo->functionBase.valuePointer = functionIndex.valuePointer;
     // null function index means it is the entry call of thread
     ZrValueInitAsNull(&functionIndex.valuePointer->value);
     callInfo->context.nativeContext.continuationFunction = ZR_NULL;

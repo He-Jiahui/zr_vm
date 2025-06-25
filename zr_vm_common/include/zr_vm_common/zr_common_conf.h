@@ -75,6 +75,9 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_ASSERT(CONDITION) ((void)0)
 #endif
 
+#define ZR_CHECK(STATE, CONDITION, MESSAGE) \
+    ((void)STATE, ZR_ASSERT((CONDITION) && (MESSAGE)))
+
 #if defined(__GNUC__)
 #define ZR_COMPILER_GNU
 #elif defined(__clang__)
@@ -122,5 +125,6 @@ typedef sig_atomic_t TZrDebugSignal;
 #endif
 
 #define ZR_ABORT() abort()
+
 
 #endif //ZR_COMMON_CONF_H

@@ -28,7 +28,7 @@ static void ZrStateStackInit(SZrState *state, SZrState *mainThreadState) {
     SZrCallInfo *callInfo = &state->baseCallInfo;
     // assume an empty call info as start entry
     // init call info list
-    // 0|-- base -- NULL(functionIndex)
+    // 0|-- base -- NULL(functionBase)
     // 1|-- top1 -- Native Call Stack Empty Space
     // ...
     // STACK_SIZE_MIN|-- top2 -- (functionTop) —
@@ -53,8 +53,8 @@ static void ZrStateStackMarkStackAsRelative(SZrState *state) {
         state, state->waitToReleaseList.valuePointer);
     // todo: upval
     for (SZrCallInfo *callInfo = state->callInfoList; callInfo != ZR_NULL; callInfo = callInfo->previous) {
-        callInfo->functionIndex.reusableValueOffset = ZrStateStackSaveAsOffset(
-            state, callInfo->functionIndex.valuePointer);
+        callInfo->functionBase.reusableValueOffset = ZrStateStackSaveAsOffset(
+            state, callInfo->functionBase.valuePointer);
         callInfo->functionTop.reusableValueOffset = ZrStateStackSaveAsOffset(state, callInfo->functionTop.valuePointer);
     }
 }
@@ -161,7 +161,7 @@ TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status) {
     SZrCallInfo *callInfo = state->callInfoList = &state->baseCallInfo;
     // 重置栈到基础栈
     state->stackBase.valuePointer->value.type = ZR_VALUE_TYPE_NULL;
-    callInfo->functionIndex.valuePointer = state->stackBase.valuePointer;
+    callInfo->functionBase.valuePointer = state->stackBase.valuePointer;
     callInfo->callStatus = ZR_CALL_STATUS_NATIVE_CALL;
     if (status == ZR_THREAD_STATUS_YIELD) {
         status = ZR_THREAD_STATUS_FINE;

@@ -8,6 +8,10 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 
+static void ZrGlobalStatePanic(SZrState *state) {
+    // todo
+}
+
 SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments, TUInt64 uniqueNumber,
                                  SZrCallbackGlobal *callbacks) {
     SZrGlobalState *global = allocator(userAllocationArguments, ZR_NULL, 0, sizeof(SZrGlobalState),
@@ -61,6 +65,9 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
         global = ZR_NULL;
         return ZR_NULL;
     }
+    // set warning function
+
+    // set panic function
     return global;
 }
 
