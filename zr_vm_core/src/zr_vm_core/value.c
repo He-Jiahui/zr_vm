@@ -8,15 +8,19 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/state.h"
 
-void ZrValueInitAsNull(SZrTypeValue *value) {
+void ZrValueResetAsNull(SZrTypeValue *value) {
     value->type = ZR_VALUE_TYPE_NULL;
+    value->isGarbageCollectable = ZR_FALSE;
 }
 
-void ZrValueInitAsRawObject(SZrTypeValue *value, SZrRawObject *object) {
+void ZrValueInitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawObject *object) {
     EZrValueType type = object->type;
     value->type = type;
     value->value.object = object;
-    // todo: check liveness
+    value->isGarbageCollectable = ZR_TRUE;
+    value->isNative = ZR_FALSE;
+    // check liveness
+    ZrGlobalValueStaticAssertIsAlive(state, value);
 }
 
 

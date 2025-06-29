@@ -41,9 +41,9 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     ZrStringTableNew(global);
 
     // init global module registry
-    ZrValueInitAsNull(&global->loadedModulesRegistry);
+    ZrValueResetAsNull(&global->loadedModulesRegistry);
     // init global null value
-    ZrValueInitAsNull(&global->nullValue);
+    ZrValueResetAsNull(&global->nullValue);
 
     // exception
     global->panicHandlingFunction = ZR_NULL;
@@ -73,7 +73,7 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
 
 void ZrGlobalStateInitRegistry(SZrState *state, SZrGlobalState *global) {
     SZrObject *object = ZrObjectNew(state, ZR_NULL);
-    ZrValueInitAsRawObject(&global->loadedModulesRegistry, ZR_CAST_RAW_OBJECT(object));
+    ZrValueInitAsRawObject(state, &global->loadedModulesRegistry, ZR_CAST_RAW_OBJECT(object));
     // todo: load state value
     // todo: load global value
 }

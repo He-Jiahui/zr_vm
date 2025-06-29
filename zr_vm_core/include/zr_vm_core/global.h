@@ -86,4 +86,17 @@ ZR_CORE_API void ZrGlobalStateFree(SZrGlobalState *global);
 ZR_FORCE_INLINE TBool ZrGlobalStateIsInitialized(SZrGlobalState *global) {
     return global->isValid;
 }
+
+ZR_FORCE_INLINE TBool ZrGlobalRawObjectIsDead(SZrGlobalState *global, SZrRawObject *object) {
+    return global->garbageCollector.gcGeneration != object->garbageCollectMark.generation;
+}
+
+ZR_FORCE_INLINE void ZrGlobalValueStaticAssertIsAlive(SZrState *state, SZrTypeValue *value) {
+    ZR_ASSERT(!value->isGarbageCollectable ||
+        (
+            (value->type == value->value.object->type) &&
+            ((state == ZR_NULL) || !ZrGlobalRawObjectIsDead(state->global, value->value.object))
+        )
+    );
+}
 #endif //ZR_VM_CORE_GLOBAL_H

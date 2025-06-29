@@ -9,6 +9,11 @@
 // gc object type
 #define ZR_VM_SHORT_STRING_MAX  127U    // 短字符串最大长度 不得超过UINT8_MAX
 #define ZR_VM_LONG_STRING_FLAG (0XFF) // 长字符串最大长度 不得超过INT32_MAX
+
+#define ZR_NUMER_TO_STRING_LENGTH_MAX 44
+
+#define ZR_STRING_NULL_STRING "<null>"
+
 struct ZR_STRUCT_ALIGN TZrString {
     SZrHashRawObject super;
 

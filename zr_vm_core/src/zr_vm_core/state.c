@@ -17,12 +17,12 @@ static void ZrStateStackInit(SZrState *state, SZrState *mainThreadState) {
     /*TZrPtr stackEndExtra = */
     ZrStackInit(mainThreadState, &state->stackBase, ZR_THREAD_STACK_SIZE_BASIC + ZR_THREAD_STACK_SIZE_EXTRA);
     state->waitToReleaseList.valuePointer = state->stackBase.valuePointer;
-    state->stackEnd.valuePointer = state->stackBase.valuePointer + ZR_THREAD_STACK_SIZE_BASIC;
+    state->stackTail.valuePointer = state->stackBase.valuePointer + ZR_THREAD_STACK_SIZE_BASIC;
     state->stackTop.valuePointer = state->stackBase.valuePointer;
     // reset stack
-    for (TZrStackValuePointer pointer = state->stackBase.valuePointer; pointer < state->stackEnd.valuePointer; pointer
+    for (TZrStackValuePointer pointer = state->stackBase.valuePointer; pointer < state->stackTail.valuePointer; pointer
          ++) {
-        ZrValueInitAsNull(&pointer->value);
+        ZrValueResetAsNull(&pointer->value);
     }
     // init call info
     SZrCallInfo *callInfo = &state->baseCallInfo;
@@ -40,38 +40,6 @@ static void ZrStateStackInit(SZrState *state, SZrState *mainThreadState) {
     state->callInfoList = callInfo;
     // when native call is finished
     state->stackTop = nextTop;
-}
-
-ZR_FORCE_INLINE TZrMemoryOffset ZrStateStackSaveAsOffset(SZrState *state, TZrStackValuePointer pointer) {
-    return pointer - state->stackBase.valuePointer;
-}
-
-
-static void ZrStateStackMarkStackAsRelative(SZrState *state) {
-    state->stackTop.reusableValueOffset = ZrStateStackSaveAsOffset(state, state->stackTop.valuePointer);
-    state->waitToReleaseList.reusableValueOffset = ZrStateStackSaveAsOffset(
-        state, state->waitToReleaseList.valuePointer);
-    // todo: upval
-    for (SZrCallInfo *callInfo = state->callInfoList; callInfo != ZR_NULL; callInfo = callInfo->previous) {
-        callInfo->functionBase.reusableValueOffset = ZrStateStackSaveAsOffset(
-            state, callInfo->functionBase.valuePointer);
-        callInfo->functionTop.reusableValueOffset = ZrStateStackSaveAsOffset(state, callInfo->functionTop.valuePointer);
-    }
-}
-
-TBool ZrStateStackRealloc(SZrState *state, TUInt64 newSize, TBool throwError) {
-    TZrSize previousStackSize = ZrStateStackGetSize(state);
-    TZrStackValuePointer newStackPointer;
-    TBool previousStopGcFlag = state->global->garbageCollector.stopGcFlag;
-    ZR_ASSERT(newSize <= ZR_VM_MAX_STACK || newSize == ZR_VM_ERROR_STACK);
-    ZrStateStackMarkStackAsRelative(state);
-    state->global->garbageCollector.stopGcFlag = ZR_TRUE;
-    // todo: luaD_reallocstack
-    // todo: luaM_reallocvector
-    // todo: newStackPointer =
-    ZR_ASSERT(ZR_FALSE);
-
-    return ZR_FALSE;
 }
 
 
@@ -146,7 +114,7 @@ void ZrStateMainThreadLaunch(SZrState *state, TZrPtr arguments) {
 }
 
 void ZrStateExit(SZrState *state) {
-    SZrGlobalState *global = state->global;
+    // SZrGlobalState *global = state->global;
     // todo
 }
 

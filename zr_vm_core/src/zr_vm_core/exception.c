@@ -98,7 +98,8 @@ EZrThreadStatus ZrExceptionTryStop(SZrState *state, TZrMemoryOffset level, EZrTh
 void ZrExceptionMarkError(SZrState *state, EZrThreadStatus errorCode, TZrStackValuePointer previousTop) {
     switch (errorCode) {
         case ZR_THREAD_STATUS_FINE: {
-            previousTop->value.type = ZR_VALUE_TYPE_NULL;
+            //previousTop->value.type = ZR_VALUE_TYPE_NULL;
+            ZrValueResetAsNull(&previousTop->value);
         }
         break;
         case ZR_THREAD_STATUS_MEMORY_ERROR: {

@@ -62,9 +62,17 @@ enum EZrGarbageCollectRunningStatus {
 
 typedef enum EZrGarbageCollectRunningStatus EZrGarbageCollectRunningStatus;
 
+enum EZrGarbageCollectGeneration {
+    ZR_GARBAGE_COLLECT_GENERATION_INVALID,
+    ZR_GARBAGE_COLLECT_GENERATION_A,
+    ZR_GARBAGE_COLLECT_GENERATION_B,
+};
+
+typedef enum EZrGarbageCollectGeneration EZrGarbageCollectGeneration;
+
 struct SZrGarbageCollectionObjectMark {
     EZrGarbageCollectObjectStatus status;
-    TUInt8 generations;
+    EZrGarbageCollectGeneration generation;
 };
 
 typedef struct SZrGarbageCollectionObjectMark SZrGarbageCollectionObjectMark;
@@ -81,7 +89,7 @@ ZR_FORCE_INLINE void ZrRawObjectInit(SZrRawObject *super, EZrValueType type) {
     super->next = ZR_NULL;
     super->type = type;
     super->garbageCollectMark.status = ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED;
-    super->garbageCollectMark.generations = 0;
+    super->garbageCollectMark.generation = ZR_GARBAGE_COLLECT_GENERATION_INVALID;
 }
 
 struct ZR_STRUCT_ALIGN SZrHashRawObject {

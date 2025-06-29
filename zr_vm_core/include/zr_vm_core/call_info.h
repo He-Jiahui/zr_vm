@@ -80,6 +80,10 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
 
 typedef struct SZrCallInfo SZrCallInfo;
 
+ZR_FORCE_INLINE TBool ZrCallInfoIsNative(SZrCallInfo *callInfo) {
+    return (TBool) ((callInfo->callStatus & ZR_CALL_STATUS_NATIVE_CALL) > 0);
+}
+
 ZR_CORE_API void ZrCallInfoEntryNativeInit(struct SZrState *state, SZrCallInfo *callInfo, TZrStackPointer functionIndex,
                                            TZrStackPointer functionTop, SZrCallInfo *previous);
 #endif //ZR_VM_CORE_CALL_INFO_H

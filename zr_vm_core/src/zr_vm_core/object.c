@@ -18,3 +18,8 @@ SZrObject *ZrObjectNew(SZrState *state, SZrObjectPrototype *prototype) {
     object->nodeListEnd = ZR_NULL;
     return object;
 }
+
+TNativeString ZrObjectToString(struct SZrState *state, SZrObject *object) {
+    // todo:
+    return ZR_NULL;
+}

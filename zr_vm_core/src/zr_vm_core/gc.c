@@ -37,6 +37,7 @@ void ZrGarbageCollectorInit(SZrGlobalState *global) {
     gc->gcStatus = ZR_GARBAGE_COLLECT_STATUS_STOP_BY_SELF;
     gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
     gc->gcInitializeObjectStatus = ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED;
+    gc->gcGeneration = ZR_GARBAGE_COLLECT_GENERATION_A;
     gc->stopGcFlag = ZR_FALSE;
     gc->stopImmediateGcFlag = ZR_FALSE;
     gc->isImmediateGcFlag = ZR_FALSE;
@@ -65,7 +66,7 @@ SZrRawObject *ZrRawObjectNew(SZrState *state, EZrValueType type, TZrSize size) {
     SZrRawObject *object = ZR_CAST_RAW_OBJECT(memory);
     ZrRawObjectInit(object, type);
     object->garbageCollectMark.status = global->garbageCollector.gcInitializeObjectStatus;
-    // object->garbageCollectMark.generations = 0;
+    object->garbageCollectMark.generation = global->garbageCollector.gcGeneration;
     object->next = global->garbageCollector.gcObjectList;
     global->garbageCollector.gcObjectList = object;
     return object;

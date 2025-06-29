@@ -5,6 +5,8 @@
 #ifndef ZR_LOG_CONF_H
 #define ZR_LOG_CONF_H
 
+#define ZR_LOG_DEBUG_FUNCTION_STR_SIZE_MAX 120
+
 enum EZrLogLevel {
     ZR_LOG_LEVEL_DEBUG,
     ZR_LOG_LEVEL_VERBOSE,

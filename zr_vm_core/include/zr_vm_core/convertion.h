@@ -11,6 +11,7 @@
 
 #define ZR_CAST_VOID(EXP) ZR_CAST(void, (EXP))
 #define ZR_CAST_BOOL(EXP) ZR_CAST(TBool, (EXP))
+#define ZR_CAST_CHAR(EXP) ZR_CAST(TChar, (EXP))
 #define ZR_CAST_INT8(EXP) ZR_CAST(TInt8, (EXP))
 #define ZR_CAST_UINT8(EXP) ZR_CAST(TUInt8, (EXP))
 #define ZR_CAST_UINT8_PTR(EXP) ZR_CAST(TUInt8*, (EXP))
@@ -25,6 +26,7 @@
 #define ZR_CAST_PTR(EXP) ZR_CAST(TZrPtr, (EXP))
 #define ZR_CAST_SIZE(EXP) ZR_CAST(TZrSize, (EXP))
 
+#define ZR_CAST_STRING(EXP) ZR_CAST(TZrString*, (EXP))
 #define ZR_CAST_STRING_TO_NATIVE(EXP) ZR_CAST(TNativeString, (EXP)->stringDataExtend)
 
 #define ZR_CAST_RAW_OBJECT(EXP) ZR_CAST(SZrRawObject*, (EXP))

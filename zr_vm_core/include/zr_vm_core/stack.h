@@ -32,7 +32,7 @@ ZR_CORE_API TZrStackValuePointer ZrStackGetAddressFromOffset(struct SZrState *st
 ZR_CORE_API TBool ZrStackCheckFullAndGrow(struct SZrState *state, TZrSize space, TNativeString errorMessage);
 
 
-ZR_FORCE_INLINE TZrSize ZrStackSize(TZrStackPointer *stackBase, TZrStackPointer *stackTop) {
+ZR_FORCE_INLINE TZrSize ZrStackUsedSize(TZrStackPointer *stackBase, TZrStackPointer *stackTop) {
     ZR_ASSERT(stackTop->valuePointer >= stackBase->valuePointer);
     return (TZrSize) (stackTop->valuePointer - stackBase->valuePointer);
 }
@@ -41,13 +41,10 @@ ZR_FORCE_INLINE SZrTypeValue *ZrStackGetValue(SZrTypeValueOnStack *valueOnStack)
     return &valueOnStack->value;
 }
 
-ZR_FORCE_INLINE void ZrStackCopyValue(struct SZrState *state, SZrTypeValueOnStack *destination, SZrTypeValue *source) {
-    ZR_TODO_PARAMETER(state);
-    SZrTypeValue *destinationValue = &destination->value;
-    destinationValue->value.object = source->value.object;
-    destinationValue->type = source->type;
-    // todo: 检查 setsvalue
-}
+ZR_CORE_API void ZrStackSetRawObjectValue(struct SZrState *state, SZrTypeValueOnStack *destination,
+                                          SZrRawObject *object);
+
+ZR_CORE_API void ZrStackCopyValue(struct SZrState *state, SZrTypeValueOnStack *destination, SZrTypeValue *source);
 
 
 #endif //ZR_VM_CORE_STACK_H

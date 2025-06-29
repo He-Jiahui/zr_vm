@@ -15,6 +15,7 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     EZrGarbageCollectStatus gcStatus;
     EZrGarbageCollectRunningStatus gcRunningStatus;
     EZrGarbageCollectObjectStatus gcInitializeObjectStatus;
+    EZrGarbageCollectGeneration gcGeneration;
 
     SZrRawObject *gcObjectList;
     SZrRawObject **gcObjectListSweeper;
@@ -43,6 +44,7 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
 };
 
 typedef struct SZrGarbageCollector SZrGarbageCollector;
+
 
 ZR_CORE_API void ZrGarbageCollectorInit(struct SZrGlobalState *global);
 

@@ -31,4 +31,6 @@ typedef struct SZrObject SZrObject;
 
 ZR_CORE_API SZrObject *ZrObjectNew(struct SZrState *state, SZrObjectPrototype *prototype);
 
+ZR_CORE_API TNativeString ZrObjectToString(struct SZrState *state, SZrObject *object);
+
 #endif //ZR_VM_CORE_OBJECT_H

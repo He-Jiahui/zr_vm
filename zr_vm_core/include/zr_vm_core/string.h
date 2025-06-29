@@ -5,12 +5,25 @@
 #ifndef ZR_VM_CORE_STRING_H
 #define ZR_VM_CORE_STRING_H
 
+#include <stdarg.h>
 #include <string.h>
 
 #include "zr_vm_core/conf.h"
 struct SZrGlobalState;
 struct SZrState;
 #define ZR_STRING_LITERAL(STATE, STR) (ZrStringCreate((STATE), "" STR, (sizeof(STR)/sizeof(char) - 1)))
+
+
+#define ZR_STRING_FORMAT_BUFFER_SIZE (ZR_LOG_DEBUG_FUNCTION_STR_SIZE_MAX + ZR_NUMER_TO_STRING_LENGTH_MAX + 95)
+
+struct ZR_STRUCT_ALIGN SZrNativeStringFormatBuffer {
+    struct SZrState *state;
+    TBool isOnStack;
+    TZrSize length;
+    char result[ZR_STRING_FORMAT_BUFFER_SIZE];
+};
+
+typedef struct SZrNativeStringFormatBuffer SZrNativeStringFormatBuffer;
 
 ZR_FORCE_INLINE TInt32 ZrNativeStringCompare(TNativeString string1, TNativeString string2) {
     return strcmp(string1, string2);
@@ -19,6 +32,12 @@ ZR_FORCE_INLINE TInt32 ZrNativeStringCompare(TNativeString string1, TNativeStrin
 ZR_FORCE_INLINE TZrSize ZrNativeStringLength(TNativeString string) {
     return strlen(string);
 }
+
+ZR_FORCE_INLINE TChar *ZrNativeStringCharFind(TNativeString string, TChar ch) {
+    return strchr(string, ch);
+}
+
+ZR_CORE_API TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format, va_list args);
 
 ZR_CORE_API void ZrStringTableNew(struct SZrGlobalState *global);
 
@@ -33,6 +52,7 @@ ZR_FORCE_INLINE TZrString *ZrStringCreateFromNative(struct SZrState *state, TNat
 
 ZR_CORE_API TZrString *ZrStringCreateTryHitCache(struct SZrState *state, TNativeString string);
 
+
 ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringShort(TZrString *string) {
     ZR_ASSERT(string->shortStringLength < ZR_VM_LONG_STRING_FLAG);
     return (TNativeString *) string->stringDataExtend;
@@ -42,4 +62,15 @@ ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringLong(TZrString *string) {
     ZR_ASSERT(string->shortStringLength == ZR_VM_LONG_STRING_FLAG);
     return (TNativeString *) string->stringDataExtend;
 }
+
+ZR_CORE_API void ZrStringConcat(struct SZrState *state, TZrSize count);
+
+// todo: raw object to string
+
+// todo: number to string
+
+// todo: object to string
+
+// todo: utf-8 to string
+
 #endif //ZR_VM_CORE_STRING_H

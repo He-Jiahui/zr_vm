@@ -28,9 +28,12 @@ struct ZR_STRUCT_ALIGN SZrState {
     TUInt32 callInfoListLength;
     SZrCallInfo baseCallInfo;
 
-
+    // address of current stack top
     TZrStackPointer stackTop;
-    TZrStackPointer stackEnd;
+    // we mark stack BASE and TAIL to indicate its space usage
+    // last address of stack
+    TZrStackPointer stackTail;
+    // first address of stack
     TZrStackPointer stackBase;
 
     TZrStackPointer waitToReleaseList;
@@ -69,9 +72,8 @@ ZR_CORE_API void ZrStateFree(struct SZrGlobalState *global, SZrState *state);
 ZR_CORE_API TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status);
 
 ZR_FORCE_INLINE TZrSize ZrStateStackGetSize(SZrState *state) {
-    return state->stackTop.valuePointer - state->stackEnd.valuePointer;
+    return state->stackTail.valuePointer - state->stackBase.valuePointer;
 }
 
 
-ZR_CORE_API TBool ZrStateStackRealloc(SZrState *state, TUInt64 newSize, TBool throwError);
 #endif //ZR_VM_CORE_STATE_H

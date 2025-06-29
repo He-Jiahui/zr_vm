@@ -22,14 +22,16 @@ typedef union TZrPureValue TZrPureValue;
 struct ZR_STRUCT_ALIGN SZrTypeValue {
     EZrValueType type;
     TZrPureValue value;
+    TBool isGarbageCollectable;
     TBool isNative;
 };
 
 typedef struct SZrTypeValue SZrTypeValue;
 
-ZR_CORE_API void ZrValueInitAsNull(SZrTypeValue *value);
+ZR_CORE_API void ZrValueResetAsNull(SZrTypeValue *value);
 
-ZR_CORE_API void ZrValueInitAsRawObject(SZrTypeValue *value, SZrRawObject *object);
+ZR_CORE_API void ZrValueInitAsRawObject(struct SZrState *state, SZrTypeValue *value, SZrRawObject *object);
+
 
 ZR_CORE_API SZrTypeValue *ZrValueGetStackOffsetValue(struct SZrState *state, TZrMemoryOffset offset);
 
