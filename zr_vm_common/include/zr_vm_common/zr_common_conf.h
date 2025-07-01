@@ -39,7 +39,9 @@ typedef int32_t TInt32; // 4 bytes
 typedef uint64_t TUInt64; // 8 bytes
 typedef int64_t TInt64; // 8 bytes
 
+typedef float TFloat32;
 typedef float TFloat;
+typedef double TFloat64;
 typedef double TDouble;
 
 typedef unsigned char TBool;
@@ -48,15 +50,18 @@ typedef char *TNativeString;
 
 union TZrNativeObject {
     TBool nativeBool;
-    TUInt8 nativeUInt8;
-    TInt8 nativeInt8;
-    TUInt16 nativeUInt16;
-    TInt16 nativeInt16;
-    TUInt32 nativeUInt32;
-    TInt32 nativeInt32;
+    TChar nativeChar;
+    // all integer saved as 64 bits
+    // TUInt8 nativeUInt8;
+    // TInt8 nativeInt8;
+    // TUInt16 nativeUInt16;
+    // TInt16 nativeInt16;
+    // TUInt32 nativeUInt32;
+    // TInt32 nativeInt32;
     TUInt64 nativeUInt64;
     TInt64 nativeInt64;
-    TFloat nativeFloat;
+    // all float saved as 64 bits
+    // TFloat nativeFloat;
     TDouble nativeDouble;
     TZrPtr nativePointer;
     TNativeString nativeString;

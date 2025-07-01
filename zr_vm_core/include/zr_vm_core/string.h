@@ -8,6 +8,7 @@
 #include <stdarg.h>
 #include <string.h>
 
+#include "convertion.h"
 #include "zr_vm_core/conf.h"
 struct SZrGlobalState;
 struct SZrState;
@@ -37,7 +38,36 @@ ZR_FORCE_INLINE TChar *ZrNativeStringCharFind(TNativeString string, TChar ch) {
     return strchr(string, ch);
 }
 
+ZR_FORCE_INLINE TZrSize ZrNativeStringSpan(TNativeString string, TChar *charset) {
+    return strspn(string, charset);
+}
+
+ZR_FORCE_INLINE TZrSize ZrNativeStringUtf8CharLength(TChar *buffer, TUInt64 uChar) {
+    ZR_ASSERT(uChar <= 0x7fffffffu);
+    TZrSize length = 1;
+    if (uChar <= 0x7fu) {
+        // 0xxxxxxx
+        buffer[ZR_STRING_UTF8_SIZE - 1] = ZR_CAST_CHAR(uChar);
+    } else {
+        TUInt64 maxFirstByte = 0x3fu;
+        // convert uChar to:
+        // 110xxxxx 10xxxxxx  (11)
+        // 1110xxxx 10xxxxxx 10xxxxxx  (16)
+        // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx (21)
+        do {
+            buffer[ZR_STRING_UTF8_SIZE - (length++)] = ZR_CAST_CHAR(0x80u | (uChar & 0x3fu));
+            uChar >>= 6;
+            maxFirstByte >>= 1;
+        } while (uChar > maxFirstByte);
+        buffer[ZR_STRING_UTF8_SIZE - length] = ZR_CAST_CHAR((~maxFirstByte<<1) | uChar);
+    }
+    return length;
+}
+
+
 ZR_CORE_API TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format, va_list args);
+
+ZR_CORE_API TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format, ...);
 
 ZR_CORE_API void ZrStringTableNew(struct SZrGlobalState *global);
 
@@ -66,6 +96,7 @@ ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringLong(TZrString *string) {
 ZR_CORE_API void ZrStringConcat(struct SZrState *state, TZrSize count);
 
 // todo: raw object to string
+ZR_CORE_API void ZrStringConvertFromRawObject(struct SZrState *state, SZrRawObject *object);
 
 // todo: number to string
 

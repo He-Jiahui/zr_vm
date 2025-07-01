@@ -35,6 +35,43 @@ static TChar *ZrNativeStringGetFromFormatStringBuffer(SZrNativeStringFormatBuffe
     return buffer->result + buffer->length;
 }
 
+static TZrSize ZrNativeStringNumberToStringBuffer(SZrTypeValue *value, TChar *buffer) {
+    TZrSize length = 0;
+    ZR_ASSERT(ZR_VALUE_IS_TYPE_NUMBER(value->type) || ZR_VALUE_IS_TYPE_NATIVE(value->type));
+    switch (value->type) {
+        ZR_VALUE_CASES_SIGNED_INT {
+            length = ZR_STRING_SIGNED_INTEGER_PRINT_FORMAT(buffer, ZR_NUMER_TO_STRING_LENGTH_MAX,
+                                                           value->value.nativeObject.nativeInt64);
+        }
+        break;
+        ZR_VALUE_CASES_UNSIGNED_INT {
+            length = ZR_STRING_UNSIGNED_INTEGER_PRINT_FORMAT(buffer, ZR_NUMER_TO_STRING_LENGTH_MAX,
+                                                             value->value.nativeObject.nativeUInt64);
+        }
+        break;
+        ZR_VALUE_CASES_FLOAT {
+            length = ZR_STRING_FLOAT_PRINT_FORMAT(buffer, ZR_NUMER_TO_STRING_LENGTH_MAX,
+                                                  value->value.nativeObject.nativeDouble);
+            // add .0 if no decimal point
+            if (buffer[ZrNativeStringSpan(buffer, ZR_STRING_DECIMAL_NUMBER_SET)] == '\0') {
+                buffer[length++] = ZR_STRING_LOCALE_DECIMAL_POINT;
+                buffer[length++] = '0';
+            }
+        }
+        break;
+        ZR_VALUE_CASES_NATIVE {
+            length = ZR_STRING_POINTER_PRINT_FORMAT(buffer, ZR_NUMER_TO_STRING_LENGTH_MAX,
+                                                    value->value.nativeObject.nativePointer);
+        }
+        break;
+        default: {
+            ZR_ASSERT(ZR_FALSE);
+        }
+        break;
+    }
+    return length;
+}
+
 static void ZrNativeStringAddStringToBuffer(SZrNativeStringFormatBuffer *buffer, TNativeString string, TZrSize length) {
     if (length <= ZR_STRING_FORMAT_BUFFER_SIZE) {
         TChar *nextBuffer = ZrNativeStringGetFromFormatStringBuffer(buffer, length);
@@ -46,6 +83,12 @@ static void ZrNativeStringAddStringToBuffer(SZrNativeStringFormatBuffer *buffer,
     }
 }
 
+static void ZrNativeStringAddNumberToBuffer(SZrNativeStringFormatBuffer *buffer, SZrTypeValue *value) {
+    TChar *numberBuffer = ZrNativeStringGetFromFormatStringBuffer(buffer, ZR_NUMER_TO_STRING_LENGTH_MAX);
+    TZrSize length = ZrNativeStringNumberToStringBuffer(value, numberBuffer);
+    buffer->length += length;
+}
+
 TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format, va_list args) {
     SZrNativeStringFormatBuffer buffer;
     buffer.isOnStack = ZR_FALSE;
@@ -53,7 +96,10 @@ TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format
     buffer.state = state;
     TChar *e;
     while ((e = ZrNativeStringCharFind(format, '%')) != ZR_NULL) {
-        ZrNativeStringAddStringToBuffer(&buffer, format, e - format);
+        TZrSize prefixLength = e - format;
+        if (prefixLength > 0) {
+            ZrNativeStringAddStringToBuffer(&buffer, format, e - format);
+        }
         // get next char from '%'
         switch (*(e + 1)) {
             case 's': {
@@ -72,11 +118,24 @@ TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format
             }
             break;
             case 'd': {
-                // todo: convert integer to string
+                // convert integer to string
+                SZrTypeValue value;
+                ZrValueInitAsInt(state, &value, va_arg(args, TInt64));
+                ZrNativeStringAddNumberToBuffer(&buffer, &value);
+            }
+            break;
+            case 'u': {
+                // convert unsigned to string
+                SZrTypeValue value;
+                ZrValueInitAsUInt(state, &value, va_arg(args, TUInt64));
+                ZrNativeStringAddNumberToBuffer(&buffer, &value);
             }
             break;
             case 'f': {
-                // todo: convert float to string
+                // convert float to string
+                SZrTypeValue value;
+                ZrValueInitAsFloat(state, &value, va_arg(args, TFloat64));
+                ZrNativeStringAddNumberToBuffer(&buffer, &value);
             }
             break;
             case 'o': {
@@ -84,11 +143,17 @@ TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format
             }
             break;
             case 'p': {
-                // todo: handle native pointer to string
+                // handle native pointer to string
+                SZrTypeValue value;
+                ZrValueInitAsNativePointer(state, &value, va_arg(args, TZrPtr));
+                ZrNativeStringAddNumberToBuffer(&buffer, &value);
             }
             break;
-            case 'x': {
-                // todo: handle utf8 string
+            case 'U': {
+                // handle utf8 char
+                TChar uCharBuffer[ZR_STRING_UTF8_SIZE];
+                TZrSize length = ZrNativeStringUtf8CharLength(uCharBuffer, ZR_CAST_UINT64(va_arg(args, TInt64)));
+                ZrNativeStringAddStringToBuffer(&buffer, uCharBuffer + ZR_STRING_UTF8_SIZE - length, length);
             }
             break;
             case '%': {
@@ -102,10 +167,22 @@ TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format
         }
         format = e + 2;
     }
-    ZrNativeStringAddStringToBuffer(&buffer, format, ZrNativeStringLength(format));
+    TZrSize suffixLength = ZrNativeStringLength(format);
+    if (suffixLength > 0) {
+        ZrNativeStringAddStringToBuffer(&buffer, format, ZrNativeStringLength(format));
+    }
     ZrNativeStringClearFormatBufferAndPushToStack(&buffer);
     ZR_ASSERT(buffer.isOnStack == ZR_TRUE);
-    return ZR_CAST_STRING_TO_NATIVE(ZR_CAST_STRING(ZrStackGetValue(state->stackTop.valuePointer - 1)));
+    return ZR_CAST_STRING_TO_NATIVE(
+        ZR_CAST_STRING(ZrValueGetRawObject(ZrStackGetValue(state->stackTop.valuePointer - 1))));
+}
+
+TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format, ...) {
+    va_list args;
+    va_start(args, format);
+    TNativeString result = ZrNativeStringVFormat(state, format, args);
+    va_end(args);
+    return result;
 }
 
 void ZrStringTableNew(SZrGlobalState *global) {

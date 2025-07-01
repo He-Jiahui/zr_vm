@@ -100,7 +100,8 @@ struct ZR_STRUCT_ALIGN SZrHashRawObject {
 
 typedef struct SZrHashRawObject SZrHashRawObject;
 ZR_FORCE_INLINE void ZrHashRawObjectInit(SZrHashRawObject *super, EZrValueType type, TUInt64 hash) {
-    ZrRawObjectInit(&super->super, type);
+    // we have already initialized super
+    // ZrRawObjectInit(&super->super, type);
     super->hash = hash;
     super->next = ZR_NULL;
 }

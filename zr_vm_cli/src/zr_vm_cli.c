@@ -21,7 +21,8 @@ static TZrPtr TestAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSiz
 
 static void AfterStateInitialized(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
-    printf("after state initialized\n");
+    TNativeString str = ZrNativeStringFormat(state, "%d is %s at %p", 1, "one", &AfterStateInitialized);
+    printf(str);
     // ZrExceptionThrow(state, ZR_THREAD_STATUS_EXCEPTION_ERROR);
 }
 

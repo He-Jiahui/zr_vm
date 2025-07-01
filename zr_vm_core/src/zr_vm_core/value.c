@@ -24,6 +24,35 @@ void ZrValueInitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawObject *
 }
 
 
+void ZrValueInitAsUInt(struct SZrState *state, SZrTypeValue *value, TUInt64 intValue) {
+    value->type = ZR_VALUE_TYPE_UINT64;
+    value->value.nativeObject.nativeUInt64 = intValue;
+    value->isGarbageCollectable = ZR_FALSE;
+    value->isNative = ZR_FALSE;
+}
+
+void ZrValueInitAsInt(struct SZrState *state, SZrTypeValue *value, TInt64 intValue) {
+    value->type = ZR_VALUE_TYPE_INT64;
+    value->value.nativeObject.nativeInt64 = intValue;
+    value->isGarbageCollectable = ZR_FALSE;
+    value->isNative = ZR_FALSE;
+}
+
+void ZrValueInitAsFloat(struct SZrState *state, SZrTypeValue *value, TFloat64 floatValue) {
+    value->type = ZR_VALUE_TYPE_DOUBLE;
+    value->value.nativeObject.nativeDouble = floatValue;
+    value->isGarbageCollectable = ZR_FALSE;
+    value->isNative = ZR_FALSE;
+}
+
+void ZrValueInitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZrPtr pointerValue) {
+    value->type = ZR_VALUE_TYPE_NATIVE_POINTER;
+    value->value.nativeObject.nativePointer = pointerValue;
+    value->isGarbageCollectable = ZR_FALSE;
+    value->isNative = ZR_TRUE;
+}
+
+
 SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset) {
     // ==max STACK_MAX
     // ==ft function top
