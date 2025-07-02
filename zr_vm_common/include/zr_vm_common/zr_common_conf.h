@@ -95,18 +95,22 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
 #define ZR_FORCE_INLINE __attribute__((always_inline)) inline
 #define ZR_NO_RETURN __attribute__((noreturn))
+#define ZR_FAST_CALL  __attribute__((fastcall))
 #elif defined(ZR_COMPILER_MSVC)
 #define ZR_STRUCT_ALIGN __declspec(align(8))
 #define ZR_FORCE_INLINE __forceinline
 #define ZR_NO_RETURN __declspec(noreturn)
+#define ZR_FAST_CALL  __declspec(naked) __fastcall
 #elif defined(ZR_COMPILER_CLANG)
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
 #define ZR_FORCE_INLINE inline
 #define ZR_NO_RETURN __attribute__((noreturn))
+#define ZR_FAST_CALL  __attribute__((fastcall))
 #else
 #define ZR_STRUCT_ALIGN
 #define ZR_FORCE_INLINE inline
 #define ZR_NO_RETURN
+#define ZR_FAST_CALL
 #endif
 
 
@@ -118,6 +122,9 @@ typedef jmp_buf TZrExceptionLongJump;
 
 // Debug Signal
 typedef sig_atomic_t TZrDebugSignal;
+#define ZR_DEBUG_SIGNAL_NONE 0
+#define ZR_DEBUG_SIGNAL_TRAP 1
+#define ZR_DEBUG_SIGNAL_BREAKPOINT 2
 
 
 // likely and unlikely to optimize branch prediction

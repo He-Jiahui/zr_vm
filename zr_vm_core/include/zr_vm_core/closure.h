@@ -6,6 +6,7 @@
 #define ZR_VM_CORE_CLOSURE_H
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/stack.h"
+#include "zr_vm_core/function.h"
 struct SZrClosureValue;
 
 union TZrClosureLink {
@@ -40,6 +41,7 @@ struct ZR_STRUCT_ALIGN SZrClosure {
     SZrRawObject super;
     SZrRawObject *gcList;
     // todo: closure info
+    SZrFunction *function;
     TZrSize closureValueCount;
     SZrTypeValue closureValuesExtend[1];
 };

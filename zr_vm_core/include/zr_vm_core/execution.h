@@ -4,9 +4,9 @@
 
 #ifndef ZR_VM_CORE_EXECUTION_H
 #define ZR_VM_CORE_EXECUTION_H
-#include "zr_vm_core/state.h"
-#include "zr_vm_core/call_info.h"
-
-ZR_CORE_API void ZrExecute(SZrState* state, SZrCallInfo* callInfo);
+#include "zr_vm_core/conf.h"
+struct SZrState;
+struct SZrCallInfo;
+ZR_CORE_API void ZrExecute(struct SZrState *state, struct SZrCallInfo *callInfo);
 
 #endif //ZR_VM_CORE_EXECUTION_H

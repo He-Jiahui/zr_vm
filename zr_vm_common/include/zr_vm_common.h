@@ -7,7 +7,7 @@
 
 // all in one to include zr_vm_common
 #include "zr_vm_common/zr_api_conf.h"
-#include "zr_vm_common/zr_code_conf.h"
+#include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_common/zr_array_conf.h"
 #include "zr_vm_common/zr_log_conf.h"

@@ -9,6 +9,4 @@
 
 struct SZrState;
 struct SZrTypeValue;
-
-
 #endif //ZR_VM_CORE_TYPE_H

@@ -8,7 +8,7 @@
 #include "zr_vm_core/conf.h"
 struct SZrState;
 
-typedef TUInt32 (*FZrNativeFunction)(struct SZrState *state);
+typedef TInt64 (*FZrNativeFunction)(struct SZrState *state);
 
 
 union TZrPureValue {
@@ -53,5 +53,6 @@ ZR_FORCE_INLINE SZrRawObject *ZrValueGetRawObject(const SZrTypeValue *value) {
 ZR_FORCE_INLINE TBool ZrValueIsNative(const SZrTypeValue *value) {
     return value->isNative;
 }
+
 
 #endif //ZR_VM_CORE_VALUE_H

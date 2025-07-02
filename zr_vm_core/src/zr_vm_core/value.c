@@ -98,7 +98,7 @@ SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset
     SZrTypeValue *functionBaseValue = ZrStackGetValue(callInfoTop->functionBase.valuePointer);
     if (ZrValueIsNative(functionBaseValue) && ZrValueGetType(functionBaseValue) == ZR_VALUE_TYPE_FUNCTION) {
         // is native function closure
-        SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(functionBaseValue);
+        SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, functionBaseValue);
         return (closureIndex <= (TZrMemoryOffset) closure->closureValueCount)
                    ? &closure->closureValuesExtend[closureIndex - 1]
                    : &global->nullValue;
