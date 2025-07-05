@@ -292,8 +292,33 @@ TZrString *ZrStringCreateTryHitCache(SZrState *state, TNativeString string) {
     return apiCache[0];
 }
 
+TBool ZrStringEqual(TZrString *string1, TZrString *string2) {
+    if (string1 == string2) {
+        return ZR_TRUE;
+    }
+    if (string1->shortStringLength != string2->shortStringLength) {
+        return ZR_FALSE;
+    }
+    if (string1->shortStringLength == ZR_VM_LONG_STRING_FLAG) {
+        // this is a long string
+        if (string1->longStringLength != string2->longStringLength) {
+            return ZR_FALSE;
+        }
+        return ZrMemoryRawCompare(*ZrStringGetNativeStringLong(string1), *ZrStringGetNativeStringLong(string2),
+                                  string1->longStringLength * sizeof(TChar)) == 0;
+    }
+
+    // short string
+    if (string1->super.hash != string2->super.hash) {
+        return ZR_FALSE;
+    }
+    return ZrMemoryRawCompare(ZrStringGetNativeStringShort(string1), ZrStringGetNativeStringShort(string2),
+                              string1->shortStringLength * sizeof(TChar)) == 0;
+}
+
 void ZrStringConcat(struct SZrState *state, TZrSize count) {
     ZR_TODO_PARAMETER(state);
     ZR_TODO_PARAMETER(count);
 }
+
 

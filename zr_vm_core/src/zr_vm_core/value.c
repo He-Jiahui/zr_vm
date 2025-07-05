@@ -28,21 +28,21 @@ void ZrValueInitAsUInt(struct SZrState *state, SZrTypeValue *value, TUInt64 intV
     value->type = ZR_VALUE_TYPE_UINT64;
     value->value.nativeObject.nativeUInt64 = intValue;
     value->isGarbageCollectable = ZR_FALSE;
-    value->isNative = ZR_FALSE;
+    value->isNative = ZR_TRUE;
 }
 
 void ZrValueInitAsInt(struct SZrState *state, SZrTypeValue *value, TInt64 intValue) {
     value->type = ZR_VALUE_TYPE_INT64;
     value->value.nativeObject.nativeInt64 = intValue;
     value->isGarbageCollectable = ZR_FALSE;
-    value->isNative = ZR_FALSE;
+    value->isNative = ZR_TRUE;
 }
 
 void ZrValueInitAsFloat(struct SZrState *state, SZrTypeValue *value, TFloat64 floatValue) {
     value->type = ZR_VALUE_TYPE_DOUBLE;
     value->value.nativeObject.nativeDouble = floatValue;
     value->isGarbageCollectable = ZR_FALSE;
-    value->isNative = ZR_FALSE;
+    value->isNative = ZR_TRUE;
 }
 
 void ZrValueInitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZrPtr pointerValue) {
@@ -52,6 +52,32 @@ void ZrValueInitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZr
     value->isNative = ZR_TRUE;
 }
 
+TBool ZrValueEqual(SZrTypeValue *value1, SZrTypeValue *value2) {
+    EZrValueType type1 = value1->type;
+    EZrValueType type2 = value2->type;
+    TBool typeEqual = type1 == type2;
+    TBool result = ZR_FALSE;
+    if (typeEqual) {
+        if (ZR_VALUE_IS_TYPE_NULL(type1)) {
+            // type null
+            result = ZR_TRUE;
+        } else if (ZR_VALUE_IS_TYPE_STRING(type1)) {
+            TZrString *str1 = ZR_CAST_STRING(value1->value.object);
+            TZrString *str2 = ZR_CAST_STRING(value2->value.object);
+            result = ZrStringEqual(str1, str2);
+        } else if (ZR_VALUE_IS_TYPE_BASIC(type1)) {
+            TBool valueEqual = value1->value.nativeObject.nativePointer == value2->value.nativeObject.
+                               nativePointer;
+            result = valueEqual;
+        } else {
+            // todo: obj equal & struct equal
+            result = ZR_FALSE;
+        }
+    } else {
+        result = ZR_FALSE;
+    }
+    return result;
+}
 
 SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset) {
     // ==max STACK_MAX

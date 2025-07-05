@@ -22,6 +22,8 @@ enum EZrThreadStatus {
     ZR_THREAD_STATUS_RUNTIME_ERROR = 2,
     ZR_THREAD_STATUS_MEMORY_ERROR = 3,
     ZR_THREAD_STATUS_EXCEPTION_ERROR = 4,
+
+    ZR_THREAD_STATUS_ENUM_MAX
 };
 
 typedef enum EZrThreadStatus EZrThreadStatus;

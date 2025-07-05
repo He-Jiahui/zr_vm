@@ -38,6 +38,9 @@ enum EZrValueType {
 };
 
 typedef enum EZrValueType EZrValueType;
+
+#define ZR_VALUE_IS_TYPE_NULL(valueType) ((valueType) == ZR_VALUE_TYPE_NULL)
+#define ZR_VALUE_IS_TYPE_BOOL(valueType) ((valueType) == ZR_VALUE_TYPE_BOOL)
 #define ZR_VALUE_IS_TYPE_SIGNED_INT(valueType) ((valueType) >= ZR_VALUE_TYPE_INT8 && (valueType) <= ZR_VALUE_TYPE_INT64)
 #define ZR_VALUE_IS_TYPE_UNSIGNED_INT(valueType) ((valueType) >= ZR_VALUE_TYPE_UINT8 && (valueType) <= ZR_VALUE_TYPE_UINT64)
 #define ZR_VALUE_IS_TYPE_INT(valueType) (ZR_VALUE_IS_TYPE_SIGNED_INT(valueType) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(valueType))
@@ -45,6 +48,8 @@ typedef enum EZrValueType EZrValueType;
 #define ZR_VALUE_IS_TYPE_NUMBER(valueType) (ZR_VALUE_IS_TYPE_INT(valueType) || ZR_VALUE_IS_TYPE_FLOAT(valueType))
 #define ZR_VALUE_IS_TYPE_STRING(valueType) ((valueType) == ZR_VALUE_TYPE_STRING)
 #define ZR_VALUE_IS_TYPE_NATIVE(valueType) ((valueType) == ZR_VALUE_TYPE_NATIVE_POINTER || (valueType) == ZR_VALUE_TYPE_NATIVE_DATA)
+
+#define ZR_VALUE_IS_TYPE_BASIC(valueType) (((valueType) >= ZR_VALUE_TYPE_NULL && (valueType) <= ZR_VALUE_TYPE_STRING) || ZR_VALUE_IS_TYPE_NATIVE(valueType))
 
 #define ZR_VALUE_CASES_SIGNED_INT \
     case ZR_VALUE_TYPE_INT8: \

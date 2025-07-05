@@ -83,15 +83,17 @@ ZR_FORCE_INLINE TZrString *ZrStringCreateFromNative(struct SZrState *state, TNat
 ZR_CORE_API TZrString *ZrStringCreateTryHitCache(struct SZrState *state, TNativeString string);
 
 
-ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringShort(TZrString *string) {
+ZR_FORCE_INLINE TNativeString ZrStringGetNativeStringShort(TZrString *string) {
     ZR_ASSERT(string->shortStringLength < ZR_VM_LONG_STRING_FLAG);
-    return (TNativeString *) string->stringDataExtend;
+    return (TNativeString) string->stringDataExtend;
 }
 
 ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringLong(TZrString *string) {
     ZR_ASSERT(string->shortStringLength == ZR_VM_LONG_STRING_FLAG);
     return (TNativeString *) string->stringDataExtend;
 }
+
+ZR_CORE_API TBool ZrStringEqual(TZrString *string1, TZrString *string2);
 
 ZR_CORE_API void ZrStringConcat(struct SZrState *state, TZrSize count);
 

@@ -35,7 +35,8 @@ struct ZR_STRUCT_ALIGN TZrString {
     };
 
     TUInt8 shortStringLength;
-
+    // short string is raw data
+    // long string is a pointer
     TUInt8 stringDataExtend[1];
 };
 
