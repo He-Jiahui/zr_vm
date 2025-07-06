@@ -7,7 +7,7 @@
 
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_common/zr_common_conf.h"
-// #define ZR_INSTRUCTION_USE_DISPATCH_TABLE
+#define ZR_INSTRUCTION_USE_DISPATCH_TABLE
 
 #if defined(ZR_COMPILER_GNU) || defined(ZR_COMPILER_CLANG)
 #define ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED 1
