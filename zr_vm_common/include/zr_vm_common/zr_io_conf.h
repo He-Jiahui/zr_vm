@@ -6,6 +6,14 @@
 #define ZR_IO_CONF_H
 
 #define ZR_IO_EOF EOF
+#include "zr_vm_common/zr_common_conf.h"
+
+static const union {
+ TUInt64 dummy;
+ TBool littleEndian;
+} CZrIoEndian = {.dummy = 1};
+
+#define ZR_IO_IS_LITTLE_ENDIAN (CZrIoEndian.littleEndian)
 
 /* .SOURCE:
  *  0 SIGNATURE 4
@@ -21,7 +29,7 @@
  *  29 OPT 3
  *  32 .MODULE
  */
-#define ZR_IO_SOURCE_SIGNATURE "\1ZR\2"
+#define ZR_IO_SOURCE_SIGNATURE "\x1ZR\x2"
 
 /* .MODULE:
  * NAME [string]
@@ -46,15 +54,12 @@
  */
 
 /* .CLASS:
+ * NAME [string]
  * SUPER_CLASS_LENGTH[8]
- * SUPER_CLASSES [.CLASS]
+ * SUPER_CLASSES [.REFERENCE]
  * GENERIC_LENGTH [8]
- * MEMBERS_LENGTH [8]
- * MEMBERS [.CLASS_MEMBER]
- * FUNCTIONS_LENGTH [8]
- * FUNCTIONS [.FUNCTION]
- * META_LENGTH [8]
- * META [.META]
+ * DECLARES_LENGTH [8]
+ * DECLARES [.CLASS_DECLARE]
  */
 
 /* .META:
@@ -94,8 +99,8 @@
  */
 
 /* .LOCAL:
- * TYPE [4]
- * DATA [string|uint|int|float|...]
+ * // TYPE [4]
+ * // DATA [string|uint|int|float|...]
  * INSTRUCTION_START [8]
  * INSTRUCTION_END [8]
  * START_LINE [8] (DEBUG)
