@@ -95,16 +95,59 @@ struct SZrIoFunction {
 
 typedef struct SZrIoFunction SZrIoFunction;
 
-struct SZrIoClassDeclare {
-    EZrIoClassDeclareType type;
+struct SZrIoMeta {
+    TUInt32 metaType;
+    TZrSize functionsLength;
+    SZrIoFunction *functions;
+};
 
+typedef struct SZrIoMeta SZrIoMeta;
+
+struct SZrIoMethod {
+    TZrString *name;
+    TZrSize functionsLength;
+    SZrIoFunction *functions;
+};
+
+typedef struct SZrIoMethod SZrIoMethod;
+
+struct SZrIoProperty {
+    TZrString *name;
+    // todo:
+    TUInt32 propertyType;
+    SZrIoFunction *getter;
+    SZrIoFunction *setter;
+};
+
+typedef struct SZrIoProperty SZrIoProperty;
+
+struct SZrIoField {
+    TZrString *name;
+};
+
+typedef struct SZrIoField SZrIoField;
+
+struct SZrIoEnumField {
+    TZrString *name;
+    TZrPureValue value;
+};
+
+typedef struct SZrIoEnumField SZrIoEnumField;
+
+struct SZrIoMemberDeclare {
+    EZrIoMemberDeclareType type;
+    EZrIoMemberDeclareStatus status;
     union {
-        SZrIoFunction *function;
+        SZrIoField *field;
+        SZrIoMethod *method;
+        SZrIoProperty *property;
+        SZrIoMeta *meta;
+        SZrIoEnumField *enumField;
         // todo:
     };
 };
 
-typedef struct SZrIoClassDeclare SZrIoClassDeclare;
+typedef struct SZrIoMemberDeclare SZrIoMemberDeclare;
 
 struct SZrIoClass {
     TZrString *name;
@@ -112,18 +155,52 @@ struct SZrIoClass {
     SZrIoReference *superClasses;
     TZrSize genericParametersLength;
     TZrSize declaresLength;
-    SZrIoClassDeclare *declares;
+    SZrIoMemberDeclare *declares;
 };
 
 typedef struct SZrIoClass SZrIoClass;
+
+struct SZrIoStruct {
+    TZrString *name;
+    TZrSize superStructLength;
+    SZrIoReference *superStructs;
+    TZrSize genericParametersLength;
+    TZrSize declaresLength;
+    SZrIoMemberDeclare *declares;
+};
+
+typedef struct SZrIoStruct SZrIoStruct;
+
+struct SZrIoInterface {
+    TZrString *name;
+    TZrSize superInterfaceLength;
+    SZrIoReference *superInterfaces;
+    TZrSize genericParametersLength;
+    TZrSize declaresLength;
+    SZrIoMemberDeclare *declares;
+};
+
+typedef struct SZrIoInterface SZrIoInterface;
+
+struct SZrIoEnum {
+    TZrString *name;
+    EZrValueType valueType;
+    TZrSize fieldsLength;
+    SZrIoEnumField *fields;
+};
+
+typedef struct SZrIoEnum SZrIoEnum;
 
 struct SZrIoModuleDeclare {
     EZrIoModuleDeclareType type;
 
     union {
         SZrIoClass *class;
+        SZrIoStruct *struct_;
+        SZrIoInterface *interface;
         SZrIoFunction *function;
-        // todo:
+        SZrIoEnum *enum_;
+        SZrIoField *field;
     };
 };
 
@@ -165,4 +242,4 @@ ZR_CORE_API TZrSize ZrIoRead(SZrIo *io, TBytePtr buffer, TZrSize size);
 
 
 ZR_CORE_API SZrIoSource *ZrIoReadSourceNew(SZrIo *io);
-#endif //ZR_VM_CORE_IO_H
+#endif // ZR_VM_CORE_IO_H
