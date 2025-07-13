@@ -5,49 +5,56 @@
 #ifndef ZR_META_CONF_H
 #define ZR_META_CONF_H
 #include "zr_vm_common/zr_common_conf.h"
-static TNativeString const CZrMetaName[] = {
-    "constructor", "destructor",
-    "add", "sub", "mul", "div", "mod", "neg",
-    "compare",
-    "to_bool", "to_string", "to_int", "to_float",
-    "call",
-    "getter", "setter",
-    "shift_left", "shift_right",
-    "bit_and", "bit_or", "bit_xor", "bit_not",
-    "close"
-};
 
-enum EZrMetaType {
-    ZR_META_CONSTRUCTOR,
-    ZR_META_DESTRUCTOR,
-    ZR_META_ADD,
-    ZR_META_SUB,
-    ZR_META_MUL,
-    ZR_META_DIV,
-    ZR_META_MOD,
-    ZR_META_NEG,
-    ZR_META_COMPARE,
-    ZR_META_TO_BOOL,
-    ZR_META_TO_STRING,
-    ZR_META_TO_INT,
-    ZR_META_TO_FLOAT,
-    ZR_META_CALL,
-    ZR_META_GETTER,
-    ZR_META_SETTER,
+#define ZR_META_DECLARE(Z)                                                                                             \
+    Z(CONSTRUCTOR)                                                                                                     \
+    Z(DESTRUCTOR)                                                                                                      \
+    Z(ADD)                                                                                                             \
+    Z(SUB)                                                                                                             \
+    Z(MUL)                                                                                                             \
+    Z(DIV)                                                                                                             \
+    Z(MOD)                                                                                                             \
+    Z(NEG)                                                                                                             \
+    Z(COMPARE)                                                                                                         \
+    Z(TO_BOOL)                                                                                                         \
+    Z(TO_STRING)                                                                                                       \
+    Z(TO_INT)                                                                                                          \
+    Z(TO_FLOAT)                                                                                                        \
+    Z(CALL)                                                                                                            \
+    Z(GETTER)                                                                                                          \
+    Z(SETTER)                                                                                                          \
+    Z(SHIFT_LEFT)                                                                                                      \
+    Z(SHIFT_RIGHT)                                                                                                     \
+    Z(BIT_AND)                                                                                                         \
+    Z(BIT_OR)                                                                                                          \
+    Z(BIT_XOR)                                                                                                         \
+    Z(BIT_NOT)                                                                                                         \
+    Z(CLOSE)
 
-    ZR_META_SHIFT_LEFT,
-    ZR_META_SHIFT_RIGHT,
 
-    ZR_META_BIT_AND,
-    ZR_META_BIT_OR,
-    ZR_META_BIT_XOR,
-    ZR_META_BIT_NOT,
+#define ZR_META_ENUM(META) ZR_META_##META
 
-    ZR_META_CLOSE,
+#define ZR_META_ENUM_WRAP(...) ZR_MACRO_REGISTER_WRAP(enum EZrMetaType{, ZR_META_ENUM(ENUM_MAX)}, __VA_ARGS__)
 
-    ZR_META_ENUM_MAX
-};
+#define ZR_META_ENUM_DECLARE(META) ZR_META_ENUM(META),
+
+#define ZR_META_CONSTANT(META) #META
+
+#define ZR_META_CONSTANT_WRAP(...)                                                                                     \
+    ZR_MACRO_REGISTER_WRAP(                                                                                            \
+            {                                                                                                          \
+                    ,                                                                                                  \
+            },                                                                                                         \
+            __VA_ARGS__)
+
+#define ZR_META_CONSTANT_DECLARE(META) ZR_META_CONSTANT(META),
+
+
+ZR_META_ENUM_WRAP(ZR_META_DECLARE(ZR_META_ENUM_DECLARE));
 
 typedef enum EZrMetaType EZrMetaType;
 
-#endif //ZR_META_CONF_H
+static TNativeString const CZrMetaName[] = ZR_META_CONSTANT_WRAP(ZR_META_DECLARE(ZR_META_CONSTANT_DECLARE));
+
+
+#endif // ZR_META_CONF_H

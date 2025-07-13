@@ -69,6 +69,7 @@ struct SZrIoFunctionClosure {
 typedef struct SZrIoFunctionClosure SZrIoFunctionClosure;
 
 struct SZrIoFunctionDebugInfo {
+    TZrSize instructionsLength;
     TUInt64 *instructionsLine;
     // todo:
 };
@@ -89,14 +90,14 @@ struct SZrIoFunction {
     SZrIoFunctionConstantVariable *constantVariables;
     TZrSize closuresLength;
     SZrIoFunctionClosure *closures;
-    TZrSize debugInfoLength;
+    TZrSize debugInfosLength;
     SZrIoFunctionDebugInfo *debugInfos;
 };
 
 typedef struct SZrIoFunction SZrIoFunction;
 
 struct SZrIoMeta {
-    TUInt32 metaType;
+    EZrMetaType metaType;
     TZrSize functionsLength;
     SZrIoFunction *functions;
 };

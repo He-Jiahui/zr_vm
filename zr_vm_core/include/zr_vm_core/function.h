@@ -5,8 +5,8 @@
 #ifndef ZR_VM_CORE_FUNCTION_H
 #define ZR_VM_CORE_FUNCTION_H
 
-#include "zr_vm_core/value.h"
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/value.h"
 
 struct ZR_STRUCT_ALIGN SZrFunctionClosureVariable {
     TZrString *name;
@@ -61,4 +61,11 @@ struct ZR_STRUCT_ALIGN SZrFunction {
 };
 
 typedef struct SZrFunction SZrFunction;
-#endif //ZR_VM_CORE_FUNCTION_H
+
+// struct ZR_STRUCT_ALIGN SZrFunctionOverload {
+//     TZrSize functionOverloadsLength;
+//     SZrFunction **functionOverloads;
+// };
+//
+// typedef struct SZrFunctionOverload SZrFunctionOverload;
+#endif // ZR_VM_CORE_FUNCTION_H

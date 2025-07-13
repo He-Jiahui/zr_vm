@@ -40,17 +40,17 @@ static TZrSize ZrNativeStringNumberToStringBuffer(SZrTypeValue *value, TChar *bu
     ZR_ASSERT(ZR_VALUE_IS_TYPE_NUMBER(value->type) || ZR_VALUE_IS_TYPE_NATIVE(value->type));
     switch (value->type) {
         ZR_VALUE_CASES_SIGNED_INT {
-            length = ZR_STRING_SIGNED_INTEGER_PRINT_FORMAT(buffer, ZR_NUMER_TO_STRING_LENGTH_MAX,
+            length = ZR_STRING_SIGNED_INTEGER_PRINT_FORMAT(buffer, ZR_NUMBER_TO_STRING_LENGTH_MAX,
                                                            value->value.nativeObject.nativeInt64);
         }
         break;
         ZR_VALUE_CASES_UNSIGNED_INT {
-            length = ZR_STRING_UNSIGNED_INTEGER_PRINT_FORMAT(buffer, ZR_NUMER_TO_STRING_LENGTH_MAX,
+            length = ZR_STRING_UNSIGNED_INTEGER_PRINT_FORMAT(buffer, ZR_NUMBER_TO_STRING_LENGTH_MAX,
                                                              value->value.nativeObject.nativeUInt64);
         }
         break;
         ZR_VALUE_CASES_FLOAT {
-            length = ZR_STRING_FLOAT_PRINT_FORMAT(buffer, ZR_NUMER_TO_STRING_LENGTH_MAX,
+            length = ZR_STRING_FLOAT_PRINT_FORMAT(buffer, ZR_NUMBER_TO_STRING_LENGTH_MAX,
                                                   value->value.nativeObject.nativeDouble);
             // add .0 if no decimal point
             if (buffer[ZrNativeStringSpan(buffer, ZR_STRING_DECIMAL_NUMBER_SET)] == '\0') {
@@ -60,14 +60,13 @@ static TZrSize ZrNativeStringNumberToStringBuffer(SZrTypeValue *value, TChar *bu
         }
         break;
         ZR_VALUE_CASES_NATIVE {
-            length = ZR_STRING_POINTER_PRINT_FORMAT(buffer, ZR_NUMER_TO_STRING_LENGTH_MAX,
+            length = ZR_STRING_POINTER_PRINT_FORMAT(buffer, ZR_NUMBER_TO_STRING_LENGTH_MAX,
                                                     value->value.nativeObject.nativePointer);
         }
         break;
         default: {
             ZR_ASSERT(ZR_FALSE);
-        }
-        break;
+        } break;
     }
     return length;
 }
@@ -84,7 +83,7 @@ static void ZrNativeStringAddStringToBuffer(SZrNativeStringFormatBuffer *buffer,
 }
 
 static void ZrNativeStringAddNumberToBuffer(SZrNativeStringFormatBuffer *buffer, SZrTypeValue *value) {
-    TChar *numberBuffer = ZrNativeStringGetFromFormatStringBuffer(buffer, ZR_NUMER_TO_STRING_LENGTH_MAX);
+    TChar *numberBuffer = ZrNativeStringGetFromFormatStringBuffer(buffer, ZR_NUMBER_TO_STRING_LENGTH_MAX);
     TZrSize length = ZrNativeStringNumberToStringBuffer(value, numberBuffer);
     buffer->length += length;
 }
@@ -110,60 +109,50 @@ TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format
                 } else {
                     ZrNativeStringAddStringToBuffer(&buffer, string, ZrNativeStringLength(string));
                 }
-            }
-            break;
+            } break;
             case 'c': {
                 TChar ch = ZR_CAST_CHAR(va_arg(args, TInt64));
                 ZrNativeStringAddStringToBuffer(&buffer, &ch, sizeof(TChar));
-            }
-            break;
+            } break;
             case 'd': {
                 // convert integer to string
                 SZrTypeValue value;
                 ZrValueInitAsInt(state, &value, va_arg(args, TInt64));
                 ZrNativeStringAddNumberToBuffer(&buffer, &value);
-            }
-            break;
+            } break;
             case 'u': {
                 // convert unsigned to string
                 SZrTypeValue value;
                 ZrValueInitAsUInt(state, &value, va_arg(args, TUInt64));
                 ZrNativeStringAddNumberToBuffer(&buffer, &value);
-            }
-            break;
+            } break;
             case 'f': {
                 // convert float to string
                 SZrTypeValue value;
                 ZrValueInitAsFloat(state, &value, va_arg(args, TFloat64));
                 ZrNativeStringAddNumberToBuffer(&buffer, &value);
-            }
-            break;
+            } break;
             case 'o': {
                 // todo: handle zr object
-            }
-            break;
+            } break;
             case 'p': {
                 // handle native pointer to string
                 SZrTypeValue value;
                 ZrValueInitAsNativePointer(state, &value, va_arg(args, TZrPtr));
                 ZrNativeStringAddNumberToBuffer(&buffer, &value);
-            }
-            break;
+            } break;
             case 'U': {
                 // handle utf8 char
                 TChar uCharBuffer[ZR_STRING_UTF8_SIZE];
                 TZrSize length = ZrNativeStringUtf8CharLength(uCharBuffer, ZR_CAST_UINT64(va_arg(args, TInt64)));
                 ZrNativeStringAddStringToBuffer(&buffer, uCharBuffer + ZR_STRING_UTF8_SIZE - length, length);
-            }
-            break;
+            } break;
             case '%': {
                 ZrNativeStringAddStringToBuffer(&buffer, "%", sizeof(TChar));
-            }
-            break;
+            } break;
             default: {
                 // todo: handle exception
-            }
-            break;
+            } break;
         }
         format = e + 2;
     }
@@ -174,7 +163,7 @@ TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format
     ZrNativeStringClearFormatBufferAndPushToStack(&buffer);
     ZR_ASSERT(buffer.isOnStack == ZR_TRUE);
     return ZR_CAST_STRING_TO_NATIVE(
-        ZR_CAST_STRING(ZrValueGetRawObject(ZrStackGetValue(state->stackTop.valuePointer - 1))));
+            ZR_CAST_STRING(ZrValueGetRawObject(ZrStackGetValue(state->stackTop.valuePointer - 1))));
 }
 
 TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format, ...) {
@@ -185,13 +174,13 @@ TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format,
     return result;
 }
 
-void ZrStringTableNew(SZrGlobalState *global) {
+void ZrStringTableConstruct(SZrGlobalState *global) {
     SZrStringTable *stringTable = &global->stringTable;
     // stringTable->bucketCount = 0;
     // stringTable->elementCount = 0;
     // stringTable->capacity = 0;
     // stringTable->buckets = ZR_NULL;
-    ZrHashSetNew(&stringTable->stringHashSet);
+    ZrHashSetConstruct(&stringTable->stringHashSet);
 }
 
 void ZrStringTableInit(SZrState *state) {
@@ -244,14 +233,15 @@ static TZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZr
     TZrString *object = ZR_CAST(TZrString *, ZrHashSetGetBucket(&stringTable->stringHashSet, hash));
     ZR_ASSERT(string != ZR_NULL);
     for (; object != ZR_NULL; object = ZR_CAST(TZrString *, object->super.next)) {
-        if (object->shortStringLength == length && ZrMemoryRawCompare(ZrStringGetNativeStringShort(object), string,
-                                                                      length * sizeof(TChar)) == 0) {
+        if (object->shortStringLength == length &&
+            ZrMemoryRawCompare(ZrStringGetNativeStringShort(object), string, length * sizeof(TChar)) == 0) {
             if (ZrRawObjectIsReleased(ZR_CAST_RAW_OBJECT_AS_SUPER(object))) {
                 ZrRawObjectMarkAsReferenced(ZR_CAST_RAW_OBJECT_AS_SUPER(object));
             }
             return object;
         }
-    } {
+    }
+    {
         // create a new string
         TZrString *newString = ZrStringObjectCreate(state, string, length);
         ZrHashSetAdd(global, &stringTable->stringHashSet, &newString->super);
@@ -266,10 +256,11 @@ static ZR_FORCE_INLINE TZrString *ZrStringCreateLong(SZrState *state, TNativeStr
 }
 
 
-ZR_CORE_API TZrString *ZrStringCreate(SZrState *state, TNativeString string, TZrSize length) {
+TZrString *ZrStringCreate(SZrState *state, TNativeString string, TZrSize length) {
     if (length <= ZR_VM_SHORT_STRING_MAX) {
         return ZrStringCreateShort(state, string, length);
-    } {
+    }
+    {
         // create a long string
         return ZrStringCreateLong(state, string, length);
     }
@@ -319,6 +310,56 @@ TBool ZrStringEqual(TZrString *string1, TZrString *string2) {
 void ZrStringConcat(struct SZrState *state, TZrSize count) {
     ZR_TODO_PARAMETER(state);
     ZR_TODO_PARAMETER(count);
+    // todo:
+    if (count == 0) {
+        return;
+    }
+    // do {
+    //     // TZrStackValuePointer top = state->stackTop.valuePointer;
+    //     // int n = 2;
+    //     // ZrStackGetValue(top - 2);
+    //     // if () {
+    //     // }
+    // } while (count > 0);
 }
 
+void ZrStringConcatSafe(struct SZrState *state, TZrSize count) {
+    // todo:
+}
 
+TZrString *ZrStringFromNumber(struct SZrState *state, struct SZrTypeValue *value) {
+    SZrGlobalState *global = state->global;
+    TZrSize length = 0;
+    TZrString *string = ZR_NULL;
+    ZR_ASSERT(ZR_VALUE_IS_TYPE_NUMBER(value->type) || ZR_VALUE_IS_TYPE_NATIVE(value->type));
+    TNativeString nativeString =
+            ZrMemoryRawMallocWithType(global, ZR_NUMBER_TO_STRING_LENGTH_MAX, ZR_VALUE_TYPE_VM_MEMORY);
+    switch (value->type) {
+        ZR_VALUE_CASES_SIGNED_INT {
+            length = ZR_STRING_SIGNED_INTEGER_PRINT_FORMAT(nativeString, ZR_NUMBER_TO_STRING_LENGTH_MAX,
+                                                           value->value.nativeObject.nativeInt64);
+        }
+        break;
+        ZR_VALUE_CASES_UNSIGNED_INT {
+            length = ZR_STRING_UNSIGNED_INTEGER_PRINT_FORMAT(nativeString, ZR_NUMBER_TO_STRING_LENGTH_MAX,
+                                                             value->value.nativeObject.nativeUInt64);
+        }
+        break;
+        ZR_VALUE_CASES_FLOAT {
+            length = ZR_STRING_FLOAT_PRINT_FORMAT(nativeString, ZR_NUMBER_TO_STRING_LENGTH_MAX,
+                                                  value->value.nativeObject.nativeDouble);
+        }
+        break;
+        ZR_VALUE_CASES_NATIVE {
+            length = ZR_STRING_POINTER_PRINT_FORMAT(nativeString, ZR_NUMBER_TO_STRING_LENGTH_MAX,
+                                                    value->value.nativeObject.nativePointer);
+        }
+        break;
+        default: {
+            ZR_ASSERT(ZR_FALSE);
+        } break;
+    }
+    string = ZrStringCreateFromNative(state, nativeString);
+    ZrMemoryRawFree(global, nativeString, ZR_NUMBER_TO_STRING_LENGTH_MAX);
+    return string;
+}

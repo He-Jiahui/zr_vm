@@ -5,9 +5,9 @@
 
 #include "zr_vm_common/zr_vm_conf.h"
 #include "zr_vm_core/call_info.h"
+#include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
-#include "zr_vm_core/callback.h"
 #include "zr_vm_core/meta.h"
 
 /*
@@ -20,8 +20,8 @@ static void ZrStateStackInit(SZrState *state, SZrState *mainThreadState) {
     state->stackTail.valuePointer = state->stackBase.valuePointer + ZR_THREAD_STACK_SIZE_BASIC;
     state->stackTop.valuePointer = state->stackBase.valuePointer;
     // reset stack
-    for (TZrStackValuePointer pointer = state->stackBase.valuePointer; pointer < state->stackTail.valuePointer; pointer
-         ++) {
+    for (TZrStackValuePointer pointer = state->stackBase.valuePointer; pointer < state->stackTail.valuePointer;
+         pointer++) {
         ZrValueResetAsNull(&pointer->value);
     }
     // init call info
@@ -47,14 +47,12 @@ static void ZrStateStackInit(SZrState *state, SZrState *mainThreadState) {
  * ===== State Functions =====
  */
 
-ZR_FORCE_INLINE void ZrStateResetDebugHookCount(SZrState *state) {
-    state->debugHookCount = state->baseDebugHookCount;
-}
+ZR_FORCE_INLINE void ZrStateResetDebugHookCount(SZrState *state) { state->debugHookCount = state->baseDebugHookCount; }
 
 SZrState *ZrStateNew(SZrGlobalState *global) {
     // FZrAllocator allocator = global->allocator;
     SZrState *newState = ZrMemoryAllocate(global, NULL, 0, sizeof(SZrState));
-    ZrRawObjectInit(&newState->super, ZR_VALUE_TYPE_THREAD);
+    ZrRawObjectConstruct(&newState->super, ZR_VALUE_TYPE_THREAD);
     ZrStateInit(newState, global);
     return newState;
 }
@@ -94,7 +92,7 @@ void ZrStateMainThreadLaunch(SZrState *state, TZrPtr arguments) {
     // string table init
     ZrStringTableInit(state);
     // meta name init
-    ZrMetaInit(state);
+    ZrMetaGlobalStaticsInit(state);
     // maybe we can create a lexer
 
     // allow gc to run
@@ -119,9 +117,7 @@ void ZrStateExit(SZrState *state) {
 }
 
 
-void ZrStateFree(SZrGlobalState *global, SZrState *state) {
-    ZrMemoryAllocate(global, state, sizeof(SZrState), 0);
-}
+void ZrStateFree(SZrGlobalState *global, SZrState *state) { ZrMemoryAllocate(global, state, sizeof(SZrState), 0); }
 
 TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status) {
     // 重置线程状态

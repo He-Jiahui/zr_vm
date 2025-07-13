@@ -12,10 +12,11 @@
 #include "zr_vm_core/conf.h"
 struct SZrGlobalState;
 struct SZrState;
-#define ZR_STRING_LITERAL(STATE, STR) (ZrStringCreate((STATE), "" STR, (sizeof(STR)/sizeof(char) - 1)))
+struct SZrTypeValue;
+#define ZR_STRING_LITERAL(STATE, STR) (ZrStringCreate((STATE), "" STR, (sizeof(STR) / sizeof(char) - 1)))
 
 
-#define ZR_STRING_FORMAT_BUFFER_SIZE (ZR_LOG_DEBUG_FUNCTION_STR_SIZE_MAX + ZR_NUMER_TO_STRING_LENGTH_MAX + 95)
+#define ZR_STRING_FORMAT_BUFFER_SIZE (ZR_LOG_DEBUG_FUNCTION_STR_SIZE_MAX + ZR_NUMBER_TO_STRING_LENGTH_MAX + 95)
 
 struct ZR_STRUCT_ALIGN SZrNativeStringFormatBuffer {
     struct SZrState *state;
@@ -30,17 +31,11 @@ ZR_FORCE_INLINE TInt32 ZrNativeStringCompare(TNativeString string1, TNativeStrin
     return strcmp(string1, string2);
 }
 
-ZR_FORCE_INLINE TZrSize ZrNativeStringLength(TNativeString string) {
-    return strlen(string);
-}
+ZR_FORCE_INLINE TZrSize ZrNativeStringLength(TNativeString string) { return strlen(string); }
 
-ZR_FORCE_INLINE TChar *ZrNativeStringCharFind(TNativeString string, TChar ch) {
-    return strchr(string, ch);
-}
+ZR_FORCE_INLINE TChar *ZrNativeStringCharFind(TNativeString string, TChar ch) { return strchr(string, ch); }
 
-ZR_FORCE_INLINE TZrSize ZrNativeStringSpan(TNativeString string, TChar *charset) {
-    return strspn(string, charset);
-}
+ZR_FORCE_INLINE TZrSize ZrNativeStringSpan(TNativeString string, TChar *charset) { return strspn(string, charset); }
 
 ZR_FORCE_INLINE TZrSize ZrNativeStringUtf8CharLength(TChar *buffer, TUInt64 uChar) {
     ZR_ASSERT(uChar <= 0x7fffffffu);
@@ -59,7 +54,7 @@ ZR_FORCE_INLINE TZrSize ZrNativeStringUtf8CharLength(TChar *buffer, TUInt64 uCha
             uChar >>= 6;
             maxFirstByte >>= 1;
         } while (uChar > maxFirstByte);
-        buffer[ZR_STRING_UTF8_SIZE - length] = ZR_CAST_CHAR((~maxFirstByte<<1) | uChar);
+        buffer[ZR_STRING_UTF8_SIZE - length] = ZR_CAST_CHAR((~maxFirstByte << 1) | uChar);
     }
     return length;
 }
@@ -69,7 +64,7 @@ ZR_CORE_API TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeS
 
 ZR_CORE_API TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format, ...);
 
-ZR_CORE_API void ZrStringTableNew(struct SZrGlobalState *global);
+ZR_CORE_API void ZrStringTableConstruct(struct SZrGlobalState *global);
 
 ZR_CORE_API void ZrStringTableInit(struct SZrState *state);
 
@@ -95,15 +90,16 @@ ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringLong(TZrString *string) {
 
 ZR_CORE_API TBool ZrStringEqual(TZrString *string1, TZrString *string2);
 
+// this is not thread safe and not reentrant
 ZR_CORE_API void ZrStringConcat(struct SZrState *state, TZrSize count);
 
-// todo: raw object to string
-ZR_CORE_API void ZrStringConvertFromRawObject(struct SZrState *state, SZrRawObject *object);
+ZR_CORE_API void ZrStringConcatSafe(struct SZrState *state, TZrSize count);
+
 
 // todo: number to string
-
+ZR_CORE_API TZrString *ZrStringFromNumber(struct SZrState *state, struct SZrTypeValue *value);
 // todo: object to string
 
 // todo: utf-8 to string
 
-#endif //ZR_VM_CORE_STRING_H
+#endif // ZR_VM_CORE_STRING_H

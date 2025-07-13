@@ -21,7 +21,8 @@ static TZrSize ZrGarbageCollectorRunIncreasementFull(SZrState *state) {
 
 void ZrGarbageCollectorInit(SZrGlobalState *global) {
     SZrGarbageCollector *gc = &global->garbageCollector;
-    SZrState *state = global->mainThreadState;;
+    SZrState *state = global->mainThreadState;
+
     // reset gc
     // reference new created state to global gc list
     gc->gcObjectList = ZR_CAST_RAW_OBJECT_AS_SUPER(state);
@@ -64,7 +65,7 @@ SZrRawObject *ZrRawObjectNew(SZrState *state, EZrValueType type, TZrSize size) {
     SZrGlobalState *global = state->global;
     TZrPtr memory = ZrMemoryGcMalloc(state, type, size);
     SZrRawObject *object = ZR_CAST_RAW_OBJECT(memory);
-    ZrRawObjectInit(object, type);
+    ZrRawObjectConstruct(object, type);
     object->garbageCollectMark.status = global->garbageCollector.gcInitializeObjectStatus;
     object->garbageCollectMark.generation = global->garbageCollector.gcGeneration;
     object->next = global->garbageCollector.gcObjectList;

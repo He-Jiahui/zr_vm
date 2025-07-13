@@ -7,10 +7,17 @@
 #include "zr_vm_core/convertion.h"
 #include "zr_vm_core/global.h"
 
-void ZrMetaInit(SZrState *state) {
+void ZrMetaGlobalStaticsInit(SZrState *state) {
     SZrGlobalState *global = state->global;
-    for (TInt32 i = 0; i < ZR_META_ENUM_MAX; i++) {
+    for (TEnum i = 0; i < ZR_META_ENUM_MAX; i++) {
         global->metaFunctionName[i] = ZrStringCreateFromNative(state, CZrMetaName[i]);
         ZrRawObjectMarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->metaFunctionName[i]));
+    }
+}
+
+
+void ZrMetaTableConstruct(SZrMetaTable *table) {
+    for (TEnum i = 0; i < ZR_META_ENUM_MAX; i++) {
+        table->metas[i] = ZR_NULL;
     }
 }

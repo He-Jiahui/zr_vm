@@ -70,6 +70,19 @@ enum EZrGarbageCollectGeneration {
 
 typedef enum EZrGarbageCollectGeneration EZrGarbageCollectGeneration;
 
+enum EZrObjectPrototypeType {
+    ZR_OBJECT_PROTOTYPE_TYPE_INVALID,
+    ZR_OBJECT_PROTOTYPE_TYPE_MODULE,
+    ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+    ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
+    ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
+    ZR_OBJECT_PROTOTYPE_TYPE_ENUM,
+    ZR_OBJECT_PROTOTYPE_TYPE_NATIVE,
+    ZR_OBJECT_PROTOTYPE_TYPE_MAX
+};
+
+typedef enum EZrObjectPrototypeType EZrObjectPrototypeType;
+
 struct SZrGarbageCollectionObjectMark {
     EZrGarbageCollectObjectStatus status;
     EZrGarbageCollectGeneration generation;
@@ -85,7 +98,7 @@ struct ZR_STRUCT_ALIGN SZrRawObject {
 
 typedef struct SZrRawObject SZrRawObject;
 
-ZR_FORCE_INLINE void ZrRawObjectInit(SZrRawObject *super, EZrValueType type) {
+ZR_FORCE_INLINE void ZrRawObjectConstruct(SZrRawObject *super, EZrValueType type) {
     super->next = ZR_NULL;
     super->type = type;
     super->garbageCollectMark.status = ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED;
@@ -101,10 +114,22 @@ struct ZR_STRUCT_ALIGN SZrHashRawObject {
 typedef struct SZrHashRawObject SZrHashRawObject;
 ZR_FORCE_INLINE void ZrHashRawObjectInit(SZrHashRawObject *super, EZrValueType type, TUInt64 hash) {
     // we have already initialized super
-    // ZrRawObjectInit(&super->super, type);
+    // ZrRawObjectConstruct(&super->super, type);
     super->hash = hash;
     super->next = ZR_NULL;
 }
 
-typedef struct SZrHashRawObject SZrHashRawObject;
-#endif //ZR_OBJECT_CONF_H
+struct ZR_STRUCT_ALIGN SZrHashKeyValuePair {
+    SZrHashRawObject super;
+    SZrHashRawObject *key;
+    SZrRawObject *value;
+};
+
+typedef struct SZrHashKeyValuePair SZrHashKeyValuePair;
+
+ZR_FORCE_INLINE void ZrHashKeyValuePairInit(SZrHashKeyValuePair *pair, SZrHashRawObject *key, SZrRawObject *value) {
+    ZrHashRawObjectInit(&pair->super, key->super.type, key->hash);
+    pair->key = key;
+    pair->value = value;
+}
+#endif // ZR_OBJECT_CONF_H

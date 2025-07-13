@@ -8,11 +8,9 @@
 
 struct SZrState;
 struct SZrGlobalState;
-#define ZR_HASH_MOD(HASH, CAPACITY) (ZR_ASSERT((CAPACITY&(CAPACITY-1))==0), ((HASH) & (CAPACITY-1)))
+#define ZR_HASH_MOD(HASH, CAPACITY) (ZR_ASSERT((CAPACITY & (CAPACITY - 1)) == 0), ((HASH) & (CAPACITY - 1)))
 
-ZR_FORCE_INLINE void ZrHashSetNew(SZrHashSet *set) {
-    set->isValid = ZR_FALSE;
-}
+ZR_FORCE_INLINE void ZrHashSetConstruct(SZrHashSet *set) { set->isValid = ZR_FALSE; }
 
 ZR_CORE_API void ZrHashSetRehash(struct SZrGlobalState *global, SZrHashSet *set, TZrSize newCapacity);
 
@@ -41,5 +39,34 @@ ZR_FORCE_INLINE void ZrHashSetAdd(struct SZrGlobalState *global, SZrHashSet *set
     set->elementCount++;
 }
 
+ZR_FORCE_INLINE TBool ZrHashSetRemove(SZrHashSet *set, SZrHashRawObject *element) {
+    SZrHashRawObject *object = ZrHashSetGetBucket(set, element->hash);
+    SZrHashRawObject *prev = ZR_NULL;
+    while (object != ZR_NULL) {
+        if (object == element) {
+            if (prev == ZR_NULL) {
+                set->buckets[ZR_HASH_MOD(element->hash, set->capacity)] = object->next;
+            } else {
+                prev->next = object->next;
+            }
+            set->elementCount--;
+            return ZR_TRUE;
+        }
+        prev = object;
+        object = object->next;
+    }
+    return ZR_FALSE;
+}
 
-#endif //ZR_VM_CORE_HASH_SET_H
+ZR_FORCE_INLINE TBool ZrHashSetFind(SZrHashSet *set, SZrHashRawObject *element) {
+    SZrHashRawObject *object = ZrHashSetGetBucket(set, element->hash);
+    while (object != ZR_NULL) {
+        if (object == element) {
+            return ZR_TRUE;
+        }
+        object = object->next;
+    }
+    return ZR_FALSE;
+}
+
+#endif // ZR_VM_CORE_HASH_SET_H

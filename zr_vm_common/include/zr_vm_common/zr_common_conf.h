@@ -4,13 +4,13 @@
 
 #ifndef ZR_COMMON_CONF_H
 #define ZR_COMMON_CONF_H
-#include <stddef.h>
-#include <limits.h>
-#include <stdint.h>
-#include <stdalign.h>
 #include <assert.h>
+#include <limits.h>
 #include <setjmp.h>
 #include <signal.h>
+#include <stdalign.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #define ZR_IS_32_INT ((UINT_MAX >> 30) >= 3)
@@ -50,6 +50,8 @@ typedef double TDouble;
 
 typedef unsigned char TBool;
 
+typedef TUInt32 TEnum;
+
 typedef char *TNativeString;
 
 union TZrNativeObject {
@@ -82,11 +84,10 @@ typedef union TZrNativeObject TZrNativeObject;
 #if defined(ZR_DEBUG)
 #define ZR_ASSERT(CONDITION) assert((CONDITION))
 #else
-#define ZR_ASSERT(CONDITION) ((void)0)
+#define ZR_ASSERT(CONDITION) ((void) 0)
 #endif
 
-#define ZR_CHECK(STATE, CONDITION, MESSAGE) \
-    ((void)STATE, ZR_ASSERT((CONDITION) && (MESSAGE)))
+#define ZR_CHECK(STATE, CONDITION, MESSAGE) ((void) STATE, ZR_ASSERT((CONDITION) && (MESSAGE)))
 
 #if defined(__GNUC__)
 #define ZR_COMPILER_GNU
@@ -100,17 +101,17 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
 #define ZR_FORCE_INLINE __attribute__((always_inline)) inline
 #define ZR_NO_RETURN __attribute__((noreturn))
-#define ZR_FAST_CALL  __attribute__((fastcall))
+#define ZR_FAST_CALL __attribute__((fastcall))
 #elif defined(ZR_COMPILER_MSVC)
 #define ZR_STRUCT_ALIGN __declspec(align(8))
 #define ZR_FORCE_INLINE __forceinline
 #define ZR_NO_RETURN __declspec(noreturn)
-#define ZR_FAST_CALL  __declspec(naked) __fastcall
+#define ZR_FAST_CALL __declspec(naked) __fastcall
 #elif defined(ZR_COMPILER_CLANG)
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
 #define ZR_FORCE_INLINE inline
 #define ZR_NO_RETURN __attribute__((noreturn))
-#define ZR_FAST_CALL  __attribute__((fastcall))
+#define ZR_FAST_CALL __attribute__((fastcall))
 #else
 #define ZR_STRUCT_ALIGN
 #define ZR_FORCE_INLINE inline
@@ -144,4 +145,10 @@ typedef sig_atomic_t TZrDebugSignal;
 #define ZR_ABORT() abort()
 
 
-#endif //ZR_COMMON_CONF_H
+// MACRO
+#define ZR_MACRO_REGISTER_WRAP(WRAP_START, WRAP_END, ...)                                                              \
+    WRAP_START                                                                                                         \
+    __VA_ARGS__                                                                                                        \
+    WRAP_END
+
+#endif // ZR_COMMON_CONF_H

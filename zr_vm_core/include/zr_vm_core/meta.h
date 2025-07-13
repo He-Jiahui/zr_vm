@@ -9,6 +9,22 @@
 
 struct SZrState;
 struct SZrGlobalState;
-ZR_CORE_API void ZrMetaInit(struct SZrState *state);
 
-#endif //ZR_VM_CORE_META_H
+struct ZR_STRUCT_ALIGN SZrMeta {
+    EZrMetaType metaType;
+    struct SZrFunction *function;
+};
+
+typedef struct SZrMeta SZrMeta;
+
+struct ZR_STRUCT_ALIGN SZrMetaTable {
+    SZrMeta *metas[ZR_META_ENUM_MAX];
+};
+
+typedef struct SZrMetaTable SZrMetaTable;
+
+ZR_CORE_API void ZrMetaGlobalStaticsInit(struct SZrState *state);
+
+ZR_CORE_API void ZrMetaTableConstruct(SZrMetaTable *table);
+
+#endif // ZR_VM_CORE_META_H

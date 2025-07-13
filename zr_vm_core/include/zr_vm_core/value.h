@@ -45,25 +45,26 @@ ZR_CORE_API TBool ZrValueEqual(SZrTypeValue *value1, SZrTypeValue *value2);
 
 ZR_CORE_API SZrTypeValue *ZrValueGetStackOffsetValue(struct SZrState *state, TZrMemoryOffset offset);
 
-#define ZR_VALUE_FAST_SET(VALUE, REGION, DATA, TYPE) \
-    {\
-        (VALUE)->type = (TYPE);\
-        (VALUE)->value.nativeObject.REGION = (DATA);\
-        (VALUE)->isGarbageCollectable = ZR_FALSE;\
-        (VALUE)->isNative = ZR_TRUE;\
+#define ZR_VALUE_FAST_SET(VALUE, REGION, DATA, TYPE)                                                                   \
+    {                                                                                                                  \
+        (VALUE)->type = (TYPE);                                                                                        \
+        (VALUE)->value.nativeObject.REGION = (DATA);                                                                   \
+        (VALUE)->isGarbageCollectable = ZR_FALSE;                                                                      \
+        (VALUE)->isNative = ZR_TRUE;                                                                                   \
     }
 
-ZR_FORCE_INLINE EZrValueType ZrValueGetType(const SZrTypeValue *value) {
-    return value->type;
+ZR_FORCE_INLINE EZrValueType ZrValueGetType(const SZrTypeValue *value) { return value->type; }
+
+ZR_FORCE_INLINE SZrRawObject *ZrValueGetRawObject(const SZrTypeValue *value) { return value->value.object; }
+
+ZR_FORCE_INLINE TBool ZrValueIsNative(const SZrTypeValue *value) { return value->isNative; }
+
+ZR_FORCE_INLINE TBool ZrValueCanValueToString(struct SZrState *state, SZrTypeValue *value) {
+    ZR_UNUSED_PARAMETER(state);
+    EZrValueType type = value->type;
+    return ZR_VALUE_IS_TYPE_NORMAL(type);
 }
-
-ZR_FORCE_INLINE SZrRawObject *ZrValueGetRawObject(const SZrTypeValue *value) {
-    return value->value.object;
-}
-
-ZR_FORCE_INLINE TBool ZrValueIsNative(const SZrTypeValue *value) {
-    return value->isNative;
-}
+ZR_CORE_API TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value);
 
 
-#endif //ZR_VM_CORE_VALUE_H
+#endif // ZR_VM_CORE_VALUE_H

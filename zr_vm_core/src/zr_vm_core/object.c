@@ -10,16 +10,14 @@
 
 SZrObject *ZrObjectNew(SZrState *state, SZrObjectPrototype *prototype) {
     SZrRawObject *rawObject = ZrRawObjectNew(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrObject));
-    SZrObject *object = ZR_CAST(SZrObject*, rawObject);
+    SZrObject *object = ZR_CAST(SZrObject *, rawObject);
     object->prototype = prototype;
     object->gcList = ZR_NULL;
     object->nodeCapacity = 0;
-    object->nodeList = ZR_NULL;
-    object->nodeListEnd = ZR_NULL;
+    object->nodeMap = ZR_NULL;
     return object;
 }
 
-TNativeString ZrObjectToString(struct SZrState *state, SZrObject *object) {
+void ZrObjectInit(struct SZrState *state, SZrObject *object) {
     // todo:
-    return ZR_NULL;
 }

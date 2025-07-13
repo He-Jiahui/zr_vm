@@ -66,8 +66,7 @@ TBool ZrValueEqual(SZrTypeValue *value1, SZrTypeValue *value2) {
             TZrString *str2 = ZR_CAST_STRING(value2->value.object);
             result = ZrStringEqual(str1, str2);
         } else if (ZR_VALUE_IS_TYPE_BASIC(type1)) {
-            TBool valueEqual = value1->value.nativeObject.nativePointer == value2->value.nativeObject.
-                               nativePointer;
+            TBool valueEqual = value1->value.nativeObject.nativePointer == value2->value.nativeObject.nativePointer;
             result = valueEqual;
         } else {
             // todo: obj equal & struct equal
@@ -107,10 +106,9 @@ SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset
     }
     // access invalid stack space
     if (offset > ZR_VM_STACK_GLOBAL_MODULE_REGISTRY) {
-        ZR_CHECK(
-            state,
-            offset != 0 && -offset <= state->stackTop.valuePointer - (callInfoTop->functionBase.valuePointer + 1),
-            "call info offset is out of range from stack top to function base");
+        ZR_CHECK(state,
+                 offset != 0 && -offset <= state->stackTop.valuePointer - (callInfoTop->functionBase.valuePointer + 1),
+                 "call info offset is out of range from stack top to function base");
         return ZrStackGetValue(state->stackTop.valuePointer + offset);
     }
     // access global module registry
@@ -126,15 +124,46 @@ SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset
         // is native function closure
         SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, functionBaseValue);
         return (closureIndex <= (TZrMemoryOffset) closure->closureValueCount)
-                   ? &closure->closureValuesExtend[closureIndex - 1]
-                   : &global->nullValue;
+                       ? &closure->closureValuesExtend[closureIndex - 1]
+                       : &global->nullValue;
     }
     // no such closure or closure is lightweight function
-    ZR_CHECK(
-        state, ZrValueIsNative(functionBaseValue) && ZrValueGetType(functionBaseValue)== ZR_VALUE_TYPE_NATIVE_POINTER,
-        "function base is not a native function");
+    ZR_CHECK(state,
+             ZrValueIsNative(functionBaseValue) && ZrValueGetType(functionBaseValue) == ZR_VALUE_TYPE_NATIVE_POINTER,
+             "function base is not a native function");
     // is zr closure
     return &global->nullValue;
 }
 
 
+TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
+    if (!ZrValueCanValueToString(state, value)) {
+        return ZR_NULL;
+    }
+    EZrValueType type = value->type;
+    // todo: basic type to string
+    switch (type) {
+        case ZR_VALUE_TYPE_NULL: {
+            return ZrStringCreateFromNative(state, ZR_STRING_NULL_STRING);
+        } break;
+        case ZR_VALUE_TYPE_STRING: {
+            return ZR_CAST_STRING(value->value.object);
+        } break;
+            ZR_VALUE_CASES_NUMBER
+            ZR_VALUE_CASES_NATIVE { return ZrStringFromNumber(state, value); }
+            break;
+        case ZR_VALUE_TYPE_OBJECT: {
+            SZrObject *object = ZR_CAST_OBJECT(value->value.object);
+            SZrMeta *meta = ZrObjectGetMetaRecursively(state, object, ZR_META_TO_STRING);
+            // todo: call meta function
+            // make it as closure
+            // call meta function
+        } break;
+
+        default: {
+            // LOG ERROR
+            ZR_ASSERT(ZR_FALSE);
+        } break;
+    }
+    return ZR_NULL;
+}
