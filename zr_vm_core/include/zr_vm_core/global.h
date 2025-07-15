@@ -26,7 +26,9 @@
 #define ZR_STRING_TABLE_INIT_SIZE_LOG2 12 // 2^12 = 4KB
 #endif
 
-
+#if !defined(ZR_OBJECT_TABLE_INIT_SIZE_LOG2)
+#define ZR_OBJECT_TABLE_INIT_SIZE_LOG2 2 // 2^2 = 4B
+#endif
 struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Memory
     FZrAllocator allocator;

@@ -24,18 +24,38 @@ enum EZrGarbageCollectMode {
 typedef enum EZrGarbageCollectMode EZrGarbageCollectMode;
 
 
-enum EZrGarbageCollectObjectStatus {
-    ZR_GARBAGE_COLLECT_OBJECT_STATUS_PERMANENT,
-    ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED,
-    ZR_GARBAGE_COLLECT_OBJECT_STATUS_REFERENCED,
-    ZR_GARBAGE_COLLECT_OBJECT_STATUS_UNREFERENCED,
-    ZR_GARBAGE_COLLECT_OBJECT_STATUS_RELEASED,
+enum EZrGarbageCollectIncrementalObjectStatus {
+    // gc ignore
+    ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT,
+    // (white) still not scanned on this turn
+    ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED,
+    // (gray) object is referenced but its children remain unscanned
+    ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_WAIT_TO_SCAN,
+    // (black) scanned and marked as referenced
+    ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_REFERENCED,
+    // (white) not referenced and wait to be released
+    ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_UNREFERENCED,
+    // (white) mark destructed object as released
+    ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED,
 
-    ZR_GARBAGE_COLLECT_OBJECT_STATUS_MAX
+    ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_MAX
 };
 
-typedef enum EZrGarbageCollectObjectStatus EZrGarbageCollectObjectStatus;
+typedef enum EZrGarbageCollectIncrementalObjectStatus EZrGarbageCollectIncrementalObjectStatus;
 
+enum EZrGarbageCollectGenerationalObjectStatus {
+    ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW,
+    ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL,
+    ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_BARRIER,
+    ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_ALIVE,
+    ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_LONG_ALIVE,
+    ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED,
+    ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED_PREVIOUS,
+
+    ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_MAX
+};
+
+typedef enum EZrGarbageCollectGenerationalObjectStatus EZrGarbageCollectGenerationalObjectStatus;
 
 enum EZrGarbageCollectStatus {
     ZR_GARBAGE_COLLECT_STATUS_RUNNING,
@@ -84,7 +104,8 @@ enum EZrObjectPrototypeType {
 typedef enum EZrObjectPrototypeType EZrObjectPrototypeType;
 
 struct SZrGarbageCollectionObjectMark {
-    EZrGarbageCollectObjectStatus status;
+    EZrGarbageCollectIncrementalObjectStatus status;
+    EZrGarbageCollectGenerationalObjectStatus generationalStatus;
     EZrGarbageCollectGeneration generation;
 };
 
@@ -93,7 +114,9 @@ typedef struct SZrGarbageCollectionObjectMark SZrGarbageCollectionObjectMark;
 struct ZR_STRUCT_ALIGN SZrRawObject {
     struct SZrRawObject *next;
     EZrValueType type;
+    TBool isNative;
     SZrGarbageCollectionObjectMark garbageCollectMark;
+    struct SZrRawObject *gcList;
 };
 
 typedef struct SZrRawObject SZrRawObject;
@@ -101,8 +124,23 @@ typedef struct SZrRawObject SZrRawObject;
 ZR_FORCE_INLINE void ZrRawObjectConstruct(SZrRawObject *super, EZrValueType type) {
     super->next = ZR_NULL;
     super->type = type;
-    super->garbageCollectMark.status = ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED;
+    super->isNative = ZR_FALSE;
+    super->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
+    super->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW;
     super->garbageCollectMark.generation = ZR_GARBAGE_COLLECT_GENERATION_INVALID;
+    super->gcList = ZR_NULL;
+}
+
+ZR_FORCE_INLINE TBool ZrRawObjectIsMarkInited(SZrRawObject *super) {
+    return super->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
+}
+
+ZR_FORCE_INLINE TBool ZrRawObjectIsMarkWaitToScan(SZrRawObject *super) {
+    return super->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_WAIT_TO_SCAN;
+}
+
+ZR_FORCE_INLINE TBool ZrRawObjectIsMarkReferenced(SZrRawObject *super) {
+    return super->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_REFERENCED;
 }
 
 struct ZR_STRUCT_ALIGN SZrHashRawObject {

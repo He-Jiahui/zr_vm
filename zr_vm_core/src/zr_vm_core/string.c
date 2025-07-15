@@ -163,7 +163,7 @@ TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format
     ZrNativeStringClearFormatBufferAndPushToStack(&buffer);
     ZR_ASSERT(buffer.isOnStack == ZR_TRUE);
     return ZR_CAST_STRING_TO_NATIVE(
-            ZR_CAST_STRING(ZrValueGetRawObject(ZrStackGetValue(state->stackTop.valuePointer - 1))));
+            ZR_CAST_STRING(state, ZrValueGetRawObject(ZrStackGetValue(state->stackTop.valuePointer - 1))));
 }
 
 TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format, ...) {
@@ -206,14 +206,14 @@ static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZ
 
     if (length <= ZR_VM_SHORT_STRING_MAX) {
         totalSize += ZR_VM_SHORT_STRING_MAX;
-        constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize);
+        constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
         ZrMemoryRawCopy(constantString->stringDataExtend, string, length);
         ((TNativeString) constantString->stringDataExtend)[length] = '\0';
         constantString->shortStringLength = (TUInt8) length;
         constantString->nextShortString = ZR_NULL;
     } else {
         totalSize += sizeof(TNativeString);
-        constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize);
+        constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
         TNativeString *pointer = (TNativeString *) &(constantString->stringDataExtend);
         *pointer = (TNativeString) ZrMemoryRawMalloc(global, length + 1);
         ZrMemoryRawCopy(*pointer, string, length);

@@ -4,12 +4,12 @@
 
 #ifndef ZR_VM_CORE_STATE_H
 #define ZR_VM_CORE_STATE_H
-#include "zr_vm_core/conf.h"
-#include "zr_vm_core/stack.h"
-#include "zr_vm_core/closure.h"
 #include "zr_vm_core/call_info.h"
-#include "zr_vm_core/exception.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/conf.h"
 #include "zr_vm_core/debug.h"
+#include "zr_vm_core/exception.h"
+#include "zr_vm_core/stack.h"
 
 struct SZrGlobalState;
 
@@ -18,7 +18,7 @@ struct ZR_STRUCT_ALIGN SZrState {
     // reverse pointer to global
     struct SZrGlobalState *global;
 
-    SZrRawObject *gcList;
+    // SZrRawObject *gcList;
     // thread management
     EZrThreadStatus threadStatus;
     TZrMemoryOffset previousProgramCounter;
@@ -76,4 +76,4 @@ ZR_FORCE_INLINE TZrSize ZrStateStackGetSize(SZrState *state) {
 }
 
 
-#endif //ZR_VM_CORE_STATE_H
+#endif // ZR_VM_CORE_STATE_H

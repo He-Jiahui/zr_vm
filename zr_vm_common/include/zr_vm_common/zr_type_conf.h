@@ -36,15 +36,17 @@ enum EZrValueType {
     ZR_VALUE_TYPE_DOUBLE,
     // BASIC STRING
     ZR_VALUE_TYPE_STRING,
-    // ZR
+    // ZR_ITEM
     ZR_VALUE_TYPE_BUFFER,
-    // ZR
+    // ZR_ITEM
     ZR_VALUE_TYPE_ARRAY,
-    // ZR
+    // ZR_ITEM
     ZR_VALUE_TYPE_FUNCTION,
-    // ZR
+    // ZR_ITEM
+    ZR_VALUE_TYPE_CLOSURE_VALUE,
+    // ZR_ITEM
     ZR_VALUE_TYPE_OBJECT,
-    // ZR
+    // ZR_ITEM
     ZR_VALUE_TYPE_THREAD,
     // BASIC NATIVE
     ZR_VALUE_TYPE_NATIVE_POINTER,
@@ -81,10 +83,11 @@ typedef enum EZrValueType EZrValueType;
 #define ZR_VALUE_IS_TYPE_BUFFER(valueType) ((valueType) == ZR_VALUE_TYPE_BUFFER)
 #define ZR_VALUE_IS_TYPE_ARRAY(valueType) ((valueType) == ZR_VALUE_TYPE_ARRAY)
 #define ZR_VALUE_IS_TYPE_FUNCTION(valueType) ((valueType) == ZR_VALUE_TYPE_FUNCTION)
+#define ZR_VALUE_IS_TYPE_CLOSURE_VALUE(valueType) ((valueType) == ZR_VALUE_TYPE_CLOSURE_VALUE)
 #define ZR_VALUE_IS_TYPE_OBJECT(valueType) ((valueType) == ZR_VALUE_TYPE_OBJECT)
 #define ZR_VALUE_IS_TYPE_THREAD(valueType) ((valueType) == ZR_VALUE_TYPE_THREAD)
 
-#define ZR_VALUE_IS_TYPE_ZR_VM(valueType) ((valueType) >= ZR_VALUE_TYPE_BUFFER && (valueType) <= ZR_VALUE_TYPE_THREAD)
+#define ZR_VALUE_IS_TYPE_ZR_ITEM(valueType) ((valueType) >= ZR_VALUE_TYPE_BUFFER && (valueType) <= ZR_VALUE_TYPE_THREAD)
 
 // normal types all can be used in zr_vm (also can convert to string), the others can't be used in zr_vm
 #define ZR_VALUE_IS_TYPE_NORMAL(valueType)                                                                             \

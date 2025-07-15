@@ -52,7 +52,7 @@ void ZrValueInitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZr
     value->isNative = ZR_TRUE;
 }
 
-TBool ZrValueEqual(SZrTypeValue *value1, SZrTypeValue *value2) {
+TBool ZrValueEqual(struct SZrState *state, SZrTypeValue *value1, SZrTypeValue *value2) {
     EZrValueType type1 = value1->type;
     EZrValueType type2 = value2->type;
     TBool typeEqual = type1 == type2;
@@ -62,8 +62,8 @@ TBool ZrValueEqual(SZrTypeValue *value1, SZrTypeValue *value2) {
             // type null
             result = ZR_TRUE;
         } else if (ZR_VALUE_IS_TYPE_STRING(type1)) {
-            TZrString *str1 = ZR_CAST_STRING(value1->value.object);
-            TZrString *str2 = ZR_CAST_STRING(value2->value.object);
+            TZrString *str1 = ZR_CAST_STRING(state, value1->value.object);
+            TZrString *str2 = ZR_CAST_STRING(state, value2->value.object);
             result = ZrStringEqual(str1, str2);
         } else if (ZR_VALUE_IS_TYPE_BASIC(type1)) {
             TBool valueEqual = value1->value.nativeObject.nativePointer == value2->value.nativeObject.nativePointer;
@@ -147,13 +147,13 @@ TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
             return ZrStringCreateFromNative(state, ZR_STRING_NULL_STRING);
         } break;
         case ZR_VALUE_TYPE_STRING: {
-            return ZR_CAST_STRING(value->value.object);
+            return ZR_CAST_STRING(state, value->value.object);
         } break;
             ZR_VALUE_CASES_NUMBER
             ZR_VALUE_CASES_NATIVE { return ZrStringFromNumber(state, value); }
             break;
         case ZR_VALUE_TYPE_OBJECT: {
-            SZrObject *object = ZR_CAST_OBJECT(value->value.object);
+            SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
             SZrMeta *meta = ZrObjectGetMetaRecursively(state, object, ZR_META_TO_STRING);
             // todo: call meta function
             // make it as closure

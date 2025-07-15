@@ -11,6 +11,7 @@ struct SZrState;
 
 struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     SZrRawObject super;
+    TZrString name;
     EZrObjectPrototypeType type;
     struct SZrMetaTable metaTable;
     struct SZrObjectPrototype *superPrototype;
@@ -26,13 +27,12 @@ struct ZR_STRUCT_ALIGN SZrStructPrototype {
 
 struct ZR_STRUCT_ALIGN SZrObject {
     SZrRawObject super;
-    TUInt64 nodeCapacity;
 
     SZrObjectPrototype *prototype;
 
-    SZrHashSet *nodeMap;
+    SZrHashSet nodeMap;
 
-    SZrRawObject *gcList;
+    // SZrRawObject *gcList;
 };
 
 typedef struct SZrObject SZrObject;

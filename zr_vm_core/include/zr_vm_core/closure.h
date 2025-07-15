@@ -5,8 +5,11 @@
 #ifndef ZR_VM_CORE_CLOSURE_H
 #define ZR_VM_CORE_CLOSURE_H
 #include "zr_vm_core/conf.h"
-#include "zr_vm_core/stack.h"
+#include "zr_vm_core/convertion.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/stack.h"
+
+struct SZrState;
 struct SZrClosureValue;
 
 union TZrClosureLink {
@@ -14,8 +17,8 @@ union TZrClosureLink {
         struct SZrClosureValue *next;
         struct SZrClosureValue **previous;
     };
-
-    SZrTypeValue releasedValue;
+    // if value is not on stack, value is independent
+    SZrTypeValue independentValue;
 };
 
 struct ZR_STRUCT_ALIGN SZrClosureValue {
@@ -29,7 +32,7 @@ typedef struct SZrClosureValue SZrClosureValue;
 
 struct ZR_STRUCT_ALIGN SZrClosureNative {
     SZrRawObject super;
-    SZrRawObject *gcList;
+    // SZrRawObject *gcList;
     FZrNativeFunction nativeFunction;
     TZrSize closureValueCount;
     SZrTypeValue closureValuesExtend[1];
@@ -39,11 +42,11 @@ typedef struct SZrClosureNative SZrClosureNative;
 
 struct ZR_STRUCT_ALIGN SZrClosure {
     SZrRawObject super;
-    SZrRawObject *gcList;
+    // SZrRawObject *gcList;
     // todo: closure info
     SZrFunction *function;
     TZrSize closureValueCount;
-    SZrTypeValue closureValuesExtend[1];
+    SZrClosureValue closureValuesExtend[1];
 };
 
 typedef struct SZrClosure SZrClosure;
@@ -54,4 +57,15 @@ union TZrClosure {
 };
 
 typedef union TZrClosure TZrClosure;
-#endif //ZR_VM_CORE_CLOSURE_H
+
+ZR_CORE_API SZrClosureNative *ZrClosureNativeNew(struct SZrState *state, TZrSize closureValueCount);
+
+ZR_CORE_API SZrClosure *ZrClosureNew(struct SZrState *state, TZrSize closureValueCount);
+
+ZR_CORE_API void ZrClosureInitValue(struct SZrState *state, SZrClosure *closure);
+
+ZR_FORCE_INLINE TBool ZrClosureValueIsIndependent(struct SZrState *state, SZrClosureValue *closureValue) {
+    return closureValue->value.valuePointer == ZR_CAST_STACK_OBJECT(&closureValue->link.independentValue);
+}
+
+#endif // ZR_VM_CORE_CLOSURE_H

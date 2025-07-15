@@ -37,7 +37,7 @@ void ZrGarbageCollectorInit(SZrGlobalState *global) {
     gc->gcMode = ZR_GARBAGE_COLLECT_MODE_INCREMENTAL;
     gc->gcStatus = ZR_GARBAGE_COLLECT_STATUS_STOP_BY_SELF;
     gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
-    gc->gcInitializeObjectStatus = ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED;
+    gc->gcInitializeObjectStatus = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
     gc->gcGeneration = ZR_GARBAGE_COLLECT_GENERATION_A;
     gc->stopGcFlag = ZR_FALSE;
     gc->stopImmediateGcFlag = ZR_FALSE;
@@ -45,8 +45,11 @@ void ZrGarbageCollectorInit(SZrGlobalState *global) {
 
 
     gc->permanentObjectList = ZR_NULL;
+    gc->waitToScanObjectList = ZR_NULL;
+    gc->waitToScanAgainObjectList = ZR_NULL;
     gc->waitToReleaseObjectList = ZR_NULL;
     gc->releasedObjectList = ZR_NULL;
+    // todo:
 }
 
 void ZrGarbageCollectorGcFull(SZrState *state, TBool isImmediate) {
@@ -61,11 +64,88 @@ void ZrGarbageCollectorGcFull(SZrState *state, TBool isImmediate) {
     global->garbageCollector.isImmediateGcFlag = ZR_FALSE;
 }
 
-SZrRawObject *ZrRawObjectNew(SZrState *state, EZrValueType type, TZrSize size) {
+TBool ZrGarbageCollectorIsInvariant(struct SZrGlobalState *global) {
+    return global->garbageCollector.gcStatus <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_ATOMIC;
+}
+
+TBool ZrGarbageCollectorIsSweeping(struct SZrGlobalState *global) {
+    EZrGarbageCollectRunningStatus status = global->garbageCollector.gcStatus;
+    return status >= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS &&
+           status <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END;
+}
+
+static void ZrGarbageCollectorMarkObject(struct SZrState *state, SZrRawObject *object);
+static ZR_FORCE_INLINE void ZrGarbageCollectorMarkValue(struct SZrState *state, SZrTypeValue *value) {
+    ZrGlobalValueStaticAssertIsAlive(state, value);
+    if (ZrValueIsGarbageCollectable(value) && ZrRawObjectIsMarkInited(value->value.object)) {
+        ZrGarbageCollectorMarkObject(state, value->value.object);
+    }
+}
+
+static ZR_FORCE_INLINE void ZrGarbageCollectorToGcListAndMarkWaitToScan(SZrRawObject *object,
+                                                                        SZrRawObject **objectList) {
+    ZR_ASSERT(!ZrRawObjectIsMarkWaitToScan(object));
+    SZrRawObject **gcList = &object->gcList;
+    *gcList = *objectList;
+    *objectList = object;
+    ZrRawObjectMarkAsWaitToScan(object);
+}
+
+static void ZrGarbageCollectorMarkObject(struct SZrState *state, SZrRawObject *object) {
+    SZrGlobalState *global = state->global;
+    switch (object->type) {
+        case ZR_VALUE_TYPE_STRING: {
+            ZrRawObjectMarkAsReferenced(object);
+        } break;
+        case ZR_VALUE_TYPE_CLOSURE_VALUE: {
+            SZrClosureValue *closureValue = ZR_CAST_VM_CLOSURE_VALUE(state, object);
+            if (ZrClosureValueIsIndependent(state, closureValue)) {
+                ZrRawObjectMarkAsReferenced(object);
+            } else {
+                ZrRawObjectMarkAsWaitToScan(object);
+            }
+            ZrGarbageCollectorMarkValue(state, &closureValue->value.valuePointer->value);
+        } break;
+        case ZR_VALUE_TYPE_NATIVE_DATA: {
+            // todo: native data is not finished
+        } break;
+        case ZR_VALUE_TYPE_BUFFER:
+        case ZR_VALUE_TYPE_ARRAY:
+        case ZR_VALUE_TYPE_FUNCTION:
+        case ZR_VALUE_TYPE_OBJECT:
+        case ZR_VALUE_TYPE_THREAD: {
+            ZrGarbageCollectorToGcListAndMarkWaitToScan(object, &global->garbageCollector.waitToScanObjectList);
+        } break;
+        default: {
+            ZR_ASSERT(ZR_FALSE);
+        } break;
+    }
+}
+
+void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject) {
+    SZrGlobalState *global = state->global;
+    ZR_ASSERT(ZrRawObjectIsMarkReferenced(object) && ZrRawObjectIsMarkInited(valueObject) &&
+              !ZrRawObjectIsUnreferenced(state, valueObject));
+    if (ZrGarbageCollectorIsInvariant(global)) {
+        ZrGarbageCollectorMarkObject(state, valueObject);
+        if (ZrRawObjectIsGenerationalThroughBarrier(object)) {
+            ZR_ASSERT(!ZrRawObjectIsGenerationalThroughBarrier(valueObject));
+            ZrRawObjectSetGenerationalStatus(valueObject, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_BARRIER);
+        }
+    } else {
+        ZR_ASSERT(ZrGarbageCollectorIsSweeping(global));
+        if (global->garbageCollector.gcMode == ZR_GARBAGE_COLLECT_MODE_INCREMENTAL) {
+            ZrRawObjectMarkAsInit(state, valueObject);
+        }
+    }
+}
+
+SZrRawObject *ZrRawObjectNew(SZrState *state, EZrValueType type, TZrSize size, TBool isNative) {
     SZrGlobalState *global = state->global;
     TZrPtr memory = ZrMemoryGcMalloc(state, type, size);
     SZrRawObject *object = ZR_CAST_RAW_OBJECT(memory);
     ZrRawObjectConstruct(object, type);
+    object->isNative = isNative;
     object->garbageCollectMark.status = global->garbageCollector.gcInitializeObjectStatus;
     object->garbageCollectMark.generation = global->garbageCollector.gcGeneration;
     object->next = global->garbageCollector.gcObjectList;
@@ -73,12 +153,30 @@ SZrRawObject *ZrRawObjectNew(SZrState *state, EZrValueType type, TZrSize size) {
     return object;
 }
 
+TBool ZrRawObjectIsUnreferenced(struct SZrState *state, SZrRawObject *object) {
+    EZrGarbageCollectIncrementalObjectStatus status = object->garbageCollectMark.status;
+    EZrGarbageCollectGeneration generation = object->garbageCollectMark.generation;
+    SZrGlobalState *global = state->global;
+    return status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_UNREFERENCED ||
+           status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED ||
+           (status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED &&
+            generation != global->garbageCollector.gcGeneration);
+}
+
+
+void ZrRawObjectMarkAsInit(struct SZrState *state, SZrRawObject *object) {
+    SZrGlobalState *global = state->global;
+    EZrGarbageCollectGeneration generation = global->garbageCollector.gcGeneration;
+    object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
+    object->garbageCollectMark.generation = generation;
+}
+
 void ZrRawObjectMarkAsPermanent(SZrState *state, SZrRawObject *object) {
-    ZR_ASSERT(object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_OBJECT_STATUS_INITED);
+    ZR_ASSERT(object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED);
     SZrGlobalState *global = state->global;
     // we assume that the object is the first object in gc list (latest created)
     ZR_ASSERT(global->garbageCollector.gcObjectList == object);
-    object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_OBJECT_STATUS_PERMANENT;
+    object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT;
     global->garbageCollector.gcObjectList = object->next;
     object->next = global->garbageCollector.permanentObjectList;
     global->garbageCollector.permanentObjectList = object;

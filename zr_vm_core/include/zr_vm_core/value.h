@@ -40,7 +40,7 @@ ZR_CORE_API void ZrValueInitAsFloat(struct SZrState *state, SZrTypeValue *value,
 
 ZR_CORE_API void ZrValueInitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZrPtr pointerValue);
 
-ZR_CORE_API TBool ZrValueEqual(SZrTypeValue *value1, SZrTypeValue *value2);
+ZR_CORE_API TBool ZrValueEqual(struct SZrState *state, SZrTypeValue *value1, SZrTypeValue *value2);
 
 
 ZR_CORE_API SZrTypeValue *ZrValueGetStackOffsetValue(struct SZrState *state, TZrMemoryOffset offset);
@@ -56,6 +56,9 @@ ZR_CORE_API SZrTypeValue *ZrValueGetStackOffsetValue(struct SZrState *state, TZr
 ZR_FORCE_INLINE EZrValueType ZrValueGetType(const SZrTypeValue *value) { return value->type; }
 
 ZR_FORCE_INLINE SZrRawObject *ZrValueGetRawObject(const SZrTypeValue *value) { return value->value.object; }
+
+ZR_FORCE_INLINE TBool ZrValueIsGarbageCollectable(const SZrTypeValue *value) { return value->isGarbageCollectable; }
+
 
 ZR_FORCE_INLINE TBool ZrValueIsNative(const SZrTypeValue *value) { return value->isNative; }
 

@@ -34,7 +34,7 @@
 #define ZR_CAST_PTR(EXP) ZR_CAST(TZrPtr, (EXP))
 #define ZR_CAST_SIZE(EXP) ZR_CAST(TZrSize, (EXP))
 
-#define ZR_CAST_STRING(EXP) ZR_CAST(TZrString *, (EXP))
+#define ZR_CAST_STRING(STATE, EXP) ZR_CAST_CHECKED(STATE, TZrString *, (EXP), ZR_VALUE_TYPE_STRING)
 #define ZR_CAST_STRING_TO_NATIVE(EXP) ZR_CAST(TNativeString, (EXP)->stringDataExtend)
 
 #define ZR_CAST_RAW_OBJECT(EXP) ZR_CAST(SZrRawObject *, (EXP))
@@ -46,7 +46,7 @@
 
 #define ZR_CAST_STACK_OBJECT(EXP) ZR_CAST(SZrTypeValueOnStack *, (EXP))
 
-#define ZR_CAST_OBJECT(EXP) ZR_CAST(SZrObject *, (EXP))
+#define ZR_CAST_OBJECT(STATE, EXP) ZR_CAST_CHECKED(STATE, SZrObject *, (EXP), ZR_VALUE_TYPE_OBJECT)
 
 #define ZR_CAST_NATIVE_FUNCTION_POINTER(STATE, EXP)                                                                    \
     ZR_CAST_CHECKED_NATIVE(STATE, FZrNativeFunction *, (EXP), ZR_VALUE_TYPE_FUNCTION, ZR_TRUE)
@@ -54,5 +54,7 @@
     ZR_CAST_CHECKED_NATIVE(STATE, SZrClosureNative *, (EXP), ZR_VALUE_TYPE_FUNCTION, ZR_TRUE)
 #define ZR_CAST_VM_CLOSURE(STATE, EXP)                                                                                 \
     ZR_CAST_CHECKED_NATIVE(STATE, SZrClosure *, (EXP), ZR_VALUE_TYPE_FUNCTION, ZR_FALSE)
+#define ZR_CAST_VM_CLOSURE_VALUE(STATE, EXP)                                                                           \
+    ZR_CAST_CHECKED_NATIVE(STATE, SZrClosureValue *, (EXP), ZR_VALUE_TYPE_CLOSURE_VALUE, ZR_FALSE)
 #define ZR_CAST_CLOSURE(STATE, EXP) ZR_CAST_CHECKED(STATE, TZrClosure *, (EXP), ZR_VALUE_TYPE_FUNCTION)
 #endif // ZR_VM_CORE_CONVERTION_H
