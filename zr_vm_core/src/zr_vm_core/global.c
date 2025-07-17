@@ -14,8 +14,8 @@ static void ZrGlobalStatePanic(SZrState *state) {
 
 SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments, TUInt64 uniqueNumber,
                                  SZrCallbackGlobal *callbacks) {
-    SZrGlobalState *global = allocator(userAllocationArguments, ZR_NULL, 0, sizeof(SZrGlobalState),
-                                       ZR_VALUE_TYPE_VM_MEMORY);
+    SZrGlobalState *global =
+            allocator(userAllocationArguments, ZR_NULL, 0, sizeof(SZrGlobalState), ZR_VALUE_TYPE_VM_MEMORY);
     if (global == ZR_NULL) {
         return ZR_NULL;
     }
@@ -25,6 +25,7 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     global->userAllocationArguments = userAllocationArguments;
     SZrState *newState = ZrStateNew(global);
     global->mainThreadState = newState;
+    global->threadWithStackClosures = ZR_NULL;
     ZrStateInit(newState, global);
     // todo: main thread cannot yield
 

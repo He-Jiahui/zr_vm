@@ -36,10 +36,10 @@ struct ZR_STRUCT_ALIGN SZrState {
     // first address of stack
     TZrStackPointer stackBase;
 
-    TZrStackPointer waitToReleaseList;
+    TZrStackPointer toBeClosedValueList;
     // closures
-    struct SZrState *threadWithAliveClosures;
-    SZrClosureValue *aliveClosureValueList;
+    struct SZrState *threadWithStackClosures;
+    SZrClosureValue *stackClosureValueList;
 
 
     // for exceptions
@@ -73,6 +73,11 @@ ZR_CORE_API TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status);
 
 ZR_FORCE_INLINE TZrSize ZrStateStackGetSize(SZrState *state) {
     return state->stackTail.valuePointer - state->stackBase.valuePointer;
+}
+
+ZR_FORCE_INLINE TBool ZrStateIsInClosureValueThreadList(SZrState *state) {
+    // if list is not point to self, it means it is in list
+    return state->threadWithStackClosures != state;
 }
 
 

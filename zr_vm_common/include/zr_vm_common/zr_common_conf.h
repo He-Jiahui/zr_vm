@@ -89,6 +89,8 @@ typedef union TZrNativeObject TZrNativeObject;
 
 #define ZR_CHECK(STATE, CONDITION, MESSAGE) ((void) STATE, ZR_ASSERT((CONDITION) && (MESSAGE)))
 
+#define ZR_CHECK_EXP(STATE, CONDITION, VALUE) ((void) STATE, ZR_ASSERT((CONDITION)), (VALUE))
+
 #if defined(__GNUC__)
 #define ZR_COMPILER_GNU
 #elif defined(__clang__)

@@ -4,14 +4,14 @@
 
 #ifndef ZR_VM_CORE_GLOBAL_H
 #define ZR_VM_CORE_GLOBAL_H
-#include "zr_vm_core/string.h"
-#include "zr_vm_core/conf.h"
-#include "zr_vm_core/state.h"
-#include "zr_vm_core/value.h"
-#include "zr_vm_core/log.h"
-#include "zr_vm_core/gc.h"
-#include "zr_vm_core/object.h"
 #include "zr_vm_core/callback.h"
+#include "zr_vm_core/conf.h"
+#include "zr_vm_core/gc.h"
+#include "zr_vm_core/log.h"
+#include "zr_vm_core/object.h"
+#include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
+#include "zr_vm_core/value.h"
 
 /**
  * 全局API字符串缓存配置参数
@@ -40,6 +40,8 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
 
     // State
     SZrState *mainThreadState;
+    // closure
+    SZrState *threadWithStackClosures;
 
     // hash
     TUInt64 hashSeed;
@@ -85,9 +87,7 @@ ZR_CORE_API void ZrGlobalStateInitRegistry(SZrState *state, SZrGlobalState *glob
 
 ZR_CORE_API void ZrGlobalStateFree(SZrGlobalState *global);
 
-ZR_FORCE_INLINE TBool ZrGlobalStateIsInitialized(SZrGlobalState *global) {
-    return global->isValid;
-}
+ZR_FORCE_INLINE TBool ZrGlobalStateIsInitialized(SZrGlobalState *global) { return global->isValid; }
 
 ZR_FORCE_INLINE TBool ZrGlobalRawObjectIsDead(SZrGlobalState *global, SZrRawObject *object) {
     return global->garbageCollector.gcGeneration != object->garbageCollectMark.generation;
@@ -95,10 +95,7 @@ ZR_FORCE_INLINE TBool ZrGlobalRawObjectIsDead(SZrGlobalState *global, SZrRawObje
 
 ZR_FORCE_INLINE void ZrGlobalValueStaticAssertIsAlive(SZrState *state, SZrTypeValue *value) {
     ZR_ASSERT(!value->isGarbageCollectable ||
-        (
-            (value->type == value->value.object->type) &&
-            ((state == ZR_NULL) || !ZrGlobalRawObjectIsDead(state->global, value->value.object))
-        )
-    );
+              ((value->type == value->value.object->type) &&
+               ((state == ZR_NULL) || !ZrGlobalRawObjectIsDead(state->global, value->value.object))));
 }
-#endif //ZR_VM_CORE_GLOBAL_H
+#endif // ZR_VM_CORE_GLOBAL_H

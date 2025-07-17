@@ -40,9 +40,9 @@ typedef struct SZrObject SZrObject;
 
 ZR_CORE_API SZrObject *ZrObjectNew(struct SZrState *state, SZrObjectPrototype *prototype);
 
-ZR_FORCE_INLINE SZrMeta *ZrObjectGetMetaRecursively(struct SZrState *state, SZrObject *object, EZrMetaType metaType) {
+ZR_FORCE_INLINE SZrMeta *ZrPrototypeGetMetaRecursively(struct SZrState *state, SZrObjectPrototype *prototype,
+                                                       EZrMetaType metaType) {
     ZR_UNUSED_PARAMETER(state);
-    SZrObjectPrototype *prototype = object->prototype;
     while (prototype != ZR_NULL) {
         SZrMeta *meta = prototype->metaTable.metas[metaType];
         if (meta != ZR_NULL) {
@@ -51,6 +51,12 @@ ZR_FORCE_INLINE SZrMeta *ZrObjectGetMetaRecursively(struct SZrState *state, SZrO
         prototype = prototype->superPrototype;
     }
     return ZR_NULL;
+}
+
+ZR_FORCE_INLINE SZrMeta *ZrObjectGetMetaRecursively(struct SZrState *state, SZrObject *object, EZrMetaType metaType) {
+    ZR_UNUSED_PARAMETER(state);
+    SZrObjectPrototype *prototype = object->prototype;
+    return ZrPrototypeGetMetaRecursively(state, prototype, metaType);
 }
 
 ZR_CORE_API void ZrObjectInit(struct SZrState *state, SZrObject *object);

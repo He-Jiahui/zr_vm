@@ -16,7 +16,7 @@
 static void ZrStateStackInit(SZrState *state, SZrState *mainThreadState) {
     /*TZrPtr stackEndExtra = */
     ZrStackInit(mainThreadState, &state->stackBase, ZR_THREAD_STACK_SIZE_BASIC + ZR_THREAD_STACK_SIZE_EXTRA);
-    state->waitToReleaseList.valuePointer = state->stackBase.valuePointer;
+    state->toBeClosedValueList.valuePointer = state->stackBase.valuePointer;
     state->stackTail.valuePointer = state->stackBase.valuePointer + ZR_THREAD_STACK_SIZE_BASIC;
     state->stackTop.valuePointer = state->stackBase.valuePointer;
     // reset stack
@@ -76,8 +76,9 @@ void ZrStateInit(SZrState *state, SZrGlobalState *global) {
     ZrStateResetDebugHookCount(state);
     state->allowDebugHook = ZR_TRUE;
     // closures
-    state->aliveClosureValueList = ZR_NULL;
-    state->threadWithAliveClosures = state;
+    state->stackClosureValueList = ZR_NULL;
+    // link to self as thread with stack closures
+    state->threadWithStackClosures = state;
     // thread
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     state->previousProgramCounter = 0;

@@ -11,7 +11,7 @@
 
 struct ZR_STRUCT_ALIGN SZrTypeValueOnStack {
     SZrTypeValue value;
-    TUInt32 toBeReleasedValueOffset;
+    TUInt32 toBeClosedValueOffset;
 };
 
 typedef struct SZrTypeValueOnStack SZrTypeValueOnStack;

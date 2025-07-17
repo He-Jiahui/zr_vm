@@ -19,10 +19,10 @@ ZR_FORCE_INLINE TZrStackValuePointer ZrStackLoadAsOffset(SZrState *state, TZrMem
 
 static void ZrStackMarkStackAsRelative(SZrState *state) {
     state->stackTop.reusableValueOffset = ZrStackSaveAsOffset(state, state->stackTop.valuePointer);
-    state->waitToReleaseList.reusableValueOffset = ZrStackSaveAsOffset(
-        state, state->waitToReleaseList.valuePointer);
+    state->toBeClosedValueList.reusableValueOffset = ZrStackSaveAsOffset(
+        state, state->toBeClosedValueList.valuePointer);
     // closures
-    for (SZrClosureValue *closureValue = state->aliveClosureValueList; closureValue != ZR_NULL;
+    for (SZrClosureValue *closureValue = state->stackClosureValueList; closureValue != ZR_NULL;
          closureValue = closureValue->link.next) {
         closureValue->value.reusableValueOffset = ZrStackSaveAsOffset(
             state, closureValue->value.valuePointer);
@@ -37,8 +37,8 @@ static void ZrStackMarkStackAsRelative(SZrState *state) {
 
 static void ZrStackMarkStackAsAbsolute(SZrState *state) {
     state->stackTop.valuePointer = ZrStackLoadAsOffset(state, state->stackTop.reusableValueOffset);
-    state->waitToReleaseList.valuePointer = ZrStackLoadAsOffset(state, state->waitToReleaseList.reusableValueOffset);
-    for (SZrClosureValue *closureValue = state->aliveClosureValueList; closureValue != ZR_NULL;
+    state->toBeClosedValueList.valuePointer = ZrStackLoadAsOffset(state, state->toBeClosedValueList.reusableValueOffset);
+    for (SZrClosureValue *closureValue = state->stackClosureValueList; closureValue != ZR_NULL;
          closureValue = closureValue->link.next) {
         closureValue->value.valuePointer = ZrStackLoadAsOffset(state, closureValue->value.reusableValueOffset);
     }

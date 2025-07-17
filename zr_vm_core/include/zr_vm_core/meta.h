@@ -9,6 +9,8 @@
 
 struct SZrState;
 struct SZrGlobalState;
+struct SZrTypeValue;
+struct SZrObject;
 
 struct ZR_STRUCT_ALIGN SZrMeta {
     EZrMetaType metaType;

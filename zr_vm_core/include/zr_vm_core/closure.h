@@ -64,8 +64,13 @@ ZR_CORE_API SZrClosure *ZrClosureNew(struct SZrState *state, TZrSize closureValu
 
 ZR_CORE_API void ZrClosureInitValue(struct SZrState *state, SZrClosure *closure);
 
+ZR_CORE_API SZrClosureValue *ZrClosureFindOrCreateValue(struct SZrState *state, TZrStackPointer stackPointer);
+
+ZR_CORE_API void ZrClosureToBeClosedValueClosureNew(struct SZrState *state, TZrStackPointer stackPointer);
+
 ZR_FORCE_INLINE TBool ZrClosureValueIsIndependent(struct SZrState *state, SZrClosureValue *closureValue) {
     return closureValue->value.valuePointer == ZR_CAST_STACK_OBJECT(&closureValue->link.independentValue);
 }
+
 
 #endif // ZR_VM_CORE_CLOSURE_H
