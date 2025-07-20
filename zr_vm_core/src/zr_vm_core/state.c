@@ -66,6 +66,7 @@ void ZrStateInit(SZrState *state, SZrGlobalState *global) {
     state->callInfoList = ZR_NULL;
     state->callInfoListLength = 0;
     state->nestedNativeCalls = 0;
+    state->nestedNativeCallYieldFlag = 0;
     // exception
     state->exceptionRecoverPoint = ZR_NULL;
     state->exceptionHandlingFunctionOffset = 0;

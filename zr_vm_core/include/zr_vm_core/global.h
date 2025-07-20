@@ -33,9 +33,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Memory
     FZrAllocator allocator;
     TZrPtr userAllocationArguments;
-    TZrSize allocatedMemories;
-    TZrSize waitToGCMemories;
-    TZrSize aliveMemories;
+
     TZrString *memoryErrorMessage;
 
     // State

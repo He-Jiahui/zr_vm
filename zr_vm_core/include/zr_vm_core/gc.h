@@ -35,7 +35,11 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     TUInt64 gcStepSizeLog2;
     TUInt64 gcPauseThresholdPercent;
 
-    TZrSize gcAllocatedNotManagedSize;
+    TZrMemoryOffset managedMemories;
+    TZrMemoryOffset gcDebtSize;
+
+    TZrSize atomicMemories;
+    TZrSize aliveMemories;
 
     SZrRawObject *aliveObjectList;
     SZrRawObject *circleMoreObjectList;
@@ -50,11 +54,17 @@ typedef struct SZrGarbageCollector SZrGarbageCollector;
 
 ZR_CORE_API void ZrGarbageCollectorInit(struct SZrGlobalState *global);
 
+ZR_CORE_API void ZrGarbageCollectorAddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffset size);
+
 ZR_CORE_API void ZrGarbageCollectorGcFull(struct SZrState *state, TBool isImmediate);
+
+ZR_CORE_API void ZrGarbageCollectorGcStep(struct SZrState *state);
 
 ZR_CORE_API TBool ZrGarbageCollectorIsInvariant(struct SZrGlobalState *global);
 
 ZR_CORE_API TBool ZrGarbageCollectorIsSweeping(struct SZrGlobalState *global);
+
+ZR_CORE_API void ZrGarbageCollectorCheckGc(struct SZrState *state);
 
 ZR_CORE_API void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject);
 
@@ -70,6 +80,18 @@ ZR_CORE_API void ZrRawObjectMarkAsPermanent(struct SZrState *state, SZrRawObject
 
 ZR_FORCE_INLINE void ZrRawObjectMarkAsReferenced(SZrRawObject *object) {
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_REFERENCED;
+}
+
+ZR_FORCE_INLINE TBool ZrRawObjectIsReferenced(SZrRawObject *object) {
+    return object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_REFERENCED;
+}
+
+ZR_FORCE_INLINE void ZrRawObjectMarkAsReleased(SZrRawObject *object) {
+    object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED;
+}
+
+ZR_FORCE_INLINE TBool ZrRawObjectIsWaitToScan(SZrRawObject *object) {
+    return object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_WAIT_TO_SCAN;
 }
 
 ZR_FORCE_INLINE void ZrRawObjectMarkAsWaitToScan(SZrRawObject *object) {

@@ -29,6 +29,8 @@ ZR_CORE_API TZrPtr ZrStackInit(struct SZrState *state, TZrStackPointer *stack, T
 
 ZR_CORE_API TZrStackValuePointer ZrStackGetAddressFromOffset(struct SZrState *state, TZrMemoryOffset offset);
 
+ZR_CORE_API TBool ZrStackGrow(struct SZrState *state, TZrSize space, TBool canThrowError);
+
 ZR_CORE_API TBool ZrStackCheckFullAndGrow(struct SZrState *state, TZrSize space, TNativeString errorMessage);
 
 
@@ -44,5 +46,8 @@ ZR_CORE_API void ZrStackSetRawObjectValue(struct SZrState *state, SZrTypeValueOn
 
 ZR_CORE_API void ZrStackCopyValue(struct SZrState *state, SZrTypeValueOnStack *destination, SZrTypeValue *source);
 
+ZR_CORE_API TZrMemoryOffset ZrStackSavePointerAsOffset(struct SZrState *state, TZrStackValuePointer stackPointer);
+
+ZR_CORE_API TZrStackValuePointer ZrStackLoadOffsetToPointer(struct SZrState *state, TZrMemoryOffset offset);
 
 #endif // ZR_VM_CORE_STACK_H

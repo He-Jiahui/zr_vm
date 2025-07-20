@@ -31,7 +31,7 @@ TZrPtr ZrMemoryGcMalloc(SZrState *state, EZrValueType type, TZrSize size) {
             ZrExceptionThrow(state, ZR_THREAD_STATUS_MEMORY_ERROR);
         }
     }
-    global->garbageCollector.gcAllocatedNotManagedSize += size;
+    global->garbageCollector.gcDebtSize += (TZrMemoryOffset) size;
     return pointer;
 }
 
@@ -39,4 +39,3 @@ TZrPtr ZrMemoryGcMalloc(SZrState *state, EZrValueType type, TZrSize size) {
  *
 
  */
-

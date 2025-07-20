@@ -29,4 +29,9 @@ ZR_CORE_API EZrThreadStatus ZrExceptionTryStop(struct SZrState *state, TZrMemory
 
 ZR_CORE_API void ZrExceptionMarkError(struct SZrState *state, EZrThreadStatus errorCode,
                                       TZrStackValuePointer previousTop);
-#endif //ZR_VM_CORE_EXCEPTION_H
+
+
+ZR_FORCE_INLINE TBool ZrExceptionIsStausError(EZrThreadStatus status) {
+    return status >= ZR_THREAD_STATUS_RUNTIME_ERROR;
+}
+#endif // ZR_VM_CORE_EXCEPTION_H

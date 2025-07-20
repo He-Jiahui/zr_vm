@@ -10,8 +10,7 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/global.h"
 
-ZR_FORCE_INLINE TZrPtr ZrMemoryAllocate(SZrGlobalState *global, TZrPtr pointer, TZrSize originalSize,
-                                        TZrSize newSize) {
+ZR_FORCE_INLINE TZrPtr ZrMemoryAllocate(SZrGlobalState *global, TZrPtr pointer, TZrSize originalSize, TZrSize newSize) {
     ZR_ASSERT((pointer != ZR_NULL && originalSize != 0) || newSize != 0);
     return global->allocator(global->userAllocationArguments, pointer, originalSize, newSize, ZR_VALUE_TYPE_VM_MEMORY);
 }
@@ -39,6 +38,11 @@ ZR_FORCE_INLINE void ZrMemoryRawFree(SZrGlobalState *global, TZrPtr pointer, TZr
     ZR_ASSERT(pointer != ZR_NULL && size != 0);
     global->allocator(global->userAllocationArguments, pointer, size, 0, ZR_VALUE_TYPE_VM_MEMORY);
 }
+ZR_FORCE_INLINE void ZrMemoryRawFreeWithType(SZrGlobalState *global, TZrPtr pointer, TZrSize size, EZrValueType type) {
+    ZR_ASSERT(pointer != ZR_NULL && size != 0);
+    global->allocator(global->userAllocationArguments, pointer, size, 0, type);
+}
+#define ZR_MEMORY_RAW_FREE_LIST(GLOBAL, POINTER, SIZE) ZrMemoryRawFree((GLOBAL), (POINTER), (SIZE) * sizeof(*(POINTER)))
 
 ZR_FORCE_INLINE void ZrMemoryRawCopy(TZrPtr destination, TZrPtr source, TZrSize size) {
     ZR_ASSERT(destination != ZR_NULL && source != ZR_NULL && size != 0);
@@ -50,4 +54,4 @@ ZR_FORCE_INLINE TInt32 ZrMemoryRawCompare(TZrPtr destination, TZrPtr source, TZr
     return memcmp(destination, source, size);
 }
 
-#endif //ZR_VM_CORE_MEMORY_H
+#endif // ZR_VM_CORE_MEMORY_H

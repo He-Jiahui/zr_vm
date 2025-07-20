@@ -13,7 +13,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define ZR_IS_32_INT ((UINT_MAX >> 30) >= 3)
+#define ZR_IS_OVER_32_INT ((UINT_MAX >> 30) >= 3)
 
 #define ZR_BIT_MASK(BIT) (1 << (BIT))
 
@@ -21,6 +21,8 @@ typedef size_t TZrSize;
 #define ZR_MAX_SIZE (SIZE_MAX)
 
 typedef ptrdiff_t TZrMemoryOffset;
+
+#define ZR_MAX_MEMORY_OFFSET ((TZrMemoryOffset) (ZR_MAX_SIZE >> 1))
 
 typedef void *TZrPtr; // 指针兼容类型
 typedef uint8_t *TBytePtr;

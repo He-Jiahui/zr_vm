@@ -7,6 +7,11 @@
 
 #include "zr_vm_common/zr_type_conf.h"
 
+#if defined(ZR_DEBUG)
+#define ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST
+#endif
+
+#define ZR_GARBAGE_COLLECT_DEBT_SIZE (-2000)
 #define ZR_GARBAGE_COLLECT_MINOR_MULTIPLIER 20
 #define ZR_GARBAGE_COLLECT_MAJOR_MULTIPLIER 100
 #define ZR_GARBAGE_COLLECT_STEP_MULTIPLIER_PERCENT 100
@@ -14,6 +19,7 @@
 #define ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE 17 /* 128KB */
 // wait memory to 200% before starting new gc cycle
 #define ZR_GARBAGE_COLLECT_PAUSE_THRESHOLD_PERCENT 200
+
 
 enum EZrGarbageCollectMode {
     ZR_GARBAGE_COLLECT_MODE_GENERATIONAL,
@@ -90,6 +96,24 @@ enum EZrGarbageCollectGeneration {
 
 typedef enum EZrGarbageCollectGeneration EZrGarbageCollectGeneration;
 
+enum EZrRawObjectType {
+    ZR_RAW_OBJECT_TYPE_INVALID,
+    ZR_RAW_OBJECT_TYPE_STRING = ZR_VALUE_TYPE_STRING,
+    ZR_RAW_OBJECT_TYPE_BUFFER = ZR_VALUE_TYPE_BUFFER,
+    ZR_RAW_OBJECT_TYPE_ARRAY = ZR_VALUE_TYPE_ARRAY,
+    ZR_RAW_OBJECT_TYPE_FUNCTION = ZR_VALUE_TYPE_FUNCTION,
+    ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE = ZR_VALUE_TYPE_CLOSURE_VALUE,
+    ZR_RAW_OBJECT_TYPE_CLOSURE = ZR_VALUE_TYPE_CLOSURE,
+    ZR_RAW_OBJECT_TYPE_OBJECT = ZR_VALUE_TYPE_OBJECT,
+    ZR_RAW_OBJECT_TYPE_THREAD = ZR_VALUE_TYPE_THREAD,
+    ZR_RAW_OBJECT_TYPE_NATIVE_POINTER = ZR_VALUE_TYPE_NATIVE_POINTER,
+    ZR_RAW_OBJECT_TYPE_NATIVE_DATA = ZR_VALUE_TYPE_NATIVE_DATA,
+
+    ZR_RAW_OBJECT_TYPE_CLOSURE_ENUM_MAX
+};
+
+typedef enum EZrRawObjectType EZrRawObjectType;
+
 enum EZrObjectPrototypeType {
     ZR_OBJECT_PROTOTYPE_TYPE_INVALID,
     ZR_OBJECT_PROTOTYPE_TYPE_MODULE,
@@ -113,7 +137,7 @@ typedef struct SZrGarbageCollectionObjectMark SZrGarbageCollectionObjectMark;
 
 struct ZR_STRUCT_ALIGN SZrRawObject {
     struct SZrRawObject *next;
-    EZrValueType type;
+    EZrRawObjectType type;
     TBool isNative;
     SZrGarbageCollectionObjectMark garbageCollectMark;
     struct SZrRawObject *gcList;
@@ -121,7 +145,7 @@ struct ZR_STRUCT_ALIGN SZrRawObject {
 
 typedef struct SZrRawObject SZrRawObject;
 
-ZR_FORCE_INLINE void ZrRawObjectConstruct(SZrRawObject *super, EZrValueType type) {
+ZR_FORCE_INLINE void ZrRawObjectConstruct(SZrRawObject *super, EZrRawObjectType type) {
     super->next = ZR_NULL;
     super->type = type;
     super->isNative = ZR_FALSE;
@@ -150,7 +174,7 @@ struct ZR_STRUCT_ALIGN SZrHashRawObject {
 };
 
 typedef struct SZrHashRawObject SZrHashRawObject;
-ZR_FORCE_INLINE void ZrHashRawObjectInit(SZrHashRawObject *super, EZrValueType type, TUInt64 hash) {
+ZR_FORCE_INLINE void ZrHashRawObjectInit(SZrHashRawObject *super, EZrRawObjectType type, TUInt64 hash) {
     // we have already initialized super
     // ZrRawObjectConstruct(&super->super, type);
     super->hash = hash;

@@ -19,9 +19,25 @@ static TZrSize ZrGarbageCollectorRunIncreasementFull(SZrState *state) {
     return 0;
 }
 
+static void ZrGarbageCollectorRunGenerationalStep(SZrState *state) { ZR_TODO_PARAMETER(state); }
+
+static TZrSize ZrGarbageCollectorRunIncreasementStep(SZrState *state) {
+    ZR_TODO_PARAMETER(state);
+    return 0;
+}
+
+static ZR_FORCE_INLINE TBool ZrGarbageCollectorIsGenerationalMode(SZrGlobalState *global) {
+    return global->garbageCollector.gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL ||
+           global->garbageCollector.atomicMemories != 0;
+}
+
 void ZrGarbageCollectorInit(SZrGlobalState *global) {
     SZrGarbageCollector *gc = &global->garbageCollector;
     SZrState *state = global->mainThreadState;
+    // set size
+    gc->managedMemories = sizeof(SZrGlobalState) + sizeof(SZrState);
+    gc->gcDebtSize = 0;
+    gc->atomicMemories = 0;
 
     // reset gc
     // reference new created state to global gc list
@@ -52,6 +68,16 @@ void ZrGarbageCollectorInit(SZrGlobalState *global) {
     // todo:
 }
 
+void ZrGarbageCollectorAddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffset size) {
+    TZrMemoryOffset totalSize = global->garbageCollector.gcDebtSize + global->garbageCollector.gcDebtSize;
+    ZR_ASSERT(totalSize > 0);
+    if (ZR_UNLIKELY(size < totalSize - ZR_MAX_MEMORY_OFFSET)) {
+        size = totalSize - ZR_MAX_MEMORY_OFFSET;
+    }
+    global->garbageCollector.managedMemories = totalSize - size;
+    global->garbageCollector.gcDebtSize = size;
+}
+
 void ZrGarbageCollectorGcFull(SZrState *state, TBool isImmediate) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(!global->garbageCollector.isImmediateGcFlag);
@@ -64,6 +90,19 @@ void ZrGarbageCollectorGcFull(SZrState *state, TBool isImmediate) {
     global->garbageCollector.isImmediateGcFlag = ZR_FALSE;
 }
 
+ZR_CORE_API void ZrGarbageCollectorGcStep(struct SZrState *state) {
+    SZrGlobalState *global = state->global;
+    if (global->garbageCollector.gcStatus != ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
+        ZrGarbageCollectorAddDebtSpace(global, ZR_GARBAGE_COLLECT_DEBT_SIZE);
+    } else {
+        if (ZrGarbageCollectorIsGenerationalMode(global)) {
+            ZrGarbageCollectorRunGenerationalStep(state);
+        } else {
+            ZrGarbageCollectorRunIncreasementStep(state);
+        }
+    }
+}
+
 TBool ZrGarbageCollectorIsInvariant(struct SZrGlobalState *global) {
     return global->garbageCollector.gcStatus <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_ATOMIC;
 }
@@ -72,6 +111,18 @@ TBool ZrGarbageCollectorIsSweeping(struct SZrGlobalState *global) {
     EZrGarbageCollectRunningStatus status = global->garbageCollector.gcStatus;
     return status >= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS &&
            status <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END;
+}
+
+void ZrGarbageCollectorCheckGc(struct SZrState *state) {
+    SZrGlobalState *global = state->global;
+    if (global->garbageCollector.gcDebtSize > 0) {
+        ZrGarbageCollectorGcStep(state);
+    }
+#if defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
+    if (global->garbageCollector.gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
+        ZrGarbageCollectorGcFull(state, ZR_FALSE);
+    }
+#endif
 }
 
 static void ZrGarbageCollectorMarkObject(struct SZrState *state, SZrRawObject *object);
@@ -94,26 +145,26 @@ static ZR_FORCE_INLINE void ZrGarbageCollectorToGcListAndMarkWaitToScan(SZrRawOb
 static void ZrGarbageCollectorMarkObject(struct SZrState *state, SZrRawObject *object) {
     SZrGlobalState *global = state->global;
     switch (object->type) {
-        case ZR_VALUE_TYPE_STRING: {
+        case ZR_RAW_OBJECT_TYPE_STRING: {
             ZrRawObjectMarkAsReferenced(object);
         } break;
-        case ZR_VALUE_TYPE_CLOSURE_VALUE: {
+        case ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE: {
             SZrClosureValue *closureValue = ZR_CAST_VM_CLOSURE_VALUE(state, object);
-            if (ZrClosureValueIsIndependent(state, closureValue)) {
+            if (ZrClosureValueIsClosed(closureValue)) {
                 ZrRawObjectMarkAsReferenced(object);
             } else {
                 ZrRawObjectMarkAsWaitToScan(object);
             }
             ZrGarbageCollectorMarkValue(state, &closureValue->value.valuePointer->value);
         } break;
-        case ZR_VALUE_TYPE_NATIVE_DATA: {
+        case ZR_RAW_OBJECT_TYPE_NATIVE_DATA: {
             // todo: native data is not finished
         } break;
-        case ZR_VALUE_TYPE_BUFFER:
-        case ZR_VALUE_TYPE_ARRAY:
-        case ZR_VALUE_TYPE_FUNCTION:
-        case ZR_VALUE_TYPE_OBJECT:
-        case ZR_VALUE_TYPE_THREAD: {
+        case ZR_RAW_OBJECT_TYPE_BUFFER:
+        case ZR_RAW_OBJECT_TYPE_ARRAY:
+        case ZR_RAW_OBJECT_TYPE_FUNCTION:
+        case ZR_RAW_OBJECT_TYPE_OBJECT:
+        case ZR_RAW_OBJECT_TYPE_THREAD: {
             ZrGarbageCollectorToGcListAndMarkWaitToScan(object, &global->garbageCollector.waitToScanObjectList);
         } break;
         default: {

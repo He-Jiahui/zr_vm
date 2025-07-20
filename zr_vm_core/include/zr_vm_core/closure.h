@@ -17,8 +17,8 @@ union TZrClosureLink {
         struct SZrClosureValue *next;
         struct SZrClosureValue **previous;
     };
-    // if value is not on stack, value is independent
-    SZrTypeValue independentValue;
+    // if value is not on stack, value is closed
+    SZrTypeValue closedValue;
 };
 
 struct ZR_STRUCT_ALIGN SZrClosureValue {
@@ -68,8 +68,16 @@ ZR_CORE_API SZrClosureValue *ZrClosureFindOrCreateValue(struct SZrState *state, 
 
 ZR_CORE_API void ZrClosureToBeClosedValueClosureNew(struct SZrState *state, TZrStackPointer stackPointer);
 
-ZR_FORCE_INLINE TBool ZrClosureValueIsIndependent(struct SZrState *state, SZrClosureValue *closureValue) {
-    return closureValue->value.valuePointer == ZR_CAST_STACK_OBJECT(&closureValue->link.independentValue);
+ZR_CORE_API void ZrClosureUnlinkValue(SZrClosureValue *closureValue);
+
+ZR_CORE_API void ZrClosureCloseStackValue(struct SZrState *state, TZrStackPointer stackPointer);
+
+ZR_CORE_API TZrStackPointer ZrClosureCloseClosure(struct SZrState *state, TZrStackPointer stackPointer,
+                                                  EZrThreadStatus errorStatus, TBool isYield);
+
+
+ZR_FORCE_INLINE TBool ZrClosureValueIsClosed(SZrClosureValue *closureValue) {
+    return closureValue->value.valuePointer == ZR_CAST_STACK_VALUE(&closureValue->link.closedValue);
 }
 
 

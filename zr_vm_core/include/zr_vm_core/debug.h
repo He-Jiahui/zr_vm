@@ -45,4 +45,9 @@ typedef void (*FZrDebugHook)(struct SZrState *state, SZrDebugInfo debugInfo);
 
 
 ZR_CORE_API TBool ZrDebugInfoGet(struct SZrState *state, EZrDebugInfoType type, SZrDebugInfo *debugInfo);
-#endif //ZR_VM_CORE_DEBUG_H
+
+ZR_CORE_API ZR_NO_RETURN void ZrDebugRunError(struct SZrState *state, TNativeString format, ...);
+
+ZR_CORE_API ZR_NO_RETURN void ZrDebugErrorWhenHandlingError(struct SZrState *state);
+
+#endif // ZR_VM_CORE_DEBUG_H

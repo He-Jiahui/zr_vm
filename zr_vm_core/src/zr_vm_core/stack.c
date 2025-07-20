@@ -5,39 +5,38 @@
 #include "zr_vm_core/stack.h"
 
 #include "zr_vm_core/convertion.h"
-#include "zr_vm_core/state.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/state.h"
 
 ZR_FORCE_INLINE TZrMemoryOffset ZrStackSaveAsOffset(SZrState *state, TZrStackValuePointer pointer) {
     return (TBytePtr) pointer - (TBytePtr) state->stackBase.valuePointer;
 }
 
 ZR_FORCE_INLINE TZrStackValuePointer ZrStackLoadAsOffset(SZrState *state, TZrMemoryOffset offset) {
-    return ZR_CAST_STACK_OBJECT((TBytePtr)state->stackBase.valuePointer + offset);
+    return ZR_CAST_STACK_VALUE((TBytePtr) state->stackBase.valuePointer + offset);
 }
 
 static void ZrStackMarkStackAsRelative(SZrState *state) {
     state->stackTop.reusableValueOffset = ZrStackSaveAsOffset(state, state->stackTop.valuePointer);
-    state->toBeClosedValueList.reusableValueOffset = ZrStackSaveAsOffset(
-        state, state->toBeClosedValueList.valuePointer);
+    state->toBeClosedValueList.reusableValueOffset =
+            ZrStackSaveAsOffset(state, state->toBeClosedValueList.valuePointer);
     // closures
     for (SZrClosureValue *closureValue = state->stackClosureValueList; closureValue != ZR_NULL;
          closureValue = closureValue->link.next) {
-        closureValue->value.reusableValueOffset = ZrStackSaveAsOffset(
-            state, closureValue->value.valuePointer);
+        closureValue->value.reusableValueOffset = ZrStackSaveAsOffset(state, closureValue->value.valuePointer);
     }
     // call infos
     for (SZrCallInfo *callInfo = state->callInfoList; callInfo != ZR_NULL; callInfo = callInfo->previous) {
-        callInfo->functionBase.reusableValueOffset = ZrStackSaveAsOffset(
-            state, callInfo->functionBase.valuePointer);
+        callInfo->functionBase.reusableValueOffset = ZrStackSaveAsOffset(state, callInfo->functionBase.valuePointer);
         callInfo->functionTop.reusableValueOffset = ZrStackSaveAsOffset(state, callInfo->functionTop.valuePointer);
     }
 }
 
 static void ZrStackMarkStackAsAbsolute(SZrState *state) {
     state->stackTop.valuePointer = ZrStackLoadAsOffset(state, state->stackTop.reusableValueOffset);
-    state->toBeClosedValueList.valuePointer = ZrStackLoadAsOffset(state, state->toBeClosedValueList.reusableValueOffset);
+    state->toBeClosedValueList.valuePointer =
+            ZrStackLoadAsOffset(state, state->toBeClosedValueList.reusableValueOffset);
     for (SZrClosureValue *closureValue = state->stackClosureValueList; closureValue != ZR_NULL;
          closureValue = closureValue->link.next) {
         closureValue->value.valuePointer = ZrStackLoadAsOffset(state, closureValue->value.reusableValueOffset);
@@ -51,16 +50,16 @@ static void ZrStackMarkStackAsAbsolute(SZrState *state) {
     }
 }
 
-static TBool ZrStackRealloc(SZrState *state, TUInt64 newSize, TBool throwError) {
+static TBool ZrStackReallocInternal(SZrState *state, TUInt64 newSize, TBool throwError) {
     SZrGlobalState *global = state->global;
     TZrSize previousStackSize = ZrStateStackGetSize(state);
     TBool previousStopGcFlag = state->global->garbageCollector.stopGcFlag;
     ZR_ASSERT(newSize <= ZR_VM_MAX_STACK || newSize == ZR_VM_ERROR_STACK);
     ZrStackMarkStackAsRelative(state);
     state->global->garbageCollector.stopGcFlag = ZR_TRUE;
-    TZrStackValuePointer newStackPointer = ZR_CAST_STACK_OBJECT(
-        ZrMemoryAllocate(global, state->stackBase.valuePointer, previousStackSize + ZR_THREAD_STACK_SIZE_EXTRA,newSize +
-            ZR_THREAD_STACK_SIZE_EXTRA));
+    TZrStackValuePointer newStackPointer = ZR_CAST_STACK_VALUE(
+            ZrMemoryAllocate(global, state->stackBase.valuePointer, previousStackSize + ZR_THREAD_STACK_SIZE_EXTRA,
+                             newSize + ZR_THREAD_STACK_SIZE_EXTRA));
     state->global->garbageCollector.stopGcFlag = previousStopGcFlag;
     if (ZR_UNLIKELY(newStackPointer == ZR_NULL)) {
         // todo:
@@ -83,7 +82,7 @@ TZrPtr ZrStackInit(SZrState *state, TZrStackPointer *stack, TZrSize stackLength)
     ZR_ASSERT(stackLength > 0);
     SZrGlobalState *global = state->global;
     TZrSize stackByteSize = sizeof(SZrTypeValueOnStack) * stackLength;
-    stack->valuePointer = ZR_CAST_STACK_OBJECT(ZrMemoryRawMalloc(global, stackByteSize));
+    stack->valuePointer = ZR_CAST_STACK_VALUE(ZrMemoryRawMalloc(global, stackByteSize));
     return ZR_CAST_PTR(stack->valuePointer + stackLength);
 }
 
@@ -98,10 +97,14 @@ TZrStackValuePointer ZrStackGetAddressFromOffset(struct SZrState *state, TZrMemo
     ZR_CHECK(state, offset <= ZR_VM_STACK_GLOBAL_MODULE_REGISTRY,
              "cannot access global module registry or closure offset");
     // negative index from top to base
-    ZR_CHECK(
-        state, offset != 0 && -offset <= state->stackTop.valuePointer - (callInfoTop->functionBase.valuePointer + 1),
-        "stack index overflow from stack top to function base");
+    ZR_CHECK(state,
+             offset != 0 && -offset <= state->stackTop.valuePointer - (callInfoTop->functionBase.valuePointer + 1),
+             "stack index overflow from stack top to function base");
     return state->stackTop.valuePointer + offset;
+}
+
+TBool ZrStackGrow(struct SZrState *state, TZrSize space, TBool canThrowError) {
+    return ZrStackReallocInternal(state, space, canThrowError);
 }
 
 TBool ZrStackCheckFullAndGrow(SZrState *state, TZrSize space, TNativeString errorMessage) {
@@ -112,7 +115,7 @@ TBool ZrStackCheckFullAndGrow(SZrState *state, TZrSize space, TNativeString erro
     if (state->stackTail.valuePointer - state->stackTop.valuePointer > (TZrMemoryOffset) space) {
         result = ZR_TRUE;
     } else {
-        result = ZrStackRealloc(state, space, ZR_FALSE);
+        result = ZrStackReallocInternal(state, space, ZR_FALSE);
     }
     if (result && callInfoTop->functionTop.valuePointer < state->stackTop.valuePointer + space) {
         callInfoTop->functionTop.valuePointer = state->stackTop.valuePointer + space;
@@ -146,4 +149,12 @@ void ZrStackCopyValue(SZrState *state, SZrTypeValueOnStack *destination, SZrType
     destinationValue->isGarbageCollectable = source->isGarbageCollectable;
     destinationValue->isNative = source->isNative;
     ZrGlobalValueStaticAssertIsAlive(state, destinationValue);
+}
+
+TZrMemoryOffset ZrStackSavePointerAsOffset(struct SZrState *state, TZrStackValuePointer stackPointer) {
+    return ZrStackSaveAsOffset(state, stackPointer);
+}
+
+TZrStackValuePointer ZrStackLoadOffsetToPointer(struct SZrState *state, TZrMemoryOffset offset) {
+    return ZrStackLoadAsOffset(state, offset);
 }

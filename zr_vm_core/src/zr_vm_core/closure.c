@@ -6,7 +6,7 @@
 #include "zr_vm_core/convertion.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
-
+#define MAX_DELTA ((256UL << ((sizeof(state->stackBase.valuePointer->toBeClosedValueOffset) - 1) * 8)) - 1)
 SZrClosureNative *ZrClosureNativeNew(struct SZrState *state, TZrSize closureValueCount) {
     SZrRawObject *object = ZrRawObjectNew(state, ZR_VALUE_TYPE_FUNCTION, sizeof(SZrClosureNative), ZR_TRUE);
     SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, object);
@@ -29,7 +29,7 @@ void ZrClosureInitValue(struct SZrState *state, SZrClosure *closure) {
         SZrRawObject *rawObject = ZrRawObjectNew(state, ZR_VALUE_TYPE_CLOSURE_VALUE, sizeof(SZrClosureValue), ZR_FALSE);
         SZrClosureValue *closureValue = ZR_CAST_VM_CLOSURE_VALUE(state, rawObject);
         // if value is on stack
-        closureValue->value.valuePointer = ZR_CAST_STACK_OBJECT(&closureValue->link.independentValue);
+        closureValue->value.valuePointer = ZR_CAST_STACK_VALUE(&closureValue->link.closedValue);
         ZrValueResetAsNull(&closureValue->value.valuePointer->value);
         closure->closureValuesExtend[i] = *closureValue;
         ZrGarbageCollectorBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure),
@@ -65,7 +65,7 @@ SZrClosureValue *ZrClosureFindOrCreateValue(struct SZrState *state, TZrStackPoin
         if (closureValue == ZR_NULL) {
             break;
         }
-        ZR_ASSERT(!ZrClosureValueIsIndependent(state, closureValue));
+        ZR_ASSERT(!ZrClosureValueIsClosed(closureValue));
         if (closureValue->value.valuePointer < stackPointer.valuePointer) {
             break;
         }
@@ -81,20 +81,35 @@ SZrClosureValue *ZrClosureFindOrCreateValue(struct SZrState *state, TZrStackPoin
 static TBool ZrClosureValueCheckCloseMeta(struct SZrState *state, TZrStackPointer stackPointer) {
     SZrTypeValue *stackValue = ZrStackGetValue(stackPointer.valuePointer);
     // todo: if it is a basic type
-    if (ZR_VALUE_IS_TYPE_OBJECT(stackValue->type)) {
-        SZrObject *object = ZR_CAST_OBJECT(state, stackValue->value.object);
-        SZrMeta *meta = ZrObjectGetMetaRecursively(state, object, ZR_META_CLOSE);
-        if (meta == ZR_NULL) {
-            return ZR_FALSE;
-        }
+    SZrMeta *meta = ZrValueGetMeta(state, stackValue, ZR_META_CLOSE);
+    return meta != ZR_NULL;
+}
+
+static void ZrClosureValueCallCloseMeta(SZrState *state, SZrTypeValue *value, SZrTypeValue *error, TBool isYield) {
+    TZrStackPointer top = state->stackTop;
+    const SZrMeta *meta = ZrValueGetMeta(state, value, ZR_META_CLOSE);
+    ZrStackSetRawObjectValue(state, top.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+    ZrStackCopyValue(state, top.valuePointer + 1, value);
+    ZrStackCopyValue(state, top.valuePointer + 2, error);
+    state->stackTop.valuePointer = top.valuePointer + 3;
+    if (isYield) {
+        ZrFunctionCall(state, top.valuePointer, 0);
     } else {
-        SZrObjectPrototype *basicPrototype = state->global->basicTypeObjectPrototype[stackValue->type];
-        SZrMeta *meta = ZrPrototypeGetMetaRecursively(state, basicPrototype, ZR_META_CLOSE);
-        if (meta == ZR_NULL) {
-            return ZR_FALSE;
-        }
+        ZrFunctionCallWithoutYield(state, top.valuePointer, 0);
     }
-    return ZR_TRUE;
+}
+
+static void ZrClosureValuePreCallCloseMeta(SZrState *state, TZrStackPointer stackPointer, EZrThreadStatus errorStatus,
+                                           TBool isYield) {
+    SZrTypeValue *value = ZrStackGetValue(stackPointer.valuePointer);
+    SZrTypeValue *error = ZR_NULL;
+    if (errorStatus == ZR_THREAD_STATUS_INVALID) {
+        error = &state->global->nullValue;
+    } else {
+        error = ZrStackGetValue(stackPointer.valuePointer + 1);
+        ZrExceptionMarkError(state, errorStatus, stackPointer.valuePointer + 1);
+    }
+    ZrClosureValueCallCloseMeta(state, value, error, isYield);
 }
 
 
@@ -110,7 +125,7 @@ void ZrClosureToBeClosedValueClosureNew(struct SZrState *state, TZrStackPointer 
         ZrLogError(state, "");
     }
 
-#define MAX_DELTA ((256UL << ((sizeof(state->stackBase.valuePointer->toBeClosedValueOffset) - 1) * 8)) - 1)
+
     // extends to be closed value list
     while (stackPointer.valuePointer - state->toBeClosedValueList.valuePointer > MAX_DELTA) {
         state->toBeClosedValueList.valuePointer += MAX_DELTA;
@@ -119,5 +134,63 @@ void ZrClosureToBeClosedValueClosureNew(struct SZrState *state, TZrStackPointer 
     stackPointer.valuePointer->toBeClosedValueOffset =
             ZR_CAST(TUInt32, stackPointer.valuePointer - state->toBeClosedValueList.valuePointer);
     state->toBeClosedValueList.valuePointer = stackPointer.valuePointer;
-#undef MAX_DELTA
 }
+
+void ZrClosureUnlinkValue(SZrClosureValue *closureValue) {
+    ZR_ASSERT(!ZrClosureValueIsClosed(closureValue));
+    *closureValue->link.previous = closureValue->link.next;
+    if (closureValue->link.next) {
+        closureValue->link.next->link.previous = closureValue->link.previous;
+    }
+}
+
+void ZrClosureCloseStackValue(struct SZrState *state, TZrStackPointer stackPointer) {
+    SZrClosureValue *closureValue = ZR_NULL;
+    while (ZR_TRUE) {
+        closureValue = state->stackClosureValueList;
+        if (closureValue == ZR_NULL) {
+            break;
+        }
+        ZR_ASSERT(!ZrClosureValueIsClosed(closureValue));
+        if (closureValue->value.valuePointer >= stackPointer.valuePointer) {
+            break;
+        }
+        SZrTypeValue *slot = &closureValue->link.closedValue;
+        ZR_ASSERT(closureValue->value.valuePointer < state->stackTop.valuePointer);
+        ZrClosureUnlinkValue(closureValue);
+        ZrValueCopy(state, slot, ZR_CAST_FROM_STACK_VALUE(closureValue->value.valuePointer));
+        closureValue->value.valuePointer = ZR_CAST_STACK_VALUE(slot);
+        SZrRawObject *rawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue);
+        if (ZrRawObjectIsWaitToScan(rawObject) || ZrRawObjectIsReferenced(rawObject)) {
+            ZrRawObjectMarkAsReferenced(rawObject);
+            ZrGarbageCollectorBarrier(state, rawObject, slot->value.object);
+        }
+    }
+}
+
+static void ZrClosurePopToBeClosedList(SZrState *state) {
+    TZrStackValuePointer toBeClosed = state->toBeClosedValueList.valuePointer;
+    ZR_ASSERT(toBeClosed->toBeClosedValueOffset > 0);
+    toBeClosed -= toBeClosed->toBeClosedValueOffset;
+    while (toBeClosed > state->stackBase.valuePointer && toBeClosed->toBeClosedValueOffset == 0) {
+        toBeClosed -= MAX_DELTA;
+    }
+    state->toBeClosedValueList.valuePointer = toBeClosed;
+}
+
+TZrStackPointer ZrClosureCloseClosure(struct SZrState *state, TZrStackPointer stackPointer, EZrThreadStatus errorStatus,
+                           TBool isYield) {
+    TZrMemoryOffset offset = ZrStackSavePointerAsOffset(state, stackPointer.valuePointer);
+    ZrClosureCloseStackValue(state, stackPointer);
+    while (state->toBeClosedValueList.valuePointer >= stackPointer.valuePointer) {
+        TZrStackPointer toBeClosed = state->toBeClosedValueList;
+        ZrClosurePopToBeClosedList(state);
+        ZrClosureValuePreCallCloseMeta(state, toBeClosed, errorStatus, isYield);
+        TZrStackValuePointer pointer = ZrStackLoadOffsetToPointer(state, offset);
+        stackPointer.valuePointer = pointer;
+    }
+    return stackPointer;
+}
+
+
+#undef MAX_DELTA

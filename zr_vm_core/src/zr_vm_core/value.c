@@ -136,6 +136,14 @@ SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset
 }
 
 
+void ZrValueCopy(struct SZrState *state, SZrTypeValue *destination, SZrTypeValue *source) {
+    destination->value = source->value;
+    destination->type = source->type;
+    destination->isGarbageCollectable = ZrValueIsGarbageCollectable(source);
+    destination->isNative = ZrValueIsNative(source);
+    ZrGlobalValueStaticAssertIsAlive(state, destination);
+}
+
 TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
     if (!ZrValueCanValueToString(state, value)) {
         return ZR_NULL;
@@ -166,4 +174,22 @@ TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
         } break;
     }
     return ZR_NULL;
+}
+
+
+struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType) {
+    EZrValueType type = value->type;
+    switch (type) {
+        case ZR_VALUE_TYPE_OBJECT: {
+            SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
+            return ZrObjectGetMetaRecursively(state, object, metaType);
+        } break;
+        case ZR_VALUE_TYPE_NATIVE_DATA: {
+            // todo:
+            return ZR_NULL;
+        } break;
+        default: {
+            return state->global->basicTypeObjectPrototype[type]->metaTable.metas[type];
+        } break;
+    }
 }

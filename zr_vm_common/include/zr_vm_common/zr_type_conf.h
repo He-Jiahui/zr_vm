@@ -45,6 +45,8 @@ enum EZrValueType {
     // ZR_ITEM
     ZR_VALUE_TYPE_CLOSURE_VALUE,
     // ZR_ITEM
+    ZR_VALUE_TYPE_CLOSURE,
+    // ZR_ITEM
     ZR_VALUE_TYPE_OBJECT,
     // ZR_ITEM
     ZR_VALUE_TYPE_THREAD,

@@ -55,7 +55,7 @@ LZrStart:
     trap = state->debugHookSignal;
 LZrReturning:
     closure = ZR_CAST_VM_CLOSURE(state, ZrStackGetValue(callInfo->functionBase.valuePointer));
-    constants = closure->function->constantVariableList;
+    constants = closure->function->constantValueList;
     programCounter = callInfo->context.context.programCounter;
     if (ZR_UNLIKELY(trap != ZR_DEBUG_SIGNAL_NONE)) {
         // todo

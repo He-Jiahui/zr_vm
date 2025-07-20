@@ -44,6 +44,7 @@ struct ZR_STRUCT_ALIGN SZrState {
 
     // for exceptions
     TUInt32 nestedNativeCalls;
+    TUInt32 nestedNativeCallYieldFlag;
     SZrExceptionLongJump *exceptionRecoverPoint;
     TZrMemoryOffset exceptionHandlingFunctionOffset;
 

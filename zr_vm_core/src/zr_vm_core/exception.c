@@ -2,37 +2,37 @@
 // Created by HeJiahui on 2025/6/18.
 //
 
+#include "zr_vm_core/exception.h"
 #include <setjmp.h>
 #include "zr_vm_common/zr_type_conf.h"
-#include "zr_vm_core/exception.h"
 
 #include <setjmp.h>
 
-#include "zr_vm_core/state.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/state.h"
 
 #if defined(__cplusplus) && !defined(ZR_EXCEPTION_WITH_LONG_JUMP)
 #define ZR_EXCEPTION_NATIVE_THROW(state, context) throw(context)
-#define ZR_EXCEPTION_NATIVE_TRY(state, context, block) \
-try { \
-block \
-} catch(...) {\
-if((context)->status == 0) {\
-(context)->status = -1;\
-}\
-}
+#define ZR_EXCEPTION_NATIVE_TRY(state, context, block)                                                                 \
+    try {                                                                                                              \
+        block                                                                                                          \
+    } catch (...) {                                                                                                    \
+        if ((context)->status == 0) {                                                                                  \
+            (context)->status = -1;                                                                                    \
+        }                                                                                                              \
+    }
 #elif defined(ZR_PLATFORM_UNIX)
 #define ZR_EXCEPTION_NATIVE_THROW(state, context) longjmp((context)->jumpBuffer, 1)
-#define ZR_EXCEPTION_NATIVE_TRY(state, context, block) \
-if(setjmp((context)->jumpBuffer) == 0){\
-block \
-}
+#define ZR_EXCEPTION_NATIVE_TRY(state, context, block)                                                                 \
+    if (setjmp((context)->jumpBuffer) == 0) {                                                                          \
+        block                                                                                                          \
+    }
 #else
 #define ZR_EXCEPTION_NATIVE_THROW(state, context) longjmp((context)->jumpBuffer, 1)
-#define ZR_EXCEPTION_NATIVE_TRY(state, context, block) \
-if(setjmp((context)->jumpBuffer) == 0){\
-block \
-}
+#define ZR_EXCEPTION_NATIVE_TRY(state, context, block)                                                                 \
+    if (setjmp((context)->jumpBuffer) == 0) {                                                                          \
+        block                                                                                                          \
+    }
 #endif
 
 EZrThreadStatus ZrExceptionTryRun(SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments) {
@@ -41,9 +41,7 @@ EZrThreadStatus ZrExceptionTryRun(SZrState *state, FZrTryFunction tryFunction, T
     exceptionLongJump.status = ZR_THREAD_STATUS_FINE;
     exceptionLongJump.previous = state->exceptionRecoverPoint;
     state->exceptionRecoverPoint = &exceptionLongJump;
-    ZR_EXCEPTION_NATIVE_TRY(state, &exceptionLongJump, {
-                            tryFunction(state, arguments);
-                            });
+    ZR_EXCEPTION_NATIVE_TRY(state, &exceptionLongJump, { tryFunction(state, arguments); });
     state->exceptionRecoverPoint = exceptionLongJump.previous;
     state->nestedNativeCalls = prevNestedNativeCalls;
     return exceptionLongJump.status;
@@ -98,18 +96,16 @@ EZrThreadStatus ZrExceptionTryStop(SZrState *state, TZrMemoryOffset level, EZrTh
 void ZrExceptionMarkError(SZrState *state, EZrThreadStatus errorCode, TZrStackValuePointer previousTop) {
     switch (errorCode) {
         case ZR_THREAD_STATUS_FINE: {
-            //previousTop->value.type = ZR_VALUE_TYPE_NULL;
-            ZrValueResetAsNull(&previousTop->value);
-        }
-        break;
+            ZrValueResetAsNull(ZrStackGetValue(previousTop));
+        } break;
         case ZR_THREAD_STATUS_MEMORY_ERROR: {
-            // todo: luaD_seterrorobj
-        }
-        break;
+            ZrStackSetRawObjectValue(state, previousTop,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(state->global->memoryErrorMessage));
+        } break;
         default: {
-            // todo setobjs2s
-        }
-        break;
+            ZR_ASSERT(ZrExceptionIsStausError(errorCode));
+            ZrStackCopyValue(state, previousTop, &(state->stackTop.valuePointer - 1)->value);
+        } break;
     }
-    state->stackTop.valuePointer = previousTop + 1;
+    state->stackTop.valuePointer = previousTop - 1;
 }

@@ -7,6 +7,7 @@
 
 #include "zr_vm_core/conf.h"
 struct SZrState;
+struct SZrMeta;
 
 typedef TInt64 (*FZrNativeFunction)(struct SZrState *state);
 
@@ -53,6 +54,8 @@ ZR_CORE_API SZrTypeValue *ZrValueGetStackOffsetValue(struct SZrState *state, TZr
         (VALUE)->isNative = ZR_TRUE;                                                                                   \
     }
 
+ZR_CORE_API void ZrValueCopy(struct SZrState *state, SZrTypeValue *destination, SZrTypeValue *source);
+
 ZR_FORCE_INLINE EZrValueType ZrValueGetType(const SZrTypeValue *value) { return value->type; }
 
 ZR_FORCE_INLINE SZrRawObject *ZrValueGetRawObject(const SZrTypeValue *value) { return value->value.object; }
@@ -69,5 +72,5 @@ ZR_FORCE_INLINE TBool ZrValueCanValueToString(struct SZrState *state, SZrTypeVal
 }
 ZR_CORE_API TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value);
 
-
+ZR_CORE_API struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType);
 #endif // ZR_VM_CORE_VALUE_H

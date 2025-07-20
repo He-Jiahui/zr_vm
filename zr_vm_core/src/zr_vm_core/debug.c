@@ -9,3 +9,13 @@ TBool ZrDebugInfoGet(struct SZrState *state, EZrDebugInfoType type, SZrDebugInfo
     ZR_TODO_PARAMETER(debugInfo);
     return ZR_FALSE;
 }
+
+void ZrDebugRunError(struct SZrState *state, TNativeString format, ...) {
+    ZR_TODO_PARAMETER(state);
+    ZR_TODO_PARAMETER(format);
+}
+
+
+void ZrDebugErrorWhenHandlingError(struct SZrState *state) {
+    // TODO:
+}
