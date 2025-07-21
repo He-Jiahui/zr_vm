@@ -2,6 +2,7 @@
 // Created by HeJiahui on 2025/6/15.
 //
 
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 
 void ZrCallInfoEntryNativeInit(SZrState *state, SZrCallInfo *callInfo, TZrStackPointer functionIndex,
@@ -21,3 +22,15 @@ void ZrCallInfoEntryNativeInit(SZrState *state, SZrCallInfo *callInfo, TZrStackP
     callInfo->functionTop.valuePointer = functionTop.valuePointer;
 }
 
+
+SZrCallInfo *ZrCallInfoExtend(struct SZrState *state) {
+    SZrCallInfo *callInfo = ZR_NULL;
+    ZR_ASSERT(state->callInfoList->next == ZR_NULL);
+    callInfo = ZR_CAST_CALL_INFO(ZrMemoryGcMalloc(state, ZR_VALUE_TYPE_VM_MEMORY, sizeof(SZrCallInfo)));
+    state->callInfoList->next = callInfo;
+    callInfo->previous = state->callInfoList;
+    callInfo->next = ZR_NULL;
+    callInfo->context.context.trap = 0;
+    state->callInfoListLength++;
+    return callInfo;
+}

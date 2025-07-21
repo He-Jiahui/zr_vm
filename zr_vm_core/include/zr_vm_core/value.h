@@ -73,4 +73,5 @@ ZR_FORCE_INLINE TBool ZrValueCanValueToString(struct SZrState *state, SZrTypeVal
 ZR_CORE_API TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value);
 
 ZR_CORE_API struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType);
+
 #endif // ZR_VM_CORE_VALUE_H

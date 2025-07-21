@@ -8,6 +8,7 @@
 struct SZrState;
 
 enum EZrCallStatus {
+    ZR_CALL_STATUS_NONE = 0,
     ZR_CALL_STATUS_ALLOW_HOOK = 1 << 0,
     ZR_CALL_STATUS_NATIVE_CALL = 1 << 1,
     ZR_CALL_STATUS_CREATE_FRAME = 1 << 2,
@@ -17,7 +18,7 @@ enum EZrCallStatus {
     ZR_CALL_STATUS_HOOK_YIELD = 1 << 6,
     ZR_CALL_STATUS_DECONSTRUCTOR_CALL = 1 << 7,
     ZR_CALL_STATUS_CALL_INFO_TRANSFER = 1 << 8,
-    ZR_CALL_STATUS_RELEASE_CALL = 1 << 9,
+    ZR_CALL_STATUS_CLOSE_CALL = 1 << 9,
 };
 
 typedef enum EZrCallStatus EZrCallStatus;
@@ -55,9 +56,9 @@ union TZrCallInfoYieldContext {
     TUInt64 returnValueCount;
 
     struct {
-        TUInt32 transferredValueStartIndex;
-        TUInt32 transferredValueCount;
-    } transferredValue;
+        TUInt32 transferStart;
+        TUInt32 transferCount;
+    };
 };
 
 typedef union TZrCallInfoYieldContext TZrCallInfoYieldContext;
@@ -77,8 +78,9 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
     TZrSize expectedReturnCount;
 };
 
-
 typedef struct SZrCallInfo SZrCallInfo;
+
+#define ZR_CALL_INFO_IS_VM(CALL_INFO) ((TBool) (!((CALL_INFO)->callStatus & ZR_CALL_STATUS_NATIVE_CALL)))
 
 ZR_FORCE_INLINE TBool ZrCallInfoIsNative(SZrCallInfo *callInfo) {
     return (TBool) ((callInfo->callStatus & ZR_CALL_STATUS_NATIVE_CALL) > 0);
@@ -86,4 +88,6 @@ ZR_FORCE_INLINE TBool ZrCallInfoIsNative(SZrCallInfo *callInfo) {
 
 ZR_CORE_API void ZrCallInfoEntryNativeInit(struct SZrState *state, SZrCallInfo *callInfo, TZrStackPointer functionIndex,
                                            TZrStackPointer functionTop, SZrCallInfo *previous);
-#endif //ZR_VM_CORE_CALL_INFO_H
+
+ZR_CORE_API SZrCallInfo *ZrCallInfoExtend(struct SZrState *state);
+#endif // ZR_VM_CORE_CALL_INFO_H
