@@ -208,7 +208,7 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
             default: {
                 // todo: use CALL meta
                 stackPointer = ZrFunctionGetMetaCall(state, stackPointer);
-                return ZR_NULL;
+                // return ZR_NULL;
             } break;
         }
     } while (ZR_TRUE);

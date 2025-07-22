@@ -64,6 +64,7 @@ union TZrCallInfoYieldContext {
 typedef union TZrCallInfoYieldContext TZrCallInfoYieldContext;
 
 struct ZR_STRUCT_ALIGN SZrCallInfo {
+    // base is always point to the function closure which is current called
     TZrStackPointer functionBase;
     TZrStackPointer functionTop;
 

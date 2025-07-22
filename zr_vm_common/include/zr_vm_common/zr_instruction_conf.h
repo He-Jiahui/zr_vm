@@ -66,6 +66,7 @@
     Z(BITWISE_SHIFT_LEFT)                                                                                              \
     Z(BITWISE_SHIFT_RIGHT)                                                                                             \
     Z(FUNCTION_CALL)                                                                                                   \
+    Z(FUNCTION_TAIL_CALL)                                                                                              \
     Z(FUNCTION_RETURN)                                                                                                 \
     Z(GET_VALUE)                                                                                                       \
     Z(SET_VALUE)                                                                                                       \

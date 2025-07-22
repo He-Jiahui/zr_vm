@@ -80,5 +80,12 @@ ZR_FORCE_INLINE TBool ZrClosureValueIsClosed(SZrClosureValue *closureValue) {
     return closureValue->value.valuePointer == ZR_CAST_STACK_VALUE(&closureValue->link.closedValue);
 }
 
+ZR_FORCE_INLINE SZrTypeValue *ZrClosureValueGetValue(SZrClosureValue *closureValue) {
+    if (ZrClosureValueIsClosed(closureValue)) {
+        return &closureValue->link.closedValue;
+    }
+    return ZrStackGetValue(closureValue->value.valuePointer);
+}
+
 
 #endif // ZR_VM_CORE_CLOSURE_H

@@ -8,6 +8,7 @@
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/convertion.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -91,13 +92,17 @@ LZrReturning:
             DONE(1);
             ZR_INSTRUCTION_LABEL(GET_CLOSURE) {
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
-                // todo: closure function to access
+                // closure function to access
+                ZrValueCopy(state, &(BASE(B0(instruction))->value),
+                            ZrClosureValueGetValue(CLOSURE(ret.value.nativeObject.nativeUInt64)));
                 // BASE(B0(instruction))->value = CLOSURE(ret.value.nativeObject.nativeUInt64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CLOSURE) {
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
-                // todo: closure function to access
+                // closure function to access
+                ZrValueCopy(state, ZrClosureValueGetValue(CLOSURE(ret.value.nativeObject.nativeUInt64)),
+                            &(BASE(B0(instruction))->value));
                 // *CLOSURE(ret.value.nativeObject.nativeUInt64) = BASE(B0(instruction))->value;
             }
             DONE(1);
@@ -118,8 +123,10 @@ LZrReturning:
             ZR_INSTRUCTION_LABEL(ADD_STRING) {
                 opA = &BASE(A0(instruction))->value;
                 opB = &BASE(B0(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_2(nativeDouble, +, opA->type);
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type));
+                // ALGORITHM_2(nativeDouble, +, opA->type);
+                // ZR_VALUE_FAST_SET(&ret, nativeString, ZrStringConcat(state, opA->value.nativeObject.nativeString,
+                // opB->value.nativeObject.nativeString), ZR_VALUE_TYPE_STRING); todo: concat string
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SUB_INT) {
@@ -383,21 +390,121 @@ LZrReturning:
                 ALGORITHM_CVT_2(nativeBool, nativeDouble, <=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(BITWISE_NOT) {}
+            ZR_INSTRUCTION_LABEL(BITWISE_NOT) {
+                opA = &BASE(A0(instruction))->value;
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type));
+                ALGORITHM_1(nativeInt64, ~, ZR_VALUE_TYPE_INT64);
+            }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(BITWISE_AND) {}
+            ZR_INSTRUCTION_LABEL(BITWISE_AND) {
+                opA = &BASE(A0(instruction))->value;
+                opB = &BASE(B0(instruction))->value;
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                ALGORITHM_2(nativeInt64, &, ZR_VALUE_TYPE_INT64);
+            }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(BITWISE_OR) {}
+            ZR_INSTRUCTION_LABEL(BITWISE_OR) {
+                opA = &BASE(A0(instruction))->value;
+                opB = &BASE(B0(instruction))->value;
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                ALGORITHM_2(nativeInt64, |, ZR_VALUE_TYPE_INT64);
+            }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(BITWISE_XOR) {}
+            ZR_INSTRUCTION_LABEL(BITWISE_XOR) {
+                opA = &BASE(A0(instruction))->value;
+                opB = &BASE(B0(instruction))->value;
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                ALGORITHM_2(nativeInt64, ^, ZR_VALUE_TYPE_INT64);
+            }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_LEFT) {}
+            ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_LEFT) {
+                opA = &BASE(A0(instruction))->value;
+                opB = &BASE(B0(instruction))->value;
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                ALGORITHM_2(nativeInt64, <<, ZR_VALUE_TYPE_INT64);
+            }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_RIGHT) {}
+            ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_RIGHT) {
+                opA = &BASE(A0(instruction))->value;
+                opB = &BASE(B0(instruction))->value;
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                ALGORITHM_2(nativeUInt64, >>, ZR_VALUE_TYPE_INT64);
+            }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(FUNCTION_CALL) {}
+            ZR_INSTRUCTION_LABEL(FUNCTION_CALL) {
+                opA = &BASE(A0(instruction))->value;
+                opB = &BASE(B0(instruction))->value;
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_CLOSURE(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type) &&
+                          ZR_VALUE_IS_TYPE_INT(ret.type));
+                TZrSize parametersCount = opB->value.nativeObject.nativeUInt64;
+                TZrSize returnCount = ret.value.nativeObject.nativeUInt64;
+                if (parametersCount > 0) {
+                    state->stackTop.valuePointer = BASE(A0(instruction)) + parametersCount;
+                }
+                // save its program counter
+                callInfo->context.context.programCounter = programCounter;
+                SZrCallInfo *nextCallInfo = ZrFunctionPreCall(state, BASE(A0(instruction)), returnCount);
+                if (nextCallInfo == ZR_NULL) {
+                    // NULL means native call
+                    trap = callInfo->context.context.trap;
+                } else {
+                    // a vm call
+                    callInfo = nextCallInfo;
+                    goto LZrStart;
+                }
+            }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(FUNCTION_RETURN) {}
+            ZR_INSTRUCTION_LABEL(FUNCTION_TAIL_CALL) {
+                opA = &BASE(A0(instruction))->value;
+                opB = &BASE(B0(instruction))->value;
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_CLOSURE(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type) &&
+                          ZR_VALUE_IS_TYPE_INT(ret.type));
+                TZrSize parametersCount = opB->value.nativeObject.nativeUInt64;
+                TZrSize returnCount = ret.value.nativeObject.nativeUInt64;
+                // TODO:
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(FUNCTION_RETURN) {
+                opA = &BASE(A0(instruction))->value;
+                opB = &BASE(B0(instruction))->value;
+
+                TZrSize returnCount = opB->value.nativeObject.nativeUInt64;
+                TZrSize variableArguments = ret.value.nativeObject.nativeUInt64;
+
+                // save its program counter
+                callInfo->context.context.programCounter = programCounter;
+                // A0 means the flag of closures to be closed
+                if (A0(instruction)) {
+                    callInfo->yieldContext.returnValueCount = returnCount;
+                    if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
+                        state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+                    }
+                    // todo close:
+
+                    trap = callInfo->context.context.trap;
+                    if (ZR_UNLIKELY(trap)) {
+                        base = callInfo->functionBase.valuePointer + 1;
+                    }
+                }
+                if (variableArguments > 0) {
+                    callInfo->functionBase.valuePointer -=
+                            callInfo->context.context.variableArgumentCount + variableArguments;
+                }
+                state->stackTop.valuePointer = BASE(A0(instruction)) + returnCount;
+                ZrFunctionPostCall(state, callInfo, returnCount);
+                trap = callInfo->context.context.trap;
+                goto LZrReturn;
+            }
+
+        LZrReturn: {
+            // return from vm
+            if (callInfo->callStatus & ZR_CALL_STATUS_CREATE_FRAME) {
+                return;
+            } else {
+                callInfo = callInfo->previous;
+                goto LZrReturning;
+            }
+        }
             DONE(1);
             ZR_INSTRUCTION_LABEL(GET_VALUE) {}
             DONE(1);
@@ -417,6 +524,7 @@ LZrReturning:
             DONE(1);
             ZR_INSTRUCTION_DEFAULT() {
                 // todo: error unreachable
+                ZR_ABORT();
             }
             DONE(1);
         }

@@ -85,6 +85,7 @@ typedef enum EZrValueType EZrValueType;
 #define ZR_VALUE_IS_TYPE_BUFFER(valueType) ((valueType) == ZR_VALUE_TYPE_BUFFER)
 #define ZR_VALUE_IS_TYPE_ARRAY(valueType) ((valueType) == ZR_VALUE_TYPE_ARRAY)
 #define ZR_VALUE_IS_TYPE_FUNCTION(valueType) ((valueType) == ZR_VALUE_TYPE_FUNCTION)
+#define ZR_VALUE_IS_TYPE_CLOSURE(valueType) ((valueType) == ZR_VALUE_TYPE_CLOSURE)
 #define ZR_VALUE_IS_TYPE_CLOSURE_VALUE(valueType) ((valueType) == ZR_VALUE_TYPE_CLOSURE_VALUE)
 #define ZR_VALUE_IS_TYPE_OBJECT(valueType) ((valueType) == ZR_VALUE_TYPE_OBJECT)
 #define ZR_VALUE_IS_TYPE_THREAD(valueType) ((valueType) == ZR_VALUE_TYPE_THREAD)
