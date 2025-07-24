@@ -8,6 +8,13 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/state.h"
 
+void ZrValueBarrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value) {
+    if (!value->isGarbageCollectable) {
+        return;
+    }
+    ZrRawObjectBarrier(state, object, value->value.object);
+}
+
 void ZrValueResetAsNull(SZrTypeValue *value) {
     value->type = ZR_VALUE_TYPE_NULL;
     value->isGarbageCollectable = ZR_FALSE;

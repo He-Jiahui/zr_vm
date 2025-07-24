@@ -80,10 +80,10 @@
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)
 
-#define ZR_INSTRUCTION_FETCH(INSTRUCTION, PC, N)                                                                       \
+#define ZR_INSTRUCTION_FETCH(INSTRUCTION, PC, EXCEPTION, N)                                                            \
     {                                                                                                                  \
         if (ZR_UNLIKELY(trap != ZR_DEBUG_SIGNAL_NONE)) {                                                               \
-            /*todo:*/                                                                                                  \
+            EXCEPTION                                                                                                  \
         }                                                                                                              \
         INSTRUCTION = *(PC += N);                                                                                      \
     }

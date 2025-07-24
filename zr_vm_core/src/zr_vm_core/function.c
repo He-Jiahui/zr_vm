@@ -12,7 +12,7 @@
 #include "zr_vm_core/state.h"
 
 TZrStackValuePointer ZrFunctionCheckStack(struct SZrState *state, TZrSize size, TZrStackValuePointer stackPointer) {
-    if (ZR_UNLIKELY(state->stackTail.valuePointer - state->stackTop.valuePointer < size)) {
+    if (ZR_UNLIKELY(state->stackTail.valuePointer - state->stackTop.valuePointer < (TZrMemoryOffset) size)) {
         TZrMemoryOffset relative = ZrStackSavePointerAsOffset(state, stackPointer);
         ZrStackGrow(state, size, ZR_TRUE);
         TZrStackValuePointer restoredStackPointer = ZrStackLoadOffsetToPointer(state, relative);

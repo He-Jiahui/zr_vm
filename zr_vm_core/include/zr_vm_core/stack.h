@@ -26,7 +26,9 @@ union TZrStackPtr {
 typedef union TZrStackPtr TZrStackPointer;
 
 #define ZR_STACK_CHECK_CALL_INFO_STACK_COUNT(STATE, COUNT)                                                             \
-    ZR_CHECK(state, (COUNT) < ((STATE)->stackTop.valuePointer - (STATE)->callInfoList->functionBase.valuePointer),     \
+    ZR_CHECK(state,                                                                                                    \
+             (TZrMemoryOffset) (COUNT) <                                                                               \
+                     ((STATE)->stackTop.valuePointer - (STATE)->callInfoList->functionBase.valuePointer),              \
              "not enough elements in the stack")
 
 ZR_CORE_API TZrPtr ZrStackInit(struct SZrState *state, TZrStackPointer *stack, TZrSize stackLength);

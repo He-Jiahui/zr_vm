@@ -90,6 +90,8 @@ ZR_CORE_API TBool ZrDebugInfoGet(struct SZrState *state, EZrDebugInfoType type, 
 
 ZR_CORE_API ZR_NO_RETURN void ZrDebugCallError(struct SZrState *state, struct SZrTypeValue *value);
 
+ZR_CORE_API TZrDebugSignal ZrDebugTraceExecution(struct SZrState *state, const TZrInstruction *programCounter);
+
 ZR_CORE_API ZR_NO_RETURN void ZrDebugRunError(struct SZrState *state, TNativeString format, ...);
 
 ZR_CORE_API ZR_NO_RETURN void ZrDebugErrorWhenHandlingError(struct SZrState *state);

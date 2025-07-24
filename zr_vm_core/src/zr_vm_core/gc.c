@@ -90,7 +90,7 @@ void ZrGarbageCollectorGcFull(SZrState *state, TBool isImmediate) {
     global->garbageCollector.isImmediateGcFlag = ZR_FALSE;
 }
 
-ZR_CORE_API void ZrGarbageCollectorGcStep(struct SZrState *state) {
+void ZrGarbageCollectorGcStep(struct SZrState *state) {
     SZrGlobalState *global = state->global;
     if (global->garbageCollector.gcStatus != ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
         ZrGarbageCollectorAddDebtSpace(global, ZR_GARBAGE_COLLECT_DEBT_SIZE);
@@ -176,7 +176,7 @@ static void ZrGarbageCollectorMarkObject(struct SZrState *state, SZrRawObject *o
 void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(ZrRawObjectIsMarkReferenced(object) && ZrRawObjectIsMarkInited(valueObject) &&
-              !ZrRawObjectIsUnreferenced(state, valueObject));
+              !ZrRawObjectIsUnreferenced(state, object) && !ZrRawObjectIsUnreferenced(state, valueObject));
     if (ZrGarbageCollectorIsInvariant(global)) {
         ZrGarbageCollectorMarkObject(state, valueObject);
         if (ZrRawObjectIsGenerationalThroughBarrier(object)) {
@@ -188,6 +188,30 @@ void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZr
         if (global->garbageCollector.gcMode == ZR_GARBAGE_COLLECT_MODE_INCREMENTAL) {
             ZrRawObjectMarkAsInit(state, valueObject);
         }
+    }
+}
+
+void ZrGarbageCollectorBarrierBack(struct SZrState *state, SZrRawObject *object) {
+    SZrGlobalState *global = state->global;
+    ZR_ASSERT(ZrRawObjectIsMarkReferenced(object) && !ZrRawObjectIsUnreferenced(state, object));
+    ZR_ASSERT((global->garbageCollector.gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) ==
+              (ZrRawObjectIsGenerationalThroughBarrier(object) &&
+               object->garbageCollectMark.generationalStatus != ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED));
+    if (object->garbageCollectMark.generationalStatus ==
+        ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED_PREVIOUS) {
+        ZrRawObjectMarkAsWaitToScan(object);
+        ZrRawObjectSetGenerationalStatus(object, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED);
+    } else {
+        ZrGarbageCollectorToGcListAndMarkWaitToScan(object, &global->garbageCollector.waitToScanAgainObjectList);
+    }
+    if (ZrRawObjectIsGenerationalThroughBarrier(object)) {
+        ZrRawObjectSetGenerationalStatus(object, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED);
+    }
+}
+
+void ZrRawObjectBarrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject) {
+    if (ZrRawObjectIsMarkReferenced(object) && ZrRawObjectIsMarkInited(valueObject)) {
+        ZrGarbageCollectorBarrier(state, object, valueObject);
     }
 }
 

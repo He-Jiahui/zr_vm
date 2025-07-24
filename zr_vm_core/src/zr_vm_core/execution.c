@@ -9,6 +9,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/convertion.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -35,13 +36,13 @@ void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
 #define A0(INSTRUCTION) INSTRUCTION.instruction.operand.operandA[0]
 #define A1(INSTRUCTION) INSTRUCTION.instruction.operand.operandA[1]
 #define A2(INSTRUCTION) INSTRUCTION.instruction.operand.operandA[2]
-#define A3(INSTRUCTION) INSTRUCTION.instruction.operand.operandA[3
+#define A3(INSTRUCTION) INSTRUCTION.instruction.operand.operandA[3]
 #define B0(INSTRUCTION) INSTRUCTION.instruction.operand.operandB[0]
 #define B1(INSTRUCTION) INSTRUCTION.instruction.operand.operandB[1]
 #define C0(INSTRUCTION) INSTRUCTION.instruction.operand.operandC[0]
 #define BASE(OFFSET) (base + (OFFSET))
 #define CONST(OFFSET) (constants + (OFFSET))
-#define CLOSURE(OFFSET) (closure->closureValuesExtend + (OFFSET))
+#define CLOSURE(OFFSET) (closure->closureValuesExtend[OFFSET])
 
 #define ALGORITHM_1(REGION, OP, TYPE) ZR_VALUE_FAST_SET(&ret, REGION, OP(opA->value.nativeObject.REGION), TYPE);
 #define ALGORITHM_2(REGION, OP, TYPE)                                                                                  \
@@ -52,6 +53,31 @@ void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
     ZR_VALUE_FAST_SET(&ret, REGION, (opA->value.nativeObject.REGION) OP(RIGHT), TYPE);
 #define ALGORITHM_FUNC_2(REGION, OP_FUNC, TYPE)                                                                        \
     ZR_VALUE_FAST_SET(&ret, REGION, OP_FUNC(opA->value.nativeObject.REGION, opB->value.nativeObject.REGION), TYPE);
+
+#define UPDATE_TRAP(CALL_INFO) (trap = (CALL_INFO)->context.context.trap)
+#define UPDATE_BASE(CALL_INFO) (base = (CALL_INFO)->functionBase.valuePointer + 1)
+#define UPDATE_STACK(CALL_INFO)                                                                                        \
+    {                                                                                                                  \
+        if (ZR_UNLIKELY(trap)) {                                                                                       \
+            UPDATE_BASE(CALL_INFO);                                                                                    \
+        }                                                                                                              \
+    }
+#define SAVE_PC(STATE, CALL_INFO) ((CALL_INFO)->context.context.programCounter = programCounter)
+#define SAVE_STATE(STATE, CALL_INFO)                                                                                   \
+    (SAVE_PC(STATE, CALL_INFO), ((STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer))
+    // MODIFIABLE: ERROR & STACK & HOOK
+#define PROTECT_ESH(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP), UPDATE_TRAP(CALL_INFO))
+    // MODIFIABLE: ERROR & HOOK
+#define PROTECT_EH(STATE, CALL_INFO, EXP) (SAVE_PC(STATE), (EXP), UPDATE_TRAP(CALL_INFO))
+    // MODIFIABLE: ERROR
+#define PROTECT_E(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE), (EXP))
+
+#define JUMP(CALL_INFO, INSTRUCTION, OFFSET)                                                                           \
+    {                                                                                                                  \
+        programCounter += C0(INSTRUCTION) + (OFFSET);                                                                  \
+        UPDATE_TRAP(CALL_INFO);                                                                                        \
+    }
+
 LZrStart:
     trap = state->debugHookSignal;
 LZrReturning:
@@ -67,7 +93,8 @@ LZrReturning:
         /*
          * fetch instruction
          */
-        ZR_INSTRUCTION_FETCH(instruction, programCounter, 1);
+        ZR_INSTRUCTION_FETCH(instruction, programCounter, trap = ZrDebugTraceExecution(state, programCounter);
+                             UPDATE_STACK(callInfo), 1);
 
         // debug line
 #if ZR_DEBUG
@@ -100,9 +127,13 @@ LZrReturning:
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CLOSURE) {
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
+                SZrClosureValue *closureValue = CLOSURE(ret.value.nativeObject.nativeUInt64);
+                SZrTypeValue *value = ZrClosureValueGetValue(closureValue);
+                SZrTypeValue *newValue = &BASE(B0(instruction))->value;
                 // closure function to access
-                ZrValueCopy(state, ZrClosureValueGetValue(CLOSURE(ret.value.nativeObject.nativeUInt64)),
-                            &(BASE(B0(instruction))->value));
+                ZrValueCopy(state, value, newValue);
+                // CLOSURE(ret.value.nativeObject.nativeUInt64) = BASE(B0(instruction))->value;
+                ZrValueBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue), newValue);
                 // *CLOSURE(ret.value.nativeObject.nativeUInt64) = BASE(B0(instruction))->value;
             }
             DONE(1);
@@ -126,7 +157,8 @@ LZrReturning:
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type));
                 // ALGORITHM_2(nativeDouble, +, opA->type);
                 // ZR_VALUE_FAST_SET(&ret, nativeString, ZrStringConcat(state, opA->value.nativeObject.nativeString,
-                // opB->value.nativeObject.nativeString), ZR_VALUE_TYPE_STRING); todo: concat string
+                // opB->value.nativeObject.nativeString), ZR_VALUE_TYPE_STRING);
+                // todo: concat string
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SUB_INT) {
@@ -168,8 +200,10 @@ LZrReturning:
                 opA = &BASE(A0(instruction))->value;
                 opB = &BASE(B0(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                if (opB->value.nativeObject.nativeInt64 == 0) {
-                    ZrExceptionThrow(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                SAVE_STATE(state, callInfo); // error: divide by zero
+                if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
+                    // ZrExceptionThrow(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                    ZrDebugRunError(state, "divide by zero");
                 }
                 ALGORITHM_2(nativeInt64, /, ZR_VALUE_TYPE_INT64);
             }
@@ -178,8 +212,10 @@ LZrReturning:
                 opA = &BASE(A0(instruction))->value;
                 opB = &BASE(B0(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                if (opB->value.nativeObject.nativeUInt64 == 0) {
-                    ZrExceptionThrow(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                SAVE_STATE(state, callInfo); // error: divide by zero
+                if (ZR_UNLIKELY(opB->value.nativeObject.nativeUInt64 == 0)) {
+                    // ZrExceptionThrow(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                    ZrDebugRunError(state, "divide by zero");
                 }
                 ALGORITHM_2(nativeUInt64, /, ZR_VALUE_TYPE_UINT64);
             }
@@ -195,11 +231,12 @@ LZrReturning:
                 opA = &BASE(A0(instruction))->value;
                 opB = &BASE(B0(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                if (opB->value.nativeObject.nativeInt64 == 0) {
-                    ZrExceptionThrow(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                SAVE_STATE(state, callInfo); // error: modulo by zero
+                if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
+                    ZrDebugRunError(state, "modulo by zero");
                 }
                 TInt64 divisor = opB->value.nativeObject.nativeInt64;
-                if (divisor < 0) {
+                if (ZR_UNLIKELY(divisor < 0)) {
                     divisor = -divisor;
                 }
                 ALGORITHM_CONST_2(nativeInt64, %, ZR_VALUE_TYPE_INT64, divisor);
@@ -209,8 +246,9 @@ LZrReturning:
                 opA = &BASE(A0(instruction))->value;
                 opB = &BASE(B0(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                SAVE_STATE(state, callInfo); // error: modulo by zero
                 if (opB->value.nativeObject.nativeUInt64 == 0) {
-                    ZrExceptionThrow(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                    ZrDebugRunError(state, "modulo by zero");
                 }
                 ALGORITHM_2(nativeUInt64, %, ZR_VALUE_TYPE_UINT64);
             }
@@ -226,8 +264,14 @@ LZrReturning:
                 opA = &BASE(A0(instruction))->value;
                 opB = &BASE(B0(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                if (opA->value.nativeObject.nativeInt64 == 0) {
-                    ZrExceptionThrow(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                SAVE_STATE(state, callInfo); // error: power domain error
+                TInt64 valueA = opA->value.nativeObject.nativeInt64;
+                TInt64 valueB = opB->value.nativeObject.nativeInt64;
+                if (ZR_UNLIKELY(valueA == 0 && valueB <= 0)) {
+                    ZrDebugRunError(state, "power domain error");
+                }
+                if (ZR_UNLIKELY(valueA < 0)) {
+                    ZrDebugRunError(state, "power domain error");
                 }
                 ALGORITHM_FUNC_2(nativeInt64, ZrMathIntPower, ZR_VALUE_TYPE_INT64);
             }
@@ -236,8 +280,11 @@ LZrReturning:
                 opA = &BASE(A0(instruction))->value;
                 opB = &BASE(B0(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                if (opB->value.nativeObject.nativeUInt64 == 0) {
-                    ZrExceptionThrow(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                SAVE_STATE(state, callInfo); // error: power domain error
+                TUInt64 valueA = opA->value.nativeObject.nativeUInt64;
+                TUInt64 valueB = opB->value.nativeObject.nativeUInt64;
+                if (ZR_UNLIKELY(valueA == 0 && valueB == 0)) {
+                    ZrDebugRunError(state, "power domain error");
                 }
                 ALGORITHM_FUNC_2(nativeUInt64, ZrMathUIntPower, ZR_VALUE_TYPE_UINT64);
             }
@@ -246,7 +293,7 @@ LZrReturning:
                 opA = &BASE(A0(instruction))->value;
                 opB = &BASE(B0(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_FUNC_2(nativeDouble, fmod, ZR_VALUE_TYPE_DOUBLE);
+                ALGORITHM_FUNC_2(nativeDouble, pow, ZR_VALUE_TYPE_DOUBLE);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_LEFT) {
@@ -479,7 +526,7 @@ LZrReturning:
                     if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
                         state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
                     }
-                    // todo close:
+                    // todo close closure values:
 
                     trap = callInfo->context.context.trap;
                     if (ZR_UNLIKELY(trap)) {
@@ -510,11 +557,18 @@ LZrReturning:
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_VALUE) {}
             DONE(1);
-            ZR_INSTRUCTION_LABEL(JUMP) {}
+            ZR_INSTRUCTION_LABEL(JUMP) { JUMP(callInfo, instruction, 0); }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(JUMP_IF) {}
+            ZR_INSTRUCTION_LABEL(JUMP_IF) {
+                if (ret.value.nativeObject.nativeBool) {
+                    JUMP(callInfo, instruction, 0);
+                }
+            }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(CREATE_CLOSURE) {}
+            ZR_INSTRUCTION_LABEL(CREATE_CLOSURE) {
+                opA = &BASE(A0(instruction))->value;
+                opB = &BASE(B0(instruction))->value;
+            }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TRY) {}
             DONE(1);

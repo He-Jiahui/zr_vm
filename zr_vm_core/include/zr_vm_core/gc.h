@@ -68,6 +68,10 @@ ZR_CORE_API void ZrGarbageCollectorCheckGc(struct SZrState *state);
 
 ZR_CORE_API void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject);
 
+ZR_CORE_API void ZrGarbageCollectorBarrierBack(struct SZrState *state, SZrRawObject *object);
+
+ZR_CORE_API void ZrRawObjectBarrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject);
+
 ZR_CORE_API SZrRawObject *ZrRawObjectNew(struct SZrState *state, EZrValueType type, TZrSize size, TBool isNative);
 
 

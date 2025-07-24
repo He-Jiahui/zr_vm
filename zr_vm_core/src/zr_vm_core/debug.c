@@ -17,6 +17,13 @@ void ZrDebugCallError(struct SZrState *state, struct SZrTypeValue *value) {
     ZR_TODO_PARAMETER(value);
 }
 
+TZrDebugSignal ZrDebugTraceExecution(struct SZrState *state, const TZrInstruction *programCounter) {
+    ZR_TODO_PARAMETER(state);
+    ZR_TODO_PARAMETER(programCounter);
+
+    return 0;
+}
+
 void ZrDebugRunError(struct SZrState *state, TNativeString format, ...) {
     ZR_TODO_PARAMETER(state);
     ZR_TODO_PARAMETER(format);
@@ -32,7 +39,7 @@ void ZrDebugHook(struct SZrState *state, EZrDebugHookEvent event, TUInt32 line, 
                  TUInt32 transferCount) {
     FZrDebugHook hook = state->debugHook;
     if (hook && state->allowDebugHook) {
-        EZrDebugHookMask mask = ZR_CALL_STATUS_DEBUG_HOOK;
+        EZrCallStatus mask = ZR_CALL_STATUS_DEBUG_HOOK;
         SZrCallInfo *callInfo = state->callInfoList;
         TZrMemoryOffset top = ZrStackSavePointerAsOffset(state, state->stackTop.valuePointer);
         TZrMemoryOffset callInfoTop = ZrStackSavePointerAsOffset(state, callInfo->functionTop.valuePointer);

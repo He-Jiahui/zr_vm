@@ -29,6 +29,8 @@ struct ZR_STRUCT_ALIGN SZrTypeValue {
 
 typedef struct SZrTypeValue SZrTypeValue;
 
+ZR_CORE_API void ZrValueBarrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value);
+
 ZR_CORE_API void ZrValueResetAsNull(SZrTypeValue *value);
 
 ZR_CORE_API void ZrValueInitAsRawObject(struct SZrState *state, SZrTypeValue *value, SZrRawObject *object);
