@@ -146,3 +146,17 @@ TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status) {
 
     return status;
 }
+
+EZrThreadStatus ZrStateDoRun(SZrState *state, TNativeString entry) {
+    SZrGlobalState *global = state->global;
+
+    // todo: use loaded module is currently not supported
+
+    SZrIoSource *source = ZrIoLoadSource(state, entry, ZR_NULL);
+    if (source == ZR_NULL) {
+        return ZR_THREAD_STATUS_RUNTIME_ERROR;
+    }
+    // todo: convert source to object
+
+    return ZR_THREAD_STATUS_FINE;
+}

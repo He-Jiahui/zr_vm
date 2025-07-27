@@ -13,11 +13,12 @@ void ZrHashSetRehash(SZrGlobalState *global, SZrHashSet *set, TZrSize newCapacit
     TZrSize oldBucketCount = oldCapacity * elementSize;
     TZrSize newBucketCount = newCapacity * elementSize;
     SZrHashRawObject **oldBuckets = set->buckets;
-    SZrHashRawObject **newBuckets = ZR_CAST_HASH_RAW_OBJECT_PTR(
-        ZrMemoryAllocate(global, oldBuckets, oldBucketCount, newBucketCount));
+    SZrHashRawObject **newBuckets =
+            ZR_CAST_HASH_RAW_OBJECT_PTR(ZrMemoryAllocate(global, oldBuckets, oldBucketCount, newBucketCount));
     oldBuckets = ZR_NULL;
     set->buckets = newBuckets;
     set->capacity = newCapacity;
+    set->bucketSize = newBucketCount;
     set->resizeThreshold = newCapacity * 3 / 4;
     ZrMemoryRawSet(set->buckets + oldBucketCount, 0, newBucketCount - oldBucketCount);
     for (TZrSize i = 0; i < oldCapacity; i++) {

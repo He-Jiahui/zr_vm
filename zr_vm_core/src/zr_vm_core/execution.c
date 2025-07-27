@@ -520,19 +520,19 @@ LZrReturning:
 
                 // save its program counter
                 callInfo->context.context.programCounter = programCounter;
-                // A0 means the flag of closures to be closed
-                if (A0(instruction)) {
-                    callInfo->yieldContext.returnValueCount = returnCount;
-                    if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
-                        state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
-                    }
-                    // todo close closure values:
-
-                    trap = callInfo->context.context.trap;
-                    if (ZR_UNLIKELY(trap)) {
-                        base = callInfo->functionBase.valuePointer + 1;
-                    }
-                }
+                // means the flag of closures to be closed
+                // if (A0(instruction)) {
+                //     callInfo->yieldContext.returnValueCount = returnCount;
+                //     if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
+                //         state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+                //     }
+                //     // todo close closure values:
+                //
+                //     trap = callInfo->context.context.trap;
+                //     if (ZR_UNLIKELY(trap)) {
+                //         base = callInfo->functionBase.valuePointer + 1;
+                //     }
+                // }
                 if (variableArguments > 0) {
                     callInfo->functionBase.valuePointer -=
                             callInfo->context.context.variableArgumentCount + variableArguments;

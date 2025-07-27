@@ -72,6 +72,8 @@ ZR_CORE_API void ZrStateFree(struct SZrGlobalState *global, SZrState *state);
 
 ZR_CORE_API TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status);
 
+ZR_CORE_API EZrThreadStatus ZrStateDoRun(SZrState *state, TNativeString entry);
+
 ZR_FORCE_INLINE TZrSize ZrStateStackGetSize(SZrState *state) {
     return state->stackTail.valuePointer - state->stackBase.valuePointer;
 }

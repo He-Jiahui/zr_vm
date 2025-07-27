@@ -31,11 +31,24 @@ ZR_FORCE_INLINE TInt32 ZrNativeStringCompare(TNativeString string1, TNativeStrin
     return strcmp(string1, string2);
 }
 
+
 ZR_FORCE_INLINE TZrSize ZrNativeStringLength(TNativeString string) { return strlen(string); }
 
 ZR_FORCE_INLINE TChar *ZrNativeStringCharFind(TNativeString string, TChar ch) { return strchr(string, ch); }
 
 ZR_FORCE_INLINE TZrSize ZrNativeStringSpan(TNativeString string, TChar *charset) { return strspn(string, charset); }
+
+ZR_FORCE_INLINE TZrSize ZrNativeStringConcat(TNativeString string1, TNativeString string2,
+                                             ZR_OUT TNativeString result) {
+    TZrSize length1 = ZrNativeStringLength(string1);
+    TZrSize length2 = ZrNativeStringLength(string2);
+    TZrSize length = length1 + length2;
+    strcpy(result, string1);
+    strcpy(result + length1, string2);
+    result[length] = '\0';
+    return length;
+}
+
 
 ZR_FORCE_INLINE TZrSize ZrNativeStringUtf8CharLength(TChar *buffer, TUInt64 uChar) {
     ZR_ASSERT(uChar <= 0x7fffffffu);
@@ -86,6 +99,14 @@ ZR_FORCE_INLINE TNativeString ZrStringGetNativeStringShort(TZrString *string) {
 ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringLong(TZrString *string) {
     ZR_ASSERT(string->shortStringLength == ZR_VM_LONG_STRING_FLAG);
     return (TNativeString *) string->stringDataExtend;
+}
+
+ZR_FORCE_INLINE TNativeString ZrStringGetNativeString(TZrString *string) {
+    if (string->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        return ZrStringGetNativeStringShort(string);
+    } else {
+        return *ZrStringGetNativeStringLong(string);
+    }
 }
 
 ZR_CORE_API TBool ZrStringEqual(TZrString *string1, TZrString *string2);

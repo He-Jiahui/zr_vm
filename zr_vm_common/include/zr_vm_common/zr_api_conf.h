@@ -8,7 +8,7 @@
 /**
  *
  */
-#if ZR_PLATFORM_WIN && ZR_LIBRARY_TYPE_SHARED && ZR_PLATFORM_WIN_USE_MSVC
+#if ZR_PLATFORM_WIN && ZR_LIBRARY_TYPE_SHARED // && ZR_PLATFORM_WIN_USE_MSVC
 #define ZR_API __declspec(dllexport)
 #define ZR_API_IMPORT __declspec(dllimport)
 #else
@@ -22,4 +22,4 @@
 #endif
 
 
-#endif //ZR_API_CONF_H
+#endif // ZR_API_CONF_H

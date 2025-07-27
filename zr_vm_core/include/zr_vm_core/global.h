@@ -4,6 +4,7 @@
 
 #ifndef ZR_VM_CORE_GLOBAL_H
 #define ZR_VM_CORE_GLOBAL_H
+#include "io.h"
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/gc.h"
@@ -34,6 +35,9 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     FZrAllocator allocator;
     TZrPtr userAllocationArguments;
 
+    // injected data
+    TZrPtr userData;
+
     TZrString *memoryErrorMessage;
 
     // State
@@ -59,6 +63,9 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
 
     // Logger
     FZrLog logFunction;
+
+    // IO
+    FZrIoLoadSource sourceLoader;
 
 
     // exceptions

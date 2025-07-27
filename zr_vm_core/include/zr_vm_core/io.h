@@ -5,14 +5,18 @@
 #ifndef ZR_VM_CORE_IO_H
 #define ZR_VM_CORE_IO_H
 
-#include "value.h"
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/value.h"
 
 struct SZrState;
+struct SZrGlobalState;
 
-typedef TBytePtr (*FZrIoRead)(struct SZrState *state, TZrPtr customData, TZrSize *size);
+
+typedef TBytePtr (*FZrIoRead)(struct SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size);
 
 typedef EZrThreadStatus (*FZrIoWrite)(struct SZrState *state, TBytePtr buffer, TZrSize size, TZrPtr customData);
+
+typedef void (*FZrIoClose)(struct SZrState *state, TZrPtr customData);
 
 struct ZR_STRUCT_ALIGN SZrIo {
     struct SZrState *state;
@@ -20,9 +24,12 @@ struct ZR_STRUCT_ALIGN SZrIo {
     TZrSize remained;
     TBytePtr pointer;
     TZrPtr customData;
+    FZrIoClose close;
 };
 
 typedef struct SZrIo SZrIo;
+
+typedef TBool (*FZrIoLoadSource)(struct SZrState *state, TNativeString sourcePath, TNativeString md5, SZrIo *io);
 
 
 struct SZrIoImport {
@@ -237,10 +244,16 @@ struct SZrIoSource {
 
 typedef struct SZrIoSource SZrIoSource;
 
-ZR_CORE_API void ZrIoInit(struct SZrState *state, SZrIo *io, FZrIoRead read, TZrPtr customData);
+ZR_CORE_API SZrIo *ZrIoNew(struct SZrGlobalState *global);
+
+ZR_CORE_API void ZrIoFree(struct SZrGlobalState *global, SZrIo *io);
+
+ZR_CORE_API void ZrIoInit(struct SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close, TZrPtr customData);
 
 ZR_CORE_API TZrSize ZrIoRead(SZrIo *io, TBytePtr buffer, TZrSize size);
 
 
 ZR_CORE_API SZrIoSource *ZrIoReadSourceNew(SZrIo *io);
+
+ZR_CORE_API SZrIoSource *ZrIoLoadSource(struct SZrState *state, TNativeString sourceName, TNativeString md5);
 #endif // ZR_VM_CORE_IO_H

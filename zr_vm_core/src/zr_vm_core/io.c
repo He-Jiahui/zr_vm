@@ -8,7 +8,8 @@
 #include "zr_vm_core/state.h"
 
 #define ZR_IO_MALLOC_NATIVE_DATA(GLOBAL, SIZE) ZrMemoryRawMallocWithType(GLOBAL, (SIZE), ZR_VALUE_TYPE_NATIVE_DATA);
-
+#define ZR_IO_FREE_NATIVE_DATA(GLOBAL, DATA, SIZE)                                                                     \
+    ZrMemoryRawFreeWithType(GLOBAL, (DATA), (SIZE), ZR_VALUE_TYPE_NATIVE_DATA);
 static TBool ZrIoRefill(SZrIo *io) {
     SZrState *state = io->state;
     TZrSize readSize = 0;
@@ -350,9 +351,27 @@ static void ZrIoReadModules(SZrIo *io, SZrIoModule *modules, TZrSize count) {
     }
 }
 
-void ZrIoInit(SZrState *state, SZrIo *io, FZrIoRead read, TZrPtr customData) {
+SZrIo *ZrIoNew(struct SZrGlobalState *global) {
+    SZrIo *io = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIo));
+    io->state = ZR_NULL;
+    io->read = ZR_NULL;
+    io->close = ZR_NULL;
+    io->customData = ZR_NULL;
+    io->pointer = ZR_NULL;
+    io->remained = 0;
+    return io;
+}
+
+void ZrIoFree(struct SZrGlobalState *global, SZrIo *io) {
+    if (io != ZR_NULL) {
+        ZR_IO_FREE_NATIVE_DATA(global, io, sizeof(SZrIo));
+    }
+}
+
+void ZrIoInit(SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close, TZrPtr customData) {
     io->state = state;
     io->read = read;
+    io->close = close;
     io->customData = customData;
     io->pointer = ZR_NULL;
     io->remained = 0;
@@ -397,6 +416,21 @@ SZrIoSource *ZrIoReadSourceNew(SZrIo *io) {
     ZR_IO_READ_NATIVE_TYPE(io, source->modulesLength, TZrSize);
     source->modules = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoModule) * source->modulesLength);
     ZrIoReadModules(io, source->modules, source->modulesLength);
+    return source;
+}
 
+SZrIoSource *ZrIoLoadSource(struct SZrState *state, TNativeString sourceName, TNativeString md5) {
+    SZrGlobalState *global = state->global;
+    SZrIo *io = ZrIoNew(global);
+    TBool success = global->sourceLoader(state, sourceName, md5, io);
+    if (!success) {
+        ZrIoFree(global, io);
+        return ZR_NULL;
+    }
+    SZrIoSource *source = ZrIoReadSourceNew(io);
+    if (io->close != ZR_NULL) {
+        io->close(state, io->customData);
+    }
+    ZrIoFree(global, io);
     return source;
 }

@@ -2,3 +2,13 @@
 	path = third_party/zr_xx_hash/xxHash
 	url = https://github.com/Cyan4973/xxHash.git
 	branch = release
+
+[submodule "third_party/zr_c_json/cJSON"]
+	path = third_party/zr_c_json/cJSON
+	url = https://github.com/DaveGamble/cJSON
+	branch = master
+
+[submodule "third_party/zr_tiny_dir/tinydir"]
+	path = third_party/zr_tiny_dir/tinydir
+	url = https://github.com/cxong/tinydir
+	branch = master

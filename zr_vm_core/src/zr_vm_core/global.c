@@ -38,6 +38,9 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     // gc
     ZrGarbageCollectorInit(global);
 
+    // io
+    global->sourceLoader = ZR_NULL;
+
     // init string table
     ZrStringTableConstruct(global);
 
@@ -48,6 +51,12 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
 
     // exception
     global->panicHandlingFunction = ZR_NULL;
+
+    // injected data
+    global->userData = ZR_NULL;
+
+    // loader
+    global->sourceLoader = ZR_NULL;
 
     // reset basic type object prototype
     for (TUInt64 i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {

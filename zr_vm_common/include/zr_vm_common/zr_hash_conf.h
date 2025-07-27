@@ -8,7 +8,7 @@
 
 struct SZrHashSet {
     SZrHashRawObject **buckets;
-    TZrSize bucketCount;
+    TZrSize bucketSize;
     TZrSize elementCount;
     TZrSize capacity;
     TZrSize resizeThreshold;
@@ -17,4 +17,4 @@ struct SZrHashSet {
 
 typedef struct SZrHashSet SZrHashSet;
 
-#endif //ZR_HASH_CONF_H
+#endif // ZR_HASH_CONF_H

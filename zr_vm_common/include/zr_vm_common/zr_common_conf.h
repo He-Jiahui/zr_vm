@@ -123,6 +123,9 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_FAST_CALL
 #endif
 
+#define ZR_IN
+#define ZR_OUT
+#define ZR_INOUT
 
 // allocator function
 typedef TZrPtr (*FZrAllocator)(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag);

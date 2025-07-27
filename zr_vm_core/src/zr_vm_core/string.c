@@ -176,7 +176,7 @@ TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format,
 
 void ZrStringTableConstruct(SZrGlobalState *global) {
     SZrStringTable *stringTable = &global->stringTable;
-    // stringTable->bucketCount = 0;
+    // stringTable->bucketSize = 0;
     // stringTable->elementCount = 0;
     // stringTable->capacity = 0;
     // stringTable->buckets = ZR_NULL;
