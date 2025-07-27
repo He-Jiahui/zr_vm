@@ -29,7 +29,7 @@
 #ifdef ZR_PLATFORM_WIN
 #define ZR_VM_PLATFORM_INFO "win"
 #define ZR_VM_PLATFORM_IS_WIN
-#deinfe ZR_SEPARATOR '\\'
+#define ZR_SEPARATOR '\\'
 #elif ZR_PLATFORM_DARWIN
 #define ZR_VM_PLATFORM_INFO "darwin"
 #define ZR_VM_PLATFORM_IS_DARWIN
