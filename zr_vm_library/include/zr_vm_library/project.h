@@ -8,6 +8,8 @@
 #include "zr_vm_library/conf.h"
 
 
+#define ZR_LIBRARY_BINARY_FILE_EXT ".zrb"
+
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrString *file;
     TZrString *directory;
@@ -19,9 +21,11 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrString *url;
     TZrString *license;
     TZrString *copyright;
-    TZrString *intermediate;
+    TZrString *binary;
     TZrString *source;
     TZrString *entry;
+    TZrString *dependency;
+    TZrString *local;
 };
 
 typedef struct SZrLibrary_Project SZrLibrary_Project;

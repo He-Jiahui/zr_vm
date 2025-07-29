@@ -67,14 +67,20 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TNativeString raw, TN
     ZR_JSON_READ_STRING(state, projectJson, copyright);
     project->copyright = copyright;
 
-    ZR_JSON_READ_STRING(state, projectJson, intermediate);
-    project->intermediate = intermediate;
+    ZR_JSON_READ_STRING(state, projectJson, binary);
+    project->binary = binary;
 
     ZR_JSON_READ_STRING(state, projectJson, source);
     project->source = source;
 
     ZR_JSON_READ_STRING(state, projectJson, entry);
     project->entry = entry;
+
+    ZR_JSON_READ_STRING(state, projectJson, dependency);
+    project->dependency = dependency;
+
+    ZR_JSON_READ_STRING(state, projectJson, local);
+    project->local = local;
 
     // todo:
     return project;
@@ -92,10 +98,10 @@ TBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TNativeString 
     SZrLibrary_Project *project = global->userData;
     TChar fullPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TNativeString directory = ZrStringGetNativeString(project->directory);
-    TNativeString intermediate = ZrStringGetNativeString(project->intermediate);
+    TNativeString intermediate = ZrStringGetNativeString(project->binary);
     // todo: load module
     ZrLibrary_File_PathJoin(directory, intermediate, fullPath);
     ZrLibrary_File_PathJoin(fullPath, path, fullPath);
-    ZrNativeStringConcat(fullPath, ".zri", fullPath);
+    ZrNativeStringConcat(fullPath, ZR_LIBRARY_BINARY_FILE_EXT, fullPath);
     return ZrLibrary_File_SourceLoadImplementation(state, fullPath, md5, io);
 }

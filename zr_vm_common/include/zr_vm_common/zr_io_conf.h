@@ -27,7 +27,8 @@ static const union {
  *  27 ENDIAN 1
  *  28 DEBUG 1
  *  29 OPT 3
- *  32 .MODULE
+ *  32 MODULES_LENGTH 8
+ *  40 MODULES [.MODULE]
  */
 #define ZR_IO_SOURCE_SIGNATURE "\x1ZR\x2"
 
@@ -123,7 +124,6 @@ static const union {
 
 /* .DECLARE:
  * TYPE [4]
- * STATUS [4] [DECLARE|STATIC]
  * BODY [.CLASS|.STRUCT|.INTERFACE|.FUNCTION|.ENUM|.FIELD]
  */
 
