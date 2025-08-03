@@ -33,13 +33,17 @@ void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
      */
     ZR_INSTRUCTION_DISPATCH_TABLE
 #define DONE(N) ZR_INSTRUCTION_DONE(instruction, programCounter, N)
-#define A0(INSTRUCTION) INSTRUCTION.instruction.operand.operandA[0]
-#define A1(INSTRUCTION) INSTRUCTION.instruction.operand.operandA[1]
-#define A2(INSTRUCTION) INSTRUCTION.instruction.operand.operandA[2]
-#define A3(INSTRUCTION) INSTRUCTION.instruction.operand.operandA[3]
-#define B0(INSTRUCTION) INSTRUCTION.instruction.operand.operandB[0]
-#define B1(INSTRUCTION) INSTRUCTION.instruction.operand.operandB[1]
-#define C0(INSTRUCTION) INSTRUCTION.instruction.operand.operandC[0]
+// 4 OPERANDS
+#define A0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[1]
+#define B0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[2]
+#define C0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[3]
+#define D0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[1]
+// 2 OPERANDS
+#define A1(INSTRUCTION) INSTRUCTION.instruction.operand.operand1[0]
+#define B1(INSTRUCTION) INSTRUCTION.instruction.operand.operand1[1]
+// 1 OPERAND
+#define A2(INSTRUCTION) INSTRUCTION.instruction.operand.operand2[0]
+
 #define BASE(OFFSET) (base + (OFFSET))
 #define CONST(OFFSET) (constants + (OFFSET))
 #define CLOSURE(OFFSET) (closure->closureValuesExtend[OFFSET])
@@ -74,7 +78,7 @@ void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
 
 #define JUMP(CALL_INFO, INSTRUCTION, OFFSET)                                                                           \
     {                                                                                                                  \
-        programCounter += C0(INSTRUCTION) + (OFFSET);                                                                  \
+        programCounter += A2(INSTRUCTION) + (OFFSET);                                                                  \
         UPDATE_TRAP(CALL_INFO);                                                                                        \
     }
 
@@ -103,57 +107,58 @@ LZrReturning:
         ZR_ASSERT(base <= state->stackTop.valuePointer &&
                   state->stackTop.valuePointer <= state->stackTail.valuePointer);
         ZR_INSTRUCTION_DISPATCH(instruction) {
-            ZR_INSTRUCTION_LABEL(GET_STACK) { ret = BASE(B0(instruction))->value; }
+            ZR_INSTRUCTION_LABEL(GET_STACK) { ret = BASE(A2(instruction))->value; }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(SET_STACK) { BASE(B0(instruction))->value = ret; }
+            ZR_INSTRUCTION_LABEL(SET_STACK) { BASE(A2(instruction))->value = ret; }
             DONE(1);
             ZR_INSTRUCTION_LABEL(GET_CONSTANT) {
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
-                BASE(B0(instruction))->value = *CONST(ret.value.nativeObject.nativeUInt64);
+                // BASE(B1(instruction))->value = *CONST(ret.value.nativeObject.nativeUInt64);
+                ret = *CONST(A2(instruction));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CONSTANT) {
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
-                *CONST(ret.value.nativeObject.nativeUInt64) = BASE(B0(instruction))->value;
+                //*CONST(ret.value.nativeObject.nativeUInt64) = BASE(B1(instruction))->value;
+                *CONST(A2(instruction)) = ret;
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(GET_CLOSURE) {
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
                 // closure function to access
-                ZrValueCopy(state, &(BASE(B0(instruction))->value),
-                            ZrClosureValueGetValue(CLOSURE(ret.value.nativeObject.nativeUInt64)));
-                // BASE(B0(instruction))->value = CLOSURE(ret.value.nativeObject.nativeUInt64);
+                ZrValueCopy(state, &ret, ZrClosureValueGetValue(CLOSURE(A2(instruction))));
+                // BASE(B1(instruction))->value = CLOSURE(ret.value.nativeObject.nativeUInt64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CLOSURE) {
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
-                SZrClosureValue *closureValue = CLOSURE(ret.value.nativeObject.nativeUInt64);
+                SZrClosureValue *closureValue = CLOSURE(A2(instruction));
                 SZrTypeValue *value = ZrClosureValueGetValue(closureValue);
-                SZrTypeValue *newValue = &BASE(B0(instruction))->value;
+                SZrTypeValue *newValue = &ret;
                 // closure function to access
                 ZrValueCopy(state, value, newValue);
-                // CLOSURE(ret.value.nativeObject.nativeUInt64) = BASE(B0(instruction))->value;
+                // CLOSURE(ret.value.nativeObject.nativeUInt64) = BASE(B1(instruction))->value;
                 ZrValueBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue), newValue);
-                // *CLOSURE(ret.value.nativeObject.nativeUInt64) = BASE(B0(instruction))->value;
+                // *CLOSURE(ret.value.nativeObject.nativeUInt64) = BASE(B1(instruction))->value;
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_INT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeUInt64, +, opA->type);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_FLOAT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_2(nativeDouble, +, opA->type);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_STRING) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type));
                 // ALGORITHM_2(nativeDouble, +, opA->type);
                 // ZR_VALUE_FAST_SET(&ret, nativeString, ZrStringConcat(state, opA->value.nativeObject.nativeString,
@@ -162,43 +167,43 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SUB_INT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeInt64, -, opA->type);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SUB_FLOAT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_2(nativeDouble, -, opA->type);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL_SIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeInt64, *, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL_UNSIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeUInt64, *, ZR_VALUE_TYPE_UINT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL_FLOAT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_2(nativeDouble, *, ZR_VALUE_TYPE_DOUBLE);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_SIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 SAVE_STATE(state, callInfo); // error: divide by zero
                 if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
@@ -209,8 +214,8 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_UNSIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 SAVE_STATE(state, callInfo); // error: divide by zero
                 if (ZR_UNLIKELY(opB->value.nativeObject.nativeUInt64 == 0)) {
@@ -221,15 +226,15 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_FLOAT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_2(nativeDouble, /, ZR_VALUE_TYPE_DOUBLE);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD_SIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 SAVE_STATE(state, callInfo); // error: modulo by zero
                 if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
@@ -243,8 +248,8 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD_UNSIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 SAVE_STATE(state, callInfo); // error: modulo by zero
                 if (opB->value.nativeObject.nativeUInt64 == 0) {
@@ -254,15 +259,15 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD_FLOAT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_FUNC_2(nativeDouble, fmod, ZR_VALUE_TYPE_DOUBLE);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW_SIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 SAVE_STATE(state, callInfo); // error: power domain error
                 TInt64 valueA = opA->value.nativeObject.nativeInt64;
@@ -277,8 +282,8 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW_UNSIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 SAVE_STATE(state, callInfo); // error: power domain error
                 TUInt64 valueA = opA->value.nativeObject.nativeUInt64;
@@ -290,28 +295,28 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW_FLOAT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_FUNC_2(nativeDouble, pow, ZR_VALUE_TYPE_DOUBLE);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_LEFT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeInt64, <<, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_RIGHT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeInt64, >>, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_NOT) {
-                opA = &BASE(A0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
                 if (ZR_VALUE_IS_TYPE_NULL(opA->type)) {
                     ZR_VALUE_FAST_SET(&ret, nativeBool, ZR_VALUE_TYPE_BOOL, ZR_TRUE);
                 } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
@@ -326,171 +331,171 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_AND) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type));
                 ALGORITHM_2(nativeBool, &&, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_OR) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type));
                 ALGORITHM_2(nativeBool, ||, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_SIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeInt64, >, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_UNSIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, >, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_FLOAT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeDouble, >, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_SIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeInt64, <, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_UNSIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, <, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_FLOAT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeDouble, <, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_EQUAL) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 TBool result = ZrValueEqual(state, opA, opB);
                 ZR_VALUE_FAST_SET(&ret, nativeBool, result, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_NOT_EQUAL) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 TBool result = !ZrValueEqual(state, opA, opB);
                 ZR_VALUE_FAST_SET(&ret, nativeBool, result, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_SIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeInt64, >=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_UNSIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, >=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_FLOAT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeDouble, >=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_EQUAL_SIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeInt64, <=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_EQUAL_UNSIGNED) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, <=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_EQUAL_FLOAT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeDouble, <=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_NOT) {
-                opA = &BASE(A0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type));
                 ALGORITHM_1(nativeInt64, ~, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_AND) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeInt64, &, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_OR) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeInt64, |, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_XOR) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeInt64, ^, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_LEFT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeInt64, <<, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_RIGHT) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeUInt64, >>, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(FUNCTION_CALL) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_CLOSURE(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type) &&
                           ZR_VALUE_IS_TYPE_INT(ret.type));
                 TZrSize parametersCount = opB->value.nativeObject.nativeUInt64;
                 TZrSize returnCount = ret.value.nativeObject.nativeUInt64;
                 if (parametersCount > 0) {
-                    state->stackTop.valuePointer = BASE(A0(instruction)) + parametersCount;
+                    state->stackTop.valuePointer = BASE(A1(instruction)) + parametersCount;
                 }
                 // save its program counter
                 callInfo->context.context.programCounter = programCounter;
-                SZrCallInfo *nextCallInfo = ZrFunctionPreCall(state, BASE(A0(instruction)), returnCount);
+                SZrCallInfo *nextCallInfo = ZrFunctionPreCall(state, BASE(A1(instruction)), returnCount);
                 if (nextCallInfo == ZR_NULL) {
                     // NULL means native call
                     trap = callInfo->context.context.trap;
@@ -502,8 +507,8 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(FUNCTION_TAIL_CALL) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_CLOSURE(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type) &&
                           ZR_VALUE_IS_TYPE_INT(ret.type));
                 TZrSize parametersCount = opB->value.nativeObject.nativeUInt64;
@@ -512,8 +517,8 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(FUNCTION_RETURN) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
 
                 TZrSize returnCount = opB->value.nativeObject.nativeUInt64;
                 TZrSize variableArguments = ret.value.nativeObject.nativeUInt64;
@@ -521,7 +526,7 @@ LZrReturning:
                 // save its program counter
                 callInfo->context.context.programCounter = programCounter;
                 // means the flag of closures to be closed
-                // if (A0(instruction)) {
+                // if (A1(instruction)) {
                 //     callInfo->yieldContext.returnValueCount = returnCount;
                 //     if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
                 //         state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
@@ -537,7 +542,7 @@ LZrReturning:
                     callInfo->functionBase.valuePointer -=
                             callInfo->context.context.variableArgumentCount + variableArguments;
                 }
-                state->stackTop.valuePointer = BASE(A0(instruction)) + returnCount;
+                state->stackTop.valuePointer = BASE(A1(instruction)) + returnCount;
                 ZrFunctionPostCall(state, callInfo, returnCount);
                 trap = callInfo->context.context.trap;
                 goto LZrReturn;
@@ -566,8 +571,8 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(CREATE_CLOSURE) {
-                opA = &BASE(A0(instruction))->value;
-                opB = &BASE(B0(instruction))->value;
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TRY) {}

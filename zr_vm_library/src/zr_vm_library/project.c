@@ -91,17 +91,19 @@ void ZrLibrary_Project_Do(SZrState *state) {
     SZrGlobalState *global = state->global;
     SZrLibrary_Project *project = global->userData;
     TNativeString entry = ZrStringGetNativeString(project->entry);
+    SZrIoSource *source = ZrIoLoadSource(state, entry, 0);
 }
 
 TBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TNativeString path, TNativeString md5, SZrIo *io) {
     SZrGlobalState *global = state->global;
     SZrLibrary_Project *project = global->userData;
+    TChar fullDirectory[ZR_LIBRARY_MAX_PATH_LENGTH];
     TChar fullPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TNativeString directory = ZrStringGetNativeString(project->directory);
-    TNativeString intermediate = ZrStringGetNativeString(project->binary);
+    TNativeString binary = ZrStringGetNativeString(project->binary);
     // todo: load module
-    ZrLibrary_File_PathJoin(directory, intermediate, fullPath);
-    ZrLibrary_File_PathJoin(fullPath, path, fullPath);
+    ZrLibrary_File_PathJoin(directory, binary, fullDirectory);
+    ZrLibrary_File_PathJoin(fullDirectory, path, fullPath);
     ZrNativeStringConcat(fullPath, ZR_LIBRARY_BINARY_FILE_EXT, fullPath);
     return ZrLibrary_File_SourceLoadImplementation(state, fullPath, md5, io);
 }

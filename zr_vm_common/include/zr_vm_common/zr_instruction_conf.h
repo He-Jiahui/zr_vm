@@ -164,9 +164,9 @@ ZR_INSTRUCTION_ENUM_WRAP(ZR_INSTRUCTION_DECLARE(ZR_INSTRUCTION_ENUM_DECLARE));
 typedef enum EZrInstructionCode EZrInstructionCode;
 
 union TZrInstructionType {
-    TUInt8 operandA[4];
-    TUInt16 operandB[2];
-    TInt32 operandC[1];
+    TUInt8 operand0[4];
+    TUInt16 operand1[2];
+    TInt32 operand2[1];
 };
 
 typedef union TZrInstructionType TZrInstructionType;

@@ -255,5 +255,7 @@ ZR_CORE_API TZrSize ZrIoRead(SZrIo *io, TBytePtr buffer, TZrSize size);
 
 ZR_CORE_API SZrIoSource *ZrIoReadSourceNew(SZrIo *io);
 
+ZR_CORE_API void ZrIoReadSourceFree(struct SZrGlobalState *global, SZrIoSource *source);
+
 ZR_CORE_API SZrIoSource *ZrIoLoadSource(struct SZrState *state, TNativeString sourceName, TNativeString md5);
 #endif // ZR_VM_CORE_IO_H

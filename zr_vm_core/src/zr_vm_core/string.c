@@ -199,11 +199,11 @@ void ZrStringTableInit(SZrState *state) {
     }
 }
 
-static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZrSize length) {
+static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZrSize length, TUInt64 hash) {
     SZrGlobalState *global = state->global;
     TZrString *constantString = ZR_NULL;
     TZrSize totalSize = sizeof(TZrString);
-
+    TNativeString stringBuffer = ZR_NULL;
     if (length <= ZR_VM_SHORT_STRING_MAX) {
         totalSize += ZR_VM_SHORT_STRING_MAX;
         constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
@@ -211,6 +211,7 @@ static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZ
         ((TNativeString) constantString->stringDataExtend)[length] = '\0';
         constantString->shortStringLength = (TUInt8) length;
         constantString->nextShortString = ZR_NULL;
+        stringBuffer = (TNativeString) constantString->stringDataExtend;
     } else {
         totalSize += sizeof(TNativeString);
         constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
@@ -220,9 +221,11 @@ static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZ
         *pointer[length] = '\0';
         constantString->shortStringLength = ZR_VM_LONG_STRING_FLAG;
         constantString->longStringLength = length;
+        stringBuffer = *pointer;
     }
 
-    ZrHashRawObjectInit(&constantString->super, ZR_VALUE_TYPE_STRING, ZrHashCreate(global, string, length));
+    ZrHashRawObjectInit(&constantString->super, ZR_VALUE_TYPE_STRING,
+                        hash == 0 ? ZrHashCreate(global, stringBuffer, length) : hash);
     return constantString;
 }
 
@@ -243,7 +246,7 @@ static TZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZr
     }
     {
         // create a new string
-        TZrString *newString = ZrStringObjectCreate(state, string, length);
+        TZrString *newString = ZrStringObjectCreate(state, string, length, hash);
         ZrHashSetAdd(global, &stringTable->stringHashSet, &newString->super);
         return newString;
     }
@@ -251,7 +254,7 @@ static TZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZr
 
 static ZR_FORCE_INLINE TZrString *ZrStringCreateLong(SZrState *state, TNativeString string, TZrSize length) {
     ZR_ASSERT(string != ZR_NULL);
-    TZrString *newString = ZrStringObjectCreate(state, string, length);
+    TZrString *newString = ZrStringObjectCreate(state, string, length, 0);
     return newString;
 }
 

@@ -49,25 +49,25 @@ void ZrLibrary_File_PathJoin(TNativeString path1, TNativeString path2, ZR_OUT TN
     }
     if (path1[0] == '\0') {
         TZrSize totalLength = ZrNativeStringLength(path2);
-        snprintf(result, totalLength, "%s", path2);
+        snprintf(result, totalLength, "%s", path2) + 1;
         return;
     }
     if (path2[0] == '\0') {
-        TZrSize totalLength = ZrNativeStringLength(path1);
+        TZrSize totalLength = ZrNativeStringLength(path1) + 1;
         snprintf(result, totalLength, "%s", path1);
         return;
     }
     if (path1[ZrNativeStringLength(path1) - 1] == '/' && path2[0] == '/') {
-        TZrSize totalLength = ZrNativeStringLength(path1) + ZrNativeStringLength(path2) - 1;
+        TZrSize totalLength = ZrNativeStringLength(path1) + ZrNativeStringLength(path2);
         snprintf(result, totalLength, "%s%s", path1, path2 + 1);
         return;
     }
     if (path1[ZrNativeStringLength(path1) - 1] == '/' || path2[0] == '/') {
-        TZrSize totalLength = ZrNativeStringLength(path1) + ZrNativeStringLength(path2);
+        TZrSize totalLength = ZrNativeStringLength(path1) + ZrNativeStringLength(path2) + 1;
         snprintf(result, totalLength, "%s%s", path1, path2);
         return;
     }
-    TZrSize totalLength = ZrNativeStringLength(path1) + ZrNativeStringLength(path2) + 1;
+    TZrSize totalLength = ZrNativeStringLength(path1) + ZrNativeStringLength(path2) + 2;
     snprintf(result, totalLength, "%s%c%s", path1, ZR_SEPARATOR, path2);
 }
 

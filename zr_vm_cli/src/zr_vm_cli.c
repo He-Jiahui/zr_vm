@@ -8,6 +8,7 @@
 
 #include "zr_vm_core/global.h"
 #include "zr_vm_library/common_state.h"
+#include "zr_vm_library/project.h"
 
 // static TZrPtr TestAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
 //     ZR_UNUSED_PARAMETER(userData);
@@ -30,7 +31,7 @@
 void ZrCliMain(const int argc, char **argv) {
     printf("use argc %d\n", argc);
     for (int i = 0; i < argc; i++) {
-        printf("argv %d is '%s'\n", argc, argv[i]);
+        printf("argv %d is '%s'\n", i, argv[i]);
     }
     Hello();
     // SZrCallbackGlobal callback = {
@@ -52,6 +53,8 @@ void ZrCliMain(const int argc, char **argv) {
         printf("global is null\n");
         return;
     }
+
+    ZrLibrary_Project_Do(global->mainThreadState);
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     global = ZR_NULL;
 }

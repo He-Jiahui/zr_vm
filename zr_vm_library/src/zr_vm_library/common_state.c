@@ -16,6 +16,9 @@ TZrPtr ZrLibrary_CommonState_BuiltinAllocator(TZrPtr userData, TZrPtr pointer, T
         free(pointer);
         return ZR_NULL;
     }
+    if (pointer == ZR_NULL) {
+        return (TZrPtr) malloc(newSize);
+    }
     return (TZrPtr) realloc(pointer, newSize);
 }
 
