@@ -7,7 +7,7 @@
 #include <math.h>
 
 #include "zr_vm_core/closure.h"
-#include "zr_vm_core/convertion.h"
+#include "zr_vm_core/conversion.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/math.h"

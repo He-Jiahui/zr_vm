@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/memory.h"
@@ -174,8 +175,9 @@ TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format,
     return result;
 }
 
-void ZrStringTableConstruct(SZrGlobalState *global) {
-    SZrStringTable *stringTable = &global->stringTable;
+void ZrStringTableNew(SZrGlobalState *global) {
+    SZrStringTable *stringTable = ZrMemoryRawMallocWithType(global, sizeof(SZrStringTable), ZR_VALUE_TYPE_VM_MEMORY);
+    global->stringTable = stringTable;
     // stringTable->bucketSize = 0;
     // stringTable->elementCount = 0;
     // stringTable->capacity = 0;
@@ -185,9 +187,9 @@ void ZrStringTableConstruct(SZrGlobalState *global) {
 
 void ZrStringTableInit(SZrState *state) {
     SZrGlobalState *global = state->global;
-    SZrStringTable *stringTable = &global->stringTable;
+    SZrStringTable *stringTable = global->stringTable;
     // stringTable
-    ZrHashSetInit(global, &stringTable->stringHashSet, ZR_STRING_TABLE_INIT_SIZE_LOG2);
+    ZrHashSetInit(state, &stringTable->stringHashSet, ZR_STRING_TABLE_INIT_SIZE_LOG2);
     // this is the first string we created
     global->memoryErrorMessage = ZR_STRING_LITERAL(state, ZR_ERROR_MESSAGE_NOT_ENOUGH_MEMORY);
     ZrRawObjectMarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->memoryErrorMessage));
@@ -197,7 +199,9 @@ void ZrStringTableInit(SZrState *state) {
             global->stringHashApiCache[i][j] = global->memoryErrorMessage;
         }
     }
+    stringTable->isValid = ZR_TRUE;
 }
+
 
 static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZrSize length, TUInt64 hash) {
     SZrGlobalState *global = state->global;
@@ -224,30 +228,33 @@ static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZ
         stringBuffer = *pointer;
     }
 
-    ZrHashRawObjectInit(&constantString->super, ZR_VALUE_TYPE_STRING,
+    ZrRawObjectInitHash(ZR_CAST_RAW_OBJECT_AS_SUPER(constantString),
                         hash == 0 ? ZrHashCreate(global, stringBuffer, length) : hash);
     return constantString;
 }
 
 static TZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZrSize length) {
     SZrGlobalState *global = state->global;
-    SZrStringTable *stringTable = &global->stringTable;
+    SZrStringTable *stringTable = global->stringTable;
     TUInt64 hash = ZrHashCreate(global, string, length);
-    TZrString *object = ZR_CAST(TZrString *, ZrHashSetGetBucket(&stringTable->stringHashSet, hash));
+    SZrHashKeyValuePair *object = ZrHashSetGetBucket(&stringTable->stringHashSet, hash);
     ZR_ASSERT(string != ZR_NULL);
-    for (; object != ZR_NULL; object = ZR_CAST(TZrString *, object->super.next)) {
-        if (object->shortStringLength == length &&
-            ZrMemoryRawCompare(ZrStringGetNativeStringShort(object), string, length * sizeof(TChar)) == 0) {
-            if (ZrRawObjectIsReleased(ZR_CAST_RAW_OBJECT_AS_SUPER(object))) {
-                ZrRawObjectMarkAsReferenced(ZR_CAST_RAW_OBJECT_AS_SUPER(object));
+    for (; object != ZR_NULL; object = object->next) {
+        ZR_ASSERT(object->key.type == ZR_VALUE_TYPE_STRING);
+        TZrString *stringObject = ZR_CAST_STRING(state, object->value);
+        // we customized string compare function for speed
+        if (stringObject->shortStringLength == length &&
+            ZrMemoryRawCompare(ZrStringGetNativeStringShort(stringObject), string, length * sizeof(TChar)) == 0) {
+            if (ZrRawObjectIsReleased(ZR_CAST_RAW_OBJECT_AS_SUPER(stringObject))) {
+                ZrRawObjectMarkAsReferenced(ZR_CAST_RAW_OBJECT_AS_SUPER(stringObject));
             }
-            return object;
+            return stringObject;
         }
     }
     {
         // create a new string
         TZrString *newString = ZrStringObjectCreate(state, string, length, hash);
-        ZrHashSetAdd(global, &stringTable->stringHashSet, &newString->super);
+        ZrHashSetAddRawObject(state, &stringTable->stringHashSet, &newString->super);
         return newString;
     }
 }

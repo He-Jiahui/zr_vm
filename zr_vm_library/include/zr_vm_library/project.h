@@ -4,7 +4,7 @@
 
 #ifndef ZR_VM_LIBRARY_PROJECT_H
 #define ZR_VM_LIBRARY_PROJECT_H
-#include "zr_vm_core/global.h"
+
 #include "zr_vm_library/conf.h"
 
 

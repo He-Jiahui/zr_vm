@@ -4,8 +4,6 @@
 
 #ifndef ZR_VM_LIBRARY_COMMON_STATE_H
 #define ZR_VM_LIBRARY_COMMON_STATE_H
-#include "zr_vm_common/zr_common_conf.h"
-#include "zr_vm_core/global.h"
 #include "zr_vm_library/conf.h"
 
 /** we provide a default state for user here

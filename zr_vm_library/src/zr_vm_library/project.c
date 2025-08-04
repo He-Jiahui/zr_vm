@@ -1,12 +1,11 @@
 //
 // Created by HeJiahui on 2025/7/27.
 //
-
-
-#include "zr_vm_library/project.h"
 #include "cJSON/cJSON.h"
-#include "zr_vm_core/memory.h"
+
+#include "zr_vm_library/conf.h"
 #include "zr_vm_library/file.h"
+#include "zr_vm_library/project.h"
 
 #define ZR_JSON_READ_STRING(STATE, OBJECT, NAME)                                                                       \
     TZrString *NAME = ZR_NULL;                                                                                         \

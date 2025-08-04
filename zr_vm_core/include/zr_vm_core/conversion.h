@@ -2,8 +2,8 @@
 // Created by HeJiahui on 2025/6/18.
 //
 
-#ifndef ZR_VM_CORE_CONVERTION_H
-#define ZR_VM_CORE_CONVERTION_H
+#ifndef ZR_VM_CORE_CONVERSION_H
+#define ZR_VM_CORE_CONVERSION_H
 
 #include "zr_vm_core/conf.h"
 
@@ -38,9 +38,8 @@
 #define ZR_CAST_RAW_OBJECT(EXP) ZR_CAST(SZrRawObject *, (EXP))
 #define ZR_CAST_RAW_OBJECT_PTR(EXP) ZR_CAST(SZrRawObject **, (EXP))
 #define ZR_CAST_RAW_OBJECT_AS_SUPER(EXP) ZR_CAST(SZrRawObject *, &((EXP)->super))
-#define ZR_CAST_HASH_RAW_OBJECT(EXP) ZR_CAST(SZrHashRawObject *, (EXP))
-#define ZR_CAST_HASH_RAW_OBJECT_PTR(EXP) ZR_CAST(SZrHashRawObject **, (EXP))
-#define ZR_CAST_HASH_RAW_OBJECT_AS_SUPER(EXP) ZR_CAST(SZrHashRawObject *, &((EXP)->super))
+#define ZR_CAST_HASH_KEY_VALUE_PAIR(EXP) ZR_CAST(SZrHashKeyValuePair *, (EXP))
+#define ZR_CAST_HASH_KEY_VALUE_PAIR_PTR(EXP) ZR_CAST(SZrHashKeyValuePair **, (EXP))
 
 #define ZR_CAST_STACK_VALUE(EXP) ZR_CAST(SZrTypeValueOnStack *, (EXP))
 #define ZR_CAST_FROM_STACK_VALUE(EXP) ZR_CAST(SZrTypeValue *, (EXP))
@@ -65,4 +64,4 @@
 #define ZR_CAST_FUNCTION(STATE, EXP) ZR_CAST_CHECKED(STATE, SZrFunction *, (EXP), ZR_RAW_OBJECT_TYPE_FUNCTION)
 #define ZR_CAST_NATIVE_FUNCTION(STATE, EXP)                                                                            \
     ZR_CAST_CHECKED_NATIVE(STATE, FZrNativeFunction, (EXP), ZR_RAW_OBJECT_TYPE_FUNCTION, ZR_TRUE)
-#endif // ZR_VM_CORE_CONVERTION_H
+#endif // ZR_VM_CORE_CONVERSION_H

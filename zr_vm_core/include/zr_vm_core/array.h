@@ -6,7 +6,7 @@
 #define ZR_VM_CORE_LIST_H
 
 #include "zr_vm_core/conf.h"
-#include "zr_vm_core/convertion.h"
+#include "zr_vm_core/conversion.h"
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/memory.h"
 ZR_FORCE_INLINE void ZrArrayConstruct(SZrArray *array) { array->isValid = ZR_FALSE; }

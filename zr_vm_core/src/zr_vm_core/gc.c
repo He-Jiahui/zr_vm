@@ -4,9 +4,10 @@
 
 #include "zr_vm_core/gc.h"
 
-#include "zr_vm_core/convertion.h"
+#include "zr_vm_core/conversion.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/state.h"
 
 
 static TZrSize ZrGarbageCollectorRunGenerationalFull(SZrState *state) {
@@ -27,12 +28,13 @@ static TZrSize ZrGarbageCollectorRunIncreasementStep(SZrState *state) {
 }
 
 static ZR_FORCE_INLINE TBool ZrGarbageCollectorIsGenerationalMode(SZrGlobalState *global) {
-    return global->garbageCollector.gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL ||
-           global->garbageCollector.atomicMemories != 0;
+    return global->garbageCollector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL ||
+           global->garbageCollector->atomicMemories != 0;
 }
 
-void ZrGarbageCollectorInit(SZrGlobalState *global) {
-    SZrGarbageCollector *gc = &global->garbageCollector;
+void ZrGarbageCollectorNew(SZrGlobalState *global) {
+    SZrGarbageCollector *gc = ZrMemoryRawMallocWithType(global, sizeof(SZrGarbageCollector), ZR_VALUE_TYPE_VM_MEMORY);
+    global->garbageCollector = gc;
     SZrState *state = global->mainThreadState;
     // set size
     gc->managedMemories = sizeof(SZrGlobalState) + sizeof(SZrState);
@@ -69,30 +71,30 @@ void ZrGarbageCollectorInit(SZrGlobalState *global) {
 }
 
 void ZrGarbageCollectorAddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffset size) {
-    TZrMemoryOffset totalSize = global->garbageCollector.gcDebtSize + global->garbageCollector.gcDebtSize;
+    TZrMemoryOffset totalSize = global->garbageCollector->gcDebtSize + global->garbageCollector->gcDebtSize;
     ZR_ASSERT(totalSize > 0);
     if (ZR_UNLIKELY(size < totalSize - ZR_MAX_MEMORY_OFFSET)) {
         size = totalSize - ZR_MAX_MEMORY_OFFSET;
     }
-    global->garbageCollector.managedMemories = totalSize - size;
-    global->garbageCollector.gcDebtSize = size;
+    global->garbageCollector->managedMemories = totalSize - size;
+    global->garbageCollector->gcDebtSize = size;
 }
 
 void ZrGarbageCollectorGcFull(SZrState *state, TBool isImmediate) {
     SZrGlobalState *global = state->global;
-    ZR_ASSERT(!global->garbageCollector.isImmediateGcFlag);
-    global->garbageCollector.isImmediateGcFlag = isImmediate;
-    if (global->garbageCollector.gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) {
+    ZR_ASSERT(!global->garbageCollector->isImmediateGcFlag);
+    global->garbageCollector->isImmediateGcFlag = isImmediate;
+    if (global->garbageCollector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) {
         ZrGarbageCollectorRunGenerationalFull(state);
     } else {
         ZrGarbageCollectorRunIncreasementFull(state);
     }
-    global->garbageCollector.isImmediateGcFlag = ZR_FALSE;
+    global->garbageCollector->isImmediateGcFlag = ZR_FALSE;
 }
 
 void ZrGarbageCollectorGcStep(struct SZrState *state) {
     SZrGlobalState *global = state->global;
-    if (global->garbageCollector.gcStatus != ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
+    if (global->garbageCollector->gcStatus != ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
         ZrGarbageCollectorAddDebtSpace(global, ZR_GARBAGE_COLLECT_DEBT_SIZE);
     } else {
         if (ZrGarbageCollectorIsGenerationalMode(global)) {
@@ -104,22 +106,22 @@ void ZrGarbageCollectorGcStep(struct SZrState *state) {
 }
 
 TBool ZrGarbageCollectorIsInvariant(struct SZrGlobalState *global) {
-    return global->garbageCollector.gcStatus <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_ATOMIC;
+    return global->garbageCollector->gcStatus <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_ATOMIC;
 }
 
 TBool ZrGarbageCollectorIsSweeping(struct SZrGlobalState *global) {
-    EZrGarbageCollectRunningStatus status = global->garbageCollector.gcStatus;
+    EZrGarbageCollectRunningStatus status = global->garbageCollector->gcStatus;
     return status >= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS &&
            status <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END;
 }
 
 void ZrGarbageCollectorCheckGc(struct SZrState *state) {
     SZrGlobalState *global = state->global;
-    if (global->garbageCollector.gcDebtSize > 0) {
+    if (global->garbageCollector->gcDebtSize > 0) {
         ZrGarbageCollectorGcStep(state);
     }
 #if defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
-    if (global->garbageCollector.gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
+    if (global->garbageCollector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
         ZrGarbageCollectorGcFull(state, ZR_FALSE);
     }
 #endif
@@ -127,7 +129,7 @@ void ZrGarbageCollectorCheckGc(struct SZrState *state) {
 
 static void ZrGarbageCollectorMarkObject(struct SZrState *state, SZrRawObject *object);
 static ZR_FORCE_INLINE void ZrGarbageCollectorMarkValue(struct SZrState *state, SZrTypeValue *value) {
-    ZrGlobalValueStaticAssertIsAlive(state, value);
+    ZrGcValueStaticAssertIsAlive(state, value);
     if (ZrValueIsGarbageCollectable(value) && ZrRawObjectIsMarkInited(value->value.object)) {
         ZrGarbageCollectorMarkObject(state, value->value.object);
     }
@@ -165,7 +167,7 @@ static void ZrGarbageCollectorMarkObject(struct SZrState *state, SZrRawObject *o
         case ZR_RAW_OBJECT_TYPE_FUNCTION:
         case ZR_RAW_OBJECT_TYPE_OBJECT:
         case ZR_RAW_OBJECT_TYPE_THREAD: {
-            ZrGarbageCollectorToGcListAndMarkWaitToScan(object, &global->garbageCollector.waitToScanObjectList);
+            ZrGarbageCollectorToGcListAndMarkWaitToScan(object, &global->garbageCollector->waitToScanObjectList);
         } break;
         default: {
             ZR_ASSERT(ZR_FALSE);
@@ -185,7 +187,7 @@ void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZr
         }
     } else {
         ZR_ASSERT(ZrGarbageCollectorIsSweeping(global));
-        if (global->garbageCollector.gcMode == ZR_GARBAGE_COLLECT_MODE_INCREMENTAL) {
+        if (global->garbageCollector->gcMode == ZR_GARBAGE_COLLECT_MODE_INCREMENTAL) {
             ZrRawObjectMarkAsInit(state, valueObject);
         }
     }
@@ -194,7 +196,7 @@ void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZr
 void ZrGarbageCollectorBarrierBack(struct SZrState *state, SZrRawObject *object) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(ZrRawObjectIsMarkReferenced(object) && !ZrRawObjectIsUnreferenced(state, object));
-    ZR_ASSERT((global->garbageCollector.gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) ==
+    ZR_ASSERT((global->garbageCollector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) ==
               (ZrRawObjectIsGenerationalThroughBarrier(object) &&
                object->garbageCollectMark.generationalStatus != ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED));
     if (object->garbageCollectMark.generationalStatus ==
@@ -202,7 +204,7 @@ void ZrGarbageCollectorBarrierBack(struct SZrState *state, SZrRawObject *object)
         ZrRawObjectMarkAsWaitToScan(object);
         ZrRawObjectSetGenerationalStatus(object, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED);
     } else {
-        ZrGarbageCollectorToGcListAndMarkWaitToScan(object, &global->garbageCollector.waitToScanAgainObjectList);
+        ZrGarbageCollectorToGcListAndMarkWaitToScan(object, &global->garbageCollector->waitToScanAgainObjectList);
     }
     if (ZrRawObjectIsGenerationalThroughBarrier(object)) {
         ZrRawObjectSetGenerationalStatus(object, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED);
@@ -221,10 +223,10 @@ SZrRawObject *ZrRawObjectNew(SZrState *state, EZrValueType type, TZrSize size, T
     SZrRawObject *object = ZR_CAST_RAW_OBJECT(memory);
     ZrRawObjectConstruct(object, type);
     object->isNative = isNative;
-    object->garbageCollectMark.status = global->garbageCollector.gcInitializeObjectStatus;
-    object->garbageCollectMark.generation = global->garbageCollector.gcGeneration;
-    object->next = global->garbageCollector.gcObjectList;
-    global->garbageCollector.gcObjectList = object;
+    object->garbageCollectMark.status = global->garbageCollector->gcInitializeObjectStatus;
+    object->garbageCollectMark.generation = global->garbageCollector->gcGeneration;
+    object->next = global->garbageCollector->gcObjectList;
+    global->garbageCollector->gcObjectList = object;
     return object;
 }
 
@@ -235,13 +237,13 @@ TBool ZrRawObjectIsUnreferenced(struct SZrState *state, SZrRawObject *object) {
     return status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_UNREFERENCED ||
            status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED ||
            (status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED &&
-            generation != global->garbageCollector.gcGeneration);
+            generation != global->garbageCollector->gcGeneration);
 }
 
 
 void ZrRawObjectMarkAsInit(struct SZrState *state, SZrRawObject *object) {
     SZrGlobalState *global = state->global;
-    EZrGarbageCollectGeneration generation = global->garbageCollector.gcGeneration;
+    EZrGarbageCollectGeneration generation = global->garbageCollector->gcGeneration;
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
     object->garbageCollectMark.generation = generation;
 }
@@ -250,9 +252,15 @@ void ZrRawObjectMarkAsPermanent(SZrState *state, SZrRawObject *object) {
     ZR_ASSERT(object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED);
     SZrGlobalState *global = state->global;
     // we assume that the object is the first object in gc list (latest created)
-    ZR_ASSERT(global->garbageCollector.gcObjectList == object);
+    ZR_ASSERT(global->garbageCollector->gcObjectList == object);
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT;
-    global->garbageCollector.gcObjectList = object->next;
-    object->next = global->garbageCollector.permanentObjectList;
-    global->garbageCollector.permanentObjectList = object;
+    global->garbageCollector->gcObjectList = object->next;
+    object->next = global->garbageCollector->permanentObjectList;
+    global->garbageCollector->permanentObjectList = object;
+}
+
+void ZrGcValueStaticAssertIsAlive(struct SZrState *state, SZrTypeValue *value) {
+    ZR_ASSERT(!value->isGarbageCollectable ||
+              ((value->type == value->value.object->type) &&
+               ((state == ZR_NULL) || !ZrGcRawObjectIsDead(state->global, value->value.object))));
 }

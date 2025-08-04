@@ -4,7 +4,8 @@
 
 #include "zr_vm_core/stack.h"
 
-#include "zr_vm_core/convertion.h"
+#include "zr_vm_core/conversion.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
@@ -53,14 +54,14 @@ static void ZrStackMarkStackAsAbsolute(SZrState *state) {
 static TBool ZrStackReallocInternal(SZrState *state, TUInt64 newSize, TBool throwError) {
     SZrGlobalState *global = state->global;
     TZrSize previousStackSize = ZrStateStackGetSize(state);
-    TBool previousStopGcFlag = state->global->garbageCollector.stopGcFlag;
+    TBool previousStopGcFlag = state->global->garbageCollector->stopGcFlag;
     ZR_ASSERT(newSize <= ZR_VM_MAX_STACK || newSize == ZR_VM_ERROR_STACK);
     ZrStackMarkStackAsRelative(state);
-    state->global->garbageCollector.stopGcFlag = ZR_TRUE;
+    state->global->garbageCollector->stopGcFlag = ZR_TRUE;
     TZrStackValuePointer newStackPointer = ZR_CAST_STACK_VALUE(
             ZrMemoryAllocate(global, state->stackBase.valuePointer, previousStackSize + ZR_THREAD_STACK_SIZE_EXTRA,
                              newSize + ZR_THREAD_STACK_SIZE_EXTRA));
-    state->global->garbageCollector.stopGcFlag = previousStopGcFlag;
+    state->global->garbageCollector->stopGcFlag = previousStopGcFlag;
     if (ZR_UNLIKELY(newStackPointer == ZR_NULL)) {
         // todo:
         ZrStackMarkStackAsAbsolute(state);
@@ -137,7 +138,7 @@ void ZrStackSetRawObjectValue(struct SZrState *state, SZrTypeValueOnStack *desti
     ZrValueInitAsRawObject(state, destinationValue, object);
     destinationValue->isNative = ZR_FALSE;
     destinationValue->isGarbageCollectable = ZR_TRUE;
-    ZrGlobalValueStaticAssertIsAlive(state, destinationValue);
+    ZrGcValueStaticAssertIsAlive(state, destinationValue);
 }
 
 
@@ -148,7 +149,7 @@ void ZrStackCopyValue(SZrState *state, SZrTypeValueOnStack *destination, SZrType
     destinationValue->type = source->type;
     destinationValue->isGarbageCollectable = source->isGarbageCollectable;
     destinationValue->isNative = source->isNative;
-    ZrGlobalValueStaticAssertIsAlive(state, destinationValue);
+    ZrGcValueStaticAssertIsAlive(state, destinationValue);
 }
 
 TZrMemoryOffset ZrStackSavePointerAsOffset(struct SZrState *state, TZrStackValuePointer stackPointer) {

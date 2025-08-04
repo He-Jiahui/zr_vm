@@ -6,13 +6,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "zr_vm_core/gc.h"
+
 
 // todo:
 TZrPtr ZrMemoryGcAndMalloc(SZrState *state, EZrValueType type, TZrSize size) {
     ZR_UNUSED_PARAMETER(type);
     SZrGlobalState *global = state->global;
     // global state is initialized judge by null value
-    if (ZrGlobalStateIsInitialized(global) && !global->garbageCollector.isImmediateGcFlag) {
+    if (ZrGlobalStateIsInitialized(global) && !global->garbageCollector->isImmediateGcFlag) {
         // todo: call full gc
         ZrGarbageCollectorGcFull(state, ZR_TRUE);
         return ZrMemoryRawMalloc(global, size);
@@ -31,7 +33,7 @@ TZrPtr ZrMemoryGcMalloc(SZrState *state, EZrValueType type, TZrSize size) {
             ZrExceptionThrow(state, ZR_THREAD_STATUS_MEMORY_ERROR);
         }
     }
-    global->garbageCollector.gcDebtSize += (TZrMemoryOffset) size;
+    global->garbageCollector->gcDebtSize += (TZrMemoryOffset) size;
     return pointer;
 }
 

@@ -2,10 +2,10 @@
 // Created by HeJiahui on 2025/7/27.
 //
 #include "zr_vm_library/common_state.h"
-#include "zr_vm_common/zr_common_conf.h"
-#include "zr_vm_core/memory.h"
+#include "zr_vm_library/conf.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
+
 
 TZrPtr ZrLibrary_CommonState_BuiltinAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize,
                                               TInt64 flag) {

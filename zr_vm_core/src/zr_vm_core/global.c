@@ -3,9 +3,12 @@
 //
 #include "zr_vm_core/global.h"
 
-#include "zr_vm_core/convertion.h"
+#include "zr_vm_core/conversion.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/object.h"
+#include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
 static void ZrGlobalStatePanic(SZrState *state) {
@@ -36,13 +39,13 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     global->hashSeed = ZrHashSeedCreate(global, uniqueNumber);
 
     // gc
-    ZrGarbageCollectorInit(global);
+    ZrGarbageCollectorNew(global);
 
     // io
     global->sourceLoader = ZR_NULL;
 
     // init string table
-    ZrStringTableConstruct(global);
+    ZrStringTableNew(global);
 
     // init global module registry
     ZrValueResetAsNull(&global->loadedModulesRegistry);

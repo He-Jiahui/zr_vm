@@ -26,7 +26,7 @@
 #define ZR_STRING_UTF8_SIZE 8
 
 struct ZR_STRUCT_ALIGN TZrString {
-    SZrHashRawObject super;
+    SZrRawObject super;
 
     // 尾部
     union {
@@ -42,11 +42,6 @@ struct ZR_STRUCT_ALIGN TZrString {
 
 typedef struct TZrString TZrString;
 
-struct ZR_STRUCT_ALIGN SZrStringTable {
-    SZrHashSet stringHashSet;
-};
-
-typedef struct SZrStringTable SZrStringTable;
 
 #define ZR_STRING_SIGNED_INTEGER_PRINT_FORMAT(STR, LEN, NUMBER) snprintf(STR, LEN, "%" PRId64, (TInt64) NUMBER)
 

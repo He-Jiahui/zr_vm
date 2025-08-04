@@ -8,13 +8,20 @@
 #include <stdarg.h>
 #include <string.h>
 
-#include "convertion.h"
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/conversion.h"
+#include "zr_vm_core/hash_set.h"
 struct SZrGlobalState;
 struct SZrState;
 struct SZrTypeValue;
 #define ZR_STRING_LITERAL(STATE, STR) (ZrStringCreate((STATE), "" STR, (sizeof(STR) / sizeof(char) - 1)))
 
+struct ZR_STRUCT_ALIGN SZrStringTable {
+    SZrHashSet stringHashSet;
+    TBool isValid;
+};
+
+typedef struct SZrStringTable SZrStringTable;
 
 #define ZR_STRING_FORMAT_BUFFER_SIZE (ZR_LOG_DEBUG_FUNCTION_STR_SIZE_MAX + ZR_NUMBER_TO_STRING_LENGTH_MAX + 95)
 
@@ -77,7 +84,7 @@ ZR_CORE_API TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeS
 
 ZR_CORE_API TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format, ...);
 
-ZR_CORE_API void ZrStringTableConstruct(struct SZrGlobalState *global);
+ZR_CORE_API void ZrStringTableNew(struct SZrGlobalState *global);
 
 ZR_CORE_API void ZrStringTableInit(struct SZrState *state);
 
@@ -91,12 +98,12 @@ ZR_FORCE_INLINE TZrString *ZrStringCreateFromNative(struct SZrState *state, TNat
 ZR_CORE_API TZrString *ZrStringCreateTryHitCache(struct SZrState *state, TNativeString string);
 
 
-ZR_FORCE_INLINE TNativeString ZrStringGetNativeStringShort(TZrString *string) {
+ZR_FORCE_INLINE TNativeString ZrStringGetNativeStringShort(const TZrString *string) {
     ZR_ASSERT(string->shortStringLength < ZR_VM_LONG_STRING_FLAG);
     return (TNativeString) string->stringDataExtend;
 }
 
-ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringLong(TZrString *string) {
+ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringLong(const TZrString *string) {
     ZR_ASSERT(string->shortStringLength == ZR_VM_LONG_STRING_FLAG);
     return (TNativeString *) string->stringDataExtend;
 }
@@ -110,6 +117,12 @@ ZR_FORCE_INLINE TNativeString ZrStringGetNativeString(TZrString *string) {
 }
 
 ZR_CORE_API TBool ZrStringEqual(TZrString *string1, TZrString *string2);
+
+// for hash table comparison
+ZR_FORCE_INLINE TBool ZrStringCompare(struct SZrState *state, const TZrString *string1, const TZrString *string2) {
+    ZR_UNUSED_PARAMETER(state);
+    return ZrStringEqual((TZrString *) string1, (TZrString *) string2);
+}
 
 // this is not thread safe and not reentrant
 ZR_CORE_API void ZrStringConcat(struct SZrState *state, TZrSize count);

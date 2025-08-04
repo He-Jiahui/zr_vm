@@ -7,8 +7,6 @@
 
 #include <stdio.h>
 
-#include "zr_vm_core/global.h"
-#include "zr_vm_core/state.h"
 #include "zr_vm_library/conf.h"
 
 #define ZR_LIBRARY_FILE_BUFFER_SIZE BUFSIZ

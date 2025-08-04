@@ -9,6 +9,7 @@
 
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/state.h"
 
 ZR_FORCE_INLINE TZrPtr ZrMemoryAllocate(SZrGlobalState *global, TZrPtr pointer, TZrSize originalSize, TZrSize newSize) {
     ZR_ASSERT((pointer != ZR_NULL && originalSize != 0) || newSize != 0);

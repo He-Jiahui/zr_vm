@@ -29,6 +29,7 @@ struct ZR_STRUCT_ALIGN SZrTypeValue {
 
 typedef struct SZrTypeValue SZrTypeValue;
 
+
 ZR_CORE_API void ZrValueBarrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value);
 
 ZR_CORE_API void ZrValueResetAsNull(SZrTypeValue *value);
@@ -56,7 +57,11 @@ ZR_CORE_API SZrTypeValue *ZrValueGetStackOffsetValue(struct SZrState *state, TZr
         (VALUE)->isNative = ZR_TRUE;                                                                                   \
     }
 
-ZR_CORE_API void ZrValueCopy(struct SZrState *state, SZrTypeValue *destination, SZrTypeValue *source);
+ZR_CORE_API void ZrValueCopy(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source);
+
+ZR_CORE_API TUInt64 ZrValueGetHash(struct SZrState *state, const SZrTypeValue *value);
+
+ZR_CORE_API TBool ZrValueCompare(struct SZrState *state, const SZrTypeValue *value1, const SZrTypeValue *value2);
 
 ZR_FORCE_INLINE EZrValueType ZrValueGetType(const SZrTypeValue *value) { return value->type; }
 

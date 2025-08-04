@@ -1,12 +1,11 @@
 //
 // Created by HeJiahui on 2025/7/27.
 //
-#include "zr_vm_library/file.h"
-#include <sys/stat.h>
-
 #include "tinydir/tinydir.h"
 
-#include "zr_vm_core/memory.h"
+#include "zr_vm_library/conf.h"
+#include "zr_vm_library/file.h"
+
 
 // #if defined(ZR_VM_PLATFORM_IS_WIN)
 // #define ZR_FILE_MODE_IS_FILE(BUFFER) ((BUFFER).st_mode & (S_IFREG))

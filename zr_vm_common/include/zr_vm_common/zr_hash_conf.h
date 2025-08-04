@@ -6,15 +6,5 @@
 #define ZR_HASH_CONF_H
 #include "zr_common_conf.h"
 
-struct SZrHashSet {
-    SZrHashRawObject **buckets;
-    TZrSize bucketSize;
-    TZrSize elementCount;
-    TZrSize capacity;
-    TZrSize resizeThreshold;
-    TBool isValid;
-};
-
-typedef struct SZrHashSet SZrHashSet;
 
 #endif // ZR_HASH_CONF_H

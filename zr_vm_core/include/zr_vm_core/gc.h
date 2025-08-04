@@ -6,6 +6,8 @@
 #define ZR_VM_CORE_GC_H
 
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/global.h"
+#include "zr_vm_core/value.h"
 struct SZrGlobalState;
 struct SZrState;
 
@@ -52,7 +54,7 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
 typedef struct SZrGarbageCollector SZrGarbageCollector;
 
 
-ZR_CORE_API void ZrGarbageCollectorInit(struct SZrGlobalState *global);
+ZR_CORE_API void ZrGarbageCollectorNew(struct SZrGlobalState *global);
 
 ZR_CORE_API void ZrGarbageCollectorAddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffset size);
 
@@ -105,8 +107,13 @@ ZR_FORCE_INLINE void ZrRawObjectMarkAsWaitToScan(SZrRawObject *object) {
 ZR_FORCE_INLINE TBool ZrRawObjectIsPermanent(struct SZrState *state, SZrRawObject *object) {
     return object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT;
 }
+
 ZR_FORCE_INLINE TBool ZrRawObjectIsReleased(SZrRawObject *object) {
     return object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED;
+}
+
+ZR_FORCE_INLINE TBool ZrGcRawObjectIsDead(struct SZrGlobalState *global, SZrRawObject *object) {
+    return global->garbageCollector->gcGeneration != object->garbageCollectMark.generation;
 }
 
 ZR_FORCE_INLINE TBool ZrRawObjectIsGenerationalThroughBarrier(SZrRawObject *object) {
@@ -117,4 +124,6 @@ ZR_FORCE_INLINE void ZrRawObjectSetGenerationalStatus(SZrRawObject *object,
                                                       EZrGarbageCollectGenerationalObjectStatus status) {
     object->garbageCollectMark.generationalStatus = status;
 }
+
+ZR_CORE_API void ZrGcValueStaticAssertIsAlive(struct SZrState *state, SZrTypeValue *value);
 #endif // ZR_VM_CORE_GC_H

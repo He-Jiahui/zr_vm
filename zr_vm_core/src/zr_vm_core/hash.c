@@ -3,7 +3,7 @@
 //
 #include "zr_vm_core/hash.h"
 
-#include "zr_vm_core/convertion.h"
+#include "zr_vm_core/conversion.h"
 #include "zr_vm_core/global.h"
 
 #include <time.h>

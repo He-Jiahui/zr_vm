@@ -6,6 +6,7 @@
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
 
 #define ZR_IO_MALLOC_NATIVE_DATA(GLOBAL, SIZE) ZrMemoryRawMallocWithType(GLOBAL, (SIZE), ZR_VALUE_TYPE_NATIVE_DATA);
 #define ZR_IO_FREE_NATIVE_DATA(GLOBAL, DATA, SIZE)                                                                     \

@@ -5,8 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "zr_vm_core.h"
-
-#include "zr_vm_core/global.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/project.h"
 

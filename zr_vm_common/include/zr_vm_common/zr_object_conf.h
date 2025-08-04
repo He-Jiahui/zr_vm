@@ -141,6 +141,8 @@ struct ZR_STRUCT_ALIGN SZrRawObject {
     TBool isNative;
     SZrGarbageCollectionObjectMark garbageCollectMark;
     struct SZrRawObject *gcList;
+    // default hash value is the address of the object
+    TUInt64 hash;
 };
 
 typedef struct SZrRawObject SZrRawObject;
@@ -153,7 +155,10 @@ ZR_FORCE_INLINE void ZrRawObjectConstruct(SZrRawObject *super, EZrRawObjectType 
     super->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW;
     super->garbageCollectMark.generation = ZR_GARBAGE_COLLECT_GENERATION_INVALID;
     super->gcList = ZR_NULL;
+    super->hash = (TUInt64) &super;
 }
+
+ZR_FORCE_INLINE void ZrRawObjectInitHash(SZrRawObject *super, TUInt64 hash) { super->hash = hash; }
 
 ZR_FORCE_INLINE TBool ZrRawObjectIsMarkInited(SZrRawObject *super) {
     return super->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
@@ -167,31 +172,5 @@ ZR_FORCE_INLINE TBool ZrRawObjectIsMarkReferenced(SZrRawObject *super) {
     return super->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_REFERENCED;
 }
 
-struct ZR_STRUCT_ALIGN SZrHashRawObject {
-    SZrRawObject super;
-    TUInt64 hash;
-    struct SZrHashRawObject *next;
-};
 
-typedef struct SZrHashRawObject SZrHashRawObject;
-ZR_FORCE_INLINE void ZrHashRawObjectInit(SZrHashRawObject *super, EZrRawObjectType type, TUInt64 hash) {
-    // we have already initialized super
-    // ZrRawObjectConstruct(&super->super, type);
-    super->hash = hash;
-    super->next = ZR_NULL;
-}
-
-struct ZR_STRUCT_ALIGN SZrHashKeyValuePair {
-    SZrHashRawObject super;
-    SZrHashRawObject *key;
-    SZrRawObject *value;
-};
-
-typedef struct SZrHashKeyValuePair SZrHashKeyValuePair;
-
-ZR_FORCE_INLINE void ZrHashKeyValuePairInit(SZrHashKeyValuePair *pair, SZrHashRawObject *key, SZrRawObject *value) {
-    ZrHashRawObjectInit(&pair->super, key->super.type, key->hash);
-    pair->key = key;
-    pair->value = value;
-}
 #endif // ZR_OBJECT_CONF_H

@@ -8,6 +8,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/log.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/meta.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 

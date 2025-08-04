@@ -4,9 +4,12 @@
 #include "zr_vm_core/value.h"
 
 #include "zr_vm_core/call_info.h"
-#include "zr_vm_core/convertion.h"
+#include "zr_vm_core/conversion.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
 
 void ZrValueBarrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value) {
     if (!value->isGarbageCollectable) {
@@ -27,7 +30,7 @@ void ZrValueInitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawObject *
     value->isGarbageCollectable = ZR_TRUE;
     value->isNative = ZR_FALSE;
     // check liveness
-    ZrGlobalValueStaticAssertIsAlive(state, value);
+    ZrGcValueStaticAssertIsAlive(state, value);
 }
 
 
@@ -143,12 +146,90 @@ SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset
 }
 
 
-void ZrValueCopy(struct SZrState *state, SZrTypeValue *destination, SZrTypeValue *source) {
+void ZrValueCopy(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source) {
     destination->value = source->value;
     destination->type = source->type;
     destination->isGarbageCollectable = ZrValueIsGarbageCollectable(source);
     destination->isNative = ZrValueIsNative(source);
-    ZrGlobalValueStaticAssertIsAlive(state, destination);
+    ZrGcValueStaticAssertIsAlive(state, destination);
+}
+
+TUInt64 ZrValueGetHash(struct SZrState *state, const SZrTypeValue *value) {
+    EZrValueType type = value->type;
+    TUInt64 hash = 0;
+    switch (type) {
+        case ZR_VALUE_TYPE_NULL: {
+            hash = 0;
+        } break;
+        case ZR_VALUE_TYPE_BOOL: {
+            hash = value->value.nativeObject.nativeBool ? 1 : 0;
+        } break;
+            ZR_VALUE_CASES_INT { hash = value->value.nativeObject.nativeUInt64; }
+            break;
+            ZR_VALUE_CASES_FLOAT { hash = value->value.nativeObject.nativeUInt64; }
+            break;
+        case ZR_VALUE_TYPE_STRING: {
+            TZrString *string = ZR_CAST_STRING(state, value->value.object);
+            hash = string->super.hash;
+        } break;
+        case ZR_VALUE_TYPE_NATIVE_DATA: {
+            hash = (TUInt64) value->value.nativeObject.nativePointer;
+        } break;
+        case ZR_VALUE_TYPE_OBJECT: {
+            SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
+            hash = object->super.hash;
+        } break;
+            // todo: support more types
+        default: {
+            hash = value->value.nativeObject.nativeUInt64;
+        } break;
+    }
+    return hash;
+}
+
+TBool ZrValueCompare(struct SZrState *state, const SZrTypeValue *value1, const SZrTypeValue *value2) {
+    EZrValueType type1 = value1->type;
+    EZrValueType type2 = value2->type;
+    TBool typeEqual = type1 == type2;
+    TBool result = ZR_FALSE;
+    if (typeEqual) {
+        switch (type1) {
+            case ZR_VALUE_TYPE_NULL: {
+                result = ZR_TRUE;
+            } break;
+            case ZR_VALUE_TYPE_BOOL: {
+                result = (!value1->value.nativeObject.nativeBool) == (!value2->value.nativeObject.nativeBool);
+            } break;
+                ZR_VALUE_CASES_INT {
+                    result = value1->value.nativeObject.nativeInt64 == value2->value.nativeObject.nativeInt64;
+                }
+                break;
+                ZR_VALUE_CASES_FLOAT {
+                    result = value1->value.nativeObject.nativeDouble == value2->value.nativeObject.nativeDouble;
+                }
+                break;
+            case ZR_VALUE_TYPE_STRING: {
+                TZrString *str1 = ZR_CAST_STRING(state, value1->value.object);
+                TZrString *str2 = ZR_CAST_STRING(state, value2->value.object);
+                result = ZrStringEqual(str1, str2);
+            } break;
+            case ZR_VALUE_TYPE_NATIVE_DATA: {
+                result = value1->value.nativeObject.nativePointer == value2->value.nativeObject.nativePointer;
+            } break;
+            case ZR_VALUE_TYPE_OBJECT: {
+                SZrObject *object1 = ZR_CAST_OBJECT(state, value1->value.object);
+                SZrObject *object2 = ZR_CAST_OBJECT(state, value2->value.object);
+                result = ZrObjectCompare(state, object1, object2);
+            } break;
+                // todo: compare more types
+            default: {
+                result = value1->value.nativeObject.nativeUInt64 == value2->value.nativeObject.nativeUInt64;
+            } break;
+        }
+    } else {
+        result = ZR_FALSE;
+    }
+    return result;
 }
 
 TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
@@ -169,7 +250,7 @@ TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
             break;
         case ZR_VALUE_TYPE_OBJECT: {
             SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
-            SZrMeta *meta = ZrObjectGetMetaRecursively(state, object, ZR_META_TO_STRING);
+            SZrMeta *meta = ZrObjectGetMetaRecursively(state->global, object, ZR_META_TO_STRING);
             // todo: call meta function
             // make it as closure
             // call meta function
@@ -189,7 +270,7 @@ struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrM
     switch (type) {
         case ZR_VALUE_TYPE_OBJECT: {
             SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
-            return ZrObjectGetMetaRecursively(state, object, metaType);
+            return ZrObjectGetMetaRecursively(state->global, object, metaType);
         } break;
         case ZR_VALUE_TYPE_NATIVE_DATA: {
             // todo:

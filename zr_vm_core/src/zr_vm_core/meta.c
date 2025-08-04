@@ -4,8 +4,11 @@
 
 #include "zr_vm_core/meta.h"
 
-#include "zr_vm_core/convertion.h"
+#include "zr_vm_core/conversion.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
 
 void ZrMetaGlobalStaticsInit(SZrState *state) {
     SZrGlobalState *global = state->global;

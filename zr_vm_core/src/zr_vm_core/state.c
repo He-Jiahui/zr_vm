@@ -6,9 +6,11 @@
 #include "zr_vm_common/zr_vm_conf.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/callback.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/meta.h"
+#include "zr_vm_core/string.h"
 
 /*
  * ===== State Stack Functions =====
@@ -98,7 +100,7 @@ void ZrStateMainThreadLaunch(SZrState *state, TZrPtr arguments) {
     // maybe we can create a lexer
 
     // allow gc to run
-    global->garbageCollector.stopGcFlag = ZR_FALSE;
+    global->garbageCollector->stopGcFlag = ZR_FALSE;
 
     // we finish the global state initialization, mark it as valid
     global->isValid = ZR_TRUE;

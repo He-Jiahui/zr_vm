@@ -3,9 +3,11 @@
 //
 #include "zr_vm_core/closure.h"
 
-#include "zr_vm_core/convertion.h"
+#include "zr_vm_core/conversion.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/meta.h"
+#include "zr_vm_core/state.h"
 #define MAX_DELTA ((256UL << ((sizeof(state->stackBase.valuePointer->toBeClosedValueOffset) - 1) * 8)) - 1)
 SZrClosureNative *ZrClosureNativeNew(struct SZrState *state, TZrSize closureValueCount) {
     SZrRawObject *object =
@@ -71,7 +73,7 @@ SZrClosureValue *ZrClosureFindOrCreateValue(struct SZrState *state, TZrStackValu
         if (closureValue->value.valuePointer < stackPointer) {
             break;
         }
-        ZR_ASSERT(ZrGlobalRawObjectIsDead(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue)));
+        ZR_ASSERT(ZrGcRawObjectIsDead(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue)));
         if (closureValue->value.valuePointer == stackPointer) {
             return closureValue;
         }
