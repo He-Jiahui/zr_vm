@@ -16,7 +16,7 @@ struct ZR_STRUCT_ALIGN SZrHashKeyValuePair {
     SZrTypeValue key;
     struct SZrHashKeyValuePair *next;
     // maybe a key value pair
-    SZrRawObject *value;
+    SZrTypeValue value;
 };
 
 typedef struct SZrHashKeyValuePair SZrHashKeyValuePair;

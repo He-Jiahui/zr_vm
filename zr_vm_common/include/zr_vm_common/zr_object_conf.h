@@ -155,7 +155,8 @@ ZR_FORCE_INLINE void ZrRawObjectConstruct(SZrRawObject *super, EZrRawObjectType 
     super->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW;
     super->garbageCollectMark.generation = ZR_GARBAGE_COLLECT_GENERATION_INVALID;
     super->gcList = ZR_NULL;
-    super->hash = (TUInt64) &super;
+    // because of the alignment, the hash value should be address / ZR_ALIGN_SIZE
+    super->hash = ((TUInt64) &super) / ZR_ALIGN_SIZE;
 }
 
 ZR_FORCE_INLINE void ZrRawObjectInitHash(SZrRawObject *super, TUInt64 hash) { super->hash = hash; }

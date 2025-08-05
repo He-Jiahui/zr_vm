@@ -241,7 +241,8 @@ static TZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZr
     ZR_ASSERT(string != ZR_NULL);
     for (; object != ZR_NULL; object = object->next) {
         ZR_ASSERT(object->key.type == ZR_VALUE_TYPE_STRING);
-        TZrString *stringObject = ZR_CAST_STRING(state, object->value);
+        SZrRawObject *rawObject = ZrValueGetRawObject(&object->key);
+        TZrString *stringObject = ZR_CAST_STRING(state, rawObject);
         // we customized string compare function for speed
         if (stringObject->shortStringLength == length &&
             ZrMemoryRawCompare(ZrStringGetNativeStringShort(stringObject), string, length * sizeof(TChar)) == 0) {

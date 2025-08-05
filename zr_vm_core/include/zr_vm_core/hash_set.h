@@ -54,7 +54,7 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrHashSetAdd(struct SZrState *state, SZrHas
     SZrHashKeyValuePair *hashElement =
             ZrMemoryRawMallocWithType(global, sizeof(SZrHashKeyValuePair), ZR_VALUE_TYPE_VM_MEMORY);
     ZrValueCopy(state, &hashElement->key, element);
-    hashElement->value = ZR_NULL;
+    ZrValueResetAsNull(&hashElement->value);
     // object->next = hashElement;
     hashElement->next = object;
     set->buckets[ZR_HASH_MOD(hash, set->capacity)] = hashElement;
@@ -75,7 +75,7 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrHashSetAddRawObject(struct SZrState *stat
             ZrMemoryRawMallocWithType(global, sizeof(SZrHashKeyValuePair), ZR_VALUE_TYPE_VM_MEMORY);
     ZrValueInitAsRawObject(state, &hashElement->key, element);
     // object->next = hashElement;
-    hashElement->value = element;
+    ZrValueResetAsNull(&hashElement->value);
     hashElement->next = object;
     set->buckets[ZR_HASH_MOD(hash, set->capacity)] = hashElement;
     set->elementCount++;
@@ -88,7 +88,7 @@ ZR_FORCE_INLINE SZrTypeValue ZrHashSetRemove(struct SZrState *state, SZrHashSet 
     SZrHashKeyValuePair *prev = ZR_NULL;
     while (object != ZR_NULL) {
         // same address or equal content(customized compare function)
-        if (ZrValueCompare(state, &object->key, element)) {
+        if (ZrValueCompareDirectly(state, &object->key, element)) {
             if (prev == ZR_NULL) {
                 set->buckets[ZR_HASH_MOD(hash, set->capacity)] = object->next;
             } else {
@@ -110,7 +110,7 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrHashSetFind(struct SZrState *state, SZrHa
     TUInt64 hash = ZrValueGetHash(state, element);
     SZrHashKeyValuePair *object = ZrHashSetGetBucket(set, hash);
     while (object != ZR_NULL) {
-        if (ZrValueCompare(state, &object->key, element)) {
+        if (ZrValueCompareDirectly(state, &object->key, element)) {
             return object;
         }
         object = object->next;

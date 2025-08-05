@@ -13,7 +13,8 @@
  * global(callback) state(closure)
  * memory(global) gc(global)
  * hash_set(memory) array(memory)
- * string(hash_set)
+ * string(hash_set) object(hash_set)
+ * module(object)
  */
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/call_info.h"
@@ -33,7 +34,9 @@
 #include "zr_vm_core/log.h"
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/meta.h"
+#include "zr_vm_core/module.h"
 #include "zr_vm_core/native.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/type.h"

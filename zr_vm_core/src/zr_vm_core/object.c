@@ -14,7 +14,16 @@ SZrObject *ZrObjectNew(SZrState *state, SZrObjectPrototype *prototype) {
     SZrRawObject *rawObject = ZrRawObjectNew(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrObject), ZR_FALSE);
     SZrObject *object = ZR_CAST_OBJECT(state, rawObject);
     object->prototype = prototype;
-    // object->gcList = ZR_NULL;
+    object->internalType = ZR_OBJECT_INTERNAL_TYPE_OBJECT;
+    ZrHashSetConstruct(&object->nodeMap);
+    return object;
+}
+
+SZrObject *ZrObjectNewCustomized(struct SZrState *state, TZrSize size, EZrObjectInternalType internalType) {
+    SZrRawObject *rawObject = ZrRawObjectNew(state, ZR_VALUE_TYPE_OBJECT, size, ZR_FALSE);
+    SZrObject *object = ZR_CAST_OBJECT(state, rawObject);
+    object->prototype = ZR_NULL;
+    object->internalType = internalType;
     ZrHashSetConstruct(&object->nodeMap);
     return object;
 }
@@ -29,20 +38,9 @@ void ZrObjectInit(struct SZrState *state, SZrObject *object) {
     // todo: call constructor
 }
 
-TBool ZrObjectCompare(struct SZrState *state, SZrObject *object1, SZrObject *object2) {
-    if (object1 == object2) {
-        return ZR_TRUE;
-    }
-    if (object1->prototype != object2->prototype) {
-        return ZR_FALSE;
-    }
-    SZrGlobalState *global = state->global;
-    SZrMeta *equal = ZrObjectGetMetaRecursively(global, object1, ZR_META_COMPARE);
-    if (equal == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    // todo: call compare function
-    return ZR_FALSE;
+TBool ZrObjectCompareWithAddress(struct SZrState *state, SZrObject *object1, SZrObject *object2) {
+    ZR_UNUSED_PARAMETER(state);
+    return object1 == object2;
 }
 
 
@@ -54,11 +52,22 @@ void ZrObjectSetValue(struct SZrState *state, SZrObject *object, const SZrTypeVa
     }
     SZrHashSet *nodeMap = &object->nodeMap;
     SZrHashKeyValuePair *pair = ZrHashSetFind(state, nodeMap, key);
-    if (pair != ZR_NULL) {
-        // todo: we create a box wrapper for the value
-        // pair->value = *value;
-        return;
+    if (pair == ZR_NULL) {
+        pair = ZrHashSetAdd(state, nodeMap, key);
     }
-    // todo: we create a box wrapper for the value
-    return;
+    ZrValueCopy(state, &pair->value, value);
+}
+
+const SZrTypeValue *ZrObjectGetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key) {
+    ZR_ASSERT(object != ZR_NULL);
+    if (key == ZR_NULL) {
+        ZrLogError(state, "attempt to get value with null key");
+        return ZR_NULL;
+    }
+    SZrHashSet *nodeMap = &object->nodeMap;
+    SZrHashKeyValuePair *pair = ZrHashSetFind(state, nodeMap, key);
+    if (pair == ZR_NULL) {
+        return ZR_NULL;
+    }
+    return &pair->value;
 }

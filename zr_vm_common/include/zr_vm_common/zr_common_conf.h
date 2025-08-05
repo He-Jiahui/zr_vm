@@ -103,21 +103,25 @@ typedef union TZrNativeObject TZrNativeObject;
 
 #if defined(ZR_COMPILER_GNU)
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
+#define ZR_ALIGN_SIZE (sizeof(max_align_t))
 #define ZR_FORCE_INLINE __attribute__((always_inline)) inline
 #define ZR_NO_RETURN __attribute__((noreturn))
 #define ZR_FAST_CALL __attribute__((fastcall))
 #elif defined(ZR_COMPILER_MSVC)
 #define ZR_STRUCT_ALIGN __declspec(align(8))
+#define ZR_ALIGN_SIZE (8)
 #define ZR_FORCE_INLINE __forceinline
 #define ZR_NO_RETURN __declspec(noreturn)
 #define ZR_FAST_CALL __declspec(naked) __fastcall
 #elif defined(ZR_COMPILER_CLANG)
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
+#define ZR_ALIGN_SIZE (sizeof(max_align_t))
 #define ZR_FORCE_INLINE inline
 #define ZR_NO_RETURN __attribute__((noreturn))
 #define ZR_FAST_CALL __attribute__((fastcall))
 #else
 #define ZR_STRUCT_ALIGN
+#define ZR_ALIGN_SIZE (8)
 #define ZR_FORCE_INLINE inline
 #define ZR_NO_RETURN
 #define ZR_FAST_CALL

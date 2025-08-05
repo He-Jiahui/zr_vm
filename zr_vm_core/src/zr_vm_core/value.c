@@ -187,7 +187,7 @@ TUInt64 ZrValueGetHash(struct SZrState *state, const SZrTypeValue *value) {
     return hash;
 }
 
-TBool ZrValueCompare(struct SZrState *state, const SZrTypeValue *value1, const SZrTypeValue *value2) {
+TBool ZrValueCompareDirectly(struct SZrState *state, const SZrTypeValue *value1, const SZrTypeValue *value2) {
     EZrValueType type1 = value1->type;
     EZrValueType type2 = value2->type;
     TBool typeEqual = type1 == type2;
@@ -219,7 +219,7 @@ TBool ZrValueCompare(struct SZrState *state, const SZrTypeValue *value1, const S
             case ZR_VALUE_TYPE_OBJECT: {
                 SZrObject *object1 = ZR_CAST_OBJECT(state, value1->value.object);
                 SZrObject *object2 = ZR_CAST_OBJECT(state, value2->value.object);
-                result = ZrObjectCompare(state, object1, object2);
+                result = ZrObjectCompareWithAddress(state, object1, object2);
             } break;
                 // todo: compare more types
             default: {

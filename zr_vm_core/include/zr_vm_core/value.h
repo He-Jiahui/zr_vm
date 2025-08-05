@@ -61,7 +61,9 @@ ZR_CORE_API void ZrValueCopy(struct SZrState *state, SZrTypeValue *destination, 
 
 ZR_CORE_API TUInt64 ZrValueGetHash(struct SZrState *state, const SZrTypeValue *value);
 
-ZR_CORE_API TBool ZrValueCompare(struct SZrState *state, const SZrTypeValue *value1, const SZrTypeValue *value2);
+// directly compare without calling meta function, for hash set to find the same value
+ZR_CORE_API TBool ZrValueCompareDirectly(struct SZrState *state, const SZrTypeValue *value1,
+                                         const SZrTypeValue *value2);
 
 ZR_FORCE_INLINE EZrValueType ZrValueGetType(const SZrTypeValue *value) { return value->type; }
 
