@@ -32,6 +32,9 @@ struct SZrState;
 // from gc.h
 struct SZrGarbageCollector;
 
+// from string.h
+struct SZrString;
+
 #if !defined(ZR_STRING_TABLE_INIT_SIZE_LOG2)
 #define ZR_STRING_TABLE_INIT_SIZE_LOG2 12 // 2^12 = 4KB
 #endif
@@ -47,7 +50,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // injected data
     TZrPtr userData;
 
-    TZrString *memoryErrorMessage;
+    struct SZrString *memoryErrorMessage;
 
     // State
     struct SZrState *mainThreadState;
@@ -60,8 +63,8 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // String Table
     struct SZrStringTable *stringTable;
     // FOR API STRING CACHE
-    TZrString *stringHashApiCache[ZR_GLOBAL_API_STR_CACHE_N][ZR_GLOBAL_API_STR_CACHE_M];
-    TZrString *metaFunctionName[ZR_META_ENUM_MAX];
+    struct SZrString *stringHashApiCache[ZR_GLOBAL_API_STR_CACHE_N][ZR_GLOBAL_API_STR_CACHE_M];
+    struct SZrString *metaFunctionName[ZR_META_ENUM_MAX];
 
     // Global Module Registry
     SZrTypeValue loadedModulesRegistry;

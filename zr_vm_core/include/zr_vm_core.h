@@ -6,7 +6,7 @@
 #define ZR_VM_CORE_H
 /**
  * conf
- * value conversion log debug hash math meta execution
+ * raw_object value conversion log debug hash math meta execution
  * stack(value) io(value) native(value)
  * call_info(stack) exception(stack) function(stack)
  * callback(exception) closure(stack)

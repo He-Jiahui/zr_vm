@@ -5,7 +5,9 @@
 #ifndef ZR_VM_CORE_HASH_H
 #define ZR_VM_CORE_HASH_H
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/value.h"
+
 struct SZrGlobalState;
 struct SZrState;
 struct SZrTypeValue;

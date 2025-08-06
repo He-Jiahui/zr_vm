@@ -10,7 +10,7 @@
 
 struct SZrState;
 struct SZrGlobalState;
-
+struct SZrString;
 
 typedef TBytePtr (*FZrIoRead)(struct SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size);
 
@@ -33,16 +33,16 @@ typedef TBool (*FZrIoLoadSource)(struct SZrState *state, TNativeString sourcePat
 
 
 struct SZrIoImport {
-    TZrString *name;
-    TZrString *md5;
+    struct SZrString *name;
+    struct SZrString *md5;
 };
 
 typedef struct SZrIoImport SZrIoImport;
 
 
 struct SZrIoReference {
-    TZrString *referenceModuleName;
-    TZrString *referenceModuleMd5;
+    struct SZrString *referenceModuleName;
+    struct SZrString *referenceModuleMd5;
     TZrSize referenceIndex;
 };
 
@@ -84,7 +84,7 @@ struct SZrIoFunctionDebugInfo {
 typedef struct SZrIoFunctionDebugInfo SZrIoFunctionDebugInfo;
 
 struct SZrIoFunction {
-    TZrString *name;
+    struct SZrString *name;
     TUInt64 startLine;
     TUInt64 endLine;
     TZrSize parametersLength;
@@ -112,7 +112,7 @@ struct SZrIoMeta {
 typedef struct SZrIoMeta SZrIoMeta;
 
 struct SZrIoMethod {
-    TZrString *name;
+    struct SZrString *name;
     TZrSize functionsLength;
     SZrIoFunction *functions;
 };
@@ -120,7 +120,7 @@ struct SZrIoMethod {
 typedef struct SZrIoMethod SZrIoMethod;
 
 struct SZrIoProperty {
-    TZrString *name;
+    struct SZrString *name;
     // todo:
     TUInt32 propertyType;
     SZrIoFunction *getter;
@@ -130,13 +130,13 @@ struct SZrIoProperty {
 typedef struct SZrIoProperty SZrIoProperty;
 
 struct SZrIoField {
-    TZrString *name;
+    struct SZrString *name;
 };
 
 typedef struct SZrIoField SZrIoField;
 
 struct SZrIoEnumField {
-    TZrString *name;
+    struct SZrString *name;
     TZrPureValue value;
 };
 
@@ -158,7 +158,7 @@ struct SZrIoMemberDeclare {
 typedef struct SZrIoMemberDeclare SZrIoMemberDeclare;
 
 struct SZrIoClass {
-    TZrString *name;
+    struct SZrString *name;
     TZrSize superClassLength;
     SZrIoReference *superClasses;
     TZrSize genericParametersLength;
@@ -169,7 +169,7 @@ struct SZrIoClass {
 typedef struct SZrIoClass SZrIoClass;
 
 struct SZrIoStruct {
-    TZrString *name;
+    struct SZrString *name;
     TZrSize superStructLength;
     SZrIoReference *superStructs;
     TZrSize genericParametersLength;
@@ -180,7 +180,7 @@ struct SZrIoStruct {
 typedef struct SZrIoStruct SZrIoStruct;
 
 struct SZrIoInterface {
-    TZrString *name;
+    struct SZrString *name;
     TZrSize superInterfaceLength;
     SZrIoReference *superInterfaces;
     TZrSize genericParametersLength;
@@ -191,7 +191,7 @@ struct SZrIoInterface {
 typedef struct SZrIoInterface SZrIoInterface;
 
 struct SZrIoEnum {
-    TZrString *name;
+    struct SZrString *name;
     EZrValueType valueType;
     TZrSize fieldsLength;
     SZrIoEnumField *fields;
@@ -215,8 +215,8 @@ struct SZrIoModuleDeclare {
 typedef struct SZrIoModuleDeclare SZrIoModuleDeclare;
 
 struct SZrIoModule {
-    TZrString *name;
-    TZrString *md5;
+    struct SZrString *name;
+    struct SZrString *md5;
     TZrSize importsLength;
     SZrIoImport *imports;
     TZrSize declaresLength;

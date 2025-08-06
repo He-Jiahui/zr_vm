@@ -72,8 +72,8 @@ TBool ZrValueEqual(struct SZrState *state, SZrTypeValue *value1, SZrTypeValue *v
             // type null
             result = ZR_TRUE;
         } else if (ZR_VALUE_IS_TYPE_STRING(type1)) {
-            TZrString *str1 = ZR_CAST_STRING(state, value1->value.object);
-            TZrString *str2 = ZR_CAST_STRING(state, value2->value.object);
+            SZrString *str1 = ZR_CAST_STRING(state, value1->value.object);
+            SZrString *str2 = ZR_CAST_STRING(state, value2->value.object);
             result = ZrStringEqual(str1, str2);
         } else if (ZR_VALUE_IS_TYPE_BASIC(type1)) {
             TBool valueEqual = value1->value.nativeObject.nativePointer == value2->value.nativeObject.nativePointer;
@@ -169,7 +169,7 @@ TUInt64 ZrValueGetHash(struct SZrState *state, const SZrTypeValue *value) {
             ZR_VALUE_CASES_FLOAT { hash = value->value.nativeObject.nativeUInt64; }
             break;
         case ZR_VALUE_TYPE_STRING: {
-            TZrString *string = ZR_CAST_STRING(state, value->value.object);
+            SZrString *string = ZR_CAST_STRING(state, value->value.object);
             hash = string->super.hash;
         } break;
         case ZR_VALUE_TYPE_NATIVE_DATA: {
@@ -209,8 +209,8 @@ TBool ZrValueCompareDirectly(struct SZrState *state, const SZrTypeValue *value1,
                 }
                 break;
             case ZR_VALUE_TYPE_STRING: {
-                TZrString *str1 = ZR_CAST_STRING(state, value1->value.object);
-                TZrString *str2 = ZR_CAST_STRING(state, value2->value.object);
+                SZrString *str1 = ZR_CAST_STRING(state, value1->value.object);
+                SZrString *str2 = ZR_CAST_STRING(state, value2->value.object);
                 result = ZrStringEqual(str1, str2);
             } break;
             case ZR_VALUE_TYPE_NATIVE_DATA: {
@@ -232,7 +232,7 @@ TBool ZrValueCompareDirectly(struct SZrState *state, const SZrTypeValue *value1,
     return result;
 }
 
-TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
+SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
     if (!ZrValueCanValueToString(state, value)) {
         return ZR_NULL;
     }

@@ -12,7 +12,7 @@
 
 static void ZrNativeStringPushStringToStack(SZrNativeStringFormatBuffer *buffer, TNativeString string, TZrSize length) {
     SZrState *state = buffer->state;
-    TZrString *str = ZrStringCreate(state, string, length);
+    SZrString *str = ZrStringCreate(state, string, length);
     ZrStackSetRawObjectValue(buffer->state, state->stackTop.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(str));
     state->stackTop.valuePointer += 1;
     if (!buffer->isOnStack) {
@@ -203,14 +203,14 @@ void ZrStringTableInit(SZrState *state) {
 }
 
 
-static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZrSize length, TUInt64 hash) {
+static SZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZrSize length, TUInt64 hash) {
     SZrGlobalState *global = state->global;
-    TZrString *constantString = ZR_NULL;
-    TZrSize totalSize = sizeof(TZrString);
+    SZrString *constantString = ZR_NULL;
+    TZrSize totalSize = sizeof(SZrString);
     TNativeString stringBuffer = ZR_NULL;
     if (length <= ZR_VM_SHORT_STRING_MAX) {
         totalSize += ZR_VM_SHORT_STRING_MAX;
-        constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
+        constantString = (SZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
         ZrMemoryRawCopy(constantString->stringDataExtend, string, length);
         ((TNativeString) constantString->stringDataExtend)[length] = '\0';
         constantString->shortStringLength = (TUInt8) length;
@@ -218,7 +218,7 @@ static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZ
         stringBuffer = (TNativeString) constantString->stringDataExtend;
     } else {
         totalSize += sizeof(TNativeString);
-        constantString = (TZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
+        constantString = (SZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
         TNativeString *pointer = (TNativeString *) &(constantString->stringDataExtend);
         *pointer = (TNativeString) ZrMemoryRawMalloc(global, length + 1);
         ZrMemoryRawCopy(*pointer, string, length);
@@ -233,7 +233,7 @@ static TZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZ
     return constantString;
 }
 
-static TZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZrSize length) {
+static SZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZrSize length) {
     SZrGlobalState *global = state->global;
     SZrStringTable *stringTable = global->stringTable;
     TUInt64 hash = ZrHashCreate(global, string, length);
@@ -242,7 +242,7 @@ static TZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZr
     for (; object != ZR_NULL; object = object->next) {
         ZR_ASSERT(object->key.type == ZR_VALUE_TYPE_STRING);
         SZrRawObject *rawObject = ZrValueGetRawObject(&object->key);
-        TZrString *stringObject = ZR_CAST_STRING(state, rawObject);
+        SZrString *stringObject = ZR_CAST_STRING(state, rawObject);
         // we customized string compare function for speed
         if (stringObject->shortStringLength == length &&
             ZrMemoryRawCompare(ZrStringGetNativeStringShort(stringObject), string, length * sizeof(TChar)) == 0) {
@@ -254,20 +254,20 @@ static TZrString *ZrStringCreateShort(SZrState *state, TNativeString string, TZr
     }
     {
         // create a new string
-        TZrString *newString = ZrStringObjectCreate(state, string, length, hash);
+        SZrString *newString = ZrStringObjectCreate(state, string, length, hash);
         ZrHashSetAddRawObject(state, &stringTable->stringHashSet, &newString->super);
         return newString;
     }
 }
 
-static ZR_FORCE_INLINE TZrString *ZrStringCreateLong(SZrState *state, TNativeString string, TZrSize length) {
+static ZR_FORCE_INLINE SZrString *ZrStringCreateLong(SZrState *state, TNativeString string, TZrSize length) {
     ZR_ASSERT(string != ZR_NULL);
-    TZrString *newString = ZrStringObjectCreate(state, string, length, 0);
+    SZrString *newString = ZrStringObjectCreate(state, string, length, 0);
     return newString;
 }
 
 
-TZrString *ZrStringCreate(SZrState *state, TNativeString string, TZrSize length) {
+SZrString *ZrStringCreate(SZrState *state, TNativeString string, TZrSize length) {
     if (length <= ZR_VM_SHORT_STRING_MAX) {
         return ZrStringCreateShort(state, string, length);
     }
@@ -277,10 +277,10 @@ TZrString *ZrStringCreate(SZrState *state, TNativeString string, TZrSize length)
     }
 }
 
-TZrString *ZrStringCreateTryHitCache(SZrState *state, TNativeString string) {
+SZrString *ZrStringCreateTryHitCache(SZrState *state, TNativeString string) {
     SZrGlobalState *global = state->global;
     TUInt64 addressHash = ZR_CAST_UINT64(string) % ZR_GLOBAL_API_STR_CACHE_N;
-    TZrString **apiCache = global->stringHashApiCache[addressHash];
+    SZrString **apiCache = global->stringHashApiCache[addressHash];
     for (TZrSize i = 0; i < ZR_GLOBAL_API_STR_CACHE_M; i++) {
         if (ZrNativeStringCompare(ZR_CAST_STRING_TO_NATIVE(apiCache[i]), string) == 0) {
             return apiCache[i];
@@ -294,7 +294,7 @@ TZrString *ZrStringCreateTryHitCache(SZrState *state, TNativeString string) {
     return apiCache[0];
 }
 
-TBool ZrStringEqual(TZrString *string1, TZrString *string2) {
+TBool ZrStringEqual(SZrString *string1, SZrString *string2) {
     if (string1 == string2) {
         return ZR_TRUE;
     }
@@ -338,10 +338,10 @@ void ZrStringConcatSafe(struct SZrState *state, TZrSize count) {
     // todo:
 }
 
-TZrString *ZrStringFromNumber(struct SZrState *state, struct SZrTypeValue *value) {
+SZrString *ZrStringFromNumber(struct SZrState *state, struct SZrTypeValue *value) {
     SZrGlobalState *global = state->global;
     TZrSize length = 0;
-    TZrString *string = ZR_NULL;
+    SZrString *string = ZR_NULL;
     ZR_ASSERT(ZR_VALUE_IS_TYPE_NUMBER(value->type) || ZR_VALUE_IS_TYPE_NATIVE(value->type));
     TNativeString nativeString =
             ZrMemoryRawMallocWithType(global, ZR_NUMBER_TO_STRING_LENGTH_MAX, ZR_VALUE_TYPE_VM_MEMORY);

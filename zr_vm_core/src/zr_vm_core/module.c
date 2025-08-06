@@ -5,6 +5,5 @@
 
 SZrObject *ZrModuleCreateFromSource(struct SZrState *state, SZrIoSource *source) {
     ZR_ASSERT(source != ZR_NULL);
-    SZrObject *newModule = ZrObjectNew(state, ZR_NULL);
-    // module has
+    // SZrObject *newModule = ZrObjectNewCustomized(state, sizeof(SZr));
 }

@@ -8,7 +8,7 @@
 #include "zr_vm_library/project.h"
 
 #define ZR_JSON_READ_STRING(STATE, OBJECT, NAME)                                                                       \
-    TZrString *NAME = ZR_NULL;                                                                                         \
+    SZrString *NAME = ZR_NULL;                                                                                         \
     {                                                                                                                  \
         cJSON *JSON_##NAME = cJSON_GetObjectItemCaseSensitive(OBJECT, #NAME);                                          \
         if (cJSON_IsString(JSON_##NAME) && JSON_##NAME->valuestring != ZR_NULL) {                                      \

@@ -7,6 +7,7 @@
 
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/value.h"
 struct SZrGlobalState;
 struct SZrState;

@@ -6,9 +6,11 @@
 #define ZR_VM_CORE_VALUE_H
 
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/raw_object.h"
+
 struct SZrState;
 struct SZrMeta;
-
+struct SZrString;
 typedef TInt64 (*FZrNativeFunction)(struct SZrState *state);
 
 
@@ -79,7 +81,7 @@ ZR_FORCE_INLINE TBool ZrValueCanValueToString(struct SZrState *state, SZrTypeVal
     EZrValueType type = value->type;
     return ZR_VALUE_IS_TYPE_NORMAL(type);
 }
-ZR_CORE_API TZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value);
+ZR_CORE_API struct SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value);
 
 ZR_CORE_API struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType);
 

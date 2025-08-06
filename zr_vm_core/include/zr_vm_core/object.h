@@ -11,6 +11,7 @@
 struct SZrState;
 struct SZrGlobalState;
 struct SZrObjectPrototype;
+struct SZrString;
 
 enum EZrObjectInternalType {
     ZR_OBJECT_INTERNAL_TYPE_OBJECT,
@@ -40,7 +41,7 @@ typedef struct SZrObject SZrObject;
 
 struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     SZrObject super;
-    TZrString name;
+    struct SZrString *name;
     EZrObjectPrototypeType type;
     struct SZrMetaTable metaTable;
     struct SZrObjectPrototype *superPrototype;

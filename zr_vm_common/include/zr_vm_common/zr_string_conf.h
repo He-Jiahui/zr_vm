@@ -25,22 +25,7 @@
 
 #define ZR_STRING_UTF8_SIZE 8
 
-struct ZR_STRUCT_ALIGN TZrString {
-    SZrRawObject super;
 
-    // 尾部
-    union {
-        TZrSize longStringLength;
-        struct TZrString *nextShortString;
-    };
-
-    TUInt8 shortStringLength;
-    // short string is raw data
-    // long string is a pointer
-    TUInt8 stringDataExtend[1];
-};
-
-typedef struct TZrString TZrString;
 
 
 #define ZR_STRING_SIGNED_INTEGER_PRINT_FORMAT(STR, LEN, NUMBER) snprintf(STR, LEN, "%" PRId64, (TInt64) NUMBER)

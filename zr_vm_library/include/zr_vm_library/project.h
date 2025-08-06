@@ -11,21 +11,21 @@
 #define ZR_LIBRARY_BINARY_FILE_EXT ".zrb"
 
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
-    TZrString *file;
-    TZrString *directory;
-    TZrString *name;
-    TZrString *version;
-    TZrString *description;
-    TZrString *author;
-    TZrString *email;
-    TZrString *url;
-    TZrString *license;
-    TZrString *copyright;
-    TZrString *binary;
-    TZrString *source;
-    TZrString *entry;
-    TZrString *dependency;
-    TZrString *local;
+    SZrString *file;
+    SZrString *directory;
+    SZrString *name;
+    SZrString *version;
+    SZrString *description;
+    SZrString *author;
+    SZrString *email;
+    SZrString *url;
+    SZrString *license;
+    SZrString *copyright;
+    SZrString *binary;
+    SZrString *source;
+    SZrString *entry;
+    SZrString *dependency;
+    SZrString *local;
 };
 
 typedef struct SZrLibrary_Project SZrLibrary_Project;

@@ -68,7 +68,7 @@ static ZR_FORCE_INLINE TUInt64 ZrIoReadUInt(SZrIo *io) {
 #define ZR_IO_READ_NATIVE_TYPE(IO, DATA, TYPE) ZrIoRead(IO, (TBytePtr) & (DATA), sizeof(TYPE))
 
 
-static TZrString *ZrIoReadStringWithLength(SZrIo *io) {
+static SZrString *ZrIoReadStringWithLength(SZrIo *io) {
     SZrGlobalState *global = io->state->global;
     TZrSize length = ZrIoReadSize(io);
     if (length == 0) {
@@ -77,7 +77,7 @@ static TZrString *ZrIoReadStringWithLength(SZrIo *io) {
     TNativeString nativeString = ZrMemoryRawMallocWithType(global, length + 1, ZR_VALUE_TYPE_STRING);
     ZrIoRead(io, (TBytePtr) nativeString, length);
     nativeString[length] = '\0';
-    TZrString *string = ZrStringCreate(io->state, nativeString, length);
+    SZrString *string = ZrStringCreate(io->state, nativeString, length);
     ZrMemoryRawFree(global, nativeString, length + 1);
     return string;
 }

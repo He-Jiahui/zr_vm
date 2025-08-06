@@ -5,6 +5,7 @@
 #include "zr_vm_core/exception.h"
 #include <setjmp.h>
 #include "zr_vm_common/zr_type_conf.h"
+#include "zr_vm_core/string.h"
 
 #include <setjmp.h>
 

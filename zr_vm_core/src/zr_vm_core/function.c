@@ -11,6 +11,7 @@
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
 
 TZrStackValuePointer ZrFunctionCheckStack(struct SZrState *state, TZrSize size, TZrStackValuePointer stackPointer) {
     if (ZR_UNLIKELY(state->stackTail.valuePointer - state->stackTop.valuePointer < (TZrMemoryOffset) size)) {
@@ -59,7 +60,7 @@ void ZrFunctionFree(struct SZrState *state, SZrFunction *function) {
     ZrMemoryRawFreeWithType(global, function, sizeof(SZrFunction), ZR_VALUE_TYPE_FUNCTION);
 }
 
-TZrString *ZrFunctionGetLocalVariableName(SZrFunction *function, TUInt32 index, TUInt32 programCounter) {
+SZrString *ZrFunctionGetLocalVariableName(SZrFunction *function, TUInt32 index, TUInt32 programCounter) {
     for (TUInt32 i = 0;
          i < function->localVariableLength && function->localVariableList[i].offsetActivate <= programCounter; i++) {
         if (programCounter < function->localVariableList[i].offsetDead) {

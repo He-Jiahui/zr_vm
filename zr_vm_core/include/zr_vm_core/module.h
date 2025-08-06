@@ -11,5 +11,12 @@
 struct SZrState;
 struct SZrGlobalState;
 
+struct ZR_STRUCT_ALIGN SZrObjectModule {
+    SZrObject super;
+};
+
+typedef struct SZrObjectModule SZrModule;
+
+
 ZR_CORE_API SZrObject *ZrModuleCreateFromSource(struct SZrState *state, SZrIoSource *source);
 #endif // ZR_VM_CORE_MODULE_H

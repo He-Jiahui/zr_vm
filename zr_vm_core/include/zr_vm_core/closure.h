@@ -4,8 +4,10 @@
 
 #ifndef ZR_VM_CORE_CLOSURE_H
 #define ZR_VM_CORE_CLOSURE_H
+
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/conversion.h"
+#include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/stack.h"
 

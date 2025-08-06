@@ -6,13 +6,15 @@
 #define ZR_VM_CORE_FUNCTION_H
 
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
 struct SZrState;
 struct SZrTypeValueOnStack;
+struct SZrString;
 
 struct ZR_STRUCT_ALIGN SZrFunctionClosureVariable {
-    TZrString *name;
+    struct SZrString *name;
     TBool inStack;
     TUInt32 index;
     EZrValueType valueType;
@@ -21,7 +23,7 @@ struct ZR_STRUCT_ALIGN SZrFunctionClosureVariable {
 typedef struct SZrFunctionClosureVariable SZrFunctionClosureVariable;
 
 struct ZR_STRUCT_ALIGN SZrFunctionLocalVariable {
-    TZrString *name;
+    struct SZrString *name;
     TZrMemoryOffset offsetActivate;
     TZrMemoryOffset offsetDead;
 };
@@ -60,7 +62,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     // function debug info
     SZrFunctionExecutionLocationInfo *executionLocationInfoList;
     TUInt32 *lineInSourceList;
-    TZrString *sourceCodeList;
+    struct SZrString *sourceCodeList;
     SZrRawObject *gcList;
 };
 
@@ -77,7 +79,8 @@ ZR_CORE_API SZrFunction *ZrFunctionNew(struct SZrState *state);
 
 ZR_CORE_API void ZrFunctionFree(struct SZrState *state, SZrFunction *function);
 
-ZR_CORE_API TZrString *ZrFunctionGetLocalVariableName(SZrFunction *function, TUInt32 index, TUInt32 programCounter);
+ZR_CORE_API struct SZrString *ZrFunctionGetLocalVariableName(SZrFunction *function, TUInt32 index,
+                                                             TUInt32 programCounter);
 
 ZR_CORE_API TZrStackValuePointer ZrFunctionCheckStack(struct SZrState *state, TZrSize size,
                                                       TZrStackValuePointer stackPointer);
