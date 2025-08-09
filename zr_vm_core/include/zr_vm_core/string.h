@@ -104,6 +104,8 @@ ZR_CORE_API TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeSt
 
 ZR_CORE_API void ZrStringTableNew(struct SZrGlobalState *global);
 
+ZR_CORE_API void ZrStringTableFree(struct SZrGlobalState *global, SZrStringTable *stringTable);
+
 ZR_CORE_API void ZrStringTableInit(struct SZrState *state);
 
 

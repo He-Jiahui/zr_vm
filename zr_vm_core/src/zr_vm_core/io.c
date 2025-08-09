@@ -8,9 +8,9 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
-#define ZR_IO_MALLOC_NATIVE_DATA(GLOBAL, SIZE) ZrMemoryRawMallocWithType(GLOBAL, (SIZE), ZR_VALUE_TYPE_NATIVE_DATA);
+#define ZR_IO_MALLOC_NATIVE_DATA(GLOBAL, SIZE) ZrMemoryRawMallocWithType(GLOBAL, (SIZE), ZR_MEMORY_NATIVE_TYPE_IO);
 #define ZR_IO_FREE_NATIVE_DATA(GLOBAL, DATA, SIZE)                                                                     \
-    ZrMemoryRawFreeWithType(GLOBAL, (DATA), (SIZE), ZR_VALUE_TYPE_NATIVE_DATA);
+    ZrMemoryRawFreeWithType(GLOBAL, (DATA), (SIZE), ZR_MEMORY_NATIVE_TYPE_IO);
 static TBool ZrIoRefill(SZrIo *io) {
     SZrState *state = io->state;
     TZrSize readSize = 0;
@@ -74,11 +74,11 @@ static SZrString *ZrIoReadStringWithLength(SZrIo *io) {
     if (length == 0) {
         return ZR_NULL;
     }
-    TNativeString nativeString = ZrMemoryRawMallocWithType(global, length + 1, ZR_VALUE_TYPE_STRING);
+    TNativeString nativeString = ZrMemoryRawMallocWithType(global, length + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
     ZrIoRead(io, (TBytePtr) nativeString, length);
     nativeString[length] = '\0';
     SZrString *string = ZrStringCreate(io->state, nativeString, length);
-    ZrMemoryRawFree(global, nativeString, length + 1);
+    ZrMemoryRawFreeWithType(global, nativeString, length + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
     return string;
 }
 

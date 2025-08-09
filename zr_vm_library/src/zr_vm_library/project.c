@@ -21,7 +21,7 @@
 SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TNativeString raw, TNativeString file) {
     SZrGlobalState *global = state->global;
     SZrLibrary_Project *project =
-            ZrMemoryRawMallocWithType(global, sizeof(SZrLibrary_Project), ZR_VALUE_TYPE_NATIVE_DATA);
+            ZrMemoryRawMallocWithType(global, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
 
     cJSON *projectJson = cJSON_Parse(raw);
     if (projectJson == ZR_NULL) {
@@ -85,12 +85,17 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TNativeString raw, TN
     return project;
 }
 
+void ZrLibrary_Project_Free(SZrState *state, SZrLibrary_Project *project) {
+    SZrGlobalState *global = state->global;
+    ZrMemoryRawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
+}
 
 void ZrLibrary_Project_Do(SZrState *state) {
     SZrGlobalState *global = state->global;
     SZrLibrary_Project *project = global->userData;
     TNativeString entry = ZrStringGetNativeString(project->entry);
     SZrIoSource *source = ZrIoLoadSource(state, entry, 0);
+    // todo: how to free source
 }
 
 TBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TNativeString path, TNativeString md5, SZrIo *io) {

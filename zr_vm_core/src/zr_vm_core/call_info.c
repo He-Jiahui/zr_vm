@@ -26,7 +26,7 @@ void ZrCallInfoEntryNativeInit(SZrState *state, SZrCallInfo *callInfo, TZrStackP
 SZrCallInfo *ZrCallInfoExtend(struct SZrState *state) {
     SZrCallInfo *callInfo = ZR_NULL;
     ZR_ASSERT(state->callInfoList->next == ZR_NULL);
-    callInfo = ZR_CAST_CALL_INFO(ZrMemoryGcMalloc(state, ZR_VALUE_TYPE_VM_MEMORY, sizeof(SZrCallInfo)));
+    callInfo = ZR_CAST_CALL_INFO(ZrMemoryGcMalloc(state, ZR_MEMORY_NATIVE_TYPE_CALL_INFO, sizeof(SZrCallInfo)));
     state->callInfoList->next = callInfo;
     callInfo->previous = state->callInfoList;
     callInfo->next = ZR_NULL;

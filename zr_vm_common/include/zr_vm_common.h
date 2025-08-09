@@ -12,6 +12,7 @@
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_log_conf.h"
+#include "zr_vm_common/zr_memory_conf.h"
 #include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
 #include "zr_vm_common/zr_string_conf.h"

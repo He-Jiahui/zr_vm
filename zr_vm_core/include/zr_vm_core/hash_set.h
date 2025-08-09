@@ -25,6 +25,7 @@ struct SZrHashSet {
 typedef struct SZrHashSet SZrHashSet;
 
 ZR_FORCE_INLINE void ZrHashSetConstruct(SZrHashSet *set) { set->isValid = ZR_FALSE; }
+ZR_CORE_API void ZrHashSetDeconstruct(struct SZrState *state, SZrHashSet *set);
 
 ZR_CORE_API void ZrHashSetRehash(struct SZrState *state, SZrHashSet *set, TZrSize newCapacity);
 
@@ -52,7 +53,7 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrHashSetAdd(struct SZrState *state, SZrHas
     TUInt64 hash = ZrValueGetHash(state, element);
     SZrHashKeyValuePair *object = ZrHashSetGetBucket(set, hash);
     SZrHashKeyValuePair *hashElement =
-            ZrMemoryRawMallocWithType(global, sizeof(SZrHashKeyValuePair), ZR_VALUE_TYPE_VM_MEMORY);
+            ZrMemoryRawMallocWithType(global, sizeof(SZrHashKeyValuePair), ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
     ZrValueCopy(state, &hashElement->key, element);
     ZrValueResetAsNull(&hashElement->value);
     // object->next = hashElement;
@@ -72,7 +73,7 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrHashSetAddRawObject(struct SZrState *stat
     SZrHashKeyValuePair *object = ZrHashSetGetBucket(set, hash);
     // todo: it should be managed by gc, how to bind it, stringTable and objectTable
     SZrHashKeyValuePair *hashElement =
-            ZrMemoryRawMallocWithType(global, sizeof(SZrHashKeyValuePair), ZR_VALUE_TYPE_VM_MEMORY);
+            ZrMemoryRawMallocWithType(global, sizeof(SZrHashKeyValuePair), ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
     ZrValueInitAsRawObject(state, &hashElement->key, element);
     // object->next = hashElement;
     ZrValueResetAsNull(&hashElement->value);
@@ -96,7 +97,8 @@ ZR_FORCE_INLINE SZrTypeValue ZrHashSetRemove(struct SZrState *state, SZrHashSet 
             }
             set->elementCount--;
             SZrTypeValue result = object->key;
-            ZrMemoryRawFreeWithType(state->global, object, sizeof(SZrHashKeyValuePair), ZR_VALUE_TYPE_VM_MEMORY);
+            ZrMemoryRawFreeWithType(state->global, object, sizeof(SZrHashKeyValuePair),
+                                    ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
             return result;
         }
         prev = object;

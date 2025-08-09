@@ -75,7 +75,7 @@ TNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TNativeString path)
     if (reader == ZR_NULL) {
         return ZR_NULL;
     }
-    TNativeString buffer = ZrMemoryRawMallocWithType(global, reader->size, ZR_VALUE_TYPE_VM_MEMORY);
+    TNativeString buffer = ZrMemoryRawMallocWithType(global, reader->size, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
     fread(buffer, 1, reader->size, reader->file);
     ZrLibrary_File_CloseRead(global, reader);
     return buffer;
@@ -86,7 +86,7 @@ SZrLibrary_File_Reader *ZrLibrary_File_OpenRead(SZrGlobalState *global, TNativeS
         return ZR_NULL;
     }
     SZrLibrary_File_Reader *reader =
-            ZrMemoryRawMallocWithType(global, sizeof(SZrLibrary_File_Reader), ZR_VALUE_TYPE_NATIVE_DATA);
+            ZrMemoryRawMallocWithType(global, sizeof(SZrLibrary_File_Reader), ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
     reader->file = fopen(path, isBinary ? "rb" : "r");
     // get file size
     fseek(reader->file, 0, SEEK_END);
@@ -101,7 +101,7 @@ void ZrLibrary_File_CloseRead(SZrGlobalState *global, SZrLibrary_File_Reader *re
     }
     fclose(reader->file);
     reader->file = ZR_NULL;
-    ZrMemoryRawFree(global, reader, sizeof(SZrLibrary_File_Reader));
+    ZrMemoryRawFreeWithType(global, reader, sizeof(SZrLibrary_File_Reader), ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
 }
 
 TBool ZrLibrary_File_SourceLoadImplementation(SZrState *state, TNativeString path, TNativeString md5, SZrIo *io) {
@@ -126,10 +126,10 @@ TBytePtr ZrLibrary_File_SourceReadImplementation(SZrState *state, TZrPtr reader,
 }
 
 void ZrLibrary_File_SourceCloseImplementation(SZrState *state, TZrPtr reader) {
-    SZrLibrary_File_Reader *fileReader = (SZrLibrary_File_Reader *) reader;
-    if (fileReader->file == ZR_NULL) {
-        return;
-    }
-    fclose(fileReader->file);
-    fileReader->file = ZR_NULL;
+    SZrLibrary_File_Reader *fileReader = ZR_CAST(SZrLibrary_File_Reader *, reader);
+    // if (fileReader->file == ZR_NULL) {
+    //     return;
+    // }
+    ZrLibrary_File_CloseRead(state->global, fileReader);
+    // fileReader->file = ZR_NULL;
 }

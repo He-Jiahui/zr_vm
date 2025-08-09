@@ -23,25 +23,39 @@
     Z(SET_CONSTANT)                                                                                                    \
     Z(GET_CLOSURE)                                                                                                     \
     Z(SET_CLOSURE)                                                                                                     \
+    Z(TO_BOOL)                                                                                                         \
+    Z(TO_INT)                                                                                                          \
+    Z(TO_UINT)                                                                                                         \
+    Z(TO_FLOAT)                                                                                                        \
+    Z(TO_STRING)                                                                                                       \
+    Z(ADD)                                                                                                             \
     Z(ADD_INT)                                                                                                         \
     Z(ADD_FLOAT)                                                                                                       \
     Z(ADD_STRING)                                                                                                      \
+    Z(SUB)                                                                                                             \
     Z(SUB_INT)                                                                                                         \
     Z(SUB_FLOAT)                                                                                                       \
+    Z(MUL)                                                                                                             \
     Z(MUL_SIGNED)                                                                                                      \
     Z(MUL_UNSIGNED)                                                                                                    \
     Z(MUL_FLOAT)                                                                                                       \
+    Z(NEG)                                                                                                             \
+    Z(DIV)                                                                                                             \
     Z(DIV_SIGNED)                                                                                                      \
     Z(DIV_UNSIGNED)                                                                                                    \
     Z(DIV_FLOAT)                                                                                                       \
+    Z(MOD)                                                                                                             \
     Z(MOD_SIGNED)                                                                                                      \
     Z(MOD_UNSIGNED)                                                                                                    \
     Z(MOD_FLOAT)                                                                                                       \
+    Z(POW)                                                                                                             \
     Z(POW_SIGNED)                                                                                                      \
     Z(POW_UNSIGNED)                                                                                                    \
     Z(POW_FLOAT)                                                                                                       \
     Z(SHIFT_LEFT)                                                                                                      \
+    Z(SHIFT_LEFT_INT)                                                                                                  \
     Z(SHIFT_RIGHT)                                                                                                     \
+    Z(SHIFT_RIGHT_INT)                                                                                                 \
     Z(LOGICAL_NOT)                                                                                                     \
     Z(LOGICAL_AND)                                                                                                     \
     Z(LOGICAL_OR)                                                                                                      \
@@ -170,9 +184,10 @@ union TZrInstructionType {
 };
 
 typedef union TZrInstructionType TZrInstructionType;
-
+#define ZR_INSTRUCTION_USE_RET_FLAG ((TUInt16) (-1))
 struct SZrInstruction {
-    EZrInstructionCode operationCode;
+    TUInt16 operationCode;
+    TUInt16 operandExtra;
     TZrInstructionType operand;
 };
 

@@ -33,11 +33,13 @@ void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
      */
     ZR_INSTRUCTION_DISPATCH_TABLE
 #define DONE(N) ZR_INSTRUCTION_DONE(instruction, programCounter, N)
+// extra operand
+#define E(INSTRUCTION) INSTRUCTION.instruction.operandExtra
 // 4 OPERANDS
-#define A0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[1]
-#define B0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[2]
-#define C0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[3]
-#define D0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[1]
+#define A0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[0]
+#define B0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[1]
+#define C0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[2]
+#define D0(INSTRUCTION) INSTRUCTION.instruction.operand.operand0[3]
 // 2 OPERANDS
 #define A1(INSTRUCTION) INSTRUCTION.instruction.operand.operand1[0]
 #define B1(INSTRUCTION) INSTRUCTION.instruction.operand.operand1[1]
@@ -48,15 +50,16 @@ void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
 #define CONST(OFFSET) (constants + (OFFSET))
 #define CLOSURE(OFFSET) (closure->closureValuesExtend[OFFSET])
 
-#define ALGORITHM_1(REGION, OP, TYPE) ZR_VALUE_FAST_SET(&ret, REGION, OP(opA->value.nativeObject.REGION), TYPE);
+#define ALGORITHM_1(REGION, OP, TYPE) ZR_VALUE_FAST_SET(destination, REGION, OP(opA->value.nativeObject.REGION), TYPE);
 #define ALGORITHM_2(REGION, OP, TYPE)                                                                                  \
-    ZR_VALUE_FAST_SET(&ret, REGION, (opA->value.nativeObject.REGION) OP(opB->value.nativeObject.REGION), TYPE);
+    ZR_VALUE_FAST_SET(destination, REGION, (opA->value.nativeObject.REGION) OP(opB->value.nativeObject.REGION), TYPE);
 #define ALGORITHM_CVT_2(CVT, REGION, OP, TYPE)                                                                         \
-    ZR_VALUE_FAST_SET(&ret, CVT, (opA->value.nativeObject.REGION) OP(opB->value.nativeObject.REGION), TYPE);
+    ZR_VALUE_FAST_SET(destination, CVT, (opA->value.nativeObject.REGION) OP(opB->value.nativeObject.REGION), TYPE);
 #define ALGORITHM_CONST_2(REGION, OP, TYPE, RIGHT)                                                                     \
-    ZR_VALUE_FAST_SET(&ret, REGION, (opA->value.nativeObject.REGION) OP(RIGHT), TYPE);
+    ZR_VALUE_FAST_SET(destination, REGION, (opA->value.nativeObject.REGION) OP(RIGHT), TYPE);
 #define ALGORITHM_FUNC_2(REGION, OP_FUNC, TYPE)                                                                        \
-    ZR_VALUE_FAST_SET(&ret, REGION, OP_FUNC(opA->value.nativeObject.REGION, opB->value.nativeObject.REGION), TYPE);
+    ZR_VALUE_FAST_SET(destination, REGION, OP_FUNC(opA->value.nativeObject.REGION, opB->value.nativeObject.REGION),    \
+                      TYPE);
 
 #define UPDATE_TRAP(CALL_INFO) (trap = (CALL_INFO)->context.context.trap)
 #define UPDATE_BASE(CALL_INFO) (base = (CALL_INFO)->functionBase.valuePointer + 1)
@@ -106,40 +109,67 @@ LZrReturning:
         ZR_ASSERT(base == callInfo->functionBase.valuePointer + 1);
         ZR_ASSERT(base <= state->stackTop.valuePointer &&
                   state->stackTop.valuePointer <= state->stackTail.valuePointer);
+
+        SZrTypeValue *destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : BASE(E(instruction));
+
         ZR_INSTRUCTION_DISPATCH(instruction) {
-            ZR_INSTRUCTION_LABEL(GET_STACK) { ret = BASE(A2(instruction))->value; }
+            ZR_INSTRUCTION_LABEL(GET_STACK) { *destination = BASE(A2(instruction))->value; }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(SET_STACK) { BASE(A2(instruction))->value = ret; }
+            ZR_INSTRUCTION_LABEL(SET_STACK) { BASE(A2(instruction))->value = *destination; }
             DONE(1);
             ZR_INSTRUCTION_LABEL(GET_CONSTANT) {
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 // BASE(B1(instruction))->value = *CONST(ret.value.nativeObject.nativeUInt64);
-                ret = *CONST(A2(instruction));
+                *destination = *CONST(A2(instruction));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CONSTANT) {
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 //*CONST(ret.value.nativeObject.nativeUInt64) = BASE(B1(instruction))->value;
-                *CONST(A2(instruction)) = ret;
+                *CONST(A2(instruction)) = *destination;
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(GET_CLOSURE) {
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 // closure function to access
-                ZrValueCopy(state, &ret, ZrClosureValueGetValue(CLOSURE(A2(instruction))));
+                ZrValueCopy(state, destination, ZrClosureValueGetValue(CLOSURE(A2(instruction))));
                 // BASE(B1(instruction))->value = CLOSURE(ret.value.nativeObject.nativeUInt64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CLOSURE) {
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(ret.type));
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 SZrClosureValue *closureValue = CLOSURE(A2(instruction));
                 SZrTypeValue *value = ZrClosureValueGetValue(closureValue);
-                SZrTypeValue *newValue = &ret;
+                SZrTypeValue *newValue = destination;
                 // closure function to access
                 ZrValueCopy(state, value, newValue);
                 // CLOSURE(ret.value.nativeObject.nativeUInt64) = BASE(B1(instruction))->value;
                 ZrValueBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue), newValue);
                 // *CLOSURE(ret.value.nativeObject.nativeUInt64) = BASE(B1(instruction))->value;
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(TO_BOOL) {
+                // TODO: UNKNOWN TYPE AND META
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(TO_INT) {
+                // TODO: UNKNOWN TYPE AND META
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(TO_UINT) {
+                // TODO: UNKNOWN TYPE AND META
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(TO_FLOAT) {
+                // TODO: UNKNOWN TYPE AND META
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(TO_STRING) {
+                // TODO: UNKNOWN TYPE AND META
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(ADD) {
+                // TODO: UNKNOWN TYPE AND META
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_INT) {
@@ -166,6 +196,10 @@ LZrReturning:
                 // todo: concat string
             }
             DONE(1);
+            ZR_INSTRUCTION_LABEL(SUB) {
+                // TODO: UNKNOWN TYPE AND META
+            }
+            DONE(1);
             ZR_INSTRUCTION_LABEL(SUB_INT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
@@ -178,6 +212,10 @@ LZrReturning:
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_2(nativeDouble, -, opA->type);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(MUL) {
+                // TODO: UNKNOWN TYPE AND META
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL_SIGNED) {
@@ -199,6 +237,14 @@ LZrReturning:
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_2(nativeDouble, *, ZR_VALUE_TYPE_DOUBLE);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(NEG) {
+                // TODO: UNKNOWN TYPE AND META
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(DIV) {
+                // TODO: UNKNOWN TYPE AND META
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_SIGNED) {
@@ -232,6 +278,10 @@ LZrReturning:
                 ALGORITHM_2(nativeDouble, /, ZR_VALUE_TYPE_DOUBLE);
             }
             DONE(1);
+            ZR_INSTRUCTION_LABEL(MOD) {
+                // TODO: UNKNOWN TYPE AND META
+            }
+            DONE(1);
             ZR_INSTRUCTION_LABEL(MOD_SIGNED) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
@@ -263,6 +313,10 @@ LZrReturning:
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
                 ALGORITHM_FUNC_2(nativeDouble, fmod, ZR_VALUE_TYPE_DOUBLE);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(POW) {
+                // TODO: UNKNOWN TYPE AND META
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW_SIGNED) {
@@ -302,6 +356,10 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_LEFT) {
+                // TODO: UNKNOWN TYPE AND META
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(SHIFT_LEFT_INT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
@@ -309,6 +367,10 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_RIGHT) {
+                // TODO: UNKNOWN TYPE AND META
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(SHIFT_RIGHT_INT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
@@ -318,15 +380,17 @@ LZrReturning:
             ZR_INSTRUCTION_LABEL(LOGICAL_NOT) {
                 opA = &BASE(A1(instruction))->value;
                 if (ZR_VALUE_IS_TYPE_NULL(opA->type)) {
-                    ZR_VALUE_FAST_SET(&ret, nativeBool, ZR_VALUE_TYPE_BOOL, ZR_TRUE);
+                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_VALUE_TYPE_BOOL, ZR_TRUE);
                 } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
                     ALGORITHM_1(nativeBool, !, ZR_VALUE_TYPE_BOOL);
                 } else if (ZR_VALUE_IS_TYPE_INT(opA->type)) {
-                    ZR_VALUE_FAST_SET(&ret, nativeBool, ZR_VALUE_TYPE_BOOL, opA->value.nativeObject.nativeInt64 == 0);
+                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_VALUE_TYPE_BOOL,
+                                      opA->value.nativeObject.nativeInt64 == 0);
                 } else if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
-                    ZR_VALUE_FAST_SET(&ret, nativeBool, ZR_VALUE_TYPE_BOOL, opA->value.nativeObject.nativeDouble == 0);
+                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_VALUE_TYPE_BOOL,
+                                      opA->value.nativeObject.nativeDouble == 0);
                 } else {
-                    ZR_VALUE_FAST_SET(&ret, nativeBool, ZR_VALUE_TYPE_BOOL, ZR_FALSE);
+                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_VALUE_TYPE_BOOL, ZR_FALSE);
                 }
             }
             DONE(1);
@@ -390,14 +454,14 @@ LZrReturning:
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 TBool result = ZrValueEqual(state, opA, opB);
-                ZR_VALUE_FAST_SET(&ret, nativeBool, result, ZR_VALUE_TYPE_BOOL);
+                ZR_VALUE_FAST_SET(destination, nativeBool, result, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_NOT_EQUAL) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 TBool result = !ZrValueEqual(state, opA, opB);
-                ZR_VALUE_FAST_SET(&ret, nativeBool, result, ZR_VALUE_TYPE_BOOL);
+                ZR_VALUE_FAST_SET(destination, nativeBool, result, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_SIGNED) {
@@ -487,9 +551,9 @@ LZrReturning:
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_CLOSURE(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type) &&
-                          ZR_VALUE_IS_TYPE_INT(ret.type));
+                          ZR_VALUE_IS_TYPE_INT(destination->type));
                 TZrSize parametersCount = opB->value.nativeObject.nativeUInt64;
-                TZrSize returnCount = ret.value.nativeObject.nativeUInt64;
+                TZrSize returnCount = destination->value.nativeObject.nativeUInt64;
                 if (parametersCount > 0) {
                     state->stackTop.valuePointer = BASE(A1(instruction)) + parametersCount;
                 }
@@ -510,7 +574,7 @@ LZrReturning:
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_CLOSURE(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type) &&
-                          ZR_VALUE_IS_TYPE_INT(ret.type));
+                          ZR_VALUE_IS_TYPE_INT(destination->type));
                 TZrSize parametersCount = opB->value.nativeObject.nativeUInt64;
                 TZrSize returnCount = ret.value.nativeObject.nativeUInt64;
                 // TODO:
@@ -521,7 +585,7 @@ LZrReturning:
                 opB = &BASE(B1(instruction))->value;
 
                 TZrSize returnCount = opB->value.nativeObject.nativeUInt64;
-                TZrSize variableArguments = ret.value.nativeObject.nativeUInt64;
+                TZrSize variableArguments = destination->value.nativeObject.nativeUInt64;
 
                 // save its program counter
                 callInfo->context.context.programCounter = programCounter;
@@ -565,7 +629,7 @@ LZrReturning:
             ZR_INSTRUCTION_LABEL(JUMP) { JUMP(callInfo, instruction, 0); }
             DONE(1);
             ZR_INSTRUCTION_LABEL(JUMP_IF) {
-                if (ret.value.nativeObject.nativeBool) {
+                if (destination->value.nativeObject.nativeBool) {
                     JUMP(callInfo, instruction, 0);
                 }
             }

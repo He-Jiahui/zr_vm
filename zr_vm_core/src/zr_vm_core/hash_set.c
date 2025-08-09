@@ -7,6 +7,18 @@
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/memory.h"
 
+void ZrHashSetDeconstruct(struct SZrState *state, SZrHashSet *set) {
+    SZrGlobalState *global = state->global;
+    const TZrSize elementSize = sizeof(TZrPtr);
+    TZrSize oldCapacity = set->capacity;
+    TZrSize oldBucketCount = oldCapacity * elementSize;
+    SZrHashKeyValuePair **oldBuckets = set->buckets;
+    if (oldBuckets != ZR_NULL) {
+        ZrMemoryAllocate(global, oldBuckets, oldBucketCount, 0, ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET);
+        set->buckets = ZR_NULL;
+    }
+}
+
 void ZrHashSetRehash(SZrState *state, SZrHashSet *set, TZrSize newCapacity) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(set != NULL && newCapacity > set->capacity);
@@ -15,8 +27,8 @@ void ZrHashSetRehash(SZrState *state, SZrHashSet *set, TZrSize newCapacity) {
     TZrSize oldBucketCount = oldCapacity * elementSize;
     TZrSize newBucketCount = newCapacity * elementSize;
     SZrHashKeyValuePair **oldBuckets = set->buckets;
-    SZrHashKeyValuePair **newBuckets =
-            ZR_CAST_HASH_KEY_VALUE_PAIR_PTR(ZrMemoryAllocate(global, oldBuckets, oldBucketCount, newBucketCount));
+    SZrHashKeyValuePair **newBuckets = ZR_CAST_HASH_KEY_VALUE_PAIR_PTR(
+            ZrMemoryAllocate(global, oldBuckets, oldBucketCount, newBucketCount, ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET));
     oldBuckets = ZR_NULL;
     set->buckets = newBuckets;
     set->capacity = newCapacity;

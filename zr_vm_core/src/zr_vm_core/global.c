@@ -18,7 +18,7 @@ static void ZrGlobalStatePanic(SZrState *state) {
 SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments, TUInt64 uniqueNumber,
                                  SZrCallbackGlobal *callbacks) {
     SZrGlobalState *global =
-            allocator(userAllocationArguments, ZR_NULL, 0, sizeof(SZrGlobalState), ZR_VALUE_TYPE_VM_MEMORY);
+            allocator(userAllocationArguments, ZR_NULL, 0, sizeof(SZrGlobalState), ZR_MEMORY_NATIVE_TYPE_GLOBAL);
     if (global == ZR_NULL) {
         return ZR_NULL;
     }
@@ -95,7 +95,13 @@ void ZrGlobalStateInitRegistry(SZrState *state, SZrGlobalState *global) {
 void ZrGlobalStateFree(SZrGlobalState *global) {
     FZrAllocator allocator = global->allocator;
 
+    ZrStringTableFree(global, global->stringTable);
+    global->stringTable = ZR_NULL;
+
+    ZrGarbageCollectorFree(global, global->garbageCollector);
+    global->garbageCollector = ZR_NULL;
+
     ZrStateFree(global, global->mainThreadState);
     // free global at last
-    allocator(global->userAllocationArguments, global, sizeof(SZrGlobalState), 0, ZR_VALUE_TYPE_VM_MEMORY);
+    allocator(global->userAllocationArguments, global, sizeof(SZrGlobalState), 0, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
 }

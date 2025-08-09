@@ -33,7 +33,8 @@ static ZR_FORCE_INLINE TBool ZrGarbageCollectorIsGenerationalMode(SZrGlobalState
 }
 
 void ZrGarbageCollectorNew(SZrGlobalState *global) {
-    SZrGarbageCollector *gc = ZrMemoryRawMallocWithType(global, sizeof(SZrGarbageCollector), ZR_VALUE_TYPE_VM_MEMORY);
+    SZrGarbageCollector *gc =
+            ZrMemoryRawMallocWithType(global, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
     global->garbageCollector = gc;
     SZrState *state = global->mainThreadState;
     // set size
@@ -68,6 +69,11 @@ void ZrGarbageCollectorNew(SZrGlobalState *global) {
     gc->waitToReleaseObjectList = ZR_NULL;
     gc->releasedObjectList = ZR_NULL;
     // todo:
+}
+
+void ZrGarbageCollectorFree(struct SZrGlobalState *global, SZrGarbageCollector *collector) {
+    // todo: final gc all objects
+    ZrMemoryRawFreeWithType(global, collector, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
 }
 
 void ZrGarbageCollectorAddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffset size) {
@@ -219,7 +225,7 @@ void ZrRawObjectBarrier(struct SZrState *state, SZrRawObject *object, SZrRawObje
 
 SZrRawObject *ZrRawObjectNew(SZrState *state, EZrValueType type, TZrSize size, TBool isNative) {
     SZrGlobalState *global = state->global;
-    TZrPtr memory = ZrMemoryGcMalloc(state, type, size);
+    TZrPtr memory = ZrMemoryGcMalloc(state, ZR_MEMORY_NATIVE_TYPE_OBJECT, size);
     SZrRawObject *object = ZR_CAST_RAW_OBJECT(memory);
     ZrRawObjectConstruct(object, type);
     object->isNative = isNative;

@@ -56,6 +56,7 @@ typedef struct SZrGarbageCollector SZrGarbageCollector;
 
 
 ZR_CORE_API void ZrGarbageCollectorNew(struct SZrGlobalState *global);
+ZR_CORE_API void ZrGarbageCollectorFree(struct SZrGlobalState *global, SZrGarbageCollector *collector);
 
 ZR_CORE_API void ZrGarbageCollectorAddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffset size);
 

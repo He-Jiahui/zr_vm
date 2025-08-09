@@ -176,13 +176,24 @@ TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format,
 }
 
 void ZrStringTableNew(SZrGlobalState *global) {
-    SZrStringTable *stringTable = ZrMemoryRawMallocWithType(global, sizeof(SZrStringTable), ZR_VALUE_TYPE_VM_MEMORY);
+    SZrStringTable *stringTable =
+            ZrMemoryRawMallocWithType(global, sizeof(SZrStringTable), ZR_MEMORY_NATIVE_TYPE_MANAGER);
     global->stringTable = stringTable;
     // stringTable->bucketSize = 0;
     // stringTable->elementCount = 0;
     // stringTable->capacity = 0;
     // stringTable->buckets = ZR_NULL;
     ZrHashSetConstruct(&stringTable->stringHashSet);
+}
+
+void ZrStringTableFree(struct SZrGlobalState *global, SZrStringTable *stringTable) {
+    SZrState *mainThread = global->mainThreadState;
+
+    ZrHashSetDeconstruct(mainThread, &stringTable->stringHashSet);
+
+    // todo: clear all strings
+    ZrMemoryRawFreeWithType(global, stringTable, sizeof(SZrStringTable), ZR_MEMORY_NATIVE_TYPE_MANAGER);
+    // ZR_MEMORY_NATIVE_TYPE_MANAGER);
 }
 
 void ZrStringTableInit(SZrState *state) {
@@ -220,7 +231,7 @@ static SZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZ
         totalSize += sizeof(TNativeString);
         constantString = (SZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
         TNativeString *pointer = (TNativeString *) &(constantString->stringDataExtend);
-        *pointer = (TNativeString) ZrMemoryRawMalloc(global, length + 1);
+        *pointer = (TNativeString) ZrMemoryRawMallocWithType(global, length + 1, ZR_MEMORY_NATIVE_TYPE_STRING);
         ZrMemoryRawCopy(*pointer, string, length);
         *pointer[length] = '\0';
         constantString->shortStringLength = ZR_VM_LONG_STRING_FLAG;
@@ -344,7 +355,7 @@ SZrString *ZrStringFromNumber(struct SZrState *state, struct SZrTypeValue *value
     SZrString *string = ZR_NULL;
     ZR_ASSERT(ZR_VALUE_IS_TYPE_NUMBER(value->type) || ZR_VALUE_IS_TYPE_NATIVE(value->type));
     TNativeString nativeString =
-            ZrMemoryRawMallocWithType(global, ZR_NUMBER_TO_STRING_LENGTH_MAX, ZR_VALUE_TYPE_VM_MEMORY);
+            ZrMemoryRawMallocWithType(global, ZR_NUMBER_TO_STRING_LENGTH_MAX, ZR_MEMORY_NATIVE_TYPE_STRING);
     switch (value->type) {
         ZR_VALUE_CASES_SIGNED_INT {
             length = ZR_STRING_SIGNED_INTEGER_PRINT_FORMAT(nativeString, ZR_NUMBER_TO_STRING_LENGTH_MAX,
@@ -371,6 +382,6 @@ SZrString *ZrStringFromNumber(struct SZrState *state, struct SZrTypeValue *value
         } break;
     }
     string = ZrStringCreateFromNative(state, nativeString);
-    ZrMemoryRawFree(global, nativeString, ZR_NUMBER_TO_STRING_LENGTH_MAX);
+    ZrMemoryRawFreeWithType(global, nativeString, ZR_NUMBER_TO_STRING_LENGTH_MAX, ZR_MEMORY_NATIVE_TYPE_STRING);
     return string;
 }

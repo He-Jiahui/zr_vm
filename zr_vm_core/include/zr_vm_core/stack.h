@@ -31,7 +31,9 @@ typedef union TZrStackPtr TZrStackPointer;
                      ((STATE)->stackTop.valuePointer - (STATE)->callInfoList->functionBase.valuePointer),              \
              "not enough elements in the stack")
 
-ZR_CORE_API TZrPtr ZrStackInit(struct SZrState *state, TZrStackPointer *stack, TZrSize stackLength);
+ZR_CORE_API TZrPtr ZrStackConstruct(struct SZrState *state, TZrStackPointer *stack, TZrSize stackLength);
+
+ZR_CORE_API void ZrStackDeconstruct(struct SZrState *state, TZrStackPointer *stack, TZrSize stackLength);
 
 ZR_CORE_API TZrStackValuePointer ZrStackGetAddressFromOffset(struct SZrState *state, TZrMemoryOffset offset);
 

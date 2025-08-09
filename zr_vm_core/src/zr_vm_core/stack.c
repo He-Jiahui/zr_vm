@@ -60,7 +60,7 @@ static TBool ZrStackReallocInternal(SZrState *state, TUInt64 newSize, TBool thro
     state->global->garbageCollector->stopGcFlag = ZR_TRUE;
     TZrStackValuePointer newStackPointer = ZR_CAST_STACK_VALUE(
             ZrMemoryAllocate(global, state->stackBase.valuePointer, previousStackSize + ZR_THREAD_STACK_SIZE_EXTRA,
-                             newSize + ZR_THREAD_STACK_SIZE_EXTRA));
+                             newSize + ZR_THREAD_STACK_SIZE_EXTRA, ZR_MEMORY_NATIVE_TYPE_STACK));
     state->global->garbageCollector->stopGcFlag = previousStopGcFlag;
     if (ZR_UNLIKELY(newStackPointer == ZR_NULL)) {
         // todo:
@@ -79,12 +79,19 @@ static TBool ZrStackReallocInternal(SZrState *state, TUInt64 newSize, TBool thro
     return ZR_TRUE;
 }
 
-TZrPtr ZrStackInit(SZrState *state, TZrStackPointer *stack, TZrSize stackLength) {
+TZrPtr ZrStackConstruct(SZrState *state, TZrStackPointer *stack, TZrSize stackLength) {
     ZR_ASSERT(stackLength > 0);
     SZrGlobalState *global = state->global;
     TZrSize stackByteSize = sizeof(SZrTypeValueOnStack) * stackLength;
-    stack->valuePointer = ZR_CAST_STACK_VALUE(ZrMemoryRawMalloc(global, stackByteSize));
+    stack->valuePointer =
+            ZR_CAST_STACK_VALUE(ZrMemoryRawMallocWithType(global, stackByteSize, ZR_MEMORY_NATIVE_TYPE_STACK));
     return ZR_CAST_PTR(stack->valuePointer + stackLength);
+}
+
+void ZrStackDeconstruct(struct SZrState *state, TZrStackPointer *stack, TZrSize stackLength) {
+    SZrGlobalState *global = state->global;
+    TZrSize stackByteSize = sizeof(SZrTypeValueOnStack) * stackLength;
+    ZrMemoryRawFreeWithType(global, stack->valuePointer, stackByteSize, ZR_MEMORY_NATIVE_TYPE_STACK);
 }
 
 TZrStackValuePointer ZrStackGetAddressFromOffset(struct SZrState *state, TZrMemoryOffset offset) {

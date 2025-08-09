@@ -31,6 +31,8 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
 typedef struct SZrLibrary_Project SZrLibrary_Project;
 ZR_LIBRARY_API SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TNativeString raw, TNativeString file);
 
+ZR_LIBRARY_API void ZrLibrary_Project_Free(SZrState *state, SZrLibrary_Project *project);
+
 ZR_LIBRARY_API void ZrLibrary_Project_Do(SZrState *state);
 
 ZR_LIBRARY_API TBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TNativeString path, TNativeString md5,

@@ -57,7 +57,8 @@ void ZrFunctionFree(struct SZrState *state, SZrFunction *function) {
     ZR_MEMORY_RAW_FREE_LIST(global, function->closureValueList, function->closureValueLength);
     ZR_MEMORY_RAW_FREE_LIST(global, function->executionLocationInfoList, function->executionLocationInfoLength);
 
-    ZrMemoryRawFreeWithType(global, function, sizeof(SZrFunction), ZR_VALUE_TYPE_FUNCTION);
+    // ZrMemoryRawFreeWithType(global, function, sizeof(SZrFunction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    // function is object, gc free it automatically.
 }
 
 SZrString *ZrFunctionGetLocalVariableName(SZrFunction *function, TUInt32 index, TUInt32 programCounter) {

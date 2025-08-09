@@ -14,11 +14,13 @@
     Z(MUL)                                                                                                             \
     Z(DIV)                                                                                                             \
     Z(MOD)                                                                                                             \
+    Z(POW)                                                                                                             \
     Z(NEG)                                                                                                             \
     Z(COMPARE)                                                                                                         \
     Z(TO_BOOL)                                                                                                         \
     Z(TO_STRING)                                                                                                       \
     Z(TO_INT)                                                                                                          \
+    Z(TO_UINT)                                                                                                         \
     Z(TO_FLOAT)                                                                                                        \
     Z(CALL)                                                                                                            \
     Z(GETTER)                                                                                                          \

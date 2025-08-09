@@ -13,7 +13,8 @@ ZR_FORCE_INLINE void ZrArrayConstruct(SZrArray *array) { array->isValid = ZR_FAL
 
 ZR_FORCE_INLINE void ZrArrayInit(SZrState *state, SZrArray *array, TZrSize elementSize, TZrSize capacity) {
     ZR_ASSERT(array != ZR_NULL && capacity != 0 && elementSize != 0);
-    array->head = ZR_CAST_UINT8_PTR(ZrMemoryRawMalloc(state->global, capacity * elementSize));
+    array->head =
+            ZR_CAST_UINT8_PTR(ZrMemoryRawMallocWithType(state->global, capacity * elementSize, ZR_MEMORY_NATIVE_TYPE_ARRAY));
     array->elementSize = elementSize;
     array->length = 0;
     array->capacity = capacity;
@@ -44,8 +45,9 @@ ZR_FORCE_INLINE void ZrArrayPush(SZrState *state, SZrArray *array, TZrPtr elemen
         // KEEP AT LEAST INCREASING 1 ELEMENT
         TZrSize toIncrease = array->capacity * ZR_MATH_MAX(ZR_ARRAY_INCREASEMENT_MULTIPLIER_PERCENT, 100) / 100 + 1;
         array->capacity = toIncrease;
-        array->head = ZR_CAST_UINT8_PTR(ZrMemoryAllocate(global, array->head, previousCapacity * array->elementSize,
-                                                         array->capacity * array->elementSize));
+        array->head =
+                ZR_CAST_UINT8_PTR(ZrMemoryAllocate(global, array->head, previousCapacity * array->elementSize,
+                                                   array->capacity * array->elementSize, ZR_MEMORY_NATIVE_TYPE_ARRAY));
     }
     ZrMemoryRawCopy(array->head + array->length * array->elementSize, element, array->elementSize);
     array->length++;
@@ -56,7 +58,7 @@ ZR_FORCE_INLINE void ZrArrayEmpty(SZrArray *array) { array->length = 0; }
 ZR_FORCE_INLINE void ZrArrayFree(SZrState *state, SZrArray *array) {
     ZR_ASSERT(array->head != ZR_NULL);
     SZrGlobalState *global = state->global;
-    ZrMemoryRawFree(global, array->head, array->capacity * array->elementSize);
+    ZrMemoryRawFreeWithType(global, array->head, array->capacity * array->elementSize, ZR_MEMORY_NATIVE_TYPE_ARRAY);
     array->isValid = ZR_FALSE;
 }
 
@@ -68,8 +70,9 @@ ZR_FORCE_INLINE void ZrArrayAppend(SZrState *state, SZrArray *array, TZrPtr elem
         // KEEP AT LEAST INCREASING 1 ELEMENT
         TZrSize toIncrease = array->capacity * ZR_MATH_MAX(ZR_ARRAY_INCREASEMENT_MULTIPLIER_PERCENT, 100) / 100 + 1;
         array->capacity = ZR_MATH_MAX(toIncrease, array->length + length);
-        array->head = ZR_CAST_UINT8_PTR(ZrMemoryAllocate(global, array->head, previousCapacity * array->elementSize,
-                                                         array->capacity * array->elementSize));
+        array->head =
+                ZR_CAST_UINT8_PTR(ZrMemoryAllocate(global, array->head, previousCapacity * array->elementSize,
+                                                   array->capacity * array->elementSize, ZR_MEMORY_NATIVE_TYPE_ARRAY));
     }
     ZrMemoryRawCopy(array->head + array->length * array->elementSize, elements, length * array->elementSize);
     array->length += length;
