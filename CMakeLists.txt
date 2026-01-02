@@ -73,6 +73,8 @@ add_subdirectory("zr_vm_common")
 
 add_subdirectory("zr_vm_core")
 
+add_subdirectory("zr_vm_parser")
+
 add_subdirectory("zr_vm_library")
 
 

@@ -50,12 +50,24 @@ SZrFunction *ZrFunctionNew(struct SZrState *state) {
 void ZrFunctionFree(struct SZrState *state, SZrFunction *function) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(function != ZR_NULL);
-    ZR_MEMORY_RAW_FREE_LIST(global, function->instructionsList, function->instructionsLength);
-    ZR_MEMORY_RAW_FREE_LIST(global, function->childFunctionList, function->childFunctionLength);
-    ZR_MEMORY_RAW_FREE_LIST(global, function->constantValueList, function->constantValueLength);
-    ZR_MEMORY_RAW_FREE_LIST(global, function->localVariableList, function->localVariableLength);
-    ZR_MEMORY_RAW_FREE_LIST(global, function->closureValueList, function->closureValueLength);
-    ZR_MEMORY_RAW_FREE_LIST(global, function->executionLocationInfoList, function->executionLocationInfoLength);
+    if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
+        ZR_MEMORY_RAW_FREE_LIST(global, function->instructionsList, function->instructionsLength);
+    }
+    if (function->childFunctionList != ZR_NULL && function->childFunctionLength > 0) {
+        ZR_MEMORY_RAW_FREE_LIST(global, function->childFunctionList, function->childFunctionLength);
+    }
+    if (function->constantValueList != ZR_NULL && function->constantValueLength > 0) {
+        ZR_MEMORY_RAW_FREE_LIST(global, function->constantValueList, function->constantValueLength);
+    }
+    if (function->localVariableList != ZR_NULL && function->localVariableLength > 0) {
+        ZR_MEMORY_RAW_FREE_LIST(global, function->localVariableList, function->localVariableLength);
+    }
+    if (function->closureValueList != ZR_NULL && function->closureValueLength > 0) {
+        ZR_MEMORY_RAW_FREE_LIST(global, function->closureValueList, function->closureValueLength);
+    }
+    if (function->executionLocationInfoList != ZR_NULL && function->executionLocationInfoLength > 0) {
+        ZR_MEMORY_RAW_FREE_LIST(global, function->executionLocationInfoList, function->executionLocationInfoLength);
+    }
 
     // ZrMemoryRawFreeWithType(global, function, sizeof(SZrFunction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     // function is object, gc free it automatically.

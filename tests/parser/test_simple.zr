@@ -1,0 +1,325 @@
+module "simple";
+// 命名模块同文件名 走标识符规则  如果包含特殊符号则需要当做字符串
+// 也可以写作 module "sample";
+// 可以在任意地方引入和使用模块
+// import是普通函数 不应特殊处理
+var math = zr.import("math\ntest\xff");
+var math1 = zr.import('1');
+var math2 = zr.import(1.0);
+var math3 = zr.import(0xff);
+var math4 = zr.import(0777);
+var math5 = zr.import(123);
+var result = 1 + (5 - 1) * 4;
+
+var myInt = 0xFFFFFFFFFFFFFFFF;
+var myFloat = 1.0f;
+var myDouble = 1.0d;
+var inf = Infinity;
+var nan = NaN;
+var ninf = NegativeInfinity;
+
+var ret = '\n';
+var xxx = '\x21';
+var zzz = '\'';
+var zzy = '\"';
+var test_exp = 5;
+test_exp += -5 * 4 + 1 << 2 == 4 & 1 && 2 | 3 ^ 5 % 1 || 2 ? 3 << 3 : 5;
+
+// 也可以以这样的方式引入
+var {matrix, pi, e, ln} = zr.import("math");
+
+// 测试方法
+%test("test"){
+    if(true){
+        var i = 4;
+        try{
+            var j = 5;
+        }
+
+        try{
+            var k = 6;
+        }
+        catch(e){
+            var l = 7;
+        }
+        finally{
+            var m = 8;
+        }
+        return 0;
+    }
+    return 1;
+}
+
+testArgs(...toPush: int[]){
+
+}
+
+// testArgs(c, ...toPush: int[]){
+
+// }
+
+// var Vector3 = {x:1,y:2,z:3};
+
+// struct 不允许继承
+struct Vector3{
+    // 无论是struct 还是class中 声明变量都是明确类型的  不明确类型的就认为是object
+    // 可以不进行初始化
+    pub var x:float;
+    var y:float;
+    var z:float = 0;
+    var a;
+    static var ZERO = $Vector3(0, 0, 0);
+    // 构造器等特殊函数会以@开头
+    pub @constructor(){
+        this.x = 0;
+    }
+    // 函数重载
+    pub @constructor(x:float, y:float, z:float){
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+    pub static @add(lhs:Vector3, rhs:Vector3){
+        // 生成新的Vector3值类型
+        // struct不能使用new 而通过$XXX生成
+        return $Vector3(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z);
+    }
+    pub static @mul(lhs:Vector3, rhs:float){
+        // 生成新的Vector3值类型
+        return $Vector3(lhs.x * rhs, lhs.y * rhs, lhs.z * rhs);
+    }
+    // 函数
+    pub add(rhs:Vector3): Vector3{
+        var lhs = this;
+        return $Vector3(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z);
+    }
+}
+// enum 允许继承 int string float bool
+enum RGBA:string{
+    R = "R",
+    G = "G",
+    B = "B",
+    A = "A",
+}
+// 允许声明以;结尾  默认为int 以0,1,2顺序进行
+enum Dimension{
+    x;
+    y;
+    z;
+}
+// 这样声明生成匿名的object
+// 可以,进行分隔 或者;进行分隔
+var value = {
+    a: 1,
+    b: 2,
+    c: 3
+};
+var valueX = {
+    a: 1;
+};
+// 可以通过[]对键进行动态运算生成
+var value2 = {
+    ["a"]: "a";
+    b: "b";
+    c: "c";
+    [2]: "d";
+};
+var {a, b, c} = value2;
+// 数组
+var arr = [1, 2, 3];
+var arr2:int[] = [1;2;3;];
+var arr3:[string, int, bool, object] = ["root", 1, true, null];
+var [x] = arr3;
+// interface只能当做类型声明 只能声明方法和成员而不实现 会忽略访问性检查
+interface Man: arr{
+    pub var id:string;
+    pub var telephone;
+    pro var _address:string;
+    // 访问器可以让getter 和 setter 返回不同的类型
+    pub get set address:int;
+
+    pub @constructor(id: string);
+}
+#singleton#
+class Person{
+    # header("Person Info") #
+    # serializable #
+    pub var id:string;
+    pri var _address:string;
+    # editor.input #
+    pro var telephone: string;
+
+    pro static var telephone2: string;
+
+
+    pub @constructor(id: string){
+    }
+    # editor.input #
+    pub set address(val:string){
+        this._address = val;
+    }
+    pub get address{
+        return this._address;
+    }
+
+    pub static get address2{
+        return this._address;
+    }
+}
+// 迭代器写法
+// 返回 IEnumerator
+var j = for(var i in [1, 2, 3, 4, 5]){
+    if(i % 2 == 0){
+        continue i;
+    }
+    if(i>=4){
+        break i;
+    }
+    // default continue null;
+};
+// result is [2, 4]
+
+var k = {{
+    // out 会寻找最近的block表达式
+    // j的类型在编译阶段就已经确定
+    if(Object.type(j) == "array"){
+        // out to block expression
+        out j.toArray();
+    }
+    // default out null;
+}};
+// 类允许单继承一个基类和实现多个接口
+class Student:Person, Man{
+    // 必须先构造基类
+    pub @constructor(id: string)super(id){
+        if(true){
+            return;
+        }
+        while(true){
+            // false loop
+        }
+        switch(1){
+            (1){}
+            (/*default case*/){}
+        }
+        for(var i:int=0;i<100;i+=1){}
+        for(;;){}
+        for(var i in arr){
+            var h = if(i){
+                1;
+            }else{
+                2;
+            };
+
+            var j = switch(i){
+                (1){1;}
+                (2){2;}
+                (){3;}
+            };
+        
+        }
+    }
+    pub get a:int{
+        return 0;
+    }
+    pub set a(val: int){
+        // do nothing
+    }
+
+
+    pub test():void{
+        // 函数
+        key.register(()=>{
+            var i = 1;
+            return null;
+        });
+        key.register((k:int,b:float)=>{
+
+        });
+        key.register((k,b)=>{
+
+        });
+        key["reg"].member["sant"]();
+        var temp = $(key["Vector3"].revert(mam)("kanji")["minify"] + val)(s);
+    }
+}
+// 声明外动作加载脚本时立刻执行
+new Student();
+
+intermediate TestIntermediate(i:int, j:int):int %
+<
+    c1: int,
+    c2: int,
+    c3: int
+>
+[
+    num = 1;
+    str = "test";
+    num2 = 2;
+]
+(
+    var1: int,
+    var2: int
+)
+{
+    GetConstant num;
+    SetStack var1; // load num
+    GetConstant num2;
+    SetStack var2; // load num2
+    AddInt var1 var2; // num + num2
+    SetStack var1; // var1 = num + num2
+    AddInt i j; // i + j
+    SetStack var2; // var2 = i + j
+    AddInt var1 var2; // var1 + var2
+    SetStack 1;
+    FunctionReturn 0 1;
+}
+
+
+intermediate __entry():int %
+<
+    c1: int,
+    c2: int,
+    c3: int
+>
+[
+    num = 1;
+    str = "test";
+    num2 = 2;
+]
+(
+    var1: int,
+    var2: int
+)
+{
+    GetConstant num;
+    SetStack var1; // load num
+    GetConstant num2;
+    SetStack var2; // load num2
+    AddInt var1 var2; // num + num2
+    SetStack var1; // var1 = num + num2
+    FunctionReturn 0 1;
+}
+
+
+// 单元测试
+%test("test"){
+    if(true){
+        var i = 4;
+        try{
+            var j = 5;
+        }
+
+        try{
+            var k = 6;
+        }
+        catch(e){
+            var l = 7;
+        }
+        finally{
+            var m = 8;
+        }
+        return 0;
+    }
+    return 1;
+}
