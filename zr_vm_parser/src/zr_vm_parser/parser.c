@@ -7,6 +7,7 @@
 #include "zr_vm_core/string.h"
 
 #include <string.h>
+#include <math.h>
 
 // 辅助函数声明
 static void expect_token(SZrParserState *ps, EZrToken expected);
@@ -472,19 +473,19 @@ static SZrAstNode *parse_literal(SZrParserState *ps) {
         case ZR_TK_INFINITY: {
             ZrLexerNext(ps->lexer);
             SZrString *literal = ZrStringCreate(ps->state, "Infinity", 8);
-            return create_float_literal_node(ps, 1.0 / 0.0, literal, ZR_FALSE);  // 正无穷
+            return create_float_literal_node(ps, INFINITY, literal, ZR_FALSE);  // 正无穷
         }
 
         case ZR_TK_NEG_INFINITY: {
             ZrLexerNext(ps->lexer);
             SZrString *literal = ZrStringCreate(ps->state, "NegativeInfinity", 16);
-            return create_float_literal_node(ps, -1.0 / 0.0, literal, ZR_FALSE);  // 负无穷
+            return create_float_literal_node(ps, -INFINITY, literal, ZR_FALSE);  // 负无穷
         }
 
         case ZR_TK_NAN: {
             ZrLexerNext(ps->lexer);
             SZrString *literal = ZrStringCreate(ps->state, "NaN", 3);
-            return create_float_literal_node(ps, 0.0 / 0.0, literal, ZR_FALSE);  // NaN
+            return create_float_literal_node(ps, NAN, literal, ZR_FALSE);  // NaN
         }
 
         default:

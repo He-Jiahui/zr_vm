@@ -24,6 +24,7 @@ endif ()
 
 if (MSVC)
     add_compile_options(/W4 /wd4819 /wd4103)  # Windows: 开启所有警告并视警告为错误 /WX
+    add_compile_options(/utf-8)  # 设置源文件和执行字符集为UTF-8，解决中文注释和标识符编码问题
     add_compile_options(-DZR_PLATFORM_WIN_USE_MSVC)
 else ()
     add_compile_options(-Wall -Wextra -Wpedantic)  # Linux/macOS: 严格警告 #-Werror
