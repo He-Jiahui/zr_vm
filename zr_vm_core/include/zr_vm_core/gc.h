@@ -9,6 +9,40 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/value.h"
+
+
+/*
+** macro to tell when main invariant (white objects cannot point to black
+** ones) must be kept. During a collection, the sweep
+** phase may break the invariant, as objects turned white may point to
+** still-black objects. The invariant is restored when sweep ends and
+** all objects are white again.
+*/
+
+
+
+/*
+** 使用枚举类型系统来管理对象的垃圾收集标记状态
+*/
+#define ZR_iswhite(x)      ((x)->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED)
+#define ZR_isblack(x)      ((x)->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_REFERENCED)
+#define ZR_isgray(x)       ((x)->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_WAIT_TO_SCAN)
+
+#define ZR_tofinalize(x)   ((x)->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_UNREFERENCED)
+
+#define ZR_otherwhite(g)   ((g)->gcGeneration == ZR_GARBAGE_COLLECT_GENERATION_A ? ZR_GARBAGE_COLLECT_GENERATION_B : ZR_GARBAGE_COLLECT_GENERATION_A)
+#define ZR_isdead(g,v)     ((v)->garbageCollectMark.generation != (g)->gcGeneration)
+
+#define ZR_changewhite(x)  ((x)->garbageCollectMark.generation = ZR_otherwhite(global->garbageCollector))
+#define ZR_nw2black(x)     ((x)->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_REFERENCED)
+
+// 使用已有的枚举类型替代位标记
+#define ZR_getage(o) ((o)->garbageCollectMark.generationalStatus)
+#define ZR_setage(o,a) ((o)->garbageCollectMark.generationalStatus = (a))
+#define ZR_isold(o) ((o)->garbageCollectMark.generationalStatus >= ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL)
+
+#define ZR_changeage(o,f,t) \
+    ZR_ASSERT((o)->garbageCollectMark.generationalStatus == (f), (o)->garbageCollectMark.generationalStatus = (t))
 struct SZrGlobalState;
 struct SZrState;
 

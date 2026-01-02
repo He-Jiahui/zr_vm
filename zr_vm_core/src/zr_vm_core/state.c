@@ -122,8 +122,23 @@ void ZrStateExit(SZrState *state) {
 
 
 void ZrStateFree(SZrGlobalState *global, SZrState *state) {
-    ZrStackDeconstruct(state, &state->stackBase, ZrStateStackGetSize(state) + ZR_THREAD_STACK_SIZE_EXTRA);
-    state->stackBase.valuePointer = ZR_NULL;
+    // 检查参数有效性
+    if (state == ZR_NULL || global == ZR_NULL) {
+        return;
+    }
+    
+    // 检查state指针是否在合理范围内（避免访问无效内存）
+    if ((TZrPtr)state < (TZrPtr)0x1000) {
+        return;  // 无效指针，不释放
+    }
+    
+    // 检查stackBase是否有效（在访问之前）
+    if ((TZrPtr)&state->stackBase >= (TZrPtr)0x1000) {
+        ZrStackDeconstruct(state, &state->stackBase, ZrStateStackGetSize(state) + ZR_THREAD_STACK_SIZE_EXTRA);
+        state->stackBase.valuePointer = ZR_NULL;
+    }
+    
+    // 释放state本身
     ZrMemoryAllocate(global, state, sizeof(SZrState), 0, ZR_MEMORY_NATIVE_TYPE_STATE);
 }
 

@@ -13,6 +13,7 @@
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/object.h"
 
 void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
     SZrClosure *closure;
@@ -622,9 +623,47 @@ LZrReturning:
             }
         }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(GET_VALUE) {}
+            ZR_INSTRUCTION_LABEL(GETUPVAL) {
+                opA = &BASE(A1(instruction))->value;  // upvalue index
+                opB = &BASE(B1(instruction))->value;  // destination register
+                SZrClosure *currentClosure = ZR_CAST_VM_CLOSURE(state, ZrStackGetValue(callInfo->functionBase.valuePointer));
+                if (ZR_UNLIKELY(A1(instruction) >= currentClosure->closureValueCount)) {
+                    ZrDebugRunError(state, "upvalue index out of range");
+                }
+                ZrValueCopy(state, destination, ZrClosureValueGetValue(currentClosure->closureValuesExtend[A1(instruction)]));
+            }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(SET_VALUE) {}
+            
+            ZR_INSTRUCTION_LABEL(SETUPVAL) {
+                opA = &BASE(A1(instruction))->value;  // upvalue index
+                opB = &BASE(B1(instruction))->value;  // source register
+                SZrClosure *currentClosure = ZR_CAST_VM_CLOSURE(state, ZrStackGetValue(callInfo->functionBase.valuePointer));
+                if (ZR_UNLIKELY(A1(instruction) >= currentClosure->closureValueCount)) {
+                    ZrDebugRunError(state, "upvalue index out of range");
+                }
+                SZrTypeValue *target = ZrClosureValueGetValue(currentClosure->closureValuesExtend[A1(instruction)]);
+                ZrValueCopy(state, target, destination);
+                ZrValueBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(currentClosure->closureValuesExtend[A1(instruction)]), destination);
+            }
+            DONE(1);
+            
+            ZR_INSTRUCTION_LABEL(GETTABLE) {
+                opA = &BASE(A1(instruction))->value;  // table object
+                opB = &BASE(B1(instruction))->value;  // key
+                const SZrTypeValue *result = ZrObjectGetValue(state, ZR_CAST_OBJECT(state, opA->value.object), opB);
+                if (result != ZR_NULL) {
+                    ZrValueCopy(state, destination, result);
+                } else {
+                    ZrValueResetAsNull(destination);
+                }
+            }
+            DONE(1);
+            
+            ZR_INSTRUCTION_LABEL(SETTABLE) {
+                opA = &BASE(A1(instruction))->value;  // table object
+                opB = &BASE(B1(instruction))->value;  // key
+                ZrObjectSetValue(state, ZR_CAST_OBJECT(state, opA->value.object), opB, destination);
+            }
             DONE(1);
             ZR_INSTRUCTION_LABEL(JUMP) { JUMP(callInfo, instruction, 0); }
             DONE(1);

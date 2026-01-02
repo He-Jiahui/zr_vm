@@ -23,6 +23,10 @@
     Z(SET_CONSTANT)                                                                                                    \
     Z(GET_CLOSURE)                                                                                                     \
     Z(SET_CLOSURE)                                                                                                     \
+    Z(GETUPVAL)                                                                                                        \
+    Z(SETUPVAL)                                                                                                        \
+    Z(GETTABLE)                                                                                                        \
+    Z(SETTABLE)                                                                                                        \
     Z(TO_BOOL)                                                                                                         \
     Z(TO_INT)                                                                                                          \
     Z(TO_UINT)                                                                                                         \

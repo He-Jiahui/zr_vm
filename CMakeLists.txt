@@ -21,11 +21,6 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
 endif ()
 
-# 定义构建类型选项
-set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel"
-        HELP "Choose the type of build."
-        FORCE
-)
 
 if (MSVC)
     add_compile_options(/W4 /wd4819 /wd4103)  # Windows: 开启所有警告并视警告为错误 /WX
@@ -82,3 +77,9 @@ add_subdirectory("zr_vm_library")
 
 
 add_subdirectory("zr_vm_cli")
+
+# 是否构建测试（默认 OFF）
+option(BUILD_TESTS "Build test executables" ON)
+if(BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
