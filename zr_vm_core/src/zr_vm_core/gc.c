@@ -223,7 +223,7 @@ static void ZrGarbageCollectorEnterSweep(struct SZrState *state) {
 
     // 准备清除阶段的数据结构
     // 翻转白色，使所有对象变为白色（等待下一轮标记）
-    global->garbageCollector->gcGeneration = ZR_otherwhite(global->garbageCollector);
+    global->garbageCollector->gcGeneration = ZR_GC_OTHER_GENERATION(global->garbageCollector);
 }
 
 // runafewfinalizers函数：运行少量终结器
@@ -293,7 +293,7 @@ static void ZrGarbageCollectorRunUntilState(struct SZrState *state, EZrGarbageCo
         if (++iterationCount > maxIterations) {
             // 如果超过最大迭代次数，强制设置为目标状态
             global->garbageCollector->gcRunningStatus = targetState;
-            // 清空所有灰色列表，避免后续问题
+            // 清空所有待扫描列表，避免后续问题
             global->garbageCollector->waitToScanObjectList = ZR_NULL;
             global->garbageCollector->waitToScanAgainObjectList = ZR_NULL;
             break;
@@ -516,12 +516,12 @@ static TZrSize ZrGarbageCollectorAtomic(struct SZrState *state) {
         }
     }
 
-    work += ZrGarbageCollectorPropagateAll(state); // 清空灰色列表
+    work += ZrGarbageCollectorPropagateAll(state); // 清空待扫描列表
 
     // 处理弱表
     work += ZrGarbageCollectorProcessWeakTables(state);
 
-    global->garbageCollector->gcGeneration = ZR_otherwhite(global->garbageCollector); // 翻转当前白色
+    global->garbageCollector->gcGeneration = ZR_GC_OTHER_GENERATION(global->garbageCollector); // 翻转当前白色
 
     return work;
 }
@@ -555,12 +555,12 @@ static TZrSize ZrGarbageCollectorSingleStep(struct SZrState *state) {
             break;
         }
         case ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION: {
-            if (global->garbageCollector->waitToScanObjectList == NULL) { // 没有更多的灰色对象？
+            if (global->garbageCollector->waitToScanObjectList == NULL) { // 没有更多的待扫描对象？
                 global->garbageCollector->gcRunningStatus =
                         ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC; // 完成传播阶段
                 work = 0;
             } else {
-                work = ZrGarbageCollectorPropagateMark(state); // 遍历一个灰色对象
+                work = ZrGarbageCollectorPropagateMark(state); // 遍历一个待扫描对象
             }
             break;
         }
@@ -668,7 +668,7 @@ void ZrGarbageCollectorFree(struct SZrGlobalState *global, SZrGarbageCollector *
         if (stateObject != ZR_NULL && 
             stateObject->type < ZR_RAW_OBJECT_TYPE_CLOSURE_ENUM_MAX && 
             stateObject->type != ZR_RAW_OBJECT_TYPE_INVALID) {
-            // 清空灰色列表，避免在释放时触发无限循环
+            // 清空待扫描列表，避免在释放时触发无限循环
             global->garbageCollector->waitToScanObjectList = ZR_NULL;
             global->garbageCollector->waitToScanAgainObjectList = ZR_NULL;
             global->garbageCollector->waitToReleaseObjectList = ZR_NULL;
@@ -738,7 +738,7 @@ void ZrGarbageCollectorAddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffs
 }
 
 static void ZrGarbageCollectorFullInc(struct SZrState *state, SZrGlobalState *global) {
-    if (ZrGarbageCollectorIsInvariant(global)) // 有黑色对象？
+    if (ZrGarbageCollectorIsInvariant(global)) // 有REFERENCED对象？
         ZrGarbageCollectorEnterSweep(state); // 清除所有对象以将它们重新变为白色
     // 完成任何待处理的清除阶段以开始新周期
     // 运行GC直到暂停状态
@@ -883,8 +883,8 @@ void ZrGarbageCollectorCheckGc(struct SZrState *state) {
 
 
 static ZR_FORCE_INLINE void ZrGarbageCollectorMarkObject(struct SZrState *state, SZrRawObject *object) {
-    // 如果对象已经是黑色或灰色，不需要再次标记
-    if (ZR_isblack(object) || ZR_isgray(object)) {
+    // 如果对象已经是REFERENCED或WAIT_TO_SCAN状态，不需要再次标记
+    if (ZR_GC_IS_REFERENCED(object) || ZR_GC_IS_WAIT_TO_SCAN(object)) {
         return;
     }
     if (ZrRawObjectIsMarkInited(object)) {
@@ -896,8 +896,8 @@ static ZR_FORCE_INLINE void ZrGarbageCollectorMarkValue(struct SZrState *state, 
     ZrGcValueStaticAssertIsAlive(state, value);
     if (ZrValueIsGarbageCollectable(value)) {
         SZrRawObject *obj = value->value.object;
-        // 如果对象已经是黑色或灰色，不需要再次标记
-        if (ZR_isblack(obj) || ZR_isgray(obj)) {
+        // 如果对象已经是REFERENCED或WAIT_TO_SCAN状态，不需要再次标记
+        if (ZR_GC_IS_REFERENCED(obj) || ZR_GC_IS_WAIT_TO_SCAN(obj)) {
             return;
         }
         if (ZrRawObjectIsMarkInited(obj)) {
@@ -907,8 +907,8 @@ static ZR_FORCE_INLINE void ZrGarbageCollectorMarkValue(struct SZrState *state, 
 }
 
 static ZR_FORCE_INLINE void ZrGarbageCollectorLinkToGrayList(SZrRawObject *o, SZrRawObject **list) {
-    // 检查对象是否已经是黑色或灰色，避免重复添加
-    if (ZR_isblack(o) || ZR_isgray(o)) {
+    // 检查对象是否已经是REFERENCED或WAIT_TO_SCAN状态，避免重复添加
+    if (ZR_GC_IS_REFERENCED(o) || ZR_GC_IS_WAIT_TO_SCAN(o)) {
         // 对象已经标记过，不需要重复添加
         return;
     }
@@ -928,7 +928,7 @@ static ZR_FORCE_INLINE void ZrGarbageCollectorLinkToGrayList(SZrRawObject *o, SZ
     SZrRawObject **pnext = &o->gcList;
     *pnext = *list;
     *list = o;
-    ZrRawObjectMarkAsWaitToScan(o);  // 标记为灰色（等待扫描）
+            ZrRawObjectMarkAsWaitToScan(o);  // 标记为WAIT_TO_SCAN状态（等待扫描）
 }
 
 void ZrGarbageCollectorReallyMarkObject(struct SZrState *state, SZrRawObject *object) {
@@ -950,15 +950,15 @@ void ZrGarbageCollectorReallyMarkObject(struct SZrState *state, SZrRawObject *ob
     
     switch (object->type) {
         case ZR_RAW_OBJECT_TYPE_STRING: {
-            ZR_nw2black(object); // 字符串直接标记为黑色
+            ZR_GC_SET_REFERENCED(object); // 字符串直接标记为REFERENCED状态
         } break;
         case ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE: {
             SZrClosureValue *closureValue = ZR_CAST_VM_CLOSURE_VALUE(state, object);
             if (ZrClosureValueIsClosed(closureValue)) {
-                ZR_nw2black(object); // 闭包值关闭时标记为黑色
+                ZR_GC_SET_REFERENCED(object); // 闭包值关闭时标记为REFERENCED状态
             } else {
                 ZrGarbageCollectorLinkToGrayList(
-                        object, &global->garbageCollector->waitToScanObjectList); // 开放闭包值加入灰色列表
+                        object, &global->garbageCollector->waitToScanObjectList); // 开放闭包值加入待扫描列表
             }
             ZrGarbageCollectorMarkValue(state, &closureValue->value.valuePointer->value);
         } break;
@@ -967,7 +967,7 @@ void ZrGarbageCollectorReallyMarkObject(struct SZrState *state, SZrRawObject *ob
             struct SZrNativeData *nativeData = ZR_CAST(struct SZrNativeData *, object);
 
             // 标记Native Data对象本身
-            ZR_nw2black(object);
+            ZR_GC_SET_REFERENCED(object);
 
             // 标记Native Data中的值
             for (TUInt32 i = 0; i < nativeData->valueLength; i++) {
@@ -985,7 +985,7 @@ void ZrGarbageCollectorReallyMarkObject(struct SZrState *state, SZrRawObject *ob
         case ZR_RAW_OBJECT_TYPE_OBJECT:
         case ZR_RAW_OBJECT_TYPE_THREAD: {
             ZrGarbageCollectorLinkToGrayList(object,
-                                             &global->garbageCollector->waitToScanObjectList); // 加入灰色列表等待扫描
+                                             &global->garbageCollector->waitToScanObjectList); // 加入待扫描列表等待扫描
         } break;
         default: {
             ZR_ASSERT(ZR_FALSE);
@@ -999,15 +999,15 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
     if (o == ZR_NULL) {
         return 0;  // 没有对象需要处理
     }
-    // 检查对象是否已经是黑色，避免重复处理
-    if (ZR_isblack(o)) {
-        // 对象已经是黑色，直接从列表中移除
+    // 检查对象是否已经是REFERENCED状态，避免重复处理
+    if (ZR_GC_IS_REFERENCED(o)) {
+        // 对象已经是REFERENCED状态，直接从列表中移除
         global->garbageCollector->waitToScanObjectList = o->gcList;
         o->gcList = ZR_NULL;  // 清空gcList指针，避免循环引用
         return 0;
     }
-    ZR_nw2black(o); // 标记为黑色
-    global->garbageCollector->waitToScanObjectList = o->gcList; // 从灰色列表移除
+    ZR_GC_SET_REFERENCED(o); // 标记为REFERENCED状态
+    global->garbageCollector->waitToScanObjectList = o->gcList; // 从待扫描列表移除
     o->gcList = ZR_NULL;  // 清空gcList指针，避免循环引用
 
     // 根据对象类型进行传播标记
@@ -1167,7 +1167,7 @@ void ZrGarbageCollectorRestartCollection(struct SZrState *state) {
         return;
     }
     
-    // 清空所有灰色列表
+    // 清空所有待扫描列表
     global->garbageCollector->waitToScanObjectList = NULL;
     global->garbageCollector->waitToScanAgainObjectList = NULL;
     global->garbageCollector->waitToReleaseObjectList = NULL;
@@ -1245,9 +1245,9 @@ void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZr
         }
     } else {
         // GC不在不变状态（可能在清除阶段或其他阶段）
-        // 如果父对象是黑色且子对象是白色，需要标记子对象
-        if (ZR_isblack(object) && ZR_iswhite(valueObject)) {
-            // 标记子对象为灰色，等待扫描
+        // 如果父对象是REFERENCED状态且子对象是INITED状态，需要标记子对象
+        if (ZR_GC_IS_REFERENCED(object) && ZR_GC_IS_INITED(valueObject)) {
+            // 标记子对象为WAIT_TO_SCAN状态，等待扫描
             ZrGarbageCollectorMarkObject(state, valueObject);
         } else if (ZrGarbageCollectorIsSweeping(global)) {
             // 在清除阶段，如果使用增量模式，标记子对象为初始状态

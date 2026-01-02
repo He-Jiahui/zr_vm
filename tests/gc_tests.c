@@ -104,28 +104,28 @@ void test_gc_status_macros(void) {
     SZrRawObject* obj = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
     TEST_ASSERT_NOT_NULL(obj);
     
-    TEST_INFO("Color marking macros - White", 
-              "Testing ZR_iswhite macro by marking object as initialized");
+    TEST_INFO("Object status macros - INITED", 
+              "Testing ZR_GC_IS_INITED macro by marking object as initialized");
     ZrRawObjectMarkAsInit(state, obj);
-    TEST_ASSERT_TRUE(ZR_iswhite(obj));
+    TEST_ASSERT_TRUE(ZR_GC_IS_INITED(obj));
     
-    TEST_INFO("Color marking macros - Gray", 
-              "Testing ZR_isgray macro by marking object as wait to scan");
+    TEST_INFO("Object status macros - WAIT_TO_SCAN", 
+              "Testing ZR_GC_IS_WAIT_TO_SCAN macro by marking object as wait to scan");
     ZrRawObjectMarkAsWaitToScan(obj);
-    TEST_ASSERT_TRUE(ZR_isgray(obj));
+    TEST_ASSERT_TRUE(ZR_GC_IS_WAIT_TO_SCAN(obj));
     
-    TEST_INFO("Color marking macros - Black", 
-              "Testing ZR_isblack macro by marking object as referenced");
+    TEST_INFO("Object status macros - REFERENCED", 
+              "Testing ZR_GC_IS_REFERENCED macro by marking object as referenced");
     ZrRawObjectMarkAsReferenced(obj);
-    TEST_ASSERT_TRUE(ZR_isblack(obj));
+    TEST_ASSERT_TRUE(ZR_GC_IS_REFERENCED(obj));
     
     TEST_INFO("Generational marking macros - New generation", 
-              "Testing ZR_isold macro with NEW generational status");
+              "Testing ZR_GC_IS_OLD macro with NEW generational status");
     ZrRawObjectSetGenerationalStatus(obj, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW);
-    TEST_ASSERT_FALSE(ZR_isold(obj));
+    TEST_ASSERT_FALSE(ZR_GC_IS_OLD(obj));
     
     TEST_INFO("Generational marking macros - Old generation", 
-              "Testing ZR_isold macro with SURVIVAL generational status");
+              "Testing ZR_GC_IS_OLD macro with SURVIVAL generational status");
     fflush(stdout);  // 确保输出刷新
     // 设置世代状态
     obj->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL;
@@ -309,20 +309,20 @@ void test_gc_mark_traversal(void) {
     SZrRawObject* obj = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
     TEST_ASSERT_NOT_NULL(obj);
     
-    TEST_INFO("Mark object as white (initial state)", 
-              "Testing white marking by initializing object and verifying ZR_iswhite macro");
+    TEST_INFO("Mark object as INITED (initial state)", 
+              "Testing INITED status by initializing object and verifying ZR_GC_IS_INITED macro");
     ZrRawObjectMarkAsInit(state, obj);
-    TEST_ASSERT_TRUE(ZR_iswhite(obj));
+    TEST_ASSERT_TRUE(ZR_GC_IS_INITED(obj));
     
-    TEST_INFO("Mark object as gray (wait to scan)", 
-              "Testing gray marking by setting wait-to-scan status and verifying ZR_isgray macro");
+    TEST_INFO("Mark object as WAIT_TO_SCAN", 
+              "Testing WAIT_TO_SCAN status by setting wait-to-scan status and verifying ZR_GC_IS_WAIT_TO_SCAN macro");
     ZrRawObjectMarkAsWaitToScan(obj);
-    TEST_ASSERT_TRUE(ZR_isgray(obj));
+    TEST_ASSERT_TRUE(ZR_GC_IS_WAIT_TO_SCAN(obj));
     
-    TEST_INFO("Mark object as black (referenced)", 
-              "Testing black marking by marking as referenced and verifying ZR_isblack macro");
+    TEST_INFO("Mark object as REFERENCED", 
+              "Testing REFERENCED status by marking as referenced and verifying ZR_GC_IS_REFERENCED macro");
     ZrRawObjectMarkAsReferenced(obj);
-    TEST_ASSERT_TRUE(ZR_isblack(obj));
+    TEST_ASSERT_TRUE(ZR_GC_IS_REFERENCED(obj));
     
     destroyTestState(state);
     
@@ -432,15 +432,15 @@ void test_gc_generational(void) {
     TEST_ASSERT_NOT_NULL(obj);
     
     TEST_INFO("New generation status", 
-              "Testing NEW generational status and verifying ZR_isold returns false");
+              "Testing NEW generational status and verifying ZR_GC_IS_OLD returns false");
     ZrRawObjectSetGenerationalStatus(obj, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW);
-    TBool isOld = ZR_isold(obj);
+    TBool isOld = ZR_GC_IS_OLD(obj);
     TEST_ASSERT_FALSE(isOld);
     
     TEST_INFO("Promotion to old generation", 
-              "Testing SURVIVAL generational status and verifying ZR_isold returns true");
+              "Testing SURVIVAL generational status and verifying ZR_GC_IS_OLD returns true");
     ZrRawObjectSetGenerationalStatus(obj, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL);
-    isOld = ZR_isold(obj);
+    isOld = ZR_GC_IS_OLD(obj);
     TEST_ASSERT_TRUE(isOld);
     
     TEST_INFO("Generational GC mode setting", 
@@ -595,21 +595,21 @@ void test_gc_barrier(void) {
     TEST_ASSERT_NOT_NULL(parent);
     TEST_ASSERT_NOT_NULL(child);
     
-    TEST_INFO("Mark parent as referenced (black)", 
-              "Marking parent object as referenced to make it black");
+    TEST_INFO("Mark parent as REFERENCED", 
+              "Marking parent object as referenced");
     ZrRawObjectMarkAsReferenced(parent);
-    TBool isBlack = ZR_isblack(parent);
-    TEST_ASSERT_TRUE(isBlack);
+    TBool isReferenced = ZR_GC_IS_REFERENCED(parent);
+    TEST_ASSERT_TRUE(isReferenced);
     
-    TEST_INFO("Test barrier: black object pointing to white object", 
-              "Calling ZrGarbageCollectorBarrier when black parent points to white child");
+    TEST_INFO("Test barrier: REFERENCED object pointing to INITED object", 
+              "Calling ZrGarbageCollectorBarrier when REFERENCED parent points to INITED child");
     ZrGarbageCollectorBarrier(state, parent, child);
     
     TEST_INFO("Verify child object is marked", 
-              "Verifying that child object is marked (gray or black) after barrier");
-    TBool isGray = ZR_isgray(child);
-    TBool isChildBlack = ZR_isblack(child);
-    TEST_ASSERT_TRUE(isGray || isChildBlack);
+              "Verifying that child object is marked (WAIT_TO_SCAN or REFERENCED) after barrier");
+    TBool isWaitToScan = ZR_GC_IS_WAIT_TO_SCAN(child);
+    TBool isChildReferenced = ZR_GC_IS_REFERENCED(child);
+    TEST_ASSERT_TRUE(isWaitToScan || isChildReferenced);
     
     destroyTestState(state);
     
