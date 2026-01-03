@@ -153,6 +153,8 @@ static ZR_FORCE_INLINE TZrSize ZrFunctionPreCallNative(struct SZrState *state, T
     ZrFunctionCheckStackAndGc(state, ZR_STACK_NATIVE_CALL_MIN, stackPointer);
     callInfo = ZrFunctionPreCallNativeCallInfo(state, stackPointer, resultCount, ZR_CALL_STATUS_NATIVE_CALL,
                                                state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_MIN);
+    callInfo->previous = state->callInfoList;
+    state->callInfoList = callInfo;
     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
     if (ZR_UNLIKELY(state->debugHookSignal & ZR_DEBUG_HOOK_MASK_CALL)) {
         TInt32 argumentsCount = ZR_CAST_INT(state->stackTop.valuePointer - stackPointer);

@@ -29,4 +29,6 @@ ZR_CORE_API void ZrMetaGlobalStaticsInit(struct SZrState *state);
 
 ZR_CORE_API void ZrMetaTableConstruct(SZrMetaTable *table);
 
+ZR_CORE_API void ZrMetaInitBuiltinTypeMetaMethods(struct SZrState *state, EZrValueType valueType);
+
 #endif // ZR_VM_CORE_META_H

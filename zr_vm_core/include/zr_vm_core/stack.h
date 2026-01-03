@@ -27,7 +27,7 @@ typedef union TZrStackPtr TZrStackPointer;
 
 #define ZR_STACK_CHECK_CALL_INFO_STACK_COUNT(STATE, COUNT)                                                             \
     ZR_CHECK(state,                                                                                                    \
-             (TZrMemoryOffset) (COUNT) <                                                                               \
+             (TZrMemoryOffset) (COUNT) <=                                                                              \
                      ((STATE)->stackTop.valuePointer - (STATE)->callInfoList->functionBase.valuePointer),              \
              "not enough elements in the stack")
 

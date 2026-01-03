@@ -11,17 +11,21 @@
 #define MAX_DELTA ((256UL << ((sizeof(state->stackBase.valuePointer->toBeClosedValueOffset) - 1) * 8)) - 1)
 SZrClosureNative *ZrClosureNativeNew(struct SZrState *state, TZrSize closureValueCount) {
     SZrRawObject *object =
-            ZrRawObjectNew(state, ZR_VALUE_TYPE_FUNCTION,
+            ZrRawObjectNew(state, ZR_VALUE_TYPE_CLOSURE,
                            sizeof(SZrClosureNative) + sizeof(SZrClosureValue *) * closureValueCount, ZR_TRUE);
     SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, object);
     closure->closureValueCount = closureValueCount;
-    ZrMemoryRawSet(closure->closureValuesExtend, (TByte) ZR_NULL, sizeof(SZrClosureValue *) * closureValueCount);
+    if (closureValueCount > 0) {
+        ZrMemoryRawSet(closure->closureValuesExtend, (TByte) ZR_NULL, sizeof(SZrClosureValue *) * closureValueCount);
+    }
     return closure;
 }
 
 SZrClosure *ZrClosureNew(struct SZrState *state, TZrSize closureValueCount) {
+    // SZrClosure 已经包含了 closureValuesExtend[1]，所以只需要分配 (closureValueCount - 1) 个额外的指针
+    TZrSize extraSize = closureValueCount > 1 ? (closureValueCount - 1) * sizeof(SZrClosureValue *) : 0;
     SZrRawObject *object = ZrRawObjectNew(state, ZR_VALUE_TYPE_CLOSURE,
-                                          sizeof(SZrClosure) + sizeof(SZrClosureValue *) * closureValueCount, ZR_FALSE);
+                                          sizeof(SZrClosure) + extraSize, ZR_FALSE);
     SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, object);
     closure->closureValueCount = closureValueCount;
     closure->function = ZR_NULL;

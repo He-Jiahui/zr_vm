@@ -8,3 +8,13 @@ add_subdirectory(gc)
 if(TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
     add_subdirectory(parser)
 endif()
+
+# Meta 测试（如果构建了 core 模块）
+if(TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
+    add_subdirectory(meta)
+endif()
+
+# Instructions 测试（如果构建了 core 模块）
+if(TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
+    add_subdirectory(instructions)
+endif()

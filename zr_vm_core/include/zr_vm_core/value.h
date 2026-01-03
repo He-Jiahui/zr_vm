@@ -85,4 +85,11 @@ ZR_CORE_API struct SZrString *ZrValueConvertToString(struct SZrState *state, SZr
 
 ZR_CORE_API struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType);
 
+// 调用指定值的元方法并返回结果
+ZR_CORE_API TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType,
+                                        SZrTypeValue *result, TZrSize argumentCount, ...);
+
+// 专门用于调用 TO_STRING 元方法的便捷函数
+ZR_CORE_API struct SZrString *ZrValueCallMetaToString(struct SZrState *state, SZrTypeValue *value);
+
 #endif // ZR_VM_CORE_VALUE_H

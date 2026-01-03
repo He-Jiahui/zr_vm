@@ -48,7 +48,12 @@
 
 #define ZR_CAST_FUNCTION_POINTER(EXP) ZR_CAST(FZrNativeFunction, (EXP)->value.nativeFunction)
 
-#define ZR_CAST_OBJECT(STATE, EXP) ZR_CAST_CHECKED(STATE, SZrObject *, (EXP), ZR_RAW_OBJECT_TYPE_OBJECT)
+// ZR_CAST_OBJECT 接受 OBJECT 和 ARRAY 类型（因为它们都是 SZrObject 结构）
+#define ZR_CAST_OBJECT(STATE, EXP)                                                                                      \
+    (ZR_CHECK(STATE,                                                                                                     \
+              ((EXP)->type == ZR_RAW_OBJECT_TYPE_OBJECT || (EXP)->type == ZR_RAW_OBJECT_TYPE_ARRAY),                   \
+              "type mismatch."),                                                                                         \
+     ZR_CAST(SZrObject *, (EXP)))
 
 #define ZR_CAST_STRING(STATE, EXP) ZR_CAST_CHECKED(STATE, SZrString *, (EXP), ZR_RAW_OBJECT_TYPE_STRING)
 #define ZR_CAST_STRING_TO_NATIVE(EXP) ZR_CAST(TNativeString, (EXP)->stringDataExtend)

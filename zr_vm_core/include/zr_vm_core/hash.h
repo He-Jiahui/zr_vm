@@ -10,7 +10,6 @@
 
 struct SZrGlobalState;
 struct SZrState;
-struct SZrTypeValue;
 // same type is basic condition for hash object
 typedef TBool (*FZrHashCompare)(struct SZrState *state, const SZrRawObject *object1, const SZrRawObject *object2);
 

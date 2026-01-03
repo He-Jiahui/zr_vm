@@ -143,7 +143,6 @@ void ZrStackSetRawObjectValue(struct SZrState *state, SZrTypeValueOnStack *desti
     ZR_UNUSED_PARAMETER(state);
     SZrTypeValue *destinationValue = ZrStackGetValue(destination);
     ZrValueInitAsRawObject(state, destinationValue, object);
-    destinationValue->isNative = ZR_FALSE;
     destinationValue->isGarbageCollectable = ZR_TRUE;
     ZrGcValueStaticAssertIsAlive(state, destinationValue);
 }

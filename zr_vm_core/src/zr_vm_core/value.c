@@ -1,13 +1,19 @@
 //
 // Created by HeJiahui on 2025/6/20.
 //
+#include <stdarg.h>
+#include <stdio.h>
+
 #include "zr_vm_core/value.h"
 
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/conversion.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/meta.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
@@ -28,7 +34,7 @@ void ZrValueInitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawObject *
     value->type = type;
     value->value.object = object;
     value->isGarbageCollectable = ZR_TRUE;
-    value->isNative = ZR_FALSE;
+    value->isNative = object->isNative;
     // check liveness
     ZrGcValueStaticAssertIsAlive(state, value);
 }
@@ -236,8 +242,44 @@ SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
     if (!ZrValueCanValueToString(state, value)) {
         return ZR_NULL;
     }
+    
+    // 优先查找并调用 TO_STRING 元方法
+    SZrMeta *meta = ZrValueGetMeta(state, value, ZR_META_TO_STRING);
+    if (meta != ZR_NULL && meta->function != ZR_NULL) {
+        // 保存当前栈状态
+        TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+        SZrCallInfo *savedCallInfo = state->callInfoList;
+        
+        // 准备调用元方法：将 meta->function 和 self 放到栈上
+        ZrFunctionCheckStackAndGc(state, 2, savedStackTop);
+        TZrStackValuePointer base = savedStackTop;
+        ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+        ZrStackCopyValue(state, base + 1, value);
+        state->stackTop.valuePointer = base + 2;
+        
+        // 调用元方法
+        ZrFunctionCallWithoutYield(state, base, 1);
+        
+        // 检查执行状态
+        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+            // 获取返回值
+            SZrTypeValue *returnValue = ZrStackGetValue(base);
+            if (returnValue->type == ZR_VALUE_TYPE_STRING) {
+                SZrString *result = ZR_CAST_STRING(state, returnValue->value.object);
+                // 恢复栈状态
+                state->stackTop.valuePointer = savedStackTop;
+                state->callInfoList = savedCallInfo;
+                return result;
+            }
+        }
+        
+        // 恢复栈状态
+        state->stackTop.valuePointer = savedStackTop;
+        state->callInfoList = savedCallInfo;
+    }
+    
+    // 如果元方法不存在或调用失败，使用现有的直接转换逻辑作为后备
     EZrValueType type = value->type;
-    // todo: basic type to string
     switch (type) {
         case ZR_VALUE_TYPE_NULL: {
             return ZrStringCreateFromNative(state, ZR_STRING_NULL_STRING);
@@ -249,11 +291,11 @@ SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
             ZR_VALUE_CASES_NATIVE { return ZrStringFromNumber(state, value); }
             break;
         case ZR_VALUE_TYPE_OBJECT: {
+            // 如果元方法调用失败，返回默认字符串
             SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
-            SZrMeta *meta = ZrObjectGetMetaRecursively(state->global, object, ZR_META_TO_STRING);
-            // todo: call meta function
-            // make it as closure
-            // call meta function
+            char buffer[64];
+            snprintf(buffer, sizeof(buffer), "[object type=%d]", (int)object->internalType);
+            return ZrStringCreateFromNative(state, buffer);
         } break;
 
         default: {
@@ -270,7 +312,12 @@ struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrM
     switch (type) {
         case ZR_VALUE_TYPE_OBJECT: {
             SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
-            return ZrObjectGetMetaRecursively(state->global, object, metaType);
+            SZrMeta *meta = ZrObjectGetMetaRecursively(state->global, object, metaType);
+            // 如果对象没有自己的元方法，回退到基本类型的元方法
+            if (meta == ZR_NULL && state->global->basicTypeObjectPrototype[ZR_VALUE_TYPE_OBJECT] != ZR_NULL) {
+                meta = state->global->basicTypeObjectPrototype[ZR_VALUE_TYPE_OBJECT]->metaTable.metas[metaType];
+            }
+            return meta;
         } break;
         case ZR_VALUE_TYPE_NATIVE_DATA: {
             // todo:
@@ -283,4 +330,80 @@ struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrM
             return state->global->basicTypeObjectPrototype[type]->metaTable.metas[metaType];
         } break;
     }
+}
+
+// 调用指定值的元方法并返回结果
+TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType,
+                             SZrTypeValue *result, TZrSize argumentCount, ...) {
+    if (state == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    SZrMeta *meta = ZrValueGetMeta(state, value, metaType);
+    if (meta == ZR_NULL || meta->function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 保存当前栈状态
+    TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+    SZrCallInfo *savedCallInfo = state->callInfoList;
+    
+    // 准备调用元方法
+    TZrStackValuePointer base = savedStackTop;
+    TZrSize totalArgs = 1 + argumentCount; // self + 其他参数
+    ZrFunctionCheckStackAndGc(state, totalArgs, base);
+    
+    // 将 meta->function 放到栈上
+    ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+    
+    // 将 self 放到栈上
+    ZrStackCopyValue(state, base + 1, value);
+    
+    // 处理可变参数
+    if (argumentCount > 0) {
+        va_list args;
+        va_start(args, argumentCount);
+        for (TZrSize i = 0; i < argumentCount; i++) {
+            SZrTypeValue *arg = va_arg(args, SZrTypeValue *);
+            ZrStackCopyValue(state, base + 2 + i, arg);
+        }
+        va_end(args);
+    }
+    
+    state->stackTop.valuePointer = base + 1 + totalArgs;
+    
+    // 调用元方法
+    ZrFunctionCallWithoutYield(state, base, 1);
+    
+    // 检查执行状态
+    TBool success = ZR_FALSE;
+    if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+        // 获取返回值
+        SZrTypeValue *returnValue = ZrStackGetValue(base);
+        if (result != ZR_NULL) {
+            ZrValueCopy(state, result, returnValue);
+        }
+        success = ZR_TRUE;
+    }
+    
+    // 恢复栈状态
+    state->stackTop.valuePointer = savedStackTop;
+    state->callInfoList = savedCallInfo;
+    
+    return success;
+}
+
+// 专门用于调用 TO_STRING 元方法的便捷函数
+SZrString *ZrValueCallMetaToString(struct SZrState *state, SZrTypeValue *value) {
+    if (state == ZR_NULL || value == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    SZrTypeValue result;
+    TBool success = ZrValueCallMetaMethod(state, value, ZR_META_TO_STRING, &result, 0);
+    if (success && result.type == ZR_VALUE_TYPE_STRING) {
+        return ZR_CAST_STRING(state, result.value.object);
+    }
+    
+    return ZR_NULL;
 }

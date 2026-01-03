@@ -17,15 +17,15 @@
 
 #define ZR_NUMBER_TO_STRING_LENGTH_MAX 44
 
-#define ZR_STRING_NULL_STRING "<null>"
+#define ZR_STRING_NULL_STRING "null"
+#define ZR_STRING_TRUE_STRING "true"
+#define ZR_STRING_FALSE_STRING "false"
 
 #define ZR_STRING_DECIMAL_NUMBER_SET "-0123456789"
 
 #define ZR_STRING_LOCALE_DECIMAL_POINT (localeconv()->decimal_point[0])
 
 #define ZR_STRING_UTF8_SIZE 8
-
-
 
 
 #define ZR_STRING_SIGNED_INTEGER_PRINT_FORMAT(STR, LEN, NUMBER) snprintf(STR, LEN, "%" PRId64, (TInt64) NUMBER)

@@ -12,6 +12,7 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_common/zr_type_conf.h"
 
 static void ZrGlobalStatePanic(SZrState *state) {
     // todo
@@ -114,6 +115,9 @@ static void ZrGlobalStateInitBasicTypeObjectPrototypes(SZrState *state, SZrGloba
         
         // 标记为永久对象（避免被 GC 回收）
         ZrRawObjectMarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+        
+        // 为基本类型注册默认元方法
+        ZrMetaInitBuiltinTypeMetaMethods(state, (EZrValueType)i);
     }
 }
 

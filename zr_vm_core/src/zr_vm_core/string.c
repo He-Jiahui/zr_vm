@@ -222,7 +222,9 @@ static SZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZ
     if (length <= ZR_VM_SHORT_STRING_MAX) {
         totalSize += ZR_VM_SHORT_STRING_MAX;
         constantString = (SZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
-        ZrMemoryRawCopy(constantString->stringDataExtend, string, length);
+        if (length > 0) {
+            ZrMemoryRawCopy(constantString->stringDataExtend, string, length);
+        }
         ((TNativeString) constantString->stringDataExtend)[length] = '\0';
         constantString->shortStringLength = (TUInt8) length;
         constantString->nextShortString = ZR_NULL;
@@ -232,7 +234,9 @@ static SZrString *ZrStringObjectCreate(SZrState *state, TNativeString string, TZ
         constantString = (SZrString *) ZrRawObjectNew(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
         TNativeString *pointer = (TNativeString *) &(constantString->stringDataExtend);
         *pointer = (TNativeString) ZrMemoryRawMallocWithType(global, length + 1, ZR_MEMORY_NATIVE_TYPE_STRING);
-        ZrMemoryRawCopy(*pointer, string, length);
+        if (length > 0) {
+            ZrMemoryRawCopy(*pointer, string, length);
+        }
         *pointer[length] = '\0';
         constantString->shortStringLength = ZR_VM_LONG_STRING_FLAG;
         constantString->longStringLength = length;

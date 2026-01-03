@@ -20,7 +20,12 @@ SZrObject *ZrObjectNew(SZrState *state, SZrObjectPrototype *prototype) {
 }
 
 SZrObject *ZrObjectNewCustomized(struct SZrState *state, TZrSize size, EZrObjectInternalType internalType) {
-    SZrRawObject *rawObject = ZrRawObjectNew(state, ZR_VALUE_TYPE_OBJECT, size, ZR_FALSE);
+    // 根据 internalType 选择正确的值类型
+    EZrValueType valueType = ZR_VALUE_TYPE_OBJECT;
+    if (internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        valueType = ZR_VALUE_TYPE_ARRAY;
+    }
+    SZrRawObject *rawObject = ZrRawObjectNew(state, valueType, size, ZR_FALSE);
     SZrObject *object = ZR_CAST_OBJECT(state, rawObject);
     object->prototype = ZR_NULL;
     object->internalType = internalType;
