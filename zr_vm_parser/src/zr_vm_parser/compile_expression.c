@@ -43,6 +43,13 @@ void emit_instruction(SZrCompilerState *cs, TZrInstruction instruction);
 TUInt32 add_constant(SZrCompilerState *cs, SZrTypeValue *value);
 TUInt32 find_local_var(SZrCompilerState *cs, SZrString *name);
 TUInt32 allocate_stack_slot(SZrCompilerState *cs);
+TUInt32 allocate_local_var(SZrCompilerState *cs, SZrString *name);
+TZrSize create_label(SZrCompilerState *cs);
+void resolve_label(SZrCompilerState *cs, TZrSize labelId);
+void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId);
+void enter_scope(SZrCompilerState *cs);
+void exit_scope(SZrCompilerState *cs);
+void compile_statement(SZrCompilerState *cs, SZrAstNode *node);
 
 // 编译字面量
 static void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
@@ -385,37 +392,33 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     compile_expression(cs, test);
     TUInt32 testSlot = cs->stackSlotCount - 1;
     
-    // 创建 else 标签
-    TZrSize elseLabelId = cs->labels.length;  // 将在后面创建
-    TZrSize endLabelId = cs->labels.length + 1;
+    // 创建 else 和 end 标签
+    TZrSize elseLabelId = create_label(cs);
+    TZrSize endLabelId = create_label(cs);
     
     // JUMP_IF false -> else
-    TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TUInt16)testSlot, 0);  // 偏移将在后面填充
+    TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TUInt16)testSlot, 0);
     TZrSize jumpIfIndex = cs->instructionCount;
     emit_instruction(cs, jumpIfInst);
+    add_pending_jump(cs, jumpIfIndex, elseLabelId);
     
     // 编译 then 分支
     compile_expression(cs, consequent);
-    TUInt32 thenSlot = cs->stackSlotCount - 1;
     
     // JUMP -> end
-    TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);  // 偏移将在后面填充
+    TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
     TZrSize jumpEndIndex = cs->instructionCount;
     emit_instruction(cs, jumpEndInst);
+    add_pending_jump(cs, jumpEndIndex, endLabelId);
     
     // 解析 else 标签
-    elseLabelId = cs->labels.length;
-    // TODO: 创建标签并解析跳转
+    resolve_label(cs, elseLabelId);
     
     // 编译 else 分支
     compile_expression(cs, alternate);
-    TUInt32 elseSlot = cs->stackSlotCount - 1;
     
     // 解析 end 标签
-    endLabelId = cs->labels.length;
-    // TODO: 创建标签并解析跳转
-    
-    // TODO: 填充跳转偏移
+    resolve_label(cs, endLabelId);
 }
 
 // 编译函数调用表达式
@@ -546,8 +549,51 @@ static void compile_array_literal(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
-    // TODO: 实现数组字面量编译
-    ZrCompilerError(cs, "Array literal compilation not implemented yet", node->location);
+    if (node->type != ZR_AST_ARRAY_LITERAL) {
+        ZrCompilerError(cs, "Expected array literal", node->location);
+        return;
+    }
+    
+    SZrArrayLiteral *arrayLiteral = &node->data.arrayLiteral;
+    
+    // 1. 创建空数组对象
+    TUInt32 destSlot = allocate_stack_slot(cs);
+    TZrInstruction createArrayInst = create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_ARRAY), (TUInt16)destSlot);
+    emit_instruction(cs, createArrayInst);
+    
+    // 2. 编译每个元素并设置到数组中
+    if (arrayLiteral->elements != ZR_NULL) {
+        for (TZrSize i = 0; i < arrayLiteral->elements->count; i++) {
+            SZrAstNode *elemNode = arrayLiteral->elements->nodes[i];
+            if (elemNode == ZR_NULL) {
+                continue;
+            }
+            
+            // 编译元素值
+            compile_expression(cs, elemNode);
+            TUInt32 valueSlot = cs->stackSlotCount - 1;
+            
+            // 创建索引常量
+            SZrTypeValue indexValue;
+            ZrValueInitAsInt(cs->state, &indexValue, (TInt64)i);
+            TUInt32 indexConstantIndex = add_constant(cs, &indexValue);
+            
+            // 将索引压栈
+            TUInt32 indexSlot = allocate_stack_slot(cs);
+            TZrInstruction getIndexInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)indexSlot, (TInt32)indexConstantIndex);
+            emit_instruction(cs, getIndexInst);
+            
+            // 使用 SETTABLE 设置数组元素
+            // SETTABLE 的格式: operandExtra = valueSlot (destination/value), operand1[0] = tableSlot, operand1[1] = keySlot
+            TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TUInt16)valueSlot, (TUInt16)destSlot, (TUInt16)indexSlot);
+            emit_instruction(cs, setTableInst);
+            
+            // 释放临时栈槽（indexSlot 和 valueSlot）
+            cs->stackSlotCount -= 2;
+        }
+    }
+    
+    // 3. 数组对象已经在 destSlot，结果留在 destSlot
 }
 
 // 编译对象字面量
@@ -556,8 +602,76 @@ static void compile_object_literal(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
-    // TODO: 实现对象字面量编译
-    ZrCompilerError(cs, "Object literal compilation not implemented yet", node->location);
+    if (node->type != ZR_AST_OBJECT_LITERAL) {
+        ZrCompilerError(cs, "Expected object literal", node->location);
+        return;
+    }
+    
+    SZrObjectLiteral *objectLiteral = &node->data.objectLiteral;
+    
+    // 1. 创建空对象
+    TUInt32 destSlot = allocate_stack_slot(cs);
+    TZrInstruction createObjectInst = create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), (TUInt16)destSlot);
+    emit_instruction(cs, createObjectInst);
+    
+    // 2. 编译每个键值对并设置到对象中
+    if (objectLiteral->properties != ZR_NULL) {
+        for (TZrSize i = 0; i < objectLiteral->properties->count; i++) {
+            SZrAstNode *kvNode = objectLiteral->properties->nodes[i];
+            if (kvNode == ZR_NULL || kvNode->type != ZR_AST_KEY_VALUE_PAIR) {
+                continue;
+            }
+            
+            SZrKeyValuePair *kv = &kvNode->data.keyValuePair;
+            
+            // 编译键
+            if (kv->key != ZR_NULL) {
+                // 键可能是标识符、字符串字面量或表达式（计算键）
+                if (kv->key->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    // 标识符键：转换为字符串常量
+                    SZrString *keyName = kv->key->data.identifier.name;
+                    if (keyName != ZR_NULL) {
+                        SZrTypeValue keyValue;
+                        ZrValueInitAsRawObject(cs->state, &keyValue, ZR_CAST_RAW_OBJECT_AS_SUPER(keyName));
+                        keyValue.type = ZR_VALUE_TYPE_STRING;
+                        TUInt32 keyConstantIndex = add_constant(cs, &keyValue);
+                        
+                        TUInt32 keySlot = allocate_stack_slot(cs);
+                        TZrInstruction getKeyInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)keySlot, (TInt32)keyConstantIndex);
+                        emit_instruction(cs, getKeyInst);
+                        
+                        // 编译值
+                        compile_expression(cs, kv->value);
+                        TUInt32 valueSlot = cs->stackSlotCount - 1;
+                        
+                        // 使用 SETTABLE 设置对象属性
+                        TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TUInt16)valueSlot, (TUInt16)destSlot, (TUInt16)keySlot);
+                        emit_instruction(cs, setTableInst);
+                        
+                        // 释放临时栈槽
+                        cs->stackSlotCount -= 2;
+                    }
+                } else {
+                    // 键是表达式（字符串字面量或计算键）
+                    compile_expression(cs, kv->key);
+                    TUInt32 keySlot = cs->stackSlotCount - 1;
+                    
+                    // 编译值
+                    compile_expression(cs, kv->value);
+                    TUInt32 valueSlot = cs->stackSlotCount - 1;
+                    
+                    // 使用 SETTABLE 设置对象属性
+                    TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TUInt16)valueSlot, (TUInt16)destSlot, (TUInt16)keySlot);
+                    emit_instruction(cs, setTableInst);
+                    
+                    // 释放临时栈槽
+                    cs->stackSlotCount -= 2;
+                }
+            }
+        }
+    }
+    
+    // 3. 对象已经在 destSlot，结果留在 destSlot
 }
 
 // 编译 Lambda 表达式
@@ -571,16 +685,205 @@ static void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
-    // TODO: 实现 Lambda 表达式编译
-    // 1. 创建新的编译器状态（嵌套函数）
-    // 2. 编译参数列表
-    // 3. 编译函数体
-    // 4. 创建 SZrFunction 对象
-    // 5. 处理闭包变量
-    // 6. 生成 CREATE_CLOSURE 指令
+    SZrLambdaExpression *lambda = &node->data.lambdaExpression;
     
-    // 占位实现
-    ZrCompilerError(cs, "Lambda expression compilation not fully implemented yet", node->location);
+    // Lambda 表达式类似于匿名函数，需要创建一个嵌套函数
+    // 1. 创建一个临时的函数声明节点来复用函数编译逻辑
+    // 2. 或者直接在这里实现类似的逻辑
+    
+    // 保存当前编译器状态
+    SZrFunction *oldFunction = cs->currentFunction;
+    TZrSize oldInstructionCount = cs->instructionCount;
+    TZrSize oldStackSlotCount = cs->stackSlotCount;
+    TZrSize oldLocalVarCount = cs->localVarCount;
+    TZrSize oldConstantCount = cs->constantCount;
+    TZrSize oldClosureVarCount = cs->closureVarCount;
+    
+    // 创建新的函数对象
+    cs->currentFunction = ZrFunctionNew(cs->state);
+    if (cs->currentFunction == ZR_NULL) {
+        ZrCompilerError(cs, "Failed to create lambda function object", node->location);
+        return;
+    }
+    
+    // 重置编译器状态（为新函数）
+    cs->instructionCount = 0;
+    cs->stackSlotCount = 0;
+    cs->localVarCount = 0;
+    cs->constantCount = 0;
+    cs->closureVarCount = 0;
+    
+    // 清空数组（但保留已分配的内存）
+    cs->instructions.length = 0;
+    cs->localVars.length = 0;
+    cs->constants.length = 0;
+    cs->closureVars.length = 0;
+    
+    // 进入函数作用域
+    enter_scope(cs);
+    
+    // 1. 编译参数列表
+    TUInt32 parameterCount = 0;
+    if (lambda->params != ZR_NULL) {
+        for (TZrSize i = 0; i < lambda->params->count; i++) {
+            SZrAstNode *paramNode = lambda->params->nodes[i];
+            if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
+                SZrParameter *param = &paramNode->data.parameter;
+                if (param->name != ZR_NULL) {
+                    SZrString *paramName = param->name->name;
+                    if (paramName != ZR_NULL) {
+                        // 分配参数槽位
+                        TUInt32 paramIndex = allocate_local_var(cs, paramName);
+                        parameterCount++;
+                        
+                        // 如果有默认值，编译默认值表达式
+                        if (param->defaultValue != ZR_NULL) {
+                            compile_expression(cs, param->defaultValue);
+                            TUInt32 defaultSlot = cs->stackSlotCount - 1;
+                            
+                            // 生成 SET_STACK 指令
+                            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)paramIndex, (TInt32)defaultSlot);
+                            emit_instruction(cs, inst);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 检查是否有可变参数
+    TBool hasVariableArguments = (lambda->args != ZR_NULL);
+    
+    // 2. 编译函数体（block）
+    if (lambda->block != ZR_NULL) {
+        compile_statement(cs, lambda->block);
+    }
+    
+    // 如果没有显式返回，添加隐式返回
+    if (!cs->hasError) {
+        if (cs->instructions.length == 0) {
+            // 如果没有任何指令，添加隐式返回 null
+            TUInt32 resultSlot = allocate_stack_slot(cs);
+            SZrTypeValue nullValue;
+            ZrValueResetAsNull(&nullValue);
+            TUInt32 constantIndex = add_constant(cs, &nullValue);
+            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)resultSlot, (TInt32)constantIndex);
+            emit_instruction(cs, inst);
+            
+            TZrInstruction returnInst = create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TUInt16)resultSlot, 0);
+            emit_instruction(cs, returnInst);
+        } else {
+            // 检查最后一条指令是否是 RETURN
+            if (cs->instructions.length > 0) {
+                TZrInstruction *lastInst = (TZrInstruction *)ZrArrayGet(&cs->instructions, cs->instructions.length - 1);
+                if (lastInst != ZR_NULL) {
+                    EZrInstructionCode lastOpcode = (EZrInstructionCode)lastInst->instruction.operationCode;
+                    if (lastOpcode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+                        // 添加隐式返回 null
+                        TUInt32 resultSlot = allocate_stack_slot(cs);
+                        SZrTypeValue nullValue;
+                        ZrValueResetAsNull(&nullValue);
+                        TUInt32 constantIndex = add_constant(cs, &nullValue);
+                        TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)resultSlot, (TInt32)constantIndex);
+                        emit_instruction(cs, inst);
+                        
+                        TZrInstruction returnInst = create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TUInt16)resultSlot, 0);
+                        emit_instruction(cs, returnInst);
+                    }
+                }
+            }
+        }
+    }
+    
+    // 退出函数作用域
+    exit_scope(cs);
+    
+    // 3. 将编译结果复制到函数对象
+    SZrFunction *newFunc = cs->currentFunction;
+    SZrGlobalState *global = cs->state->global;
+    
+    // 复制指令列表
+    if (cs->instructions.length > 0) {
+        TZrSize instSize = cs->instructions.length * sizeof(TZrInstruction);
+        newFunc->instructionsList = (TZrInstruction *)ZrMemoryRawMallocWithType(global, instSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->instructionsList != ZR_NULL) {
+            memcpy(newFunc->instructionsList, cs->instructions.head, instSize);
+            newFunc->instructionsLength = (TUInt32)cs->instructions.length;
+            cs->instructionCount = cs->instructions.length;
+        }
+    }
+    
+    // 复制常量列表
+    if (cs->constantCount > 0) {
+        TZrSize constSize = cs->constantCount * sizeof(SZrTypeValue);
+        newFunc->constantValueList = (SZrTypeValue *)ZrMemoryRawMallocWithType(global, constSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->constantValueList != ZR_NULL) {
+            memcpy(newFunc->constantValueList, cs->constants.head, constSize);
+            newFunc->constantValueLength = (TUInt32)cs->constantCount;
+        }
+    }
+    
+    // 复制局部变量列表
+    if (cs->localVars.length > 0) {
+        TZrSize localVarSize = cs->localVars.length * sizeof(SZrFunctionLocalVariable);
+        newFunc->localVariableList = (SZrFunctionLocalVariable *)ZrMemoryRawMallocWithType(global, localVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->localVariableList != ZR_NULL) {
+            memcpy(newFunc->localVariableList, cs->localVars.head, localVarSize);
+            newFunc->localVariableLength = (TUInt32)cs->localVars.length;
+            cs->localVarCount = cs->localVars.length;
+        }
+    }
+    
+    // 复制闭包变量列表
+    if (cs->closureVarCount > 0) {
+        TZrSize closureVarSize = cs->closureVarCount * sizeof(SZrFunctionClosureVariable);
+        newFunc->closureValueList = (SZrFunctionClosureVariable *)ZrMemoryRawMallocWithType(global, closureVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->closureValueList != ZR_NULL) {
+            memcpy(newFunc->closureValueList, cs->closureVars.head, closureVarSize);
+            newFunc->closureValueLength = (TUInt32)cs->closureVarCount;
+        }
+    }
+    
+    // 设置函数元数据
+    newFunc->stackSize = (TUInt32)cs->stackSlotCount;
+    newFunc->parameterCount = (TUInt16)parameterCount;
+    newFunc->hasVariableArguments = hasVariableArguments;
+    newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TUInt32)node->location.start.line : 0;
+    newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TUInt32)node->location.end.line : 0;
+    
+    // 将新函数添加到子函数列表
+    if (oldFunction != ZR_NULL) {
+        ZrArrayPush(cs->state, &cs->childFunctions, &newFunc);
+    }
+    
+    // 4. 生成 CREATE_CLOSURE 指令（在恢复状态之前）
+    // 将函数对象添加到常量池，然后生成 CREATE_CLOSURE 指令
+    // 注意：这里简化处理，直接将函数对象作为常量
+    // TODO: 完整的闭包处理需要捕获外部变量
+    SZrTypeValue funcValue;
+    ZrValueInitAsRawObject(cs->state, &funcValue, ZR_CAST_RAW_OBJECT_AS_SUPER(newFunc));
+    // 函数对象在 VM 中通常作为 CLOSURE 类型处理
+    funcValue.type = ZR_VALUE_TYPE_CLOSURE;
+    TUInt32 funcConstantIndex = add_constant(cs, &funcValue);
+    
+    // 分配目标槽位
+    TUInt32 destSlot = allocate_stack_slot(cs);
+    
+    // 保存闭包变量数量（在恢复状态之前）
+    TUInt32 closureVarCount = (TUInt32)newFunc->closureValueLength;
+    
+    // 恢复旧的编译器状态
+    cs->currentFunction = oldFunction;
+    cs->instructionCount = oldInstructionCount;
+    cs->stackSlotCount = oldStackSlotCount;
+    cs->localVarCount = oldLocalVarCount;
+    cs->constantCount = oldConstantCount;
+    cs->closureVarCount = oldClosureVarCount;
+    
+    // 生成 CREATE_CLOSURE 指令
+    // CREATE_CLOSURE 的格式: operandExtra = destSlot, operand1[0] = functionConstantIndex, operand1[1] = closureVarCount
+    TZrInstruction createClosureInst = create_instruction_2(ZR_INSTRUCTION_ENUM(CREATE_CLOSURE), (TUInt16)destSlot, (TUInt16)funcConstantIndex, (TUInt16)closureVarCount);
+    emit_instruction(cs, createClosureInst);
 }
 
 // 编译 If 表达式
@@ -671,6 +974,17 @@ void compile_expression(SZrCompilerState *cs, SZrAstNode *node) {
         
         case ZR_AST_SWITCH_EXPRESSION:
             compile_switch_expression(cs, node);
+            break;
+        
+        // 循环和语句不应该作为表达式编译，应该先转换为语句
+        case ZR_AST_WHILE_LOOP:
+        case ZR_AST_FOR_LOOP:
+        case ZR_AST_FOREACH_LOOP:
+        case ZR_AST_BREAK_CONTINUE_STATEMENT:
+        case ZR_AST_OUT_STATEMENT:
+        case ZR_AST_THROW_STATEMENT:
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
+            ZrCompilerError(cs, "Loop or statement cannot be used as expression", node->location);
             break;
         
         // 解构对象和数组不是表达式，不应该在这里处理

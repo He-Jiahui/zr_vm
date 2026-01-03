@@ -44,6 +44,9 @@ typedef struct SZrCompilerState {
     SZrArray labels;                    // 标签数组
     SZrArray pendingJumps;              // 待解析的跳转
     
+    // 循环标签栈（用于 break/continue）
+    SZrArray loopLabelStack;            // 循环标签栈（SZrLoopLabel）
+    
     // 嵌套函数
     SZrArray childFunctions;            // 子函数数组（SZrFunction*）
     
@@ -71,6 +74,12 @@ typedef struct SZrPendingJump {
     TZrSize instructionIndex;           // 跳转指令的索引
     TZrSize labelId;                    // 目标标签 ID
 } SZrPendingJump;
+
+// 循环标签（用于 break/continue）
+typedef struct SZrLoopLabel {
+    TZrSize breakLabelId;               // break 目标标签 ID
+    TZrSize continueLabelId;            // continue 目标标签 ID
+} SZrLoopLabel;
 
 // 初始化编译器状态
 ZR_PARSER_API void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state);

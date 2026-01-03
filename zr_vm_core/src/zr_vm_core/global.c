@@ -6,7 +6,9 @@
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash.h"
+#include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/meta.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -84,9 +86,44 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     return global;
 }
 
+// 初始化基本类型对象原型
+static void ZrGlobalStateInitBasicTypeObjectPrototypes(SZrState *state, SZrGlobalState *global) {
+    // 为每个值类型创建 ObjectPrototype 对象
+    for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
+        // 创建 ObjectPrototype 对象（ZrObjectNewCustomized 已经设置了 internalType 并调用了 ZrHashSetConstruct）
+        SZrObject *objectBase = ZrObjectNewCustomized(state, sizeof(SZrObjectPrototype), ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE);
+        if (objectBase == ZR_NULL) {
+            continue;
+        }
+        
+        SZrObjectPrototype *prototype = (SZrObjectPrototype *)objectBase;
+        
+        // 初始化哈希集（ZrObjectNewCustomized 只调用了 Construct，需要调用 Init）
+        ZrHashSetInit(state, &prototype->super.nodeMap, ZR_OBJECT_TABLE_INIT_SIZE_LOG2);
+        
+        // 初始化 ObjectPrototype 特定字段
+        prototype->name = ZR_NULL;
+        prototype->type = ZR_OBJECT_PROTOTYPE_TYPE_NATIVE;
+        prototype->superPrototype = ZR_NULL;
+        
+        // 初始化 metaTable
+        ZrMetaTableConstruct(&prototype->metaTable);
+        
+        // 将原型存储到全局数组中
+        global->basicTypeObjectPrototype[i] = prototype;
+        
+        // 标记为永久对象（避免被 GC 回收）
+        ZrRawObjectMarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+    }
+}
+
 void ZrGlobalStateInitRegistry(SZrState *state, SZrGlobalState *global) {
     SZrObject *object = ZrObjectNew(state, ZR_NULL);
     ZrValueInitAsRawObject(state, &global->loadedModulesRegistry, ZR_CAST_RAW_OBJECT(object));
+    
+    // 初始化基本类型对象原型
+    ZrGlobalStateInitBasicTypeObjectPrototypes(state, global);
+    
     // todo: load state value
     // todo: load global value
 }

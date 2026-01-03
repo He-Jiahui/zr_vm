@@ -58,6 +58,9 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     // 初始化待解析跳转数组
     ZrArrayInit(state, &cs->pendingJumps, sizeof(SZrPendingJump), 8);
     
+    // 初始化循环标签栈
+    ZrArrayInit(state, &cs->loopLabelStack, sizeof(SZrLoopLabel), 4);
+    
     // 初始化子函数数组
     ZrArrayInit(state, &cs->childFunctions, sizeof(SZrFunction*), 8);
     
@@ -121,6 +124,12 @@ void ZrCompilerStateFree(SZrCompilerState *cs) {
     if (cs->pendingJumps.isValid && cs->pendingJumps.head != ZR_NULL && 
         cs->pendingJumps.capacity > 0 && cs->pendingJumps.elementSize > 0) {
         ZrArrayFree(state, &cs->pendingJumps);
+    }
+    
+    // 释放循环标签栈
+    if (cs->loopLabelStack.isValid && cs->loopLabelStack.head != ZR_NULL && 
+        cs->loopLabelStack.capacity > 0 && cs->loopLabelStack.elementSize > 0) {
+        ZrArrayFree(state, &cs->loopLabelStack);
     }
     
     // 释放子函数数组（函数本身由 GC 管理）
@@ -345,7 +354,33 @@ void resolve_label(SZrCompilerState *cs, TZrSize labelId) {
     if (label != ZR_NULL) {
         label->instructionIndex = cs->instructionCount;
         label->isResolved = ZR_TRUE;
+        
+        // 填充所有指向该标签的跳转指令的偏移量
+        for (TZrSize i = 0; i < cs->pendingJumps.length; i++) {
+            SZrPendingJump *pendingJump = (SZrPendingJump *)ZrArrayGet(&cs->pendingJumps, i);
+            if (pendingJump != ZR_NULL && pendingJump->labelId == labelId && pendingJump->instructionIndex < cs->instructions.length) {
+                TZrInstruction *jumpInst = (TZrInstruction *)ZrArrayGet(&cs->instructions, pendingJump->instructionIndex);
+                if (jumpInst != ZR_NULL) {
+                    // 计算相对偏移：目标指令索引 - 当前指令索引
+                    TInt32 offset = (TInt32)label->instructionIndex - (TInt32)pendingJump->instructionIndex;
+                    jumpInst->instruction.operand.operand2[0] = offset;
+                }
+            }
+        }
     }
+}
+
+// 添加待解析的跳转（在 compiler.c 中定义，在 compile_statement.c 和 compile_expression.c 中使用）
+void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId) {
+    if (cs == ZR_NULL || cs->hasError) {
+        return;
+    }
+    
+    SZrPendingJump pendingJump;
+    pendingJump.instructionIndex = instructionIndex;
+    pendingJump.labelId = labelId;
+    
+    ZrArrayPush(cs->state, &cs->pendingJumps, &pendingJump);
 }
 
 // 编译表达式（在 compile_expression.c 中实现）

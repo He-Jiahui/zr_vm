@@ -4,6 +4,7 @@
 
 #include "zr_vm_core/function.h"
 
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/log.h"
@@ -203,6 +204,49 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
                     callInfo = ZrFunctionPreCallNativeCallInfo(state, stackPointer, resultCount, ZR_CALL_STATUS_NONE,
                                                                stackPointer + 1 + stackSize);
                     state->callInfoList = callInfo;
+                    callInfo->context.context.programCounter = function->instructionsList;
+                    for (; argumentsCount < parametersCount; argumentsCount++) {
+                        SZrTypeValue *stackValue = ZrStackGetValue(state->stackTop.valuePointer++);
+                        ZrValueResetAsNull(stackValue);
+                    }
+                    ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
+                    return callInfo;
+                }
+            } break;
+            case ZR_VALUE_TYPE_CLOSURE: {
+                // 闭包类型：与 VM 函数类似，但需要通过 ZR_CAST_VM_CLOSURE 转换
+                // 闭包不是 native 的（isNative 应该是 ZR_FALSE）
+                if (isNative) {
+                    // Native 闭包应该使用 ZR_VALUE_TYPE_FUNCTION
+                    // 这里不应该到达，但为了安全起见，我们处理它
+                    SZrClosureNative *native = ZR_CAST_NATIVE_CLOSURE(state, value->value.object);
+                    ZrFunctionPreCallNative(state, stackPointer, resultCount, native->nativeFunction);
+                    return ZR_NULL;
+                } else {
+                    // VM 闭包：提取其中的函数并调用
+                    SZrCallInfo *callInfo = ZR_NULL;
+                    SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, value->value.object);
+                    if (closure->function == ZR_NULL) {
+                        // 闭包没有关联的函数，这不应该发生
+                        // todo: throw error
+                        return ZR_NULL;
+                    }
+                    SZrFunction *function = closure->function;
+                    TZrSize argumentsCount = ZR_CAST_INT64(state->stackTop.valuePointer - stackPointer) - 1;
+                    TZrSize parametersCount = function->parameterCount;
+                    TZrSize stackSize = function->stackSize;
+                    ZrFunctionCheckStackAndGc(state, stackSize, stackPointer);
+                    callInfo = ZrFunctionPreCallNativeCallInfo(state, stackPointer, resultCount, ZR_CALL_STATUS_NONE,
+                                                               stackPointer + 1 + stackSize);
+                    state->callInfoList = callInfo;
+                    // 验证闭包的 function 字段是否仍然有效
+                    SZrTypeValue *callInfoBaseValue = ZrStackGetValue(callInfo->functionBase.valuePointer);
+                    SZrClosure *callInfoClosure = ZR_CAST_VM_CLOSURE(state, callInfoBaseValue->value.object);
+                    if (ZR_UNLIKELY(callInfoClosure->function == ZR_NULL)) {
+                        // 闭包的 function 字段在创建 callInfo 后变成了 NULL，这不应该发生
+                        // todo: throw error
+                        return ZR_NULL;
+                    }
                     callInfo->context.context.programCounter = function->instructionsList;
                     for (; argumentsCount < parametersCount; argumentsCount++) {
                         SZrTypeValue *stackValue = ZrStackGetValue(state->stackTop.valuePointer++);

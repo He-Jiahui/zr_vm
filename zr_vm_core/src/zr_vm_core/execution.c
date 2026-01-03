@@ -11,9 +11,9 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/math.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
-#include "zr_vm_core/object.h"
 
 void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
     SZrClosure *closure;
@@ -88,14 +88,16 @@ void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
 
 LZrStart:
     trap = state->debugHookSignal;
-LZrReturning:
-    closure = ZR_CAST_VM_CLOSURE(state, ZrStackGetValue(callInfo->functionBase.valuePointer));
+LZrReturning: {
+    SZrTypeValue *functionBaseValue = ZrStackGetValue(callInfo->functionBase.valuePointer);
+    closure = ZR_CAST_VM_CLOSURE(state, functionBaseValue->value.object);
     constants = closure->function->constantValueList;
-    programCounter = callInfo->context.context.programCounter;
+    programCounter = callInfo->context.context.programCounter - 1;
+    base = callInfo->functionBase.valuePointer + 1;
+}
     if (ZR_UNLIKELY(trap != ZR_DEBUG_SIGNAL_NONE)) {
         // todo
     }
-    base = callInfo->functionBase.valuePointer + 1;
     for (;;) {
         TZrInstruction instruction;
         /*
@@ -119,26 +121,26 @@ LZrReturning:
             ZR_INSTRUCTION_LABEL(SET_STACK) { BASE(A2(instruction))->value = *destination; }
             DONE(1);
             ZR_INSTRUCTION_LABEL(GET_CONSTANT) {
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
+                // ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 // BASE(B1(instruction))->value = *CONST(ret.value.nativeObject.nativeUInt64);
                 *destination = *CONST(A2(instruction));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CONSTANT) {
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
+                // ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 //*CONST(ret.value.nativeObject.nativeUInt64) = BASE(B1(instruction))->value;
                 *CONST(A2(instruction)) = *destination;
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(GET_CLOSURE) {
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
+                // ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 // closure function to access
                 ZrValueCopy(state, destination, ZrClosureValueGetValue(CLOSURE(A2(instruction))));
                 // BASE(B1(instruction))->value = CLOSURE(ret.value.nativeObject.nativeUInt64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CLOSURE) {
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
+                // ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 SZrClosureValue *closureValue = CLOSURE(A2(instruction));
                 SZrTypeValue *value = ZrClosureValueGetValue(closureValue);
                 SZrTypeValue *newValue = destination;
@@ -582,11 +584,13 @@ LZrReturning:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(FUNCTION_RETURN) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
-
-                TZrSize returnCount = opB->value.nativeObject.nativeUInt64;
-                TZrSize variableArguments = destination->value.nativeObject.nativeUInt64;
+                // FUNCTION_RETURN 指令格式：
+                // operandExtra (E) = 返回值数量 (returnCount)
+                // operand1[0] (A1) = 返回值槽位 (resultSlot)
+                // operand1[1] (B1) = 可变参数参数数量 (variableArguments, 0 表示非可变参数函数)
+                TZrSize returnCount = E(instruction);
+                TZrSize resultSlot = A1(instruction);
+                TZrSize variableArguments = B1(instruction);
 
                 // save its program counter
                 callInfo->context.context.programCounter = programCounter;
@@ -603,11 +607,13 @@ LZrReturning:
                 //         base = callInfo->functionBase.valuePointer + 1;
                 //     }
                 // }
+                // 如果是可变参数函数，需要调整 functionBase 指针
+                // 参考 Lua: if (nparams1) ci->func.p -= ci->u.l.nextraargs + nparams1;
                 if (variableArguments > 0) {
                     callInfo->functionBase.valuePointer -=
                             callInfo->context.context.variableArgumentCount + variableArguments;
                 }
-                state->stackTop.valuePointer = BASE(A1(instruction)) + returnCount;
+                state->stackTop.valuePointer = BASE(resultSlot) + returnCount;
                 ZrFunctionPostCall(state, callInfo, returnCount);
                 trap = callInfo->context.context.trap;
                 goto LZrReturn;
@@ -624,32 +630,36 @@ LZrReturning:
         }
             DONE(1);
             ZR_INSTRUCTION_LABEL(GETUPVAL) {
-                opA = &BASE(A1(instruction))->value;  // upvalue index
-                opB = &BASE(B1(instruction))->value;  // destination register
-                SZrClosure *currentClosure = ZR_CAST_VM_CLOSURE(state, ZrStackGetValue(callInfo->functionBase.valuePointer));
+                opA = &BASE(A1(instruction))->value; // upvalue index
+                opB = &BASE(B1(instruction))->value; // destination register
+                SZrClosure *currentClosure =
+                        ZR_CAST_VM_CLOSURE(state, ZrStackGetValue(callInfo->functionBase.valuePointer));
                 if (ZR_UNLIKELY(A1(instruction) >= currentClosure->closureValueCount)) {
                     ZrDebugRunError(state, "upvalue index out of range");
                 }
-                ZrValueCopy(state, destination, ZrClosureValueGetValue(currentClosure->closureValuesExtend[A1(instruction)]));
+                ZrValueCopy(state, destination,
+                            ZrClosureValueGetValue(currentClosure->closureValuesExtend[A1(instruction)]));
             }
             DONE(1);
-            
+
             ZR_INSTRUCTION_LABEL(SETUPVAL) {
-                opA = &BASE(A1(instruction))->value;  // upvalue index
-                opB = &BASE(B1(instruction))->value;  // source register
-                SZrClosure *currentClosure = ZR_CAST_VM_CLOSURE(state, ZrStackGetValue(callInfo->functionBase.valuePointer));
+                opA = &BASE(A1(instruction))->value; // upvalue index
+                opB = &BASE(B1(instruction))->value; // source register
+                SZrClosure *currentClosure =
+                        ZR_CAST_VM_CLOSURE(state, ZrStackGetValue(callInfo->functionBase.valuePointer));
                 if (ZR_UNLIKELY(A1(instruction) >= currentClosure->closureValueCount)) {
                     ZrDebugRunError(state, "upvalue index out of range");
                 }
                 SZrTypeValue *target = ZrClosureValueGetValue(currentClosure->closureValuesExtend[A1(instruction)]);
                 ZrValueCopy(state, target, destination);
-                ZrValueBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(currentClosure->closureValuesExtend[A1(instruction)]), destination);
+                ZrValueBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(currentClosure->closureValuesExtend[A1(instruction)]),
+                               destination);
             }
             DONE(1);
-            
+
             ZR_INSTRUCTION_LABEL(GETTABLE) {
-                opA = &BASE(A1(instruction))->value;  // table object
-                opB = &BASE(B1(instruction))->value;  // key
+                opA = &BASE(A1(instruction))->value; // table object
+                opB = &BASE(B1(instruction))->value; // key
                 const SZrTypeValue *result = ZrObjectGetValue(state, ZR_CAST_OBJECT(state, opA->value.object), opB);
                 if (result != ZR_NULL) {
                     ZrValueCopy(state, destination, result);
@@ -658,10 +668,10 @@ LZrReturning:
                 }
             }
             DONE(1);
-            
+
             ZR_INSTRUCTION_LABEL(SETTABLE) {
-                opA = &BASE(A1(instruction))->value;  // table object
-                opB = &BASE(B1(instruction))->value;  // key
+                opA = &BASE(A1(instruction))->value; // table object
+                opB = &BASE(B1(instruction))->value; // key
                 ZrObjectSetValue(state, ZR_CAST_OBJECT(state, opA->value.object), opB, destination);
             }
             DONE(1);
@@ -676,6 +686,28 @@ LZrReturning:
             ZR_INSTRUCTION_LABEL(CREATE_CLOSURE) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(CREATE_OBJECT) {
+                // 创建空对象
+                SZrObject *object = ZrObjectNew(state, ZR_NULL);
+                if (object != ZR_NULL) {
+                    ZrObjectInit(state, object);
+                    ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(object));
+                } else {
+                    ZrValueResetAsNull(destination);
+                }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(CREATE_ARRAY) {
+                // 创建空数组对象
+                SZrObject *array = ZrObjectNewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+                if (array != ZR_NULL) {
+                    ZrObjectInit(state, array);
+                    ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(array));
+                } else {
+                    ZrValueResetAsNull(destination);
+                }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TRY) {}

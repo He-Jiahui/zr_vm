@@ -20,12 +20,14 @@ SZrClosureNative *ZrClosureNativeNew(struct SZrState *state, TZrSize closureValu
 }
 
 SZrClosure *ZrClosureNew(struct SZrState *state, TZrSize closureValueCount) {
-    SZrRawObject *object = ZrRawObjectNew(state, ZR_VALUE_TYPE_FUNCTION,
+    SZrRawObject *object = ZrRawObjectNew(state, ZR_VALUE_TYPE_CLOSURE,
                                           sizeof(SZrClosure) + sizeof(SZrClosureValue *) * closureValueCount, ZR_FALSE);
     SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, object);
     closure->closureValueCount = closureValueCount;
     closure->function = ZR_NULL;
-    ZrMemoryRawSet(closure->closureValuesExtend, (TByte) ZR_NULL, sizeof(SZrClosureValue *) * closureValueCount);
+    if (closureValueCount > 0) {
+        ZrMemoryRawSet(closure->closureValuesExtend, (TByte) ZR_NULL, sizeof(SZrClosureValue *) * closureValueCount);
+    }
     return closure;
 }
 

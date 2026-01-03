@@ -91,6 +91,8 @@
     Z(JUMP)                                                                                                            \
     Z(JUMP_IF)                                                                                                         \
     Z(CREATE_CLOSURE)                                                                                                  \
+    Z(CREATE_OBJECT)                                                                                                   \
+    Z(CREATE_ARRAY)                                                                                                    \
     Z(TRY)                                                                                                             \
     Z(THROW)                                                                                                           \
     Z(CATCH)

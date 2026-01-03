@@ -32,6 +32,7 @@ extern void enter_scope(SZrCompilerState *cs);
 extern void exit_scope(SZrCompilerState *cs);
 extern TZrSize create_label(SZrCompilerState *cs);
 extern void resolve_label(SZrCompilerState *cs, TZrSize labelId);
+extern void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId);
 
 // 编译变量声明
 static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node) {
@@ -210,6 +211,7 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TUInt16)condSlot, 0);  // 偏移将在后面填充
     TZrSize jumpIfIndex = cs->instructionCount;
     emit_instruction(cs, jumpIfInst);
+    add_pending_jump(cs, jumpIfIndex, elseLabelId);
     
     // 编译 then 分支
     if (ifExpr->thenExpr != ZR_NULL) {
@@ -220,6 +222,7 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);  // 偏移将在后面填充
     TZrSize jumpEndIndex = cs->instructionCount;
     emit_instruction(cs, jumpEndInst);
+    add_pending_jump(cs, jumpEndIndex, endLabelId);
     
     // 解析 else 标签
     resolve_label(cs, elseLabelId);
@@ -231,8 +234,6 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 解析 end 标签
     resolve_label(cs, endLabelId);
-    
-    // TODO: 填充跳转偏移
 }
 
 // 编译 while 语句
@@ -248,20 +249,28 @@ static void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     SZrWhileLoop *whileLoop = &node->data.whileLoop;
     
-    // 创建循环开始标签
-    TZrSize loopStartLabelId = create_label(cs);
+    // 创建循环标签（用于 break/continue）
+    SZrLoopLabel loopLabel;
+    loopLabel.breakLabelId = create_label(cs);
+    loopLabel.continueLabelId = create_label(cs);
+    ZrArrayPush(cs->state, &cs->loopLabelStack, &loopLabel);
+    
+    // 创建循环开始标签（continue 跳转到这里）
+    TZrSize loopStartLabelId = loopLabel.continueLabelId;
     resolve_label(cs, loopStartLabelId);
     
     // 编译条件表达式
     compile_expression(cs, whileLoop->cond);
     TUInt32 condSlot = cs->stackSlotCount - 1;
     
-    // 创建循环结束标签
-    TZrSize loopEndLabelId = create_label(cs);
+    // 创建循环结束标签（break 跳转到这里）
+    TZrSize loopEndLabelId = loopLabel.breakLabelId;
     
     // JUMP_IF false -> end
-    TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TUInt16)condSlot, 0);  // 偏移将在后面填充
+    TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TUInt16)condSlot, 0);
+    TZrSize jumpIfIndex = cs->instructionCount;
     emit_instruction(cs, jumpIfInst);
+    add_pending_jump(cs, jumpIfIndex, loopEndLabelId);
     
     // 编译循环体
     if (whileLoop->block != ZR_NULL) {
@@ -269,13 +278,16 @@ static void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     // JUMP -> loop start
-    TZrInstruction jumpLoopInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);  // 偏移将在后面填充
+    TZrInstruction jumpLoopInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+    TZrSize jumpLoopIndex = cs->instructionCount;
     emit_instruction(cs, jumpLoopInst);
+    add_pending_jump(cs, jumpLoopIndex, loopStartLabelId);
     
     // 解析循环结束标签
     resolve_label(cs, loopEndLabelId);
     
-    // TODO: 填充跳转偏移
+    // 弹出循环标签栈
+    ZrArrayPop(&cs->loopLabelStack);
 }
 
 // 编译 for 语句
@@ -294,26 +306,34 @@ static void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
     // 进入新作用域
     enter_scope(cs);
     
+    // 创建循环标签（用于 break/continue）
+    SZrLoopLabel loopLabel;
+    loopLabel.breakLabelId = create_label(cs);
+    loopLabel.continueLabelId = create_label(cs);
+    ZrArrayPush(cs->state, &cs->loopLabelStack, &loopLabel);
+    
     // 编译初始化表达式
     if (forLoop->init != ZR_NULL) {
         compile_statement(cs, forLoop->init);
     }
     
-    // 创建循环开始标签
-    TZrSize loopStartLabelId = create_label(cs);
+    // 创建循环开始标签（continue 跳转到这里，在 step 之后）
+    TZrSize loopStartLabelId = loopLabel.continueLabelId;
     resolve_label(cs, loopStartLabelId);
     
-    // 编译条件表达式
-    if (forLoop->cond != ZR_NULL) {
-        compile_expression(cs, forLoop->cond);
-        TUInt32 condSlot = cs->stackSlotCount - 1;
-        
-        // 创建循环结束标签
-        TZrSize loopEndLabelId = create_label(cs);
+        // 编译条件表达式
+        if (forLoop->cond != ZR_NULL) {
+            compile_expression(cs, forLoop->cond);
+            TUInt32 condSlot = cs->stackSlotCount - 1;
+            
+            // 创建循环结束标签（break 跳转到这里）
+            TZrSize loopEndLabelId = loopLabel.breakLabelId;
         
         // JUMP_IF false -> end
         TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TUInt16)condSlot, 0);
+        TZrSize jumpIfIndex = cs->instructionCount;
         emit_instruction(cs, jumpIfInst);
+        add_pending_jump(cs, jumpIfIndex, loopEndLabelId);
         
         // 编译循环体
         if (forLoop->block != ZR_NULL) {
@@ -328,7 +348,9 @@ static void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
         
         // JUMP -> loop start
         TZrInstruction jumpLoopInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+        TZrSize jumpLoopIndex = cs->instructionCount;
         emit_instruction(cs, jumpLoopInst);
+        add_pending_jump(cs, jumpLoopIndex, loopStartLabelId);
         
         // 解析循环结束标签
         resolve_label(cs, loopEndLabelId);
@@ -346,13 +368,19 @@ static void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
         
         // JUMP -> loop start
         TZrInstruction jumpLoopInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+        TZrSize jumpLoopIndex = cs->instructionCount;
         emit_instruction(cs, jumpLoopInst);
+        add_pending_jump(cs, jumpLoopIndex, loopStartLabelId);
+        
+        // 解析循环结束标签（虽然不会到达，但为了完整性）
+        resolve_label(cs, loopLabel.breakLabelId);
     }
+    
+    // 弹出循环标签栈
+    ZrArrayPop(&cs->loopLabelStack);
     
     // 退出作用域
     exit_scope(cs);
-    
-    // TODO: 填充跳转偏移
 }
 
 // 编译 foreach 语句
@@ -415,7 +443,9 @@ static void compile_switch_statement(SZrCompilerState *cs, SZrAstNode *node) {
                 
                 // JUMP_IF false -> next case
                 TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TUInt16)compareSlot, 0);
+                TZrSize jumpIfIndex = cs->instructionCount;
                 emit_instruction(cs, jumpIfInst);
+                add_pending_jump(cs, jumpIfIndex, nextCaseLabelId);
                 
                 // 编译 case 块
                 if (switchCase->block != ZR_NULL) {
@@ -424,7 +454,9 @@ static void compile_switch_statement(SZrCompilerState *cs, SZrAstNode *node) {
                 
                 // JUMP -> end
                 TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+                TZrSize jumpEndIndex = cs->instructionCount;
                 emit_instruction(cs, jumpEndInst);
+                add_pending_jump(cs, jumpEndIndex, endLabelId);
                 
                 // 解析下一个 case 标签
                 resolve_label(cs, nextCaseLabelId);
@@ -442,8 +474,6 @@ static void compile_switch_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 解析结束标签
     resolve_label(cs, endLabelId);
-    
-    // TODO: 填充跳转偏移
 }
 
 // 编译 break/continue 语句
@@ -459,9 +489,56 @@ static void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *n
     
     SZrBreakContinueStatement *stmt = &node->data.breakContinueStatement;
     
-    // TODO: 实现 break/continue 语句编译
-    // 需要维护循环标签栈
-    ZrCompilerError(cs, "Break/continue statement compilation not fully implemented yet", node->location);
+    // 检查循环标签栈是否为空
+    if (cs->loopLabelStack.length == 0) {
+        ZrCompilerError(cs, stmt->isBreak ? "break statement not inside a loop" : "continue statement not inside a loop", node->location);
+        return;
+    }
+    
+    // 获取最内层循环的标签
+    SZrLoopLabel *loopLabel = (SZrLoopLabel *)ZrArrayGet(&cs->loopLabelStack, cs->loopLabelStack.length - 1);
+    if (loopLabel == ZR_NULL) {
+        ZrCompilerError(cs, "Invalid loop label stack", node->location);
+        return;
+    }
+    
+    // 选择目标标签
+    TZrSize targetLabelId = stmt->isBreak ? loopLabel->breakLabelId : loopLabel->continueLabelId;
+    
+    // 如果有表达式，编译它（用于 break value 或 continue value）
+    if (stmt->expr != ZR_NULL) {
+        compile_expression(cs, stmt->expr);
+        // 注意：break/continue 的值通常会被丢弃，但这里先编译表达式
+    }
+    
+    // 生成跳转指令
+    TZrInstruction jumpInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+    TZrSize jumpIndex = cs->instructionCount;
+    emit_instruction(cs, jumpInst);
+    add_pending_jump(cs, jumpIndex, targetLabelId);
+}
+
+// 编译 OUT 语句（用于生成器表达式）
+static void compile_out_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+    
+    if (node->type != ZR_AST_OUT_STATEMENT) {
+        ZrCompilerError(cs, "Expected out statement", node->location);
+        return;
+    }
+    
+    SZrOutStatement *stmt = &node->data.outStatement;
+    
+    // 编译表达式
+    if (stmt->expr != ZR_NULL) {
+        compile_expression(cs, stmt->expr);
+        // 结果留在栈上，用于生成器
+        // TODO: 实现完整的生成器机制（yield/out）
+    } else {
+        ZrCompilerError(cs, "Out statement requires an expression", node->location);
+    }
 }
 
 // 编译 throw 语句
@@ -503,7 +580,6 @@ static void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode
     
     // 生成 TRY 指令
     TZrInstruction tryInst = create_instruction_0(ZR_INSTRUCTION_ENUM(TRY), 0);
-    TZrSize tryIndex = cs->instructionCount;
     emit_instruction(cs, tryInst);
     
     // 编译 try 块
@@ -571,7 +647,13 @@ void compile_statement(SZrCompilerState *cs, SZrAstNode *node) {
             break;
         
         case ZR_AST_WHILE_LOOP:
-            compile_while_statement(cs, node);
+            // 检查是否是语句
+            if (node->data.whileLoop.isStatement) {
+                compile_while_statement(cs, node);
+            } else {
+                // 作为表达式处理（暂不支持）
+                ZrCompilerError(cs, "While loop as expression is not supported", node->location);
+            }
             break;
         
         case ZR_AST_FOR_LOOP:
@@ -602,6 +684,10 @@ void compile_statement(SZrCompilerState *cs, SZrAstNode *node) {
         
         case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
             compile_try_catch_finally_statement(cs, node);
+            break;
+        
+        case ZR_AST_OUT_STATEMENT:
+            compile_out_statement(cs, node);
             break;
         
         default:

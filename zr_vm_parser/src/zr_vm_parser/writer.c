@@ -339,6 +339,12 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
             case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
                 fprintf(file, "FUNCTION_RETURN");
                 break;
+            case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
+                fprintf(file, "CREATE_OBJECT");
+                break;
+            case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+                fprintf(file, "CREATE_ARRAY");
+                break;
             default:
                 fprintf(file, "OPCODE_%u", (TUInt32)opcode);
                 break;
@@ -387,6 +393,14 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                 fprintf(file, ", operand1=%u, operand2=%u", 
                         inst->instruction.operand.operand1[0], 
                         inst->instruction.operand.operand1[1]);
+                break;
+                
+            case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
+            case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+            case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
+            case ZR_INSTRUCTION_ENUM(TRY):
+            case ZR_INSTRUCTION_ENUM(CATCH):
+                // 只使用 operandExtra，不需要其他操作数
                 break;
                 
             default:

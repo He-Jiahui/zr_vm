@@ -42,3 +42,5 @@ target_compile_definitions(zr_vm_gc_test PRIVATE
 enable_testing()
 add_test(NAME gc_tests COMMAND zr_vm_gc_test)
 
+
+

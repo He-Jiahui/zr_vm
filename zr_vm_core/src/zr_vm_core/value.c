@@ -277,7 +277,10 @@ struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrM
             return ZR_NULL;
         } break;
         default: {
-            return state->global->basicTypeObjectPrototype[type]->metaTable.metas[type];
+            if (state->global->basicTypeObjectPrototype[type] == ZR_NULL) {
+                return ZR_NULL;
+            }
+            return state->global->basicTypeObjectPrototype[type]->metaTable.metas[metaType];
         } break;
     }
 }

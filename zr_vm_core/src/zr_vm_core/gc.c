@@ -16,6 +16,7 @@
 
 #include "zr_vm_common/zr_array_conf.h"
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
@@ -952,6 +953,22 @@ void ZrGarbageCollectorReallyMarkObject(struct SZrState *state, SZrRawObject *ob
         case ZR_RAW_OBJECT_TYPE_STRING: {
             ZR_GC_SET_REFERENCED(object); // 字符串直接标记为REFERENCED状态
         } break;
+        case ZR_RAW_OBJECT_TYPE_CLOSURE: {
+            // VM 闭包：需要标记其关联的函数和闭包值
+            SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, object);
+            // 标记闭包关联的函数
+            if (closure->function != ZR_NULL) {
+                ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->function));
+            }
+            // 标记闭包值
+            for (TZrSize i = 0; i < closure->closureValueCount; i++) {
+                if (closure->closureValuesExtend[i] != ZR_NULL) {
+                    ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->closureValuesExtend[i]));
+                }
+            }
+            // 将闭包加入待扫描列表
+            ZrGarbageCollectorLinkToGrayList(object, &global->garbageCollector->waitToScanObjectList);
+        } break;
         case ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE: {
             SZrClosureValue *closureValue = ZR_CAST_VM_CLOSURE_VALUE(state, object);
             if (ZrClosureValueIsClosed(closureValue)) {
@@ -1045,6 +1062,22 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
             // TODO: 如果数组存储的是 SZrTypeValue，则需要标记每个元素
             // TODO: 目前暂时返回基础工作量，实际实现需要根据数组的具体使用情况
             work = 1;
+            break;
+        }
+        case ZR_RAW_OBJECT_TYPE_CLOSURE: {
+            // VM 闭包：标记其关联的函数和闭包值
+            SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, o);
+            // 标记闭包关联的函数
+            if (closure->function != ZR_NULL) {
+                ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->function));
+            }
+            // 标记闭包值
+            for (TZrSize i = 0; i < closure->closureValueCount; i++) {
+                if (closure->closureValuesExtend[i] != ZR_NULL) {
+                    ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->closureValuesExtend[i]));
+                }
+            }
+            work = closure->closureValueCount + (closure->function != ZR_NULL ? 1 : 0);
             break;
         }
         case ZR_RAW_OBJECT_TYPE_FUNCTION: {
