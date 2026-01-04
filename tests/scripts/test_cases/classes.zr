@@ -1,0 +1,116 @@
+module "classes";
+
+// 基类
+class BaseClass {
+    pub var baseValue: int = 10;
+    
+    pub @constructor() {
+        this.baseValue = 10;
+    }
+    
+    pub getValue(): int {
+        return this.baseValue;
+    }
+}
+
+// 类继承测试
+class DerivedClass: BaseClass {
+    pub var derivedValue: int = 20;
+    
+    pub @constructor()super() {
+        this.derivedValue = 20;
+    }
+    
+    pub getDerivedValue(): int {
+        return this.derivedValue;
+    }
+}
+
+// 类方法测试
+class MethodTest {
+    pub var value: int;
+    
+    pub @constructor(v: int) {
+        this.value = v;
+    }
+    
+    pub add(x: int): int {
+        this.value = this.value + x;
+        return this.value;
+    }
+    
+    pub multiply(x: int): int {
+        this.value = this.value * x;
+        return this.value;
+    }
+}
+
+// 类属性测试
+class PropertyTest {
+    pri var _value: int = 0;
+    
+    pub get value(): int {
+        return this._value;
+    }
+    
+    pub set value(v: int) {
+        this._value = v;
+    }
+}
+
+// 静态成员测试
+class StaticTest {
+    pub static var staticValue: int = 100;
+    
+    pub static getStaticValue(): int {
+        return StaticTest.staticValue;
+    }
+}
+
+// 访问修饰符测试
+class AccessModifierTest {
+    pub var publicVar: int = 1;
+    pri var privateVar: int = 2;
+    pro var protectedVar: int = 3;
+    
+    pub getPrivateVar(): int {
+        return this.privateVar;
+    }
+    
+    pub getProtectedVar(): int {
+        return this.protectedVar;
+    }
+}
+
+// 测试用例
+%test("classesTest"){
+    var result = 0;
+    
+    // 测试类继承
+    var derived = new DerivedClass();
+    result = result + derived.getValue();
+    result = result + derived.getDerivedValue();
+    
+    // 测试类方法
+    var methodTest = new MethodTest(5);
+    result = result + methodTest.add(3);
+    result = result + methodTest.multiply(2);
+    
+    // 测试类属性
+    var propTest = new PropertyTest();
+    propTest.value = 10;
+    result = result + propTest.value;
+    
+    // 测试静态成员
+    result = result + StaticTest.staticValue;
+    result = result + StaticTest.getStaticValue();
+    
+    // 测试访问修饰符
+    var accessTest = new AccessModifierTest();
+    result = result + accessTest.publicVar;
+    result = result + accessTest.getPrivateVar();
+    result = result + accessTest.getProtectedVar();
+    
+    return result;
+}
+

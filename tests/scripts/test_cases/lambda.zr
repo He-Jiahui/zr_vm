@@ -1,0 +1,83 @@
+module "lambda";
+
+// 箭头函数语法测试
+var arrow_function_test = () => {
+    var add = (a: int, b: int) => {
+        return a + b;
+    };
+    return add(10, 20);
+};
+
+// Lambda参数测试
+var lambda_params_test = () => {
+    var multiply = (x: int, y: int) => {
+        return x * y;
+    };
+    return multiply(5, 6);
+};
+
+// Lambda返回值测试
+var lambda_return_test = () => {
+    var square = (x: int) => {
+        return x * x;
+    };
+    return square(7);
+};
+
+// Lambda闭包测试
+var lambda_closure_test = () => {
+    var x = 10;
+    var addX = (y: int) => {
+        return x + y;
+    };
+    return addX(5);
+};
+
+// Lambda作为参数测试
+var lambda_as_param_test = () => {
+    var apply = (f: (int) => int, x: int) => {
+        return f(x);
+    };
+    var double = (n: int) => {
+        return n * 2;
+    };
+    return apply(double, 8);
+};
+
+// Lambda数组操作测试
+var lambda_array_test = () => {
+    var arr = [1, 2, 3, 4, 5];
+    var sum = 0;
+    var add = (x: int) => {
+        sum = sum + x;
+    };
+    for (var item in arr) {
+        add(item);
+    }
+    return sum;
+};
+
+// 嵌套Lambda测试
+var nested_lambda_test = () => {
+    var outer = (x: int) => {
+        var inner = (y: int) => {
+            return x + y;
+        };
+        return inner(5);
+    };
+    return outer(10);
+};
+
+// 测试用例
+%test("lambdaTest"){
+    var result = 0;
+    result = result + arrow_function_test();
+    result = result + lambda_params_test();
+    result = result + lambda_return_test();
+    result = result + lambda_closure_test();
+    result = result + lambda_as_param_test();
+    result = result + lambda_array_test();
+    result = result + nested_lambda_test();
+    return result;
+}
+

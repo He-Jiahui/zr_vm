@@ -1,0 +1,115 @@
+module "intermediate";
+
+// intermediate语句声明测试
+intermediate TestIntermediate(i: int, j: int): int
+<
+    c1: int,
+    c2: int
+>
+[
+    num = 1;
+    str = "test";
+]
+(
+    var1: int,
+    var2: int
+)
+{
+    GetConstant num;
+    SetStack var1;
+    GetConstant num;
+    SetStack var2;
+    AddInt var1 var2;
+    SetStack var1;
+    AddInt i j;
+    SetStack var2;
+    AddInt var1 var2;
+    SetStack 1;
+    FunctionReturn 0 1;
+}
+
+// 中间指令测试
+intermediate InstructionTest(): int
+<
+>
+[
+    val1 = 10;
+    val2 = 20;
+]
+(
+    result: int
+)
+{
+    GetConstant val1;
+    SetStack result;
+    GetConstant val2;
+    AddInt result;
+    SetStack result;
+    FunctionReturn 0 1;
+}
+
+// 常量声明测试
+intermediate ConstantTest(): int
+<
+>
+[
+    intConst = 42;
+    strConst = "hello";
+    boolConst = true;
+    nullConst = null;
+]
+(
+    result: int
+)
+{
+    GetConstant intConst;
+    SetStack result;
+    FunctionReturn 0 1;
+}
+
+// 局部变量声明测试
+intermediate LocalVarTest(): int
+<
+>
+[
+]
+(
+    var1: int,
+    var2: int,
+    result: int
+)
+{
+    GetConstant 10;
+    SetStack var1;
+    GetConstant 20;
+    SetStack var2;
+    AddInt var1 var2;
+    SetStack result;
+    FunctionReturn 0 1;
+}
+
+// 闭包变量声明测试
+intermediate ClosureVarTest(): int
+<
+    closure1: int,
+    closure2: int
+>
+[
+]
+(
+    result: int
+)
+{
+    GetClosure closure1;
+    SetStack result;
+    GetClosure closure2;
+    AddInt result;
+    SetStack result;
+    FunctionReturn 0 1;
+}
+
+// 测试用例
+%test("intermediateTest"){
+    return 1;
+}
+

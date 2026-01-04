@@ -20,6 +20,7 @@ static void compile_literal(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_identifier(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node);
+static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_function_call(SZrCompilerState *cs, SZrAstNode *node);
@@ -370,6 +371,92 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     } else {
         // TODO: 处理成员访问等复杂左值
         ZrCompilerError(cs, "Complex left-hand side not supported yet", node->location);
+    }
+}
+
+// 编译逻辑表达式（&& 和 ||，支持短路求值）
+static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+    
+    if (node->type != ZR_AST_LOGICAL_EXPRESSION) {
+        ZrCompilerError(cs, "Expected logical expression", node->location);
+        return;
+    }
+    
+    const TChar *op = node->data.logicalExpression.op;
+    SZrAstNode *left = node->data.logicalExpression.left;
+    SZrAstNode *right = node->data.logicalExpression.right;
+    
+    // 编译左操作数
+    compile_expression(cs, left);
+    TUInt32 leftSlot = cs->stackSlotCount - 1;
+    
+    // 分配结果槽位
+    TUInt32 destSlot = allocate_stack_slot(cs);
+    
+    // 创建标签用于短路求值
+    TZrSize shortCircuitLabelId = create_label(cs);
+    TZrSize endLabelId = create_label(cs);
+    
+    if (strcmp(op, "&&") == 0) {
+        // && 运算符：如果左操作数为false，短路返回false
+        // 复制左操作数到结果槽位
+        TZrInstruction copyLeftInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)destSlot, (TInt32)leftSlot);
+        emit_instruction(cs, copyLeftInst);
+        
+        // 如果左操作数为false，跳转到短路标签
+        TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TUInt16)leftSlot, 0);
+        TZrSize jumpIfIndex = cs->instructionCount;
+        emit_instruction(cs, jumpIfInst);
+        add_pending_jump(cs, jumpIfIndex, shortCircuitLabelId);
+        
+        // 编译右操作数
+        compile_expression(cs, right);
+        TUInt32 rightSlot = cs->stackSlotCount - 1;
+        
+        // 将右操作数复制到结果槽位
+        TZrInstruction copyRightInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)destSlot, (TInt32)rightSlot);
+        emit_instruction(cs, copyRightInst);
+        
+        // 跳转到结束标签
+        TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+        TZrSize jumpEndIndex = cs->instructionCount;
+        emit_instruction(cs, jumpEndInst);
+        add_pending_jump(cs, jumpEndIndex, endLabelId);
+        
+        // 短路标签：左操作数为false，结果就是false（已经在destSlot中）
+        resolve_label(cs, shortCircuitLabelId);
+        
+        // 结束标签
+        resolve_label(cs, endLabelId);
+    } else if (strcmp(op, "||") == 0) {
+        // || 运算符：如果左操作数为true，短路返回true
+        // 复制左操作数到结果槽位
+        TZrInstruction copyLeftInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)destSlot, (TInt32)leftSlot);
+        emit_instruction(cs, copyLeftInst);
+        
+        // 如果左操作数为true，跳转到结束标签（短路返回true）
+        TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TUInt16)leftSlot, 0);
+        TZrSize jumpIfIndex = cs->instructionCount;
+        emit_instruction(cs, jumpIfInst);
+        add_pending_jump(cs, jumpIfIndex, endLabelId);
+        
+        // 左操作数为false，需要计算右操作数
+        // 编译右操作数
+        compile_expression(cs, right);
+        TUInt32 rightSlot = cs->stackSlotCount - 1;
+        
+        // 将右操作数复制到结果槽位
+        TZrInstruction copyRightInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)destSlot, (TInt32)rightSlot);
+        emit_instruction(cs, copyRightInst);
+        
+        // 结束标签：左操作数为true时跳转到这里（结果已经是true）
+        resolve_label(cs, endLabelId);
+    } else {
+        ZrCompilerError(cs, "Unknown logical operator", node->location);
+        return;
     }
 }
 
@@ -892,8 +979,64 @@ static void compile_if_expression(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
-    // If 表达式与条件表达式类似
-    compile_conditional_expression(cs, node);
+    if (node->type != ZR_AST_IF_EXPRESSION) {
+        ZrCompilerError(cs, "Expected if expression", node->location);
+        return;
+    }
+    
+    SZrIfExpression *ifExpr = &node->data.ifExpression;
+    
+    // 编译条件表达式
+    compile_expression(cs, ifExpr->condition);
+    TUInt32 condSlot = cs->stackSlotCount - 1;
+    
+    // 创建 else 和 end 标签
+    TZrSize elseLabelId = create_label(cs);
+    TZrSize endLabelId = create_label(cs);
+    
+    // JUMP_IF false -> else
+    TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TUInt16)condSlot, 0);
+    TZrSize jumpIfIndex = cs->instructionCount;
+    emit_instruction(cs, jumpIfInst);
+    add_pending_jump(cs, jumpIfIndex, elseLabelId);
+    
+    // 编译 then 分支
+    if (ifExpr->thenExpr != ZR_NULL) {
+        compile_expression(cs, ifExpr->thenExpr);
+    } else {
+        // 如果没有then分支，使用null值
+        SZrTypeValue nullValue;
+        ZrValueResetAsNull(&nullValue);
+        TUInt32 constantIndex = add_constant(cs, &nullValue);
+        TUInt32 destSlot = allocate_stack_slot(cs);
+        TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), destSlot, (TInt32)constantIndex);
+        emit_instruction(cs, inst);
+    }
+    
+    // JUMP -> end
+    TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+    TZrSize jumpEndIndex = cs->instructionCount;
+    emit_instruction(cs, jumpEndInst);
+    add_pending_jump(cs, jumpEndIndex, endLabelId);
+    
+    // 解析 else 标签
+    resolve_label(cs, elseLabelId);
+    
+    // 编译 else 分支
+    if (ifExpr->elseExpr != ZR_NULL) {
+        compile_expression(cs, ifExpr->elseExpr);
+    } else {
+        // 如果没有else分支，使用null值
+        SZrTypeValue nullValue;
+        ZrValueResetAsNull(&nullValue);
+        TUInt32 constantIndex = add_constant(cs, &nullValue);
+        TUInt32 destSlot = allocate_stack_slot(cs);
+        TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), destSlot, (TInt32)constantIndex);
+        emit_instruction(cs, inst);
+    }
+    
+    // 解析 end 标签
+    resolve_label(cs, endLabelId);
 }
 
 // 编译 Switch 表达式
@@ -934,6 +1077,10 @@ void compile_expression(SZrCompilerState *cs, SZrAstNode *node) {
         
         case ZR_AST_BINARY_EXPRESSION:
             compile_binary_expression(cs, node);
+            break;
+        
+        case ZR_AST_LOGICAL_EXPRESSION:
+            compile_logical_expression(cs, node);
             break;
         
         case ZR_AST_ASSIGNMENT_EXPRESSION:

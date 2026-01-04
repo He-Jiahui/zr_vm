@@ -41,3 +41,5 @@ target_compile_definitions(zr_vm_instructions_test PRIVATE
 enable_testing()
 add_test(NAME instructions_tests COMMAND zr_vm_instructions_test)
 
+
+

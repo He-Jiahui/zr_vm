@@ -1,0 +1,33 @@
+module "module_a";
+
+// 模块A导出函数
+var exported_function_a = () => {
+    return 10;
+};
+
+// 模块A导出变量
+var exported_variable_a = 20;
+
+// 模块A内部函数
+var internal_function = () => {
+    return 5;
+};
+
+// 模块A导出类
+class ExportedClassA {
+    pub var value: int;
+    
+    pub @constructor(v: int) {
+        this.value = v;
+    }
+    
+    pub getValue(): int {
+        return this.value;
+    }
+}
+
+// 测试用例
+%test("moduleATest"){
+    return exported_function_a() + exported_variable_a;
+}
+

@@ -1,0 +1,79 @@
+module "closures";
+
+// 闭包变量捕获测试
+var closure_capture_test = () => {
+    var x = 10;
+    var inner = () => {
+        return x;
+    };
+    return inner();
+};
+
+// 嵌套函数闭包测试
+var nested_closure_test = () => {
+    var x = 5;
+    var outer = () => {
+        var y = 10;
+        var inner = () => {
+            return x + y;
+        };
+        return inner();
+    };
+    return outer();
+};
+
+// 闭包变量修改测试
+var closure_modify_test = () => {
+    var x = 0;
+    var increment = () => {
+        x = x + 1;
+        return x;
+    };
+    var result1 = increment();
+    var result2 = increment();
+    return result1 + result2;
+};
+
+// 多个闭包共享变量测试
+var shared_closure_test = () => {
+    var x = 0;
+    var add1 = () => {
+        x = x + 1;
+        return x;
+    };
+    var add2 = () => {
+        x = x + 2;
+        return x;
+    };
+    var result1 = add1();
+    var result2 = add2();
+    return result1 + result2;
+};
+
+// 闭包链式调用测试
+var closure_chain_test = () => {
+    var x = 1;
+    var f1 = () => {
+        x = x * 2;
+        return x;
+    };
+    var f2 = () => {
+        x = x + 1;
+        return x;
+    };
+    var result1 = f1();
+    var result2 = f2();
+    return result1 + result2;
+};
+
+// 测试用例
+%test("closuresTest"){
+    var result = 0;
+    result = result + closure_capture_test();
+    result = result + nested_closure_test();
+    result = result + closure_modify_test();
+    result = result + shared_closure_test();
+    result = result + closure_chain_test();
+    return result;
+}
+

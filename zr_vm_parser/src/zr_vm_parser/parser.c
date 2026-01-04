@@ -6,8 +6,8 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 
-#include <math.h>
 #include <string.h>
+#include <math.h>
 
 // 辅助函数声明
 static void expect_token(SZrParserState *ps, EZrToken expected);
@@ -58,7 +58,7 @@ static SZrAstNode *parse_generator_expression(SZrParserState *ps);
 static SZrAstNode *parse_parameter(SZrParserState *ps);
 static SZrAstNodeArray *parse_parameter_list(SZrParserState *ps);
 static SZrType *parse_type(SZrParserState *ps);
-static SZrType *parse_type_no_generic(SZrParserState *ps); // 不解析泛型类型的版本
+static SZrType *parse_type_no_generic(SZrParserState *ps);  // 不解析泛型类型的版本
 static SZrAstNode *parse_block(SZrParserState *ps);
 static SZrAstNode *parse_if_expression(SZrParserState *ps);
 static SZrAstNode *parse_switch_expression(SZrParserState *ps);
@@ -96,8 +96,7 @@ static SZrAstNode *parse_property_get(SZrParserState *ps);
 static SZrAstNode *parse_property_set(SZrParserState *ps);
 
 // 初始化解析器状态
-void ZrParserStateInit(SZrParserState *ps, SZrState *state, const TChar *source, TZrSize sourceLength,
-                       SZrString *sourceName) {
+void ZrParserStateInit(SZrParserState *ps, SZrState *state, const TChar *source, TZrSize sourceLength, SZrString *sourceName) {
     ZR_ASSERT(ps != ZR_NULL);
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(source != ZR_NULL);
@@ -131,8 +130,7 @@ void ZrParserStateFree(SZrParserState *ps) {
     if (ps->lexer != ZR_NULL) {
         // 释放词法分析器的缓冲区
         if (ps->lexer->buffer != ZR_NULL) {
-            ZrMemoryRawFreeWithType(ps->state->global, ps->lexer->buffer, ps->lexer->bufferSize,
-                                    ZR_MEMORY_NATIVE_TYPE_STRING);
+            ZrMemoryRawFreeWithType(ps->state->global, ps->lexer->buffer, ps->lexer->bufferSize, ZR_MEMORY_NATIVE_TYPE_STRING);
         }
         ZrMemoryRawFreeWithType(ps->state->global, ps->lexer, sizeof(SZrLexState), ZR_MEMORY_NATIVE_TYPE_STRING);
     }
@@ -159,7 +157,9 @@ static TBool consume_token(SZrParserState *ps, EZrToken token) {
 }
 
 // 查看下一个 token（不消费）
-static EZrToken peek_token(SZrParserState *ps) { return ZrLexerLookahead(ps->lexer); }
+static EZrToken peek_token(SZrParserState *ps) {
+    return ZrLexerLookahead(ps->lexer);
+}
 
 // 获取当前位置信息
 static SZrFileRange get_current_location(SZrParserState *ps) {
@@ -172,10 +172,17 @@ static SZrFileRange get_current_location(SZrParserState *ps) {
             column++;
         }
     }
-
+    
     SZrFilePosition start = ZrFilePositionCreate(
-            ps->lexer->currentPos, ps->lexer->lastLine > 0 ? ps->lexer->lastLine : ps->lexer->lineNumber, column);
-    SZrFilePosition end = ZrFilePositionCreate(ps->lexer->currentPos, ps->lexer->lineNumber, column);
+        ps->lexer->currentPos,
+        ps->lexer->lastLine > 0 ? ps->lexer->lastLine : ps->lexer->lineNumber,
+        column
+    );
+    SZrFilePosition end = ZrFilePositionCreate(
+        ps->lexer->currentPos,
+        ps->lexer->lineNumber,
+        column
+    );
     return ZrFileRangeCreate(start, end, ps->lexer->sourceName);
 }
 
@@ -186,35 +193,35 @@ static void get_line_snippet(SZrParserState *ps, TChar *buffer, TZrSize bufferSi
         *errorColumn = 1;
         return;
     }
-
+    
     // 计算列号并找到行首
     TZrSize pos = ps->lexer->currentPos;
     TInt32 column = 1;
     TZrSize lineStart = pos;
-
+    
     // 向前查找行首
     while (lineStart > 0 && ps->lexer->source[lineStart - 1] != '\n') {
         lineStart--;
         column++;
     }
-
+    
     // 向后查找行尾
     TZrSize lineEnd = pos;
     while (lineEnd < ps->lexer->sourceLength && ps->lexer->source[lineEnd] != '\n') {
         lineEnd++;
     }
-
+    
     // 计算要显示的起始和结束位置（前后各20个字符）
     TZrSize snippetStart = lineStart;
     TZrSize snippetEnd = lineEnd;
     TInt32 displayColumn = column;
-
+    
     // 如果列号大于20，向前移动起始位置
     if (column > 20) {
         snippetStart = pos - 20;
-        displayColumn = 21; // 错误位置在显示的第21个字符
+        displayColumn = 21;  // 错误位置在显示的第21个字符
     }
-
+    
     // 如果剩余字符少于20，向后扩展
     if (lineEnd - pos < 20) {
         TZrSize needed = 20 - (lineEnd - pos);
@@ -226,7 +233,7 @@ static void get_line_snippet(SZrParserState *ps, TChar *buffer, TZrSize bufferSi
             displayColumn = column;
         }
     }
-
+    
     // 确保不越界
     if (snippetStart > lineStart) {
         snippetStart = lineStart;
@@ -235,13 +242,13 @@ static void get_line_snippet(SZrParserState *ps, TChar *buffer, TZrSize bufferSi
     if (snippetEnd > ps->lexer->sourceLength) {
         snippetEnd = ps->lexer->sourceLength;
     }
-
+    
     // 复制代码片段
     TZrSize snippetLen = snippetEnd - snippetStart;
     if (snippetLen >= bufferSize) {
         snippetLen = bufferSize - 1;
     }
-
+    
     for (TZrSize i = 0; i < snippetLen; i++) {
         TChar c = ps->lexer->source[snippetStart + i];
         // 将制表符和换行符替换为空格以便显示
@@ -254,7 +261,7 @@ static void get_line_snippet(SZrParserState *ps, TChar *buffer, TZrSize bufferSi
         }
     }
     buffer[snippetLen] = '\0';
-
+    
     *errorColumn = displayColumn;
 }
 
@@ -262,11 +269,11 @@ static void get_line_snippet(SZrParserState *ps, TChar *buffer, TZrSize bufferSi
 static void report_error_with_token(SZrParserState *ps, const TChar *msg, EZrToken token) {
     ps->hasError = ZR_TRUE;
     ps->errorMessage = msg;
-
+    
     if (ps->lexer != ZR_NULL) {
         // 获取 token 字符串
         const TChar *tokenStr = ZrLexerTokenToString(ps->lexer, token);
-
+        
         // 获取文件名
         const TChar *fileName = "<unknown>";
         if (ps->lexer->sourceName != ZR_NULL) {
@@ -275,7 +282,7 @@ static void report_error_with_token(SZrParserState *ps, const TChar *msg, EZrTok
                 fileName = nameStr;
             }
         }
-
+        
         // 计算列号（从当前行开始到当前位置的字符数）
         TInt32 column = 1;
         if (ps->lexer->source != ZR_NULL && ps->lexer->currentPos > 0) {
@@ -285,17 +292,18 @@ static void report_error_with_token(SZrParserState *ps, const TChar *msg, EZrTok
                 column++;
             }
         }
-
+        
         // 获取代码片段
         TChar snippet[128];
         TInt32 displayColumn = 1;
         get_line_snippet(ps, snippet, sizeof(snippet), &displayColumn);
-
+        
         // 输出详细的错误信息
         // 使用 lastLine 而不是 lineNumber，因为 lastLine 是当前 token 的行号
         TInt32 errorLine = ps->lexer->lastLine > 0 ? ps->lexer->lastLine : ps->lexer->lineNumber;
-        printf("  [%s:%d:%d] %s (遇到 token: '%s')\n", fileName, errorLine, column, msg, tokenStr);
-
+        printf("  [%s:%d:%d] %s (遇到 token: '%s')\n", 
+               fileName, errorLine, column, msg, tokenStr);
+        
         // 输出代码片段和错误位置标记
         if (snippet[0] != '\0') {
             printf("    %s\n", snippet);
@@ -312,7 +320,7 @@ static void report_error_with_token(SZrParserState *ps, const TChar *msg, EZrTok
 static void report_error(SZrParserState *ps, const TChar *msg) {
     ps->hasError = ZR_TRUE;
     ps->errorMessage = msg;
-
+    
     // 使用词法分析器的错误报告函数
     if (ps->lexer != ZR_NULL) {
         EZrToken currentToken = ps->lexer->t.token;
@@ -381,8 +389,7 @@ static SZrAstNode *create_float_literal_node(SZrParserState *ps, TDouble value, 
     return node;
 }
 
-static SZrAstNode *create_string_literal_node(SZrParserState *ps, SZrString *value, TBool hasError,
-                                              SZrString *literal) {
+static SZrAstNode *create_string_literal_node(SZrParserState *ps, SZrString *value, TBool hasError, SZrString *literal) {
     SZrFileRange loc = get_current_location(ps);
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRING_LITERAL, loc);
     if (node == ZR_NULL) {
@@ -428,7 +435,7 @@ static SZrAstNode *parse_literal(SZrParserState *ps) {
 
         case ZR_TK_INTEGER: {
             TInt64 value = ps->lexer->t.seminfo.intValue;
-            SZrString *literal = ps->lexer->t.seminfo.stringValue; // 注意：这里需要从 token 中获取原始字符串
+            SZrString *literal = ps->lexer->t.seminfo.stringValue;  // 注意：这里需要从 token 中获取原始字符串
             ZrLexerNext(ps->lexer);
             return create_integer_literal_node(ps, value, literal);
         }
@@ -437,23 +444,23 @@ static SZrAstNode *parse_literal(SZrParserState *ps) {
             TDouble value = ps->lexer->t.seminfo.floatValue;
             SZrString *literal = ps->lexer->t.seminfo.stringValue;
             // 判断是否为单精度（需要从原始字符串判断）
-            TBool isSingle = ZR_FALSE; // TODO: 从 literal 判断
+            TBool isSingle = ZR_FALSE;  // TODO: 从 literal 判断
             ZrLexerNext(ps->lexer);
             return create_float_literal_node(ps, value, literal, isSingle);
         }
 
         case ZR_TK_STRING: {
             SZrString *value = ps->lexer->t.seminfo.stringValue;
-            TBool hasError = ZR_FALSE; // TODO: 从词法分析器获取错误信息
-            SZrString *literal = value; // TODO: 获取原始字符串
+            TBool hasError = ZR_FALSE;  // TODO: 从词法分析器获取错误信息
+            SZrString *literal = value;  // TODO: 获取原始字符串
             ZrLexerNext(ps->lexer);
             return create_string_literal_node(ps, value, hasError, literal);
         }
 
         case ZR_TK_CHAR: {
             TChar value = ps->lexer->t.seminfo.charValue;
-            TBool hasError = ZR_FALSE; // TODO: 从词法分析器获取错误信息
-            SZrString *literal = ZR_NULL; // TODO: 获取原始字符串
+            TBool hasError = ZR_FALSE;  // TODO: 从词法分析器获取错误信息
+            SZrString *literal = ZR_NULL;  // TODO: 获取原始字符串
             ZrLexerNext(ps->lexer);
             return create_char_literal_node(ps, value, hasError, literal);
         }
@@ -466,19 +473,19 @@ static SZrAstNode *parse_literal(SZrParserState *ps) {
         case ZR_TK_INFINITY: {
             ZrLexerNext(ps->lexer);
             SZrString *literal = ZrStringCreate(ps->state, "Infinity", 8);
-            return create_float_literal_node(ps, INFINITY, literal, ZR_FALSE); // 正无穷
+            return create_float_literal_node(ps, INFINITY, literal, ZR_FALSE);  // 正无穷
         }
 
         case ZR_TK_NEG_INFINITY: {
             ZrLexerNext(ps->lexer);
             SZrString *literal = ZrStringCreate(ps->state, "NegativeInfinity", 16);
-            return create_float_literal_node(ps, -INFINITY, literal, ZR_FALSE); // 负无穷
+            return create_float_literal_node(ps, -INFINITY, literal, ZR_FALSE);  // 负无穷
         }
 
         case ZR_TK_NAN: {
             ZrLexerNext(ps->lexer);
             SZrString *literal = ZrStringCreate(ps->state, "NaN", 3);
-            return create_float_literal_node(ps, NAN, literal, ZR_FALSE); // NaN
+            return create_float_literal_node(ps, NAN, literal, ZR_FALSE);  // NaN
         }
 
         default:
@@ -717,7 +724,7 @@ static SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 report_error_with_token(ps, errorMsg, ps->lexer->t.token);
                 return base;
             }
-
+            
             SZrAstNode *property = parse_identifier(ps);
             if (property == ZR_NULL) {
                 // parse_identifier 已经报告了错误
@@ -803,7 +810,8 @@ static SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             ZrAstNodeArrayAdd(ps->state, members, callNode);
             primaryNode->data.primaryExpression.members = members;
             base = primaryNode;
-        } else {
+        }
+        else {
             break;
         }
     }
@@ -818,9 +826,9 @@ static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
     SZrAstNode *base = ZR_NULL;
 
     // 字面量
-    if (token == ZR_TK_BOOLEAN || token == ZR_TK_INTEGER || token == ZR_TK_FLOAT || token == ZR_TK_STRING ||
-        token == ZR_TK_CHAR || token == ZR_TK_NULL || token == ZR_TK_INFINITY || token == ZR_TK_NEG_INFINITY ||
-        token == ZR_TK_NAN) {
+    if (token == ZR_TK_BOOLEAN || token == ZR_TK_INTEGER || token == ZR_TK_FLOAT ||
+        token == ZR_TK_STRING || token == ZR_TK_CHAR || token == ZR_TK_NULL ||
+        token == ZR_TK_INFINITY || token == ZR_TK_NEG_INFINITY || token == ZR_TK_NAN) {
         base = parse_literal(ps);
     }
     // 标识符
@@ -851,8 +859,8 @@ static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
     else if (consume_token(ps, ZR_TK_LPAREN)) {
         // 检查是否是 lambda 表达式（参数列表后跟 =>）
         EZrToken lookahead = peek_token(ps);
-        if (lookahead == ZR_TK_RIGHT_ARROW || lookahead == ZR_TK_PARAMS || ps->lexer->t.token == ZR_TK_IDENTIFIER ||
-            ps->lexer->t.token == ZR_TK_PARAMS) {
+        if (lookahead == ZR_TK_RIGHT_ARROW || lookahead == ZR_TK_PARAMS || 
+            ps->lexer->t.token == ZR_TK_IDENTIFIER || ps->lexer->t.token == ZR_TK_PARAMS) {
             // 可能是 lambda，尝试解析
             SZrFileRange lambdaLoc = get_current_location(ps);
             SZrAstNodeArray *params = ZR_NULL;
@@ -929,13 +937,13 @@ static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
         TInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
         TInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
         TInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
+        
         // 跳过 for 和 (
         ZrLexerNext(ps->lexer);
         if (ps->lexer->t.token == ZR_TK_LPAREN) {
             ZrLexerNext(ps->lexer);
         }
-
+        
         // 检查是否是 foreach (var x in ...)
         if (ps->lexer->t.token == ZR_TK_VAR) {
             // 恢复状态并解析 foreach
@@ -964,7 +972,7 @@ static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
             ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
             base = parse_for_loop(ps);
         }
-
+        
         if (base != ZR_NULL) {
             if (base->type == ZR_AST_FOREACH_LOOP) {
                 base->data.foreachLoop.isStatement = ZR_FALSE;
@@ -976,7 +984,8 @@ static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
     // Switch 表达式（作为表达式使用）
     else if (token == ZR_TK_SWITCH) {
         base = parse_switch_expression(ps);
-    } else {
+    }
+    else {
         report_error(ps, "Expected primary expression");
         return ZR_NULL;
     }
@@ -995,14 +1004,14 @@ static SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
     // 检查一元操作符
-    if (token == ZR_TK_BANG || token == ZR_TK_TILDE || token == ZR_TK_PLUS || token == ZR_TK_MINUS ||
-        token == ZR_TK_DOLLAR || token == ZR_TK_NEW) {
+    if (token == ZR_TK_BANG || token == ZR_TK_TILDE || token == ZR_TK_PLUS ||
+        token == ZR_TK_MINUS || token == ZR_TK_DOLLAR || token == ZR_TK_NEW) {
         SZrFileRange startLoc = get_current_location(ps);
         SZrUnaryOperator op;
         op.op = ZrLexerTokenToString(ps->lexer, token);
 
         ZrLexerNext(ps->lexer);
-        SZrAstNode *argument = parse_unary_expression(ps); // 右结合
+        SZrAstNode *argument = parse_unary_expression(ps);  // 右结合
 
         SZrAstNode *node = create_ast_node(ps, ZR_AST_UNARY_EXPRESSION, startLoc);
         if (node == ZR_NULL) {
@@ -1317,7 +1326,7 @@ static SZrAstNode *parse_conditional_expression(SZrParserState *ps) {
         SZrAstNode *consequent = parse_expression(ps);
         expect_token(ps, ZR_TK_COLON);
         consume_token(ps, ZR_TK_COLON);
-        SZrAstNode *alternate = parse_conditional_expression(ps); // 右结合
+        SZrAstNode *alternate = parse_conditional_expression(ps);  // 右结合
 
         SZrAstNode *node = create_ast_node(ps, ZR_AST_CONDITIONAL_EXPRESSION, startLoc);
         if (node == ZR_NULL) {
@@ -1349,7 +1358,7 @@ static SZrAstNode *parse_assignment_expression(SZrParserState *ps) {
         op.op = ZrLexerTokenToString(ps->lexer, token);
 
         ZrLexerNext(ps->lexer);
-        SZrAstNode *right = parse_assignment_expression(ps); // 右结合
+        SZrAstNode *right = parse_assignment_expression(ps);  // 右结合
 
         SZrAstNode *node = create_ast_node(ps, ZR_AST_ASSIGNMENT_EXPRESSION, startLoc);
         if (node == ZR_NULL) {
@@ -1366,7 +1375,9 @@ static SZrAstNode *parse_assignment_expression(SZrParserState *ps) {
 }
 
 // 解析表达式（入口函数）
-static SZrAstNode *parse_expression(SZrParserState *ps) { return parse_assignment_expression(ps); }
+static SZrAstNode *parse_expression(SZrParserState *ps) {
+    return parse_assignment_expression(ps);
+}
 
 // ==================== 辅助解析函数 ====================
 
@@ -1644,8 +1655,7 @@ static SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps) {
     expect_token(ps, ZR_TK_GREATER_THAN);
     ZrLexerNext(ps->lexer);
 
-    SZrGenericDeclaration *generic =
-            ZrMemoryRawMallocWithType(ps->state->global, sizeof(SZrGenericDeclaration), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    SZrGenericDeclaration *generic = ZrMemoryRawMallocWithType(ps->state->global, sizeof(SZrGenericDeclaration), ZR_MEMORY_NATIVE_TYPE_ARRAY);
     if (generic == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, params);
         return ZR_NULL;
@@ -1809,20 +1819,20 @@ static EZrAccessModifier parse_access_modifier(SZrParserState *ps) {
         ZrLexerNext(ps->lexer);
         return ZR_ACCESS_PROTECTED;
     }
-    return ZR_ACCESS_PUBLIC; // 默认
+    return ZR_ACCESS_PUBLIC;  // 默认
 }
 
 // 解析参数
 static SZrAstNode *parse_parameter(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 检查是否是可变参数 (...name: type)
     TBool isVariadic = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         isVariadic = ZR_TRUE;
         ZrLexerNext(ps->lexer);
     }
-
+    
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
@@ -1934,7 +1944,7 @@ static SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
         report_error(ps, "Expected identifier or destructuring pattern");
         return ZR_NULL;
     }
-
+    
     if (pattern == ZR_NULL) {
         return ZR_NULL;
     }
@@ -1976,13 +1986,18 @@ static SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
     // 注意：在检查分号之前，表达式应该已经完全解析（包括成员访问和函数调用）
     if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
         consume_token(ps, ZR_TK_SEMICOLON);
-    } else if (ps->lexer->t.token != ZR_TK_EOS && ps->lexer->t.token != ZR_TK_VAR &&
-               ps->lexer->t.token != ZR_TK_STRUCT && ps->lexer->t.token != ZR_TK_CLASS &&
-               ps->lexer->t.token != ZR_TK_INTERFACE && ps->lexer->t.token != ZR_TK_ENUM &&
-               ps->lexer->t.token != ZR_TK_TEST && ps->lexer->t.token != ZR_TK_INTERMEDIATE &&
-               ps->lexer->t.token != ZR_TK_MODULE && ps->lexer->t.token != ZR_TK_DOT && // 允许成员访问继续
-               ps->lexer->t.token != ZR_TK_LBRACKET && // 允许计算属性访问
-               ps->lexer->t.token != ZR_TK_LPAREN) { // 允许函数调用
+    } else if (ps->lexer->t.token != ZR_TK_EOS && 
+               ps->lexer->t.token != ZR_TK_VAR && 
+               ps->lexer->t.token != ZR_TK_STRUCT &&
+               ps->lexer->t.token != ZR_TK_CLASS &&
+               ps->lexer->t.token != ZR_TK_INTERFACE &&
+               ps->lexer->t.token != ZR_TK_ENUM &&
+               ps->lexer->t.token != ZR_TK_TEST &&
+               ps->lexer->t.token != ZR_TK_INTERMEDIATE &&
+               ps->lexer->t.token != ZR_TK_MODULE &&
+               ps->lexer->t.token != ZR_TK_DOT &&  // 允许成员访问继续
+               ps->lexer->t.token != ZR_TK_LBRACKET &&  // 允许计算属性访问
+               ps->lexer->t.token != ZR_TK_LPAREN) {  // 允许函数调用
         // 如果下一个 token 不是语句开始关键字或表达式继续符号，期望分号
         const TChar *tokenStr = ZrLexerTokenToString(ps->lexer, ps->lexer->t.token);
         TChar errorMsg[256];
@@ -2036,7 +2051,7 @@ static SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     ZrLexerNext(ps->lexer);
 
     SZrAstNodeArray *params = ZR_NULL;
-    SZrParameter *args = ZR_NULL; // 可变参数
+    SZrParameter *args = ZR_NULL;  // 可变参数
 
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         // 只有可变参数的情况 (...name: type)
@@ -2136,7 +2151,7 @@ static SZrAstNode *parse_block(SZrParserState *ps) {
         if (stmt != ZR_NULL) {
             ZrAstNodeArrayAdd(ps->state, statements, stmt);
         } else {
-            break; // 遇到错误
+            break;  // 遇到错误
         }
     }
 
@@ -2269,7 +2284,7 @@ static SZrAstNode *parse_switch_expression(SZrParserState *ps) {
         switchNode->data.switchExpression.expr = expr;
         switchNode->data.switchExpression.cases = cases;
         switchNode->data.switchExpression.defaultCase = defaultCase;
-        switchNode->data.switchExpression.isStatement = ZR_FALSE; // 默认是表达式
+        switchNode->data.switchExpression.isStatement = ZR_FALSE;  // 默认是表达式
         return switchNode;
     }
     return ZR_NULL;
@@ -2317,7 +2332,7 @@ static SZrAstNode *parse_if_expression(SZrParserState *ps) {
     node->data.ifExpression.condition = condition;
     node->data.ifExpression.thenExpr = thenExpr;
     node->data.ifExpression.elseExpr = elseExpr;
-    node->data.ifExpression.isStatement = ZR_FALSE; // 默认是表达式
+    node->data.ifExpression.isStatement = ZR_FALSE;  // 默认是表达式
     return node;
 }
 
@@ -2353,7 +2368,7 @@ static SZrAstNode *parse_while_loop(SZrParserState *ps) {
 
     node->data.whileLoop.cond = cond;
     node->data.whileLoop.block = block;
-    node->data.whileLoop.isStatement = ZR_FALSE; // 默认是表达式
+    node->data.whileLoop.isStatement = ZR_FALSE;  // 默认是表达式
     return node;
 }
 
@@ -2424,7 +2439,7 @@ static SZrAstNode *parse_for_loop(SZrParserState *ps) {
     node->data.forLoop.cond = cond;
     node->data.forLoop.step = step;
     node->data.forLoop.block = block;
-    node->data.forLoop.isStatement = ZR_FALSE; // 默认是表达式
+    node->data.forLoop.isStatement = ZR_FALSE;  // 默认是表达式
     return node;
 }
 
@@ -2484,7 +2499,7 @@ static SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
     node->data.foreachLoop.typeInfo = typeInfo;
     node->data.foreachLoop.expr = expr;
     node->data.foreachLoop.block = block;
-    node->data.foreachLoop.isStatement = ZR_FALSE; // 默认是表达式
+    node->data.foreachLoop.isStatement = ZR_FALSE;  // 默认是表达式
     return node;
 }
 
@@ -2516,7 +2531,7 @@ static SZrAstNode *parse_break_continue_statement(SZrParserState *ps) {
 static SZrAstNode *parse_out_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     expect_token(ps, ZR_TK_OUT);
-    ZrLexerNext(ps->lexer); // 消费 OUT
+    ZrLexerNext(ps->lexer);  // 消费 OUT
 
     SZrAstNode *expr = parse_expression(ps);
     if (expr == ZR_NULL) {
@@ -2659,17 +2674,19 @@ static SZrAstNode *parse_statement(SZrParserState *ps) {
             TInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
             TInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
+            
             // 跳过 FOR 和 LPAREN
-            ZrLexerNext(ps->lexer); // 消费 FOR
+            ZrLexerNext(ps->lexer);  // 消费 FOR
             if (ps->lexer->t.token == ZR_TK_LPAREN) {
-                ZrLexerNext(ps->lexer); // 消费 LPAREN
+                ZrLexerNext(ps->lexer);  // 消费 LPAREN
                 if (ps->lexer->t.token == ZR_TK_VAR) {
                     // 可能是 foreach，继续检查
-                    ZrLexerNext(ps->lexer); // 消费 VAR
+                    ZrLexerNext(ps->lexer);  // 消费 VAR
                     // 跳过模式（标识符、类型注解等）
-                    while (ps->lexer->t.token != ZR_TK_IN && ps->lexer->t.token != ZR_TK_COLON &&
-                           ps->lexer->t.token != ZR_TK_RPAREN && ps->lexer->t.token != ZR_TK_EOS) {
+                    while (ps->lexer->t.token != ZR_TK_IN && 
+                           ps->lexer->t.token != ZR_TK_COLON && 
+                           ps->lexer->t.token != ZR_TK_RPAREN &&
+                           ps->lexer->t.token != ZR_TK_EOS) {
                         ZrLexerNext(ps->lexer);
                     }
                     if (ps->lexer->t.token == ZR_TK_IN) {
@@ -2723,6 +2740,8 @@ static SZrAstNode *parse_statement(SZrParserState *ps) {
         case ZR_TK_TRY:
             return parse_try_catch_finally_statement(ps);
 
+        // TODO: 实现 switch 语句
+
         default:
             // 尝试解析为表达式语句
             return parse_expression_statement(ps);
@@ -2759,7 +2778,7 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
 
         case ZR_TK_INTERMEDIATE:
             return parse_intermediate_statement(ps);
-
+        
         case ZR_TK_IF: {
             SZrAstNode *ifNode = parse_if_expression(ps);
             if (ifNode != ZR_NULL) {
@@ -2767,7 +2786,7 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             }
             return ifNode;
         }
-
+        
         case ZR_TK_WHILE: {
             SZrAstNode *whileNode = parse_while_loop(ps);
             if (whileNode != ZR_NULL) {
@@ -2775,7 +2794,7 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             }
             return whileNode;
         }
-
+        
         case ZR_TK_FOR: {
             // 判断是 for 还是 foreach
             // 保存状态以便向前看
@@ -2789,13 +2808,13 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             TInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
             TInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
+            
             // 跳过 for 和 (
             ZrLexerNext(ps->lexer);
             if (ps->lexer->t.token == ZR_TK_LPAREN) {
                 ZrLexerNext(ps->lexer);
             }
-
+            
             // 检查是否是 foreach (var x in ...)
             if (ps->lexer->t.token == ZR_TK_VAR) {
                 // 恢复状态并解析 foreach
@@ -2815,7 +2834,7 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 }
                 return foreachNode;
             }
-
+            
             // 恢复状态并解析 for
             ps->lexer->currentPos = savedPos;
             ps->lexer->currentChar = savedChar;
@@ -2833,7 +2852,7 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             }
             return forNode;
         }
-
+        
         case ZR_TK_SWITCH: {
             SZrAstNode *switchNode = parse_switch_expression(ps);
             if (switchNode != ZR_NULL) {
@@ -2841,20 +2860,20 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             }
             return switchNode;
         }
-
+        
         case ZR_TK_RETURN:
             return parse_return_statement(ps);
-
+        
         case ZR_TK_BREAK:
         case ZR_TK_CONTINUE:
             return parse_break_continue_statement(ps);
-
+        
         case ZR_TK_OUT:
             return parse_out_statement(ps);
-
+        
         case ZR_TK_THROW:
             return parse_throw_statement(ps);
-
+        
         case ZR_TK_TRY:
             return parse_try_catch_finally_statement(ps);
 
@@ -2939,39 +2958,39 @@ static SZrAstNode *parse_script(SZrParserState *ps) {
 
     TZrSize stmtCount = 0;
     TZrSize errorCount = 0;
-    const TZrSize MAX_CONSECUTIVE_ERRORS = 10; // 最多连续错误次数
-
+    const TZrSize MAX_CONSECUTIVE_ERRORS = 10;  // 最多连续错误次数
+    
     while (ps->lexer->t.token != ZR_TK_EOS) {
         // 保存错误状态
         TBool hadError = ps->hasError;
         const TChar *prevErrorMessage = ps->errorMessage;
-
+        
         // 重置错误状态（临时）
         ps->hasError = ZR_FALSE;
         ps->errorMessage = ZR_NULL;
-
+        
         SZrAstNode *stmt = parse_top_level_statement(ps);
         if (stmt != ZR_NULL) {
             ZrAstNodeArrayAdd(ps->state, statements, stmt);
             stmtCount++;
-            errorCount = 0; // 重置错误计数
+            errorCount = 0;  // 重置错误计数
         } else {
             // 检查是否真的发生了错误
             if (ps->hasError) {
                 errorCount++;
                 // 错误信息已经在 report_error 中输出，这里只输出统计信息
                 // printf("  Parser error at statement %zu (已在上方显示详细信息)\n", stmtCount);
-
+                
                 // 如果连续错误太多，停止解析
                 if (errorCount >= MAX_CONSECUTIVE_ERRORS) {
                     printf("  Too many consecutive errors (%zu), stopping parse\n", errorCount);
                     break;
                 }
-
+                
                 // 尝试错误恢复：跳过到下一个可能的语句开始位置
                 // 跳过当前 token 直到遇到分号、换行或语句开始关键字
                 TZrSize skipCount = 0;
-                const TZrSize MAX_SKIP_TOKENS = 100; // 最多跳过 100 个 token
+                const TZrSize MAX_SKIP_TOKENS = 100;  // 最多跳过 100 个 token
                 while (ps->lexer->t.token != ZR_TK_EOS && skipCount < MAX_SKIP_TOKENS) {
                     EZrToken token = ps->lexer->t.token;
                     // 如果遇到分号，跳过它并继续
@@ -2982,8 +3001,9 @@ static SZrAstNode *parse_script(SZrParserState *ps) {
                     // 如果遇到可能的语句开始关键字，停止跳过
                     // 注意：函数声明使用标识符，不是 ZR_TK_FUNCTION
                     if (token == ZR_TK_VAR || token == ZR_TK_STRUCT || token == ZR_TK_CLASS ||
-                        token == ZR_TK_INTERFACE || token == ZR_TK_ENUM || token == ZR_TK_TEST ||
-                        token == ZR_TK_INTERMEDIATE || token == ZR_TK_MODULE || token == ZR_TK_IDENTIFIER) {
+                        token == ZR_TK_INTERFACE || token == ZR_TK_ENUM ||
+                        token == ZR_TK_TEST || token == ZR_TK_INTERMEDIATE ||
+                        token == ZR_TK_MODULE || token == ZR_TK_IDENTIFIER) {
                         break;
                     }
                     // 跳过当前 token
@@ -2992,8 +3012,7 @@ static SZrAstNode *parse_script(SZrParserState *ps) {
                 }
             } else {
                 // 没有错误但返回 NULL，可能是遇到了不支持的语法
-                printf("  Warning: Failed to parse statement %zu (token: %d), skipping\n", stmtCount,
-                       ps->lexer->t.token);
+                printf("  Warning: Failed to parse statement %zu (token: %d), skipping\n", stmtCount, ps->lexer->t.token);
                 // 尝试跳过当前 token 继续解析
                 if (ps->lexer->t.token != ZR_TK_EOS) {
                     ZrLexerNext(ps->lexer);
@@ -3049,52 +3068,52 @@ void ZrParserFreeAst(SZrState *state, SZrAstNode *node) {
 // 解析结构体字段
 static SZrAstNode *parse_struct_field(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 解析 static 关键字（可选）
     TBool isStatic = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_STATIC) {
         isStatic = ZR_TRUE;
         ZrLexerNext(ps->lexer);
     }
-
+    
     // 期望 var 关键字
     expect_token(ps, ZR_TK_VAR);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析字段名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 可选类型注解
     SZrType *typeInfo = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         typeInfo = parse_type(ps);
     }
-
+    
     // 可选初始值
     SZrAstNode *init = ZR_NULL;
     if (consume_token(ps, ZR_TK_EQUALS)) {
         init = parse_expression(ps);
     }
-
+    
     // 期望分号
     expect_token(ps, ZR_TK_SEMICOLON);
     consume_token(ps, ZR_TK_SEMICOLON);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange fieldLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRUCT_FIELD, fieldLoc);
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     node->data.structField.access = access;
     node->data.structField.isStatic = isStatic;
     node->data.structField.name = name;
@@ -3106,7 +3125,7 @@ static SZrAstNode *parse_struct_field(SZrParserState *ps) {
 // 解析结构体方法
 static SZrAstNode *parse_struct_method(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrAstNodeArrayNew(ps->state, 2);
     while (ps->lexer->t.token == ZR_TK_SHARP) {
@@ -3117,17 +3136,17 @@ static SZrAstNode *parse_struct_method(SZrParserState *ps) {
             break;
         }
     }
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 解析 static 关键字（可选）
     TBool isStatic = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_STATIC) {
         isStatic = ZR_TRUE;
         ZrLexerNext(ps->lexer);
     }
-
+    
     // 解析方法名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
@@ -3135,20 +3154,20 @@ static SZrAstNode *parse_struct_method(SZrParserState *ps) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
         generic = parse_generic_declaration(ps);
     }
-
+    
     // 解析参数列表
     expect_token(ps, ZR_TK_LPAREN);
     ZrLexerNext(ps->lexer);
-
+    
     SZrAstNodeArray *params = ZR_NULL;
     SZrParameter *args = ZR_NULL;
-
+    
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         SZrAstNode *argsNode = parse_parameter(ps);
         if (argsNode != ZR_NULL) {
@@ -3166,16 +3185,16 @@ static SZrAstNode *parse_struct_method(SZrParserState *ps) {
             }
         }
     }
-
+    
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
-
+    
     // 解析返回类型（可选）
     SZrType *returnType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
     }
-
+    
     // 解析方法体
     SZrAstNode *body = parse_block(ps);
     if (body == ZR_NULL) {
@@ -3185,10 +3204,10 @@ static SZrAstNode *parse_struct_method(SZrParserState *ps) {
         ZrAstNodeArrayFree(ps->state, decorators);
         return ZR_NULL;
     }
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange methodLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRUCT_METHOD, methodLoc);
     if (node == ZR_NULL) {
         if (params != ZR_NULL) {
@@ -3197,7 +3216,7 @@ static SZrAstNode *parse_struct_method(SZrParserState *ps) {
         ZrAstNodeArrayFree(ps->state, decorators);
         return ZR_NULL;
     }
-
+    
     node->data.structMethod.decorators = decorators;
     node->data.structMethod.access = access;
     node->data.structMethod.isStatic = isStatic;
@@ -3213,35 +3232,35 @@ static SZrAstNode *parse_struct_method(SZrParserState *ps) {
 // 解析结构体元函数
 static SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 解析 static 关键字（可选）
     TBool isStatic = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_STATIC) {
         isStatic = ZR_TRUE;
         ZrLexerNext(ps->lexer);
     }
-
+    
     // 期望 @ 符号
     expect_token(ps, ZR_TK_AT);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析元标识符（@ 后面跟小写蛇形标识符）
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *meta = &nameNode->data.identifier;
-
+    
     // 解析参数列表
     expect_token(ps, ZR_TK_LPAREN);
     ZrLexerNext(ps->lexer);
-
+    
     SZrAstNodeArray *params = ZR_NULL;
     SZrParameter *args = ZR_NULL;
-
+    
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         SZrAstNode *argsNode = parse_parameter(ps);
         if (argsNode != ZR_NULL) {
@@ -3259,16 +3278,16 @@ static SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
             }
         }
     }
-
+    
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
-
+    
     // 解析返回类型（可选）
     SZrType *returnType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
     }
-
+    
     // 解析函数体
     SZrAstNode *body = parse_block(ps);
     if (body == ZR_NULL) {
@@ -3277,10 +3296,10 @@ static SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
         }
         return ZR_NULL;
     }
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange metaLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRUCT_META_FUNCTION, metaLoc);
     if (node == ZR_NULL) {
         if (params != ZR_NULL) {
@@ -3288,7 +3307,7 @@ static SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
         }
         return ZR_NULL;
     }
-
+    
     node->data.structMetaFunction.access = access;
     node->data.structMetaFunction.isStatic = isStatic;
     node->data.structMetaFunction.meta = meta;
@@ -3302,46 +3321,46 @@ static SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
 // 解析结构体声明
 static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 期望 struct 关键字
     expect_token(ps, ZR_TK_STRUCT);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析结构体名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
         generic = parse_generic_declaration(ps);
     }
-
+    
     // 解析继承列表（可选，但注释说 struct 不允许继承，所以这里暂时不支持）
     SZrAstNodeArray *inherits = ZrAstNodeArrayNew(ps->state, 0);
-
+    
     // 期望左大括号
     expect_token(ps, ZR_TK_LBRACE);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析成员列表
     SZrAstNodeArray *members = ZrAstNodeArrayNew(ps->state, 8);
     if (members == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, inherits);
         return ZR_NULL;
     }
-
+    
     // 解析成员直到遇到右大括号
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
         SZrAstNode *member = ZR_NULL;
-
+        
         // 检查是否是字段（以 var 开头，可能前面有访问修饰符和 static）
         EZrToken token = ps->lexer->t.token;
-        if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO || token == ZR_TK_STATIC ||
-            token == ZR_TK_VAR) {
+        if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO || 
+            token == ZR_TK_STATIC || token == ZR_TK_VAR) {
             // 可能是字段，尝试解析
             // 需要向前看一个 token 来确定
             TZrSize savedPos = ps->lexer->currentPos;
@@ -3354,13 +3373,13 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             TInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
             TInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
+            
             // 跳过访问修饰符和 static
-            while (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI ||
+            while (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || 
                    ps->lexer->t.token == ZR_TK_PRO || ps->lexer->t.token == ZR_TK_STATIC) {
                 ZrLexerNext(ps->lexer);
             }
-
+            
             if (ps->lexer->t.token == ZR_TK_VAR) {
                 // 恢复状态并解析字段
                 ps->lexer->currentPos = savedPos;
@@ -3412,7 +3431,7 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             report_error(ps, "Unexpected token in struct declaration");
             break;
         }
-
+        
         if (member != ZR_NULL) {
             ZrAstNodeArrayAdd(ps->state, members, member);
         } else {
@@ -3420,21 +3439,21 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             break;
         }
     }
-
+    
     // 期望右大括号
     expect_token(ps, ZR_TK_RBRACE);
     consume_token(ps, ZR_TK_RBRACE);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange structLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRUCT_DECLARATION, structLoc);
     if (node == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, inherits);
         ZrAstNodeArrayFree(ps->state, members);
         return ZR_NULL;
     }
-
+    
     node->data.structDeclaration.name = name;
     node->data.structDeclaration.generic = generic;
     node->data.structDeclaration.inherits = inherits;
@@ -3445,7 +3464,7 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
 // 解析类声明
 static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrAstNodeArrayNew(ps->state, 2);
     while (ps->lexer->t.token == ZR_TK_SHARP) {
@@ -3456,11 +3475,11 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             break;
         }
     }
-
+    
     // 期望 class 关键字
     expect_token(ps, ZR_TK_CLASS);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析类名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
@@ -3468,13 +3487,13 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
         generic = parse_generic_declaration(ps);
     }
-
+    
     // 解析继承列表（可选）
     SZrAstNodeArray *inherits = ZrAstNodeArrayNew(ps->state, 0);
     if (consume_token(ps, ZR_TK_COLON)) {
@@ -3489,7 +3508,7 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
                     ZrAstNodeArrayAdd(ps->state, inherits, typeNode);
                 }
             }
-
+            
             while (consume_token(ps, ZR_TK_COMMA)) {
                 if (ps->lexer->t.token == ZR_TK_LBRACE) {
                     break;
@@ -3508,11 +3527,11 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             }
         }
     }
-
+    
     // 期望左大括号
     expect_token(ps, ZR_TK_LBRACE);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析成员列表
     SZrAstNodeArray *members = ZrAstNodeArrayNew(ps->state, 8);
     if (members == ZR_NULL) {
@@ -3520,16 +3539,16 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
         ZrAstNodeArrayFree(ps->state, inherits);
         return ZR_NULL;
     }
-
+    
     // 解析成员直到遇到右大括号
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
         SZrAstNode *member = ZR_NULL;
-
+        
         // 检查成员类型
         EZrToken token = ps->lexer->t.token;
-
+        
         // 检查是否是装饰器或访问修饰符（可能是字段、方法或属性）
-        if (token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO ||
+        if (token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO || 
             token == ZR_TK_STATIC || token == ZR_TK_VAR) {
             // 保存状态以便向前看
             TZrSize savedPos = ps->lexer->currentPos;
@@ -3542,21 +3561,21 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             TInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
             TInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
+            
             // 跳过装饰器
             while (ps->lexer->t.token == ZR_TK_SHARP) {
                 parse_decorator_expression(ps);
             }
-
+            
             // 跳过访问修饰符和 static
-            while (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI ||
+            while (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || 
                    ps->lexer->t.token == ZR_TK_PRO || ps->lexer->t.token == ZR_TK_STATIC) {
                 ZrLexerNext(ps->lexer);
             }
-
+            
             // 检查是字段、属性还是方法
             EZrToken nextToken = ps->lexer->t.token;
-
+            
             // 恢复状态，让成员解析函数处理
             ps->lexer->currentPos = savedPos;
             ps->lexer->currentChar = savedChar;
@@ -3568,7 +3587,7 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             ps->lexer->lookaheadChar = savedLookaheadChar;
             ps->lexer->lookaheadLine = savedLookaheadLine;
             ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-
+            
             if (nextToken == ZR_TK_VAR) {
                 // 字段
                 member = parse_class_field(ps);
@@ -3593,7 +3612,7 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             report_error(ps, "Unexpected token in class declaration");
             break;
         }
-
+        
         if (member != ZR_NULL) {
             ZrAstNodeArrayAdd(ps->state, members, member);
         } else {
@@ -3601,14 +3620,14 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             break;
         }
     }
-
+    
     // 期望右大括号
     expect_token(ps, ZR_TK_RBRACE);
     consume_token(ps, ZR_TK_RBRACE);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange classLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_DECLARATION, classLoc);
     if (node == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, decorators);
@@ -3616,7 +3635,7 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
         ZrAstNodeArrayFree(ps->state, members);
         return ZR_NULL;
     }
-
+    
     node->data.classDeclaration.name = name;
     node->data.classDeclaration.generic = generic;
     node->data.classDeclaration.inherits = inherits;
@@ -3628,39 +3647,39 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
 // 解析接口字段声明
 static SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 期望 var 关键字
     expect_token(ps, ZR_TK_VAR);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析字段名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 可选类型注解
     SZrType *typeInfo = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         typeInfo = parse_type(ps);
     }
-
+    
     // 期望分号
     expect_token(ps, ZR_TK_SEMICOLON);
     consume_token(ps, ZR_TK_SEMICOLON);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange fieldLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERFACE_FIELD_DECLARATION, fieldLoc);
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     node->data.interfaceFieldDeclaration.access = access;
     node->data.interfaceFieldDeclaration.name = name;
     node->data.interfaceFieldDeclaration.typeInfo = typeInfo;
@@ -3670,30 +3689,30 @@ static SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
 // 解析接口方法签名
 static SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 解析方法名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
         generic = parse_generic_declaration(ps);
     }
-
+    
     // 解析参数列表
     expect_token(ps, ZR_TK_LPAREN);
     ZrLexerNext(ps->lexer);
-
+    
     SZrAstNodeArray *params = ZR_NULL;
     SZrParameter *args = ZR_NULL;
-
+    
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         SZrAstNode *argsNode = parse_parameter(ps);
         if (argsNode != ZR_NULL) {
@@ -3711,23 +3730,23 @@ static SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
             }
         }
     }
-
+    
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
-
+    
     // 可选返回类型
     SZrType *returnType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
     }
-
+    
     // 期望分号
     expect_token(ps, ZR_TK_SEMICOLON);
     consume_token(ps, ZR_TK_SEMICOLON);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange methodLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERFACE_METHOD_SIGNATURE, methodLoc);
     if (node == ZR_NULL) {
         if (params != ZR_NULL) {
@@ -3735,7 +3754,7 @@ static SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
         }
         return ZR_NULL;
     }
-
+    
     node->data.interfaceMethodSignature.access = access;
     node->data.interfaceMethodSignature.name = name;
     node->data.interfaceMethodSignature.generic = generic;
@@ -3748,14 +3767,14 @@ static SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
 // 解析接口属性签名
 static SZrAstNode *parse_interface_property_signature(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 解析 get/set 修饰符
     TBool hasGet = ZR_FALSE;
     TBool hasSet = ZR_FALSE;
-
+    
     if (ps->lexer->t.token == ZR_TK_GET) {
         hasGet = ZR_TRUE;
         ZrLexerNext(ps->lexer);
@@ -3771,32 +3790,32 @@ static SZrAstNode *parse_interface_property_signature(SZrParserState *ps) {
             ZrLexerNext(ps->lexer);
         }
     }
-
+    
     // 解析属性名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 可选类型注解
     SZrType *typeInfo = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         typeInfo = parse_type(ps);
     }
-
+    
     // 期望分号
     expect_token(ps, ZR_TK_SEMICOLON);
     consume_token(ps, ZR_TK_SEMICOLON);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange propertyLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERFACE_PROPERTY_SIGNATURE, propertyLoc);
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     node->data.interfacePropertySignature.access = access;
     node->data.interfacePropertySignature.hasGet = hasGet;
     node->data.interfacePropertySignature.hasSet = hasSet;
@@ -3808,28 +3827,28 @@ static SZrAstNode *parse_interface_property_signature(SZrParserState *ps) {
 // 解析接口元函数签名
 static SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 期望 @ 符号
     expect_token(ps, ZR_TK_AT);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析元标识符
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *meta = &nameNode->data.identifier;
-
+    
     // 解析参数列表
     expect_token(ps, ZR_TK_LPAREN);
     ZrLexerNext(ps->lexer);
-
+    
     SZrAstNodeArray *params = ZR_NULL;
     SZrParameter *args = ZR_NULL;
-
+    
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         SZrAstNode *argsNode = parse_parameter(ps);
         if (argsNode != ZR_NULL) {
@@ -3847,23 +3866,23 @@ static SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
             }
         }
     }
-
+    
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
-
+    
     // 可选返回类型
     SZrType *returnType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
     }
-
+    
     // 期望分号
     expect_token(ps, ZR_TK_SEMICOLON);
     consume_token(ps, ZR_TK_SEMICOLON);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange metaLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERFACE_META_SIGNATURE, metaLoc);
     if (node == ZR_NULL) {
         if (params != ZR_NULL) {
@@ -3871,7 +3890,7 @@ static SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
         }
         return ZR_NULL;
     }
-
+    
     node->data.interfaceMetaSignature.access = access;
     node->data.interfaceMetaSignature.meta = meta;
     node->data.interfaceMetaSignature.params = params;
@@ -3883,24 +3902,24 @@ static SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
 // 解析接口声明
 static SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 期望 interface 关键字
     expect_token(ps, ZR_TK_INTERFACE);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析接口名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
         generic = parse_generic_declaration(ps);
     }
-
+    
     // 解析继承列表（可选）
     SZrAstNodeArray *inherits = ZrAstNodeArrayNew(ps->state, 0);
     if (consume_token(ps, ZR_TK_COLON)) {
@@ -3915,7 +3934,7 @@ static SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
                     ZrAstNodeArrayAdd(ps->state, inherits, typeNode);
                 }
             }
-
+            
             while (consume_token(ps, ZR_TK_COMMA)) {
                 if (ps->lexer->t.token == ZR_TK_LBRACE) {
                     break;
@@ -3934,22 +3953,22 @@ static SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             }
         }
     }
-
+    
     // 期望左大括号
     expect_token(ps, ZR_TK_LBRACE);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析成员列表
     SZrAstNodeArray *members = ZrAstNodeArrayNew(ps->state, 8);
     if (members == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, inherits);
         return ZR_NULL;
     }
-
+    
     // 解析成员直到遇到右大括号
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
         SZrAstNode *member = ZR_NULL;
-
+        
         // 检查成员类型
         EZrToken token = ps->lexer->t.token;
         if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO) {
@@ -3964,10 +3983,10 @@ static SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             TInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
             TInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
+            
             // 跳过访问修饰符
             ZrLexerNext(ps->lexer);
-
+            
             if (ps->lexer->t.token == ZR_TK_VAR) {
                 // 字段声明
                 ps->lexer->currentPos = savedPos;
@@ -4032,7 +4051,7 @@ static SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             report_error(ps, "Unexpected token in interface declaration");
             break;
         }
-
+        
         if (member != ZR_NULL) {
             ZrAstNodeArrayAdd(ps->state, members, member);
         } else {
@@ -4040,21 +4059,21 @@ static SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             break;
         }
     }
-
+    
     // 期望右大括号
     expect_token(ps, ZR_TK_RBRACE);
     consume_token(ps, ZR_TK_RBRACE);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange interfaceLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERFACE_DECLARATION, interfaceLoc);
     if (node == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, inherits);
         ZrAstNodeArrayFree(ps->state, members);
         return ZR_NULL;
     }
-
+    
     node->data.interfaceDeclaration.name = name;
     node->data.interfaceDeclaration.generic = generic;
     node->data.interfaceDeclaration.inherits = inherits;
@@ -4066,14 +4085,14 @@ static SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
 // 解析枚举成员
 static SZrAstNode *parse_enum_member(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析成员名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 可选值（name = value 或 name;）
     SZrAstNode *value = ZR_NULL;
     if (consume_token(ps, ZR_TK_EQUALS)) {
@@ -4082,20 +4101,20 @@ static SZrAstNode *parse_enum_member(SZrParserState *ps) {
             return ZR_NULL;
         }
     }
-
+    
     // 可选分隔符（逗号或分号）
     if (ps->lexer->t.token == ZR_TK_COMMA || ps->lexer->t.token == ZR_TK_SEMICOLON) {
         ZrLexerNext(ps->lexer);
     }
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange memberLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_ENUM_MEMBER, memberLoc);
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     node->data.enumMember.name = name;
     node->data.enumMember.value = value;
     return node;
@@ -4105,18 +4124,18 @@ static SZrAstNode *parse_enum_member(SZrParserState *ps) {
 // 语法：enum Name[: baseType] { members }
 static SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 期望 enum 关键字
     expect_token(ps, ZR_TK_ENUM);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析枚举名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 解析基础类型（可选，继承 int, string, float, bool）
     SZrType *baseType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
@@ -4125,17 +4144,17 @@ static SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
             return ZR_NULL;
         }
     }
-
+    
     // 期望左大括号
     expect_token(ps, ZR_TK_LBRACE);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析成员列表
     SZrAstNodeArray *members = ZrAstNodeArrayNew(ps->state, 8);
     if (members == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     // 解析成员直到遇到右大括号
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
         SZrAstNode *member = parse_enum_member(ps);
@@ -4152,20 +4171,20 @@ static SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
             }
         }
     }
-
+    
     // 期望右大括号
     expect_token(ps, ZR_TK_RBRACE);
     consume_token(ps, ZR_TK_RBRACE);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange enumLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_ENUM_DECLARATION, enumLoc);
     if (node == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, members);
         return ZR_NULL;
     }
-
+    
     node->data.enumDeclaration.name = name;
     node->data.enumDeclaration.baseType = baseType;
     node->data.enumDeclaration.members = members;
@@ -4176,7 +4195,7 @@ static SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
 // 语法：%test("test_name") { ... }
 static SZrAstNode *parse_test_declaration(SZrParserState *ps) {
     SZrFileRange startLoc;
-
+    
     // 解析 %test
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
         // 保存 % token 的位置信息（在调用 ZrLexerNext 之前）
@@ -4199,8 +4218,7 @@ static SZrAstNode *parse_test_declaration(SZrParserState *ps) {
             TNativeString nameStr = ZrStringGetNativeString(identName);
             if (nameStr == ZR_NULL || strcmp(nameStr, "test") != 0) {
                 TChar errorMsg[256];
-                snprintf(errorMsg, sizeof(errorMsg), "Expected 'test' after '%%', but got identifier '%s'",
-                         nameStr ? nameStr : "<null>");
+                snprintf(errorMsg, sizeof(errorMsg), "Expected 'test' after '%%', but got identifier '%s'", nameStr ? nameStr : "<null>");
                 report_error(ps, errorMsg);
                 return ZR_NULL;
             }
@@ -4215,8 +4233,8 @@ static SZrAstNode *parse_test_declaration(SZrParserState *ps) {
                 }
             }
             const TChar *tokenStr = ZrLexerTokenToString(ps->lexer, ps->lexer->t.token);
-            printf("  [%s:%d:%d] Expected 'test' after '%%' (遇到 token: '%s')\n", fileName, percentLine, percentColumn,
-                   tokenStr);
+            printf("  [%s:%d:%d] Expected 'test' after '%%' (遇到 token: '%s')\n", 
+                   fileName, percentLine, percentColumn, tokenStr);
             report_error(ps, "Expected 'test' after '%'");
             return ZR_NULL;
         }
@@ -4238,7 +4256,7 @@ static SZrAstNode *parse_test_declaration(SZrParserState *ps) {
     if (ps->lexer->t.token == ZR_TK_STRING) {
         SZrString *testNameStr = ps->lexer->t.seminfo.stringValue;
         ZrLexerNext(ps->lexer);
-
+        
         // 创建标识符节点来存储测试名
         SZrAstNode *nameNode = create_identifier_node(ps, testNameStr);
         if (nameNode != ZR_NULL) {
@@ -4267,7 +4285,7 @@ static SZrAstNode *parse_test_declaration(SZrParserState *ps) {
     }
 
     node->data.testDeclaration.name = name;
-    node->data.testDeclaration.params = ZrAstNodeArrayNew(ps->state, 0); // 测试没有参数列表
+    node->data.testDeclaration.params = ZrAstNodeArrayNew(ps->state, 0);  // 测试没有参数列表
     node->data.testDeclaration.args = ZR_NULL;
     node->data.testDeclaration.body = body;
     return node;
@@ -4278,27 +4296,27 @@ static SZrAstNode *parse_test_declaration(SZrParserState *ps) {
 static SZrAstNode *parse_intermediate_instruction_parameter(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrString *value = ZR_NULL;
-
+    
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
         value = ps->lexer->t.seminfo.stringValue;
         ZrLexerNext(ps->lexer);
     } else if (ps->lexer->t.token == ZR_TK_INTEGER) {
         // 整数（包括十进制、十六进制和八进制）都使用 ZR_TK_INTEGER
-        value = ps->lexer->t.seminfo.stringValue; // 获取原始字符串
+        value = ps->lexer->t.seminfo.stringValue;  // 获取原始字符串
         ZrLexerNext(ps->lexer);
     } else {
         report_error(ps, "Expected identifier or number in intermediate instruction parameter");
         return ZR_NULL;
     }
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange paramLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERMEDIATE_INSTRUCTION_PARAMETER, paramLoc);
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     node->data.intermediateInstructionParameter.value = value;
     return node;
 }
@@ -4306,26 +4324,26 @@ static SZrAstNode *parse_intermediate_instruction_parameter(SZrParserState *ps) 
 // 解析 Intermediate 指令
 static SZrAstNode *parse_intermediate_instruction(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析指令名
     if (ps->lexer->t.token != ZR_TK_IDENTIFIER) {
         report_error(ps, "Expected identifier for intermediate instruction name");
         return ZR_NULL;
     }
-
+    
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 解析参数列表（参数之间用空格分隔，lexer 已经处理了空白）
     // 语法：name value1 value2 ... ;
     SZrAstNodeArray *values = ZrAstNodeArrayNew(ps->state, 4);
     if (values == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     // 解析指令参数，直到遇到分号
     // lexer 已经跳过了空白，所以直接解析参数即可
     while (ps->lexer->t.token != ZR_TK_SEMICOLON && ps->lexer->t.token != ZR_TK_EOS) {
@@ -4342,19 +4360,19 @@ static SZrAstNode *parse_intermediate_instruction(SZrParserState *ps) {
             break;
         }
     }
-
+    
     expect_token(ps, ZR_TK_SEMICOLON);
     consume_token(ps, ZR_TK_SEMICOLON);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange instLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERMEDIATE_INSTRUCTION, instLoc);
     if (node == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, values);
         return ZR_NULL;
     }
-
+    
     node->data.intermediateInstruction.name = name;
     node->data.intermediateInstruction.values = values;
     return node;
@@ -4363,34 +4381,34 @@ static SZrAstNode *parse_intermediate_instruction(SZrParserState *ps) {
 // 解析 Intermediate 常量
 static SZrAstNode *parse_intermediate_constant(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析常量名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     expect_token(ps, ZR_TK_EQUALS);
     consume_token(ps, ZR_TK_EQUALS);
-
+    
     // 解析字面量值
     SZrAstNode *value = parse_literal(ps);
     if (value == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     expect_token(ps, ZR_TK_SEMICOLON);
     consume_token(ps, ZR_TK_SEMICOLON);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange constLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERMEDIATE_CONSTANT, constLoc);
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     node->data.intermediateConstant.name = name;
     node->data.intermediateConstant.value = value;
     return node;
@@ -4399,21 +4417,21 @@ static SZrAstNode *parse_intermediate_constant(SZrParserState *ps) {
 // 解析 Intermediate 声明
 static SZrAstNode *parse_intermediate_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析名称
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 解析参数列表
     expect_token(ps, ZR_TK_LPAREN);
     consume_token(ps, ZR_TK_LPAREN);
-
+    
     SZrAstNodeArray *params = ZR_NULL;
     SZrParameter *args = ZR_NULL;
-
+    
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         SZrAstNode *argsNode = parse_parameter(ps);
         if (argsNode != ZR_NULL) {
@@ -4431,16 +4449,16 @@ static SZrAstNode *parse_intermediate_declaration(SZrParserState *ps) {
             }
         }
     }
-
+    
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
-
+    
     // 解析返回类型（可选）
     SZrType *returnType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
     }
-
+    
     // 解析闭包（可选）< ... >
     // 注意：在 intermediate 声明中，返回类型和闭包参数列表之间使用 % 分隔符
     // 格式：:int % < ... > 或 :int %（如果没有闭包参数）
@@ -4464,7 +4482,7 @@ static SZrAstNode *parse_intermediate_declaration(SZrParserState *ps) {
                         report_error(ps, "Failed to parse closure parameter");
                     }
                 }
-
+                
                 // 解析后续参数（用逗号分隔）
                 while (ps->lexer->t.token != ZR_TK_GREATER_THAN && ps->lexer->t.token != ZR_TK_EOS) {
                     if (!consume_token(ps, ZR_TK_COMMA)) {
@@ -4488,7 +4506,7 @@ static SZrAstNode *parse_intermediate_declaration(SZrParserState *ps) {
         }
         // 如果 % 后面没有 <，说明没有闭包参数列表，这是允许的
     }
-
+    
     // 解析常量（可选）[ ... ]
     SZrAstNodeArray *constants = ZrAstNodeArrayNew(ps->state, 0);
     if (consume_token(ps, ZR_TK_LBRACKET)) {
@@ -4503,7 +4521,7 @@ static SZrAstNode *parse_intermediate_declaration(SZrParserState *ps) {
         expect_token(ps, ZR_TK_RBRACKET);
         consume_token(ps, ZR_TK_RBRACKET);
     }
-
+    
     // 解析局部变量（可选）( ... )
     SZrAstNodeArray *locals = ZrAstNodeArrayNew(ps->state, 0);
     if (consume_token(ps, ZR_TK_LPAREN)) {
@@ -4517,23 +4535,19 @@ static SZrAstNode *parse_intermediate_declaration(SZrParserState *ps) {
         expect_token(ps, ZR_TK_RPAREN);
         consume_token(ps, ZR_TK_RPAREN);
     }
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange declLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERMEDIATE_DECLARATION, declLoc);
     if (node == ZR_NULL) {
-        if (params != ZR_NULL)
-            ZrAstNodeArrayFree(ps->state, params);
-        if (closures != ZR_NULL)
-            ZrAstNodeArrayFree(ps->state, closures);
-        if (constants != ZR_NULL)
-            ZrAstNodeArrayFree(ps->state, constants);
-        if (locals != ZR_NULL)
-            ZrAstNodeArrayFree(ps->state, locals);
+        if (params != ZR_NULL) ZrAstNodeArrayFree(ps->state, params);
+        if (closures != ZR_NULL) ZrAstNodeArrayFree(ps->state, closures);
+        if (constants != ZR_NULL) ZrAstNodeArrayFree(ps->state, constants);
+        if (locals != ZR_NULL) ZrAstNodeArrayFree(ps->state, locals);
         return ZR_NULL;
     }
-
+    
     node->data.intermediateDeclaration.name = name;
     node->data.intermediateDeclaration.params = params;
     node->data.intermediateDeclaration.args = args;
@@ -4547,25 +4561,25 @@ static SZrAstNode *parse_intermediate_declaration(SZrParserState *ps) {
 // 解析 Intermediate 语句
 static SZrAstNode *parse_intermediate_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     expect_token(ps, ZR_TK_INTERMEDIATE);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析声明
     SZrAstNode *declaration = parse_intermediate_declaration(ps);
     if (declaration == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     // 解析指令块
     expect_token(ps, ZR_TK_LBRACE);
     consume_token(ps, ZR_TK_LBRACE);
-
+    
     SZrAstNodeArray *instructions = ZrAstNodeArrayNew(ps->state, 8);
     if (instructions == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
         SZrAstNode *instruction = parse_intermediate_instruction(ps);
         if (instruction != ZR_NULL) {
@@ -4574,19 +4588,19 @@ static SZrAstNode *parse_intermediate_statement(SZrParserState *ps) {
             break;
         }
     }
-
+    
     expect_token(ps, ZR_TK_RBRACE);
     consume_token(ps, ZR_TK_RBRACE);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange stmtLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTERMEDIATE_STATEMENT, stmtLoc);
     if (node == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, instructions);
         return ZR_NULL;
     }
-
+    
     node->data.intermediateStatement.declaration = declaration;
     node->data.intermediateStatement.instructions = instructions;
     return node;
@@ -4595,15 +4609,15 @@ static SZrAstNode *parse_intermediate_statement(SZrParserState *ps) {
 // 解析生成器表达式（{{}}）
 static SZrAstNode *parse_generator_expression(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 期望第一个 {
     expect_token(ps, ZR_TK_LBRACE);
     ZrLexerNext(ps->lexer);
-
+    
     // 期望第二个 {
     expect_token(ps, ZR_TK_LBRACE);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析块内容（语句列表），不期望 { 和 }
     SZrFileRange blockStartLoc = get_current_location(ps);
     SZrAstNodeArray *statements = ZrAstNodeArrayNew(ps->state, 8);
@@ -4618,18 +4632,18 @@ static SZrAstNode *parse_generator_expression(SZrParserState *ps) {
         if (stmt != ZR_NULL) {
             ZrAstNodeArrayAdd(ps->state, statements, stmt);
         } else {
-            break; // 遇到错误
+            break;  // 遇到错误
         }
     }
 
     // 期望第一个 }
     expect_token(ps, ZR_TK_RBRACE);
     consume_token(ps, ZR_TK_RBRACE);
-
+    
     // 期望第二个 }
     expect_token(ps, ZR_TK_RBRACE);
     consume_token(ps, ZR_TK_RBRACE);
-
+    
     // 创建块节点
     SZrFileRange blockEndLoc = get_current_location(ps);
     SZrFileRange blockLoc = ZrFileRangeMerge(blockStartLoc, blockEndLoc);
@@ -4639,17 +4653,17 @@ static SZrAstNode *parse_generator_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
     block->data.block.body = statements;
-    block->data.block.isStatement = ZR_FALSE; // 生成器表达式中的块是表达式
-
+    block->data.block.isStatement = ZR_FALSE;  // 生成器表达式中的块是表达式
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange generatorLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_GENERATOR_EXPRESSION, generatorLoc);
     if (node == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, statements);
         return ZR_NULL;
     }
-
+    
     node->data.generatorExpression.block = block;
     return node;
 }
@@ -4657,7 +4671,7 @@ static SZrAstNode *parse_generator_expression(SZrParserState *ps) {
 // 解析类字段
 static SZrAstNode *parse_class_field(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrAstNodeArrayNew(ps->state, 2);
     while (ps->lexer->t.token == ZR_TK_SHARP) {
@@ -4668,21 +4682,21 @@ static SZrAstNode *parse_class_field(SZrParserState *ps) {
             break;
         }
     }
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 解析 static 关键字（可选）
     TBool isStatic = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_STATIC) {
         isStatic = ZR_TRUE;
         ZrLexerNext(ps->lexer);
     }
-
+    
     // 期望 var 关键字
     expect_token(ps, ZR_TK_VAR);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析字段名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
@@ -4690,32 +4704,32 @@ static SZrAstNode *parse_class_field(SZrParserState *ps) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 可选类型注解
     SZrType *typeInfo = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         typeInfo = parse_type(ps);
     }
-
+    
     // 可选初始值
     SZrAstNode *init = ZR_NULL;
     if (consume_token(ps, ZR_TK_EQUALS)) {
         init = parse_expression(ps);
     }
-
+    
     // 期望分号
     expect_token(ps, ZR_TK_SEMICOLON);
     consume_token(ps, ZR_TK_SEMICOLON);
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange fieldLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_FIELD, fieldLoc);
     if (node == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, decorators);
         return ZR_NULL;
     }
-
+    
     node->data.classField.decorators = decorators;
     node->data.classField.access = access;
     node->data.classField.isStatic = isStatic;
@@ -4728,7 +4742,7 @@ static SZrAstNode *parse_class_field(SZrParserState *ps) {
 // 解析类方法
 static SZrAstNode *parse_class_method(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrAstNodeArrayNew(ps->state, 2);
     while (ps->lexer->t.token == ZR_TK_SHARP) {
@@ -4739,17 +4753,17 @@ static SZrAstNode *parse_class_method(SZrParserState *ps) {
             break;
         }
     }
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 解析 static 关键字（可选）
     TBool isStatic = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_STATIC) {
         isStatic = ZR_TRUE;
         ZrLexerNext(ps->lexer);
     }
-
+    
     // 解析方法名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
@@ -4757,20 +4771,20 @@ static SZrAstNode *parse_class_method(SZrParserState *ps) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
         generic = parse_generic_declaration(ps);
     }
-
+    
     // 解析参数列表
     expect_token(ps, ZR_TK_LPAREN);
     ZrLexerNext(ps->lexer);
-
+    
     SZrAstNodeArray *params = ZR_NULL;
     SZrParameter *args = ZR_NULL;
-
+    
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         SZrAstNode *argsNode = parse_parameter(ps);
         if (argsNode != ZR_NULL) {
@@ -4788,16 +4802,16 @@ static SZrAstNode *parse_class_method(SZrParserState *ps) {
             }
         }
     }
-
+    
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
-
+    
     // 可选返回类型
     SZrType *returnType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
     }
-
+    
     // 解析方法体
     SZrAstNode *body = parse_block(ps);
     if (body == ZR_NULL) {
@@ -4807,10 +4821,10 @@ static SZrAstNode *parse_class_method(SZrParserState *ps) {
         }
         return ZR_NULL;
     }
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange methodLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_METHOD, methodLoc);
     if (node == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, decorators);
@@ -4819,7 +4833,7 @@ static SZrAstNode *parse_class_method(SZrParserState *ps) {
         }
         return ZR_NULL;
     }
-
+    
     node->data.classMethod.decorators = decorators;
     node->data.classMethod.access = access;
     node->data.classMethod.isStatic = isStatic;
@@ -4835,38 +4849,38 @@ static SZrAstNode *parse_class_method(SZrParserState *ps) {
 // 解析属性 Getter
 static SZrAstNode *parse_property_get(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 期望 get 关键字
     expect_token(ps, ZR_TK_GET);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析属性名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 可选返回类型
     SZrType *targetType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         targetType = parse_type(ps);
     }
-
+    
     // 解析方法体
     SZrAstNode *body = parse_block(ps);
     if (body == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange getLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_PROPERTY_GET, getLoc);
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     node->data.propertyGet.name = name;
     node->data.propertyGet.targetType = targetType;
     node->data.propertyGet.body = body;
@@ -4876,52 +4890,52 @@ static SZrAstNode *parse_property_get(SZrParserState *ps) {
 // 解析属性 Setter
 static SZrAstNode *parse_property_set(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 期望 set 关键字
     expect_token(ps, ZR_TK_SET);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析属性名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
-
+    
     // 解析参数列表
     expect_token(ps, ZR_TK_LPAREN);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析参数名
     SZrAstNode *paramNode = parse_identifier(ps);
     if (paramNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *param = &paramNode->data.identifier;
-
+    
     // 可选参数类型
     SZrType *targetType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         targetType = parse_type(ps);
     }
-
+    
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
-
+    
     // 解析方法体
     SZrAstNode *body = parse_block(ps);
     if (body == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange setLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_PROPERTY_SET, setLoc);
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
-
+    
     node->data.propertySet.name = name;
     node->data.propertySet.param = param;
     node->data.propertySet.targetType = targetType;
@@ -4932,7 +4946,7 @@ static SZrAstNode *parse_property_set(SZrParserState *ps) {
 // 解析类属性
 static SZrAstNode *parse_class_property(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrAstNodeArrayNew(ps->state, 2);
     while (ps->lexer->t.token == ZR_TK_SHARP) {
@@ -4943,17 +4957,17 @@ static SZrAstNode *parse_class_property(SZrParserState *ps) {
             break;
         }
     }
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 解析 static 关键字（可选）
     TBool isStatic = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_STATIC) {
         isStatic = ZR_TRUE;
         ZrLexerNext(ps->lexer);
     }
-
+    
     // 解析 get 或 set
     SZrAstNode *modifier = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_GET) {
@@ -4965,21 +4979,21 @@ static SZrAstNode *parse_class_property(SZrParserState *ps) {
         report_error(ps, "Expected 'get' or 'set' for property");
         return ZR_NULL;
     }
-
+    
     if (modifier == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, decorators);
         return ZR_NULL;
     }
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange propertyLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_PROPERTY, propertyLoc);
     if (node == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, decorators);
         return ZR_NULL;
     }
-
+    
     node->data.classProperty.decorators = decorators;
     node->data.classProperty.access = access;
     node->data.classProperty.isStatic = isStatic;
@@ -4990,35 +5004,35 @@ static SZrAstNode *parse_class_property(SZrParserState *ps) {
 // 解析类元函数
 static SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
-
+    
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
-
+    
     // 解析 static 关键字（可选）
     TBool isStatic = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_STATIC) {
         isStatic = ZR_TRUE;
         ZrLexerNext(ps->lexer);
     }
-
+    
     // 期望 @ 符号
     expect_token(ps, ZR_TK_AT);
     ZrLexerNext(ps->lexer);
-
+    
     // 解析元标识符
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
     SZrIdentifier *meta = &nameNode->data.identifier;
-
+    
     // 解析参数列表
     expect_token(ps, ZR_TK_LPAREN);
     ZrLexerNext(ps->lexer);
-
+    
     SZrAstNodeArray *params = ZR_NULL;
     SZrParameter *args = ZR_NULL;
-
+    
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         SZrAstNode *argsNode = parse_parameter(ps);
         if (argsNode != ZR_NULL) {
@@ -5036,22 +5050,22 @@ static SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
             }
         }
     }
-
+    
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
-
+    
     // 解析 super 调用参数（可选）
     SZrAstNodeArray *superArgs = ZrAstNodeArrayNew(ps->state, 0);
     if (consume_token(ps, ZR_TK_SUPER)) {
         expect_token(ps, ZR_TK_LPAREN);
         ZrLexerNext(ps->lexer);
-
+        
         if (ps->lexer->t.token != ZR_TK_RPAREN) {
             SZrAstNode *firstArg = parse_expression(ps);
             if (firstArg != ZR_NULL) {
                 ZrAstNodeArrayAdd(ps->state, superArgs, firstArg);
             }
-
+            
             while (consume_token(ps, ZR_TK_COMMA)) {
                 if (ps->lexer->t.token == ZR_TK_RPAREN) {
                     break;
@@ -5064,17 +5078,17 @@ static SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
                 }
             }
         }
-
+        
         expect_token(ps, ZR_TK_RPAREN);
         consume_token(ps, ZR_TK_RPAREN);
     }
-
+    
     // 可选返回类型
     SZrType *returnType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
     }
-
+    
     // 解析方法体
     SZrAstNode *body = parse_block(ps);
     if (body == ZR_NULL) {
@@ -5084,10 +5098,10 @@ static SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
         ZrAstNodeArrayFree(ps->state, superArgs);
         return ZR_NULL;
     }
-
+    
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange metaLoc = ZrFileRangeMerge(startLoc, endLoc);
-
+    
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_META_FUNCTION, metaLoc);
     if (node == ZR_NULL) {
         if (params != ZR_NULL) {
@@ -5096,7 +5110,7 @@ static SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
         ZrAstNodeArrayFree(ps->state, superArgs);
         return ZR_NULL;
     }
-
+    
     node->data.classMetaFunction.access = access;
     node->data.classMetaFunction.isStatic = isStatic;
     node->data.classMetaFunction.meta = meta;
@@ -5107,3 +5121,4 @@ static SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     node->data.classMetaFunction.body = body;
     return node;
 }
+

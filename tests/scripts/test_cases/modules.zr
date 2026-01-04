@@ -1,0 +1,36 @@
+module "modules";
+
+// 模块声明测试
+// 模块名已在顶部声明: module "modules";
+
+// import函数调用测试
+var import_test = () => {
+    // 注意: import是普通函数，这里只是语法测试
+    // 实际模块加载需要运行时支持
+    var math = import("math");
+    // 假设import返回一个对象
+    return 1;
+};
+
+// 模块导出测试（通过顶层声明）
+var exported_function = () => {
+    return 42;
+};
+
+var exported_variable = 100;
+
+// 模块内部使用测试
+var use_exported_test = () => {
+    var result = exported_function();
+    result = result + exported_variable;
+    return result;
+};
+
+// 测试用例
+%test("modulesTest"){
+    var result = 0;
+    result = result + import_test();
+    result = result + use_exported_test();
+    return result;
+}
+

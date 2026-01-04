@@ -54,6 +54,10 @@ typedef struct SZrCompilerState {
     TBool hasError;
     const TChar *errorMessage;
     SZrFileRange errorLocation;
+    
+    // 测试模式
+    TBool isTestMode;                    // 是否处于测试模式
+    SZrArray testFunctions;              // 测试函数数组（SZrFunction*）
 } SZrCompilerState;
 
 // 作用域信息
@@ -81,14 +85,28 @@ typedef struct SZrLoopLabel {
     TZrSize continueLabelId;            // continue 目标标签 ID
 } SZrLoopLabel;
 
+// 编译结果结构体
+typedef struct SZrCompileResult {
+    SZrFunction *mainFunction;          // 主函数（脚本主体）
+    SZrFunction **testFunctions;        // 测试函数数组（SZrFunction*）
+    TZrSize testFunctionCount;          // 测试函数数量
+} SZrCompileResult;
+
 // 初始化编译器状态
 ZR_PARSER_API void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state);
 
 // 清理解译器状态
 ZR_PARSER_API void ZrCompilerStateFree(SZrCompilerState *cs);
 
-// 编译 AST 为函数
+// 编译 AST 为函数（旧接口，保持向后兼容）
 ZR_PARSER_API SZrFunction *ZrCompilerCompile(SZrState *state, SZrAstNode *ast);
+
+// 编译 AST 为函数和测试函数列表（新接口）
+// 返回编译结果结构体，调用者需要调用 ZrCompileResultFree 来释放资源
+ZR_PARSER_API TBool ZrCompilerCompileWithTests(SZrState *state, SZrAstNode *ast, SZrCompileResult *result);
+
+// 释放编译结果（释放测试函数数组，但不释放函数对象本身，函数对象由GC管理）
+ZR_PARSER_API void ZrCompileResultFree(SZrState *state, SZrCompileResult *result);
 
 // 报告编译错误
 ZR_PARSER_API void ZrCompilerError(SZrCompilerState *cs, const TChar *msg, SZrFileRange location);

@@ -1,0 +1,35 @@
+module "test_declarations";
+
+// test声明语法测试
+%test("basic_test"){
+    var x = 10;
+    var y = 20;
+    return x + y;
+}
+
+// 测试用例组织
+%test("arithmetic_test"){
+    var a = 5;
+    var b = 3;
+    var sum = a + b;
+    var product = a * b;
+    return sum + product;
+}
+
+%test("conditional_test"){
+    var x = 15;
+    return if (x > 10) {
+        1;
+    } else {
+        0;
+    };
+}
+
+%test("loop_test"){
+    var sum = 0;
+    for (var i = 0; i < 10; i = i + 1) {
+        sum = sum + i;
+    }
+    return sum;
+}
+

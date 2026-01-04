@@ -1,0 +1,61 @@
+module "enums";
+
+// 枚举声明 - int基类型（默认）
+enum Direction {
+    Up;
+    Down;
+    Left;
+    Right;
+}
+
+// 枚举声明 - string基类型
+enum Color: string {
+    Red = "RED";
+    Green = "GREEN";
+    Blue = "BLUE";
+}
+
+// 枚举声明 - int基类型（显式）
+enum Status: int {
+    Pending = 0;
+    Running = 1;
+    Completed = 2;
+    Failed = 3;
+}
+
+// 枚举使用测试
+var enum_usage_test = () => {
+    var dir = Direction.Up;
+    var color = Color.Red;
+    var status = Status.Pending;
+    return 1;
+};
+
+// 枚举比较测试
+var enum_compare_test = () => {
+    var dir1 = Direction.Up;
+    var dir2 = Direction.Up;
+    // 假设枚举可以比较
+    return if (dir1 == dir2) { 1; } else { 0; };
+};
+
+// 枚举作为函数参数测试
+var enum_param_test = (dir: Direction) => {
+    return 1;
+};
+
+// 枚举作为返回值测试
+var enum_return_test = (): Direction => {
+    return Direction.Left;
+};
+
+// 测试用例
+%test("enumUsageTest"){
+    var result = 0;
+    result = result + enum_usage_test();
+    result = result + enum_compare_test();
+    result = result + enum_param_test(Direction.Right);
+    result = result + enum_return_test();
+    return result;
+}
+

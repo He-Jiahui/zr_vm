@@ -1,0 +1,65 @@
+module "decorators";
+
+// 类装饰器测试
+#singleton#
+class SingletonClass {
+    pub var value: int = 0;
+    
+    pub @constructor() {
+        this.value = 1;
+    }
+}
+
+// 方法装饰器测试
+class MethodDecoratorTest {
+    #networked#
+    pub testMethod(): int {
+        return 1;
+    }
+}
+
+// 属性装饰器测试
+class PropertyDecoratorTest {
+    #serializable#
+    pub var serializableField: int = 10;
+    
+    #clientOnly#
+    pub var clientOnlyField: int = 20;
+}
+
+// 多个装饰器测试
+#singleton#
+#networked#
+class MultipleDecoratorClass {
+    #serializable#
+    #clientOnly#
+    pub var complexField: int = 30;
+    
+    #networked#
+    pub complexMethod(): int {
+        return 1;
+    }
+}
+
+// 测试用例
+%test("decoratorsTest"){
+    var result = 0;
+    
+    // 测试装饰器类
+    var singleton = new SingletonClass();
+    result = result + singleton.value;
+    
+    var methodTest = new MethodDecoratorTest();
+    result = result + methodTest.testMethod();
+    
+    var propTest = new PropertyDecoratorTest();
+    result = result + propTest.serializableField;
+    result = result + propTest.clientOnlyField;
+    
+    var multiTest = new MultipleDecoratorClass();
+    result = result + multiTest.complexField;
+    result = result + multiTest.complexMethod();
+    
+    return result;
+}
+

@@ -1,0 +1,27 @@
+module "module_b";
+
+// 模块B引入模块A
+var moduleA = import("module_a");
+
+// 跨模块调用测试
+var cross_module_call_test = () => {
+    // 假设可以通过moduleA访问导出的函数和变量
+    // var result = moduleA.exported_function_a();
+    // result = result + moduleA.exported_variable_a;
+    // return result;
+    return 1; // 占位返回值
+};
+
+// 模块B自己的函数
+var module_b_function = () => {
+    return 30;
+};
+
+// 测试用例
+%test("moduleBTest"){
+    var result = 0;
+    result = result + cross_module_call_test();
+    result = result + module_b_function();
+    return result;
+}
+

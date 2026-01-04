@@ -1,0 +1,145 @@
+module "basic_operations";
+
+// 基本运算测试
+var arithmetic_test = () => {
+    var a = 10;
+    var b = 20;
+    var add = a + b;        // 30
+    var sub = a - b;        // -10
+    var mul = a * b;        // 200
+    var div = b / a;        // 2
+    var mod = b % a;        // 0
+    return add + sub + mul + div + mod;
+};
+
+// 逻辑运算测试
+var logical_test = () => {
+    var a = true;
+    var b = false;
+    var and = a && b;       // false
+    var or = a || b;        // true
+    var not = !a;           // false
+    return if (and) { 1; } else if (or) { 2; } else { 3; };
+};
+
+// 比较运算测试
+var comparison_test = () => {
+    var a = 10;
+    var b = 20;
+    var eq = a == b;        // false
+    var ne = a != b;        // true
+    var lt = a < b;         // true
+    var gt = a > b;         // false
+    var le = a <= b;        // true
+    var ge = a >= b;        // false
+    return if (lt && ne) { 1; } else { 0; };
+};
+
+// 位运算测试
+var bitwise_test = () => {
+    var a = 5;              // 101
+    var b = 3;              // 011
+    var and = a & b;        // 001 = 1
+    var or = a | b;         // 111 = 7
+    var xor = a ^ b;        // 110 = 6
+    var shl = a << 1;       // 1010 = 10
+    var shr = a >> 1;       // 10 = 2
+    return and + or + xor + shl + shr;
+};
+
+// if/else分支测试
+var branch_test = (x: int) => {
+    if (x > 10) {
+        return 1;
+    } else if (x > 5) {
+        return 2;
+    } else {
+        return 3;
+    }
+};
+
+// while循环测试
+var while_test = () => {
+    var i = 0;
+    var sum = 0;
+    while (i < 10) {
+        sum = sum + i;
+        i = i + 1;
+    }
+    return sum;
+};
+
+// for循环测试
+var for_test = () => {
+    var sum = 0;
+    for (var i = 0; i < 10; i = i + 1) {
+        sum = sum + i;
+    }
+    return sum;
+};
+
+// foreach循环测试
+var foreach_test = () => {
+    var arr = [1, 2, 3, 4, 5];
+    var sum = 0;
+    for (var item in arr) {
+        sum = sum + item;
+    }
+    return sum;
+};
+
+// 函数声明和调用测试
+var function_test = (a: int, b: int) => {
+    return a + b;
+};
+
+var call_function_test = () => {
+    return function_test(10, 20);
+};
+
+// 变量声明测试
+var variable_declaration_test = () => {
+    var a = 10;
+    var b: int = 20;
+    var c = a + b;
+    return c;
+};
+
+// return语句测试
+var return_test = () => {
+    return 42;
+};
+
+// break/continue测试
+var break_continue_test = () => {
+    var sum = 0;
+    for (var i = 0; i < 20; i = i + 1) {
+        if (i % 2 == 0) {
+            continue;
+        }
+        if (i > 15) {
+            break;
+        }
+        sum = sum + i;
+    }
+    return sum;
+};
+
+// 测试用例
+%test("basicOperationsTest"){
+    var result = 0;
+    result = result + arithmetic_test();
+    result = result + logical_test();
+    result = result + comparison_test();
+    result = result + bitwise_test();
+    result = result + branch_test(15);
+    result = result + while_test();
+    result = result + for_test();
+    result = result + foreach_test();
+    result = result + call_function_test();
+    result = result + variable_declaration_test();
+    result = result + return_test();
+    result = result + break_continue_test();
+    return result;
+}
+
