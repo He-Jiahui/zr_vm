@@ -91,10 +91,10 @@ void ZrStateMainThreadLaunch(SZrState *state, TZrPtr arguments) {
     ZR_UNUSED_PARAMETER(arguments);
     SZrGlobalState *global = state->global;
     ZrStateStackInit(state, global->mainThreadState);
+    // string table init (必须在 ZrGlobalStateInitRegistry 之前，因为后者会创建字符串)
+    ZrStringTableInit(state);
     // global registry module init
     ZrGlobalStateInitRegistry(state, global);
-    // string table init
-    ZrStringTableInit(state);
     // meta name init
     ZrMetaGlobalStaticsInit(state);
     // maybe we can create a lexer

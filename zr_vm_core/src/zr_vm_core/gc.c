@@ -1372,12 +1372,22 @@ void ZrRawObjectMarkAsInit(struct SZrState *state, SZrRawObject *object) {
 }
 
 void ZrRawObjectMarkAsPermanent(SZrState *state, SZrRawObject *object) {
-    ZR_ASSERT(object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED);
     SZrGlobalState *global = state->global;
+    
+    // 如果对象已经是永久对象，直接返回
+    if (object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+        return;
+    }
+    
+    // 确保对象状态是 INITED
+    ZR_ASSERT(object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED);
+    
     // we assume that the object is the first object in gc list (latest created)
     ZR_ASSERT(global->garbageCollector->gcObjectList == object);
-    object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT;
     global->garbageCollector->gcObjectList = object->next;
+    
+    // 标记为永久对象并添加到永久对象列表
+    object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT;
     object->next = global->garbageCollector->permanentObjectList;
     global->garbageCollector->permanentObjectList = object;
 }

@@ -30,3 +30,9 @@ if((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
    (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static))
     add_subdirectory(exceptions)
 endif()
+
+# Module System 测试（如果构建了 parser 和 core 模块）
+if((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND 
+   (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static))
+    add_subdirectory(module)
+endif()

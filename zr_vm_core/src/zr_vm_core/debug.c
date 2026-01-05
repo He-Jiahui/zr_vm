@@ -3,7 +3,13 @@
 //
 #include "zr_vm_core/debug.h"
 
+#include <stdarg.h>
+#include "zr_vm_core/exception.h"
+#include "zr_vm_core/global.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
+#include "zr_vm_core/value.h"
 
 TBool ZrDebugInfoGet(struct SZrState *state, EZrDebugInfoType type, SZrDebugInfo *debugInfo) {
     ZR_TODO_PARAMETER(state);
@@ -24,9 +30,62 @@ TZrDebugSignal ZrDebugTraceExecution(struct SZrState *state, const TZrInstructio
     return 0;
 }
 
-void ZrDebugRunError(struct SZrState *state, TNativeString format, ...) {
-    ZR_TODO_PARAMETER(state);
-    ZR_TODO_PARAMETER(format);
+ZR_NO_RETURN void ZrDebugRunError(struct SZrState *state, TNativeString format, ...) {
+    if (state == ZR_NULL || format == ZR_NULL) {
+        ZR_ABORT();
+    }
+
+    // 格式化错误消息
+    va_list args;
+    va_start(args, format);
+    TNativeString errorMessage = ZrNativeStringVFormat(state, format, args);
+    va_end(args);
+
+    if (errorMessage == ZR_NULL) {
+        // 如果格式化失败，使用默认消息
+        errorMessage = "Runtime error";
+    }
+
+    // 创建错误消息字符串对象
+    SZrString *errorString = ZrStringCreateFromNative(state, errorMessage);
+    if (errorString == ZR_NULL) {
+        // 如果创建字符串失败，检查是否有 panic handling function
+        SZrGlobalState *global = state->global;
+        if (global != ZR_NULL && global->panicHandlingFunction != ZR_NULL) {
+            ZR_THREAD_UNLOCK(state);
+            global->panicHandlingFunction(state);
+        }
+        ZR_ABORT();
+    }
+
+    // 确保栈有足够空间
+    ZrFunctionCheckStackAndGc(state, 1, state->stackTop.valuePointer);
+
+    // 将错误消息字符串放到栈上
+    SZrTypeValue *errorValue = ZrStackGetValue(state->stackTop.valuePointer);
+    ZrValueInitAsRawObject(state, errorValue, ZR_CAST_RAW_OBJECT_AS_SUPER(errorString));
+    errorValue->type = ZR_VALUE_TYPE_STRING;
+    errorValue->isGarbageCollectable = ZR_TRUE;
+    errorValue->isNative = ZR_FALSE;
+    state->stackTop.valuePointer++;
+
+    // 检查是否有已注册的异常处理函数
+    SZrGlobalState *global = state->global;
+    if (global != ZR_NULL && global->panicHandlingFunction != ZR_NULL) {
+        // 如果有 panic handling function，先调用它
+        // 注意：在调用之前需要 unlock thread
+        ZR_THREAD_UNLOCK(state);
+        global->panicHandlingFunction(state);
+        // panic handling function 调用后，应该 abort
+        ZR_ABORT();
+    } else {
+        // 如果没有 panic handling function，尝试抛出异常
+        // 如果异常被 catch 捕获，程序可以继续
+        // 如果异常没有被捕获，ZrExceptionThrow 内部会 abort
+        ZrExceptionThrow(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+        // 不应该到达这里（因为 ZrExceptionThrow 是 noreturn 或会 longjmp）
+        ZR_ABORT();
+    }
 }
 
 

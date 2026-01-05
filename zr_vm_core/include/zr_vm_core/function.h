@@ -64,6 +64,15 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TUInt32 *lineInSourceList;
     struct SZrString *sourceCodeList;
     SZrRawObject *gcList;
+    
+    // module export info (for script-level functions only)
+    // 导出变量信息（用于模块导出）
+    struct SZrFunctionExportedVariable {
+        struct SZrString *name;                    // 变量名
+        TUInt32 stackSlot;                          // 栈槽位
+        TUInt8 accessModifier;                      // 可见性修饰符 (0=PRIVATE, 1=PUBLIC, 2=PROTECTED)
+    } *exportedVariables;                           // 导出变量数组
+    TUInt32 exportedVariableLength;                 // 导出变量数量
 };
 
 typedef struct SZrFunction SZrFunction;

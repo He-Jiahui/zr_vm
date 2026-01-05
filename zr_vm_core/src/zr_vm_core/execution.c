@@ -13,6 +13,7 @@
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/object.h"
@@ -78,11 +79,33 @@ void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
 #define SAVE_STATE(STATE, CALL_INFO)                                                                                   \
     (SAVE_PC(STATE, CALL_INFO), ((STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer))
     // MODIFIABLE: ERROR & STACK & HOOK
-#define PROTECT_ESH(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP), UPDATE_TRAP(CALL_INFO))
-    // MODIFIABLE: ERROR & HOOK
-#define PROTECT_EH(STATE, CALL_INFO, EXP) (SAVE_PC(STATE), (EXP), UPDATE_TRAP(CALL_INFO))
-    // MODIFIABLE: ERROR
-#define PROTECT_E(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP))
+#if defined(_MSC_VER)
+    // MSVC 不支持语句表达式，使用 do-while 循环
+    #define PROTECT_ESH(STATE, CALL_INFO, EXP) \
+        do { \
+            SAVE_PC(STATE, CALL_INFO); \
+            (STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer; \
+            EXP; \
+            UPDATE_TRAP(CALL_INFO); \
+        } while(0)
+    #define PROTECT_EH(STATE, CALL_INFO, EXP) \
+        do { \
+            SAVE_PC(STATE, CALL_INFO); \
+            EXP; \
+            UPDATE_TRAP(CALL_INFO); \
+        } while(0)
+    #define PROTECT_E(STATE, CALL_INFO, EXP) \
+        do { \
+            SAVE_PC(STATE, CALL_INFO); \
+            (STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer; \
+            EXP; \
+        } while(0)
+#else
+    // GCC/Clang 支持语句表达式
+    #define PROTECT_ESH(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP), UPDATE_TRAP(CALL_INFO))
+    #define PROTECT_EH(STATE, CALL_INFO, EXP) (SAVE_PC(STATE, CALL_INFO), (EXP), UPDATE_TRAP(CALL_INFO))
+    #define PROTECT_E(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP))
+#endif
 
 #define JUMP(CALL_INFO, INSTRUCTION, OFFSET)                                                                           \
     {                                                                                                                  \
@@ -1005,18 +1028,30 @@ LZrReturning: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(FUNCTION_CALL) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_CLOSURE(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type) &&
-                          ZR_VALUE_IS_TYPE_INT(destination->type));
-                TZrSize parametersCount = opB->value.nativeObject.nativeUInt64;
-                TZrSize returnCount = destination->value.nativeObject.nativeUInt64;
+                // FUNCTION_CALL 指令格式：
+                // operandExtra (E) = resultSlot (返回值槽位)
+                // operand1[0] (A1) = functionSlot (函数在栈上的槽位)
+                // operand1[1] (B1) = parametersCount (参数数量，直接使用，不从栈读取)
+                TZrSize functionSlot = A1(instruction);
+                TZrSize parametersCount = B1(instruction);  // 参数数量直接使用，不是栈槽位
+                TZrSize returnCount = E(instruction);  // 返回值数量
+                
+                opA = &BASE(functionSlot)->value;
+                // 检查函数值是否为空
+                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");
+                // 函数类型可以是 ZR_VALUE_TYPE_FUNCTION 或 ZR_VALUE_TYPE_CLOSURE
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_FUNCTION(opA->type) || ZR_VALUE_IS_TYPE_CLOSURE(opA->type));
+                
+                // 设置栈顶指针（函数在 functionSlot，参数在 functionSlot+1 到 functionSlot+parametersCount）
                 if (parametersCount > 0) {
-                    state->stackTop.valuePointer = BASE(A1(instruction)) + parametersCount;
+                    state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
+                } else {
+                    state->stackTop.valuePointer = BASE(functionSlot) + 1;
                 }
+                
                 // save its program counter
                 callInfo->context.context.programCounter = programCounter;
-                SZrCallInfo *nextCallInfo = ZrFunctionPreCall(state, BASE(A1(instruction)), returnCount);
+                SZrCallInfo *nextCallInfo = ZrFunctionPreCall(state, BASE(functionSlot), returnCount);
                 if (nextCallInfo == ZR_NULL) {
                     // NULL means native call
                     trap = callInfo->context.context.trap;
@@ -1028,19 +1063,34 @@ LZrReturning: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(FUNCTION_TAIL_CALL) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_CLOSURE(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type) &&
-                          ZR_VALUE_IS_TYPE_INT(destination->type));
-                TZrSize parametersCount = opB->value.nativeObject.nativeUInt64;
-                TZrSize returnCount = destination->value.nativeObject.nativeUInt64;
+                // FUNCTION_TAIL_CALL 指令格式：
+                // operandExtra (E) = resultSlot (返回值槽位)
+                // operand1[0] (A1) = functionSlot (函数在栈上的槽位)
+                // operand1[1] (B1) = parametersCount (参数数量，直接使用，不从栈读取)
+                TZrSize functionSlot = A1(instruction);
+                TZrSize parametersCount = B1(instruction);  // 参数数量直接使用，不是栈槽位
+                TZrSize returnCount = E(instruction);  // 返回值数量
+                
+                opA = &BASE(functionSlot)->value;
+                // 检查函数值是否为空
+                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");
+                // 函数类型可以是 ZR_VALUE_TYPE_FUNCTION 或 ZR_VALUE_TYPE_CLOSURE
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_FUNCTION(opA->type) || ZR_VALUE_IS_TYPE_CLOSURE(opA->type));
+                
+                // 设置栈顶指针
+                if (parametersCount > 0) {
+                    state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
+                } else {
+                    state->stackTop.valuePointer = BASE(functionSlot) + 1;
+                }
+                
                 // 尾调用：重用当前调用帧
                 // 保存当前程序计数器
                 callInfo->context.context.programCounter = programCounter;
                 // 设置尾调用标志
                 callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                // 准备调用参数（函数在BASE(A1(instruction))，参数在BASE(A1(instruction)+1)到BASE(A1(instruction)+parametersCount)）
-                TZrStackValuePointer functionPointer = BASE(A1(instruction));
+                // 准备调用参数（函数在BASE(functionSlot)，参数在BASE(functionSlot+1)到BASE(functionSlot+parametersCount)）
+                TZrStackValuePointer functionPointer = BASE(functionSlot);
                 // 调用函数（重用当前callInfo）
                 SZrCallInfo *nextCallInfo = ZrFunctionPreCall(state, functionPointer, returnCount);
                 if (nextCallInfo == ZR_NULL) {
@@ -1142,6 +1192,132 @@ LZrReturning: {
                 ZrValueCopy(state, target, destination);
                 ZrValueBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(currentClosure->closureValuesExtend[upvalueIndex]),
                                destination);
+            }
+            DONE(1);
+
+            ZR_INSTRUCTION_LABEL(GET_VALUE) {
+                // GET_VALUE 指令格式：
+                // operandExtra (E) = destSlot (destination已通过E(instruction)定义)
+                // operand1[0] (A1) = nameConstantIndex (变量名的常量索引)
+                // operand1[1] (B1) = 0 (未使用)
+                // GET_VALUE 用于通过变量名访问局部变量
+                TZrSize nameConstantIndex = A1(instruction);
+                SZrTypeValue *nameValue = CONST(nameConstantIndex);
+                
+                // 检查变量名是否为字符串类型
+                if (!ZR_VALUE_IS_TYPE_STRING(nameValue->type)) {
+                    ZrDebugRunError(state, "GET_VALUE: variable name must be a string");
+                }
+                
+                // 获取变量名字符串对象
+                SZrString *varName = ZR_CAST_STRING(state, nameValue->value.object);
+                if (varName == ZR_NULL) {
+                    ZrDebugRunError(state, "GET_VALUE: variable name string is null");
+                }
+                
+                // 在当前函数的局部变量表中查找变量
+                SZrFunction *function = closure->function;
+                TZrMemoryOffset currentOffset = (TZrMemoryOffset)(programCounter - closure->function->instructionsList);
+                TBool found = ZR_FALSE;
+                
+                // 遍历局部变量表，查找匹配的变量名
+                for (TUInt32 i = 0; i < function->localVariableLength; i++) {
+                    SZrFunctionLocalVariable *localVar = &function->localVariableList[i];
+                    
+                    // 检查变量名是否匹配
+                    if (localVar->name != ZR_NULL && ZrStringEqual(localVar->name, varName)) {
+                        // 检查变量是否在当前作用域内（通过 offsetActivate 和 offsetDead）
+                        if (localVar->offsetActivate <= currentOffset && currentOffset < localVar->offsetDead) {
+                            // 变量在作用域内，使用 offsetActivate 作为栈偏移量
+                            TZrStackValuePointer varPointer = base + localVar->offsetActivate;
+                            
+                            // 检查偏移量是否有效
+                            if (varPointer >= callInfo->functionBase.valuePointer + 1 && 
+                                varPointer < state->stackTop.valuePointer) {
+                                ZrValueCopy(state, destination, &varPointer->value);
+                                found = ZR_TRUE;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // 如果没找到局部变量，返回 null
+                if (!found) {
+                    ZrValueResetAsNull(destination);
+                }
+            }
+            DONE(1);
+
+            ZR_INSTRUCTION_LABEL(SET_VALUE) {
+                // SET_VALUE 指令格式：
+                // operandExtra (E) = nameConstantIndex (变量名的常量索引)
+                // operand1[0] (A1) = rightSlot (源值槽位)
+                // operand1[1] (B1) = 0 (未使用)
+                // SET_VALUE 用于通过变量名设置局部变量的值
+                TZrSize nameConstantIndex = E(instruction);
+                TZrSize rightSlot = A1(instruction);
+                SZrTypeValue *nameValue = CONST(nameConstantIndex);
+                SZrTypeValue *sourceValue = &BASE(rightSlot)->value;
+                
+                // 检查变量名是否为字符串类型
+                if (!ZR_VALUE_IS_TYPE_STRING(nameValue->type)) {
+                    ZrDebugRunError(state, "SET_VALUE: variable name must be a string");
+                }
+                
+                // 获取变量名字符串对象
+                SZrString *varName = ZR_CAST_STRING(state, nameValue->value.object);
+                if (varName == ZR_NULL) {
+                    ZrDebugRunError(state, "SET_VALUE: variable name string is null");
+                }
+                
+                // 在当前函数的局部变量表中查找变量
+                SZrFunction *function = closure->function;
+                TZrMemoryOffset currentOffset = (TZrMemoryOffset)(programCounter - closure->function->instructionsList);
+                TBool found = ZR_FALSE;
+                
+                // 遍历局部变量表，查找匹配的变量名
+                for (TUInt32 i = 0; i < function->localVariableLength; i++) {
+                    SZrFunctionLocalVariable *localVar = &function->localVariableList[i];
+                    
+                    // 检查变量名是否匹配
+                    if (localVar->name != ZR_NULL && ZrStringEqual(localVar->name, varName)) {
+                        // 检查变量是否在当前作用域内（通过 offsetActivate 和 offsetDead）
+                        if (localVar->offsetActivate <= currentOffset && currentOffset < localVar->offsetDead) {
+                            // 变量在作用域内，使用 offsetActivate 作为栈偏移量
+                            TZrStackValuePointer varPointer = base + localVar->offsetActivate;
+                            
+                            // 检查偏移量是否有效
+                            if (varPointer >= callInfo->functionBase.valuePointer + 1 && 
+                                varPointer < state->stackTop.valuePointer) {
+                                ZrValueCopy(state, &varPointer->value, sourceValue);
+                                found = ZR_TRUE;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // 如果没找到局部变量，报错
+                if (!found) {
+                    ZrDebugRunError(state, "SET_VALUE: local variable not found or out of scope");
+                }
+            }
+            DONE(1);
+
+            ZR_INSTRUCTION_LABEL(GET_GLOBAL) {
+                // GET_GLOBAL 指令格式：
+                // operandExtra (E) = destSlot (destination已通过E(instruction)定义)
+                // operand1[0] (A1) = 0 (未使用)
+                // operand1[1] (B1) = 0 (未使用)
+                // GET_GLOBAL 用于获取全局 zr 对象到堆栈
+                SZrGlobalState *global = state->global;
+                if (global != ZR_NULL && global->zrObject.type == ZR_VALUE_TYPE_OBJECT) {
+                    ZrValueCopy(state, destination, &global->zrObject);
+                } else {
+                    // 如果 zr 对象未初始化，返回 null
+                    ZrValueResetAsNull(destination);
+                }
             }
             DONE(1);
 
@@ -1280,6 +1456,10 @@ LZrReturning: {
             DONE(1);
             ZR_INSTRUCTION_DEFAULT() {
                 // todo: error unreachable
+                char message[256];
+                sprintf(message, "Not implemented op code:%d at offset %d\n", instruction.instruction.operationCode,
+                        (int) (instructionsEnd - programCounter));
+                ZrDebugRunError(state, message);
                 ZR_ABORT();
             }
             DONE(1);

@@ -1,0 +1,92 @@
+// ZR Syntax Tree File (.zrs)
+// Generated from parsed AST
+
+SCRIPT [line:1:col:7]
+  module:   MODULE_DECLARATION [line:1:col:7]
+    STRING_LITERAL [line:1:col:1]
+  value: "basic_operations"
+  statements (14):
+    VARIABLE_DECLARATION [line:4:col:5]
+      pattern:       IDENTIFIER [line:4:col:23]
+  name: "arithmetic_test"
+      value:       LAMBDA_EXPRESSION [line:4:col:26]
+        params: ()
+        body:         BLOCK [line:4:col:1]
+    VARIABLE_DECLARATION [line:16:col:5]
+      pattern:       IDENTIFIER [line:16:col:20]
+  name: "logical_test"
+      value:       LAMBDA_EXPRESSION [line:16:col:23]
+        params: ()
+        body:         BLOCK [line:16:col:1]
+    VARIABLE_DECLARATION [line:26:col:5]
+      pattern:       IDENTIFIER [line:26:col:23]
+  name: "comparison_test"
+      value:       LAMBDA_EXPRESSION [line:26:col:26]
+        params: ()
+        body:         BLOCK [line:26:col:1]
+    VARIABLE_DECLARATION [line:39:col:5]
+      pattern:       IDENTIFIER [line:39:col:20]
+  name: "bitwise_test"
+      value:       LAMBDA_EXPRESSION [line:39:col:23]
+        params: ()
+        body:         BLOCK [line:39:col:1]
+    VARIABLE_DECLARATION [line:51:col:5]
+      pattern:       IDENTIFIER [line:51:col:19]
+  name: "branch_test"
+      value:       LAMBDA_EXPRESSION [line:51:col:22]
+        params (1):
+          PARAMETER [line:51:col:22]
+        body:         BLOCK [line:51:col:1]
+    VARIABLE_DECLARATION [line:62:col:5]
+      pattern:       IDENTIFIER [line:62:col:18]
+  name: "while_test"
+      value:       LAMBDA_EXPRESSION [line:62:col:21]
+        params: ()
+        body:         BLOCK [line:62:col:1]
+    VARIABLE_DECLARATION [line:73:col:5]
+      pattern:       IDENTIFIER [line:73:col:16]
+  name: "for_test"
+      value:       LAMBDA_EXPRESSION [line:73:col:19]
+        params: ()
+        body:         BLOCK [line:73:col:1]
+    VARIABLE_DECLARATION [line:82:col:5]
+      pattern:       IDENTIFIER [line:82:col:20]
+  name: "foreach_test"
+      value:       LAMBDA_EXPRESSION [line:82:col:23]
+        params: ()
+        body:         BLOCK [line:82:col:1]
+    VARIABLE_DECLARATION [line:92:col:5]
+      pattern:       IDENTIFIER [line:92:col:21]
+  name: "function_test"
+      value:       LAMBDA_EXPRESSION [line:92:col:24]
+        params (2):
+          PARAMETER [line:92:col:24]
+          PARAMETER [line:92:col:32]
+        body:         BLOCK [line:92:col:1]
+    VARIABLE_DECLARATION [line:96:col:5]
+      pattern:       IDENTIFIER [line:96:col:26]
+  name: "call_function_test"
+      value:       LAMBDA_EXPRESSION [line:96:col:29]
+        params: ()
+        body:         BLOCK [line:96:col:1]
+    VARIABLE_DECLARATION [line:101:col:5]
+      pattern:       IDENTIFIER [line:101:col:33]
+  name: "variable_declaration_test"
+      value:       LAMBDA_EXPRESSION [line:101:col:36]
+        params: ()
+        body:         BLOCK [line:101:col:1]
+    VARIABLE_DECLARATION [line:109:col:5]
+      pattern:       IDENTIFIER [line:109:col:19]
+  name: "return_test"
+      value:       LAMBDA_EXPRESSION [line:109:col:22]
+        params: ()
+        body:         BLOCK [line:109:col:1]
+    VARIABLE_DECLARATION [line:114:col:5]
+      pattern:       IDENTIFIER [line:114:col:27]
+  name: "break_continue_test"
+      value:       LAMBDA_EXPRESSION [line:114:col:30]
+        params: ()
+        body:         BLOCK [line:114:col:1]
+    TEST_DECLARATION [line:129:col:3]
+      name:       UNKNOWN
+      body:       BLOCK [line:129:col:1]

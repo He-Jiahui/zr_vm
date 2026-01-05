@@ -4,6 +4,14 @@
 
 #ifndef ZR_COMMON_CONF_H
 #define ZR_COMMON_CONF_H
+
+// MSVC 兼容性处理：确保标准库头文件能够正确找到
+#if defined(_MSC_VER)
+    // 在 MSVC 下，先包含基础头文件以确保标准库路径正确
+    #include <stdlib.h>
+    #include <stddef.h>
+#endif
+
 #include <assert.h>
 #include <limits.h>
 #include <setjmp.h>

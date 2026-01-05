@@ -1,0 +1,579 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: __entry
+  START_LINE: 1
+  END_LINE: 146
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 13
+
+CONSTANTS (16):
+  [0] int: 0
+  [1] string: "arithmetic_test"
+  [2] string: "logical_test"
+  [3] string: "comparison_test"
+  [4] string: "bitwise_test"
+  [5] string: "branch_test"
+  [6] int: 15
+  [7] string: "while_test"
+  [8] string: "for_test"
+  [9] string: "foreach_test"
+  [10] string: "call_function_test"
+  [11] string: "variable_declaration_test"
+  [12] string: "return_test"
+  [13] string: "break_continue_test"
+  [14] int: 1
+  [15] int: 0
+
+LOCAL_VARIABLES (1):
+  [0] result: offset_activate=1, offset_dead=0
+
+INSTRUCTIONS (73):
+  [0] TRY (extra=0)
+  [1] GET_CONSTANT (extra=1, operand=0)
+  [2] SET_STACK (extra=0, operand=1)
+  [3] GET_STACK (extra=2, operand=0)
+  [4] GET_VALUE (extra=3, operand=1)
+  [5] FUNCTION_CALL (extra=4, operand1=3, operand2=0)
+  [6] ADD_INT (extra=4, operand1=2, operand2=3)
+  [7] SET_STACK (extra=0, operand=4)
+  [8] GET_STACK (extra=5, operand=0)
+  [9] GET_VALUE (extra=6, operand=2)
+  [10] FUNCTION_CALL (extra=7, operand1=6, operand2=0)
+  [11] ADD_INT (extra=7, operand1=5, operand2=6)
+  [12] SET_STACK (extra=0, operand=7)
+  [13] GET_STACK (extra=8, operand=0)
+  [14] GET_VALUE (extra=9, operand=3)
+  [15] FUNCTION_CALL (extra=10, operand1=9, operand2=0)
+  [16] ADD_INT (extra=10, operand1=8, operand2=9)
+  [17] SET_STACK (extra=0, operand=10)
+  [18] GET_STACK (extra=11, operand=0)
+  [19] GET_VALUE (extra=12, operand=4)
+  [20] FUNCTION_CALL (extra=13, operand1=12, operand2=0)
+  [21] ADD_INT (extra=13, operand1=11, operand2=12)
+  [22] SET_STACK (extra=0, operand=13)
+  [23] GET_STACK (extra=14, operand=0)
+  [24] GET_VALUE (extra=15, operand=5)
+  [25] GET_CONSTANT (extra=16, operand=6)
+  [26] FUNCTION_CALL (extra=17, operand1=15, operand2=1)
+  [27] ADD_INT (extra=16, operand1=14, operand2=15)
+  [28] SET_STACK (extra=0, operand=16)
+  [29] GET_STACK (extra=17, operand=0)
+  [30] GET_VALUE (extra=18, operand=7)
+  [31] FUNCTION_CALL (extra=19, operand1=18, operand2=0)
+  [32] ADD_INT (extra=19, operand1=17, operand2=18)
+  [33] SET_STACK (extra=0, operand=19)
+  [34] GET_STACK (extra=20, operand=0)
+  [35] GET_VALUE (extra=21, operand=8)
+  [36] FUNCTION_CALL (extra=22, operand1=21, operand2=0)
+  [37] ADD_INT (extra=22, operand1=20, operand2=21)
+  [38] SET_STACK (extra=0, operand=22)
+  [39] GET_STACK (extra=23, operand=0)
+  [40] GET_VALUE (extra=24, operand=9)
+  [41] FUNCTION_CALL (extra=25, operand1=24, operand2=0)
+  [42] ADD_INT (extra=25, operand1=23, operand2=24)
+  [43] SET_STACK (extra=0, operand=25)
+  [44] GET_STACK (extra=26, operand=0)
+  [45] GET_VALUE (extra=27, operand=10)
+  [46] FUNCTION_CALL (extra=28, operand1=27, operand2=0)
+  [47] ADD_INT (extra=28, operand1=26, operand2=27)
+  [48] SET_STACK (extra=0, operand=28)
+  [49] GET_STACK (extra=29, operand=0)
+  [50] GET_VALUE (extra=30, operand=11)
+  [51] FUNCTION_CALL (extra=31, operand1=30, operand2=0)
+  [52] ADD_INT (extra=31, operand1=29, operand2=30)
+  [53] SET_STACK (extra=0, operand=31)
+  [54] GET_STACK (extra=32, operand=0)
+  [55] GET_VALUE (extra=33, operand=12)
+  [56] FUNCTION_CALL (extra=34, operand1=33, operand2=0)
+  [57] ADD_INT (extra=34, operand1=32, operand2=33)
+  [58] SET_STACK (extra=0, operand=34)
+  [59] GET_STACK (extra=35, operand=0)
+  [60] GET_VALUE (extra=36, operand=13)
+  [61] FUNCTION_CALL (extra=37, operand1=36, operand2=0)
+  [62] ADD_INT (extra=37, operand1=35, operand2=36)
+  [63] SET_STACK (extra=0, operand=37)
+  [64] GET_STACK (extra=38, operand=0)
+  [65] FUNCTION_RETURN (extra=1, operand1=38, operand2=0)
+  [66] JUMP (extra=0, operand=3)
+  [67] CATCH (extra=0)
+  [68] JUMP (extra=0, operand=3)
+  [69] GET_CONSTANT (extra=39, operand=14)
+  [70] JUMP (extra=0, operand=2)
+  [71] GET_CONSTANT (extra=40, operand=15)
+  [72] FUNCTION_RETURN (extra=1, operand1=39, operand2=0)
+
+CHILD_FUNCTIONS (13):
+  [0] FUNCTION:
+    START_LINE: 4
+    END_LINE: 14
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 33
+    CONSTANTS (2):
+      [0] int: 10
+      [1] int: 20
+    INSTRUCTIONS (34):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] SET_STACK (extra=0, operand=1)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] SET_STACK (extra=1, operand=3)
+      [4] GET_STACK (extra=5, operand=0)
+      [5] GET_STACK (extra=6, operand=1)
+      [6] ADD_INT (extra=7, operand1=5, operand2=6)
+      [7] SET_STACK (extra=2, operand=7)
+      [8] GET_STACK (extra=9, operand=0)
+      [9] GET_STACK (extra=10, operand=1)
+      [10] SUB_INT (extra=11, operand1=9, operand2=10)
+      [11] SET_STACK (extra=3, operand=11)
+      [12] GET_STACK (extra=13, operand=0)
+      [13] GET_STACK (extra=14, operand=1)
+      [14] MUL_SIGNED (extra=15, operand1=13, operand2=14)
+      [15] SET_STACK (extra=4, operand=15)
+      [16] GET_STACK (extra=17, operand=1)
+      [17] GET_STACK (extra=18, operand=0)
+      [18] DIV_SIGNED (extra=19, operand1=17, operand2=18)
+      [19] SET_STACK (extra=5, operand=19)
+      [20] GET_STACK (extra=21, operand=1)
+      [21] GET_STACK (extra=22, operand=0)
+      [22] OPCODE_32 (extra=23, operand1=21, operand2=22)
+      [23] SET_STACK (extra=6, operand=23)
+      [24] GET_STACK (extra=24, operand=2)
+      [25] GET_STACK (extra=25, operand=3)
+      [26] ADD_INT (extra=26, operand1=24, operand2=25)
+      [27] GET_STACK (extra=27, operand=4)
+      [28] ADD_INT (extra=28, operand1=26, operand2=27)
+      [29] GET_STACK (extra=29, operand=5)
+      [30] ADD_INT (extra=30, operand1=28, operand2=29)
+      [31] GET_STACK (extra=31, operand=6)
+      [32] ADD_INT (extra=32, operand1=30, operand2=31)
+      [33] FUNCTION_RETURN (extra=1, operand1=32, operand2=0)
+
+  [1] FUNCTION:
+    START_LINE: 16
+    END_LINE: 24
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 20
+    CONSTANTS (5):
+      [0] bool: true
+      [1] bool: false
+      [2] int: 1
+      [3] int: 2
+      [4] int: 3
+    INSTRUCTIONS (30):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] SET_STACK (extra=0, operand=1)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] SET_STACK (extra=1, operand=3)
+      [4] GET_STACK (extra=5, operand=0)
+      [5] SET_STACK (extra=6, operand=5)
+      [6] OPCODE_72 (extra=5, operand=4)
+      [7] GET_STACK (extra=7, operand=1)
+      [8] SET_STACK (extra=6, operand=7)
+      [9] OPCODE_71 (extra=0, operand=1)
+      [10] SET_STACK (extra=2, operand=7)
+      [11] GET_STACK (extra=9, operand=0)
+      [12] SET_STACK (extra=10, operand=9)
+      [13] OPCODE_72 (extra=9, operand=3)
+      [14] GET_STACK (extra=11, operand=1)
+      [15] SET_STACK (extra=10, operand=11)
+      [16] SET_STACK (extra=3, operand=11)
+      [17] GET_STACK (extra=13, operand=0)
+      [18] OPCODE_43 (extra=14, operand2=13, operand1=13, operand1_1=0)
+      [19] SET_STACK (extra=4, operand=14)
+      [20] GET_STACK (extra=15, operand=2)
+      [21] OPCODE_72 (extra=15, operand=3)
+      [22] GET_CONSTANT (extra=16, operand=2)
+      [23] OPCODE_71 (extra=0, operand=6)
+      [24] GET_STACK (extra=17, operand=3)
+      [25] OPCODE_72 (extra=17, operand=3)
+      [26] GET_CONSTANT (extra=18, operand=3)
+      [27] OPCODE_71 (extra=0, operand=2)
+      [28] GET_CONSTANT (extra=19, operand=4)
+      [29] FUNCTION_RETURN (extra=1, operand1=19, operand2=0)
+
+  [2] FUNCTION:
+    START_LINE: 26
+    END_LINE: 37
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 33
+    CONSTANTS (4):
+      [0] int: 10
+      [1] int: 20
+      [2] int: 1
+      [3] int: 0
+    INSTRUCTIONS (39):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] SET_STACK (extra=0, operand=1)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] SET_STACK (extra=1, operand=3)
+      [4] GET_STACK (extra=5, operand=0)
+      [5] GET_STACK (extra=6, operand=1)
+      [6] OPCODE_52 (extra=7, operand1=5, operand2=6)
+      [7] SET_STACK (extra=2, operand=7)
+      [8] GET_STACK (extra=9, operand=0)
+      [9] GET_STACK (extra=10, operand=1)
+      [10] OPCODE_53 (extra=11, operand1=9, operand2=10)
+      [11] SET_STACK (extra=3, operand=11)
+      [12] GET_STACK (extra=13, operand=0)
+      [13] GET_STACK (extra=14, operand=1)
+      [14] OPCODE_49 (extra=15, operand2=917517, operand1=13, operand1_1=14)
+      [15] SET_STACK (extra=4, operand=15)
+      [16] GET_STACK (extra=17, operand=0)
+      [17] GET_STACK (extra=18, operand=1)
+      [18] OPCODE_46 (extra=19, operand2=1179665, operand1=17, operand1_1=18)
+      [19] SET_STACK (extra=5, operand=19)
+      [20] GET_STACK (extra=21, operand=0)
+      [21] GET_STACK (extra=22, operand=1)
+      [22] OPCODE_57 (extra=23, operand2=1441813, operand1=21, operand1_1=22)
+      [23] SET_STACK (extra=6, operand=23)
+      [24] GET_STACK (extra=25, operand=0)
+      [25] GET_STACK (extra=26, operand=1)
+      [26] OPCODE_54 (extra=27, operand2=1703961, operand1=25, operand1_1=26)
+      [27] SET_STACK (extra=7, operand=27)
+      [28] GET_STACK (extra=28, operand=4)
+      [29] SET_STACK (extra=29, operand=28)
+      [30] OPCODE_72 (extra=28, operand=4)
+      [31] GET_STACK (extra=30, operand=3)
+      [32] SET_STACK (extra=29, operand=30)
+      [33] OPCODE_71 (extra=0, operand=1)
+      [34] OPCODE_72 (extra=30, operand=3)
+      [35] GET_CONSTANT (extra=31, operand=2)
+      [36] OPCODE_71 (extra=0, operand=2)
+      [37] GET_CONSTANT (extra=32, operand=3)
+      [38] FUNCTION_RETURN (extra=1, operand1=32, operand2=0)
+
+  [3] FUNCTION:
+    START_LINE: 39
+    END_LINE: 49
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 33
+    CONSTANTS (4):
+      [0] int: 5
+      [1] int: 3
+      [2] int: 1
+      [3] int: 1
+    INSTRUCTIONS (34):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] SET_STACK (extra=0, operand=1)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] SET_STACK (extra=1, operand=3)
+      [4] GET_STACK (extra=5, operand=0)
+      [5] GET_STACK (extra=6, operand=1)
+      [6] OPCODE_61 (extra=7, operand1=5, operand2=6)
+      [7] SET_STACK (extra=2, operand=7)
+      [8] GET_STACK (extra=9, operand=0)
+      [9] GET_STACK (extra=10, operand=1)
+      [10] OPCODE_62 (extra=11, operand1=9, operand2=10)
+      [11] SET_STACK (extra=3, operand=11)
+      [12] GET_STACK (extra=13, operand=0)
+      [13] GET_STACK (extra=14, operand=1)
+      [14] OPCODE_63 (extra=15, operand1=13, operand2=14)
+      [15] SET_STACK (extra=4, operand=15)
+      [16] GET_STACK (extra=17, operand=0)
+      [17] GET_CONSTANT (extra=18, operand=2)
+      [18] OPCODE_40 (extra=19, operand2=1179665, operand1=17, operand1_1=18)
+      [19] SET_STACK (extra=5, operand=19)
+      [20] GET_STACK (extra=21, operand=0)
+      [21] GET_CONSTANT (extra=22, operand=3)
+      [22] OPCODE_42 (extra=23, operand2=1441813, operand1=21, operand1_1=22)
+      [23] SET_STACK (extra=6, operand=23)
+      [24] GET_STACK (extra=24, operand=2)
+      [25] GET_STACK (extra=25, operand=3)
+      [26] ADD_INT (extra=26, operand1=24, operand2=25)
+      [27] GET_STACK (extra=27, operand=4)
+      [28] ADD_INT (extra=28, operand1=26, operand2=27)
+      [29] GET_STACK (extra=29, operand=5)
+      [30] ADD_INT (extra=30, operand1=28, operand2=29)
+      [31] GET_STACK (extra=31, operand=6)
+      [32] ADD_INT (extra=32, operand1=30, operand2=31)
+      [33] FUNCTION_RETURN (extra=1, operand1=32, operand2=0)
+
+  [4] FUNCTION:
+    START_LINE: 51
+    END_LINE: 60
+    PARAMETERS: 1
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 14
+    CONSTANTS (9):
+      [0] int: 10
+      [1] int: 1
+      [2] null
+      [3] int: 5
+      [4] int: 2
+      [5] null
+      [6] int: 3
+      [7] null
+      [8] null
+    INSTRUCTIONS (21):
+      [0] GET_STACK (extra=1, operand=0)
+      [1] GET_CONSTANT (extra=2, operand=0)
+      [2] OPCODE_46 (extra=3, operand2=131073, operand1=1, operand1_1=2)
+      [3] OPCODE_72 (extra=3, operand=5)
+      [4] GET_CONSTANT (extra=4, operand=1)
+      [5] FUNCTION_RETURN (extra=1, operand1=4, operand2=0)
+      [6] GET_CONSTANT (extra=5, operand=2)
+      [7] OPCODE_71 (extra=0, operand=12)
+      [8] GET_STACK (extra=6, operand=0)
+      [9] GET_CONSTANT (extra=7, operand=3)
+      [10] OPCODE_46 (extra=8, operand2=458758, operand1=6, operand1_1=7)
+      [11] OPCODE_72 (extra=8, operand=5)
+      [12] GET_CONSTANT (extra=9, operand=4)
+      [13] FUNCTION_RETURN (extra=1, operand1=9, operand2=0)
+      [14] GET_CONSTANT (extra=10, operand=5)
+      [15] OPCODE_71 (extra=0, operand=4)
+      [16] GET_CONSTANT (extra=11, operand=6)
+      [17] FUNCTION_RETURN (extra=1, operand1=11, operand2=0)
+      [18] GET_CONSTANT (extra=12, operand=7)
+      [19] GET_CONSTANT (extra=13, operand=8)
+      [20] FUNCTION_RETURN (extra=1, operand1=13, operand2=0)
+
+  [5] FUNCTION:
+    START_LINE: 62
+    END_LINE: 71
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 14
+    CONSTANTS (4):
+      [0] int: 0
+      [1] int: 0
+      [2] int: 10
+      [3] int: 1
+    INSTRUCTIONS (19):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] SET_STACK (extra=0, operand=1)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] SET_STACK (extra=1, operand=3)
+      [4] GET_STACK (extra=4, operand=0)
+      [5] GET_CONSTANT (extra=5, operand=2)
+      [6] OPCODE_49 (extra=6, operand2=327684, operand1=4, operand1_1=5)
+      [7] OPCODE_72 (extra=6, operand=10)
+      [8] GET_STACK (extra=7, operand=1)
+      [9] GET_STACK (extra=8, operand=0)
+      [10] ADD_INT (extra=9, operand1=7, operand2=8)
+      [11] SET_STACK (extra=1, operand=9)
+      [12] GET_STACK (extra=10, operand=0)
+      [13] GET_CONSTANT (extra=11, operand=3)
+      [14] ADD_INT (extra=12, operand1=10, operand2=11)
+      [15] SET_STACK (extra=0, operand=12)
+      [16] OPCODE_71 (extra=0, operand=0)
+      [17] GET_STACK (extra=13, operand=1)
+      [18] FUNCTION_RETURN (extra=1, operand1=13, operand2=0)
+
+  [6] FUNCTION:
+    START_LINE: 73
+    END_LINE: 80
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 14
+    CONSTANTS (4):
+      [0] int: 0
+      [1] int: 0
+      [2] int: 10
+      [3] int: 1
+    INSTRUCTIONS (19):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] SET_STACK (extra=0, operand=1)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] SET_STACK (extra=1, operand=3)
+      [4] GET_STACK (extra=4, operand=1)
+      [5] GET_CONSTANT (extra=5, operand=2)
+      [6] OPCODE_49 (extra=6, operand2=327684, operand1=4, operand1_1=5)
+      [7] OPCODE_72 (extra=6, operand=10)
+      [8] GET_STACK (extra=7, operand=0)
+      [9] GET_STACK (extra=8, operand=1)
+      [10] ADD_INT (extra=9, operand1=7, operand2=8)
+      [11] SET_STACK (extra=0, operand=9)
+      [12] GET_STACK (extra=10, operand=1)
+      [13] GET_CONSTANT (extra=11, operand=3)
+      [14] ADD_INT (extra=12, operand1=10, operand2=11)
+      [15] SET_STACK (extra=1, operand=12)
+      [16] OPCODE_71 (extra=0, operand=0)
+      [17] GET_STACK (extra=13, operand=0)
+      [18] FUNCTION_RETURN (extra=1, operand1=13, operand2=0)
+
+  [7] FUNCTION:
+    START_LINE: 82
+    END_LINE: 90
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 9
+    CONSTANTS (14):
+      [0] int: 1
+      [1] int: 0
+      [2] int: 2
+      [3] int: 1
+      [4] int: 3
+      [5] int: 2
+      [6] int: 4
+      [7] int: 3
+      [8] int: 5
+      [9] int: 4
+      [10] int: 0
+      [11] string: "iterator"
+      [12] string: "hasNext"
+      [13] string: "next"
+    INSTRUCTIONS (37):
+      [0] CREATE_ARRAY (extra=1)
+      [1] GET_CONSTANT (extra=2, operand=0)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] OPCODE_9 (extra=2, operand1=1, operand2=3)
+      [4] GET_CONSTANT (extra=2, operand=2)
+      [5] GET_CONSTANT (extra=3, operand=3)
+      [6] OPCODE_9 (extra=2, operand1=1, operand2=3)
+      [7] GET_CONSTANT (extra=2, operand=4)
+      [8] GET_CONSTANT (extra=3, operand=5)
+      [9] OPCODE_9 (extra=2, operand1=1, operand2=3)
+      [10] GET_CONSTANT (extra=2, operand=6)
+      [11] GET_CONSTANT (extra=3, operand=7)
+      [12] OPCODE_9 (extra=2, operand1=1, operand2=3)
+      [13] GET_CONSTANT (extra=2, operand=8)
+      [14] GET_CONSTANT (extra=3, operand=9)
+      [15] OPCODE_9 (extra=2, operand1=1, operand2=3)
+      [16] SET_STACK (extra=0, operand=1)
+      [17] GET_CONSTANT (extra=3, operand=10)
+      [18] SET_STACK (extra=1, operand=3)
+      [19] GET_STACK (extra=4, operand=0)
+      [20] GET_CONSTANT (extra=7, operand=11)
+      [21] OPCODE_66 (extra=8, operand1=4, operand2=1)
+      [22] GET_STACK (extra=5, operand=8)
+      [23] GET_CONSTANT (extra=7, operand=12)
+      [24] OPCODE_66 (extra=8, operand1=5, operand2=1)
+      [25] GET_STACK (extra=6, operand=8)
+      [26] OPCODE_72 (extra=6, operand=9)
+      [27] GET_CONSTANT (extra=7, operand=13)
+      [28] OPCODE_66 (extra=8, operand1=5, operand2=1)
+      [29] SET_STACK (extra=2, operand=8)
+      [30] GET_STACK (extra=8, operand=1)
+      [31] GET_STACK (extra=9, operand=2)
+      [32] ADD_INT (extra=10, operand1=8, operand2=9)
+      [33] SET_STACK (extra=1, operand=10)
+      [34] OPCODE_71 (extra=0, operand=0)
+      [35] GET_STACK (extra=8, operand=1)
+      [36] FUNCTION_RETURN (extra=1, operand1=8, operand2=0)
+
+  [8] FUNCTION:
+    START_LINE: 92
+    END_LINE: 95
+    PARAMETERS: 2
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 5
+    CONSTANTS (0):
+    INSTRUCTIONS (4):
+      [0] GET_STACK (extra=2, operand=0)
+      [1] GET_STACK (extra=3, operand=1)
+      [2] ADD_INT (extra=4, operand1=2, operand2=3)
+      [3] FUNCTION_RETURN (extra=1, operand1=4, operand2=0)
+
+  [9] FUNCTION:
+    START_LINE: 96
+    END_LINE: 99
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 1
+    CONSTANTS (3):
+      [0] string: "function_test"
+      [1] int: 10
+      [2] int: 20
+    INSTRUCTIONS (5):
+      [0] OPCODE_69 (extra=0, operand=0)
+      [1] GET_CONSTANT (extra=1, operand=1)
+      [2] GET_CONSTANT (extra=2, operand=2)
+      [3] OPCODE_67 (extra=3, operand2=131072, operand1=0, operand1_1=2)
+      [4] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+
+  [10] FUNCTION:
+    START_LINE: 101
+    END_LINE: 107
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 9
+    CONSTANTS (2):
+      [0] int: 10
+      [1] int: 20
+    INSTRUCTIONS (10):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] SET_STACK (extra=0, operand=1)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] SET_STACK (extra=1, operand=3)
+      [4] GET_STACK (extra=5, operand=0)
+      [5] GET_STACK (extra=6, operand=1)
+      [6] ADD_INT (extra=7, operand1=5, operand2=6)
+      [7] SET_STACK (extra=2, operand=7)
+      [8] GET_STACK (extra=8, operand=2)
+      [9] FUNCTION_RETURN (extra=1, operand1=8, operand2=0)
+
+  [11] FUNCTION:
+    START_LINE: 109
+    END_LINE: 112
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 1
+    CONSTANTS (1):
+      [0] int: 42
+    INSTRUCTIONS (2):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+
+  [12] FUNCTION:
+    START_LINE: 114
+    END_LINE: 127
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 26
+    CONSTANTS (11):
+      [0] int: 0
+      [1] int: 0
+      [2] int: 20
+      [3] int: 2
+      [4] int: 0
+      [5] null
+      [6] null
+      [7] int: 15
+      [8] null
+      [9] null
+      [10] int: 1
+    INSTRUCTIONS (37):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] SET_STACK (extra=0, operand=1)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] SET_STACK (extra=1, operand=3)
+      [4] GET_STACK (extra=4, operand=1)
+      [5] GET_CONSTANT (extra=5, operand=2)
+      [6] OPCODE_49 (extra=6, operand2=327684, operand1=4, operand1_1=5)
+      [7] OPCODE_72 (extra=6, operand=28)
+      [8] GET_STACK (extra=7, operand=1)
+      [9] GET_CONSTANT (extra=8, operand=3)
+      [10] OPCODE_32 (extra=9, operand1=7, operand2=8)
+      [11] GET_CONSTANT (extra=10, operand=4)
+      [12] OPCODE_52 (extra=11, operand1=9, operand2=10)
+      [13] OPCODE_72 (extra=11, operand=4)
+      [14] OPCODE_71 (extra=0, operand=0)
+      [15] GET_CONSTANT (extra=12, operand=5)
+      [16] OPCODE_71 (extra=0, operand=2)
+      [17] GET_CONSTANT (extra=13, operand=6)
+      [18] GET_STACK (extra=14, operand=1)
+      [19] GET_CONSTANT (extra=15, operand=7)
+      [20] OPCODE_46 (extra=16, operand2=983054, operand1=14, operand1_1=15)
+      [21] OPCODE_72 (extra=16, operand=4)
+      [22] OPCODE_71 (extra=0, operand=13)
+      [23] GET_CONSTANT (extra=17, operand=8)
+      [24] OPCODE_71 (extra=0, operand=2)
+      [25] GET_CONSTANT (extra=18, operand=9)
+      [26] GET_STACK (extra=19, operand=0)
+      [27] GET_STACK (extra=20, operand=1)
+      [28] ADD_INT (extra=21, operand1=19, operand2=20)
+      [29] SET_STACK (extra=0, operand=21)
+      [30] GET_STACK (extra=22, operand=1)
+      [31] GET_CONSTANT (extra=23, operand=10)
+      [32] ADD_INT (extra=24, operand1=22, operand2=23)
+      [33] SET_STACK (extra=1, operand=24)
+      [34] OPCODE_71 (extra=0, operand=0)
+      [35] GET_STACK (extra=25, operand=0)
+      [36] FUNCTION_RETURN (extra=1, operand1=25, operand2=0)
+
+

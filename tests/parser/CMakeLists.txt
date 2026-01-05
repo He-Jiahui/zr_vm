@@ -16,6 +16,14 @@ set(INSTRUCTION_EXECUTION_TEST_SOURCES
 # 创建指令执行测试可执行文件
 add_executable(zr_vm_instruction_execution_test ${INSTRUCTION_EXECUTION_TEST_SOURCES})
 
+# 添加类型推断测试源文件
+set(TYPE_INFERENCE_TEST_SOURCES
+    test_type_inference.c
+)
+
+# 创建类型推断测试可执行文件
+add_executable(zr_vm_type_inference_test ${TYPE_INFERENCE_TEST_SOURCES})
+
 # 包含Unity测试框架
 target_include_directories(zr_vm_parser_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
 
@@ -28,17 +36,21 @@ set(UNITY_SOURCES
 if (BUILD_SHARED_LIB)
     target_link_libraries(zr_vm_parser_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
     target_link_libraries(zr_vm_instruction_execution_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
+    target_link_libraries(zr_vm_type_inference_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
 else()
     target_link_libraries(zr_vm_parser_test PRIVATE zr_vm_parser_static zr_vm_core_static)
     target_link_libraries(zr_vm_instruction_execution_test PRIVATE zr_vm_parser_static zr_vm_core_static)
+    target_link_libraries(zr_vm_type_inference_test PRIVATE zr_vm_parser_static zr_vm_core_static)
 endif()
 
 # 添加Unity源文件到目标
 target_sources(zr_vm_parser_test PRIVATE ${UNITY_SOURCES})
 target_sources(zr_vm_instruction_execution_test PRIVATE ${UNITY_SOURCES})
+target_sources(zr_vm_type_inference_test PRIVATE ${UNITY_SOURCES})
 
 # 包含Unity测试框架
 target_include_directories(zr_vm_instruction_execution_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
+target_include_directories(zr_vm_type_inference_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
 
 # 包含头文件目录
 target_include_directories(zr_vm_parser_test PRIVATE 
@@ -53,12 +65,22 @@ target_include_directories(zr_vm_instruction_execution_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
 )
 
+target_include_directories(zr_vm_type_inference_test PRIVATE 
+    ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+)
+
 # 显式启用UNITY输出
 target_compile_definitions(zr_vm_parser_test PRIVATE
     UNITY_USE_FLUSH_STDOUT
 )
 
 target_compile_definitions(zr_vm_instruction_execution_test PRIVATE
+    UNITY_USE_FLUSH_STDOUT
+)
+
+target_compile_definitions(zr_vm_type_inference_test PRIVATE
     UNITY_USE_FLUSH_STDOUT
 )
 
@@ -89,4 +111,5 @@ configure_file(
 enable_testing()
 add_test(NAME parser_tests COMMAND zr_vm_parser_test)
 add_test(NAME instruction_execution_tests COMMAND zr_vm_instruction_execution_test)
+add_test(NAME type_inference_tests COMMAND zr_vm_type_inference_test)
 

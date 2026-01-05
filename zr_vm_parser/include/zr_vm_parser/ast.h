@@ -357,6 +357,7 @@ typedef struct SZrVariableDeclaration {
     SZrAstNode *pattern;  // DestructuringPattern, DestructuringArrayPattern, 或 Identifier
     SZrAstNode *value;  // Expression
     SZrType *typeInfo;  // 可选
+    EZrAccessModifier accessModifier;  // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrVariableDeclaration;
 
 typedef struct SZrFunctionDeclaration {
@@ -381,6 +382,7 @@ typedef struct SZrStructDeclaration {
     SZrGenericDeclaration *generic;  // 可选
     SZrAstNodeArray *inherits;  // Type 数组
     SZrAstNodeArray *members;  // StructField, StructMethod, StructMetaFunction 数组
+    EZrAccessModifier accessModifier;  // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrStructDeclaration;
 
 typedef struct SZrStructField {
@@ -417,6 +419,7 @@ typedef struct SZrEnumDeclaration {
     SZrIdentifier *name;
     SZrType *baseType;  // 可选，继承类型（int, string, float, bool）
     SZrAstNodeArray *members;  // EnumMember 数组
+    EZrAccessModifier accessModifier;  // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrEnumDeclaration;
 
 typedef struct SZrEnumMember {
@@ -431,6 +434,7 @@ typedef struct SZrClassDeclaration {
     SZrAstNodeArray *inherits;  // Type 数组
     SZrAstNodeArray *members;  // ClassField, ClassMethod, ClassProperty, ClassMetaFunction 数组
     SZrAstNodeArray *decorators;  // DecoratorExpression 数组
+    EZrAccessModifier accessModifier;  // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrClassDeclaration;
 
 // 类字段
@@ -497,6 +501,7 @@ typedef struct SZrInterfaceDeclaration {
     SZrGenericDeclaration *generic;  // 可选
     SZrAstNodeArray *inherits;  // Type 数组
     SZrAstNodeArray *members;  // InterfaceFieldDeclaration, InterfaceMethodSignature, InterfacePropertySignature, InterfaceMetaSignature 数组
+    EZrAccessModifier accessModifier;  // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrInterfaceDeclaration;
 
 // 接口字段声明

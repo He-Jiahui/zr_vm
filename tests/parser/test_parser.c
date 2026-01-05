@@ -2,6 +2,15 @@
 // Created by Auto on 2025/01/XX.
 //
 
+// 定义GNU源以支持realpath函数（Linux系统）
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+// 定义POSIX源以支持realpath函数（备用）
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200112L
+#endif
+
 #include <stdio.h>
 #include <time.h>
 #include <string.h>
@@ -325,6 +334,132 @@ void test_variable_declaration(void) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse variable declaration");
         destroyTestState(state);
         TEST_FAIL_MESSAGE("Test assertion failed");
+    }
+    
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+// 测试可见性修饰符解析
+void test_access_modifier_parsing(void) {
+    SZrTestTimer timer;
+    const char* testSummary = "Access Modifier Parsing";
+    
+    TEST_START(testSummary);
+    timer.startTime = clock();
+    
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    
+    // 测试 pub var
+    TEST_INFO("Public variable parsing", 
+              "Testing parsing of: pub var x = 5;");
+    const char* source1 = "pub var x = 5;";
+    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
+    SZrAstNode* ast1 = ZrParserParse(state, source1, strlen(source1), sourceName);
+    
+    if (ast1 != ZR_NULL && ast1->data.script.statements != ZR_NULL && 
+        ast1->data.script.statements->count > 0) {
+        SZrAstNode* stmt = ast1->data.script.statements->nodes[0];
+        if (stmt->type == ZR_AST_VARIABLE_DECLARATION) {
+            TEST_ASSERT_EQUAL_INT(ZR_ACCESS_PUBLIC, 
+                stmt->data.variableDeclaration.accessModifier);
+        }
+    }
+    if (ast1 != ZR_NULL) {
+        ZrParserFreeAst(state, ast1);
+    }
+    
+    // 测试 pri var
+    TEST_INFO("Private variable parsing", 
+              "Testing parsing of: pri var y = 10;");
+    const char* source2 = "pri var y = 10;";
+    SZrAstNode* ast2 = ZrParserParse(state, source2, strlen(source2), sourceName);
+    
+    if (ast2 != ZR_NULL && ast2->data.script.statements != ZR_NULL && 
+        ast2->data.script.statements->count > 0) {
+        SZrAstNode* stmt = ast2->data.script.statements->nodes[0];
+        if (stmt->type == ZR_AST_VARIABLE_DECLARATION) {
+            TEST_ASSERT_EQUAL_INT(ZR_ACCESS_PRIVATE, 
+                stmt->data.variableDeclaration.accessModifier);
+        }
+    }
+    if (ast2 != ZR_NULL) {
+        ZrParserFreeAst(state, ast2);
+    }
+    
+    // 测试 pro var
+    TEST_INFO("Protected variable parsing", 
+              "Testing parsing of: pro var z = 15;");
+    const char* source3 = "pro var z = 15;";
+    SZrAstNode* ast3 = ZrParserParse(state, source3, strlen(source3), sourceName);
+    
+    if (ast3 != ZR_NULL && ast3->data.script.statements != ZR_NULL && 
+        ast3->data.script.statements->count > 0) {
+        SZrAstNode* stmt = ast3->data.script.statements->nodes[0];
+        if (stmt->type == ZR_AST_VARIABLE_DECLARATION) {
+            TEST_ASSERT_EQUAL_INT(ZR_ACCESS_PROTECTED, 
+                stmt->data.variableDeclaration.accessModifier);
+        }
+    }
+    if (ast3 != ZR_NULL) {
+        ZrParserFreeAst(state, ast3);
+    }
+    
+    // 测试默认（无修饰符，应该是 pri）
+    TEST_INFO("Default access modifier (private)", 
+              "Testing parsing of: var w = 20; (should default to private)");
+    const char* source4 = "var w = 20;";
+    SZrAstNode* ast4 = ZrParserParse(state, source4, strlen(source4), sourceName);
+    
+    if (ast4 != ZR_NULL && ast4->data.script.statements != ZR_NULL && 
+        ast4->data.script.statements->count > 0) {
+        SZrAstNode* stmt = ast4->data.script.statements->nodes[0];
+        if (stmt->type == ZR_AST_VARIABLE_DECLARATION) {
+            TEST_ASSERT_EQUAL_INT(ZR_ACCESS_PRIVATE, 
+                stmt->data.variableDeclaration.accessModifier);
+        }
+    }
+    if (ast4 != ZR_NULL) {
+        ZrParserFreeAst(state, ast4);
+    }
+    
+    // 测试 struct 的可见性修饰符
+    TEST_INFO("Struct access modifier parsing", 
+              "Testing parsing of: pub struct Test { var x: int; }");
+    const char* source5 = "pub struct Test { var x: int = 0; }";
+    SZrAstNode* ast5 = ZrParserParse(state, source5, strlen(source5), sourceName);
+    
+    if (ast5 != ZR_NULL && ast5->data.script.statements != ZR_NULL && 
+        ast5->data.script.statements->count > 0) {
+        SZrAstNode* stmt = ast5->data.script.statements->nodes[0];
+        if (stmt->type == ZR_AST_STRUCT_DECLARATION) {
+            TEST_ASSERT_EQUAL_INT(ZR_ACCESS_PUBLIC, 
+                stmt->data.structDeclaration.accessModifier);
+        }
+    }
+    if (ast5 != ZR_NULL) {
+        ZrParserFreeAst(state, ast5);
+    }
+    
+    // 测试 class 的可见性修饰符
+    TEST_INFO("Class access modifier parsing", 
+              "Testing parsing of: pro class Test { }");
+    const char* source6 = "pro class Test { }";
+    SZrAstNode* ast6 = ZrParserParse(state, source6, strlen(source6), sourceName);
+    
+    if (ast6 != ZR_NULL && ast6->data.script.statements != ZR_NULL && 
+        ast6->data.script.statements->count > 0) {
+        SZrAstNode* stmt = ast6->data.script.statements->nodes[0];
+        if (stmt->type == ZR_AST_CLASS_DECLARATION) {
+            TEST_ASSERT_EQUAL_INT(ZR_ACCESS_PROTECTED, 
+                stmt->data.classDeclaration.accessModifier);
+        }
+    }
+    if (ast6 != ZR_NULL) {
+        ZrParserFreeAst(state, ast6);
     }
     
     timer.endTime = clock();
@@ -1140,6 +1275,7 @@ int main(void) {
     RUN_TEST(test_boolean_literal);
     RUN_TEST(test_module_declaration);
     RUN_TEST(test_variable_declaration);
+    RUN_TEST(test_access_modifier_parsing);
     
     TEST_MODULE_DIVIDER();
     printf("Expression Tests\n");

@@ -154,6 +154,7 @@ ZR_FORCE_INLINE void ZrRawObjectMarkAsWaitToScan(SZrRawObject *object) {
 }
 
 ZR_FORCE_INLINE TBool ZrRawObjectIsPermanent(struct SZrState *state, SZrRawObject *object) {
+    ZR_UNUSED_PARAMETER(state);
     return object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT;
 }
 

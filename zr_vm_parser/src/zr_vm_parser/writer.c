@@ -313,37 +313,244 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
         
         fprintf(file, "  [%u] ", i);
         
-        // 输出操作码名称（简化处理）
+        // 输出操作码名称
         switch (opcode) {
-            case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
-                fprintf(file, "GET_CONSTANT");
+            case ZR_INSTRUCTION_ENUM(GET_STACK):
+                fprintf(file, "GET_STACK");
                 break;
             case ZR_INSTRUCTION_ENUM(SET_STACK):
                 fprintf(file, "SET_STACK");
                 break;
-            case ZR_INSTRUCTION_ENUM(GET_STACK):
-                fprintf(file, "GET_STACK");
+            case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
+                fprintf(file, "GET_CONSTANT");
+                break;
+            case ZR_INSTRUCTION_ENUM(SET_CONSTANT):
+                fprintf(file, "SET_CONSTANT");
+                break;
+            case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
+                fprintf(file, "GET_CLOSURE");
+                break;
+            case ZR_INSTRUCTION_ENUM(SET_CLOSURE):
+                fprintf(file, "SET_CLOSURE");
+                break;
+            case ZR_INSTRUCTION_ENUM(GETUPVAL):
+                fprintf(file, "GETUPVAL");
+                break;
+            case ZR_INSTRUCTION_ENUM(SETUPVAL):
+                fprintf(file, "SETUPVAL");
+                break;
+            case ZR_INSTRUCTION_ENUM(GETTABLE):
+                fprintf(file, "GETTABLE");
+                break;
+            case ZR_INSTRUCTION_ENUM(SETTABLE):
+                fprintf(file, "SETTABLE");
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_BOOL):
+                fprintf(file, "TO_BOOL");
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_INT):
+                fprintf(file, "TO_INT");
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_UINT):
+                fprintf(file, "TO_UINT");
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+                fprintf(file, "TO_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_STRING):
+                fprintf(file, "TO_STRING");
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD):
+                fprintf(file, "ADD");
                 break;
             case ZR_INSTRUCTION_ENUM(ADD_INT):
                 fprintf(file, "ADD_INT");
                 break;
+            case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+                fprintf(file, "ADD_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_STRING):
+                fprintf(file, "ADD_STRING");
+                break;
+            case ZR_INSTRUCTION_ENUM(SUB):
+                fprintf(file, "SUB");
+                break;
             case ZR_INSTRUCTION_ENUM(SUB_INT):
                 fprintf(file, "SUB_INT");
+                break;
+            case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
+                fprintf(file, "SUB_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(MUL):
+                fprintf(file, "MUL");
                 break;
             case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
                 fprintf(file, "MUL_SIGNED");
                 break;
+            case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
+                fprintf(file, "MUL_UNSIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+                fprintf(file, "MUL_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(NEG):
+                fprintf(file, "NEG");
+                break;
+            case ZR_INSTRUCTION_ENUM(DIV):
+                fprintf(file, "DIV");
+                break;
             case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
                 fprintf(file, "DIV_SIGNED");
                 break;
+            case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
+                fprintf(file, "DIV_UNSIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
+                fprintf(file, "DIV_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(MOD):
+                fprintf(file, "MOD");
+                break;
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
+                fprintf(file, "MOD_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
+                fprintf(file, "MOD_UNSIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(MOD_FLOAT):
+                fprintf(file, "MOD_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(POW):
+                fprintf(file, "POW");
+                break;
+            case ZR_INSTRUCTION_ENUM(POW_SIGNED):
+                fprintf(file, "POW_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(POW_UNSIGNED):
+                fprintf(file, "POW_UNSIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(POW_FLOAT):
+                fprintf(file, "POW_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(SHIFT_LEFT):
+                fprintf(file, "SHIFT_LEFT");
+                break;
+            case ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT):
+                fprintf(file, "SHIFT_LEFT_INT");
+                break;
+            case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT):
+                fprintf(file, "SHIFT_RIGHT");
+                break;
+            case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT):
+                fprintf(file, "SHIFT_RIGHT_INT");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
+                fprintf(file, "LOGICAL_NOT");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_AND):
+                fprintf(file, "LOGICAL_AND");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_OR):
+                fprintf(file, "LOGICAL_OR");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED):
+                fprintf(file, "LOGICAL_GREATER_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED):
+                fprintf(file, "LOGICAL_GREATER_UNSIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT):
+                fprintf(file, "LOGICAL_GREATER_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED):
+                fprintf(file, "LOGICAL_LESS_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED):
+                fprintf(file, "LOGICAL_LESS_UNSIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
+                fprintf(file, "LOGICAL_LESS_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
+                fprintf(file, "LOGICAL_EQUAL");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
+                fprintf(file, "LOGICAL_NOT_EQUAL");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED):
+                fprintf(file, "LOGICAL_GREATER_EQUAL_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED):
+                fprintf(file, "LOGICAL_GREATER_EQUAL_UNSIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT):
+                fprintf(file, "LOGICAL_GREATER_EQUAL_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED):
+                fprintf(file, "LOGICAL_LESS_EQUAL_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED):
+                fprintf(file, "LOGICAL_LESS_EQUAL_UNSIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT):
+                fprintf(file, "LOGICAL_LESS_EQUAL_FLOAT");
+                break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
+                fprintf(file, "BITWISE_NOT");
+                break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_AND):
+                fprintf(file, "BITWISE_AND");
+                break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_OR):
+                fprintf(file, "BITWISE_OR");
+                break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
+                fprintf(file, "BITWISE_XOR");
+                break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT):
+                fprintf(file, "BITWISE_SHIFT_LEFT");
+                break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT):
+                fprintf(file, "BITWISE_SHIFT_RIGHT");
+                break;
+            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+                fprintf(file, "FUNCTION_CALL");
+                break;
+            case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
+                fprintf(file, "FUNCTION_TAIL_CALL");
+                break;
             case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
                 fprintf(file, "FUNCTION_RETURN");
+                break;
+            case ZR_INSTRUCTION_ENUM(GET_VALUE):
+                fprintf(file, "GET_VALUE");
+                break;
+            case ZR_INSTRUCTION_ENUM(SET_VALUE):
+                fprintf(file, "SET_VALUE");
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP):
+                fprintf(file, "JUMP");
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF):
+                fprintf(file, "JUMP_IF");
+                break;
+            case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
+                fprintf(file, "CREATE_CLOSURE");
                 break;
             case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
                 fprintf(file, "CREATE_OBJECT");
                 break;
             case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
                 fprintf(file, "CREATE_ARRAY");
+                break;
+            case ZR_INSTRUCTION_ENUM(TRY):
+                fprintf(file, "TRY");
+                break;
+            case ZR_INSTRUCTION_ENUM(THROW):
+                fprintf(file, "THROW");
+                break;
+            case ZR_INSTRUCTION_ENUM(CATCH):
+                fprintf(file, "CATCH");
                 break;
             default:
                 fprintf(file, "OPCODE_%u", (TUInt32)opcode);
@@ -358,49 +565,100 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
         
         // 检查指令类型，决定使用哪种操作数格式
         switch (opcode) {
+            // 使用 operand2[0] (TInt32) 的指令
             case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
             case ZR_INSTRUCTION_ENUM(SET_CONSTANT):
             case ZR_INSTRUCTION_ENUM(GET_STACK):
             case ZR_INSTRUCTION_ENUM(SET_STACK):
             case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
             case ZR_INSTRUCTION_ENUM(SET_CLOSURE):
+            case ZR_INSTRUCTION_ENUM(GETUPVAL):
+            case ZR_INSTRUCTION_ENUM(SETUPVAL):
             case ZR_INSTRUCTION_ENUM(GET_VALUE):
             case ZR_INSTRUCTION_ENUM(SET_VALUE):
             case ZR_INSTRUCTION_ENUM(JUMP):
             case ZR_INSTRUCTION_ENUM(JUMP_IF):
             case ZR_INSTRUCTION_ENUM(THROW):
-                // 使用 operand2[0] (TInt32)
                 fprintf(file, ", operand=%d", inst->instruction.operand.operand2[0]);
                 break;
                 
+            // 使用 operand1[0] (TUInt16) 的指令（单操作数）
+            case ZR_INSTRUCTION_ENUM(TO_BOOL):
+            case ZR_INSTRUCTION_ENUM(TO_INT):
+            case ZR_INSTRUCTION_ENUM(TO_UINT):
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+            case ZR_INSTRUCTION_ENUM(TO_STRING):
+            case ZR_INSTRUCTION_ENUM(NEG):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
+            case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
+                fprintf(file, ", operand1=%u", inst->instruction.operand.operand1[0]);
+                break;
+                
+            // 使用 operand1[0] + operand1[1] (TUInt16) 的指令（双操作数）
+            case ZR_INSTRUCTION_ENUM(ADD):
             case ZR_INSTRUCTION_ENUM(ADD_INT):
+            case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+            case ZR_INSTRUCTION_ENUM(ADD_STRING):
+            case ZR_INSTRUCTION_ENUM(SUB):
             case ZR_INSTRUCTION_ENUM(SUB_INT):
+            case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
+            case ZR_INSTRUCTION_ENUM(MUL):
             case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+            case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+            case ZR_INSTRUCTION_ENUM(DIV):
             case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
+            case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
+            case ZR_INSTRUCTION_ENUM(MOD):
             case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
-            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
-            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
+            case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(MOD_FLOAT):
+            case ZR_INSTRUCTION_ENUM(POW):
+            case ZR_INSTRUCTION_ENUM(POW_SIGNED):
+            case ZR_INSTRUCTION_ENUM(POW_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(POW_FLOAT):
+            case ZR_INSTRUCTION_ENUM(SHIFT_LEFT):
+            case ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT):
+            case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT):
+            case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT):
             case ZR_INSTRUCTION_ENUM(LOGICAL_AND):
             case ZR_INSTRUCTION_ENUM(LOGICAL_OR):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT):
             case ZR_INSTRUCTION_ENUM(BITWISE_AND):
             case ZR_INSTRUCTION_ENUM(BITWISE_OR):
             case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
+            case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT):
+            case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT):
             case ZR_INSTRUCTION_ENUM(GETTABLE):
             case ZR_INSTRUCTION_ENUM(SETTABLE):
             case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+            case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
-                // 使用 operand1[0] + operand1[1] (TUInt16)
                 fprintf(file, ", operand1=%u, operand2=%u", 
                         inst->instruction.operand.operand1[0], 
                         inst->instruction.operand.operand1[1]);
                 break;
                 
+            // 只使用 operandExtra，不需要其他操作数
             case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
             case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
             case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
             case ZR_INSTRUCTION_ENUM(TRY):
             case ZR_INSTRUCTION_ENUM(CATCH):
-                // 只使用 operandExtra，不需要其他操作数
                 break;
                 
             default:
@@ -419,11 +677,163 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
     }
     fprintf(file, "\n");
     
-    // 子函数列表
+    // 子函数列表（递归输出）
     if (function->childFunctionLength > 0) {
         fprintf(file, "CHILD_FUNCTIONS (%u):\n", function->childFunctionLength);
         for (TUInt32 i = 0; i < function->childFunctionLength; i++) {
-            fprintf(file, "  [%u] <function>\n", i);
+            SZrFunction *childFunc = &function->childFunctionList[i];
+            fprintf(file, "  [%u] FUNCTION:\n", i);
+            fprintf(file, "    START_LINE: %u\n", childFunc->lineInSourceStart);
+            fprintf(file, "    END_LINE: %u\n", childFunc->lineInSourceEnd);
+            fprintf(file, "    PARAMETERS: %u\n", childFunc->parameterCount);
+            fprintf(file, "    HAS_VAR_ARGS: %s\n", childFunc->hasVariableArguments ? "true" : "false");
+            fprintf(file, "    STACK_SIZE: %u\n", childFunc->stackSize);
+            fprintf(file, "    CONSTANTS (%u):\n", childFunc->constantValueLength);
+            for (TUInt32 j = 0; j < childFunc->constantValueLength; j++) {
+                SZrTypeValue *constant = &childFunc->constantValueList[j];
+                fprintf(file, "      [%u] ", j);
+                switch (constant->type) {
+                    case ZR_VALUE_TYPE_NULL:
+                        fprintf(file, "null\n");
+                        break;
+                    case ZR_VALUE_TYPE_BOOL:
+                        fprintf(file, "bool: %s\n", constant->value.nativeObject.nativeBool ? "true" : "false");
+                        break;
+                    case ZR_VALUE_TYPE_INT8:
+                    case ZR_VALUE_TYPE_INT16:
+                    case ZR_VALUE_TYPE_INT32:
+                    case ZR_VALUE_TYPE_INT64:
+                        fprintf(file, "int: %lld\n", (long long)constant->value.nativeObject.nativeInt64);
+                        break;
+                    case ZR_VALUE_TYPE_FLOAT:
+                    case ZR_VALUE_TYPE_DOUBLE:
+                        fprintf(file, "float: %f\n", constant->value.nativeObject.nativeDouble);
+                        break;
+                    case ZR_VALUE_TYPE_STRING: {
+                        if (constant->value.object == ZR_NULL) {
+                            fprintf(file, "string: \"\"\n");
+                        } else {
+                            SZrRawObject *rawObj = constant->value.object;
+                            if (rawObj->type == ZR_VALUE_TYPE_STRING) {
+                                SZrString *str = ZR_CAST_STRING(state, rawObj);
+                                TNativeString strStr = ZrStringGetNativeString(str);
+                                fprintf(file, "string: \"%s\"\n", strStr);
+                            } else {
+                                fprintf(file, "string: \"\"\n");
+                            }
+                        }
+                        break;
+                    }
+                    default:
+                        fprintf(file, "unknown type: %u\n", (TUInt32)constant->type);
+                        break;
+                }
+            }
+            fprintf(file, "    INSTRUCTIONS (%u):\n", childFunc->instructionsLength);
+            for (TUInt32 j = 0; j < childFunc->instructionsLength; j++) {
+                TZrInstruction *inst = &childFunc->instructionsList[j];
+                EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
+                TUInt16 operandExtra = inst->instruction.operandExtra;
+                
+                fprintf(file, "      [%u] ", j);
+                
+                // 输出操作码名称
+                switch (opcode) {
+                    case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
+                        fprintf(file, "GET_CONSTANT");
+                        break;
+                    case ZR_INSTRUCTION_ENUM(SET_STACK):
+                        fprintf(file, "SET_STACK");
+                        break;
+                    case ZR_INSTRUCTION_ENUM(GET_STACK):
+                        fprintf(file, "GET_STACK");
+                        break;
+                    case ZR_INSTRUCTION_ENUM(ADD_INT):
+                        fprintf(file, "ADD_INT");
+                        break;
+                    case ZR_INSTRUCTION_ENUM(SUB_INT):
+                        fprintf(file, "SUB_INT");
+                        break;
+                    case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+                        fprintf(file, "MUL_SIGNED");
+                        break;
+                    case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
+                        fprintf(file, "DIV_SIGNED");
+                        break;
+                    case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
+                        fprintf(file, "FUNCTION_RETURN");
+                        break;
+                    case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
+                        fprintf(file, "CREATE_OBJECT");
+                        break;
+                    case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+                        fprintf(file, "CREATE_ARRAY");
+                        break;
+                    default:
+                        fprintf(file, "OPCODE_%u", (TUInt32)opcode);
+                        break;
+                }
+                
+                fprintf(file, " (extra=%u", operandExtra);
+                
+                // 输出操作数
+                switch (opcode) {
+                    case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
+                    case ZR_INSTRUCTION_ENUM(SET_CONSTANT):
+                    case ZR_INSTRUCTION_ENUM(GET_STACK):
+                    case ZR_INSTRUCTION_ENUM(SET_STACK):
+                    case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
+                    case ZR_INSTRUCTION_ENUM(SET_CLOSURE):
+                    case ZR_INSTRUCTION_ENUM(GET_VALUE):
+                    case ZR_INSTRUCTION_ENUM(SET_VALUE):
+                    case ZR_INSTRUCTION_ENUM(JUMP):
+                    case ZR_INSTRUCTION_ENUM(JUMP_IF):
+                    case ZR_INSTRUCTION_ENUM(THROW):
+                        fprintf(file, ", operand=%d", inst->instruction.operand.operand2[0]);
+                        break;
+                        
+                    case ZR_INSTRUCTION_ENUM(ADD_INT):
+                    case ZR_INSTRUCTION_ENUM(SUB_INT):
+                    case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+                    case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
+                    case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
+                    case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
+                    case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
+                    case ZR_INSTRUCTION_ENUM(LOGICAL_AND):
+                    case ZR_INSTRUCTION_ENUM(LOGICAL_OR):
+                    case ZR_INSTRUCTION_ENUM(BITWISE_AND):
+                    case ZR_INSTRUCTION_ENUM(BITWISE_OR):
+                    case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
+                    case ZR_INSTRUCTION_ENUM(GETTABLE):
+                    case ZR_INSTRUCTION_ENUM(SETTABLE):
+                    case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+                    case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
+                        fprintf(file, ", operand1=%u, operand2=%u", 
+                                inst->instruction.operand.operand1[0], 
+                                inst->instruction.operand.operand1[1]);
+                        break;
+                        
+                    case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
+                    case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+                    case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
+                    case ZR_INSTRUCTION_ENUM(TRY):
+                    case ZR_INSTRUCTION_ENUM(CATCH):
+                        break;
+                        
+                    default:
+                        if (inst->instruction.operand.operand2[0] != 0) {
+                            fprintf(file, ", operand2=%d", inst->instruction.operand.operand2[0]);
+                        }
+                        if (inst->instruction.operand.operand1[0] != 0 || inst->instruction.operand.operand1[1] != 0) {
+                            fprintf(file, ", operand1=%u, operand1_1=%u", 
+                                    inst->instruction.operand.operand1[0], 
+                                    inst->instruction.operand.operand1[1]);
+                        }
+                        break;
+                }
+                fprintf(file, ")\n");
+            }
+            fprintf(file, "\n");
         }
         fprintf(file, "\n");
     }
@@ -463,6 +873,52 @@ static const TChar *get_ast_node_type_name(EZrAstNodeType type) {
         case ZR_AST_WHILE_LOOP: return "WHILE_LOOP";
         case ZR_AST_FOR_LOOP: return "FOR_LOOP";
         case ZR_AST_FOREACH_LOOP: return "FOREACH_LOOP";
+        case ZR_AST_LAMBDA_EXPRESSION: return "LAMBDA_EXPRESSION";
+        case ZR_AST_TEST_DECLARATION: return "TEST_DECLARATION";
+        case ZR_AST_SWITCH_EXPRESSION: return "SWITCH_EXPRESSION";
+        case ZR_AST_SWITCH_CASE: return "SWITCH_CASE";
+        case ZR_AST_SWITCH_DEFAULT: return "SWITCH_DEFAULT";
+        case ZR_AST_BREAK_CONTINUE_STATEMENT: return "BREAK_CONTINUE_STATEMENT";
+        case ZR_AST_THROW_STATEMENT: return "THROW_STATEMENT";
+        case ZR_AST_OUT_STATEMENT: return "OUT_STATEMENT";
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT: return "TRY_CATCH_FINALLY_STATEMENT";
+        case ZR_AST_KEY_VALUE_PAIR: return "KEY_VALUE_PAIR";
+        case ZR_AST_UNPACK_LITERAL: return "UNPACK_LITERAL";
+        case ZR_AST_GENERATOR_EXPRESSION: return "GENERATOR_EXPRESSION";
+        case ZR_AST_DECORATOR_EXPRESSION: return "DECORATOR_EXPRESSION";
+        case ZR_AST_DESTRUCTURING_OBJECT: return "DESTRUCTURING_OBJECT";
+        case ZR_AST_DESTRUCTURING_ARRAY: return "DESTRUCTURING_ARRAY";
+        case ZR_AST_PARAMETER: return "PARAMETER";
+        case ZR_AST_PARAMETER_LIST: return "PARAMETER_LIST";
+        case ZR_AST_TYPE: return "TYPE";
+        case ZR_AST_GENERIC_TYPE: return "GENERIC_TYPE";
+        case ZR_AST_TUPLE_TYPE: return "TUPLE_TYPE";
+        case ZR_AST_GENERIC_DECLARATION: return "GENERIC_DECLARATION";
+        case ZR_AST_STRUCT_DECLARATION: return "STRUCT_DECLARATION";
+        case ZR_AST_CLASS_DECLARATION: return "CLASS_DECLARATION";
+        case ZR_AST_INTERFACE_DECLARATION: return "INTERFACE_DECLARATION";
+        case ZR_AST_ENUM_DECLARATION: return "ENUM_DECLARATION";
+        case ZR_AST_INTERMEDIATE_STATEMENT: return "INTERMEDIATE_STATEMENT";
+        case ZR_AST_INTERMEDIATE_DECLARATION: return "INTERMEDIATE_DECLARATION";
+        case ZR_AST_INTERMEDIATE_CONSTANT: return "INTERMEDIATE_CONSTANT";
+        case ZR_AST_INTERMEDIATE_INSTRUCTION: return "INTERMEDIATE_INSTRUCTION";
+        case ZR_AST_INTERMEDIATE_INSTRUCTION_PARAMETER: return "INTERMEDIATE_INSTRUCTION_PARAMETER";
+        case ZR_AST_STRUCT_FIELD: return "STRUCT_FIELD";
+        case ZR_AST_STRUCT_METHOD: return "STRUCT_METHOD";
+        case ZR_AST_STRUCT_META_FUNCTION: return "STRUCT_META_FUNCTION";
+        case ZR_AST_CLASS_FIELD: return "CLASS_FIELD";
+        case ZR_AST_CLASS_METHOD: return "CLASS_METHOD";
+        case ZR_AST_CLASS_PROPERTY: return "CLASS_PROPERTY";
+        case ZR_AST_CLASS_META_FUNCTION: return "CLASS_META_FUNCTION";
+        case ZR_AST_INTERFACE_FIELD_DECLARATION: return "INTERFACE_FIELD_DECLARATION";
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE: return "INTERFACE_METHOD_SIGNATURE";
+        case ZR_AST_INTERFACE_PROPERTY_SIGNATURE: return "INTERFACE_PROPERTY_SIGNATURE";
+        case ZR_AST_INTERFACE_META_SIGNATURE: return "INTERFACE_META_SIGNATURE";
+        case ZR_AST_ENUM_MEMBER: return "ENUM_MEMBER";
+        case ZR_AST_META_IDENTIFIER: return "META_IDENTIFIER";
+        case ZR_AST_ACCESS_MODIFIER: return "ACCESS_MODIFIER";
+        case ZR_AST_PROPERTY_GET: return "PROPERTY_GET";
+        case ZR_AST_PROPERTY_SET: return "PROPERTY_SET";
         default: return "UNKNOWN";
     }
 }
@@ -532,16 +988,33 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
         case ZR_AST_IDENTIFIER_LITERAL: {
             SZrIdentifier *ident = &node->data.identifier;
             if (ident->name != ZR_NULL) {
-                // 不打印字符串内容，避免段错误（字符串对象可能已被释放）
-                fprintf(file, "  name: <string>\n");
+                TNativeString nameStr = ZrStringGetNativeString(ident->name);
+                if (nameStr != ZR_NULL) {
+                    fprintf(file, "  name: \"%s\"\n", nameStr);
+                } else {
+                    fprintf(file, "  name: <null>\n");
+                }
             }
             break;
         }
         case ZR_AST_STRING_LITERAL: {
             SZrStringLiteral *str = &node->data.stringLiteral;
             if (str->value != ZR_NULL) {
-                // 不打印字符串内容，避免段错误（字符串对象可能已被释放）
-                fprintf(file, "  value: <string>\n");
+                TNativeString valueStr = ZrStringGetNativeString(str->value);
+                if (valueStr != ZR_NULL) {
+                    fprintf(file, "  value: \"%s\"\n", valueStr);
+                } else {
+                    fprintf(file, "  value: <null>\n");
+                }
+            } else if (str->literal != ZR_NULL) {
+                TNativeString literalStr = ZrStringGetNativeString(str->literal);
+                if (literalStr != ZR_NULL) {
+                    fprintf(file, "  literal: \"%s\"\n", literalStr);
+                } else {
+                    fprintf(file, "  literal: <null>\n");
+                }
+            } else {
+                fprintf(file, "  value: <null>\n");
             }
             break;
         }
@@ -629,6 +1102,61 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
         case ZR_AST_EXPRESSION_STATEMENT: {
             SZrExpressionStatement *stmt = &node->data.expressionStatement;
             print_ast_node(state, file, stmt->expr, indent + 1);
+            break;
+        }
+        case ZR_AST_LAMBDA_EXPRESSION: {
+            SZrLambdaExpression *lambda = &node->data.lambdaExpression;
+            // 打印参数列表
+            if (lambda->params != ZR_NULL && lambda->params->count > 0) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "params (%zu):\n", lambda->params->count);
+                for (TZrSize i = 0; i < lambda->params->count; i++) {
+                    print_ast_node(state, file, lambda->params->nodes[i], indent + 2);
+                }
+            } else {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "params: ()\n");
+            }
+            // 打印可变参数（如果有）
+            if (lambda->args != ZR_NULL) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "args: <parameter>\n");
+            }
+            // 打印函数体
+            if (lambda->block != ZR_NULL) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "body: ");
+                print_ast_node(state, file, lambda->block, indent + 1);
+            }
+            break;
+        }
+        case ZR_AST_TEST_DECLARATION: {
+            SZrTestDeclaration *test = &node->data.testDeclaration;
+            // 打印测试名称
+            if (test->name != ZR_NULL && test->name->name != ZR_NULL) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "name: ");
+                print_ast_node(state, file, (SZrAstNode *)test->name, indent + 1);
+            }
+            // 打印参数列表
+            if (test->params != ZR_NULL && test->params->count > 0) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "params (%zu):\n", test->params->count);
+                for (TZrSize i = 0; i < test->params->count; i++) {
+                    print_ast_node(state, file, test->params->nodes[i], indent + 2);
+                }
+            }
+            // 打印可变参数（如果有）
+            if (test->args != ZR_NULL) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "args: <parameter>\n");
+            }
+            // 打印函数体
+            if (test->body != ZR_NULL) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "body: ");
+                print_ast_node(state, file, test->body, indent + 1);
+            }
             break;
         }
         default:

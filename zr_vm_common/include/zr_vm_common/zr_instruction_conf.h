@@ -88,6 +88,7 @@
     Z(FUNCTION_RETURN)                                                                                                 \
     Z(GET_VALUE)                                                                                                       \
     Z(SET_VALUE)                                                                                                       \
+    Z(GET_GLOBAL)                                                                                                      \
     Z(JUMP)                                                                                                            \
     Z(JUMP_IF)                                                                                                         \
     Z(CREATE_CLOSURE)                                                                                                  \

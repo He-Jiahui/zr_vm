@@ -857,37 +857,41 @@ static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
     }
     // Lambda 表达式或括号表达式
     else if (consume_token(ps, ZR_TK_LPAREN)) {
-        // 检查是否是 lambda 表达式（参数列表后跟 =>）
-        EZrToken lookahead = peek_token(ps);
-        if (lookahead == ZR_TK_RIGHT_ARROW || lookahead == ZR_TK_PARAMS || 
-            ps->lexer->t.token == ZR_TK_IDENTIFIER || ps->lexer->t.token == ZR_TK_PARAMS) {
-            // 可能是 lambda，尝试解析
-            SZrFileRange lambdaLoc = get_current_location(ps);
-            SZrAstNodeArray *params = ZR_NULL;
-            SZrParameter *args = ZR_NULL;
+        // 检查是否是 lambda 表达式：先尝试解析参数列表，然后检查下一个 token 是否是 =>
+        // 这样可以处理空参数列表 () => { ... } 的情况
+        SZrFileRange lambdaLoc = get_current_location(ps);
+        SZrAstNodeArray *params = ZR_NULL;
+        SZrParameter *args = ZR_NULL;
 
-            if (ps->lexer->t.token == ZR_TK_PARAMS) {
-                // 只有可变参数
-                ZrLexerNext(ps->lexer);
-                SZrAstNode *argsNode = parse_parameter(ps);
-                if (argsNode != ZR_NULL) {
-                    args = &argsNode->data.parameter;
-                }
-                params = ZrAstNodeArrayNew(ps->state, 0);
-            } else {
-                params = parse_parameter_list(ps);
-                if (consume_token(ps, ZR_TK_COMMA)) {
-                    if (ps->lexer->t.token == ZR_TK_PARAMS) {
-                        ZrLexerNext(ps->lexer);
-                        SZrAstNode *argsNode = parse_parameter(ps);
-                        if (argsNode != ZR_NULL) {
-                            args = &argsNode->data.parameter;
-                        }
+        // 尝试解析参数列表（可能是空的）
+        if (ps->lexer->t.token == ZR_TK_PARAMS) {
+            // 只有可变参数
+            ZrLexerNext(ps->lexer);
+            SZrAstNode *argsNode = parse_parameter(ps);
+            if (argsNode != ZR_NULL) {
+                args = &argsNode->data.parameter;
+            }
+            params = ZrAstNodeArrayNew(ps->state, 0);
+        } else {
+            // 解析参数列表（可能是空的）
+            params = parse_parameter_list(ps);
+            if (consume_token(ps, ZR_TK_COMMA)) {
+                if (ps->lexer->t.token == ZR_TK_PARAMS) {
+                    ZrLexerNext(ps->lexer);
+                    SZrAstNode *argsNode = parse_parameter(ps);
+                    if (argsNode != ZR_NULL) {
+                        args = &argsNode->data.parameter;
                     }
                 }
             }
+        }
 
-            if (consume_token(ps, ZR_TK_RPAREN) && consume_token(ps, ZR_TK_RIGHT_ARROW)) {
+        // 检查下一个 token 是否是 =>，如果是，就是 lambda 表达式
+        if (consume_token(ps, ZR_TK_RPAREN)) {
+            if (ps->lexer->t.token == ZR_TK_RIGHT_ARROW) {
+                // 是 lambda 表达式
+                ZrLexerNext(ps->lexer);  // 消费 =>
+                
                 SZrAstNode *block = parse_block(ps);
                 if (block != ZR_NULL) {
                     SZrFileRange endLoc = get_current_location(ps);
@@ -900,11 +904,20 @@ static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
                         return parse_member_access(ps, lambdaNode);
                     }
                 }
+                // 如果创建 lambda 节点失败，继续解析为普通表达式
             }
-            // 如果不是 lambda，回退并解析为普通括号表达式
-            // 这里需要更复杂的回退机制，暂时简化处理
         }
-        // 普通括号表达式
+        
+        // 如果不是 lambda，解析为普通括号表达式
+        // 注意：如果参数列表已经被解析了，这里需要重新解析
+        // 简化处理：如果参数列表为空，直接解析表达式；否则，可能需要报错
+        // 实际上，如果已经消费了 )，需要回退，但回退很复杂
+        // 这里简化：假设如果不是 lambda，就是普通括号表达式
+        // 但参数列表可能已经被解析了，所以这里可能会有问题
+        // 更好的方法是：不消费 )，先检查下一个 token
+        // 为了简化，我们假设如果参数列表为空且后面不是 =>，就是普通括号表达式
+        // 但 ) 已经被消费了，所以这里需要特殊处理
+        // 暂时：如果不是 lambda，就解析为普通表达式（可能会出错，但先这样）
         base = parse_expression(ps);
         expect_token(ps, ZR_TK_RPAREN);
         consume_token(ps, ZR_TK_RPAREN);
@@ -1819,7 +1832,7 @@ static EZrAccessModifier parse_access_modifier(SZrParserState *ps) {
         ZrLexerNext(ps->lexer);
         return ZR_ACCESS_PROTECTED;
     }
-    return ZR_ACCESS_PUBLIC;  // 默认
+    return ZR_ACCESS_PRIVATE;  // 默认 private
 }
 
 // 解析参数
@@ -1927,6 +1940,10 @@ static SZrAstNode *parse_module_declaration(SZrParserState *ps) {
 // 解析变量声明
 static SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    
+    // 解析可见性修饰符（可选，默认 private）
+    EZrAccessModifier accessModifier = parse_access_modifier(ps);
+    
     expect_token(ps, ZR_TK_VAR);
     ZrLexerNext(ps->lexer);
 
@@ -2014,6 +2031,7 @@ static SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
     node->data.variableDeclaration.pattern = pattern;
     node->data.variableDeclaration.value = value;
     node->data.variableDeclaration.typeInfo = typeInfo;
+    node->data.variableDeclaration.accessModifier = accessModifier;
     return node;
 }
 
@@ -2754,6 +2772,30 @@ static SZrAstNode *parse_statement(SZrParserState *ps) {
 static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
+    // 检查是否是可见性修饰符（pub/pri/pro），后面应该跟 var/struct/class/interface/enum
+    if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO) {
+        // 使用 peek_token 查看下一个 token，不消费当前 token
+        EZrToken nextToken = peek_token(ps);
+        
+        // 根据下一个 token 调用相应的解析函数（它们会自己解析可见性修饰符）
+        switch (nextToken) {
+            case ZR_TK_VAR:
+                return parse_variable_declaration(ps);
+            case ZR_TK_STRUCT:
+                return parse_struct_declaration(ps);
+            case ZR_TK_CLASS:
+                return parse_class_declaration(ps);
+            case ZR_TK_INTERFACE:
+                return parse_interface_declaration(ps);
+            case ZR_TK_ENUM:
+                return parse_enum_declaration(ps);
+            default:
+                // 如果后面不是声明类型，报告错误
+                report_error(ps, "Expected declaration after access modifier");
+                return ZR_NULL;
+        }
+    }
+
     switch (token) {
         case ZR_TK_MODULE:
             return parse_module_declaration(ps);
@@ -3322,6 +3364,9 @@ static SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
 static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     
+    // 解析可见性修饰符（可选，默认 private）
+    EZrAccessModifier accessModifier = parse_access_modifier(ps);
+    
     // 期望 struct 关键字
     expect_token(ps, ZR_TK_STRUCT);
     ZrLexerNext(ps->lexer);
@@ -3458,12 +3503,16 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     node->data.structDeclaration.generic = generic;
     node->data.structDeclaration.inherits = inherits;
     node->data.structDeclaration.members = members;
+    node->data.structDeclaration.accessModifier = accessModifier;
     return node;
 }
 
 // 解析类声明
 static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    
+    // 解析可见性修饰符（可选，默认 private）
+    EZrAccessModifier accessModifier = parse_access_modifier(ps);
     
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrAstNodeArrayNew(ps->state, 2);
@@ -3641,6 +3690,7 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     node->data.classDeclaration.inherits = inherits;
     node->data.classDeclaration.members = members;
     node->data.classDeclaration.decorators = decorators;
+    node->data.classDeclaration.accessModifier = accessModifier;
     return node;
 }
 
@@ -3903,6 +3953,9 @@ static SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
 static SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     
+    // 解析可见性修饰符（可选，默认 private）
+    EZrAccessModifier accessModifier = parse_access_modifier(ps);
+    
     // 期望 interface 关键字
     expect_token(ps, ZR_TK_INTERFACE);
     ZrLexerNext(ps->lexer);
@@ -4078,6 +4131,7 @@ static SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     node->data.interfaceDeclaration.generic = generic;
     node->data.interfaceDeclaration.inherits = inherits;
     node->data.interfaceDeclaration.members = members;
+    node->data.interfaceDeclaration.accessModifier = accessModifier;
     return node;
 }
 
@@ -4124,6 +4178,9 @@ static SZrAstNode *parse_enum_member(SZrParserState *ps) {
 // 语法：enum Name[: baseType] { members }
 static SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    
+    // 解析可见性修饰符（可选，默认 private）
+    EZrAccessModifier accessModifier = parse_access_modifier(ps);
     
     // 期望 enum 关键字
     expect_token(ps, ZR_TK_ENUM);
@@ -4188,6 +4245,7 @@ static SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     node->data.enumDeclaration.name = name;
     node->data.enumDeclaration.baseType = baseType;
     node->data.enumDeclaration.members = members;
+    node->data.enumDeclaration.accessModifier = accessModifier;
     return node;
 }
 

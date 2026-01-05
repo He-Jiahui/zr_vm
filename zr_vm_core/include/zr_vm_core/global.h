@@ -69,6 +69,8 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Global Module Registry
     SZrTypeValue loadedModulesRegistry;
     SZrTypeValue nullValue;
+    // Global zr object (contains import, etc.)
+    SZrTypeValue zrObject;
 
     // GC
     struct SZrGarbageCollector *garbageCollector;
@@ -78,6 +80,11 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
 
     // IO
     FZrIoLoadSource sourceLoader;
+    
+    // Parser and Compiler (injected, can be NULL)
+    // 如果为NULL，则只支持加载.zro二进制文件
+    // 封装了从源代码解析到编译的全流程
+    struct SZrFunction *(*compileSource)(struct SZrState *state, const TChar *source, TZrSize sourceLength, struct SZrString *sourceName);
 
 
     // exceptions
@@ -101,6 +108,10 @@ ZR_CORE_API SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr user
                                              TUInt64 uniqueNumber, SZrCallbackGlobal *callbacks);
 
 ZR_CORE_API void ZrGlobalStateInitRegistry(struct SZrState *state, SZrGlobalState *global);
+
+// 设置 compileSource 函数指针（由 parser 模块调用）
+ZR_CORE_API void ZrGlobalStateSetCompileSource(SZrGlobalState *global, 
+    struct SZrFunction *(*compileSource)(struct SZrState *state, const TChar *source, TZrSize sourceLength, struct SZrString *sourceName));
 
 ZR_CORE_API void ZrGlobalStateFree(SZrGlobalState *global);
 

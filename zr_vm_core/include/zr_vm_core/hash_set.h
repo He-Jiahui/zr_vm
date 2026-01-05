@@ -11,7 +11,13 @@
 
 struct SZrState;
 struct SZrGlobalState;
-#define ZR_HASH_MOD(HASH, CAPACITY) (ZR_ASSERT((CAPACITY & (CAPACITY - 1)) == 0), ((HASH) & (CAPACITY - 1)))
+
+// MSVC 不支持在数组下标中使用逗号运算符，使用内联函数替代
+ZR_FORCE_INLINE TZrSize zr_hash_mod_inline(TUInt64 hash, TZrSize capacity) {
+    ZR_ASSERT((capacity & (capacity - 1)) == 0);
+    return (TZrSize)(hash & (capacity - 1));
+}
+#define ZR_HASH_MOD(HASH, CAPACITY) zr_hash_mod_inline((HASH), (CAPACITY))
 
 struct SZrHashSet {
     SZrHashKeyValuePair **buckets;

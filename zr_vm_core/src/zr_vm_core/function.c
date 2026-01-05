@@ -45,6 +45,8 @@ SZrFunction *ZrFunctionNew(struct SZrState *state) {
     function->lineInSourceStart = 0;
     function->lineInSourceEnd = 0;
     function->sourceCodeList = ZR_NULL;
+    function->exportedVariables = ZR_NULL;
+    function->exportedVariableLength = 0;
     return function;
 }
 
@@ -68,6 +70,9 @@ void ZrFunctionFree(struct SZrState *state, SZrFunction *function) {
     }
     if (function->executionLocationInfoList != ZR_NULL && function->executionLocationInfoLength > 0) {
         ZR_MEMORY_RAW_FREE_LIST(global, function->executionLocationInfoList, function->executionLocationInfoLength);
+    }
+    if (function->exportedVariables != ZR_NULL && function->exportedVariableLength > 0) {
+        ZR_MEMORY_RAW_FREE_LIST(global, function->exportedVariables, function->exportedVariableLength);
     }
 
     // ZrMemoryRawFreeWithType(global, function, sizeof(SZrFunction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
