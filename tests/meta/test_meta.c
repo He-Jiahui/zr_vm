@@ -173,6 +173,11 @@ static TBool callMetaMethod(SZrState *state, SZrTypeValue *value, EZrMetaType me
     return success;
 }
 
+// 测试初始化和清理
+void setUp(void) {}
+
+void tearDown(void) {}
+
 // ==================== TO_STRING 元方法测试 ====================
 
 static void test_meta_to_string_null(void) {
