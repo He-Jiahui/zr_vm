@@ -1195,115 +1195,63 @@ LZrReturning: {
             }
             DONE(1);
 
-            ZR_INSTRUCTION_LABEL(GET_VALUE) {
-                // GET_VALUE 指令格式：
+            ZR_INSTRUCTION_LABEL(GET_SUB_FUNCTION) {
+                // GET_SUB_FUNCTION 指令格式：
                 // operandExtra (E) = destSlot (destination已通过E(instruction)定义)
-                // operand1[0] (A1) = nameConstantIndex (变量名的常量索引)
+                // operand1[0] (A1) = childFunctionIndex (子函数在 childFunctionList 中的索引)
                 // operand1[1] (B1) = 0 (未使用)
-                // GET_VALUE 用于通过变量名访问局部变量
-                TZrSize nameConstantIndex = A1(instruction);
-                SZrTypeValue *nameValue = CONST(nameConstantIndex);
+                // GET_SUB_FUNCTION 用于从父函数的 childFunctionList 中通过索引获取子函数并压入栈
+                // 这是编译时确定的静态索引，运行时直接通过索引访问，无需名称查找
+                // 注意：GET_SUB_FUNCTION 只操作函数类型（ZR_VALUE_TYPE_FUNCTION 或 ZR_VALUE_TYPE_CLOSURE）
+                TZrSize childFunctionIndex = A1(instruction);
                 
-                // 检查变量名是否为字符串类型
-                if (!ZR_VALUE_IS_TYPE_STRING(nameValue->type)) {
-                    ZrDebugRunError(state, "GET_VALUE: variable name must be a string");
-                }
-                
-                // 获取变量名字符串对象
-                SZrString *varName = ZR_CAST_STRING(state, nameValue->value.object);
-                if (varName == ZR_NULL) {
-                    ZrDebugRunError(state, "GET_VALUE: variable name string is null");
-                }
-                
-                // 在当前函数的局部变量表中查找变量
-                SZrFunction *function = closure->function;
-                TZrMemoryOffset currentOffset = (TZrMemoryOffset)(programCounter - closure->function->instructionsList);
+                // 获取父函数的 callInfo
+                SZrCallInfo *parentCallInfo = callInfo->previous;
                 TBool found = ZR_FALSE;
                 
-                // 遍历局部变量表，查找匹配的变量名
-                for (TUInt32 i = 0; i < function->localVariableLength; i++) {
-                    SZrFunctionLocalVariable *localVar = &function->localVariableList[i];
-                    
-                    // 检查变量名是否匹配
-                    if (localVar->name != ZR_NULL && ZrStringEqual(localVar->name, varName)) {
-                        // 检查变量是否在当前作用域内（通过 offsetActivate 和 offsetDead）
-                        if (localVar->offsetActivate <= currentOffset && currentOffset < localVar->offsetDead) {
-                            // 变量在作用域内，使用 offsetActivate 作为栈偏移量
-                            TZrStackValuePointer varPointer = base + localVar->offsetActivate;
-                            
-                            // 检查偏移量是否有效
-                            if (varPointer >= callInfo->functionBase.valuePointer + 1 && 
-                                varPointer < state->stackTop.valuePointer) {
-                                ZrValueCopy(state, destination, &varPointer->value);
-                                found = ZR_TRUE;
-                                break;
+                if (parentCallInfo != ZR_NULL && ZR_CALL_INFO_IS_VM(parentCallInfo)) {
+                    // 获取父函数的闭包和函数
+                    SZrTypeValue *parentFunctionBaseValue = ZrStackGetValue(parentCallInfo->functionBase.valuePointer);
+                    if (parentFunctionBaseValue != ZR_NULL) {
+                        // 类型检查：确保父函数是函数类型或闭包类型
+                        if (parentFunctionBaseValue->type == ZR_VALUE_TYPE_FUNCTION || 
+                            parentFunctionBaseValue->type == ZR_VALUE_TYPE_CLOSURE) {
+                            SZrClosure *parentClosure = ZR_CAST_VM_CLOSURE(state, parentFunctionBaseValue->value.object);
+                            if (parentClosure != ZR_NULL && parentClosure->function != ZR_NULL) {
+                                SZrFunction *parentFunction = parentClosure->function;
+                                
+                                // 通过索引直接访问 childFunctionList
+                                if (childFunctionIndex < parentFunction->childFunctionLength) {
+                                    SZrFunction *childFunction = &parentFunction->childFunctionList[childFunctionIndex];
+                                    if (childFunction != ZR_NULL && 
+                                        childFunction->super.type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+                                        // 创建闭包对象
+                                        SZrClosure *childClosure = ZrClosureNew(state, 0);
+                                        if (childClosure != ZR_NULL) {
+                                            childClosure->function = childFunction;
+                                            ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(childClosure));
+                                            destination->type = ZR_VALUE_TYPE_CLOSURE;
+                                            destination->isGarbageCollectable = ZR_TRUE;
+                                            destination->isNative = ZR_FALSE;
+                                            found = ZR_TRUE;
+                                        }
+                                    }
+                                }
                             }
+                        } else {
+                            // 类型错误：父函数不是函数类型
+                            ZrDebugRunError(state, "GET_SUB_FUNCTION: parent must be a function or closure");
                         }
                     }
                 }
                 
-                // 如果没找到局部变量，返回 null
+                // 如果没找到，返回 null
                 if (!found) {
                     ZrValueResetAsNull(destination);
                 }
             }
             DONE(1);
 
-            ZR_INSTRUCTION_LABEL(SET_VALUE) {
-                // SET_VALUE 指令格式：
-                // operandExtra (E) = nameConstantIndex (变量名的常量索引)
-                // operand1[0] (A1) = rightSlot (源值槽位)
-                // operand1[1] (B1) = 0 (未使用)
-                // SET_VALUE 用于通过变量名设置局部变量的值
-                TZrSize nameConstantIndex = E(instruction);
-                TZrSize rightSlot = A1(instruction);
-                SZrTypeValue *nameValue = CONST(nameConstantIndex);
-                SZrTypeValue *sourceValue = &BASE(rightSlot)->value;
-                
-                // 检查变量名是否为字符串类型
-                if (!ZR_VALUE_IS_TYPE_STRING(nameValue->type)) {
-                    ZrDebugRunError(state, "SET_VALUE: variable name must be a string");
-                }
-                
-                // 获取变量名字符串对象
-                SZrString *varName = ZR_CAST_STRING(state, nameValue->value.object);
-                if (varName == ZR_NULL) {
-                    ZrDebugRunError(state, "SET_VALUE: variable name string is null");
-                }
-                
-                // 在当前函数的局部变量表中查找变量
-                SZrFunction *function = closure->function;
-                TZrMemoryOffset currentOffset = (TZrMemoryOffset)(programCounter - closure->function->instructionsList);
-                TBool found = ZR_FALSE;
-                
-                // 遍历局部变量表，查找匹配的变量名
-                for (TUInt32 i = 0; i < function->localVariableLength; i++) {
-                    SZrFunctionLocalVariable *localVar = &function->localVariableList[i];
-                    
-                    // 检查变量名是否匹配
-                    if (localVar->name != ZR_NULL && ZrStringEqual(localVar->name, varName)) {
-                        // 检查变量是否在当前作用域内（通过 offsetActivate 和 offsetDead）
-                        if (localVar->offsetActivate <= currentOffset && currentOffset < localVar->offsetDead) {
-                            // 变量在作用域内，使用 offsetActivate 作为栈偏移量
-                            TZrStackValuePointer varPointer = base + localVar->offsetActivate;
-                            
-                            // 检查偏移量是否有效
-                            if (varPointer >= callInfo->functionBase.valuePointer + 1 && 
-                                varPointer < state->stackTop.valuePointer) {
-                                ZrValueCopy(state, &varPointer->value, sourceValue);
-                                found = ZR_TRUE;
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                // 如果没找到局部变量，报错
-                if (!found) {
-                    ZrDebugRunError(state, "SET_VALUE: local variable not found or out of scope");
-                }
-            }
-            DONE(1);
 
             ZR_INSTRUCTION_LABEL(GET_GLOBAL) {
                 // GET_GLOBAL 指令格式：
@@ -1322,12 +1270,26 @@ LZrReturning: {
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(GETTABLE) {
+                // GETTABLE 指令格式：
+                // operandExtra (E) = destSlot (destination已通过E(instruction)定义)
+                // operand1[0] (A1) = tableSlot (对象在栈中的位置)
+                // operand1[1] (B1) = keySlot (键在栈中的位置)
+                // GETTABLE 用于从 object 的键值对（nodeMap）中获取值
+                // 注意：GETTABLE 只操作对象类型（ZR_VALUE_TYPE_OBJECT 或 ZR_VALUE_TYPE_ARRAY）
                 opA = &BASE(A1(instruction))->value; // table object
                 opB = &BASE(B1(instruction))->value; // key
-                const SZrTypeValue *result = ZrObjectGetValue(state, ZR_CAST_OBJECT(state, opA->value.object), opB);
-                if (result != ZR_NULL) {
-                    ZrValueCopy(state, destination, result);
+                
+                // 类型检查：确保 table 是对象类型或数组类型
+                if (opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY) {
+                    const SZrTypeValue *result = ZrObjectGetValue(state, ZR_CAST_OBJECT(state, opA->value.object), opB);
+                    if (result != ZR_NULL) {
+                        ZrValueCopy(state, destination, result);
+                    } else {
+                        ZrValueResetAsNull(destination);
+                    }
                 } else {
+                    // 类型错误：table 不是对象类型
+                    ZrDebugRunError(state, "GETTABLE: table must be an object or array");
                     ZrValueResetAsNull(destination);
                 }
             }

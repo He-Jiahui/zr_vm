@@ -5,10 +5,10 @@
 #ifndef ZR_VM_PARSER_AST_H
 #define ZR_VM_PARSER_AST_H
 
+#include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/location.h"
-#include "zr_vm_core/string.h"
-#include "zr_vm_core/state.h"
 
 #include <stddef.h>
 
@@ -153,17 +153,17 @@ typedef enum EZrAccessModifier EZrAccessModifier;
 
 // 赋值操作符
 typedef struct SZrAssignmentOperator {
-    const TChar *op;  // "=", "+=", "-=", "*=", "/=", "%="
+    const TChar *op; // "=", "+=", "-=", "*=", "/=", "%="
 } SZrAssignmentOperator;
 
 // 二元操作符
 typedef struct SZrBinaryOperator {
-    const TChar *op;  // "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "<<", ">>", "|", "^", "&"
+    const TChar *op; // "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "<<", ">>", "|", "^", "&"
 } SZrBinaryOperator;
 
 // 一元操作符
 typedef struct SZrUnaryOperator {
-    const TChar *op;  // "!", "~", "+", "-", "$", "new"
+    const TChar *op; // "!", "~", "+", "-", "$", "new"
 } SZrUnaryOperator;
 
 // 标识符
@@ -173,32 +173,32 @@ typedef struct SZrIdentifier {
 
 // 类型定义
 typedef struct SZrType {
-    SZrAstNode *name;  // Identifier 或 GenericType 或 TupleType
-    SZrAstNode *subType;  // 子类型（可选）
-    TInt32 dimensions;  // 数组维度
+    SZrAstNode *name; // Identifier 或 GenericType 或 TupleType
+    struct SZrType *subType; // 子类型（可选）
+    TInt32 dimensions; // 数组维度
 } SZrType;
 
 // 泛型类型
 typedef struct SZrGenericType {
     SZrIdentifier *name;
-    SZrAstNodeArray *params;  // Type 数组
+    SZrAstNodeArray *params; // Type 数组
 } SZrGenericType;
 
 // 元组类型
 typedef struct SZrTupleType {
-    SZrAstNodeArray *elements;  // Type 数组
+    SZrAstNodeArray *elements; // Type 数组
 } SZrTupleType;
 
 // 泛型声明
 typedef struct SZrGenericDeclaration {
-    SZrAstNodeArray *params;  // Parameter 数组
+    SZrAstNodeArray *params; // Parameter 数组
 } SZrGenericDeclaration;
 
 // 参数
 typedef struct SZrParameter {
     SZrIdentifier *name;
-    SZrType *typeInfo;  // 可选
-    SZrAstNode *defaultValue;  // 可选表达式
+    SZrType *typeInfo; // 可选
+    SZrAstNode *defaultValue; // 可选表达式
 } SZrParameter;
 
 // 字面量节点结构
@@ -208,13 +208,13 @@ typedef struct SZrBooleanLiteral {
 
 typedef struct SZrIntegerLiteral {
     TInt64 value;
-    SZrString *literal;  // 原始字符串
+    SZrString *literal; // 原始字符串
 } SZrIntegerLiteral;
 
 typedef struct SZrFloatLiteral {
     TDouble value;
     SZrString *literal;
-    TBool isSingle;  // 是否为单精度
+    TBool isSingle; // 是否为单精度
 } SZrFloatLiteral;
 
 typedef struct SZrStringLiteral {
@@ -256,26 +256,26 @@ typedef struct SZrConditionalExpression {
 typedef struct SZrLogicalExpression {
     SZrAstNode *left;
     SZrAstNode *right;
-    const TChar *op;  // "&&" 或 "||"
+    const TChar *op; // "&&" 或 "||"
 } SZrLogicalExpression;
 
 typedef struct SZrLambdaExpression {
-    SZrAstNodeArray *params;  // Parameter 数组
-    SZrParameter *args;  // 可变参数（可选）
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
     SZrAstNode *block;
 } SZrLambdaExpression;
 
 typedef struct SZrIfExpression {
     SZrAstNode *condition;
     SZrAstNode *thenExpr;
-    SZrAstNode *elseExpr;  // 可选
+    SZrAstNode *elseExpr; // 可选
     TBool isStatement;
 } SZrIfExpression;
 
 typedef struct SZrSwitchExpression {
     SZrAstNode *expr;
-    SZrAstNodeArray *cases;  // SwitchCase 数组
-    SZrAstNode *defaultCase;  // SwitchDefault（可选）
+    SZrAstNodeArray *cases; // SwitchCase 数组
+    SZrAstNode *defaultCase; // SwitchDefault（可选）
     TBool isStatement;
 } SZrSwitchExpression;
 
@@ -289,31 +289,31 @@ typedef struct SZrSwitchDefault {
 } SZrSwitchDefault;
 
 typedef struct SZrFunctionCall {
-    SZrAstNodeArray *args;  // Expression 数组
+    SZrAstNodeArray *args; // Expression 数组
 } SZrFunctionCall;
 
 typedef struct SZrMemberExpression {
     SZrAstNode *property;
-    TBool computed;  // true 表示使用 []，false 表示使用 .
+    TBool computed; // true 表示使用 []，false 表示使用 .
 } SZrMemberExpression;
 
 typedef struct SZrPrimaryExpression {
     SZrAstNode *property;
-    SZrAstNodeArray *members;  // MemberExpression 或 FunctionCall 数组
+    SZrAstNodeArray *members; // MemberExpression 或 FunctionCall 数组
 } SZrPrimaryExpression;
 
 // 字面量表达式
 typedef struct SZrArrayLiteral {
-    SZrAstNodeArray *elements;  // Expression 数组
+    SZrAstNodeArray *elements; // Expression 数组
 } SZrArrayLiteral;
 
 typedef struct SZrObjectLiteral {
-    SZrAstNodeArray *properties;  // KeyValuePair 数组
+    SZrAstNodeArray *properties; // KeyValuePair 数组
 } SZrObjectLiteral;
 
 typedef struct SZrKeyValuePair {
-    SZrAstNode *key;  // Identifier, String, 或 Expression（计算键）
-    SZrAstNode *value;  // Expression
+    SZrAstNode *key; // Identifier, String, 或 Expression（计算键）
+    SZrAstNode *value; // Expression
 } SZrKeyValuePair;
 
 typedef struct SZrUnpackLiteral {
@@ -322,7 +322,7 @@ typedef struct SZrUnpackLiteral {
 
 // 生成器表达式（{{}}）
 typedef struct SZrGeneratorExpression {
-    SZrAstNode *block;  // Block，包含 out 语句
+    SZrAstNode *block; // Block，包含 out 语句
 } SZrGeneratorExpression;
 
 // 循环表达式
@@ -333,16 +333,16 @@ typedef struct SZrWhileLoop {
 } SZrWhileLoop;
 
 typedef struct SZrForLoop {
-    SZrAstNode *init;  // VariableDeclaration 或 null
-    SZrAstNode *cond;  // ExpressionStatement 或 null
-    SZrAstNode *step;  // Expression（可选）
+    SZrAstNode *init; // VariableDeclaration 或 null
+    SZrAstNode *cond; // ExpressionStatement 或 null
+    SZrAstNode *step; // Expression（可选）
     SZrAstNode *block;
     TBool isStatement;
 } SZrForLoop;
 
 typedef struct SZrForeachLoop {
-    SZrAstNode *pattern;  // DestructuringPattern, DestructuringArrayPattern, 或 Identifier
-    SZrType *typeInfo;  // 可选
+    SZrAstNode *pattern; // DestructuringPattern, DestructuringArrayPattern, 或 Identifier
+    SZrType *typeInfo; // 可选
     SZrAstNode *expr;
     SZrAstNode *block;
     TBool isStatement;
@@ -350,47 +350,47 @@ typedef struct SZrForeachLoop {
 
 // 声明节点结构
 typedef struct SZrModuleDeclaration {
-    SZrAstNode *name;  // Identifier 或 StringLiteral
+    SZrAstNode *name; // Identifier 或 StringLiteral
 } SZrModuleDeclaration;
 
 typedef struct SZrVariableDeclaration {
-    SZrAstNode *pattern;  // DestructuringPattern, DestructuringArrayPattern, 或 Identifier
-    SZrAstNode *value;  // Expression
-    SZrType *typeInfo;  // 可选
-    EZrAccessModifier accessModifier;  // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
+    SZrAstNode *pattern; // DestructuringPattern, DestructuringArrayPattern, 或 Identifier
+    SZrAstNode *value; // Expression
+    SZrType *typeInfo; // 可选
+    EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrVariableDeclaration;
 
 typedef struct SZrFunctionDeclaration {
     SZrIdentifier *name;
-    SZrGenericDeclaration *generic;  // 可选
-    SZrAstNodeArray *params;  // Parameter 数组
-    SZrParameter *args;  // 可变参数（可选）
-    SZrType *returnType;  // 可选
-    SZrAstNode *body;  // Block
-    SZrAstNodeArray *decorators;  // DecoratorExpression 数组
+    SZrGenericDeclaration *generic; // 可选
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrType *returnType; // 可选
+    SZrAstNode *body; // Block
+    SZrAstNodeArray *decorators; // DecoratorExpression 数组
 } SZrFunctionDeclaration;
 
 typedef struct SZrTestDeclaration {
-    SZrIdentifier *name;  // 可选，测试名称
-    SZrAstNodeArray *params;  // Parameter 数组
-    SZrParameter *args;  // 可变参数（可选）
-    SZrAstNode *body;  // Block
+    SZrIdentifier *name; // 可选，测试名称
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrAstNode *body; // Block
 } SZrTestDeclaration;
 
 typedef struct SZrStructDeclaration {
     SZrIdentifier *name;
-    SZrGenericDeclaration *generic;  // 可选
-    SZrAstNodeArray *inherits;  // Type 数组
-    SZrAstNodeArray *members;  // StructField, StructMethod, StructMetaFunction 数组
-    EZrAccessModifier accessModifier;  // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
+    SZrGenericDeclaration *generic; // 可选
+    SZrAstNodeArray *inherits; // Type 数组
+    SZrAstNodeArray *members; // StructField, StructMethod, StructMetaFunction 数组
+    EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrStructDeclaration;
 
 typedef struct SZrStructField {
     EZrAccessModifier access;
     TBool isStatic;
     SZrIdentifier *name;
-    SZrType *typeInfo;  // 可选
-    SZrAstNode *init;  // 可选表达式
+    SZrType *typeInfo; // 可选
+    SZrAstNode *init; // 可选表达式
 } SZrStructField;
 
 typedef struct SZrStructMethod {
@@ -398,43 +398,43 @@ typedef struct SZrStructMethod {
     EZrAccessModifier access;
     TBool isStatic;
     SZrIdentifier *name;
-    SZrGenericDeclaration *generic;  // 可选
-    SZrAstNodeArray *params;  // Parameter 数组
-    SZrParameter *args;  // 可变参数（可选）
-    SZrType *returnType;  // 可选
-    SZrAstNode *body;  // Block
+    SZrGenericDeclaration *generic; // 可选
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrType *returnType; // 可选
+    SZrAstNode *body; // Block
 } SZrStructMethod;
 
 typedef struct SZrStructMetaFunction {
     EZrAccessModifier access;
     TBool isStatic;
-    SZrIdentifier *meta;  // MetaIdentifier
-    SZrAstNodeArray *params;  // Parameter 数组
-    SZrParameter *args;  // 可变参数（可选）
-    SZrType *returnType;  // 可选
-    SZrAstNode *body;  // Block
+    SZrIdentifier *meta; // MetaIdentifier
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrType *returnType; // 可选
+    SZrAstNode *body; // Block
 } SZrStructMetaFunction;
 
 typedef struct SZrEnumDeclaration {
     SZrIdentifier *name;
-    SZrType *baseType;  // 可选，继承类型（int, string, float, bool）
-    SZrAstNodeArray *members;  // EnumMember 数组
-    EZrAccessModifier accessModifier;  // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
+    SZrType *baseType; // 可选，继承类型（int, string, float, bool）
+    SZrAstNodeArray *members; // EnumMember 数组
+    EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrEnumDeclaration;
 
 typedef struct SZrEnumMember {
     SZrIdentifier *name;
-    SZrAstNode *value;  // 可选表达式
+    SZrAstNode *value; // 可选表达式
 } SZrEnumMember;
 
 // 类声明
 typedef struct SZrClassDeclaration {
     SZrIdentifier *name;
-    SZrGenericDeclaration *generic;  // 可选
-    SZrAstNodeArray *inherits;  // Type 数组
-    SZrAstNodeArray *members;  // ClassField, ClassMethod, ClassProperty, ClassMetaFunction 数组
-    SZrAstNodeArray *decorators;  // DecoratorExpression 数组
-    EZrAccessModifier accessModifier;  // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
+    SZrGenericDeclaration *generic; // 可选
+    SZrAstNodeArray *inherits; // Type 数组
+    SZrAstNodeArray *members; // ClassField, ClassMethod, ClassProperty, ClassMetaFunction 数组
+    SZrAstNodeArray *decorators; // DecoratorExpression 数组
+    EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrClassDeclaration;
 
 // 类字段
@@ -443,8 +443,8 @@ typedef struct SZrClassField {
     EZrAccessModifier access;
     TBool isStatic;
     SZrIdentifier *name;
-    SZrType *typeInfo;  // 可选
-    SZrAstNode *init;  // 可选表达式
+    SZrType *typeInfo; // 可选
+    SZrAstNode *init; // 可选表达式
 } SZrClassField;
 
 // 类方法
@@ -453,11 +453,11 @@ typedef struct SZrClassMethod {
     EZrAccessModifier access;
     TBool isStatic;
     SZrIdentifier *name;
-    SZrGenericDeclaration *generic;  // 可选
-    SZrAstNodeArray *params;  // Parameter 数组
-    SZrParameter *args;  // 可变参数（可选）
-    SZrType *returnType;  // 可选
-    SZrAstNode *body;  // Block
+    SZrGenericDeclaration *generic; // 可选
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrType *returnType; // 可选
+    SZrAstNode *body; // Block
 } SZrClassMethod;
 
 // 类属性
@@ -465,60 +465,61 @@ typedef struct SZrClassProperty {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TBool isStatic;
-    SZrAstNode *modifier;  // PropertyGet 或 PropertySet 节点
+    SZrAstNode *modifier; // PropertyGet 或 PropertySet 节点
 } SZrClassProperty;
 
 // 类元函数
 typedef struct SZrClassMetaFunction {
     EZrAccessModifier access;
     TBool isStatic;
-    SZrIdentifier *meta;  // MetaIdentifier
-    SZrAstNodeArray *params;  // Parameter 数组
-    SZrParameter *args;  // 可变参数（可选）
-    SZrAstNodeArray *superArgs;  // Expression 数组（可选）
-    SZrType *returnType;  // 可选
-    SZrAstNode *body;  // Block
+    SZrIdentifier *meta; // MetaIdentifier
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrAstNodeArray *superArgs; // Expression 数组（可选）
+    SZrType *returnType; // 可选
+    SZrAstNode *body; // Block
 } SZrClassMetaFunction;
 
 // 属性 Getter
 typedef struct SZrPropertyGet {
     SZrIdentifier *name;
-    SZrType *targetType;  // 可选
-    SZrAstNode *body;  // Block
+    SZrType *targetType; // 可选
+    SZrAstNode *body; // Block
 } SZrPropertyGet;
 
 // 属性 Setter
 typedef struct SZrPropertySet {
     SZrIdentifier *name;
     SZrIdentifier *param;
-    SZrType *targetType;  // 可选
-    SZrAstNode *body;  // Block
+    SZrType *targetType; // 可选
+    SZrAstNode *body; // Block
 } SZrPropertySet;
 
 // 接口声明
 typedef struct SZrInterfaceDeclaration {
     SZrIdentifier *name;
-    SZrGenericDeclaration *generic;  // 可选
-    SZrAstNodeArray *inherits;  // Type 数组
-    SZrAstNodeArray *members;  // InterfaceFieldDeclaration, InterfaceMethodSignature, InterfacePropertySignature, InterfaceMetaSignature 数组
-    EZrAccessModifier accessModifier;  // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
+    SZrGenericDeclaration *generic; // 可选
+    SZrAstNodeArray *inherits; // Type 数组
+    SZrAstNodeArray *members; // InterfaceFieldDeclaration, InterfaceMethodSignature, InterfacePropertySignature,
+                              // InterfaceMetaSignature 数组
+    EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrInterfaceDeclaration;
 
 // 接口字段声明
 typedef struct SZrInterfaceFieldDeclaration {
     EZrAccessModifier access;
     SZrIdentifier *name;
-    SZrType *typeInfo;  // 可选
+    SZrType *typeInfo; // 可选
 } SZrInterfaceFieldDeclaration;
 
 // 接口方法签名
 typedef struct SZrInterfaceMethodSignature {
     EZrAccessModifier access;
     SZrIdentifier *name;
-    SZrGenericDeclaration *generic;  // 可选
-    SZrAstNodeArray *params;  // Parameter 数组
-    SZrParameter *args;  // 可变参数（可选）
-    SZrType *returnType;  // 可选
+    SZrGenericDeclaration *generic; // 可选
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrType *returnType; // 可选
 } SZrInterfaceMethodSignature;
 
 // 接口属性签名
@@ -527,21 +528,21 @@ typedef struct SZrInterfacePropertySignature {
     TBool hasGet;
     TBool hasSet;
     SZrIdentifier *name;
-    SZrType *typeInfo;  // 可选
+    SZrType *typeInfo; // 可选
 } SZrInterfacePropertySignature;
 
 // 接口元函数签名
 typedef struct SZrInterfaceMetaSignature {
     EZrAccessModifier access;
-    SZrIdentifier *meta;  // MetaIdentifier
-    SZrAstNodeArray *params;  // Parameter 数组
-    SZrParameter *args;  // 可变参数（可选）
-    SZrType *returnType;  // 可选
+    SZrIdentifier *meta; // MetaIdentifier
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrType *returnType; // 可选
 } SZrInterfaceMetaSignature;
 
 // 语句节点结构
 typedef struct SZrBlock {
-    SZrAstNodeArray *body;  // Statement 数组
+    SZrAstNodeArray *body; // Statement 数组
     TBool isStatement;
 } SZrBlock;
 
@@ -550,12 +551,12 @@ typedef struct SZrExpressionStatement {
 } SZrExpressionStatement;
 
 typedef struct SZrReturnStatement {
-    SZrAstNode *expr;  // 可选表达式
+    SZrAstNode *expr; // 可选表达式
 } SZrReturnStatement;
 
 typedef struct SZrBreakContinueStatement {
     TBool isBreak;
-    SZrAstNode *expr;  // 可选表达式
+    SZrAstNode *expr; // 可选表达式
 } SZrBreakContinueStatement;
 
 typedef struct SZrThrowStatement {
@@ -568,52 +569,52 @@ typedef struct SZrOutStatement {
 
 typedef struct SZrTryCatchFinallyStatement {
     SZrAstNode *block;
-    SZrAstNodeArray *catchPattern;  // Parameter 数组（可选）
-    SZrAstNode *catchBlock;  // Block（可选）
-    SZrAstNode *finallyBlock;  // Block（可选）
+    SZrAstNodeArray *catchPattern; // Parameter 数组（可选）
+    SZrAstNode *catchBlock; // Block（可选）
+    SZrAstNode *finallyBlock; // Block（可选）
 } SZrTryCatchFinallyStatement;
 
 // Intermediate 语句
 typedef struct SZrIntermediateStatement {
-    SZrAstNode *declaration;  // IntermediateDeclaration
-    SZrAstNodeArray *instructions;  // IntermediateInstruction 数组
+    SZrAstNode *declaration; // IntermediateDeclaration
+    SZrAstNodeArray *instructions; // IntermediateInstruction 数组
 } SZrIntermediateStatement;
 
 // Intermediate 声明
 typedef struct SZrIntermediateDeclaration {
     SZrIdentifier *name;
-    SZrAstNodeArray *params;  // Parameter 数组
-    SZrParameter *args;  // 可变参数（可选）
-    SZrType *returnType;  // 可选
-    SZrAstNodeArray *closures;  // Parameter 数组（可选）
-    SZrAstNodeArray *constants;  // IntermediateConstant 数组（可选）
-    SZrAstNodeArray *locals;  // Parameter 数组（可选）
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrType *returnType; // 可选
+    SZrAstNodeArray *closures; // Parameter 数组（可选）
+    SZrAstNodeArray *constants; // IntermediateConstant 数组（可选）
+    SZrAstNodeArray *locals; // Parameter 数组（可选）
 } SZrIntermediateDeclaration;
 
 // Intermediate 常量
 typedef struct SZrIntermediateConstant {
     SZrIdentifier *name;
-    SZrAstNode *value;  // Literal
+    SZrAstNode *value; // Literal
 } SZrIntermediateConstant;
 
 // Intermediate 指令
 typedef struct SZrIntermediateInstruction {
     SZrIdentifier *name;
-    SZrAstNodeArray *values;  // IntermediateInstructionParameter 数组
+    SZrAstNodeArray *values; // IntermediateInstructionParameter 数组
 } SZrIntermediateInstruction;
 
 // Intermediate 指令参数
 typedef struct SZrIntermediateInstructionParameter {
-    SZrString *value;  // 标识符名或数字字面量字符串
+    SZrString *value; // 标识符名或数字字面量字符串
 } SZrIntermediateInstructionParameter;
 
 // 解构
 typedef struct SZrDestructuringObject {
-    SZrAstNodeArray *keys;  // Identifier 数组
+    SZrAstNodeArray *keys; // Identifier 数组
 } SZrDestructuringObject;
 
 typedef struct SZrDestructuringArray {
-    SZrAstNodeArray *keys;  // Identifier 数组
+    SZrAstNodeArray *keys; // Identifier 数组
 } SZrDestructuringArray;
 
 // 装饰器
@@ -628,8 +629,8 @@ typedef struct SZrMetaIdentifier {
 
 // Script 节点
 typedef struct SZrScript {
-    SZrAstNode *moduleName;  // ModuleDeclaration（可选）
-    SZrAstNodeArray *statements;  // TopLevelStatement 数组
+    SZrAstNode *moduleName; // ModuleDeclaration（可选）
+    SZrAstNodeArray *statements; // TopLevelStatement 数组
 } SZrScript;
 
 // AST 节点联合体
@@ -754,5 +755,4 @@ ZR_PARSER_API void ZrAstNodeArrayFree(SZrState *state, SZrAstNodeArray *array);
 // AST 节点创建辅助函数（将在 parser.c 中实现）
 // 这些函数用于创建各种类型的 AST 节点
 
-#endif //ZR_VM_PARSER_AST_H
-
+#endif // ZR_VM_PARSER_AST_H

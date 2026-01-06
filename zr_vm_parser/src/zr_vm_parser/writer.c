@@ -97,7 +97,11 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
     
     // MODULE: ENTRY [.FUNCTION]
     // FUNCTION: NAME [string]
-    SZrString *funcName = ZrStringCreate(state, "__entry", 7);
+    // 使用函数对象中的 functionName，如果不存在则使用默认名称
+    SZrString *funcName = function->functionName;
+    if (funcName == ZR_NULL) {
+        funcName = ZrStringCreate(state, "__entry", 7);
+    }
     TZrSize funcNameLength = (funcName->shortStringLength < 0xFF) ? 
                               (TZrSize)funcName->shortStringLength : 
                               funcName->longStringLength;
@@ -522,11 +526,8 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
             case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
                 fprintf(file, "FUNCTION_RETURN");
                 break;
-            case ZR_INSTRUCTION_ENUM(GET_VALUE):
-                fprintf(file, "GET_VALUE");
-                break;
-            case ZR_INSTRUCTION_ENUM(SET_VALUE):
-                fprintf(file, "SET_VALUE");
+            case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
+                fprintf(file, "GET_SUB_FUNCTION");
                 break;
             case ZR_INSTRUCTION_ENUM(JUMP):
                 fprintf(file, "JUMP");
@@ -574,8 +575,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
             case ZR_INSTRUCTION_ENUM(SET_CLOSURE):
             case ZR_INSTRUCTION_ENUM(GETUPVAL):
             case ZR_INSTRUCTION_ENUM(SETUPVAL):
-            case ZR_INSTRUCTION_ENUM(GET_VALUE):
-            case ZR_INSTRUCTION_ENUM(SET_VALUE):
+            case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
             case ZR_INSTRUCTION_ENUM(JUMP):
             case ZR_INSTRUCTION_ENUM(JUMP_IF):
             case ZR_INSTRUCTION_ENUM(THROW):
@@ -683,6 +683,23 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
         for (TUInt32 i = 0; i < function->childFunctionLength; i++) {
             SZrFunction *childFunc = &function->childFunctionList[i];
             fprintf(file, "  [%u] FUNCTION:\n", i);
+            // 输出函数名（如果存在）
+            if (childFunc->functionName != ZR_NULL) {
+                TNativeString nameStr = ZrStringGetNativeString(childFunc->functionName);
+                TZrSize nameLen;
+                if (childFunc->functionName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+                    nameLen = childFunc->functionName->shortStringLength;
+                } else {
+                    nameLen = childFunc->functionName->longStringLength;
+                }
+                if (nameStr != ZR_NULL && nameLen > 0) {
+                    fprintf(file, "    NAME: %.*s\n", (int)nameLen, nameStr);
+                } else {
+                    fprintf(file, "    NAME: <empty>\n");
+                }
+            } else {
+                fprintf(file, "    NAME: <anonymous>\n");
+            }
             fprintf(file, "    START_LINE: %u\n", childFunc->lineInSourceStart);
             fprintf(file, "    END_LINE: %u\n", childFunc->lineInSourceEnd);
             fprintf(file, "    PARAMETERS: %u\n", childFunc->parameterCount);
@@ -784,8 +801,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                     case ZR_INSTRUCTION_ENUM(SET_STACK):
                     case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
                     case ZR_INSTRUCTION_ENUM(SET_CLOSURE):
-                    case ZR_INSTRUCTION_ENUM(GET_VALUE):
-                    case ZR_INSTRUCTION_ENUM(SET_VALUE):
+                    case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
                     case ZR_INSTRUCTION_ENUM(JUMP):
                     case ZR_INSTRUCTION_ENUM(JUMP_IF):
                     case ZR_INSTRUCTION_ENUM(THROW):

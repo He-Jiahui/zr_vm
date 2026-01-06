@@ -51,6 +51,12 @@ typedef struct SZrCompilerState {
     // 嵌套函数
     SZrArray childFunctions;            // 子函数数组（SZrFunction*）
     
+    // 函数名到子函数索引的映射（仅用于编译时查找，运行时不需要）
+    SZrArray childFunctionNameMap;      // 函数名映射数组（SZrChildFunctionNameMap）
+    
+    // 顶层函数声明（如果脚本只有一个顶层函数声明，保存它以便返回）
+    SZrFunction *topLevelFunction;      // 顶层函数对象（如果存在）
+    
     // 错误处理
     TBool hasError;
     const TChar *errorMessage;
@@ -108,6 +114,12 @@ typedef struct SZrExportedVariable {
     TUInt32 stackSlot;                  // 栈槽位
     EZrAccessModifier accessModifier;   // 可见性修饰符
 } SZrExportedVariable;
+
+// 函数名到子函数索引的映射（仅用于编译时查找，运行时不需要）
+typedef struct SZrChildFunctionNameMap {
+    SZrString *name;                    // 函数名
+    TUInt32 childFunctionIndex;         // 子函数在 childFunctions 中的索引
+} SZrChildFunctionNameMap;
 
 // 编译结果结构体
 typedef struct SZrCompileResult {

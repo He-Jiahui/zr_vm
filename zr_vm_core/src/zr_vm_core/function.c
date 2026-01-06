@@ -47,6 +47,7 @@ SZrFunction *ZrFunctionNew(struct SZrState *state) {
     function->sourceCodeList = ZR_NULL;
     function->exportedVariables = ZR_NULL;
     function->exportedVariableLength = 0;
+    function->functionName = ZR_NULL;  // 函数名，匿名函数为 ZR_NULL
     return function;
 }
 

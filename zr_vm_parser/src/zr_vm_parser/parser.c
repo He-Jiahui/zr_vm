@@ -2050,7 +2050,7 @@ static SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         }
     }
 
-    // 解析函数名
+    // 解析函数名（不需要function关键字，直接是标识符）
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         ZrAstNodeArrayFree(ps->state, decorators);
@@ -2473,12 +2473,17 @@ static SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
     expect_token(ps, ZR_TK_VAR);
     consume_token(ps, ZR_TK_VAR);
 
-    // 解析模式
+    // 解析模式（标识符或解构）
     SZrAstNode *pattern = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
         pattern = parse_identifier(ps);
+    } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
+        // 对象解构模式 {key1, key2, ...}
+        pattern = parse_destructuring_object(ps);
+    } else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
+        // 数组解构模式 [elem1, elem2, ...]
+        pattern = parse_destructuring_array(ps);
     } else {
-        // TODO: 实现解构模式
         report_error(ps, "Expected identifier or destructuring pattern");
         return ZR_NULL;
     }
@@ -2761,6 +2766,91 @@ static SZrAstNode *parse_statement(SZrParserState *ps) {
         // TODO: 实现 switch 语句
 
         default:
+            // 检查是否是函数声明（identifier(params) { statements} 风格）
+            if (token == ZR_TK_IDENTIFIER) {
+                // 查看下一个 token 判断是否是函数声明
+                EZrToken lookahead = peek_token(ps);
+                if (lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN) {
+                    // 可能是函数声明，需要进一步检查后面是否有函数体 { }
+                    // 保存状态以便向前看
+                    TZrSize savedPos = ps->lexer->currentPos;
+                    TInt32 savedChar = ps->lexer->currentChar;
+                    TInt32 savedLine = ps->lexer->lineNumber;
+                    TInt32 savedLastLine = ps->lexer->lastLine;
+                    SZrToken savedToken = ps->lexer->t;
+                    SZrToken savedLookahead = ps->lexer->lookahead;
+                    TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
+                    TInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
+                    TInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
+                    TInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
+                    
+                    // 跳过标识符和左括号（或泛型）
+                    ZrLexerNext(ps->lexer);  // 消费标识符
+                    if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+                        // 跳过泛型参数
+                        while (ps->lexer->t.token != ZR_TK_GREATER_THAN && 
+                               ps->lexer->t.token != ZR_TK_EOS) {
+                            ZrLexerNext(ps->lexer);
+                        }
+                        if (ps->lexer->t.token == ZR_TK_GREATER_THAN) {
+                            ZrLexerNext(ps->lexer);  // 消费 >
+                        }
+                    }
+                    if (ps->lexer->t.token == ZR_TK_LPAREN) {
+                        ZrLexerNext(ps->lexer);  // 消费 (
+                        // 跳过参数列表（直到遇到 )）
+                        while (ps->lexer->t.token != ZR_TK_RPAREN && 
+                               ps->lexer->t.token != ZR_TK_EOS) {
+                            ZrLexerNext(ps->lexer);
+                        }
+                        if (ps->lexer->t.token == ZR_TK_RPAREN) {
+                            ZrLexerNext(ps->lexer);  // 消费 )
+                            // 跳过可选的返回类型注解
+                            if (ps->lexer->t.token == ZR_TK_COLON) {
+                                ZrLexerNext(ps->lexer);  // 消费 :
+                                // 跳过类型
+                                while (ps->lexer->t.token != ZR_TK_LBRACE && 
+                                       ps->lexer->t.token != ZR_TK_EOS &&
+                                       ps->lexer->t.token != ZR_TK_SEMICOLON) {
+                                    ZrLexerNext(ps->lexer);
+                                }
+                            }
+                            // 检查下一个 token 是否是函数体 { }
+                            if (ps->lexer->t.token == ZR_TK_LBRACE) {
+                                // 是函数声明，恢复状态并解析
+                                ps->lexer->currentPos = savedPos;
+                                ps->lexer->currentChar = savedChar;
+                                ps->lexer->lineNumber = savedLine;
+                                ps->lexer->lastLine = savedLastLine;
+                                ps->lexer->t = savedToken;
+                                ps->lexer->lookahead = savedLookahead;
+                                ps->lexer->lookaheadPos = savedLookaheadPos;
+                                ps->lexer->lookaheadChar = savedLookaheadChar;
+                                ps->lexer->lookaheadLine = savedLookaheadLine;
+                                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                                SZrAstNode *funcDecl = parse_function_declaration(ps);
+                                // 如果解析失败，直接返回 NULL（无论是否有错误）
+                                // 因为如果标识符后跟括号和函数体，它应该是函数声明，不应该回退到表达式解析
+                                if (funcDecl == ZR_NULL) {
+                                    return ZR_NULL;
+                                }
+                                return funcDecl;
+                            }
+                        }
+                    }
+                    // 恢复状态
+                    ps->lexer->currentPos = savedPos;
+                    ps->lexer->currentChar = savedChar;
+                    ps->lexer->lineNumber = savedLine;
+                    ps->lexer->lastLine = savedLastLine;
+                    ps->lexer->t = savedToken;
+                    ps->lexer->lookahead = savedLookahead;
+                    ps->lexer->lookaheadPos = savedLookaheadPos;
+                    ps->lexer->lookaheadChar = savedLookaheadChar;
+                    ps->lexer->lookaheadLine = savedLookaheadLine;
+                    ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                }
+            }
             // 尝试解析为表达式语句
             return parse_expression_statement(ps);
     }
@@ -2969,8 +3059,9 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 if (lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN) {
                     // 可能是函数声明
                     SZrAstNode *funcDecl = parse_function_declaration(ps);
-                    // 如果解析失败且已报告错误，直接返回 NULL，不要回退到表达式解析
-                    if (funcDecl == ZR_NULL && ps->hasError) {
+                    // 如果解析失败，直接返回 NULL（无论是否有错误）
+                    // 因为如果标识符后跟括号，它应该是函数声明，不应该回退到表达式解析
+                    if (funcDecl == ZR_NULL) {
                         return ZR_NULL;
                     }
                     return funcDecl;
@@ -3041,7 +3132,6 @@ static SZrAstNode *parse_script(SZrParserState *ps) {
                         break;
                     }
                     // 如果遇到可能的语句开始关键字，停止跳过
-                    // 注意：函数声明使用标识符，不是 ZR_TK_FUNCTION
                     if (token == ZR_TK_VAR || token == ZR_TK_STRUCT || token == ZR_TK_CLASS ||
                         token == ZR_TK_INTERFACE || token == ZR_TK_ENUM ||
                         token == ZR_TK_TEST || token == ZR_TK_INTERMEDIATE ||

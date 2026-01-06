@@ -1,7 +1,7 @@
 module "intermediate";
 
 // intermediate语句声明测试
-intermediate TestIntermediate(i: int, j: int): int
+intermediate TestIntermediate(i: int, j: int): int %
 <
     c1: int,
     c2: int
@@ -29,7 +29,7 @@ intermediate TestIntermediate(i: int, j: int): int
 }
 
 // 中间指令测试
-intermediate InstructionTest(): int
+intermediate InstructionTest(): int %
 <
 >
 [
@@ -49,7 +49,7 @@ intermediate InstructionTest(): int
 }
 
 // 常量声明测试
-intermediate ConstantTest(): int
+intermediate ConstantTest(): int %
 <
 >
 [
@@ -68,7 +68,7 @@ intermediate ConstantTest(): int
 }
 
 // 局部变量声明测试
-intermediate LocalVarTest(): int
+intermediate LocalVarTest(): int %
 <
 >
 [
@@ -89,7 +89,7 @@ intermediate LocalVarTest(): int
 }
 
 // 闭包变量声明测试
-intermediate ClosureVarTest(): int
+intermediate ClosureVarTest(): int %
 <
     closure1: int,
     closure2: int

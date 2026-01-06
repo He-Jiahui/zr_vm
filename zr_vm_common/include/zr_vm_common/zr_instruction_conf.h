@@ -86,9 +86,8 @@
     Z(FUNCTION_CALL)                                                                                                   \
     Z(FUNCTION_TAIL_CALL)                                                                                              \
     Z(FUNCTION_RETURN)                                                                                                 \
-    Z(GET_VALUE)                                                                                                       \
-    Z(SET_VALUE)                                                                                                       \
     Z(GET_GLOBAL)                                                                                                      \
+    Z(GET_SUB_FUNCTION)                                                                                                \
     Z(JUMP)                                                                                                            \
     Z(JUMP_IF)                                                                                                         \
     Z(CREATE_CLOSURE)                                                                                                  \

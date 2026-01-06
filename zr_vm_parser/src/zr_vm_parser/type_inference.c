@@ -220,21 +220,12 @@ TBool infer_identifier_type(SZrCompilerState *cs, SZrAstNode *node, SZrInferredT
         }
     }
     
-    // 未找到变量类型，报告错误（但在严格模式下）
-    static TChar errorMsg[256];
-    TNativeString nameStr;
-    TZrSize nameLen;
-    if (name->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-        nameStr = ZrStringGetNativeStringShort(name);
-        nameLen = name->shortStringLength;
-    } else {
-        nameStr = ZrStringGetNativeString(name);
-        nameLen = name->longStringLength;
-    }
-    
-    snprintf(errorMsg, sizeof(errorMsg), "Variable '%.*s' not found in type environment", (int)nameLen, nameStr);
-    ZrCompilerError(cs, errorMsg, node->location);
-    return ZR_FALSE;
+    // 未找到变量类型，不立即报错
+    // 可能是全局对象 zr 的属性访问，或者子函数，或者全局对象的其他属性
+    // 返回默认的 OBJECT 类型，让 compile_identifier 继续处理
+    // compile_identifier 会尝试作为全局对象属性访问、子函数访问等
+    ZrInferredTypeInit(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 
 // 从一元表达式推断类型
@@ -339,12 +330,16 @@ TBool infer_function_call_type(SZrCompilerState *cs, SZrAstNode *node, SZrInferr
         return ZR_FALSE;
     }
     
-    // TODO: 实现函数调用类型推断
-    // 1. 查找函数声明
-    // 2. 获取返回类型
-    // 3. 检查参数类型匹配
+    SZrFunctionCall *funcCall = &node->data.functionCall;
     
-    // 暂时返回对象类型（函数调用返回对象类型，具体类型由运行时确定）
+    // 注意：函数调用在 PRIMARY_EXPRESSION 中处理
+    // SZrFunctionCall 只有 args 字段，被调用的表达式在 PRIMARY_EXPRESSION 的 property 中
+    // 这个函数应该从 PRIMARY_EXPRESSION 调用，而不是直接从 FUNCTION_CALL 调用
+    // 如果直接调用，无法获取被调用的表达式，返回默认对象类型
+    
+    // 尝试从类型环境查找函数类型（如果函数名可以从上下文中推断）
+    // 这里简化处理，返回对象类型
+    // TODO: 未来可以从 PRIMARY_EXPRESSION 中获取被调用的表达式进行类型推断
     ZrInferredTypeInit(cs->state, result, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
 }

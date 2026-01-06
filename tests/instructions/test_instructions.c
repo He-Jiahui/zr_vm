@@ -290,10 +290,6 @@ static const char *get_instruction_name(EZrInstructionCode opcode) {
             return "FUNCTION_TAIL_CALL";
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
             return "FUNCTION_RETURN";
-        case ZR_INSTRUCTION_ENUM(GET_VALUE):
-            return "GET_VALUE";
-        case ZR_INSTRUCTION_ENUM(SET_VALUE):
-            return "SET_VALUE";
         case ZR_INSTRUCTION_ENUM(JUMP):
             return "JUMP";
         case ZR_INSTRUCTION_ENUM(JUMP_IF):

@@ -118,6 +118,154 @@ static void destroyTestState(SZrState *state) {
     }
 }
 
+// 打印编译后的指令列表
+static void printInstructions(SZrFunction *function) {
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        printf("  No instructions available\n");
+        return;
+    }
+
+    printf("  Total Instructions: %u\n", function->instructionsLength);
+    printf("  Instructions:\n");
+    for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        TZrInstruction *inst = &function->instructionsList[i];
+        EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
+        TUInt16 operandExtra = inst->instruction.operandExtra;
+
+        printf("    [%u] ", i);
+
+        // 输出操作码名称
+        const char *opcodeName = "UNKNOWN";
+        switch (opcode) {
+            case ZR_INSTRUCTION_ENUM(GET_STACK): opcodeName = "GET_STACK"; break;
+            case ZR_INSTRUCTION_ENUM(SET_STACK): opcodeName = "SET_STACK"; break;
+            case ZR_INSTRUCTION_ENUM(GET_CONSTANT): opcodeName = "GET_CONSTANT"; break;
+            case ZR_INSTRUCTION_ENUM(SET_CONSTANT): opcodeName = "SET_CONSTANT"; break;
+            case ZR_INSTRUCTION_ENUM(GET_CLOSURE): opcodeName = "GET_CLOSURE"; break;
+            case ZR_INSTRUCTION_ENUM(SET_CLOSURE): opcodeName = "SET_CLOSURE"; break;
+            case ZR_INSTRUCTION_ENUM(GETUPVAL): opcodeName = "GETUPVAL"; break;
+            case ZR_INSTRUCTION_ENUM(SETUPVAL): opcodeName = "SETUPVAL"; break;
+            case ZR_INSTRUCTION_ENUM(GETTABLE): opcodeName = "GETTABLE"; break;
+            case ZR_INSTRUCTION_ENUM(SETTABLE): opcodeName = "SETTABLE"; break;
+            case ZR_INSTRUCTION_ENUM(ADD): opcodeName = "ADD"; break;
+            case ZR_INSTRUCTION_ENUM(ADD_INT): opcodeName = "ADD_INT"; break;
+            case ZR_INSTRUCTION_ENUM(ADD_FLOAT): opcodeName = "ADD_FLOAT"; break;
+            case ZR_INSTRUCTION_ENUM(ADD_STRING): opcodeName = "ADD_STRING"; break;
+            case ZR_INSTRUCTION_ENUM(SUB): opcodeName = "SUB"; break;
+            case ZR_INSTRUCTION_ENUM(SUB_INT): opcodeName = "SUB_INT"; break;
+            case ZR_INSTRUCTION_ENUM(SUB_FLOAT): opcodeName = "SUB_FLOAT"; break;
+            case ZR_INSTRUCTION_ENUM(MUL): opcodeName = "MUL"; break;
+            case ZR_INSTRUCTION_ENUM(MUL_SIGNED): opcodeName = "MUL_SIGNED"; break;
+            case ZR_INSTRUCTION_ENUM(MUL_FLOAT): opcodeName = "MUL_FLOAT"; break;
+            case ZR_INSTRUCTION_ENUM(DIV): opcodeName = "DIV"; break;
+            case ZR_INSTRUCTION_ENUM(DIV_SIGNED): opcodeName = "DIV_SIGNED"; break;
+            case ZR_INSTRUCTION_ENUM(DIV_FLOAT): opcodeName = "DIV_FLOAT"; break;
+            case ZR_INSTRUCTION_ENUM(MOD): opcodeName = "MOD"; break;
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED): opcodeName = "MOD_SIGNED"; break;
+            case ZR_INSTRUCTION_ENUM(MOD_FLOAT): opcodeName = "MOD_FLOAT"; break;
+            case ZR_INSTRUCTION_ENUM(TO_INT): opcodeName = "TO_INT"; break;
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT): opcodeName = "TO_FLOAT"; break;
+            case ZR_INSTRUCTION_ENUM(TO_STRING): opcodeName = "TO_STRING"; break;
+            case ZR_INSTRUCTION_ENUM(TO_BOOL): opcodeName = "TO_BOOL"; break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL): opcodeName = "LOGICAL_EQUAL"; break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL): opcodeName = "LOGICAL_NOT_EQUAL"; break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED): opcodeName = "LOGICAL_LESS_SIGNED"; break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT): opcodeName = "LOGICAL_LESS_FLOAT"; break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED): opcodeName = "LOGICAL_GREATER_SIGNED"; break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT): opcodeName = "LOGICAL_GREATER_FLOAT"; break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_AND): opcodeName = "LOGICAL_AND"; break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_OR): opcodeName = "LOGICAL_OR"; break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT): opcodeName = "LOGICAL_NOT"; break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_AND): opcodeName = "BITWISE_AND"; break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_OR): opcodeName = "BITWISE_OR"; break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_XOR): opcodeName = "BITWISE_XOR"; break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_NOT): opcodeName = "BITWISE_NOT"; break;
+            case ZR_INSTRUCTION_ENUM(NEG): opcodeName = "NEG"; break;
+            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL): opcodeName = "FUNCTION_CALL"; break;
+            case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN): opcodeName = "FUNCTION_RETURN"; break;
+            case ZR_INSTRUCTION_ENUM(GET_GLOBAL): opcodeName = "GET_GLOBAL"; break;
+            case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION): opcodeName = "GET_SUB_FUNCTION"; break;
+            case ZR_INSTRUCTION_ENUM(JUMP): opcodeName = "JUMP"; break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF): opcodeName = "JUMP_IF"; break;
+            case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE): opcodeName = "CREATE_CLOSURE"; break;
+            case ZR_INSTRUCTION_ENUM(CREATE_OBJECT): opcodeName = "CREATE_OBJECT"; break;
+            case ZR_INSTRUCTION_ENUM(CREATE_ARRAY): opcodeName = "CREATE_ARRAY"; break;
+            default: {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "OPCODE_%u", (TUInt32)opcode);
+                opcodeName = buf;
+                break;
+            }
+        }
+
+        printf("%s", opcodeName);
+
+        // 提取操作数
+        TUInt16 op1_0 = inst->instruction.operand.operand1[0];
+        TUInt16 op1_1 = inst->instruction.operand.operand1[1];
+        TInt32 op2_0 = (TInt32)inst->instruction.operand.operand2[0];
+
+        // 根据指令类型输出操作数
+        if (opcode == ZR_INSTRUCTION_ENUM(GET_STACK) || opcode == ZR_INSTRUCTION_ENUM(SET_STACK) ||
+            opcode == ZR_INSTRUCTION_ENUM(GET_CONSTANT) || opcode == ZR_INSTRUCTION_ENUM(SET_CONSTANT)) {
+            printf(" dst=%u, src=%d", operandExtra, op2_0);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(ADD) || opcode == ZR_INSTRUCTION_ENUM(ADD_INT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(ADD_FLOAT) || opcode == ZR_INSTRUCTION_ENUM(ADD_STRING) ||
+                   opcode == ZR_INSTRUCTION_ENUM(SUB) || opcode == ZR_INSTRUCTION_ENUM(SUB_INT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(SUB_FLOAT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(MUL) || opcode == ZR_INSTRUCTION_ENUM(MUL_SIGNED) ||
+                   opcode == ZR_INSTRUCTION_ENUM(MUL_FLOAT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(DIV) || opcode == ZR_INSTRUCTION_ENUM(DIV_SIGNED) ||
+                   opcode == ZR_INSTRUCTION_ENUM(DIV_FLOAT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(MOD) || opcode == ZR_INSTRUCTION_ENUM(MOD_SIGNED) ||
+                   opcode == ZR_INSTRUCTION_ENUM(MOD_FLOAT)) {
+            printf(" dst=%u, left=%u, right=%u", operandExtra, op1_0, op1_1);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(GETTABLE) || opcode == ZR_INSTRUCTION_ENUM(SETTABLE)) {
+            printf(" dst=%u, table=%u, key=%u", operandExtra, op1_0, op1_1);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL) || opcode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+            printf(" result_count=%u, result_slot=%u", operandExtra, op1_0);
+            if (opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL) && op1_1 > 0) {
+                printf(", arg_count=%u", op1_1);
+            }
+        } else if (opcode == ZR_INSTRUCTION_ENUM(JUMP) || opcode == ZR_INSTRUCTION_ENUM(JUMP_IF)) {
+            printf(" offset=%d", op2_0);
+            if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF)) {
+                printf(", condition=%u", operandExtra);
+            }
+        } else if (opcode == ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION)) {
+            printf(" dst=%u, func_index=%d", operandExtra, op2_0);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(GET_GLOBAL)) {
+            printf(" dst=%u", operandExtra);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(CREATE_CLOSURE)) {
+            printf(" dst=%u, func_index=%u", operandExtra, op1_0);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(CREATE_OBJECT) || opcode == ZR_INSTRUCTION_ENUM(CREATE_ARRAY)) {
+            printf(" dst=%u", operandExtra);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(GET_CLOSURE) || opcode == ZR_INSTRUCTION_ENUM(SET_CLOSURE) ||
+                   opcode == ZR_INSTRUCTION_ENUM(GETUPVAL) || opcode == ZR_INSTRUCTION_ENUM(SETUPVAL)) {
+            printf(" dst=%u, closure_var_index=%u", operandExtra, op1_0);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(TO_BOOL) || opcode == ZR_INSTRUCTION_ENUM(TO_INT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(TO_UINT) || opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(TO_STRING) || opcode == ZR_INSTRUCTION_ENUM(NEG) ||
+                   opcode == ZR_INSTRUCTION_ENUM(LOGICAL_NOT) || opcode == ZR_INSTRUCTION_ENUM(BITWISE_NOT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(THROW)) {
+            printf(" dst=%u, src=%u", operandExtra, op1_0);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(TRY) || opcode == ZR_INSTRUCTION_ENUM(CATCH)) {
+            // No specific operands to print for now
+        } else {
+            if (op1_0 != 0 || op1_1 != 0) {
+                printf(" op1=[%u, %u]", op1_0, op1_1);
+            }
+            if (op2_0 != 0) {
+                printf(" op2=[%d]", op2_0);
+            }
+            if (operandExtra != 0) {
+                printf(" extra=%u", operandExtra);
+            }
+        }
+        printf("\n");
+    }
+}
+
 // 打印测试结果值
 static void printTestResult(SZrState *state, const SZrTypeValue *value) {
     if (value == ZR_NULL) {
@@ -397,6 +545,10 @@ void test_execute_create_object_with_properties(void) {
     // 验证函数有指令
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     // 执行函数并输出结果
     SZrTypeValue result;
     TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
@@ -539,6 +691,10 @@ void test_execute_create_array_with_elements(void) {
     // 验证函数有指令
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     // 执行函数并输出结果
     SZrTypeValue result;
     TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
@@ -610,6 +766,10 @@ void test_execute_jump_if_instruction(void) {
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     // 执行函数并输出结果
     SZrTypeValue result;
     TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
@@ -679,6 +839,10 @@ void test_execute_jump_instruction(void) {
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     // 执行函数并输出结果
     SZrTypeValue result;
     TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
@@ -740,6 +904,10 @@ void test_execute_add_int_instruction(void) {
             }
         }
     }
+
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
 
     if (!hasAddInt) {
         ZrParserFreeAst(state, ast);
@@ -820,6 +988,10 @@ void test_execute_sub_int_instruction(void) {
         }
     }
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     ZrParserFreeAst(state, ast);
 
     if (!hasSubInt) {
@@ -829,6 +1001,27 @@ void test_execute_sub_int_instruction(void) {
     }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
+
+    // 执行函数并验证结果
+    SZrTypeValue result;
+    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+
+    if (!execSuccess) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
+        destroyTestState(state);
+        return;
+    }
+
+    // 验证结果是整数类型
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+
+    // 验证结果值为 2 (5 - 3)
+    if (ZR_VALUE_IS_TYPE_INT(result.type)) {
+        TInt64 value = result.value.nativeObject.nativeInt64;
+        TEST_ASSERT_TRUE(value == 2);
+        printf("Test Result: ");
+        printTestResult(state, &result);
+    }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -879,6 +1072,10 @@ void test_execute_mul_signed_instruction(void) {
         }
     }
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     ZrParserFreeAst(state, ast);
 
     if (!hasMulSigned) {
@@ -888,6 +1085,27 @@ void test_execute_mul_signed_instruction(void) {
     }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
+
+    // 执行函数并验证结果
+    SZrTypeValue result;
+    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+
+    if (!execSuccess) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
+        destroyTestState(state);
+        return;
+    }
+
+    // 验证结果是整数类型
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+
+    // 验证结果值为 12 (3 * 4)
+    if (ZR_VALUE_IS_TYPE_INT(result.type)) {
+        TInt64 value = result.value.nativeObject.nativeInt64;
+        TEST_ASSERT_TRUE(value == 12);
+        printf("Test Result: ");
+        printTestResult(state, &result);
+    }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -943,6 +1161,10 @@ void test_execute_logical_and_instruction(void) {
         }
     }
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     ZrParserFreeAst(state, ast);
 
     if (!hasBitwiseAnd) {
@@ -953,6 +1175,27 @@ void test_execute_logical_and_instruction(void) {
     }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
+
+    // 执行函数并验证结果
+    SZrTypeValue result;
+    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+
+    if (!execSuccess) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
+        destroyTestState(state);
+        return;
+    }
+
+    // 验证结果是整数类型
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+
+    // 验证结果值为 0 (1 & 2 = 0)
+    if (ZR_VALUE_IS_TYPE_INT(result.type)) {
+        TInt64 value = result.value.nativeObject.nativeInt64;
+        TEST_ASSERT_TRUE(value == 0);
+        printf("Test Result: ");
+        printTestResult(state, &result);
+    }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -1003,6 +1246,10 @@ void test_execute_logical_equal_instruction(void) {
         }
     }
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     ZrParserFreeAst(state, ast);
 
     if (!hasLogicalEqual) {
@@ -1012,6 +1259,27 @@ void test_execute_logical_equal_instruction(void) {
     }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
+
+    // 执行函数并验证结果
+    SZrTypeValue result;
+    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+
+    if (!execSuccess) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
+        destroyTestState(state);
+        return;
+    }
+
+    // 验证结果是布尔类型
+    TEST_ASSERT_TRUE(result.type == ZR_VALUE_TYPE_BOOL);
+
+    // 验证结果值为 true (1 == 1)
+    if (result.type == ZR_VALUE_TYPE_BOOL) {
+        TBool value = result.value.nativeObject.nativeBool;
+        TEST_ASSERT_TRUE(value == ZR_TRUE);
+        printf("Test Result: ");
+        printTestResult(state, &result);
+    }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -1065,6 +1333,10 @@ void test_execute_settable_instruction(void) {
         }
     }
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     ZrParserFreeAst(state, ast);
 
     if (!hasSetTable) {
@@ -1074,6 +1346,16 @@ void test_execute_settable_instruction(void) {
     }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
+
+    // 执行函数并输出结果
+    SZrTypeValue result;
+    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    if (execSuccess) {
+        printf("Test Result: ");
+        printTestResult(state, &result);
+    } else {
+        printf("Test Result: <execution failed or no return value>\n");
+    }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -1124,6 +1406,10 @@ void test_execute_div_signed_instruction(void) {
         }
     }
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     ZrParserFreeAst(state, ast);
 
     if (!hasDivSigned) {
@@ -1133,6 +1419,27 @@ void test_execute_div_signed_instruction(void) {
     }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
+
+    // 执行函数并验证结果
+    SZrTypeValue result;
+    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+
+    if (!execSuccess) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
+        destroyTestState(state);
+        return;
+    }
+
+    // 验证结果是整数类型
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+
+    // 验证结果值为 5 (10 / 2)
+    if (ZR_VALUE_IS_TYPE_INT(result.type)) {
+        TInt64 value = result.value.nativeObject.nativeInt64;
+        TEST_ASSERT_TRUE(value == 5);
+        printf("Test Result: ");
+        printTestResult(state, &result);
+    }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -1183,6 +1490,10 @@ void test_execute_logical_not_instruction(void) {
         }
     }
 
+    // 输出编译后的指令
+    printf("  Compiled Instructions:\n");
+    printInstructions(function);
+
     ZrParserFreeAst(state, ast);
 
     if (!hasLogicalNot) {
@@ -1192,6 +1503,27 @@ void test_execute_logical_not_instruction(void) {
     }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
+
+    // 执行函数并验证结果
+    SZrTypeValue result;
+    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+
+    if (!execSuccess) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
+        destroyTestState(state);
+        return;
+    }
+
+    // 验证结果是布尔类型
+    TEST_ASSERT_TRUE(result.type == ZR_VALUE_TYPE_BOOL);
+
+    // 验证结果值为 false (!true)
+    if (result.type == ZR_VALUE_TYPE_BOOL) {
+        TBool value = result.value.nativeObject.nativeBool;
+        TEST_ASSERT_TRUE(value == ZR_FALSE);
+        printf("Test Result: ");
+        printTestResult(state, &result);
+    }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);

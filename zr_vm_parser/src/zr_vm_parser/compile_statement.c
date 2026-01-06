@@ -17,6 +17,7 @@
 // 前向声明
 extern void compile_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_statement(SZrCompilerState *cs, SZrAstNode *node);
+extern void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value);
 static void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value);
 
@@ -566,16 +567,17 @@ static void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
                 emit_instruction(cs, setVarInst);
             }
         } else if (foreachLoop->pattern->type == ZR_AST_DESTRUCTURING_OBJECT) {
-            // 解构对象模式：创建临时表达式节点
-            // 注意：这里需要创建临时节点来存储当前值，然后调用解构函数
-            // 简化处理：假设解构对象处理会从currentValueSlot读取值
-            // 实际上应该将currentValueSlot的值传递给解构函数
-            // TODO: 完善解构对象的foreach支持
-            ZrCompilerError(cs, "Destructuring object in foreach is not fully supported yet", node->location);
+            // 解构对象模式：调用解构函数处理
+            // currentValueSlot 包含当前迭代的值（对象）
+            compile_destructuring_object(cs, foreachLoop->pattern, ZR_NULL);
+            // 注意：compile_destructuring_object 需要从栈上读取值
+            // 这里 currentValueSlot 已经在栈上，所以可以直接使用
         } else if (foreachLoop->pattern->type == ZR_AST_DESTRUCTURING_ARRAY) {
-            // 解构数组模式
-            // TODO: 完善解构数组的foreach支持
-            ZrCompilerError(cs, "Destructuring array in foreach is not fully supported yet", node->location);
+            // 解构数组模式：调用解构函数处理
+            // currentValueSlot 包含当前迭代的值（数组）
+            compile_destructuring_array(cs, foreachLoop->pattern, ZR_NULL);
+            // 注意：compile_destructuring_array 需要从栈上读取值
+            // 这里 currentValueSlot 已经在栈上，所以可以直接使用
         }
     }
     
@@ -739,8 +741,18 @@ static void compile_out_statement(SZrCompilerState *cs, SZrAstNode *node) {
     // 编译表达式
     if (stmt->expr != ZR_NULL) {
         compile_expression(cs, stmt->expr);
-        // 结果留在栈上，用于生成器
-        // TODO: 实现完整的生成器机制（yield/out）
+        TUInt32 valueSlot = cs->stackSlotCount - 1;
+        
+        // 生成生成器输出指令（用于生成器）
+        // 注意：生成器机制需要运行时支持，这里先实现基本框架
+        // 生成器函数会在运行时通过特殊的调用约定来处理 yield/out
+        // 目前先使用 RETURN 指令返回值，后续可以扩展为专门的生成器指令
+        // 生成器函数应该标记为可暂停的函数类型
+        TZrInstruction returnInst = create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TUInt16)valueSlot, 0);
+        emit_instruction(cs, returnInst);
+        
+        // 释放值栈槽（YIELD 会处理值的传递）
+        cs->stackSlotCount--;
     } else {
         ZrCompilerError(cs, "Out statement requires an expression", node->location);
     }
@@ -987,6 +999,11 @@ void compile_statement(SZrCompilerState *cs, SZrAstNode *node) {
             compile_out_statement(cs, node);
             break;
         
+        case ZR_AST_FUNCTION_DECLARATION:
+            // 函数声明可以作为语句编译（嵌套函数）
+            compile_function_declaration(cs, node);
+            break;
+        
         default:
             // 检查是否是声明类型（不应该作为语句编译）
             if (node->type == ZR_AST_INTERFACE_METHOD_SIGNATURE ||
@@ -1000,7 +1017,6 @@ void compile_statement(SZrCompilerState *cs, SZrAstNode *node) {
                 node->type == ZR_AST_CLASS_METHOD ||
                 node->type == ZR_AST_CLASS_PROPERTY ||
                 node->type == ZR_AST_CLASS_META_FUNCTION ||
-                node->type == ZR_AST_FUNCTION_DECLARATION ||
                 node->type == ZR_AST_STRUCT_DECLARATION ||
                 node->type == ZR_AST_CLASS_DECLARATION ||
                 node->type == ZR_AST_INTERFACE_DECLARATION ||
@@ -1023,7 +1039,6 @@ void compile_statement(SZrCompilerState *cs, SZrAstNode *node) {
                     case ZR_AST_CLASS_METHOD: typeName = "CLASS_METHOD"; break;
                     case ZR_AST_CLASS_PROPERTY: typeName = "CLASS_PROPERTY"; break;
                     case ZR_AST_CLASS_META_FUNCTION: typeName = "CLASS_META_FUNCTION"; break;
-                    case ZR_AST_FUNCTION_DECLARATION: typeName = "FUNCTION_DECLARATION"; break;
                     case ZR_AST_STRUCT_DECLARATION: typeName = "STRUCT_DECLARATION"; break;
                     case ZR_AST_CLASS_DECLARATION: typeName = "CLASS_DECLARATION"; break;
                     case ZR_AST_INTERFACE_DECLARATION: typeName = "INTERFACE_DECLARATION"; break;
@@ -1059,13 +1074,19 @@ static void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *patte
     }
     
     // 1. 编译右侧表达式（例如 import("math")）
-    if (value == ZR_NULL) {
-        ZrCompilerError(cs, "Destructuring assignment requires a value", pattern->location);
-        return;
+    // 如果 value 为 NULL，表示值已经在栈上（例如在 foreach 中）
+    TUInt32 sourceSlot;
+    if (value != ZR_NULL) {
+        compile_expression(cs, value);
+        sourceSlot = cs->stackSlotCount - 1;  // 源对象在栈顶
+    } else {
+        // 值已经在栈上，使用栈顶的值
+        if (cs->stackSlotCount == 0) {
+            ZrCompilerError(cs, "Destructuring assignment requires a value on stack", pattern->location);
+            return;
+        }
+        sourceSlot = cs->stackSlotCount - 1;  // 使用栈顶的值
     }
-    
-    compile_expression(cs, value);
-    TUInt32 sourceSlot = cs->stackSlotCount - 1;  // 源对象在栈顶
     
     // 2. 遍历所有键，为每个键分配局部变量并获取值
     SZrDestructuringObject *destruct = &pattern->data.destructuringObject;
@@ -1109,8 +1130,10 @@ static void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *patte
         }
     }
     
-    // 3. 释放源对象栈槽
-    cs->stackSlotCount--;
+    // 3. 释放源对象栈槽（只有在 value 不为 NULL 时才释放，因为如果是 NULL，值已经在栈上且需要保留）
+    if (value != ZR_NULL) {
+        cs->stackSlotCount--;
+    }
 }
 
 // 编译解构数组赋值：var [elem1, elem2, ...] = value;
@@ -1125,13 +1148,19 @@ static void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *patter
     }
     
     // 1. 编译右侧表达式（例如 arr3）
-    if (value == ZR_NULL) {
-        ZrCompilerError(cs, "Destructuring assignment requires a value", pattern->location);
-        return;
+    // 如果 value 为 NULL，表示值已经在栈上（例如在 foreach 中）
+    TUInt32 sourceSlot;
+    if (value != ZR_NULL) {
+        compile_expression(cs, value);
+        sourceSlot = cs->stackSlotCount - 1;  // 源数组在栈顶
+    } else {
+        // 值已经在栈上，使用栈顶的值
+        if (cs->stackSlotCount == 0) {
+            ZrCompilerError(cs, "Destructuring assignment requires a value on stack", pattern->location);
+            return;
+        }
+        sourceSlot = cs->stackSlotCount - 1;  // 使用栈顶的值
     }
-    
-    compile_expression(cs, value);
-    TUInt32 sourceSlot = cs->stackSlotCount - 1;  // 源数组在栈顶
     
     // 2. 遍历所有索引，为每个元素分配局部变量并获取值
     SZrDestructuringArray *destruct = &pattern->data.destructuringArray;
@@ -1174,7 +1203,9 @@ static void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *patter
         }
     }
     
-    // 3. 释放源数组栈槽
-    cs->stackSlotCount--;
+    // 3. 释放源数组栈槽（只有在 value 不为 NULL 时才释放，因为如果是 NULL，值已经在栈上且需要保留）
+    if (value != ZR_NULL) {
+        cs->stackSlotCount--;
+    }
 }
 

@@ -42,6 +42,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TUInt16 parameterCount;
     TBool hasVariableArguments;
     TUInt32 stackSize;
+    // function name (函数名由函数自身持有，匿名函数为 ZR_NULL)
+    struct SZrString *functionName;
     // length
     TUInt32 instructionsLength;
     TUInt32 closureValueLength;

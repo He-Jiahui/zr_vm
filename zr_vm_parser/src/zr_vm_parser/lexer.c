@@ -14,7 +14,104 @@
 #define ZR_LEXER_BUFFER_INIT_SIZE 256
 #define ZR_LEXER_EOZ (-1)
 
-// 关键字表
+// Token 信息结构（合并关键字表和名称表）
+typedef struct {
+    const TChar *name;
+    EZrToken token;
+} SZrTokenInfo;
+
+// Token 信息表（按枚举顺序排列，确保 token == index + ZR_FIRST_RESERVED）
+static const SZrTokenInfo zr_token_info[] = {
+    // 关键字
+    {"module", ZR_TK_MODULE},
+    {"struct", ZR_TK_STRUCT},
+    {"class", ZR_TK_CLASS},
+    {"interface", ZR_TK_INTERFACE},
+    {"enum", ZR_TK_ENUM},
+    {"test", ZR_TK_TEST},
+    {"intermediate", ZR_TK_INTERMEDIATE},
+    {"var", ZR_TK_VAR},
+    {"pub", ZR_TK_PUB},
+    {"pri", ZR_TK_PRI},
+    {"pro", ZR_TK_PRO},
+    {"if", ZR_TK_IF},
+    {"else", ZR_TK_ELSE},
+    {"switch", ZR_TK_SWITCH},
+    {"while", ZR_TK_WHILE},
+    {"for", ZR_TK_FOR},
+    {"break", ZR_TK_BREAK},
+    {"continue", ZR_TK_CONTINUE},
+    {"return", ZR_TK_RETURN},
+    {"super", ZR_TK_SUPER},
+    {"new", ZR_TK_NEW},
+    {"set", ZR_TK_SET},
+    {"get", ZR_TK_GET},
+    {"static", ZR_TK_STATIC},
+    {"in", ZR_TK_IN},
+    {"out", ZR_TK_OUT},
+    {"throw", ZR_TK_THROW},
+    {"try", ZR_TK_TRY},
+    {"catch", ZR_TK_CATCH},
+    {"finally", ZR_TK_FINALLY},
+    {"Infinity", ZR_TK_INFINITY},
+    {"NegativeInfinity", ZR_TK_NEG_INFINITY},
+    {"NaN", ZR_TK_NAN},
+    // 操作符
+    {"...", ZR_TK_PARAMS},
+    {"?", ZR_TK_QUESTIONMARK},
+    {":", ZR_TK_COLON},
+    {";", ZR_TK_SEMICOLON},
+    {",", ZR_TK_COMMA},
+    {".", ZR_TK_DOT},
+    {"~", ZR_TK_TILDE},
+    {"@", ZR_TK_AT},
+    {"#", ZR_TK_SHARP},
+    {"$", ZR_TK_DOLLAR},
+    {"(", ZR_TK_LPAREN},
+    {")", ZR_TK_RPAREN},
+    {"{", ZR_TK_LBRACE},
+    {"}", ZR_TK_RBRACE},
+    {"[", ZR_TK_LBRACKET},
+    {"]", ZR_TK_RBRACKET},
+    {"=", ZR_TK_EQUALS},
+    {"+=", ZR_TK_PLUS_EQUALS},
+    {"-=", ZR_TK_MINUS_EQUALS},
+    {"*=", ZR_TK_STAR_EQUALS},
+    {"/=", ZR_TK_SLASH_EQUALS},
+    {"%=", ZR_TK_PERCENT_EQUALS},
+    {"==", ZR_TK_DOUBLE_EQUALS},
+    {"!=", ZR_TK_BANG_EQUALS},
+    {"!", ZR_TK_BANG},
+    {"<", ZR_TK_LESS_THAN},
+    {"<=", ZR_TK_LESS_THAN_EQUALS},
+    {">", ZR_TK_GREATER_THAN},
+    {">=", ZR_TK_GREATER_THAN_EQUALS},
+    {"+", ZR_TK_PLUS},
+    {"-", ZR_TK_MINUS},
+    {"*", ZR_TK_STAR},
+    {"/", ZR_TK_SLASH},
+    {"%", ZR_TK_PERCENT},
+    {"&&", ZR_TK_AMPERSAND_AMPERSAND},
+    {"||", ZR_TK_PIPE_PIPE},
+    {"=>", ZR_TK_RIGHT_ARROW},
+    {"<<", ZR_TK_LEFT_SHIFT},
+    {">>", ZR_TK_RIGHT_SHIFT},
+    {"|", ZR_TK_OR},
+    {"^", ZR_TK_XOR},
+    {"&", ZR_TK_AND},
+    // 字面量
+    {"<boolean>", ZR_TK_BOOLEAN},
+    {"<integer>", ZR_TK_INTEGER},
+    {"<float>", ZR_TK_FLOAT},
+    {"<string>", ZR_TK_STRING},
+    {"<char>", ZR_TK_CHAR},
+    {"<null>", ZR_TK_NULL},
+    {"<identifier>", ZR_TK_IDENTIFIER},
+    // 特殊
+    {"<eos>", ZR_TK_EOS},
+};
+
+// 关键字表（用于词法分析器查找关键字）
 static const struct {
     const TChar *name;
     EZrToken token;
@@ -55,91 +152,6 @@ static const struct {
                    {"false", ZR_TK_BOOLEAN},
                    {"null", ZR_TK_NULL},
                    {ZR_NULL, ZR_TK_EOS}};
-
-// Token 名称表（用于错误消息）
-static const TChar *zr_token_names[] = {"module",
-                                        "struct",
-                                        "class",
-                                        "interface",
-                                        "enum",
-                                        "test",
-                                        "intermediate",
-                                        "var",
-                                        "pub",
-                                        "pri",
-                                        "pro",
-                                        "if",
-                                        "else",
-                                        "switch",
-                                        "while",
-                                        "for",
-                                        "break",
-                                        "continue",
-                                        "return",
-                                        "super",
-                                        "new",
-                                        "set",
-                                        "get",
-                                        "static",
-                                        "in",
-                                        "out",
-                                        "throw",
-                                        "try",
-                                        "catch",
-                                        "finally",
-                                        "Infinity",
-                                        "NegativeInfinity",
-                                        "NaN",
-                                        "...",
-                                        "?",
-                                        ":",
-                                        ";",
-                                        ",",
-                                        ".",
-                                        "~",
-                                        "@",
-                                        "#",
-                                        "$",
-                                        "(",
-                                        ")",
-                                        "{",
-                                        "}",
-                                        "[",
-                                        "]",
-                                        "=",
-                                        "+=",
-                                        "-=",
-                                        "*=",
-                                        "/=",
-                                        "%=",
-                                        "==",
-                                        "!=",
-                                        "!",
-                                        "<",
-                                        "<=",
-                                        ">",
-                                        ">=",
-                                        "+",
-                                        "-",
-                                        "*",
-                                        "/",
-                                        "%",
-                                        "&&",
-                                        "||",
-                                        "=>",
-                                        "<<",
-                                        ">>",
-                                        "|",
-                                        "^",
-                                        "&",
-                                        "<boolean>",
-                                        "<integer>",
-                                        "<float>",
-                                        "<string>",
-                                        "<char>",
-                                        "<null>",
-                                        "<identifier>",
-                                        "<eos>"};
 
 // 辅助函数：获取下一个字符
 static TInt32 next_char(SZrLexState *ls) {
@@ -918,8 +930,12 @@ const TChar *ZrLexerTokenToString(SZrLexState *ls, EZrToken token) {
     }
 
     TZrSize index = token - ZR_FIRST_RESERVED;
-    if (index < sizeof(zr_token_names) / sizeof(zr_token_names[0])) {
-        return zr_token_names[index];
+    TZrSize tokenInfoCount = sizeof(zr_token_info) / sizeof(zr_token_info[0]);
+    
+    if (index < tokenInfoCount) {
+        // 断言：确保 token 和结构体中的 token 匹配
+        ZR_ASSERT(token == zr_token_info[index].token);
+        return zr_token_info[index].name;
     }
 
     return "<unknown>";
