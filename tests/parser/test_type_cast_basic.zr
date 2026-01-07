@@ -1,0 +1,50 @@
+module "type_cast_basic";
+
+// 基本类型转换测试
+var test_int_cast = () => {
+    var f: float = 3.14;
+    var i: int = <int> f;
+    return i;
+};
+
+var test_float_cast = () => {
+    var i: int = 42;
+    var f: float = <float> i;
+    return f;
+};
+
+var test_string_cast = () => {
+    var i: int = 123;
+    var s: string = <string> i;
+    return s;
+};
+
+var test_bool_cast = () => {
+    var i: int = 1;
+    var b: bool = <bool> i;
+    return b;
+};
+
+// 测试用例
+%test("typeCastBasicTest"){
+    var result = 0;
+    
+    // 测试 int 转换
+    var intResult = test_int_cast();
+    if (intResult == 3) { result = result + 1; }
+    
+    // 测试 float 转换
+    var floatResult = test_float_cast();
+    if (floatResult == 42.0) { result = result + 1; }
+    
+    // 测试 string 转换
+    var stringResult = test_string_cast();
+    if (stringResult != null) { result = result + 1; }
+    
+    // 测试 bool 转换
+    var boolResult = test_bool_cast();
+    if (boolResult == true) { result = result + 1; }
+    
+    return result;
+}
+

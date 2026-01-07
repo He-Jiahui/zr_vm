@@ -1,0 +1,48 @@
+// 测试 class prototype 生成
+module "test_class";
+
+// 基本 class 声明
+class Animal {
+    pub var name: string;
+    
+    pub function speak() {
+        return "Some sound";
+    }
+}
+
+// 带继承的 class
+class Dog : Animal {
+    pub function speak() {
+        return "Woof";
+    }
+}
+
+// 带属性的 class
+class Person {
+    pub var _name: string;
+    
+    pub property name: string {
+        get {
+            return _name;
+        }
+        set {
+            _name = value;
+        }
+    }
+}
+
+// 带元函数的 class
+class TestClass {
+    pub var value: int;
+    
+    @constructor
+    pub function init(v: int) {
+        value = v;
+    }
+    
+    @destructor
+    pub function cleanup() {
+        value = 0;
+    }
+}
+

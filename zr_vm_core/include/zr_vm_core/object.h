@@ -8,10 +8,10 @@
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/meta.h"
+#include "zr_vm_core/string.h"
 struct SZrState;
 struct SZrGlobalState;
 struct SZrObjectPrototype;
-struct SZrString;
 
 enum EZrObjectInternalType {
     ZR_OBJECT_INTERNAL_TYPE_OBJECT,
@@ -90,4 +90,18 @@ ZR_CORE_API void ZrObjectSetValue(struct SZrState *state, SZrObject *object, con
                                   const SZrTypeValue *value);
 
 ZR_CORE_API const SZrTypeValue *ZrObjectGetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key);
+
+// Prototype 创建和管理函数
+ZR_CORE_API SZrObjectPrototype *ZrObjectPrototypeNew(struct SZrState *state, SZrString *name, EZrObjectPrototypeType type);
+
+ZR_CORE_API SZrStructPrototype *ZrStructPrototypeNew(struct SZrState *state, SZrString *name);
+
+ZR_CORE_API void ZrObjectPrototypeSetSuper(struct SZrState *state, SZrObjectPrototype *prototype, SZrObjectPrototype *superPrototype);
+
+ZR_CORE_API void ZrObjectPrototypeInitMetaTable(struct SZrState *state, SZrObjectPrototype *prototype);
+
+ZR_CORE_API void ZrStructPrototypeAddField(struct SZrState *state, SZrStructPrototype *prototype, SZrString *fieldName, TZrSize offset);
+
+ZR_CORE_API void ZrObjectPrototypeAddMeta(struct SZrState *state, SZrObjectPrototype *prototype, EZrMetaType metaType, struct SZrFunction *function);
+
 #endif // ZR_VM_CORE_OBJECT_H

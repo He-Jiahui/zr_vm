@@ -32,6 +32,8 @@
     Z(TO_UINT)                                                                                                         \
     Z(TO_FLOAT)                                                                                                        \
     Z(TO_STRING)                                                                                                       \
+    Z(TO_STRUCT)                                                                                                       \
+    Z(TO_OBJECT)                                                                                                       \
     Z(ADD)                                                                                                             \
     Z(ADD_INT)                                                                                                         \
     Z(ADD_FLOAT)                                                                                                       \

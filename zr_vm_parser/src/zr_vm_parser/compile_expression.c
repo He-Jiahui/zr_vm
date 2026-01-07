@@ -20,6 +20,7 @@ void compile_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_literal(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_identifier(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node);
+static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node);
@@ -64,6 +65,64 @@ static void emit_type_conversion(SZrCompilerState *cs, TUInt32 destSlot, TUInt32
     // 类型转换指令格式: operandExtra = destSlot, operand1[0] = srcSlot, operand1[1] = 0
     TZrInstruction convInst = create_instruction_2(conversionOpcode, (TUInt16)destSlot, (TUInt16)srcSlot, 0);
     emit_instruction(cs, convInst);
+}
+
+// 带原型信息的类型转换辅助函数（用于 TO_STRUCT 和 TO_OBJECT）
+static void emit_type_conversion_with_prototype(SZrCompilerState *cs, TUInt32 destSlot, TUInt32 srcSlot, 
+                                                EZrInstructionCode conversionOpcode, TUInt32 prototypeConstantIndex) {
+    if (cs == ZR_NULL || cs->hasError) {
+        return;
+    }
+    // 类型转换指令格式: operandExtra = destSlot, operand1[0] = srcSlot, operand1[1] = prototypeConstantIndex
+    TZrInstruction convInst = create_instruction_2(conversionOpcode, (TUInt16)destSlot, (TUInt16)srcSlot, (TUInt16)prototypeConstantIndex);
+    emit_instruction(cs, convInst);
+}
+
+// 在脚本 AST 中查找类型定义（struct 或 class）
+// 返回找到的 AST 节点，如果未找到返回 ZR_NULL
+static SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeName) {
+    if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    if (cs->scriptAst->type != ZR_AST_SCRIPT) {
+        return ZR_NULL;
+    }
+    
+    SZrScript *script = &cs->scriptAst->data.script;
+    if (script->statements == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    // 遍历顶层语句，查找 struct 或 class 声明
+    for (TZrSize i = 0; i < script->statements->count; i++) {
+        SZrAstNode *stmt = script->statements->nodes[i];
+        if (stmt == ZR_NULL) {
+            continue;
+        }
+        
+        // 检查是否是 struct 声明
+        if (stmt->type == ZR_AST_STRUCT_DECLARATION) {
+            SZrIdentifier *structName = stmt->data.structDeclaration.name;
+            if (structName != ZR_NULL && structName->name != ZR_NULL) {
+                if (ZrStringEqual(structName->name, typeName)) {
+                    return stmt;
+                }
+            }
+        }
+        
+        // 检查是否是 class 声明
+        if (stmt->type == ZR_AST_CLASS_DECLARATION) {
+            SZrIdentifier *className = stmt->data.classDeclaration.name;
+            if (className != ZR_NULL && className->name != ZR_NULL) {
+                if (ZrStringEqual(className->name, typeName)) {
+                    return stmt;
+                }
+            }
+        }
+    }
+    
+    return ZR_NULL;
 }
 
 // 编译字面量
@@ -291,6 +350,101 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         emit_instruction(cs, inst);
     } else {
         ZrCompilerError(cs, "Unknown unary operator", node->location);
+    }
+}
+
+// 编译类型转换表达式
+static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+    
+    if (node->type != ZR_AST_TYPE_CAST_EXPRESSION) {
+        ZrCompilerError(cs, "Expected type cast expression", node->location);
+        return;
+    }
+    
+    SZrType *targetType = node->data.typeCastExpression.targetType;
+    SZrAstNode *expression = node->data.typeCastExpression.expression;
+    
+    if (targetType == ZR_NULL || expression == ZR_NULL) {
+        ZrCompilerError(cs, "Invalid type cast expression", node->location);
+        return;
+    }
+    
+    // 先编译要转换的表达式
+    compile_expression(cs, expression);
+    
+    TUInt32 srcSlot = cs->stackSlotCount - 1;
+    TUInt32 destSlot = allocate_stack_slot(cs);
+    
+    // 根据目标类型生成相应的转换指令
+    // 首先检查类型名称
+    if (targetType->name != ZR_NULL && targetType->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        SZrString *typeName = targetType->name->data.identifier.name;
+        TNativeString typeNameStr;
+        TZrSize nameLen;
+        
+        if (typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+            typeNameStr = ZrStringGetNativeStringShort(typeName);
+            nameLen = typeName->shortStringLength;
+        } else {
+            typeNameStr = ZrStringGetNativeString(typeName);
+            nameLen = typeName->longStringLength;
+        }
+        
+        // 检查基本类型
+        if (nameLen == 3 && strncmp(typeNameStr, "int", 3) == 0) {
+            // 转换为 int
+            emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT));
+            return;
+        } else if (nameLen == 5 && strncmp(typeNameStr, "float", 5) == 0) {
+            // 转换为 float
+            emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
+            return;
+        } else if (nameLen == 6 && strncmp(typeNameStr, "string", 6) == 0) {
+            // 转换为 string
+            emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
+            return;
+        } else if (nameLen == 4 && strncmp(typeNameStr, "bool", 4) == 0) {
+            // 转换为 bool
+            emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_BOOL));
+            return;
+        }
+        
+        // 对于 struct 和 class 类型，查找类型定义
+        SZrAstNode *typeDecl = find_type_declaration(cs, typeName);
+        if (typeDecl != ZR_NULL) {
+            // 将类型名称作为常量存储（运行时通过类型名称查找或创建原型）
+            SZrTypeValue typeNameValue;
+            ZrValueResetAsNull(&typeNameValue);
+            ZrValueInitAsRawObject(cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
+            typeNameValue.type = ZR_VALUE_TYPE_STRING;
+            TUInt32 typeNameConstantIndex = add_constant(cs, &typeNameValue);
+            
+            // 根据类型声明类型生成相应的转换指令
+            if (typeDecl->type == ZR_AST_STRUCT_DECLARATION) {
+                // 生成 TO_STRUCT 指令，将类型名称常量索引作为操作数
+                emit_type_conversion_with_prototype(cs, destSlot, srcSlot, 
+                                                    ZR_INSTRUCTION_ENUM(TO_STRUCT), 
+                                                    typeNameConstantIndex);
+                return;
+            } else if (typeDecl->type == ZR_AST_CLASS_DECLARATION) {
+                // 生成 TO_OBJECT 指令，将类型名称常量索引作为操作数
+                emit_type_conversion_with_prototype(cs, destSlot, srcSlot, 
+                                                    ZR_INSTRUCTION_ENUM(TO_OBJECT), 
+                                                    typeNameConstantIndex);
+                return;
+            }
+        }
+        
+        // 如果未找到类型定义，使用 TO_STRING 作为默认转换
+        // TODO: 可能需要支持从其他模块导入的类型
+        emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
+    } else {
+        // 对于复杂类型（泛型、元组等），暂时使用 TO_STRING
+        // TODO: 实现完整的类型转换逻辑
+        emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
     }
 }
 
@@ -1730,6 +1884,10 @@ void compile_expression(SZrCompilerState *cs, SZrAstNode *node) {
         // 表达式
         case ZR_AST_UNARY_EXPRESSION:
             compile_unary_expression(cs, node);
+            break;
+        
+        case ZR_AST_TYPE_CAST_EXPRESSION:
+            compile_type_cast_expression(cs, node);
             break;
         
         case ZR_AST_BINARY_EXPRESSION:

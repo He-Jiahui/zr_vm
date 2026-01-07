@@ -65,4 +65,9 @@ ZR_CORE_API SZrObject *ZrModuleCreateFromSource(struct SZrState *state, SZrIoSou
 // zr.import native 函数
 ZR_CORE_API TInt64 ZrImportNativeFunction(struct SZrState *state);
 
+// 创建并注册 prototype 的 native 函数
+// 参数: (module, typeName, prototypeType, accessModifier, inherits..., members...)
+// 返回: prototype 对象
+ZR_CORE_API TInt64 ZrCreatePrototypeNativeFunction(struct SZrState *state);
+
 #endif // ZR_VM_CORE_MODULE_H

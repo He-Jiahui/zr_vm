@@ -413,30 +413,69 @@ static void read_char(SZrLexState *ls, TZrSemInfo *seminfo) {
         switch (ls->currentChar) {
             case 'n':
                 seminfo->charValue = '\n';
+                next_char(ls);
                 break;
             case 't':
                 seminfo->charValue = '\t';
+                next_char(ls);
                 break;
             case 'r':
                 seminfo->charValue = '\r';
+                next_char(ls);
                 break;
             case 'b':
                 seminfo->charValue = '\b';
+                next_char(ls);
                 break;
             case 'f':
                 seminfo->charValue = '\f';
+                next_char(ls);
                 break;
             case '\'':
                 seminfo->charValue = '\'';
+                next_char(ls);
                 break;
             case '\\':
                 seminfo->charValue = '\\';
+                next_char(ls);
                 break;
+            case 'u': {
+                // Unicode 转义 \uXXXX
+                next_char(ls); // 跳过 'u'
+                TInt32 code = 0;
+                for (int i = 0; i < 4; i++) {
+                    if (!isxdigit(ls->currentChar)) {
+                        ZrLexerSyntaxError(ls, "invalid unicode escape sequence");
+                        return;
+                    }
+                    code = code * 16 + (isdigit(ls->currentChar) ? (ls->currentChar - '0')
+                                                                 : (tolower(ls->currentChar) - 'a' + 10));
+                    next_char(ls); // 跳过十六进制字符
+                }
+                seminfo->charValue = (TChar) code;
+                break;
+            }
+            case 'x': {
+                // 十六进制转义 \xXX
+                next_char(ls); // 跳过 'x'
+                TInt32 code = 0;
+                for (int i = 0; i < 2; i++) {
+                    if (!isxdigit(ls->currentChar)) {
+                        ZrLexerSyntaxError(ls, "invalid hex escape sequence");
+                        return;
+                    }
+                    code = code * 16 + (isdigit(ls->currentChar) ? (ls->currentChar - '0')
+                                                                 : (tolower(ls->currentChar) - 'a' + 10));
+                    next_char(ls); // 跳过十六进制字符
+                }
+                seminfo->charValue = (TChar) code;
+                break;
+            }
             default:
                 seminfo->charValue = (TChar) ls->currentChar;
+                next_char(ls);
                 break;
         }
-        next_char(ls);
     } else {
         seminfo->charValue = (TChar) ls->currentChar;
         next_char(ls);
@@ -507,10 +546,14 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
 
     switch (ls->currentChar) {
         case '"':
-        case '\'':
-            // 单引号和双引号都表示字符串
+            // 双引号表示字符串
             read_string(ls, seminfo);
             return ZR_TK_STRING;
+        
+        case '\'':
+            // 单引号表示字符字面量
+            read_char(ls, seminfo);
+            return ZR_TK_CHAR;
 
         case '.':
             next_char(ls);

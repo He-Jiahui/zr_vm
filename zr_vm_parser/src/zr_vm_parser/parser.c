@@ -1016,6 +1016,82 @@ static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
 static SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
+    // 检查类型转换表达式: <Type> expression
+    if (token == ZR_TK_LESS_THAN) {
+        // 可能是类型转换，需要向前看以区分泛型类型和类型转换
+        // 类型转换: <Type> expression (后面跟着表达式)
+        // 泛型类型: Type<...> (在类型解析上下文中)
+        // 这里我们尝试解析类型，如果成功且后面跟着表达式，就是类型转换
+        SZrFileRange startLoc = get_current_location(ps);
+        
+        // 保存状态以便回退
+        TZrSize savedPos = ps->lexer->currentPos;
+        TInt32 savedChar = ps->lexer->currentChar;
+        TInt32 savedLine = ps->lexer->lineNumber;
+        TInt32 savedLastLine = ps->lexer->lastLine;
+        SZrToken savedToken = ps->lexer->t;
+        
+        // 尝试解析类型
+        ZrLexerNext(ps->lexer);  // 跳过 <
+        SZrType *targetType = parse_type(ps);
+        
+        if (targetType != ZR_NULL && ps->lexer->t.token == ZR_TK_GREATER_THAN) {
+            ZrLexerNext(ps->lexer);  // 跳过 >
+            
+            // 检查后面是否是表达式（不是类型声明上下文）
+            // 如果后面是标识符、字面量、一元操作符等，就是类型转换
+            EZrToken nextToken = ps->lexer->t.token;
+            if (nextToken == ZR_TK_IDENTIFIER || nextToken == ZR_TK_INTEGER || 
+                nextToken == ZR_TK_FLOAT || nextToken == ZR_TK_STRING || 
+                nextToken == ZR_TK_CHAR || nextToken == ZR_TK_BOOLEAN ||
+                nextToken == ZR_TK_NULL || nextToken == ZR_TK_LPAREN ||
+                nextToken == ZR_TK_LBRACKET || nextToken == ZR_TK_LBRACE ||
+                nextToken == ZR_TK_BANG || nextToken == ZR_TK_TILDE ||
+                nextToken == ZR_TK_PLUS || nextToken == ZR_TK_MINUS ||
+                nextToken == ZR_TK_DOLLAR || nextToken == ZR_TK_NEW ||
+                nextToken == ZR_TK_LESS_THAN) {
+                // 是类型转换表达式
+                SZrAstNode *expression = parse_unary_expression(ps);  // 递归解析表达式
+                
+                if (expression != ZR_NULL) {
+                    SZrFileRange endLoc = get_current_location(ps);
+                    SZrFileRange castLoc = ZrFileRangeMerge(startLoc, endLoc);
+                    SZrAstNode *node = create_ast_node(ps, ZR_AST_TYPE_CAST_EXPRESSION, castLoc);
+                    if (node != ZR_NULL) {
+                        node->data.typeCastExpression.targetType = targetType;
+                        node->data.typeCastExpression.expression = expression;
+                        return node;
+                    }
+                }
+                
+                // 如果创建节点失败，释放类型
+                if (targetType != ZR_NULL) {
+                    ZrMemoryRawFreeWithType(ps->state->global, targetType, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
+            } else {
+                // 不是类型转换，恢复状态
+                ps->lexer->currentPos = savedPos;
+                ps->lexer->currentChar = savedChar;
+                ps->lexer->lineNumber = savedLine;
+                ps->lexer->lastLine = savedLastLine;
+                ps->lexer->t = savedToken;
+                if (targetType != ZR_NULL) {
+                    ZrMemoryRawFreeWithType(ps->state->global, targetType, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
+            }
+        } else {
+            // 解析类型失败，恢复状态
+            ps->lexer->currentPos = savedPos;
+            ps->lexer->currentChar = savedChar;
+            ps->lexer->lineNumber = savedLine;
+            ps->lexer->lastLine = savedLastLine;
+            ps->lexer->t = savedToken;
+            if (targetType != ZR_NULL) {
+                ZrMemoryRawFreeWithType(ps->state->global, targetType, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+        }
+    }
+
     // 检查一元操作符
     if (token == ZR_TK_BANG || token == ZR_TK_TILDE || token == ZR_TK_PLUS ||
         token == ZR_TK_MINUS || token == ZR_TK_DOLLAR || token == ZR_TK_NEW) {

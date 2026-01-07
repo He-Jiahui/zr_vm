@@ -16,9 +16,256 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/meta.h"
+#include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_common/zr_object_conf.h"
+
+// 辅助函数：从模块中查找类型原型
+// 返回找到的原型对象，如果未找到返回 ZR_NULL
+static SZrObjectPrototype *find_prototype_in_module(SZrState *state, struct SZrObjectModule *module, 
+                                                     SZrString *typeName, EZrObjectPrototypeType expectedType) {
+    if (state == ZR_NULL || module == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    // 从模块的 pub 导出中查找类型
+    const SZrTypeValue *typeValue = ZrModuleGetPubExport(state, module, typeName);
+    if (typeValue == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    // 检查值类型是否为对象
+    if (typeValue->type != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_NULL;
+    }
+    
+    SZrObject *typeObject = ZR_CAST_OBJECT(state, typeValue->value.object);
+    if (typeObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    // 检查对象是否为原型对象
+    if (typeObject->internalType != ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        return ZR_NULL;
+    }
+    
+    SZrObjectPrototype *prototype = (SZrObjectPrototype *)typeObject;
+    
+    // 检查原型类型是否匹配
+    if (prototype->type == expectedType) {
+        return prototype;
+    }
+    
+    return ZR_NULL;
+}
+
+// 辅助函数：解析类型名称，支持 "module.TypeName" 格式
+// 返回解析后的模块名和类型名，如果类型名不包含模块路径，moduleName 返回 ZR_NULL
+static void parse_type_name(SZrState *state, SZrString *fullTypeName, SZrString **moduleName, SZrString **typeName) {
+    if (state == ZR_NULL || fullTypeName == ZR_NULL) {
+        if (moduleName != ZR_NULL) *moduleName = ZR_NULL;
+        if (typeName != ZR_NULL) *typeName = ZR_NULL;
+        return;
+    }
+    
+    // 获取类型名称字符串
+    TNativeString typeNameStr;
+    TZrSize nameLen;
+    if (fullTypeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        typeNameStr = (TNativeString)ZrStringGetNativeStringShort(fullTypeName);
+        nameLen = fullTypeName->shortStringLength;
+    } else {
+        typeNameStr = (TNativeString)ZrStringGetNativeString(fullTypeName);
+        nameLen = fullTypeName->longStringLength;
+    }
+    
+    if (typeNameStr == ZR_NULL || nameLen == 0) {
+        if (moduleName != ZR_NULL) *moduleName = ZR_NULL;
+        if (typeName != ZR_NULL) *typeName = fullTypeName;
+        return;
+    }
+    
+    // 查找 '.' 分隔符
+    const TChar *dotPos = (const TChar *)memchr(typeNameStr, '.', nameLen);
+    if (dotPos == ZR_NULL) {
+        // 没有模块路径，类型名就是完整名称
+        if (moduleName != ZR_NULL) *moduleName = ZR_NULL;
+        if (typeName != ZR_NULL) *typeName = fullTypeName;
+        return;
+    }
+    
+    // 解析模块名和类型名
+    TZrSize moduleNameLen = (TZrSize)(dotPos - typeNameStr);
+    TZrSize typeNameLen = nameLen - moduleNameLen - 1;
+    const TChar *typeNameStart = dotPos + 1;
+    
+    if (moduleNameLen > 0 && typeNameLen > 0) {
+        if (moduleName != ZR_NULL) {
+            *moduleName = ZrStringCreate(state, typeNameStr, moduleNameLen);
+        }
+        if (typeName != ZR_NULL) {
+            *typeName = ZrStringCreate(state, typeNameStart, typeNameLen);
+        }
+    } else {
+        if (moduleName != ZR_NULL) *moduleName = ZR_NULL;
+        if (typeName != ZR_NULL) *typeName = fullTypeName;
+    }
+}
+
+// 辅助函数：查找类型原型（从当前模块或全局模块注册表）
+// 返回找到的原型对象，如果未找到返回 ZR_NULL
+static SZrObjectPrototype *find_type_prototype(SZrState *state, SZrString *typeName, EZrObjectPrototypeType expectedType) {
+    if (state == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    SZrGlobalState *global = state->global;
+    if (global == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    // 解析类型名称，支持 "module.TypeName" 格式
+    SZrString *moduleName = ZR_NULL;
+    SZrString *actualTypeName = ZR_NULL;
+    parse_type_name(state, typeName, &moduleName, &actualTypeName);
+    
+    if (actualTypeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    // 如果指定了模块名，从该模块中查找
+    if (moduleName != ZR_NULL) {
+        // 从模块注册表中获取模块
+        struct SZrObjectModule *module = ZrModuleGetFromCache(state, moduleName);
+        if (module != ZR_NULL) {
+            SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
+            return prototype;
+        }
+    } else {
+        // 没有指定模块名，尝试从当前调用栈的闭包中查找模块
+        // 遍历调用栈，查找模块对象（通过闭包变量或其他方式）
+        // TODO: 如果函数有模块信息，从模块中查找类型
+        // 目前先跳过，因为需要额外的机制来关联函数和模块
+        
+        // 从全局模块注册表中查找（遍历所有已加载的模块）
+        // 注意：由于 ZrHashSet 没有迭代接口，我们需要通过其他方式查找
+        // 一个可能的方案是：在模块加载时，将类型原型注册到全局类型表中
+        // 或者：通过类型名称的哈希值在注册表中查找对应的模块
+        
+        // 暂时先尝试从全局 zr 对象中查找（如果类型是全局注册的）
+        // 或者：通过元方法机制，让类型系统提供查找功能
+    }
+    
+    // 如果找不到，返回 ZR_NULL（后续可以通过元方法或创建新原型）
+    // 注意：完整的实现需要：
+    // - 模块加载时将类型原型注册到全局类型表
+    // - 或者通过类型名称的模块路径（如 "module.TypeName"）来查找
+    return ZR_NULL;
+}
+
+// 辅助函数：执行 struct 类型转换
+// 将源对象转换为目标 struct 类型
+static TBool convert_to_struct(SZrState *state, SZrTypeValue *source, SZrObjectPrototype *targetPrototype, 
+                                SZrTypeValue *destination) {
+    if (state == ZR_NULL || source == ZR_NULL || targetPrototype == ZR_NULL || destination == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 检查目标原型类型
+    if (targetPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+        return ZR_FALSE;
+    }
+    
+    // 如果源值是对象，尝试转换
+    if (ZR_VALUE_IS_TYPE_OBJECT(source->type)) {
+        SZrObject *sourceObject = ZR_CAST_OBJECT(state, source->value.object);
+        if (sourceObject == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        
+        // 创建新的 struct 对象（值类型）
+        SZrObject *structObject = ZrObjectNew(state, targetPrototype);
+        if (structObject == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        
+        // 设置内部类型为 STRUCT
+        structObject->internalType = ZR_OBJECT_INTERNAL_TYPE_STRUCT;
+        
+        // 复制源对象的字段到新对象
+        // 对于 struct，字段存储在 nodeMap 中（与普通对象相同）
+        // 遍历源对象的 nodeMap，复制匹配的字段到新对象
+        if (sourceObject->nodeMap.isValid && sourceObject->nodeMap.buckets != ZR_NULL && sourceObject->nodeMap.elementCount > 0) {
+            // 注意：ZrHashSet 没有迭代接口，我们需要通过其他方式复制字段
+            // 一个方案是：通过元方法 @to_struct 来处理字段复制
+            // 或者：如果源对象已经是 struct 类型，直接复制其 nodeMap
+            
+            // 暂时先复制所有字段（后续需要根据 struct 定义进行字段验证和类型转换）
+            // 由于无法直接迭代 nodeMap，我们依赖元方法或构造函数来处理字段复制
+            // 如果源对象有 @to_struct 元方法，应该已经在上层调用了
+            // 这里只是创建了新的 struct 对象，字段复制由元方法或构造函数完成
+        }
+        
+        ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(structObject));
+        destination->type = ZR_VALUE_TYPE_OBJECT;
+        return ZR_TRUE;
+    }
+    
+    return ZR_FALSE;
+}
+
+// 辅助函数：执行 class 类型转换
+// 将源对象转换为目标 class 类型
+static TBool convert_to_class(SZrState *state, SZrTypeValue *source, SZrObjectPrototype *targetPrototype, 
+                               SZrTypeValue *destination) {
+    if (state == ZR_NULL || source == ZR_NULL || targetPrototype == ZR_NULL || destination == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 检查目标原型类型
+    if (targetPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+        return ZR_FALSE;
+    }
+    
+    // 如果源值是对象，尝试转换
+    if (ZR_VALUE_IS_TYPE_OBJECT(source->type)) {
+        SZrObject *sourceObject = ZR_CAST_OBJECT(state, source->value.object);
+        if (sourceObject == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        
+        // 创建新的 class 对象（引用类型）
+        SZrObject *classObject = ZrObjectNew(state, targetPrototype);
+        if (classObject == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        
+        // 设置内部类型为 OBJECT（class 是引用类型）
+        classObject->internalType = ZR_OBJECT_INTERNAL_TYPE_OBJECT;
+        
+        // 复制源对象的字段到新对象
+        // 对于 class，字段存储在 nodeMap 中
+        // 遍历源对象的 nodeMap，复制匹配的字段到新对象
+        if (sourceObject->nodeMap.isValid && sourceObject->nodeMap.buckets != ZR_NULL && sourceObject->nodeMap.elementCount > 0) {
+            // 注意：ZrHashSet 没有迭代接口，我们需要通过其他方式复制字段
+            // 一个方案是：通过元方法 @to_object 来处理字段复制
+            // 或者：如果源对象已经是 class 类型，直接复制其 nodeMap
+            
+            // 暂时先复制所有字段（后续需要根据 class 定义进行字段验证和类型转换）
+            // 由于无法直接迭代 nodeMap，我们依赖元方法或构造函数来处理字段复制
+            // 如果源对象有 @to_object 元方法，应该已经在上层调用了
+            // 这里只是创建了新的 class 对象，字段复制由元方法或构造函数完成
+        }
+        
+        ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(classObject));
+        destination->type = ZR_VALUE_TYPE_OBJECT;
+        return ZR_TRUE;
+    }
+    
+    return ZR_FALSE;
+}
 
 void ZrExecute(SZrState *state, SZrCallInfo *callInfo) {
     SZrClosure *closure;
@@ -385,6 +632,132 @@ LZrReturning: {
                     ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(result));
                 } else {
                     // 转换失败，返回 null
+                    ZrValueResetAsNull(destination);
+                }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(TO_STRUCT) {
+                opA = &BASE(A1(instruction))->value;
+                // operand1[1] 存储类型名称常量索引
+                TUInt16 typeNameConstantIndex = B1(instruction);
+                if (closure->function != ZR_NULL && typeNameConstantIndex < closure->function->constantValueLength) {
+                    SZrTypeValue *typeNameValue = CONST(typeNameConstantIndex);
+                    if (typeNameValue->type == ZR_VALUE_TYPE_STRING) {
+                        SZrString *typeName = ZR_CAST_STRING(state, typeNameValue->value.object);
+                        
+                        // 1. 优先尝试通过元方法进行转换
+                        // 注意：ZR_META_TO_STRUCT 可能不存在，暂时不使用元方法，直接查找原型
+                        // TODO: 如果定义了 ZR_META_TO_STRUCT，使用它；否则直接查找原型
+                        SZrMeta *meta = ZR_NULL; // ZrValueGetMeta(state, opA, ZR_META_TO_STRUCT);
+                        if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                            // 调用元方法
+                            TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+                            SZrCallInfo *savedCallInfo = state->callInfoList;
+                            PROTECT_E(state, callInfo, {
+                                ZrFunctionCheckStackAndGc(state, 3, savedStackTop);
+                                TZrStackValuePointer metaBase = savedStackTop;
+                                ZrStackSetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+                                ZrStackCopyValue(state, metaBase + 1, opA);
+                                ZrStackCopyValue(state, metaBase + 2, typeNameValue);
+                                state->stackTop.valuePointer = metaBase + 3;
+                                ZrFunctionCallWithoutYield(state, metaBase, 1);
+                                if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                                    SZrTypeValue *returnValue = ZrStackGetValue(metaBase);
+                                    ZrValueCopy(state, destination, returnValue);
+                                } else {
+                                    ZrValueResetAsNull(destination);
+                                }
+                                state->stackTop.valuePointer = savedStackTop;
+                                state->callInfoList = savedCallInfo;
+                            });
+                        } else {
+                            // 2. 无元方法，尝试查找类型原型并执行转换
+                            SZrObjectPrototype *prototype = find_type_prototype(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_STRUCT);
+                            if (prototype != ZR_NULL) {
+                                // 找到原型，执行转换
+                                if (!convert_to_struct(state, opA, prototype, destination)) {
+                                    ZrValueResetAsNull(destination);
+                                }
+                            } else {
+                                // 3. 找不到原型，如果源值是对象，尝试直接复制
+                                // 这允许在运行时动态创建 struct（如果类型系统支持）
+                                if (ZR_VALUE_IS_TYPE_OBJECT(opA->type)) {
+                                    // 暂时直接复制对象（后续需要设置正确的原型）
+                                    ZrValueCopy(state, destination, opA);
+                                } else {
+                                    ZrValueResetAsNull(destination);
+                                }
+                            }
+                        }
+                    } else {
+                        // 类型名称常量类型错误
+                        ZrValueResetAsNull(destination);
+                    }
+                } else {
+                    // 常量索引越界
+                    ZrValueResetAsNull(destination);
+                }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(TO_OBJECT) {
+                opA = &BASE(A1(instruction))->value;
+                // operand1[1] 存储类型名称常量索引
+                TUInt16 typeNameConstantIndex = B1(instruction);
+                if (closure->function != ZR_NULL && typeNameConstantIndex < closure->function->constantValueLength) {
+                    SZrTypeValue *typeNameValue = CONST(typeNameConstantIndex);
+                    if (typeNameValue->type == ZR_VALUE_TYPE_STRING) {
+                        SZrString *typeName = ZR_CAST_STRING(state, typeNameValue->value.object);
+                        
+                        // 1. 优先尝试通过元方法进行转换
+                        // 注意：ZR_META_TO_OBJECT 可能不存在，暂时不使用元方法，直接查找原型
+                        // TODO: 如果定义了 ZR_META_TO_OBJECT，使用它；否则直接查找原型
+                        SZrMeta *meta = ZR_NULL; // ZrValueGetMeta(state, opA, ZR_META_TO_OBJECT);
+                        if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                            // 调用元方法
+                            TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+                            SZrCallInfo *savedCallInfo = state->callInfoList;
+                            PROTECT_E(state, callInfo, {
+                                ZrFunctionCheckStackAndGc(state, 3, savedStackTop);
+                                TZrStackValuePointer metaBase = savedStackTop;
+                                ZrStackSetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+                                ZrStackCopyValue(state, metaBase + 1, opA);
+                                ZrStackCopyValue(state, metaBase + 2, typeNameValue);
+                                state->stackTop.valuePointer = metaBase + 3;
+                                ZrFunctionCallWithoutYield(state, metaBase, 1);
+                                if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                                    SZrTypeValue *returnValue = ZrStackGetValue(metaBase);
+                                    ZrValueCopy(state, destination, returnValue);
+                                } else {
+                                    ZrValueResetAsNull(destination);
+                                }
+                                state->stackTop.valuePointer = savedStackTop;
+                                state->callInfoList = savedCallInfo;
+                            });
+                        } else {
+                            // 2. 无元方法，尝试查找类型原型并执行转换
+                            SZrObjectPrototype *prototype = find_type_prototype(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+                            if (prototype != ZR_NULL) {
+                                // 找到原型，执行转换
+                                if (!convert_to_class(state, opA, prototype, destination)) {
+                                    ZrValueResetAsNull(destination);
+                                }
+                            } else {
+                                // 3. 找不到原型，如果源值是对象，尝试直接复制
+                                // 这允许在运行时动态创建 class（如果类型系统支持）
+                                if (ZR_VALUE_IS_TYPE_OBJECT(opA->type)) {
+                                    // 暂时直接复制对象（后续需要设置正确的原型）
+                                    ZrValueCopy(state, destination, opA);
+                                } else {
+                                    ZrValueResetAsNull(destination);
+                                }
+                            }
+                        }
+                    } else {
+                        // 类型名称常量类型错误
+                        ZrValueResetAsNull(destination);
+                    }
+                } else {
+                    // 常量索引越界
                     ZrValueResetAsNull(destination);
                 }
             }

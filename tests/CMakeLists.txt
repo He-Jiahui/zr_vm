@@ -36,3 +36,30 @@ if((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
    (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static))
     add_subdirectory(module)
 endif()
+
+# 测试运行器（整合所有测试）
+if(TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
+    # 添加测试运行器源文件
+    set(TEST_RUNNER_SOURCES
+        test_runner.c
+    )
+    
+    # 创建测试运行器可执行文件
+    add_executable(zr_vm_test_runner ${TEST_RUNNER_SOURCES})
+    
+    # 包含头文件目录
+    target_include_directories(zr_vm_test_runner PRIVATE 
+        ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    )
+    
+    # 链接必要的库（如果需要）
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_test_runner PRIVATE zr_vm_core_shared)
+    else()
+        target_link_libraries(zr_vm_test_runner PRIVATE zr_vm_core_static)
+    endif()
+    
+    # 添加测试目标
+    enable_testing()
+    add_test(NAME test_runner COMMAND zr_vm_test_runner)
+endif()

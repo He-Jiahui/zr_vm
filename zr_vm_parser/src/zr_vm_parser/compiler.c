@@ -24,6 +24,8 @@ extern void compile_statement(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_script(SZrCompilerState *cs, SZrAstNode *node);
 void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node);
+static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node);
+static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node);
 TZrSize create_label(SZrCompilerState *cs);
 void resolve_label(SZrCompilerState *cs, TZrSize labelId);
 
@@ -101,8 +103,14 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     ZrArrayInit(state, &cs->proVariables, sizeof(SZrExportedVariable), 8);
     ZrArrayInit(state, &cs->exportedTypes, sizeof(SZrString *), 4);  // 暂时存储类型名
     
+    // 初始化脚本 AST 引用
+    cs->scriptAst = ZR_NULL;
+    
     // 初始化脚本级别标志
     cs->isScriptLevel = ZR_FALSE;
+    
+    // 初始化类型 Prototype 信息数组
+    ZrArrayInit(state, &cs->typePrototypes, sizeof(SZrTypePrototypeInfo), 8);
 }
 
 // 清理解译器状态
@@ -198,6 +206,28 @@ void ZrCompilerStateFree(SZrCompilerState *cs) {
     if (cs->typeEnv != ZR_NULL) {
         ZrTypeEnvironmentFree(state, cs->typeEnv);
         cs->typeEnv = ZR_NULL;
+    }
+    
+    // 释放类型 Prototype 信息数组
+    if (cs->typePrototypes.isValid && cs->typePrototypes.head != ZR_NULL &&
+        cs->typePrototypes.capacity > 0 && cs->typePrototypes.elementSize > 0) {
+        // 释放每个 prototype 信息中的嵌套数组
+        for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
+            SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrArrayGet(&cs->typePrototypes, i);
+            if (info != ZR_NULL) {
+                // 释放 inherits 数组（字符串本身由 GC 管理）
+                if (info->inherits.isValid && info->inherits.head != ZR_NULL &&
+                    info->inherits.capacity > 0 && info->inherits.elementSize > 0) {
+                    ZrArrayFree(state, &info->inherits);
+                }
+                // 释放 members 数组
+                if (info->members.isValid && info->members.head != ZR_NULL &&
+                    info->members.capacity > 0 && info->members.elementSize > 0) {
+                    ZrArrayFree(state, &info->members);
+                }
+            }
+        }
+        ZrArrayFree(state, &cs->typePrototypes);
     }
     
     // 释放模块导出跟踪数组（字符串本身由 GC 管理）
@@ -1643,6 +1673,236 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->closureVarCount = oldClosureVarCount;
 }
 
+// 编译 struct 声明
+static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+    
+    if (node->type != ZR_AST_STRUCT_DECLARATION) {
+        ZrCompilerError(cs, "Expected struct declaration node", node->location);
+        return;
+    }
+    
+    SZrStructDeclaration *structDecl = &node->data.structDeclaration;
+    
+    // 获取类型名称
+    if (structDecl->name == ZR_NULL) {
+        ZrCompilerError(cs, "Struct declaration must have a valid name", node->location);
+        return;
+    }
+    
+    SZrString *typeName = structDecl->name->name;
+    if (typeName == ZR_NULL) {
+        ZrCompilerError(cs, "Struct name is null", node->location);
+        return;
+    }
+    
+    // 创建 prototype 信息结构
+    SZrTypePrototypeInfo info;
+    info.name = typeName;
+    info.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
+    info.accessModifier = structDecl->accessModifier;
+    
+    // 初始化继承数组
+    ZrArrayInit(cs->state, &info.inherits, sizeof(SZrString *), 4);
+    
+    // 处理继承关系
+    if (structDecl->inherits != ZR_NULL && structDecl->inherits->count > 0) {
+        for (TZrSize i = 0; i < structDecl->inherits->count; i++) {
+            SZrAstNode *inheritType = structDecl->inherits->nodes[i];
+            if (inheritType != ZR_NULL && inheritType->type == ZR_AST_TYPE) {
+                SZrType *type = &inheritType->data.type;
+                // 提取类型名称（简化处理，只处理简单类型名）
+                if (type->name != ZR_NULL && type->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    SZrString *inheritTypeName = type->name->data.identifier.name;
+                    if (inheritTypeName != ZR_NULL) {
+                        ZrArrayPush(cs->state, &info.inherits, &inheritTypeName);
+                    }
+                }
+            }
+        }
+    }
+    
+    // 初始化成员数组
+    ZrArrayInit(cs->state, &info.members, sizeof(SZrTypeMemberInfo), 16);
+    
+    // 处理成员信息
+    if (structDecl->members != ZR_NULL && structDecl->members->count > 0) {
+        for (TZrSize i = 0; i < structDecl->members->count; i++) {
+            SZrAstNode *member = structDecl->members->nodes[i];
+            if (member == ZR_NULL) {
+                continue;
+            }
+            
+            SZrTypeMemberInfo memberInfo;
+            memberInfo.memberType = member->type;
+            memberInfo.isStatic = ZR_FALSE;
+            memberInfo.accessModifier = ZR_ACCESS_PRIVATE;
+            memberInfo.name = ZR_NULL;
+            
+            // 根据成员类型提取信息
+            switch (member->type) {
+                case ZR_AST_STRUCT_FIELD: {
+                    SZrStructField *field = &member->data.structField;
+                    memberInfo.accessModifier = field->access;
+                    memberInfo.isStatic = field->isStatic;
+                    if (field->name != ZR_NULL) {
+                        memberInfo.name = field->name->name;
+                    }
+                    break;
+                }
+                case ZR_AST_STRUCT_METHOD: {
+                    SZrStructMethod *method = &member->data.structMethod;
+                    memberInfo.accessModifier = method->access;
+                    memberInfo.isStatic = method->isStatic;
+                    if (method->name != ZR_NULL) {
+                        memberInfo.name = method->name->name;
+                    }
+                    break;
+                }
+                case ZR_AST_STRUCT_META_FUNCTION: {
+                    SZrStructMetaFunction *metaFunc = &member->data.structMetaFunction;
+                    memberInfo.accessModifier = metaFunc->access;
+                    memberInfo.isStatic = metaFunc->isStatic;
+                    if (metaFunc->meta != ZR_NULL) {
+                        memberInfo.name = metaFunc->meta->name;
+                    }
+                    break;
+                }
+                default:
+                    // 忽略未知成员类型
+                    continue;
+            }
+            
+            if (memberInfo.name != ZR_NULL) {
+                ZrArrayPush(cs->state, &info.members, &memberInfo);
+            }
+        }
+    }
+    
+    // 将 prototype 信息添加到数组
+    ZrArrayPush(cs->state, &cs->typePrototypes, &info);
+}
+
+// 编译 class 声明
+static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+    
+    if (node->type != ZR_AST_CLASS_DECLARATION) {
+        ZrCompilerError(cs, "Expected class declaration node", node->location);
+        return;
+    }
+    
+    SZrClassDeclaration *classDecl = &node->data.classDeclaration;
+    
+    // 获取类型名称
+    if (classDecl->name == ZR_NULL) {
+        ZrCompilerError(cs, "Class declaration must have a valid name", node->location);
+        return;
+    }
+    
+    SZrString *typeName = classDecl->name->name;
+    if (typeName == ZR_NULL) {
+        ZrCompilerError(cs, "Class name is null", node->location);
+        return;
+    }
+    
+    // 创建 prototype 信息结构
+    SZrTypePrototypeInfo info;
+    info.name = typeName;
+    info.type = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
+    info.accessModifier = classDecl->accessModifier;
+    
+    // 初始化继承数组
+    ZrArrayInit(cs->state, &info.inherits, sizeof(SZrString *), 4);
+    
+    // 处理继承关系
+    if (classDecl->inherits != ZR_NULL && classDecl->inherits->count > 0) {
+        for (TZrSize i = 0; i < classDecl->inherits->count; i++) {
+            SZrAstNode *inheritType = classDecl->inherits->nodes[i];
+            if (inheritType != ZR_NULL && inheritType->type == ZR_AST_TYPE) {
+                SZrType *type = &inheritType->data.type;
+                // 提取类型名称（简化处理，只处理简单类型名）
+                if (type->name != ZR_NULL && type->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    SZrString *inheritTypeName = type->name->data.identifier.name;
+                    if (inheritTypeName != ZR_NULL) {
+                        ZrArrayPush(cs->state, &info.inherits, &inheritTypeName);
+                    }
+                }
+            }
+        }
+    }
+    
+    // 初始化成员数组
+    ZrArrayInit(cs->state, &info.members, sizeof(SZrTypeMemberInfo), 16);
+    
+    // 处理成员信息
+    if (classDecl->members != ZR_NULL && classDecl->members->count > 0) {
+        for (TZrSize i = 0; i < classDecl->members->count; i++) {
+            SZrAstNode *member = classDecl->members->nodes[i];
+            if (member == ZR_NULL) {
+                continue;
+            }
+            
+            SZrTypeMemberInfo memberInfo;
+            memberInfo.memberType = member->type;
+            memberInfo.isStatic = ZR_FALSE;
+            memberInfo.accessModifier = ZR_ACCESS_PRIVATE;
+            memberInfo.name = ZR_NULL;
+            
+            // 根据成员类型提取信息
+            switch (member->type) {
+                case ZR_AST_CLASS_FIELD: {
+                    SZrClassField *field = &member->data.classField;
+                    memberInfo.accessModifier = field->access;
+                    if (field->name != ZR_NULL) {
+                        memberInfo.name = field->name->name;
+                    }
+                    break;
+                }
+                case ZR_AST_CLASS_METHOD: {
+                    SZrClassMethod *method = &member->data.classMethod;
+                    memberInfo.accessModifier = method->access;
+                    memberInfo.isStatic = method->isStatic;
+                    if (method->name != ZR_NULL) {
+                        memberInfo.name = method->name->name;
+                    }
+                    break;
+                }
+                case ZR_AST_CLASS_PROPERTY: {
+                    SZrClassProperty *property = &member->data.classProperty;
+                    memberInfo.accessModifier = property->access;
+                    // ClassProperty 没有直接的 name 字段，需要从 modifier 中提取
+                    // 暂时跳过，TODO: 实现从 PropertyGet/PropertySet 中提取名称
+                    break;
+                }
+                case ZR_AST_CLASS_META_FUNCTION: {
+                    SZrClassMetaFunction *metaFunc = &member->data.classMetaFunction;
+                    memberInfo.accessModifier = metaFunc->access;
+                    memberInfo.isStatic = metaFunc->isStatic;
+                    if (metaFunc->meta != ZR_NULL) {
+                        memberInfo.name = metaFunc->meta->name;
+                    }
+                    break;
+                }
+                default:
+                    // 忽略未知成员类型
+                    continue;
+            }
+            
+            if (memberInfo.name != ZR_NULL) {
+                ZrArrayPush(cs->state, &info.members, &memberInfo);
+            }
+        }
+    }
+    
+    // 将 prototype 信息添加到数组
+    ZrArrayPush(cs->state, &cs->typePrototypes, &info);
+}
+
 // 编译脚本
 static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -1658,6 +1918,9 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 设置脚本级别标志（用于区分脚本级变量和函数内变量）
     cs->isScriptLevel = ZR_TRUE;
+    
+    // 保存脚本 AST 引用（用于类型查找）
+    cs->scriptAst = node;
 
     // 1. 编译模块声明（如果有）
     if (script->moduleName != ZR_NULL) {
@@ -1770,6 +2033,83 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 emit_instruction(cs, returnInst);
             }
         }
+    }
+    
+    // 5. 将 prototype 信息存储到常量池中，供运行时使用
+    // 运行时创建逻辑将在 zr.import 中实现（在创建模块后）
+    // 这里我们将每个 prototype 的信息序列化为常量：
+    // - 类型名称（字符串）
+    // - 类型（STRUCT/CLASS，整数）
+    // - 访问修饰符（整数）
+    // - 继承关系（字符串数组）
+    // - 成员信息（简化处理，暂时只存储成员名称）
+    
+    if (cs->typePrototypes.length > 0) {
+        // 将 prototype 信息存储到常量池
+        // 使用特殊标记来标识 prototype 信息常量
+        // 格式：第一个常量是标记（特殊值），后续是 prototype 信息
+        for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
+            SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrArrayGet(&cs->typePrototypes, i);
+            if (info == ZR_NULL || info->name == ZR_NULL) {
+                continue;
+            }
+            
+            // 存储类型名称
+            SZrTypeValue typeNameValue;
+            ZrValueInitAsRawObject(cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(info->name));
+            typeNameValue.type = ZR_VALUE_TYPE_STRING;
+            add_constant(cs, &typeNameValue);
+            
+            // 存储类型（STRUCT/CLASS）
+            SZrTypeValue typeValue;
+            ZrValueInitAsUInt(cs->state, &typeValue, (TUInt64)info->type);
+            add_constant(cs, &typeValue);
+            
+            // 存储访问修饰符
+            SZrTypeValue accessModifierValue;
+            ZrValueInitAsUInt(cs->state, &accessModifierValue, (TUInt64)info->accessModifier);
+            add_constant(cs, &accessModifierValue);
+            
+            // 存储继承关系数量
+            SZrTypeValue inheritsCountValue;
+            ZrValueInitAsUInt(cs->state, &inheritsCountValue, (TUInt64)info->inherits.length);
+            add_constant(cs, &inheritsCountValue);
+            
+            // 存储每个继承类型名称
+            for (TZrSize j = 0; j < info->inherits.length; j++) {
+                SZrString **inheritTypeNamePtr = (SZrString **)ZrArrayGet(&info->inherits, j);
+                if (inheritTypeNamePtr != ZR_NULL && *inheritTypeNamePtr != ZR_NULL) {
+                    SZrTypeValue inheritTypeNameValue;
+                    ZrValueInitAsRawObject(cs->state, &inheritTypeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(*inheritTypeNamePtr));
+                    inheritTypeNameValue.type = ZR_VALUE_TYPE_STRING;
+                    add_constant(cs, &inheritTypeNameValue);
+                }
+            }
+            
+            // 存储成员数量
+            SZrTypeValue membersCountValue;
+            ZrValueInitAsUInt(cs->state, &membersCountValue, (TUInt64)info->members.length);
+            add_constant(cs, &membersCountValue);
+            
+            // 存储每个成员名称（简化处理）
+            for (TZrSize j = 0; j < info->members.length; j++) {
+                SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrArrayGet(&info->members, j);
+                if (memberInfo != ZR_NULL && memberInfo->name != ZR_NULL) {
+                    SZrTypeValue memberNameValue;
+                    ZrValueInitAsRawObject(cs->state, &memberNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->name));
+                    memberNameValue.type = ZR_VALUE_TYPE_STRING;
+                    add_constant(cs, &memberNameValue);
+                }
+            }
+        }
+        
+        // 存储 prototype 数量（用于运行时知道有多少个 prototype 需要创建）
+        // 使用一个特殊标记常量来标识 prototype 信息的开始
+        // 格式：第一个常量是 prototype 数量
+        SZrTypeValue prototypeCountValue;
+        ZrValueInitAsUInt(cs->state, &prototypeCountValue, (TUInt64)cs->typePrototypes.length);
+        // 在常量池开头插入（需要特殊处理，暂时先添加到末尾，运行时从末尾读取）
+        // TODO: 实现更优雅的存储方式
     }
     
     // 重置脚本级别标志

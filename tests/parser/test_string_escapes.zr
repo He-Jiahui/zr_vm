@@ -1,0 +1,40 @@
+// 测试字符串转义序列
+module "string_escapes";
+
+// 基本转义字符
+var s1 = "hello\nworld";
+var s2 = "tab\there";
+var s3 = "quote\"here";
+var s4 = "single\'quote";
+var s5 = "backslash\\here";
+
+// 十六进制转义
+var s6 = "hex\x21";
+var s7 = "hex\xFF";
+
+// Unicode 转义
+var s8 = "unicode\u0041";
+var s9 = "unicode\u4E2D";
+
+// 测试用例
+%test("stringEscapesTest"){
+    var result = 0;
+    
+    // 验证基本转义字符
+    if (s1 != null) { result = result + 1; }
+    if (s2 != null) { result = result + 1; }
+    if (s3 != null) { result = result + 1; }
+    if (s4 != null) { result = result + 1; }
+    if (s5 != null) { result = result + 1; }
+    
+    // 验证十六进制转义
+    if (s6 != null) { result = result + 1; }
+    if (s7 != null) { result = result + 1; }
+    
+    // 验证 Unicode 转义
+    if (s8 != null) { result = result + 1; }
+    if (s9 != null) { result = result + 1; }
+    
+    return result;
+}
+

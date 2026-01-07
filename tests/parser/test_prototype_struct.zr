@@ -1,0 +1,39 @@
+// 测试 struct prototype 生成
+module "test_struct";
+
+// 基本 struct 声明
+struct Vector3 {
+    pub var x: float;
+    pub var y: float;
+    pub var z: float;
+}
+
+// 带继承的 struct
+struct Point2D {
+    pub var x: float;
+    pub var y: float;
+}
+
+struct Point3D : Point2D {
+    pub var z: float;
+}
+
+// 带方法的 struct
+struct Counter {
+    pub var count: int;
+    
+    pub function increment() {
+        count = count + 1;
+    }
+}
+
+// 带元函数的 struct
+struct TestStruct {
+    pub var value: int;
+    
+    @constructor
+    pub function init(v: int) {
+        value = v;
+    }
+}
+

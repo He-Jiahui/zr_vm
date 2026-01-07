@@ -55,6 +55,7 @@ enum EZrAstNodeType {
     ZR_AST_LOGICAL_EXPRESSION,
     ZR_AST_CONDITIONAL_EXPRESSION,
     ZR_AST_UNARY_EXPRESSION,
+    ZR_AST_TYPE_CAST_EXPRESSION,
     ZR_AST_LAMBDA_EXPRESSION,
     ZR_AST_IF_EXPRESSION,
     ZR_AST_SWITCH_EXPRESSION,
@@ -240,6 +241,11 @@ typedef struct SZrUnaryExpression {
     SZrUnaryOperator op;
     SZrAstNode *argument;
 } SZrUnaryExpression;
+
+typedef struct SZrTypeCastExpression {
+    SZrType *targetType;  // 目标类型
+    SZrAstNode *expression;  // 要转换的表达式
+} SZrTypeCastExpression;
 
 typedef struct SZrAssignmentExpression {
     SZrAstNode *left;
@@ -680,6 +686,7 @@ typedef struct SZrAstNode {
         // 表达式
         SZrBinaryExpression binaryExpression;
         SZrUnaryExpression unaryExpression;
+        SZrTypeCastExpression typeCastExpression;
         SZrAssignmentExpression assignmentExpression;
         SZrConditionalExpression conditionalExpression;
         SZrLogicalExpression logicalExpression;

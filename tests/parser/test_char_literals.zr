@@ -1,0 +1,55 @@
+module "char_literals";
+
+// 基本字符测试
+var c1 = 'a';
+var c2 = 'Z';
+var c3 = '0';
+var c4 = ' ';
+
+// 转义字符测试
+var c5 = '\n';      // 换行
+var c6 = '\t';      // 制表符
+var c7 = '\r';      // 回车
+var c8 = '\b';      // 退格
+var c9 = '\f';      // 换页
+var c10 = '\'';     // 单引号
+var c11 = '\\';     // 反斜杠
+
+// 十六进制转义测试
+var c12 = '\x21';   // !
+var c13 = '\xFF';   // 255
+
+// Unicode 转义测试
+var c14 = '\u0041'; // A
+var c15 = '\u4E2D'; // 中
+
+// 测试用例
+%test("charLiteralsTest"){
+    var result = 0;
+    
+    // 验证基本字符
+    if (c1 == 'a') { result = result + 1; }
+    if (c2 == 'Z') { result = result + 1; }
+    if (c3 == '0') { result = result + 1; }
+    if (c4 == ' ') { result = result + 1; }
+    
+    // 验证转义字符
+    if (c5 == '\n') { result = result + 1; }
+    if (c6 == '\t') { result = result + 1; }
+    if (c7 == '\r') { result = result + 1; }
+    if (c8 == '\b') { result = result + 1; }
+    if (c9 == '\f') { result = result + 1; }
+    if (c10 == '\'') { result = result + 1; }
+    if (c11 == '\\') { result = result + 1; }
+    
+    // 验证十六进制转义
+    if (c12 == '\x21') { result = result + 1; }
+    if (c13 == '\xFF') { result = result + 1; }
+    
+    // 验证 Unicode 转义
+    if (c14 == '\u0041') { result = result + 1; }
+    if (c15 == '\u4E2D') { result = result + 1; }
+    
+    return result;
+}
+

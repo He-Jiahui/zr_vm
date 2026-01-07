@@ -14,6 +14,7 @@
 #include "zr_vm_core/array.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_common/zr_array_conf.h"
+#include "zr_vm_common/zr_object_conf.h"
 
 // 编译器状态结构
 typedef struct SZrCompilerState {
@@ -81,6 +82,12 @@ typedef struct SZrCompilerState {
     SZrArray proVariables;                // pro 变量列表（SZrExportedVariable，包含所有 pub）
     SZrArray exportedTypes;              // 导出的类型列表（暂时作为占位）
     TBool isScriptLevel;                  // 是否在脚本级别（用于区分脚本级变量和函数内变量）
+    
+    // 脚本 AST 引用（用于类型查找）
+    SZrAstNode *scriptAst;                // 当前编译的脚本 AST 节点（用于查找类型定义）
+    
+    // 类型 Prototype 信息（用于运行时创建）
+    SZrArray typePrototypes;              // 待创建的 prototype 信息数组（SZrTypePrototypeInfo）
 } SZrCompilerState;
 
 // 作用域信息
@@ -120,6 +127,24 @@ typedef struct SZrChildFunctionNameMap {
     SZrString *name;                    // 函数名
     TUInt32 childFunctionIndex;         // 子函数在 childFunctions 中的索引
 } SZrChildFunctionNameMap;
+
+// 编译时存储的 Prototype 信息
+typedef struct SZrTypePrototypeInfo {
+    SZrString *name;                    // 类型名称
+    EZrObjectPrototypeType type;        // STRUCT 或 CLASS
+    EZrAccessModifier accessModifier;   // 访问修饰符
+    SZrArray inherits;                  // 继承的类型引用（SZrString* 数组，存储类型名称字符串）
+    SZrArray members;                   // 成员信息（字段、方法等，存储 SZrTypeMemberInfo）
+} SZrTypePrototypeInfo;
+
+// 成员信息（字段、方法、元函数等）
+typedef struct SZrTypeMemberInfo {
+    EZrAstNodeType memberType;          // 成员类型（STRUCT_FIELD, STRUCT_METHOD, CLASS_FIELD 等）
+    SZrString *name;                    // 成员名称
+    EZrAccessModifier accessModifier;   // 访问修饰符
+    TBool isStatic;                     // 是否为静态成员
+    // 其他成员特定信息可以根据需要扩展
+} SZrTypeMemberInfo;
 
 // 编译结果结构体
 typedef struct SZrCompileResult {

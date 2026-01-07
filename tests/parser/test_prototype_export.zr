@@ -1,0 +1,28 @@
+// 测试 prototype 模块导出
+module "test_export";
+
+// pub struct - 应该导出到 pub
+pub struct PublicStruct {
+    pub var value: int;
+}
+
+// pro struct - 应该导出到 pro
+pro struct ProtectedStruct {
+    pro var value: int;
+}
+
+// private struct - 不导出
+struct PrivateStruct {
+    var value: int;
+}
+
+// pub class - 应该导出到 pub
+pub class PublicClass {
+    pub var value: int;
+}
+
+// pro class - 应该导出到 pro
+pro class ProtectedClass {
+    pro var value: int;
+}
+

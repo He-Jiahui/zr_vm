@@ -1,0 +1,31 @@
+module "type_cast_class";
+
+// 类定义
+class Person {
+    pub var id: string;
+    pub var name: string;
+    
+    pub @constructor(id: string, name: string) {
+        this.id = id;
+        this.name = name;
+    }
+}
+
+// 类类型转换测试
+var test_class_cast = () => {
+    var obj = {id: "123", name: "John"};
+    var person = <Person> obj;
+    return person.id + person.name;
+};
+
+// 测试用例
+%test("typeCastClassTest"){
+    var result = 0;
+    
+    // 测试类转换
+    var classResult = test_class_cast();
+    if (classResult != null) { result = result + 1; }
+    
+    return result;
+}
+

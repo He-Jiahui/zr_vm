@@ -462,6 +462,8 @@ static TBool executeTestFunction(SZrState *state, SZrFunction *function) {
     callInfo->expectedReturnCount = 1;
 
     state->callInfoList = callInfo;
+    // 确保线程状态为正常
+    state->threadStatus = ZR_THREAD_STATUS_FINE;
 
     // 执行函数
     ZrExecute(state, callInfo);

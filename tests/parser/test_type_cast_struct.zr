@@ -1,0 +1,33 @@
+module "type_cast_struct";
+
+// 结构体定义
+struct Vector3 {
+    pub var x: float;
+    pub var y: float;
+    pub var z: float;
+    
+    pub @constructor(x: float, y: float, z: float) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+}
+
+// 结构体类型转换测试
+var test_struct_cast = () => {
+    var obj = {x: 1.0, y: 2.0, z: 3.0};
+    var v = <Vector3> obj;
+    return v.x + v.y + v.z;
+};
+
+// 测试用例
+%test("typeCastStructTest"){
+    var result = 0;
+    
+    // 测试结构体转换
+    var structResult = test_struct_cast();
+    if (structResult == 6.0) { result = result + 1; }
+    
+    return result;
+}
+

@@ -13,6 +13,12 @@
 #include "zr_vm_core/stack.h"
 // 不直接引用parser/compiler模块，通过globalState注入的函数指针调用
 #include "xxHash/xxhash.h"
+// 访问修饰符定义（从 parser 模块复制，避免直接依赖）
+// 注意：这里使用数值常量，与 parser 中的定义保持一致
+#define ZR_ACCESS_PUBLIC 0
+#define ZR_ACCESS_PRIVATE 1
+#define ZR_ACCESS_PROTECTED 2
+typedef TUInt8 EZrAccessModifier;
 
 // 创建模块对象
 struct SZrObjectModule *ZrModuleCreate(SZrState *state) {
@@ -399,21 +405,10 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     
     closure->function = func;
     
-    // 执行函数（调用 __entry）
-    TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-    TZrStackValuePointer callBase = savedStackTop;
-    ZrStackSetRawObjectValue(state, callBase, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    state->stackTop.valuePointer = callBase + 1;
-    ZrFunctionCall(state, callBase, 0);
-    
-    // 执行后，栈上的变量值已经可用
-    // TODO: 收集 pub 和 pro 变量到 module object
-    // 这里需要访问编译时记录的导出变量信息
-    
-    // 创建模块对象
+    // 创建模块对象（在执行 __entry 之前创建，以便在运行时可以访问）
     struct SZrObjectModule *module = ZrModuleCreate(state);
     if (module == ZR_NULL) {
-        state->stackTop.valuePointer = savedStackTop;
+        ZrMemoryRawFreeWithType(global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
         return 1;
     }
@@ -422,10 +417,40 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     TUInt64 pathHash = ZrModuleCalculatePathHash(state, path);
     ZrModuleSetInfo(state, module, ZR_NULL, pathHash, path);
     
-    // TODO: 收集导出变量
-    // 这里需要访问编译时记录的导出变量信息（pubVariables 和 proVariables）
-    // 由于这些信息在编译时记录，需要在运行时能够访问
-    // 暂时先创建一个空的模块对象
+    // 执行函数（调用 __entry）
+    TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+    TZrStackValuePointer callBase = savedStackTop;
+    ZrStackSetRawObjectValue(state, callBase, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    state->stackTop.valuePointer = callBase + 1;
+    ZrFunctionCall(state, callBase, 0);
+    
+    // 执行后，栈上的变量值已经可用
+    // 收集 pub 和 pro 变量到 module object
+    if (func != ZR_NULL && func->exportedVariables != ZR_NULL && func->exportedVariableLength > 0) {
+        for (TUInt32 i = 0; i < func->exportedVariableLength; i++) {
+            struct SZrFunctionExportedVariable *exportVar = &func->exportedVariables[i];
+            if (exportVar->name != ZR_NULL) {
+                // 从栈上获取变量值（需要根据 stackSlot 计算位置）
+                // 注意：stackSlot 是相对于 functionBase 的偏移
+                TZrStackValuePointer varPointer = callBase + 1 + exportVar->stackSlot;
+                if (varPointer < state->stackTop.valuePointer) {
+                    SZrTypeValue *varValue = ZrStackGetValue(varPointer);
+                    if (varValue != ZR_NULL) {
+                        if (exportVar->accessModifier == ZR_ACCESS_PUBLIC) {
+                            ZrModuleAddPubExport(state, module, exportVar->name, varValue);
+                        } else if (exportVar->accessModifier == ZR_ACCESS_PROTECTED) {
+                            ZrModuleAddProExport(state, module, exportVar->name, varValue);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 创建 prototype（从编译时收集的信息）
+    // 从函数的常量池中读取 prototype 信息并创建
+    // 注意：这是一个简化实现，实际应该使用更明确的标记来标识 prototype 信息
+    // TODO: 实现更优雅的存储和读取方式（例如使用函数的额外字段或特殊标记常量）
     
     // 添加到缓存
     ZrModuleAddToCache(state, path, module);
@@ -436,5 +461,107 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     result->type = ZR_VALUE_TYPE_OBJECT;
     
     state->stackTop.valuePointer = savedStackTop;
+    return 1;
+}
+
+// 创建并注册 prototype 的 native 函数
+// 参数: (module, typeName, prototypeType, accessModifier)
+// 返回: prototype 对象
+TInt64 ZrCreatePrototypeNativeFunction(SZrState *state) {
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+    
+    // 获取函数参数
+    TZrStackValuePointer functionBase = state->callInfoList->functionBase.valuePointer;
+    TZrStackValuePointer argBase = functionBase + 1;
+    
+    // 检查参数数量（至少需要 4 个参数：module, typeName, prototypeType, accessModifier）
+    if (state->stackTop.valuePointer <= argBase + 3) {
+        ZrValueResetAsNull(ZrStackGetValue(functionBase));
+        return 1;
+    }
+    
+    // 获取 module 参数
+    SZrTypeValue *moduleValue = ZrStackGetValue(argBase);
+    if (moduleValue->type != ZR_VALUE_TYPE_OBJECT) {
+        ZrValueResetAsNull(ZrStackGetValue(functionBase));
+        return 1;
+    }
+    
+    SZrObject *moduleObject = ZR_CAST_OBJECT(state, moduleValue->value.object);
+    if (moduleObject == ZR_NULL || moduleObject->internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+        ZrValueResetAsNull(ZrStackGetValue(functionBase));
+        return 1;
+    }
+    
+    struct SZrObjectModule *module = (struct SZrObjectModule *)moduleObject;
+    
+    // 获取 typeName 参数
+    SZrTypeValue *typeNameValue = ZrStackGetValue(argBase + 1);
+    if (typeNameValue->type != ZR_VALUE_TYPE_STRING) {
+        ZrValueResetAsNull(ZrStackGetValue(functionBase));
+        return 1;
+    }
+    
+    SZrString *typeName = ZR_CAST_STRING(state, typeNameValue->value.object);
+    if (typeName == ZR_NULL) {
+        ZrValueResetAsNull(ZrStackGetValue(functionBase));
+        return 1;
+    }
+    
+    // 获取 prototypeType 参数
+    SZrTypeValue *typeValue = ZrStackGetValue(argBase + 2);
+    if (!ZR_VALUE_IS_TYPE_INT(typeValue->type)) {
+        ZrValueResetAsNull(ZrStackGetValue(functionBase));
+        return 1;
+    }
+    
+    EZrObjectPrototypeType prototypeType = (EZrObjectPrototypeType)typeValue->value.nativeObject.nativeUInt64;
+    if (prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT && prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+        ZrValueResetAsNull(ZrStackGetValue(functionBase));
+        return 1;
+    }
+    
+    // 获取 accessModifier 参数
+    SZrTypeValue *accessModifierValue = ZrStackGetValue(argBase + 3);
+    if (!ZR_VALUE_IS_TYPE_INT(accessModifierValue->type)) {
+        ZrValueResetAsNull(ZrStackGetValue(functionBase));
+        return 1;
+    }
+    
+    EZrAccessModifier accessModifier = (EZrAccessModifier)accessModifierValue->value.nativeObject.nativeUInt64;
+    
+    // 创建 prototype 对象
+    SZrObjectPrototype *prototype = ZR_NULL;
+    if (prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+        prototype = (SZrObjectPrototype *)ZrStructPrototypeNew(state, typeName);
+    } else {
+        prototype = ZrObjectPrototypeNew(state, typeName, prototypeType);
+    }
+    
+    if (prototype == ZR_NULL) {
+        ZrValueResetAsNull(ZrStackGetValue(functionBase));
+        return 1;
+    }
+    
+    // 注册到模块导出
+    SZrTypeValue prototypeValue;
+    ZrValueInitAsRawObject(state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+    prototypeValue.type = ZR_VALUE_TYPE_OBJECT;
+    
+    if (accessModifier == ZR_ACCESS_PUBLIC) {
+        ZrModuleAddPubExport(state, module, typeName, &prototypeValue);
+    } else if (accessModifier == ZR_ACCESS_PROTECTED) {
+        ZrModuleAddProExport(state, module, typeName, &prototypeValue);
+    } else {
+        // PRIVATE 不导出
+        // 但仍然创建 prototype 对象
+    }
+    
+    // 返回 prototype 对象
+    SZrTypeValue *result = ZrStackGetValue(functionBase);
+    ZrValueCopy(state, result, &prototypeValue);
+    
     return 1;
 }

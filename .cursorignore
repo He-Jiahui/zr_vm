@@ -5,6 +5,13 @@
 .notes
 .vs
 .zig-cache
+.cache
+
 build/
 cmake-build-debug/
 CMakeSettings.json
+
+
+LICENSE
+README.md
+
