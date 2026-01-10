@@ -31,3 +31,4 @@ var test_struct_cast = () => {
     return result;
 }
 
+

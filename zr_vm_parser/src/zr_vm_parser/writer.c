@@ -7,10 +7,14 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
+#include "zr_vm_common/zr_version_info.h"
+#include "zr_vm_common/zr_string_conf.h"
+#include "zr_vm_common/zr_common_conf.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -31,43 +35,43 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
     fwrite(ZR_IO_SOURCE_SIGNATURE, 1, 4, file);
     
     // VERSION_MAJOR (4 bytes)
-    TUInt32 versionMajor = 0;
+    TUInt32 versionMajor = ZR_VM_MAJOR_VERSION;
     fwrite(&versionMajor, sizeof(TUInt32), 1, file);
     
     // VERSION_MINOR (4 bytes)
-    TUInt32 versionMinor = 0;
+    TUInt32 versionMinor = ZR_VM_MINOR_VERSION;
     fwrite(&versionMinor, sizeof(TUInt32), 1, file);
     
     // VERSION_PATCH (4 bytes)
-    TUInt32 versionPatch = 1;
+    TUInt32 versionPatch = ZR_VM_PATCH_VERSION;
     fwrite(&versionPatch, sizeof(TUInt32), 1, file);
     
     // FORMAT (8 bytes)
-    TUInt64 format = ((TUInt64)versionMajor << 32) | versionMinor;
+    TUInt64 format = ((TUInt64)versionMajor << ZR_IO_VERSION_FORMAT_SHIFT_BITS) | versionMinor;
     fwrite(&format, sizeof(TUInt64), 1, file);
     
     // NATIVE_INT_SIZE (1 byte)
-    TUInt8 nativeIntSize = 8;
+    TUInt8 nativeIntSize = ZR_IO_NATIVE_INT_SIZE;
     fwrite(&nativeIntSize, sizeof(TUInt8), 1, file);
     
     // SIZE_T_SIZE (1 byte)
-    TUInt8 sizeTypeSize = 8;
+    TUInt8 sizeTypeSize = ZR_IO_SIZE_T_SIZE;
     fwrite(&sizeTypeSize, sizeof(TUInt8), 1, file);
     
     // INSTRUCTION_SIZE (1 byte)
-    TUInt8 instructionSize = 8;
+    TUInt8 instructionSize = ZR_IO_INSTRUCTION_SIZE;
     fwrite(&instructionSize, sizeof(TUInt8), 1, file);
     
     // ENDIAN (1 byte)
-    TUInt8 endian = ZR_IO_IS_LITTLE_ENDIAN ? 1 : 0;
+    TUInt8 endian = ZR_IO_IS_LITTLE_ENDIAN ? ZR_TRUE : ZR_FALSE;
     fwrite(&endian, sizeof(TUInt8), 1, file);
     
     // DEBUG (1 byte)
-    TUInt8 debug = 0;
+    TUInt8 debug = ZR_FALSE;
     fwrite(&debug, sizeof(TUInt8), 1, file);
     
     // OPT (3 bytes)
-    TUInt8 opt[3] = {0, 0, 0};
+    TUInt8 opt[3] = {ZR_FALSE, ZR_FALSE, ZR_FALSE};
     fwrite(opt, sizeof(TUInt8), 3, file);
     
     // MODULES_LENGTH (8 bytes)
@@ -76,7 +80,7 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
     
     // MODULE: NAME [string]
     SZrString *moduleName = ZrStringCreate(state, "simple", 6);
-    TZrSize nameLength = (moduleName->shortStringLength < 0xFF) ? 
+    TZrSize nameLength = (moduleName->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? 
                          (TZrSize)moduleName->shortStringLength : 
                          moduleName->longStringLength;
     fwrite(&nameLength, sizeof(TZrSize), 1, file);
@@ -102,7 +106,7 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
     if (funcName == ZR_NULL) {
         funcName = ZrStringCreate(state, "__entry", 7);
     }
-    TZrSize funcNameLength = (funcName->shortStringLength < 0xFF) ? 
+    TZrSize funcNameLength = (funcName->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? 
                               (TZrSize)funcName->shortStringLength : 
                               funcName->longStringLength;
     fwrite(&funcNameLength, sizeof(TZrSize), 1, file);
@@ -122,7 +126,7 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
     fwrite(&parametersLength, sizeof(TUInt64), 1, file);
     
     // FUNCTION: HAS_VAR_ARGS (8 bytes)
-    TUInt64 hasVarArgs = function->hasVariableArguments ? 1 : 0;
+    TUInt64 hasVarArgs = function->hasVariableArguments ? ZR_TRUE : ZR_FALSE;
     fwrite(&hasVarArgs, sizeof(TUInt64), 1, file);
     
     // FUNCTION: INSTRUCTIONS_LENGTH (8 bytes)
@@ -190,7 +194,7 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
                     SZrRawObject *rawObj = constant->value.object;
                     if (rawObj->type == ZR_VALUE_TYPE_STRING) {
                         SZrString *str = ZR_CAST_STRING(state, rawObj);
-                        TZrSize strLength = (str->shortStringLength < 0xFF) ? 
+                        TZrSize strLength = (str->shortStringLength < ZR_VM_LONG_STRING_FLAG) ?
                                              (TZrSize)str->shortStringLength : 
                                              str->longStringLength;
                         fwrite(&strLength, sizeof(TZrSize), 1, file);
@@ -213,6 +217,22 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
         TUInt64 endLineConst = 0;    // TODO: 从调试信息获取
         fwrite(&startLineConst, sizeof(TUInt64), 1, file);
         fwrite(&endLineConst, sizeof(TUInt64), 1, file);
+    }
+    
+    // FUNCTION: PROTOTYPE_CONSTANT_INDICES_LENGTH (8 bytes) - 新增字段
+    TUInt64 prototypeConstantIndicesLength = 0;
+    if (function->prototypeConstantIndices != ZR_NULL) {
+        prototypeConstantIndicesLength = function->prototypeConstantIndicesLength;
+    }
+    fwrite(&prototypeConstantIndicesLength, sizeof(TUInt64), 1, file);
+    
+    // FUNCTION: PROTOTYPE_CONSTANT_INDICES [.PROTOTYPE_CONSTANT_INDEX] - 新增字段
+    // 每个索引是一个TUInt32
+    if (prototypeConstantIndicesLength > 0 && function->prototypeConstantIndices != ZR_NULL) {
+        for (TUInt64 i = 0; i < prototypeConstantIndicesLength; i++) {
+            TUInt32 index = function->prototypeConstantIndices[i];
+            fwrite(&index, sizeof(TUInt32), 1, file);
+        }
     }
     
     // FUNCTION: CLOSURES_LENGTH (8 bytes)
@@ -297,6 +317,21 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
         }
     }
     fprintf(file, "\n");
+    
+    // 输出prototype常量信息（如果有）
+    // 检查最后一个常量是否为prototype数量
+    if (function->constantValueLength > 0) {
+        SZrTypeValue *lastConstant = &function->constantValueList[function->constantValueLength - 1];
+        if (ZR_VALUE_IS_TYPE_INT(lastConstant->type)) {
+            TUInt32 prototypeCount = (TUInt32)lastConstant->value.nativeObject.nativeUInt64;
+            if (prototypeCount > 0) {
+                // 输出prototype信息
+                fprintf(file, "PROTOTYPES:\n");
+                ZrDebugPrintPrototypeFromConstants(state, function, file);
+                fprintf(file, "\n");
+            }
+        }
+    }
     
     // 局部变量列表
     fprintf(file, "LOCAL_VARIABLES (%u):\n", function->localVariableLength);

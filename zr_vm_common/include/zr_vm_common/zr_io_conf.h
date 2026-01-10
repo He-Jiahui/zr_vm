@@ -15,6 +15,12 @@ static const union {
 
 #define ZR_IO_IS_LITTLE_ENDIAN (CZrIoEndian.littleEndian)
 
+// IO文件格式相关常量
+#define ZR_IO_NATIVE_INT_SIZE 8
+#define ZR_IO_SIZE_T_SIZE 8
+#define ZR_IO_INSTRUCTION_SIZE 8
+#define ZR_IO_VERSION_FORMAT_SHIFT_BITS 32
+
 /* .SOURCE:
  *  0 SIGNATURE 4
  *  4 VERSION_MAJOR 4
@@ -115,6 +121,8 @@ static const union {
  * LOCALS [.LOCAL]
  * CONSTANTS_LENGTH [8]
  * CONSTANTS [.CONSTANT]
+ * PROTOTYPE_CONSTANT_INDICES_LENGTH [8]  (新增：prototype常量索引数组长度)
+ * PROTOTYPE_CONSTANT_INDICES [.PROTOTYPE_CONSTANT_INDEX]  (新增：prototype常量索引数组，每个元素为TUInt32)
  * CLOSURES_LENGTH [8]
  * CLOSURES [.CLOSURE]
  * DEBUG_INFO_LENGTH [8]

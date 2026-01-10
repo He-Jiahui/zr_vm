@@ -21,6 +21,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_object_conf.h"
+#include "zr_vm_common/zr_string_conf.h"
 
 // 辅助函数：从模块中查找类型原型
 // 返回找到的原型对象，如果未找到返回 ZR_NULL
@@ -399,7 +400,14 @@ LZrReturning: {
         ZR_INSTRUCTION_DISPATCH(instruction) {
             ZR_INSTRUCTION_LABEL(GET_STACK) { *destination = BASE(A2(instruction))->value; }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(SET_STACK) { BASE(A2(instruction))->value = *destination; }
+            ZR_INSTRUCTION_LABEL(SET_STACK) {
+                // SET_STACK 指令格式：
+                // operandExtra (E) = destSlot (目标栈槽)
+                // operand2[0] (A2) = srcSlot (源栈槽)
+                // 将 srcSlot 的值复制到 destSlot
+                SZrTypeValue *srcValue = &BASE(A2(instruction))->value;
+                BASE(E(instruction))->value = *srcValue;
+            }
             DONE(1);
             ZR_INSTRUCTION_LABEL(GET_CONSTANT) {
                 // ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
@@ -440,11 +448,18 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrFunctionCheckStackAndGc(state, 2, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
+                        // 从函数帧顶部开始分配元方法调用栈，避免覆盖已分配的栈槽
+                        TZrStackValuePointer metaBase = callInfo->functionTop.valuePointer;
+                        ZrFunctionCheckStackAndGc(state, 2, metaBase);
+                        // 如果栈增长，functionTop 会被自动更新，需要重新获取
+                        metaBase = callInfo->functionTop.valuePointer;
                         ZrStackSetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
                         ZrStackCopyValue(state, metaBase + 1, opA);
                         state->stackTop.valuePointer = metaBase + 2;
+                        // 更新 functionTop 以包含元方法调用的栈空间
+                        if (callInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+                            callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+                        }
                         ZrFunctionCallWithoutYield(state, metaBase, 1);
                         if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
                             SZrTypeValue *returnValue = ZrStackGetValue(metaBase);
@@ -478,7 +493,7 @@ LZrReturning: {
                                           ZR_VALUE_TYPE_BOOL);
                     } else if (ZR_VALUE_IS_TYPE_STRING(opA->type)) {
                         SZrString *str = ZR_CAST_STRING(state, opA->value.object);
-                        TZrSize len = (str->shortStringLength < 0xFF) ? str->shortStringLength : str->longStringLength;
+                        TZrSize len = (str->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str->shortStringLength : str->longStringLength;
                         ZR_VALUE_FAST_SET(destination, nativeBool, len > 0, ZR_VALUE_TYPE_BOOL);
                     } else {
                         // 对象类型，默认返回 true
@@ -525,7 +540,7 @@ LZrReturning: {
                     } else if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
                         ZrValueInitAsInt(state, destination, (TInt64) opA->value.nativeObject.nativeDouble);
                     } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
-                        ZrValueInitAsInt(state, destination, opA->value.nativeObject.nativeBool ? 1 : 0);
+                        ZrValueInitAsInt(state, destination, opA->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE);
                     } else {
                         // 其他类型无法转换，返回 0
                         ZrValueInitAsInt(state, destination, 0);
@@ -571,7 +586,7 @@ LZrReturning: {
                     } else if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
                         ZrValueInitAsUInt(state, destination, (TUInt64) opA->value.nativeObject.nativeDouble);
                     } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
-                        ZrValueInitAsUInt(state, destination, opA->value.nativeObject.nativeBool ? 1 : 0);
+                        ZrValueInitAsUInt(state, destination, opA->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE);
                     } else {
                         // 其他类型无法转换，返回 0
                         ZrValueInitAsUInt(state, destination, 0);
@@ -617,7 +632,7 @@ LZrReturning: {
                     } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
                         ZrValueInitAsFloat(state, destination, (TFloat64) opA->value.nativeObject.nativeUInt64);
                     } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
-                        ZrValueInitAsFloat(state, destination, opA->value.nativeObject.nativeBool ? 1.0 : 0.0);
+                        ZrValueInitAsFloat(state, destination, opA->value.nativeObject.nativeBool ? (TFloat64)ZR_TRUE : (TFloat64)ZR_FALSE);
                     } else {
                         // 其他类型无法转换，返回 0.0
                         ZrValueInitAsFloat(state, destination, 0.0);
@@ -797,7 +812,12 @@ LZrReturning: {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeUInt64, +, opA->type);
+                // 根据操作数类型选择使用有符号还是无符号整数
+                if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {
+                    ALGORITHM_2(nativeInt64, +, opA->type);
+                } else {
+                    ALGORITHM_2(nativeUInt64, +, opA->type);
+                }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_FLOAT) {
@@ -815,8 +835,8 @@ LZrReturning: {
                 SZrString *str2 = ZR_CAST_STRING(state, opB->value.object);
                 TNativeString native1 = ZrStringGetNativeString(str1);
                 TNativeString native2 = ZrStringGetNativeString(str2);
-                TZrSize len1 = (str1->shortStringLength < 0xFF) ? str1->shortStringLength : str1->longStringLength;
-                TZrSize len2 = (str2->shortStringLength < 0xFF) ? str2->shortStringLength : str2->longStringLength;
+                TZrSize len1 = (str1->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str1->shortStringLength : str1->longStringLength;
+                TZrSize len2 = (str2->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str2->shortStringLength : str2->longStringLength;
                 TZrSize totalLen = len1 + len2;
                 char *buffer = (char *) malloc(totalLen + 1);
                 if (buffer != ZR_NULL) {
@@ -1677,7 +1697,34 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(JUMP) { JUMP(callInfo, instruction, 0); }
             DONE(1);
             ZR_INSTRUCTION_LABEL(JUMP_IF) {
-                if (destination->value.nativeObject.nativeBool) {
+                // JUMP_IF 指令格式：
+                // operandExtra (E) = condSlot (条件值的栈槽)
+                // operand2[0] (A2) = offset (相对跳转偏移量)
+                // 如果条件为假，跳转到 else 分支；如果条件为真，继续执行 then 分支
+                SZrTypeValue *condValue = &BASE(E(instruction))->value;
+                // 检查条件值是否为真（支持 bool、int、非零值等）
+                TBool condition = ZR_FALSE;
+                if (ZR_VALUE_IS_TYPE_BOOL(condValue->type)) {
+                    condition = condValue->value.nativeObject.nativeBool;
+                } else if (ZR_VALUE_IS_TYPE_INT(condValue->type)) {
+                    condition = condValue->value.nativeObject.nativeInt64 != 0;
+                } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(condValue->type)) {
+                    condition = condValue->value.nativeObject.nativeUInt64 != 0;
+                } else if (ZR_VALUE_IS_TYPE_FLOAT(condValue->type)) {
+                    condition = condValue->value.nativeObject.nativeDouble != 0.0;
+                } else if (ZR_VALUE_IS_TYPE_NULL(condValue->type)) {
+                    condition = ZR_FALSE;
+                } else if (ZR_VALUE_IS_TYPE_STRING(condValue->type)) {
+                    SZrString *str = ZR_CAST_STRING(state, condValue->value.object);
+                    TZrSize len = (str->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str->shortStringLength : str->longStringLength;
+                    condition = len > 0;
+                } else {
+                    // 对象类型，默认为真
+                    condition = ZR_TRUE;
+                }
+                
+                // 如果条件为假，跳转到 else 分支
+                if (!condition) {
                     JUMP(callInfo, instruction, 0);
                 }
             }

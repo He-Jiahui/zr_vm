@@ -6,6 +6,7 @@
 
 #include "zr_vm_core/value.h"
 
+#include "zr_vm_core/array.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/function.h"
@@ -81,9 +82,16 @@ TBool ZrValueEqual(struct SZrState *state, SZrTypeValue *value1, SZrTypeValue *v
             SZrString *str1 = ZR_CAST_STRING(state, value1->value.object);
             SZrString *str2 = ZR_CAST_STRING(state, value2->value.object);
             result = ZrStringEqual(str1, str2);
-        } else if (ZR_VALUE_IS_TYPE_BASIC(type1)) {
-            TBool valueEqual = value1->value.nativeObject.nativePointer == value2->value.nativeObject.nativePointer;
-            result = valueEqual;
+        } else if (ZR_VALUE_IS_TYPE_BOOL(type1)) {
+            result = (value1->value.nativeObject.nativeBool != 0) == (value2->value.nativeObject.nativeBool != 0);
+        } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(type1)) {
+            result = value1->value.nativeObject.nativeInt64 == value2->value.nativeObject.nativeInt64;
+        } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(type1)) {
+            result = value1->value.nativeObject.nativeUInt64 == value2->value.nativeObject.nativeUInt64;
+        } else if (ZR_VALUE_IS_TYPE_FLOAT(type1)) {
+            result = value1->value.nativeObject.nativeDouble == value2->value.nativeObject.nativeDouble;
+        } else if (ZR_VALUE_IS_TYPE_NATIVE(type1)) {
+            result = value1->value.nativeObject.nativePointer == value2->value.nativeObject.nativePointer;
         } else {
             // todo: obj equal & struct equal
             result = ZR_FALSE;
@@ -168,7 +176,7 @@ TUInt64 ZrValueGetHash(struct SZrState *state, const SZrTypeValue *value) {
             hash = 0;
         } break;
         case ZR_VALUE_TYPE_BOOL: {
-            hash = value->value.nativeObject.nativeBool ? 1 : 0;
+            hash = value->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
         } break;
             ZR_VALUE_CASES_INT { hash = value->value.nativeObject.nativeUInt64; }
             break;
@@ -406,4 +414,146 @@ SZrString *ZrValueCallMetaToString(struct SZrState *state, SZrTypeValue *value) 
     }
     
     return ZR_NULL;
+}
+
+// 将值转换为调试字符串，包含详细信息（用于测试和调试）
+SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
+    if (state == ZR_NULL || value == ZR_NULL) {
+        return ZrStringCreateFromNative(state, "<null>");
+    }
+
+    const TZrSize MAX_DEBUG_BUFFER_SIZE = 2048;
+    const TZrSize MAX_ELEMENTS_TO_SHOW = 10;
+    char buffer[MAX_DEBUG_BUFFER_SIZE];
+    TZrSize offset = 0;
+
+    switch (value->type) {
+        case ZR_VALUE_TYPE_OBJECT: {
+            SZrObject *obj = ZR_CAST_OBJECT(state, value->value.object);
+            if (obj == ZR_NULL) {
+                return ZrStringCreateFromNative(state, "<null object>");
+            }
+
+            // 获取类型名称
+            const char *typeName = "object";
+            if (obj->prototype != ZR_NULL && obj->prototype->name != ZR_NULL) {
+                TNativeString nameStr = ZrStringGetNativeString(obj->prototype->name);
+                if (nameStr != ZR_NULL) {
+                    typeName = nameStr;
+                }
+            }
+
+            offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, 
+                             "<object type=%s>{", typeName);
+
+            // 遍历 nodeMap 获取字段（最多10个）
+            TZrSize fieldCount = 0;
+            TZrSize totalFieldCount = 0;
+            if (obj->nodeMap.isValid && obj->nodeMap.buckets != ZR_NULL) {
+                totalFieldCount = obj->nodeMap.elementCount;
+                for (TZrSize i = 0; i < obj->nodeMap.capacity && fieldCount < MAX_ELEMENTS_TO_SHOW; i++) {
+                    SZrHashKeyValuePair *pair = obj->nodeMap.buckets[i];
+                    while (pair != ZR_NULL && fieldCount < MAX_ELEMENTS_TO_SHOW) {
+                        // 获取键名（假设是字符串）
+                        if (pair->key.type == ZR_VALUE_TYPE_STRING) {
+                            SZrString *keyStr = ZR_CAST_STRING(state, pair->key.value.object);
+                            TNativeString keyNative = ZrStringGetNativeString(keyStr);
+                            if (keyNative != ZR_NULL) {
+                                if (fieldCount > 0) {
+                                    offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, ", ");
+                                }
+                                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "%s : ", keyNative);
+
+                                // 获取值的字符串表示
+                                SZrString *valueStr = ZrValueConvertToString(state, &pair->value);
+                                if (valueStr != ZR_NULL) {
+                                    TNativeString valueNative = ZrStringGetNativeString(valueStr);
+                                    if (valueNative != ZR_NULL) {
+                                        offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "%s", valueNative);
+                                    }
+                                } else {
+                                    offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "<?>");
+                                }
+                                fieldCount++;
+                            }
+                        }
+                        pair = pair->next;
+                    }
+                }
+            }
+
+            // 如果有更多字段，添加省略号
+            if (totalFieldCount > MAX_ELEMENTS_TO_SHOW) {
+                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, ", ...");
+            }
+
+            // 只有当总数 >= 10 时才显示 count 信息
+            if (totalFieldCount >= MAX_ELEMENTS_TO_SHOW) {
+                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, " | count = %lu}", (unsigned long)totalFieldCount);
+            } else {
+                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "}");
+            }
+            break;
+        }
+        case ZR_VALUE_TYPE_ARRAY: {
+            SZrObject *obj = ZR_CAST_OBJECT(state, value->value.object);
+            if (obj == ZR_NULL || obj->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+                return ZrStringCreateFromNative(state, "<invalid array>");
+            }
+
+            // 尝试从 nodeMap 中获取数组元素（假设数组元素通过 nodeMap 存储）
+            // 注意：这可能不是数组的实际存储方式，需要根据实际实现调整
+            offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "[");
+
+            TZrSize elementCount = 0;
+            TZrSize totalElementCount = 0;
+            if (obj->nodeMap.isValid && obj->nodeMap.buckets != ZR_NULL) {
+                totalElementCount = obj->nodeMap.elementCount;
+                for (TZrSize i = 0; i < obj->nodeMap.capacity && elementCount < MAX_ELEMENTS_TO_SHOW; i++) {
+                    SZrHashKeyValuePair *pair = obj->nodeMap.buckets[i];
+                    while (pair != ZR_NULL && elementCount < MAX_ELEMENTS_TO_SHOW) {
+                        if (elementCount > 0) {
+                            offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, ", ");
+                        }
+                        // 获取值的字符串表示
+                        SZrString *valueStr = ZrValueConvertToString(state, &pair->value);
+                        if (valueStr != ZR_NULL) {
+                            TNativeString valueNative = ZrStringGetNativeString(valueStr);
+                            if (valueNative != ZR_NULL) {
+                                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "%s", valueNative);
+                            }
+                        } else {
+                            offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "<?>");
+                        }
+                        elementCount++;
+                        pair = pair->next;
+                    }
+                }
+            }
+
+            // 如果有更多元素，添加省略号
+            if (totalElementCount > MAX_ELEMENTS_TO_SHOW) {
+                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, ", ...");
+            }
+
+            // 只有当总数 >= 10 时才显示 count 信息
+            if (totalElementCount >= MAX_ELEMENTS_TO_SHOW) {
+                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, " | count = %lu]", (unsigned long)totalElementCount);
+            } else {
+                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "]");
+            }
+            break;
+        }
+        default: {
+            // 对于其他类型，使用普通的字符串转换
+            SZrString *str = ZrValueConvertToString(state, value);
+            if (str != ZR_NULL) {
+                return str;
+            }
+            return ZrStringCreateFromNative(state, "<unknown>");
+        }
+    }
+
+    buffer[offset] = '\0';
+    return ZrStringCreateFromNative(state, buffer);
 }

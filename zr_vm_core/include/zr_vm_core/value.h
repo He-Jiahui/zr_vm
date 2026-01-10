@@ -92,4 +92,11 @@ ZR_CORE_API TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *va
 // 专门用于调用 TO_STRING 元方法的便捷函数
 ZR_CORE_API struct SZrString *ZrValueCallMetaToString(struct SZrState *state, SZrTypeValue *value);
 
+// 将值转换为调试字符串，包含详细信息（用于测试和调试）
+// 对于对象：打印类型名称和第一层字段（最多10个）
+// 对于数组：打印第一层元素（最多10个）
+// 格式：对象: <object type=${className or object}>{a=1,b=2,... | count = 12}
+//       数组: [1,2,3,... | count = 12]
+ZR_CORE_API struct SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value);
+
 #endif // ZR_VM_CORE_VALUE_H

@@ -18,9 +18,16 @@
 #include <limits.h>
 #ifdef _MSC_VER
     #include <direct.h>
+    #include <stdlib.h>
     #define getcwd _getcwd
+    #ifndef PATH_MAX
+        #define PATH_MAX _MAX_PATH
+    #endif
 #else
     #include <unistd.h>
+    #ifndef PATH_MAX
+        #define PATH_MAX 4096
+    #endif
 #endif
 #include "unity.h"
 #include "zr_vm_parser.h"

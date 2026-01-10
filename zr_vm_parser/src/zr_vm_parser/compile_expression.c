@@ -325,31 +325,111 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     const TChar *op = node->data.unaryExpression.op.op;
     SZrAstNode *arg = node->data.unaryExpression.argument;
     
-    // 先编译操作数
-    compile_expression(cs, arg);
-    
-    TUInt32 argSlot = cs->stackSlotCount - 1;
     TUInt32 destSlot = allocate_stack_slot(cs);
     
-    if (strcmp(op, "!") == 0) {
-        // 逻辑非
-        TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_NOT), destSlot, (TUInt16)argSlot, 0);
-        emit_instruction(cs, inst);
-    } else if (strcmp(op, "~") == 0) {
-        // 位非
-        TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(BITWISE_NOT), destSlot, (TUInt16)argSlot, 0);
-        emit_instruction(cs, inst);
-    } else if (strcmp(op, "-") == 0) {
-        // 取负
-        TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(NEG), destSlot, (TUInt16)argSlot, 0);
-        emit_instruction(cs, inst);
-    } else if (strcmp(op, "+") == 0) {
-        // 正号：直接使用操作数（不需要额外指令）
-        // 将结果复制到目标槽位
-        TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_STACK), destSlot, (TInt32)argSlot);
-        emit_instruction(cs, inst);
+    // 处理$和new操作符（这些操作符的参数是类型名称，需要特殊处理）
+    if (strcmp(op, "$") == 0) {
+        // $操作符：创建struct实例
+        // 参数应该是Identifier（类型名称）
+        // TODO: 支持$TypeName(...)语法，需要parser支持或特殊处理
+        SZrString *typeName = ZR_NULL;
+        
+        if (arg != ZR_NULL && arg->type == ZR_AST_IDENTIFIER_LITERAL) {
+            // 参数是类型名称
+            typeName = arg->data.identifier.name;
+        } else {
+            // TODO: 处理$TypeName(...)的情况，需要从函数调用表达式中提取类型名称
+            ZrCompilerError(cs, "$ operator currently only supports simple type name, not function call syntax", node->location);
+            return;
+        }
+        
+        if (typeName != ZR_NULL) {
+            // 将类型名称添加到常量池
+            SZrTypeValue typeNameValue;
+            ZrValueInitAsRawObject(cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
+            typeNameValue.type = ZR_VALUE_TYPE_STRING;
+            TUInt32 typeNameConstantIndex = add_constant(cs, &typeNameValue);
+            
+            // 创建struct实例（使用TO_STRUCT指令）
+            // TO_STRUCT指令格式: operandExtra = destSlot, operand1[0] = sourceSlot, operand1[1] = typeNameConstantIndex
+            // 对于$操作符，sourceSlot可以是null或空对象
+            TUInt32 nullSlot = allocate_stack_slot(cs);
+            SZrTypeValue nullValue;
+            ZrValueResetAsNull(&nullValue);
+            TUInt32 nullConstantIndex = add_constant(cs, &nullValue);
+            
+            // 先加载null值到栈
+            TZrInstruction nullInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)nullSlot, (TInt32)nullConstantIndex);
+            emit_instruction(cs, nullInst);
+            
+            // 然后使用TO_STRUCT指令创建struct实例
+            TZrInstruction structInst = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_STRUCT), (TUInt16)destSlot, (TUInt16)nullSlot, (TUInt16)typeNameConstantIndex);
+            emit_instruction(cs, structInst);
+            
+            // TODO: 调用constructor（如果存在），需要查找prototype的constructor元方法
+        } else {
+            ZrCompilerError(cs, "$ operator requires a type name", node->location);
+        }
+    } else if (strcmp(op, "new") == 0) {
+        // new操作符：创建class实例
+        // 参数应该是Identifier（类型名称）
+        // TODO: 支持new TypeName(...)语法，需要parser支持或特殊处理
+        SZrString *typeName = ZR_NULL;
+        
+        if (arg != ZR_NULL && arg->type == ZR_AST_IDENTIFIER_LITERAL) {
+            // 参数是类型名称
+            typeName = arg->data.identifier.name;
+        } else {
+            // TODO: 处理new TypeName(...)的情况，需要从函数调用表达式中提取类型名称
+            ZrCompilerError(cs, "new operator currently only supports simple type name, not function call syntax", node->location);
+            return;
+        }
+        
+        if (typeName != ZR_NULL) {
+            // 将类型名称添加到常量池
+            SZrTypeValue typeNameValue;
+            ZrValueInitAsRawObject(cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
+            typeNameValue.type = ZR_VALUE_TYPE_STRING;
+            TUInt32 typeNameConstantIndex = add_constant(cs, &typeNameValue);
+            
+            // 创建class实例（使用CREATE_OBJECT指令创建空对象，然后使用TO_OBJECT设置prototype）
+            // 先创建空对象
+            TZrInstruction createObjInst = create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), (TUInt16)destSlot);
+            emit_instruction(cs, createObjInst);
+            
+            // 然后使用TO_OBJECT指令设置prototype
+            TZrInstruction toObjInst = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_OBJECT), (TUInt16)destSlot, (TUInt16)destSlot, (TUInt16)typeNameConstantIndex);
+            emit_instruction(cs, toObjInst);
+            
+            // TODO: 调用constructor（从基类到派生类），需要查找prototype链的constructor元方法
+        } else {
+            ZrCompilerError(cs, "new operator requires a type name", node->location);
+        }
     } else {
-        ZrCompilerError(cs, "Unknown unary operator", node->location);
+        // 其他一元操作符：先编译操作数
+        compile_expression(cs, arg);
+        TUInt32 argSlot = cs->stackSlotCount - 1;
+        
+        if (strcmp(op, "!") == 0) {
+            // 逻辑非
+            TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_NOT), destSlot, (TUInt16)argSlot, 0);
+            emit_instruction(cs, inst);
+        } else if (strcmp(op, "~") == 0) {
+            // 位非
+            TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(BITWISE_NOT), destSlot, (TUInt16)argSlot, 0);
+            emit_instruction(cs, inst);
+        } else if (strcmp(op, "-") == 0) {
+            // 取负
+            TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(NEG), destSlot, (TUInt16)argSlot, 0);
+            emit_instruction(cs, inst);
+        } else if (strcmp(op, "+") == 0) {
+            // 正号：直接使用操作数（不需要额外指令）
+            // 将结果复制到目标槽位
+            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_STACK), destSlot, (TInt32)argSlot);
+            emit_instruction(cs, inst);
+        } else {
+            ZrCompilerError(cs, "Unknown unary operator", node->location);
+        }
     }
 }
 
@@ -511,29 +591,36 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                             strcmp(op, "==") == 0 || strcmp(op, "!=") == 0);
     
     if (hasTypeInfo) {
-        // 检查左操作数是否需要转换
-        EZrInstructionCode leftConvOp = ZrInferredTypeGetConversionOpcode(&leftType, &resultType);
-        if (leftConvOp != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
-            TUInt32 convertedLeftSlot = allocate_stack_slot(cs);
-            emit_type_conversion(cs, convertedLeftSlot, leftSlot, leftConvOp);
-            leftSlot = convertedLeftSlot;
-        }
-        
-        // 检查右操作数是否需要转换
-        EZrInstructionCode rightConvOp = ZrInferredTypeGetConversionOpcode(&rightType, &resultType);
-        if (rightConvOp != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
-            TUInt32 convertedRightSlot = allocate_stack_slot(cs);
-            emit_type_conversion(cs, convertedRightSlot, rightSlot, rightConvOp);
-            rightSlot = convertedRightSlot;
-        }
-        
-        // 对于比较操作，保留类型信息用于选择正确的比较指令
-        // 对于其他操作，可以立即清理类型信息
-        if (!isComparisonOp) {
+        if (isComparisonOp) {
+            // 对于比较操作，不应该根据 resultType（布尔类型）来转换操作数
+            // 比较操作的结果才是布尔类型，但操作数应该保持其原始数值类型
+            // 这里我们跳过基于 resultType 的转换，直接使用操作数的原始类型
+            // 类型选择将在后续根据 leftType 和 rightType 的公共类型来决定
+            // 暂时不进行类型提升，直接使用操作数的原始类型进行比较
+            // TODO: 实现完整的类型提升逻辑（例如：int 和 float 比较时，将 int 提升为 float）
+        } else {
+            // 对于非比较操作，根据结果类型进行转换
+            // 检查左操作数是否需要转换
+            EZrInstructionCode leftConvOp = ZrInferredTypeGetConversionOpcode(&leftType, &resultType);
+            if (leftConvOp != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+                TUInt32 convertedLeftSlot = allocate_stack_slot(cs);
+                emit_type_conversion(cs, convertedLeftSlot, leftSlot, leftConvOp);
+                leftSlot = convertedLeftSlot;
+            }
+            
+            // 检查右操作数是否需要转换
+            EZrInstructionCode rightConvOp = ZrInferredTypeGetConversionOpcode(&rightType, &resultType);
+            if (rightConvOp != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+                TUInt32 convertedRightSlot = allocate_stack_slot(cs);
+                emit_type_conversion(cs, convertedRightSlot, rightSlot, rightConvOp);
+                rightSlot = convertedRightSlot;
+            }
+            
+            // 对于非比较操作，可以立即清理类型信息
             ZrInferredTypeFree(cs->state, &leftType);
             ZrInferredTypeFree(cs->state, &rightType);
         }
-        // resultType 在比较操作中也需要使用，所以稍后清理
+        // resultType 在比较操作中需要使用，所以稍后清理
     }
     
     TUInt32 destSlot = allocate_stack_slot(cs);
@@ -599,35 +686,56 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         opcode = ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL);
     } else if (strcmp(op, "<") == 0) {
         // 根据操作数类型选择比较指令
-        // 注意：在类型转换之后，leftType 和 rightType 可能已经被释放，需要重新推断或使用 resultType
-        if (hasTypeInfo && (resultType.baseType == ZR_VALUE_TYPE_FLOAT || resultType.baseType == ZR_VALUE_TYPE_DOUBLE)) {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT);
-        } else if (hasTypeInfo && ZR_VALUE_IS_TYPE_UNSIGNED_INT(resultType.baseType)) {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED);
+        // 对于比较操作，使用 leftType 或 rightType 来判断操作数类型（它们应该相同或兼容）
+        if (hasTypeInfo) {
+            // 优先检查是否有浮点数类型
+            if (leftType.baseType == ZR_VALUE_TYPE_FLOAT || leftType.baseType == ZR_VALUE_TYPE_DOUBLE ||
+                rightType.baseType == ZR_VALUE_TYPE_FLOAT || rightType.baseType == ZR_VALUE_TYPE_DOUBLE) {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT);
+            } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftType.baseType) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightType.baseType)) {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED);
+            } else {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED);
+            }
         } else {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED);
+            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED);  // 默认使用有符号整数比较
         }
     } else if (strcmp(op, ">") == 0) {
-        if (hasTypeInfo && (resultType.baseType == ZR_VALUE_TYPE_FLOAT || resultType.baseType == ZR_VALUE_TYPE_DOUBLE)) {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT);
-        } else if (hasTypeInfo && ZR_VALUE_IS_TYPE_UNSIGNED_INT(resultType.baseType)) {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED);
+        if (hasTypeInfo) {
+            if (leftType.baseType == ZR_VALUE_TYPE_FLOAT || leftType.baseType == ZR_VALUE_TYPE_DOUBLE ||
+                rightType.baseType == ZR_VALUE_TYPE_FLOAT || rightType.baseType == ZR_VALUE_TYPE_DOUBLE) {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT);
+            } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftType.baseType) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightType.baseType)) {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED);
+            } else {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED);
+            }
         } else {
             opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED);
         }
     } else if (strcmp(op, "<=") == 0) {
-        if (hasTypeInfo && (resultType.baseType == ZR_VALUE_TYPE_FLOAT || resultType.baseType == ZR_VALUE_TYPE_DOUBLE)) {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT);
-        } else if (hasTypeInfo && ZR_VALUE_IS_TYPE_UNSIGNED_INT(resultType.baseType)) {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED);
+        if (hasTypeInfo) {
+            if (leftType.baseType == ZR_VALUE_TYPE_FLOAT || leftType.baseType == ZR_VALUE_TYPE_DOUBLE ||
+                rightType.baseType == ZR_VALUE_TYPE_FLOAT || rightType.baseType == ZR_VALUE_TYPE_DOUBLE) {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT);
+            } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftType.baseType) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightType.baseType)) {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED);
+            } else {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED);
+            }
         } else {
             opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED);
         }
     } else if (strcmp(op, ">=") == 0) {
-        if (hasTypeInfo && (resultType.baseType == ZR_VALUE_TYPE_FLOAT || resultType.baseType == ZR_VALUE_TYPE_DOUBLE)) {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT);
-        } else if (hasTypeInfo && ZR_VALUE_IS_TYPE_UNSIGNED_INT(resultType.baseType)) {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED);
+        if (hasTypeInfo) {
+            if (leftType.baseType == ZR_VALUE_TYPE_FLOAT || leftType.baseType == ZR_VALUE_TYPE_DOUBLE ||
+                rightType.baseType == ZR_VALUE_TYPE_FLOAT || rightType.baseType == ZR_VALUE_TYPE_DOUBLE) {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT);
+            } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftType.baseType) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightType.baseType)) {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED);
+            } else {
+                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED);
+            }
         } else {
             opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED);
         }
@@ -648,6 +756,16 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     TZrInstruction inst = create_instruction_2(opcode, destSlot, (TUInt16)leftSlot, (TUInt16)rightSlot);
     emit_instruction(cs, inst);
+    
+    // 清理类型信息
+    if (hasTypeInfo) {
+        if (isComparisonOp) {
+            // 比较操作：清理 leftType, rightType 和 resultType
+            ZrInferredTypeFree(cs->state, &leftType);
+            ZrInferredTypeFree(cs->state, &rightType);
+        }
+        ZrInferredTypeFree(cs->state, &resultType);
+    }
 }
 
 // 编译赋值表达式

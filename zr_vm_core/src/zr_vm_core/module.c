@@ -2,6 +2,94 @@
 // Created by HeJiahui on 2025/8/6.
 //
 #include "zr_vm_core/module.h"
+#include "zr_vm_core/array.h"
+#include "zr_vm_core/memory.h"
+#include "zr_vm_core/constant_reference.h"
+#include "zr_vm_common/zr_meta_conf.h"
+#include "zr_vm_common/zr_ast_constants.h"
+#include "zr_vm_common/zr_string_conf.h"
+
+// 访问修饰符类型定义（值与zr_ast_constants.h中的常量保持一致）
+typedef TUInt8 EZrAccessModifier;
+
+// 内部结构：存储prototype创建时的临时信息
+typedef struct {
+    SZrObjectPrototype *prototype;
+    SZrString *typeName;
+    EZrObjectPrototypeType prototypeType;
+    EZrAccessModifier accessModifier;
+    SZrArray inheritTypeNames;  // SZrString*数组，存储继承类型名称
+    SZrArray *membersArray;     // 成员信息数组指针（从Object中读取）
+    TUInt32 membersCount;
+} SZrPrototypeCreationInfo;
+
+// 辅助函数：检查一个常量是否是prototype信息对象
+// 通过检查Object的__type属性来判断
+static TBool is_prototype_info_constant(struct SZrState *state, const SZrTypeValue *constant) {
+    if (constant == ZR_NULL || constant->type != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_FALSE;
+    }
+    
+    SZrObject *obj = ZR_CAST_OBJECT(state, constant->value.object);
+    if (obj == ZR_NULL || obj->internalType != ZR_OBJECT_INTERNAL_TYPE_PROTOTYPE_INFO) {
+        return ZR_FALSE;
+    }
+    
+    // 检查是否有__type属性，且值为"prototype"
+    SZrTypeValue typeKey;
+    SZrString *typeKeyStr = ZrStringCreate(state, "__type", 6);
+    ZrValueInitAsRawObject(state, &typeKey, ZR_CAST_RAW_OBJECT_AS_SUPER(typeKeyStr));
+    typeKey.type = ZR_VALUE_TYPE_STRING;
+    
+    const SZrTypeValue *typeValue = ZrObjectGetValue(state, obj, &typeKey);
+    if (typeValue == ZR_NULL || typeValue->type != ZR_VALUE_TYPE_STRING) {
+        return ZR_FALSE;
+    }
+    
+    SZrString *typeStr = ZR_CAST_STRING(state, typeValue->value.object);
+    if (typeStr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 比较字符串值是否为"prototype"
+    TNativeString typeNativeStr = ZrStringGetNativeStringShort(typeStr);
+    if (typeNativeStr == ZR_NULL) {
+        typeNativeStr = *ZrStringGetNativeStringLong(typeStr);
+    }
+    
+    if (typeNativeStr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    TZrSize len = (typeStr->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? 
+                   (TZrSize)typeStr->shortStringLength : 
+                   typeStr->longStringLength;
+    
+    return (len == 9 && ZrMemoryRawCompare(typeNativeStr, "prototype", 9) == 0);
+}
+
+// 辅助函数：从模块中查找prototype（用于继承关系）
+static SZrObjectPrototype *find_prototype_by_name(struct SZrState *state, 
+                                                   struct SZrObjectModule *module,
+                                                   SZrString *typeName) {
+    if (state == ZR_NULL || module == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    // 先在当前模块的导出中查找
+    const SZrTypeValue *exported = ZrModuleGetPubExport(state, module, typeName);
+    if (exported != ZR_NULL && exported->type == ZR_VALUE_TYPE_OBJECT) {
+        SZrObjectPrototype *proto = (SZrObjectPrototype *)ZR_CAST_OBJECT(state, exported->value.object);
+        if (proto != ZR_NULL && proto->type != ZR_OBJECT_PROTOTYPE_TYPE_INVALID) {
+            return proto;
+        }
+    }
+    
+    // TODO: 在导入模块中查找（需要模块导入机制支持）
+    
+    return ZR_NULL;
+}
+
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/hash.h"
@@ -13,12 +101,6 @@
 #include "zr_vm_core/stack.h"
 // 不直接引用parser/compiler模块，通过globalState注入的函数指针调用
 #include "xxHash/xxhash.h"
-// 访问修饰符定义（从 parser 模块复制，避免直接依赖）
-// 注意：这里使用数值常量，与 parser 中的定义保持一致
-#define ZR_ACCESS_PUBLIC 0
-#define ZR_ACCESS_PRIVATE 1
-#define ZR_ACCESS_PROTECTED 2
-typedef TUInt8 EZrAccessModifier;
 
 // 创建模块对象
 struct SZrObjectModule *ZrModuleCreate(SZrState *state) {
@@ -38,7 +120,11 @@ struct SZrObjectModule *ZrModuleCreate(SZrState *state) {
     module->pathHash = 0;
     module->fullPath = ZR_NULL;
     
-    // 初始化 proNodeMap
+    // 初始化 super.nodeMap（继承自 SZrObject，用于 pub 导出）
+    // 注意：ZrObjectNewCustomized 已经调用了 ZrHashSetConstruct，这里只需要调用 ZrHashSetInit
+    ZrHashSetInit(state, &module->super.nodeMap, ZR_OBJECT_TABLE_INIT_SIZE_LOG2);
+    
+    // 初始化 proNodeMap（用于 pro 导出）
     ZrHashSetConstruct(&module->proNodeMap);
     ZrHashSetInit(state, &module->proNodeMap, ZR_OBJECT_TABLE_INIT_SIZE_LOG2);
     
@@ -233,13 +319,6 @@ void ZrModuleAddToCache(SZrState *state, SZrString *path, struct SZrObjectModule
     ZrObjectSetValue(state, registry, &key, &moduleValue);
 }
 
-// 从源文件创建模块（旧接口，保持向后兼容）
-SZrObject *ZrModuleCreateFromSource(SZrState *state, SZrIoSource *source) {
-    ZR_UNUSED_PARAMETER(state);
-    ZR_ASSERT(source != ZR_NULL);
-    // TODO: 实现从源文件创建模块的逻辑
-    return ZR_NULL;
-}
 
 // zr.import native 函数实现
 TInt64 ZrImportNativeFunction(SZrState *state) {
@@ -408,7 +487,7 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     // 创建模块对象（在执行 __entry 之前创建，以便在运行时可以访问）
     struct SZrObjectModule *module = ZrModuleCreate(state);
     if (module == ZR_NULL) {
-        ZrMemoryRawFreeWithType(global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        // sourceBuffer已经在编译后释放，不需要再次释放
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
         return 1;
     }
@@ -436,9 +515,9 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
                 if (varPointer < state->stackTop.valuePointer) {
                     SZrTypeValue *varValue = ZrStackGetValue(varPointer);
                     if (varValue != ZR_NULL) {
-                        if (exportVar->accessModifier == ZR_ACCESS_PUBLIC) {
+                        if (exportVar->accessModifier == ZR_ACCESS_CONSTANT_PUBLIC) {
                             ZrModuleAddPubExport(state, module, exportVar->name, varValue);
-                        } else if (exportVar->accessModifier == ZR_ACCESS_PROTECTED) {
+                        } else if (exportVar->accessModifier == ZR_ACCESS_CONSTANT_PROTECTED) {
                             ZrModuleAddProExport(state, module, exportVar->name, varValue);
                         }
                     }
@@ -449,8 +528,10 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     
     // 创建 prototype（从编译时收集的信息）
     // 从函数的常量池中读取 prototype 信息并创建
-    // 注意：这是一个简化实现，实际应该使用更明确的标记来标识 prototype 信息
-    // TODO: 实现更优雅的存储和读取方式（例如使用函数的额外字段或特殊标记常量）
+    // 调用 ZrModuleCreatePrototypesFromConstants 从常量池中创建所有prototype实例
+    if (func != ZR_NULL) {
+        ZrModuleCreatePrototypesFromConstants(state, module, func);
+    }
     
     // 添加到缓存
     ZrModuleAddToCache(state, path, module);
@@ -550,9 +631,9 @@ TInt64 ZrCreatePrototypeNativeFunction(SZrState *state) {
     ZrValueInitAsRawObject(state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
     prototypeValue.type = ZR_VALUE_TYPE_OBJECT;
     
-    if (accessModifier == ZR_ACCESS_PUBLIC) {
+    if (accessModifier == ZR_ACCESS_CONSTANT_PUBLIC) {
         ZrModuleAddPubExport(state, module, typeName, &prototypeValue);
-    } else if (accessModifier == ZR_ACCESS_PROTECTED) {
+    } else if (accessModifier == ZR_ACCESS_CONSTANT_PROTECTED) {
         ZrModuleAddProExport(state, module, typeName, &prototypeValue);
     } else {
         // PRIVATE 不导出
@@ -564,4 +645,236 @@ TInt64 ZrCreatePrototypeNativeFunction(SZrState *state) {
     ZrValueCopy(state, result, &prototypeValue);
     
     return 1;
+}
+
+// 辅助函数：从序列化的二进制数据解析prototype信息
+// 数据格式：SZrCompiledPrototypeInfo(24字节) + [inheritsCount * TUInt32] + [membersCount * SZrCompiledMemberInfo(44字节)]
+// 需要从entryFunction的常量池中读取字符串索引对应的字符串
+static TBool parse_compiled_prototype_info(struct SZrState *state,
+                                           struct SZrFunction *entryFunction,
+                                           const TByte *serializedData,
+                                           TZrSize dataSize,
+                                           SZrPrototypeCreationInfo *protoInfo) {
+    if (state == ZR_NULL || entryFunction == ZR_NULL || serializedData == ZR_NULL || 
+        dataSize < sizeof(SZrCompiledPrototypeInfo) || protoInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 读取prototype信息结构
+    const SZrCompiledPrototypeInfo *protoInfoHeader = (const SZrCompiledPrototypeInfo *)serializedData;
+    TUInt32 nameStringIndex = protoInfoHeader->nameStringIndex;
+    TUInt32 type = protoInfoHeader->type;
+    TUInt32 accessModifier = protoInfoHeader->accessModifier;
+    TUInt32 inheritsCount = protoInfoHeader->inheritsCount;
+    TUInt32 membersCount = protoInfoHeader->membersCount;
+    
+    // 验证数据大小是否足够
+    TZrSize expectedSize = sizeof(SZrCompiledPrototypeInfo) + 
+                           inheritsCount * sizeof(TUInt32) + 
+                           membersCount * sizeof(SZrCompiledMemberInfo);
+    if (dataSize < expectedSize) {
+        return ZR_FALSE;
+    }
+    
+    // 从常量池读取类型名称
+    if (nameStringIndex >= entryFunction->constantValueLength) {
+        return ZR_FALSE;
+    }
+    const SZrTypeValue *nameConstant = &entryFunction->constantValueList[nameStringIndex];
+    if (nameConstant->type != ZR_VALUE_TYPE_STRING) {
+        return ZR_FALSE;
+    }
+    SZrString *typeName = ZR_CAST_STRING(state, nameConstant->value.object);
+    if (typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 填充protoInfo结构
+    protoInfo->typeName = typeName;
+    protoInfo->prototypeType = (EZrObjectPrototypeType)type;
+    protoInfo->accessModifier = (EZrAccessModifier)accessModifier;
+    protoInfo->prototype = ZR_NULL;  // 稍后创建
+    protoInfo->membersCount = membersCount;
+    
+    // 初始化继承类型名称数组
+    ZrArrayInit(state, &protoInfo->inheritTypeNames, sizeof(SZrString *), inheritsCount);
+    
+    // 读取继承类型名称索引数组
+    const TUInt32 *inheritIndices = (const TUInt32 *)(serializedData + sizeof(SZrCompiledPrototypeInfo));
+    for (TUInt32 i = 0; i < inheritsCount; i++) {
+        TUInt32 inheritStringIndex = inheritIndices[i];
+        if (inheritStringIndex > 0 && inheritStringIndex < entryFunction->constantValueLength) {
+            const SZrTypeValue *inheritConstant = &entryFunction->constantValueList[inheritStringIndex];
+            if (inheritConstant->type == ZR_VALUE_TYPE_STRING) {
+                SZrString *inheritTypeName = ZR_CAST_STRING(state, inheritConstant->value.object);
+                if (inheritTypeName != ZR_NULL) {
+                    ZrArrayPush(state, &protoInfo->inheritTypeNames, &inheritTypeName);
+                }
+            }
+        }
+    }
+    
+    // 读取成员信息（只存储指针，稍后处理）
+    // 成员数据紧跟在继承数组后面
+    // TODO: 处理成员信息（方法、字段等）
+    // 需要从SZrCompiledMemberInfo中读取成员信息并转换为运行时格式
+    // 这涉及函数引用解析、字段偏移计算等，比较复杂，暂时跳过
+    // const SZrCompiledMemberInfo *members = (const SZrCompiledMemberInfo *)
+    //     (serializedData + sizeof(SZrCompiledPrototypeInfo) + inheritsCount * sizeof(TUInt32));
+    
+    protoInfo->membersArray = ZR_NULL;  // 稍后处理成员信息
+    
+    return ZR_TRUE;
+}
+
+// 从编译后的函数的常量池中解析prototype信息并创建prototype实例
+// 实现两遍创建机制：第一遍创建所有prototype，第二遍设置继承关系和成员信息
+// 现在使用prototypeConstantIndices直接从常量池索引读取
+TZrSize ZrModuleCreatePrototypesFromConstants(struct SZrState *state, 
+                                              struct SZrObjectModule *module,
+                                              struct SZrFunction *entryFunction) {
+    if (state == ZR_NULL || module == ZR_NULL || entryFunction == ZR_NULL) {
+        return 0;
+    }
+    
+    // 检查常量池是否有效
+    if (entryFunction->constantValueList == ZR_NULL || entryFunction->constantValueLength == 0) {
+        return 0;
+    }
+    
+    // 优先使用prototypeConstantIndices（新格式）
+    // 如果存在，直接使用索引访问，避免遍历整个常量池
+    if (entryFunction->prototypeConstantIndices != ZR_NULL && entryFunction->prototypeConstantIndicesLength > 0) {
+        TUInt32 prototypeCount = entryFunction->prototypeConstantIndicesLength;
+        
+        // 第一遍：创建所有prototype实例（不设置继承关系）
+        SZrArray prototypeInfos;
+        ZrArrayInit(state, &prototypeInfos, sizeof(SZrPrototypeCreationInfo), prototypeCount);
+        
+        TZrSize createdCount = 0;
+        
+        // 从prototypeConstantIndices读取索引，直接访问对应的常量
+        for (TUInt32 i = 0; i < prototypeCount; i++) {
+            TUInt32 constantIndex = entryFunction->prototypeConstantIndices[i];
+            if (constantIndex >= entryFunction->constantValueLength) {
+                continue;  // 索引越界，跳过
+            }
+            
+            const SZrTypeValue *constant = &entryFunction->constantValueList[constantIndex];
+            
+            // 新格式：prototype信息存储为字符串类型的二进制数据
+            if (constant->type == ZR_VALUE_TYPE_STRING) {
+                // 从字符串读取二进制数据并解析
+                // 注意：constant->value.object是非const的，但我们需要将其转换为SZrString
+                SZrString *serializedString = ZR_CAST_STRING(state, constant->value.object);
+                if (serializedString == ZR_NULL) {
+                    continue;
+                }
+                
+                // 获取字符串数据（注意：字符串可能包含二进制数据，不是UTF-8文本）
+                TNativeString strData = ZR_NULL;
+                TZrSize strLength = 0;
+                if (serializedString->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+                    strData = ZrStringGetNativeStringShort(serializedString);
+                    strLength = (TZrSize)serializedString->shortStringLength;
+                } else {
+                    TNativeString *longStrPtr = ZrStringGetNativeStringLong(serializedString);
+                    if (longStrPtr != ZR_NULL) {
+                        strData = *longStrPtr;
+                        strLength = serializedString->longStringLength;
+                    }
+                }
+                
+                if (strData == ZR_NULL || strLength == 0) {
+                    continue;
+                }
+                
+                // 解析二进制数据并创建prototype信息结构
+                SZrPrototypeCreationInfo protoInfo;
+                protoInfo.prototype = ZR_NULL;
+                protoInfo.typeName = ZR_NULL;
+                protoInfo.prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
+                protoInfo.accessModifier = ZR_ACCESS_CONSTANT_PRIVATE;
+                ZrArrayInit(state, &protoInfo.inheritTypeNames, sizeof(SZrString *), 4);
+                protoInfo.membersArray = ZR_NULL;
+                protoInfo.membersCount = 0;
+                
+                if (parse_compiled_prototype_info(state, entryFunction, (const TByte *)strData, strLength, &protoInfo)) {
+                    // 创建prototype对象（第一遍：不设置继承关系）
+                    if (protoInfo.typeName != ZR_NULL && protoInfo.prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID) {
+                        SZrObjectPrototype *prototype = ZR_NULL;
+                        if (protoInfo.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+                            prototype = (SZrObjectPrototype *)ZrStructPrototypeNew(state, protoInfo.typeName);
+                        } else if (protoInfo.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+                            prototype = ZrObjectPrototypeNew(state, protoInfo.typeName, protoInfo.prototypeType);
+                            // 初始化元表
+                            ZrObjectPrototypeInitMetaTable(state, prototype);
+                        }
+                        
+                        if (prototype != ZR_NULL) {
+                            protoInfo.prototype = prototype;
+                            
+                            // 注册到模块导出（先注册，第二遍可能还需要查找）
+                            SZrTypeValue prototypeValue;
+                            ZrValueInitAsRawObject(state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+                            prototypeValue.type = ZR_VALUE_TYPE_OBJECT;
+                            
+                            if (protoInfo.accessModifier == ZR_ACCESS_CONSTANT_PUBLIC) {
+                                ZrModuleAddPubExport(state, module, protoInfo.typeName, &prototypeValue);
+                            } else if (protoInfo.accessModifier == ZR_ACCESS_CONSTANT_PROTECTED) {
+                                ZrModuleAddProExport(state, module, protoInfo.typeName, &prototypeValue);
+                            }
+                            // PRIVATE 不导出，但仍然创建prototype对象
+                            
+                            // 保存prototype信息到数组，用于第二遍处理继承关系和成员信息
+                            ZrArrayPush(state, &prototypeInfos, &protoInfo);
+                            createdCount++;
+                        } else {
+                            // 创建失败，清理资源
+                            ZrArrayFree(state, &protoInfo.inheritTypeNames);
+                        }
+                    } else {
+                        // 解析失败，清理资源
+                        ZrArrayFree(state, &protoInfo.inheritTypeNames);
+                    }
+                }
+                continue;  // 已处理，继续下一个
+            } else {
+                continue;  // 不支持的类型
+            }
+        }
+        
+        // 第二遍：设置继承关系和成员信息
+        for (TZrSize i = 0; i < prototypeInfos.length; i++) {
+            SZrPrototypeCreationInfo *protoInfo = (SZrPrototypeCreationInfo *)ZrArrayGet(&prototypeInfos, i);
+            if (protoInfo == ZR_NULL || protoInfo->prototype == ZR_NULL) {
+                continue;
+            }
+            
+            // 处理继承关系（只支持单个基类，TODO: 支持多重继承）
+            if (protoInfo->inheritTypeNames.length > 0) {
+                SZrString **inheritTypeNamePtr = (SZrString **)ZrArrayGet(&protoInfo->inheritTypeNames, 0);
+                if (inheritTypeNamePtr != ZR_NULL && *inheritTypeNamePtr != ZR_NULL) {
+                    SZrObjectPrototype *superPrototype = find_prototype_by_name(state, module, *inheritTypeNamePtr);
+                    if (superPrototype != ZR_NULL) {
+                        ZrObjectPrototypeSetSuper(state, protoInfo->prototype, superPrototype);
+                    }
+                }
+            }
+            
+            // TODO: 处理成员信息（方法、字段等）
+            // 需要从序列化的SZrCompiledMemberInfo中读取成员信息并添加到prototype
+            // 这需要解析函数引用、字段偏移等，比较复杂，暂时跳过
+            
+            // 清理继承类型名称数组
+            ZrArrayFree(state, &protoInfo->inheritTypeNames);
+        }
+        
+        // 清理prototype信息数组
+        ZrArrayFree(state, &prototypeInfos);
+        return createdCount;
+    }
+    
+    // 没有新格式数据，返回0
+    return 0;
 }

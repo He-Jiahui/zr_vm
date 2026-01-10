@@ -59,8 +59,6 @@ ZR_CORE_API TUInt64 ZrModuleCalculatePathHash(struct SZrState *state, struct SZr
 ZR_CORE_API struct SZrObjectModule *ZrModuleGetFromCache(struct SZrState *state, struct SZrString *path);
 ZR_CORE_API void ZrModuleAddToCache(struct SZrState *state, struct SZrString *path, struct SZrObjectModule *module);
 
-// 从源文件创建模块（旧接口，保持向后兼容）
-ZR_CORE_API SZrObject *ZrModuleCreateFromSource(struct SZrState *state, SZrIoSource *source);
 
 // zr.import native 函数
 ZR_CORE_API TInt64 ZrImportNativeFunction(struct SZrState *state);
@@ -69,5 +67,13 @@ ZR_CORE_API TInt64 ZrImportNativeFunction(struct SZrState *state);
 // 参数: (module, typeName, prototypeType, accessModifier, inherits..., members...)
 // 返回: prototype 对象
 ZR_CORE_API TInt64 ZrCreatePrototypeNativeFunction(struct SZrState *state);
+
+// 从编译后的函数的常量池中解析prototype信息并创建prototype实例
+// 将创建的prototype注册到模块的导出中
+// 参数: state - VM状态, module - 目标模块, entryFunction - 编译后的入口函数(__entry)
+// 返回: 成功创建的prototype数量
+ZR_CORE_API TZrSize ZrModuleCreatePrototypesFromConstants(struct SZrState *state, 
+                                                          struct SZrObjectModule *module,
+                                                          struct SZrFunction *entryFunction);
 
 #endif // ZR_VM_CORE_MODULE_H

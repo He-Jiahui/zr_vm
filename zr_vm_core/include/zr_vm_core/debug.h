@@ -9,6 +9,9 @@
 struct SZrState;
 struct SZrCallInfo;
 struct SZrTypeValue;
+struct SZrObjectPrototype;
+struct SZrObject;
+struct SZrFunction;
 enum EZrDebugHookEvent {
     ZR_DEBUG_HOOK_EVENT_CALL,
     ZR_DEBUG_HOOK_EVENT_RETURN,
@@ -100,4 +103,18 @@ ZR_CORE_API void ZrDebugHook(struct SZrState *state, EZrDebugHookEvent event, TU
                              TUInt32 transferCount);
 
 ZR_CORE_API void ZrDebugHookReturn(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount);
+
+// Debug工具：输出Prototype信息（类、结构体等）
+// 输出prototype的名称、类型、继承关系、字段、Meta方法等信息
+ZR_CORE_API void ZrDebugPrintPrototype(struct SZrState *state, struct SZrObjectPrototype *prototype, FILE *output);
+
+// Debug工具：输出Object信息
+// 输出object的prototype、字段值等信息
+ZR_CORE_API void ZrDebugPrintObject(struct SZrState *state, struct SZrObject *object, FILE *output);
+
+// Debug工具：从常量池中解析并字符串化prototype信息
+// 输出类似zri中间表示的格式，用于调试编译后的.zri文件
+ZR_CORE_API void ZrDebugPrintPrototypeFromConstants(struct SZrState *state, struct SZrFunction *entryFunction,
+                                                    FILE *output);
+
 #endif // ZR_VM_CORE_DEBUG_H

@@ -305,8 +305,12 @@ static void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     ZrArrayPush(cs->state, &cs->loopLabelStack, &loopLabel);
     
     // 创建循环开始标签（continue 跳转到这里）
+    // 注意：标签位置应该在编译条件表达式之前，但不要立即解析
+    // 因为此时还没有指向它的跳转指令
     TZrSize loopStartLabelId = loopLabel.continueLabelId;
-    resolve_label(cs, loopStartLabelId);
+    
+    // 记录循环开始位置（用于后续解析标签）
+    TZrSize loopStartInstructionIndex = cs->instructionCount;
     
     // 编译条件表达式
     compile_expression(cs, whileLoop->cond);
@@ -331,6 +335,28 @@ static void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize jumpLoopIndex = cs->instructionCount;
     emit_instruction(cs, jumpLoopInst);
     add_pending_jump(cs, jumpLoopIndex, loopStartLabelId);
+    
+    // 现在解析循环开始标签（此时已经有了指向它的跳转指令）
+    // 标签位置应该是条件表达式编译前的第一条指令位置
+    SZrLabel *loopStartLabel = (SZrLabel *)ZrArrayGet(&cs->labels, loopStartLabelId);
+    if (loopStartLabel != ZR_NULL) {
+        loopStartLabel->instructionIndex = loopStartInstructionIndex;
+        loopStartLabel->isResolved = ZR_TRUE;
+        // 填充所有指向该标签的跳转指令的偏移量
+        for (TZrSize i = 0; i < cs->pendingJumps.length; i++) {
+            SZrPendingJump *pendingJump = (SZrPendingJump *) ZrArrayGet(&cs->pendingJumps, i);
+            if (pendingJump != ZR_NULL && pendingJump->labelId == loopStartLabelId &&
+                pendingJump->instructionIndex < cs->instructions.length) {
+                TZrInstruction *jumpInst =
+                        (TZrInstruction *) ZrArrayGet(&cs->instructions, pendingJump->instructionIndex);
+                if (jumpInst != ZR_NULL) {
+                    // 计算相对偏移：目标指令索引 - (当前指令索引 + 1)
+                    TInt32 offset = (TInt32) loopStartInstructionIndex - (TInt32) pendingJump->instructionIndex - 1;
+                    jumpInst->instruction.operand.operand2[0] = offset;
+                }
+            }
+        }
+    }
     
     // 解析循环结束标签
     resolve_label(cs, loopEndLabelId);

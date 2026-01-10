@@ -48,6 +48,10 @@ SZrFunction *ZrFunctionNew(struct SZrState *state) {
     function->exportedVariables = ZR_NULL;
     function->exportedVariableLength = 0;
     function->functionName = ZR_NULL;  // 函数名，匿名函数为 ZR_NULL
+    function->prototypeConstantIndices = ZR_NULL;
+    function->prototypeConstantIndicesLength = 0;
+    function->prototypeInstances = ZR_NULL;
+    function->prototypeInstancesLength = 0;
     return function;
 }
 
@@ -75,6 +79,10 @@ void ZrFunctionFree(struct SZrState *state, SZrFunction *function) {
     if (function->exportedVariables != ZR_NULL && function->exportedVariableLength > 0) {
         ZR_MEMORY_RAW_FREE_LIST(global, function->exportedVariables, function->exportedVariableLength);
     }
+    if (function->prototypeConstantIndices != ZR_NULL && function->prototypeConstantIndicesLength > 0) {
+        ZR_MEMORY_RAW_FREE_LIST(global, function->prototypeConstantIndices, function->prototypeConstantIndicesLength);
+    }
+    // prototypeInstances 不需要手动释放，它们由GC管理（作为对象引用）
 
     // ZrMemoryRawFreeWithType(global, function, sizeof(SZrFunction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     // function is object, gc free it automatically.

@@ -205,6 +205,16 @@ static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->constantVariables = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionConstantVariable) *
                                                                                function->constantVariablesLength);
         ZrIoReadFunctionConstantVariables(io, function->constantVariables, function->constantVariablesLength);
+        // 读取PROTOTYPE_CONSTANT_INDICES_LENGTH和PROTOTYPE_CONSTANT_INDICES（新增字段）
+        ZR_IO_READ_NATIVE_TYPE(io, function->prototypeConstantIndicesLength, TZrSize);
+        if (function->prototypeConstantIndicesLength > 0) {
+            function->prototypeConstantIndices = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(TUInt32) * function->prototypeConstantIndicesLength);
+            for (TZrSize i = 0; i < function->prototypeConstantIndicesLength; i++) {
+                ZR_IO_READ_NATIVE_TYPE(io, function->prototypeConstantIndices[i], TUInt32);
+            }
+        } else {
+            function->prototypeConstantIndices = ZR_NULL;
+        }
         ZR_IO_READ_NATIVE_TYPE(io, function->closuresLength, TZrSize);
         function->closures = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction) * function->closuresLength);
         ZrIoReadFunctionClosures(io, function->closures, function->closuresLength);

@@ -129,7 +129,7 @@ static void printInstructions(SZrFunction *function) {
     printf("  Instructions:\n");
     for (TUInt32 i = 0; i < function->instructionsLength; i++) {
         TZrInstruction *inst = &function->instructionsList[i];
-        EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
+        EZrInstructionCode opcode = (EZrInstructionCode) inst->instruction.operationCode;
         TUInt16 operandExtra = inst->instruction.operandExtra;
 
         printf("    [%u] ", i);
@@ -137,62 +137,168 @@ static void printInstructions(SZrFunction *function) {
         // 输出操作码名称
         const char *opcodeName = "UNKNOWN";
         switch (opcode) {
-            case ZR_INSTRUCTION_ENUM(GET_STACK): opcodeName = "GET_STACK"; break;
-            case ZR_INSTRUCTION_ENUM(SET_STACK): opcodeName = "SET_STACK"; break;
-            case ZR_INSTRUCTION_ENUM(GET_CONSTANT): opcodeName = "GET_CONSTANT"; break;
-            case ZR_INSTRUCTION_ENUM(SET_CONSTANT): opcodeName = "SET_CONSTANT"; break;
-            case ZR_INSTRUCTION_ENUM(GET_CLOSURE): opcodeName = "GET_CLOSURE"; break;
-            case ZR_INSTRUCTION_ENUM(SET_CLOSURE): opcodeName = "SET_CLOSURE"; break;
-            case ZR_INSTRUCTION_ENUM(GETUPVAL): opcodeName = "GETUPVAL"; break;
-            case ZR_INSTRUCTION_ENUM(SETUPVAL): opcodeName = "SETUPVAL"; break;
-            case ZR_INSTRUCTION_ENUM(GETTABLE): opcodeName = "GETTABLE"; break;
-            case ZR_INSTRUCTION_ENUM(SETTABLE): opcodeName = "SETTABLE"; break;
-            case ZR_INSTRUCTION_ENUM(ADD): opcodeName = "ADD"; break;
-            case ZR_INSTRUCTION_ENUM(ADD_INT): opcodeName = "ADD_INT"; break;
-            case ZR_INSTRUCTION_ENUM(ADD_FLOAT): opcodeName = "ADD_FLOAT"; break;
-            case ZR_INSTRUCTION_ENUM(ADD_STRING): opcodeName = "ADD_STRING"; break;
-            case ZR_INSTRUCTION_ENUM(SUB): opcodeName = "SUB"; break;
-            case ZR_INSTRUCTION_ENUM(SUB_INT): opcodeName = "SUB_INT"; break;
-            case ZR_INSTRUCTION_ENUM(SUB_FLOAT): opcodeName = "SUB_FLOAT"; break;
-            case ZR_INSTRUCTION_ENUM(MUL): opcodeName = "MUL"; break;
-            case ZR_INSTRUCTION_ENUM(MUL_SIGNED): opcodeName = "MUL_SIGNED"; break;
-            case ZR_INSTRUCTION_ENUM(MUL_FLOAT): opcodeName = "MUL_FLOAT"; break;
-            case ZR_INSTRUCTION_ENUM(DIV): opcodeName = "DIV"; break;
-            case ZR_INSTRUCTION_ENUM(DIV_SIGNED): opcodeName = "DIV_SIGNED"; break;
-            case ZR_INSTRUCTION_ENUM(DIV_FLOAT): opcodeName = "DIV_FLOAT"; break;
-            case ZR_INSTRUCTION_ENUM(MOD): opcodeName = "MOD"; break;
-            case ZR_INSTRUCTION_ENUM(MOD_SIGNED): opcodeName = "MOD_SIGNED"; break;
-            case ZR_INSTRUCTION_ENUM(MOD_FLOAT): opcodeName = "MOD_FLOAT"; break;
-            case ZR_INSTRUCTION_ENUM(TO_INT): opcodeName = "TO_INT"; break;
-            case ZR_INSTRUCTION_ENUM(TO_FLOAT): opcodeName = "TO_FLOAT"; break;
-            case ZR_INSTRUCTION_ENUM(TO_STRING): opcodeName = "TO_STRING"; break;
-            case ZR_INSTRUCTION_ENUM(TO_BOOL): opcodeName = "TO_BOOL"; break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL): opcodeName = "LOGICAL_EQUAL"; break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL): opcodeName = "LOGICAL_NOT_EQUAL"; break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED): opcodeName = "LOGICAL_LESS_SIGNED"; break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT): opcodeName = "LOGICAL_LESS_FLOAT"; break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED): opcodeName = "LOGICAL_GREATER_SIGNED"; break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT): opcodeName = "LOGICAL_GREATER_FLOAT"; break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_AND): opcodeName = "LOGICAL_AND"; break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_OR): opcodeName = "LOGICAL_OR"; break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT): opcodeName = "LOGICAL_NOT"; break;
-            case ZR_INSTRUCTION_ENUM(BITWISE_AND): opcodeName = "BITWISE_AND"; break;
-            case ZR_INSTRUCTION_ENUM(BITWISE_OR): opcodeName = "BITWISE_OR"; break;
-            case ZR_INSTRUCTION_ENUM(BITWISE_XOR): opcodeName = "BITWISE_XOR"; break;
-            case ZR_INSTRUCTION_ENUM(BITWISE_NOT): opcodeName = "BITWISE_NOT"; break;
-            case ZR_INSTRUCTION_ENUM(NEG): opcodeName = "NEG"; break;
-            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL): opcodeName = "FUNCTION_CALL"; break;
-            case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN): opcodeName = "FUNCTION_RETURN"; break;
-            case ZR_INSTRUCTION_ENUM(GET_GLOBAL): opcodeName = "GET_GLOBAL"; break;
-            case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION): opcodeName = "GET_SUB_FUNCTION"; break;
-            case ZR_INSTRUCTION_ENUM(JUMP): opcodeName = "JUMP"; break;
-            case ZR_INSTRUCTION_ENUM(JUMP_IF): opcodeName = "JUMP_IF"; break;
-            case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE): opcodeName = "CREATE_CLOSURE"; break;
-            case ZR_INSTRUCTION_ENUM(CREATE_OBJECT): opcodeName = "CREATE_OBJECT"; break;
-            case ZR_INSTRUCTION_ENUM(CREATE_ARRAY): opcodeName = "CREATE_ARRAY"; break;
+            case ZR_INSTRUCTION_ENUM(GET_STACK):
+                opcodeName = "GET_STACK";
+                break;
+            case ZR_INSTRUCTION_ENUM(SET_STACK):
+                opcodeName = "SET_STACK";
+                break;
+            case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
+                opcodeName = "GET_CONSTANT";
+                break;
+            case ZR_INSTRUCTION_ENUM(SET_CONSTANT):
+                opcodeName = "SET_CONSTANT";
+                break;
+            case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
+                opcodeName = "GET_CLOSURE";
+                break;
+            case ZR_INSTRUCTION_ENUM(SET_CLOSURE):
+                opcodeName = "SET_CLOSURE";
+                break;
+            case ZR_INSTRUCTION_ENUM(GETUPVAL):
+                opcodeName = "GETUPVAL";
+                break;
+            case ZR_INSTRUCTION_ENUM(SETUPVAL):
+                opcodeName = "SETUPVAL";
+                break;
+            case ZR_INSTRUCTION_ENUM(GETTABLE):
+                opcodeName = "GETTABLE";
+                break;
+            case ZR_INSTRUCTION_ENUM(SETTABLE):
+                opcodeName = "SETTABLE";
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD):
+                opcodeName = "ADD";
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_INT):
+                opcodeName = "ADD_INT";
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+                opcodeName = "ADD_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_STRING):
+                opcodeName = "ADD_STRING";
+                break;
+            case ZR_INSTRUCTION_ENUM(SUB):
+                opcodeName = "SUB";
+                break;
+            case ZR_INSTRUCTION_ENUM(SUB_INT):
+                opcodeName = "SUB_INT";
+                break;
+            case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
+                opcodeName = "SUB_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(MUL):
+                opcodeName = "MUL";
+                break;
+            case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+                opcodeName = "MUL_SIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+                opcodeName = "MUL_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(DIV):
+                opcodeName = "DIV";
+                break;
+            case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
+                opcodeName = "DIV_SIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
+                opcodeName = "DIV_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(MOD):
+                opcodeName = "MOD";
+                break;
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
+                opcodeName = "MOD_SIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(MOD_FLOAT):
+                opcodeName = "MOD_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_INT):
+                opcodeName = "TO_INT";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+                opcodeName = "TO_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_STRING):
+                opcodeName = "TO_STRING";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_BOOL):
+                opcodeName = "TO_BOOL";
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
+                opcodeName = "LOGICAL_EQUAL";
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
+                opcodeName = "LOGICAL_NOT_EQUAL";
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED):
+                opcodeName = "LOGICAL_LESS_SIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
+                opcodeName = "LOGICAL_LESS_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED):
+                opcodeName = "LOGICAL_GREATER_SIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT):
+                opcodeName = "LOGICAL_GREATER_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_AND):
+                opcodeName = "LOGICAL_AND";
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_OR):
+                opcodeName = "LOGICAL_OR";
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
+                opcodeName = "LOGICAL_NOT";
+                break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_AND):
+                opcodeName = "BITWISE_AND";
+                break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_OR):
+                opcodeName = "BITWISE_OR";
+                break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
+                opcodeName = "BITWISE_XOR";
+                break;
+            case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
+                opcodeName = "BITWISE_NOT";
+                break;
+            case ZR_INSTRUCTION_ENUM(NEG):
+                opcodeName = "NEG";
+                break;
+            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+                opcodeName = "FUNCTION_CALL";
+                break;
+            case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
+                opcodeName = "FUNCTION_RETURN";
+                break;
+            case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
+                opcodeName = "GET_GLOBAL";
+                break;
+            case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
+                opcodeName = "GET_SUB_FUNCTION";
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP):
+                opcodeName = "JUMP";
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF):
+                opcodeName = "JUMP_IF";
+                break;
+            case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
+                opcodeName = "CREATE_CLOSURE";
+                break;
+            case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
+                opcodeName = "CREATE_OBJECT";
+                break;
+            case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+                opcodeName = "CREATE_ARRAY";
+                break;
             default: {
                 char buf[32];
-                snprintf(buf, sizeof(buf), "OPCODE_%u", (TUInt32)opcode);
+                snprintf(buf, sizeof(buf), "OPCODE_%u", (TUInt32) opcode);
                 opcodeName = buf;
                 break;
             }
@@ -203,7 +309,7 @@ static void printInstructions(SZrFunction *function) {
         // 提取操作数
         TUInt16 op1_0 = inst->instruction.operand.operand1[0];
         TUInt16 op1_1 = inst->instruction.operand.operand1[1];
-        TInt32 op2_0 = (TInt32)inst->instruction.operand.operand2[0];
+        TInt32 op2_0 = (TInt32) inst->instruction.operand.operand2[0];
 
         // 根据指令类型输出操作数
         if (opcode == ZR_INSTRUCTION_ENUM(GET_STACK) || opcode == ZR_INSTRUCTION_ENUM(SET_STACK) ||
@@ -212,13 +318,11 @@ static void printInstructions(SZrFunction *function) {
         } else if (opcode == ZR_INSTRUCTION_ENUM(ADD) || opcode == ZR_INSTRUCTION_ENUM(ADD_INT) ||
                    opcode == ZR_INSTRUCTION_ENUM(ADD_FLOAT) || opcode == ZR_INSTRUCTION_ENUM(ADD_STRING) ||
                    opcode == ZR_INSTRUCTION_ENUM(SUB) || opcode == ZR_INSTRUCTION_ENUM(SUB_INT) ||
-                   opcode == ZR_INSTRUCTION_ENUM(SUB_FLOAT) ||
-                   opcode == ZR_INSTRUCTION_ENUM(MUL) || opcode == ZR_INSTRUCTION_ENUM(MUL_SIGNED) ||
-                   opcode == ZR_INSTRUCTION_ENUM(MUL_FLOAT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(SUB_FLOAT) || opcode == ZR_INSTRUCTION_ENUM(MUL) ||
+                   opcode == ZR_INSTRUCTION_ENUM(MUL_SIGNED) || opcode == ZR_INSTRUCTION_ENUM(MUL_FLOAT) ||
                    opcode == ZR_INSTRUCTION_ENUM(DIV) || opcode == ZR_INSTRUCTION_ENUM(DIV_SIGNED) ||
-                   opcode == ZR_INSTRUCTION_ENUM(DIV_FLOAT) ||
-                   opcode == ZR_INSTRUCTION_ENUM(MOD) || opcode == ZR_INSTRUCTION_ENUM(MOD_SIGNED) ||
-                   opcode == ZR_INSTRUCTION_ENUM(MOD_FLOAT)) {
+                   opcode == ZR_INSTRUCTION_ENUM(DIV_FLOAT) || opcode == ZR_INSTRUCTION_ENUM(MOD) ||
+                   opcode == ZR_INSTRUCTION_ENUM(MOD_SIGNED) || opcode == ZR_INSTRUCTION_ENUM(MOD_FLOAT)) {
             printf(" dst=%u, left=%u, right=%u", operandExtra, op1_0, op1_1);
         } else if (opcode == ZR_INSTRUCTION_ENUM(GETTABLE) || opcode == ZR_INSTRUCTION_ENUM(SETTABLE)) {
             printf(" dst=%u, table=%u, key=%u", operandExtra, op1_0, op1_1);
@@ -284,13 +388,13 @@ static void printTestResult(SZrState *state, const SZrTypeValue *value) {
         case ZR_VALUE_TYPE_INT16:
         case ZR_VALUE_TYPE_INT32:
         case ZR_VALUE_TYPE_INT64:
-            printf("Result: %lld\n", (long long)value->value.nativeObject.nativeInt64);
+            printf("Result: %lld\n", (long long) value->value.nativeObject.nativeInt64);
             break;
         case ZR_VALUE_TYPE_UINT8:
         case ZR_VALUE_TYPE_UINT16:
         case ZR_VALUE_TYPE_UINT32:
         case ZR_VALUE_TYPE_UINT64:
-            printf("Result: %llu\n", (unsigned long long)value->value.nativeObject.nativeUInt64);
+            printf("Result: %llu\n", (unsigned long long) value->value.nativeObject.nativeUInt64);
             break;
         case ZR_VALUE_TYPE_FLOAT:
         case ZR_VALUE_TYPE_DOUBLE:
@@ -306,17 +410,15 @@ static void printTestResult(SZrState *state, const SZrTypeValue *value) {
             }
             break;
         }
-        case ZR_VALUE_TYPE_OBJECT: {
-            SZrObject *obj = ZR_CAST_OBJECT(state, value->value.object);
-            if (obj != ZR_NULL) {
-                printf("Result: <object type=%d>\n", (int)obj->internalType);
-            } else {
-                printf("Result: <null object>\n");
-            }
-            break;
-        }
+        case ZR_VALUE_TYPE_OBJECT:
         case ZR_VALUE_TYPE_ARRAY: {
-            printf("Result: <array>\n");
+            SZrString *debugStr = ZrValueToDebugString(state, (SZrTypeValue *) value);
+            if (debugStr != ZR_NULL) {
+                TNativeString str = ZrStringGetNativeString(debugStr);
+                printf("Result: %s\n", str ? str : "<null string>");
+            } else {
+                printf("Result: <failed to convert to debug string>\n");
+            }
             break;
         }
         case ZR_VALUE_TYPE_CLOSURE: {
@@ -324,7 +426,7 @@ static void printTestResult(SZrState *state, const SZrTypeValue *value) {
             break;
         }
         default:
-            printf("Result: <unknown type=%d>\n", (int)value->type);
+            printf("Result: <unknown type=%d>\n", (int) value->type);
             break;
     }
 }
@@ -797,9 +899,10 @@ void test_execute_jump_instruction(void) {
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("JUMP instruction via while loop", "Testing JUMP instruction: while (false) { } return 0;");
+    TEST_INFO("JUMP instruction via while loop",
+              "Testing JUMP instruction: var i = 0;while (true) { i = i + 1; if(i>5){break;} } while(false){return i;} return i+1;");
 
-    const char *source = "while (false) { } return 0;";
+    const char *source = "var i = 0;while (true) { i = i + 1; if(i>5){break;} } while(false){return i;} return i+1;";
     SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
     SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
 
@@ -1259,7 +1362,6 @@ void test_execute_logical_equal_instruction(void) {
     }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
-
     // 执行函数并验证结果
     SZrTypeValue result;
     TBool execSuccess = executeFunctionAndGetResult(state, function, &result);

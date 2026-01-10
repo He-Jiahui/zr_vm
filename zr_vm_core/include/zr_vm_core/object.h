@@ -19,6 +19,7 @@ enum EZrObjectInternalType {
     ZR_OBJECT_INTERNAL_TYPE_ARRAY,
     ZR_OBJECT_INTERNAL_TYPE_MODULE,
     ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE,
+    ZR_OBJECT_INTERNAL_TYPE_PROTOTYPE_INFO,  // 用于在常量池中存储prototype信息的对象
     ZR_OBJECT_INTERNAL_TYPE_CUSTOM_EXTENSION_START,
     // user can add custom extension object prototype here
 };

@@ -15,6 +15,9 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_core/object.h"
+#include "zr_vm_core/raw_object.h"
+#include "zr_vm_core/gc.h"
 
 #include <string.h>
 
@@ -28,6 +31,10 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node);
 TZrSize create_label(SZrCompilerState *cs);
 void resolve_label(SZrCompilerState *cs, TZrSize labelId);
+
+// 将prototype信息序列化为Object对象并存储到常量池
+// 返回：常量池索引
+static TUInt32 serialize_prototype_info_to_object(SZrCompilerState *cs, SZrTypePrototypeInfo *info);
 
 // 初始化编译器状态
 void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
@@ -111,6 +118,7 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     
     // 初始化类型 Prototype 信息数组
     ZrArrayInit(state, &cs->typePrototypes, sizeof(SZrTypePrototypeInfo), 8);
+    ZrArrayInit(state, &cs->prototypeConstantIndices, sizeof(TUInt32), 8);
 }
 
 // 清理解译器状态
@@ -228,6 +236,12 @@ void ZrCompilerStateFree(SZrCompilerState *cs) {
             }
         }
         ZrArrayFree(state, &cs->typePrototypes);
+    }
+    
+    // 释放prototype常量索引数组
+    if (cs->prototypeConstantIndices.isValid && cs->prototypeConstantIndices.head != ZR_NULL &&
+        cs->prototypeConstantIndices.capacity > 0 && cs->prototypeConstantIndices.elementSize > 0) {
+        ZrArrayFree(state, &cs->prototypeConstantIndices);
     }
     
     // 释放模块导出跟踪数组（字符串本身由 GC 管理）
@@ -571,6 +585,63 @@ TUInt32 find_child_function_index(SZrCompilerState *cs, SZrString *name) {
     return (TUInt32) -1;
 }
 
+// 生成函数引用路径常量
+// 用于在编译函数调用时，如果是子函数调用，生成引用路径常量
+// targetFunction: 目标函数（子函数）
+// 返回：常量池索引（存储引用路径常量），失败返回0
+// 注意：生成的路径格式为：[ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX, childIndex]
+//       如果目标函数在parent中，则：[ZR_CONSTANT_REF_STEP_PARENT, ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX, childIndex]
+static TUInt32 generate_function_reference_path_constant(SZrCompilerState *cs, TUInt32 childFunctionIndex) {
+    if (cs == ZR_NULL || childFunctionIndex == (TUInt32)-1) {
+        return 0;
+    }
+    
+    // 生成引用路径：直接子函数引用
+    // 路径格式：[ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX, childIndex]
+    TUInt32 pathDepth = 2;
+    TUInt32 *pathSteps = (TUInt32 *)ZrMemoryRawMalloc(cs->state->global, pathDepth * sizeof(TUInt32));
+    if (pathSteps == ZR_NULL) {
+        return 0;
+    }
+    
+    pathSteps[0] = ZR_CONSTANT_REF_STEP_TO_UINT32(ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX);
+    pathSteps[1] = childFunctionIndex;
+    
+    // 将路径序列化为字符串类型常量（与prototype类似，使用字符串类型存储二进制数据）
+    // 格式：pathDepth (TUInt32) + pathSteps (TUInt32数组)
+    TZrSize serializedSize = sizeof(TUInt32) + pathDepth * sizeof(TUInt32);
+    TByte *serializedData = (TByte *)ZrMemoryRawMalloc(cs->state->global, serializedSize);
+    if (serializedData == ZR_NULL) {
+        ZrMemoryRawFree(cs->state->global, pathSteps, pathDepth * sizeof(TUInt32));
+        return 0;
+    }
+    
+    // 写入路径深度和步骤
+    *(TUInt32 *)serializedData = pathDepth;
+    ZrMemoryRawCopy(serializedData + sizeof(TUInt32), (TByte *)pathSteps, pathDepth * sizeof(TUInt32));
+    
+    // 创建字符串常量存储二进制数据
+    SZrString *serializedString = ZrStringCreate(cs->state, (TNativeString)serializedData, serializedSize);
+    if (serializedString == ZR_NULL) {
+        ZrMemoryRawFree(cs->state->global, serializedData, serializedSize);
+        ZrMemoryRawFree(cs->state->global, pathSteps, pathDepth * sizeof(TUInt32));
+        return 0;
+    }
+    
+    // 将字符串存储到常量池
+    SZrTypeValue serializedValue;
+    ZrValueInitAsRawObject(cs->state, &serializedValue, ZR_CAST_RAW_OBJECT_AS_SUPER(serializedString));
+    serializedValue.type = ZR_VALUE_TYPE_STRING;
+    
+    TUInt32 constantIndex = add_constant(cs, &serializedValue);
+    
+    // 释放临时分配的内存
+    ZrMemoryRawFree(cs->state->global, serializedData, serializedSize);
+    ZrMemoryRawFree(cs->state->global, pathSteps, pathDepth * sizeof(TUInt32));
+    
+    return constantIndex;
+}
+
 // 分配栈槽
 TUInt32 allocate_stack_slot(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
@@ -711,8 +782,9 @@ void resolve_label(SZrCompilerState *cs, TZrSize labelId) {
                 TZrInstruction *jumpInst =
                         (TZrInstruction *) ZrArrayGet(&cs->instructions, pendingJump->instructionIndex);
                 if (jumpInst != ZR_NULL) {
-                    // 计算相对偏移：目标指令索引 - 当前指令索引
-                    TInt32 offset = (TInt32) label->instructionIndex - (TInt32) pendingJump->instructionIndex;
+                    // 计算相对偏移：目标指令索引 - (当前指令索引 + 1)
+                    // 因为 ZR_INSTRUCTION_FETCH 已经将 PC 指向下一条指令，所以需要 -1
+                    TInt32 offset = (TInt32) label->instructionIndex - (TInt32) pendingJump->instructionIndex - 1;
                     jumpInst->instruction.operand.operand2[0] = offset;
                 }
             }
@@ -1673,6 +1745,119 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->closureVarCount = oldClosureVarCount;
 }
 
+// 辅助函数：从类型节点提取类型名称字符串
+static SZrString *extract_type_name_string(SZrCompilerState *cs, SZrType *type) {
+    if (cs == ZR_NULL || type == ZR_NULL || type->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    if (type->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return type->name->data.identifier.name;
+    }
+    
+    // TODO: 处理其他类型名称格式（泛型、元组等）
+    return ZR_NULL;
+}
+
+// 辅助函数：计算类型的大小（字节数）
+// 返回0表示未知类型，需要在运行时确定
+static TUInt32 calculate_type_size(SZrCompilerState *cs, SZrType *type) {
+    if (cs == ZR_NULL || type == ZR_NULL || type->name == ZR_NULL) {
+        return 0;
+    }
+    
+    // 处理数组类型
+    if (type->dimensions > 0) {
+        // 数组本身是指针类型，固定8字节
+        // 注意：数组元素的实际大小在运行时确定，这里只返回指针大小
+        return sizeof(TZrPtr); // 8 bytes
+    }
+    
+    // 处理基本类型（通过类型名称字符串匹配）
+    if (type->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        SZrString *typeName = type->name->data.identifier.name;
+        if (typeName == ZR_NULL) {
+            return 0;
+        }
+        
+        TNativeString typeNameStr = ZrStringGetNativeStringShort(typeName);
+        if (typeNameStr == ZR_NULL) {
+            return 0;
+        }
+        
+        // 匹配基本类型名称
+        if (strcmp(typeNameStr, "int") == 0 || strcmp(typeNameStr, "i64") == 0) {
+            return sizeof(TInt64); // 8 bytes
+        }
+        if (strcmp(typeNameStr, "i8") == 0) {
+            return sizeof(TInt8); // 1 byte
+        }
+        if (strcmp(typeNameStr, "i16") == 0) {
+            return sizeof(TInt16); // 2 bytes
+        }
+        if (strcmp(typeNameStr, "i32") == 0) {
+            return sizeof(TInt32); // 4 bytes
+        }
+        if (strcmp(typeNameStr, "uint") == 0 || strcmp(typeNameStr, "u64") == 0) {
+            return sizeof(TUInt64); // 8 bytes
+        }
+        if (strcmp(typeNameStr, "u8") == 0) {
+            return sizeof(TUInt8); // 1 byte
+        }
+        if (strcmp(typeNameStr, "u16") == 0) {
+            return sizeof(TUInt16); // 2 bytes
+        }
+        if (strcmp(typeNameStr, "u32") == 0) {
+            return sizeof(TUInt32); // 4 bytes
+        }
+        if (strcmp(typeNameStr, "float") == 0 || strcmp(typeNameStr, "f32") == 0) {
+            return sizeof(TFloat32); // 4 bytes
+        }
+        if (strcmp(typeNameStr, "double") == 0 || strcmp(typeNameStr, "f64") == 0 || strcmp(typeNameStr, "f") == 0) {
+            return sizeof(TDouble); // 8 bytes
+        }
+        if (strcmp(typeNameStr, "bool") == 0) {
+            return sizeof(TBool); // 1 byte
+        }
+        if (strcmp(typeNameStr, "string") == 0 || strcmp(typeNameStr, "str") == 0) {
+            return sizeof(TZrPtr); // 指针大小 8 bytes
+        }
+        if (strcmp(typeNameStr, "object") == 0 || strcmp(typeNameStr, "obj") == 0) {
+            return sizeof(TZrPtr); // 指针大小 8 bytes
+        }
+        
+        // 如果是自定义类型（struct/class），大小未知，需要在运行时确定
+        // 返回0表示需要运行时计算
+        return 0;
+    }
+    
+    return 0;
+}
+
+// 辅助函数：应用对齐规则计算偏移量
+static TUInt32 align_offset(TUInt32 offset, TUInt32 align) {
+    // 对齐到align字节边界
+    return ((offset + align - 1) / align) * align;
+}
+
+// 辅助函数：确定类型的对齐要求（字节）
+static TUInt32 get_type_alignment(SZrCompilerState *cs, SZrType *type) {
+    if (cs == ZR_NULL || type == ZR_NULL) {
+        return ZR_ALIGN_SIZE; // 默认对齐
+    }
+    
+    TUInt32 size = calculate_type_size(cs, type);
+    if (size == 0) {
+        return ZR_ALIGN_SIZE; // 未知类型，默认对齐
+    }
+    
+    // 对齐要求通常是类型大小的幂（但不超过默认对齐）
+    if (size <= 1) return 1;
+    if (size <= 2) return 2;
+    if (size <= 4) return 4;
+    return ZR_ALIGN_SIZE; // 默认对齐
+}
+
 // 编译 struct 声明
 static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -1736,10 +1921,19 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             }
             
             SZrTypeMemberInfo memberInfo;
+            // 初始化所有字段
             memberInfo.memberType = member->type;
             memberInfo.isStatic = ZR_FALSE;
             memberInfo.accessModifier = ZR_ACCESS_PRIVATE;
             memberInfo.name = ZR_NULL;
+            memberInfo.fieldType = ZR_NULL;
+            memberInfo.fieldTypeName = ZR_NULL;
+            memberInfo.fieldOffset = 0;
+            memberInfo.fieldSize = 0;
+            memberInfo.functionConstantIndex = 0;
+            memberInfo.parameterCount = 0;
+            memberInfo.metaType = 0; // ZR_META_ENUM_MAX表示非元方法
+            memberInfo.isMetaMethod = ZR_FALSE;
             
             // 根据成员类型提取信息
             switch (member->type) {
@@ -1750,6 +1944,20 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     if (field->name != ZR_NULL) {
                         memberInfo.name = field->name->name;
                     }
+                    
+                    // 处理字段类型信息
+                    if (field->typeInfo != ZR_NULL) {
+                        memberInfo.fieldType = field->typeInfo;
+                        memberInfo.fieldTypeName = extract_type_name_string(cs, field->typeInfo);
+                        // 计算字段大小（用于偏移量计算）
+                        memberInfo.fieldSize = calculate_type_size(cs, field->typeInfo);
+                    } else {
+                        // 没有明确类型，默认为object类型（8字节指针）
+                        memberInfo.fieldSize = sizeof(TZrPtr);
+                    }
+                    
+                    // 字段偏移量将在所有字段收集后统一计算
+                    // 这里先设置为0，后续会根据字段顺序和对齐规则计算
                     break;
                 }
                 case ZR_AST_STRUCT_METHOD: {
@@ -1759,6 +1967,9 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     if (method->name != ZR_NULL) {
                         memberInfo.name = method->name->name;
                     }
+                    // 方法信息（函数引用等）将在方法编译后设置
+                    // TODO: 需要将方法编译为函数并存储函数引用索引
+                    memberInfo.isMetaMethod = ZR_FALSE;
                     break;
                 }
                 case ZR_AST_STRUCT_META_FUNCTION: {
@@ -1767,6 +1978,28 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.isStatic = metaFunc->isStatic;
                     if (metaFunc->meta != ZR_NULL) {
                         memberInfo.name = metaFunc->meta->name;
+                        
+                        // 提取元方法类型（如@constructor -> ZR_META_CONSTRUCTOR）
+                        // 通过元方法名称匹配
+                        TNativeString metaName = ZrStringGetNativeStringShort(metaFunc->meta->name);
+                        if (metaName != ZR_NULL) {
+                            if (strcmp(metaName, "constructor") == 0) {
+                                memberInfo.metaType = ZR_META_CONSTRUCTOR;
+                            } else if (strcmp(metaName, "destructor") == 0) {
+                                memberInfo.metaType = ZR_META_DESTRUCTOR;
+                            } else if (strcmp(metaName, "add") == 0) {
+                                memberInfo.metaType = ZR_META_ADD;
+                            } else if (strcmp(metaName, "toString") == 0) {
+                                memberInfo.metaType = ZR_META_TO_STRING;
+                            }
+                            // TODO: 添加更多元方法类型匹配
+                            memberInfo.isMetaMethod = ZR_TRUE;
+                        }
+                    }
+                    // 元方法的函数引用索引将在编译后设置
+                    // TODO: 需要将元方法编译为函数并存储函数引用索引
+                    if (metaFunc->params != ZR_NULL) {
+                        memberInfo.parameterCount = (TUInt32)metaFunc->params->count;
                     }
                     break;
                 }
@@ -1778,6 +2011,37 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             if (memberInfo.name != ZR_NULL) {
                 ZrArrayPush(cs->state, &info.members, &memberInfo);
             }
+        }
+    }
+    
+    // 计算struct字段偏移量（仅对非静态字段）
+    TUInt32 currentOffset = 0;
+    for (TZrSize i = 0; i < info.members.length; i++) {
+        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrArrayGet(&info.members, i);
+        if (memberInfo == ZR_NULL) {
+            continue;
+        }
+        
+        // 只处理非静态字段
+        if (memberInfo->memberType == ZR_AST_STRUCT_FIELD && !memberInfo->isStatic) {
+            // 获取字段对齐要求
+            TUInt32 align = ZR_ALIGN_SIZE; // 默认对齐
+            if (memberInfo->fieldType != ZR_NULL) {
+                align = get_type_alignment(cs, memberInfo->fieldType);
+            }
+            
+            // 应用对齐
+            currentOffset = align_offset(currentOffset, align);
+            
+            // 设置字段偏移量
+            memberInfo->fieldOffset = currentOffset;
+            
+            // 增加偏移量（如果字段大小为0，表示未知类型，使用默认大小）
+            TUInt32 fieldSize = memberInfo->fieldSize;
+            if (fieldSize == 0) {
+                fieldSize = ZR_ALIGN_SIZE; // 默认大小
+            }
+            currentOffset += fieldSize;
         }
     }
     
@@ -1848,18 +2112,34 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             }
             
             SZrTypeMemberInfo memberInfo;
+            // 初始化所有字段
             memberInfo.memberType = member->type;
             memberInfo.isStatic = ZR_FALSE;
             memberInfo.accessModifier = ZR_ACCESS_PRIVATE;
             memberInfo.name = ZR_NULL;
+            memberInfo.fieldType = ZR_NULL;
+            memberInfo.fieldTypeName = ZR_NULL;
+            memberInfo.fieldOffset = 0;
+            memberInfo.fieldSize = 0;
+            memberInfo.functionConstantIndex = 0;
+            memberInfo.parameterCount = 0;
+            memberInfo.metaType = 0;
+            memberInfo.isMetaMethod = ZR_FALSE;
             
             // 根据成员类型提取信息
             switch (member->type) {
                 case ZR_AST_CLASS_FIELD: {
                     SZrClassField *field = &member->data.classField;
                     memberInfo.accessModifier = field->access;
+                    memberInfo.isStatic = field->isStatic; // class字段也有isStatic
                     if (field->name != ZR_NULL) {
                         memberInfo.name = field->name->name;
+                    }
+                    // 处理字段类型信息
+                    if (field->typeInfo != ZR_NULL) {
+                        memberInfo.fieldType = field->typeInfo;
+                        memberInfo.fieldTypeName = extract_type_name_string(cs, field->typeInfo);
+                        memberInfo.fieldSize = calculate_type_size(cs, field->typeInfo);
                     }
                     break;
                 }
@@ -1870,13 +2150,20 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     if (method->name != ZR_NULL) {
                         memberInfo.name = method->name->name;
                     }
+                    // 方法信息（函数引用等）将在方法编译后设置
+                    // TODO: 需要将方法编译为函数并存储函数引用索引
+                    if (method->params != ZR_NULL) {
+                        memberInfo.parameterCount = (TUInt32)method->params->count;
+                    }
+                    memberInfo.isMetaMethod = ZR_FALSE;
                     break;
                 }
                 case ZR_AST_CLASS_PROPERTY: {
                     SZrClassProperty *property = &member->data.classProperty;
                     memberInfo.accessModifier = property->access;
-                    // ClassProperty 没有直接的 name 字段，需要从 modifier 中提取
-                    // 暂时跳过，TODO: 实现从 PropertyGet/PropertySet 中提取名称
+                    // ClassProperty 包含getter和setter，需要从PropertyGet/PropertySet中提取名称
+                    // TODO: 实现从PropertyGet/PropertySet中提取名称和函数引用
+                    // 暂时跳过属性处理
                     break;
                 }
                 case ZR_AST_CLASS_META_FUNCTION: {
@@ -1885,6 +2172,27 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.isStatic = metaFunc->isStatic;
                     if (metaFunc->meta != ZR_NULL) {
                         memberInfo.name = metaFunc->meta->name;
+                        
+                        // 提取元方法类型
+                        TNativeString metaName = ZrStringGetNativeStringShort(metaFunc->meta->name);
+                        if (metaName != ZR_NULL) {
+                            if (strcmp(metaName, "constructor") == 0) {
+                                memberInfo.metaType = ZR_META_CONSTRUCTOR;
+                            } else if (strcmp(metaName, "destructor") == 0) {
+                                memberInfo.metaType = ZR_META_DESTRUCTOR;
+                            } else if (strcmp(metaName, "add") == 0) {
+                                memberInfo.metaType = ZR_META_ADD;
+                            } else if (strcmp(metaName, "toString") == 0) {
+                                memberInfo.metaType = ZR_META_TO_STRING;
+                            }
+                            // TODO: 添加更多元方法类型匹配
+                            memberInfo.isMetaMethod = ZR_TRUE;
+                        }
+                    }
+                    // 元方法的函数引用索引将在编译后设置
+                    // TODO: 需要将元方法编译为函数并存储函数引用索引
+                    if (metaFunc->params != ZR_NULL) {
+                        memberInfo.parameterCount = (TUInt32)metaFunc->params->count;
                     }
                     break;
                 }
@@ -1893,7 +2201,7 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     continue;
             }
             
-            if (memberInfo.name != ZR_NULL) {
+            if (memberInfo.name != ZR_NULL || memberInfo.memberType == ZR_AST_CLASS_PROPERTY) {
                 ZrArrayPush(cs->state, &info.members, &memberInfo);
             }
         }
@@ -1901,6 +2209,230 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 将 prototype 信息添加到数组
     ZrArrayPush(cs->state, &cs->typePrototypes, &info);
+}
+
+// 序列化的prototype信息结构（紧凑二进制格式）
+typedef struct SZrSerializedPrototypeInfo {
+    // 基本信息
+    TUInt32 nameStringIndex;              // 类型名称字符串在常量池中的索引
+    TUInt32 type;                         // EZrObjectPrototypeType
+    TUInt32 accessModifier;               // EZrAccessModifier
+    
+    // 继承关系
+    TUInt32 inheritsCount;                // 继承类型数量
+    TUInt32 *inheritStringIndices;        // 继承类型名称字符串索引数组（动态分配）
+    
+    // 成员信息
+    TUInt32 membersCount;                 // 成员数量
+    // 成员数据紧随其后（动态数组）
+} SZrSerializedPrototypeInfo;
+
+// 序列化的成员信息结构（紧凑二进制格式）
+typedef struct SZrSerializedMemberInfo {
+    TUInt32 memberType;                   // EZrAstNodeType
+    TUInt32 nameStringIndex;              // 成员名称字符串在常量池中的索引（如果为0表示无名）
+    TUInt32 accessModifier;               // EZrAccessModifier
+    TUInt32 isStatic;                     // TBool (0或1)
+    
+    // 字段特定信息（仅当memberType为STRUCT_FIELD或CLASS_FIELD时有效）
+    TUInt32 fieldTypeNameStringIndex;     // 字段类型名称字符串索引（如果为0表示无类型名）
+    TUInt32 fieldOffset;                  // 字段偏移量
+    TUInt32 fieldSize;                    // 字段大小
+    
+    // 方法特定信息（仅当memberType为METHOD或META_FUNCTION时有效）
+    TUInt32 isMetaMethod;                 // TBool (0或1)
+    TUInt32 metaType;                     // EZrMetaType
+    TUInt32 functionConstantIndex;        // 函数在常量池中的索引
+    TUInt32 parameterCount;               // 参数数量
+} SZrSerializedMemberInfo;
+
+// 编译时使用的C原生结构（用于序列化prototype信息）
+// 完全使用C原生结构，避免任何VM对象
+// 布局：固定大小头部 + 可变数据
+// 格式：[头部] [继承索引数组] [成员信息数组]
+typedef struct SZrCompiledPrototypeInfo {
+    TUInt32 nameStringIndex;              // 类型名称字符串在常量池中的索引
+    TUInt32 type;                         // EZrObjectPrototypeType
+    TUInt32 accessModifier;               // EZrAccessModifier
+    TUInt32 inheritsCount;                // 继承类型数量
+    TUInt32 membersCount;                 // 成员数量
+    // 注意：inheritStringIndices数组紧跟在结构体后面（不是指针）
+    // 运行时通过 inheritsCount 和固定偏移量访问：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo)
+    // 成员数据紧跟在继承数组后面：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo) + inheritsCount * sizeof(TUInt32)
+    // 布局：SZrCompiledPrototypeInfo(20字节) + [inheritsCount * 4字节] + [membersCount * SZrCompiledMemberInfo]
+} SZrCompiledPrototypeInfo;
+
+// 编译时使用的C原生结构（用于序列化成员信息）
+typedef struct SZrCompiledMemberInfo {
+    TUInt32 memberType;                   // EZrAstNodeType
+    TUInt32 nameStringIndex;              // 成员名称字符串在常量池中的索引（如果为0表示无名）
+    TUInt32 accessModifier;               // EZrAccessModifier
+    TUInt32 isStatic;                     // TBool (0或1)
+    
+    // 字段特定信息（仅当memberType为STRUCT_FIELD或CLASS_FIELD时有效）
+    TUInt32 fieldTypeNameStringIndex;     // 字段类型名称字符串索引（如果为0表示无类型名）
+    TUInt32 fieldOffset;                  // 字段偏移量
+    TUInt32 fieldSize;                    // 字段大小
+    
+    // 方法特定信息（仅当memberType为METHOD或META_FUNCTION时有效）
+    TUInt32 isMetaMethod;                 // TBool (0或1)
+    TUInt32 metaType;                     // EZrMetaType
+    TUInt32 functionConstantIndex;        // 函数在常量池中的索引
+    TUInt32 parameterCount;               // 参数数量
+} SZrCompiledMemberInfo;
+
+// 将prototype信息序列化为紧凑二进制格式并存储到常量池
+// 编译时使用C原生结构，避免创建VM对象，提高编译速度
+// 运行时（module.c）会从常量池读取并创建VM对象
+// 返回：常量池索引（从0开始，0表示失败）
+static TUInt32 serialize_prototype_info_to_object(SZrCompilerState *cs, SZrTypePrototypeInfo *info) {
+    if (cs == ZR_NULL || info == ZR_NULL || info->name == ZR_NULL) {
+        return 0;
+    }
+    
+    // 1. 使用C原生结构收集数据，避免创建VM对象
+    // 先将所有字符串添加到常量池，获取索引
+    SZrTypeValue nameValue;
+    ZrValueInitAsRawObject(cs->state, &nameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(info->name));
+    nameValue.type = ZR_VALUE_TYPE_STRING;
+    TUInt32 nameStringIndex = add_constant(cs, &nameValue);
+    
+    // 2. 添加继承类型名称字符串到常量池
+    TUInt32 *inheritStringIndices = ZR_NULL;
+    TUInt32 inheritsCount = (TUInt32)info->inherits.length;
+    if (inheritsCount > 0) {
+        inheritStringIndices = (TUInt32 *)ZrMemoryRawMalloc(cs->state->global, inheritsCount * sizeof(TUInt32));
+        if (inheritStringIndices == ZR_NULL) {
+            return 0;
+        }
+        
+        for (TZrSize i = 0; i < info->inherits.length; i++) {
+            SZrString **inheritTypeNamePtr = (SZrString **)ZrArrayGet(&info->inherits, i);
+            if (inheritTypeNamePtr != ZR_NULL && *inheritTypeNamePtr != ZR_NULL) {
+                SZrTypeValue inheritValue;
+                ZrValueInitAsRawObject(cs->state, &inheritValue, ZR_CAST_RAW_OBJECT_AS_SUPER(*inheritTypeNamePtr));
+                inheritValue.type = ZR_VALUE_TYPE_STRING;
+                inheritStringIndices[i] = add_constant(cs, &inheritValue);
+            } else {
+                inheritStringIndices[i] = 0;
+            }
+        }
+    }
+    
+    // 3. 计算序列化数据大小（使用C原生结构）
+    TUInt32 membersCount = (TUInt32)info->members.length;
+    TZrSize serializedSize = sizeof(SZrCompiledPrototypeInfo) + 
+                             (inheritsCount > 0 ? inheritsCount * sizeof(TUInt32) : 0) +
+                             membersCount * sizeof(SZrCompiledMemberInfo);
+    
+    // 4. 分配序列化数据缓冲区（C原生内存，非VM对象）
+    TByte *serializedData = (TByte *)ZrMemoryRawMalloc(cs->state->global, serializedSize);
+    if (serializedData == ZR_NULL) {
+        if (inheritStringIndices != ZR_NULL) {
+            ZrMemoryRawFree(cs->state->global, inheritStringIndices, inheritsCount * sizeof(TUInt32));
+        }
+        return 0;
+    }
+    
+    // 5. 填充序列化数据（使用C原生结构，避免指针，所有数据直接嵌入）
+    SZrCompiledPrototypeInfo *protoInfo = (SZrCompiledPrototypeInfo *)serializedData;
+    protoInfo->nameStringIndex = nameStringIndex;
+    protoInfo->type = (TUInt32)info->type;
+    protoInfo->accessModifier = (TUInt32)info->accessModifier;
+    protoInfo->inheritsCount = inheritsCount;
+    protoInfo->membersCount = membersCount;
+    
+    // 复制继承类型索引数组到序列化数据中（紧跟在结构体后面）
+    TUInt32 *embeddedInheritIndices = (TUInt32 *)(serializedData + sizeof(SZrCompiledPrototypeInfo));
+    if (inheritsCount > 0 && inheritStringIndices != ZR_NULL) {
+        memcpy(embeddedInheritIndices, inheritStringIndices, inheritsCount * sizeof(TUInt32));
+        ZrMemoryRawFree(cs->state->global, inheritStringIndices, inheritsCount * sizeof(TUInt32));
+    }
+    
+    // 序列化成员信息（紧跟在继承数组后面）
+    SZrCompiledMemberInfo *members = (SZrCompiledMemberInfo *)(serializedData + 
+                                                                 sizeof(SZrCompiledPrototypeInfo) +
+                                                                 inheritsCount * sizeof(TUInt32));
+    for (TZrSize i = 0; i < info->members.length; i++) {
+        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrArrayGet(&info->members, i);
+        if (memberInfo == ZR_NULL) {
+            continue;
+        }
+        
+        SZrCompiledMemberInfo *compiledMember = &members[i];
+        compiledMember->memberType = (TUInt32)memberInfo->memberType;
+        compiledMember->accessModifier = (TUInt32)memberInfo->accessModifier;
+        compiledMember->isStatic = memberInfo->isStatic ? ZR_TRUE : ZR_FALSE;
+        
+        // 添加成员名称字符串到常量池
+        if (memberInfo->name != ZR_NULL) {
+            SZrTypeValue memberNameValue;
+            ZrValueInitAsRawObject(cs->state, &memberNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->name));
+            memberNameValue.type = ZR_VALUE_TYPE_STRING;
+            compiledMember->nameStringIndex = add_constant(cs, &memberNameValue);
+        } else {
+            compiledMember->nameStringIndex = 0;
+        }
+        
+        // 字段特定信息
+        if (memberInfo->memberType == ZR_AST_STRUCT_FIELD || memberInfo->memberType == ZR_AST_CLASS_FIELD) {
+            if (memberInfo->fieldTypeName != ZR_NULL) {
+                SZrTypeValue fieldTypeNameValue;
+                ZrValueInitAsRawObject(cs->state, &fieldTypeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->fieldTypeName));
+                fieldTypeNameValue.type = ZR_VALUE_TYPE_STRING;
+                compiledMember->fieldTypeNameStringIndex = add_constant(cs, &fieldTypeNameValue);
+            } else {
+                compiledMember->fieldTypeNameStringIndex = 0;
+            }
+            compiledMember->fieldOffset = memberInfo->fieldOffset;
+            compiledMember->fieldSize = memberInfo->fieldSize;
+            // 方法字段清零
+            compiledMember->isMetaMethod = ZR_FALSE;
+            compiledMember->metaType = 0;
+            compiledMember->functionConstantIndex = 0;
+            compiledMember->parameterCount = 0;
+        }
+        
+        // 方法特定信息
+        if (memberInfo->memberType == ZR_AST_STRUCT_METHOD || 
+            memberInfo->memberType == ZR_AST_STRUCT_META_FUNCTION ||
+            memberInfo->memberType == ZR_AST_CLASS_METHOD ||
+            memberInfo->memberType == ZR_AST_CLASS_META_FUNCTION) {
+            compiledMember->isMetaMethod = memberInfo->isMetaMethod ? ZR_TRUE : ZR_FALSE;
+            compiledMember->metaType = (TUInt32)memberInfo->metaType;
+            compiledMember->functionConstantIndex = memberInfo->functionConstantIndex;
+            compiledMember->parameterCount = memberInfo->parameterCount;
+            // 字段字段清零
+            compiledMember->fieldTypeNameStringIndex = 0;
+            compiledMember->fieldOffset = 0;
+            compiledMember->fieldSize = 0;
+        }
+    }
+    
+    // 6. 将序列化数据存储到常量池（完全避免使用VM Object）
+    // 使用字符串类型存储二进制数据，运行时通过常量索引范围或特殊标记识别
+    // 注意：字符串对象会自动处理数据，包括二进制数据
+    SZrString *serializedString = ZrStringCreate(cs->state, (TNativeString)serializedData, serializedSize);
+    if (serializedString == ZR_NULL) {
+        ZrMemoryRawFree(cs->state->global, serializedData, serializedSize);
+        return 0;
+    }
+    
+    // 将字符串存储到常量池
+    SZrTypeValue serializedValue;
+    ZrValueInitAsRawObject(cs->state, &serializedValue, ZR_CAST_RAW_OBJECT_AS_SUPER(serializedString));
+    serializedValue.type = ZR_VALUE_TYPE_STRING;
+    
+    TUInt32 constantIndex = add_constant(cs, &serializedValue);
+    
+    // 释放临时分配的序列化数据（字符串对象已经复制了数据）
+    ZrMemoryRawFree(cs->state->global, serializedData, serializedSize);
+    
+    // 注意：运行时（module.c）需要修改为从字符串常量解析二进制数据
+    // 可以通过prototypeConstantIndices来识别哪些常量是prototype信息
+    // 或者通过检查字符串内容是否以特定magic number开头来识别
+    
+    return constantIndex;
 }
 
 // 编译脚本
@@ -1953,8 +2485,14 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                     case ZR_AST_TEST_DECLARATION:
                         compile_test_declaration(cs, stmt);
                         break;
+                    case ZR_AST_STRUCT_DECLARATION:
+                        compile_struct_declaration(cs, stmt);
+                        break;
+                    case ZR_AST_CLASS_DECLARATION:
+                        compile_class_declaration(cs, stmt);
+                        break;
                     default:
-                        // 其他顶层声明类型（struct, class, interface, enum, intermediate）
+                        // TODO: 其他顶层声明类型（interface, enum, intermediate）
                         // 目前先跳过，后续实现
                         printf("    Skipping statement type %d (not implemented yet)\n", stmt->type);
                         break;
@@ -2037,79 +2575,29 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 5. 将 prototype 信息存储到常量池中，供运行时使用
     // 运行时创建逻辑将在 zr.import 中实现（在创建模块后）
-    // 这里我们将每个 prototype 的信息序列化为常量：
-    // - 类型名称（字符串）
-    // - 类型（STRUCT/CLASS，整数）
-    // - 访问修饰符（整数）
-    // - 继承关系（字符串数组）
-    // - 成员信息（简化处理，暂时只存储成员名称）
+    // 这里我们将每个 prototype 的信息序列化为常量并记录索引
+    // 使用紧凑二进制格式存储为OBJECT类型，并通过internalType标记
     
     if (cs->typePrototypes.length > 0) {
-        // 将 prototype 信息存储到常量池
-        // 使用特殊标记来标识 prototype 信息常量
-        // 格式：第一个常量是标记（特殊值），后续是 prototype 信息
+        // 清空prototype常量索引数组（准备重新填充）
+        cs->prototypeConstantIndices.length = 0;
+        
+        // 将每个 prototype 信息序列化为一个Object对象并存储到常量池
         for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
             SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrArrayGet(&cs->typePrototypes, i);
             if (info == ZR_NULL || info->name == ZR_NULL) {
                 continue;
             }
             
-            // 存储类型名称
-            SZrTypeValue typeNameValue;
-            ZrValueInitAsRawObject(cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(info->name));
-            typeNameValue.type = ZR_VALUE_TYPE_STRING;
-            add_constant(cs, &typeNameValue);
-            
-            // 存储类型（STRUCT/CLASS）
-            SZrTypeValue typeValue;
-            ZrValueInitAsUInt(cs->state, &typeValue, (TUInt64)info->type);
-            add_constant(cs, &typeValue);
-            
-            // 存储访问修饰符
-            SZrTypeValue accessModifierValue;
-            ZrValueInitAsUInt(cs->state, &accessModifierValue, (TUInt64)info->accessModifier);
-            add_constant(cs, &accessModifierValue);
-            
-            // 存储继承关系数量
-            SZrTypeValue inheritsCountValue;
-            ZrValueInitAsUInt(cs->state, &inheritsCountValue, (TUInt64)info->inherits.length);
-            add_constant(cs, &inheritsCountValue);
-            
-            // 存储每个继承类型名称
-            for (TZrSize j = 0; j < info->inherits.length; j++) {
-                SZrString **inheritTypeNamePtr = (SZrString **)ZrArrayGet(&info->inherits, j);
-                if (inheritTypeNamePtr != ZR_NULL && *inheritTypeNamePtr != ZR_NULL) {
-                    SZrTypeValue inheritTypeNameValue;
-                    ZrValueInitAsRawObject(cs->state, &inheritTypeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(*inheritTypeNamePtr));
-                    inheritTypeNameValue.type = ZR_VALUE_TYPE_STRING;
-                    add_constant(cs, &inheritTypeNameValue);
-                }
-            }
-            
-            // 存储成员数量
-            SZrTypeValue membersCountValue;
-            ZrValueInitAsUInt(cs->state, &membersCountValue, (TUInt64)info->members.length);
-            add_constant(cs, &membersCountValue);
-            
-            // 存储每个成员名称（简化处理）
-            for (TZrSize j = 0; j < info->members.length; j++) {
-                SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrArrayGet(&info->members, j);
-                if (memberInfo != ZR_NULL && memberInfo->name != ZR_NULL) {
-                    SZrTypeValue memberNameValue;
-                    ZrValueInitAsRawObject(cs->state, &memberNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->name));
-                    memberNameValue.type = ZR_VALUE_TYPE_STRING;
-                    add_constant(cs, &memberNameValue);
-                }
+            // 序列化prototype信息为Object对象并存储到常量池
+            // serialize_prototype_info_to_object内部调用add_constant，返回0-based索引（0表示失败）
+            TUInt32 constantIndex = serialize_prototype_info_to_object(cs, info);
+            if (constantIndex != 0) {
+                // 记录prototype常量索引（0-based）
+                // 注意：add_constant返回的是0-based索引，所以这里直接使用
+                ZrArrayPush(cs->state, &cs->prototypeConstantIndices, &constantIndex);
             }
         }
-        
-        // 存储 prototype 数量（用于运行时知道有多少个 prototype 需要创建）
-        // 使用一个特殊标记常量来标识 prototype 信息的开始
-        // 格式：第一个常量是 prototype 数量
-        SZrTypeValue prototypeCountValue;
-        ZrValueInitAsUInt(cs->state, &prototypeCountValue, (TUInt64)cs->typePrototypes.length);
-        // 在常量池开头插入（需要特殊处理，暂时先添加到末尾，运行时从末尾读取）
-        // TODO: 实现更优雅的存储方式
     }
     
     // 重置脚本级别标志
@@ -2286,7 +2774,30 @@ SZrFunction *ZrCompilerCompile(SZrState *state, SZrAstNode *ast) {
         func->exportedVariableLength = 0;
     }
 
-    // 7. 设置函数元数据
+    // 7. 复制prototype常量索引数组
+    if (cs.prototypeConstantIndices.length > 0) {
+        TZrSize prototypeIndicesSize = cs.prototypeConstantIndices.length * sizeof(TUInt32);
+        func->prototypeConstantIndices = (TUInt32 *)ZrMemoryRawMallocWithType(
+            global, prototypeIndicesSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (func->prototypeConstantIndices != ZR_NULL) {
+            memcpy(func->prototypeConstantIndices, cs.prototypeConstantIndices.head, prototypeIndicesSize);
+            func->prototypeConstantIndicesLength = (TUInt32)cs.prototypeConstantIndices.length;
+            // prototype实例数组初始化为NULL，延迟加载
+            func->prototypeInstances = ZR_NULL;
+            func->prototypeInstancesLength = 0;
+        } else {
+            func->prototypeConstantIndicesLength = 0;
+            func->prototypeInstances = ZR_NULL;
+            func->prototypeInstancesLength = 0;
+        }
+    } else {
+        func->prototypeConstantIndices = ZR_NULL;
+        func->prototypeConstantIndicesLength = 0;
+        func->prototypeInstances = ZR_NULL;
+        func->prototypeInstancesLength = 0;
+    }
+
+    // 8. 设置函数元数据
     // 注意：脚本入口函数没有参数（它是脚本的包装函数）
     // 脚本中的函数声明会被编译为子函数，它们的参数信息已通过 compile_function_declaration 正确设置
     // 但是，如果返回的是顶层函数声明，参数信息已经在 compile_function_declaration 中设置了，不应该覆盖

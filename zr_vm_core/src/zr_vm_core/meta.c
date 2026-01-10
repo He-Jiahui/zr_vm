@@ -253,7 +253,7 @@ static TInt64 meta_to_int_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
     SZrTypeValue *self = ZrStackGetValue(base + 1);
-    TInt64 result = self->value.nativeObject.nativeBool ? 1 : 0;
+    TInt64 result = self->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
     ZrValueInitAsInt(state, ZrStackGetValue(base), result);
     state->stackTop.valuePointer = base + 1;
     return 1;
@@ -286,7 +286,7 @@ static TInt64 meta_to_uint_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
     SZrTypeValue *self = ZrStackGetValue(base + 1);
-    TUInt64 result = self->value.nativeObject.nativeBool ? 1 : 0;
+    TUInt64 result = self->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
     ZrValueInitAsUInt(state, ZrStackGetValue(base), result);
     state->stackTop.valuePointer = base + 1;
     return 1;
@@ -319,7 +319,7 @@ static TInt64 meta_to_float_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
     SZrTypeValue *self = ZrStackGetValue(base + 1);
-    TFloat64 result = self->value.nativeObject.nativeBool ? 1.0 : 0.0;
+    TFloat64 result = self->value.nativeObject.nativeBool ? (TFloat64)ZR_TRUE : (TFloat64)ZR_FALSE;
     ZrValueInitAsFloat(state, ZrStackGetValue(base), result);
     state->stackTop.valuePointer = base + 1;
     return 1;
@@ -703,8 +703,8 @@ static TInt64 meta_compare_bool(SZrState *state) {
     SZrTypeValue *other = ZrStackGetValue(base + 2);
 
     if (ZR_VALUE_IS_TYPE_BOOL(self->type) && ZR_VALUE_IS_TYPE_BOOL(other->type)) {
-        TInt64 val1 = self->value.nativeObject.nativeBool ? 1 : 0;
-        TInt64 val2 = other->value.nativeObject.nativeBool ? 1 : 0;
+        TInt64 val1 = self->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
+        TInt64 val2 = other->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
         TInt64 diff = val1 - val2;
         ZrValueInitAsInt(state, ZrStackGetValue(base), diff);
         state->stackTop.valuePointer = base + 1;

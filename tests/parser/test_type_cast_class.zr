@@ -29,3 +29,4 @@ var test_class_cast = () => {
     return result;
 }
 
+

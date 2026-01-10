@@ -95,6 +95,8 @@ struct SZrIoFunction {
     SZrIoFunctionLocalVariable *localVariables;
     TZrSize constantVariablesLength;
     SZrIoFunctionConstantVariable *constantVariables;
+    TZrSize prototypeConstantIndicesLength;  // 新增：prototype常量索引数组长度
+    TUInt32 *prototypeConstantIndices;       // 新增：prototype常量索引数组
     TZrSize closuresLength;
     SZrIoFunctionClosure *closures;
     TZrSize debugInfosLength;

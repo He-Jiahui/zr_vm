@@ -5,14 +5,14 @@ module "test_class";
 class Animal {
     pub var name: string;
     
-    pub function speak() {
+    pub speak() {
         return "Some sound";
     }
 }
 
 // 带继承的 class
 class Dog : Animal {
-    pub function speak() {
+    pub speak() {
         return "Woof";
     }
 }
@@ -21,13 +21,12 @@ class Dog : Animal {
 class Person {
     pub var _name: string;
     
-    pub property name: string {
-        get {
-            return _name;
-        }
-        set {
-            _name = value;
-        }
+    pub get name: string {
+        return this._name;
+    }
+
+    pub set name(v: string){
+        this._name = v;
     }
 }
 
@@ -35,14 +34,15 @@ class Person {
 class TestClass {
     pub var value: int;
     
-    @constructor
-    pub function init(v: int) {
+
+    pub @constructor(v: int) {
         value = v;
     }
     
-    @destructor
-    pub function cleanup() {
+
+    pub @destructor() {
         value = 0;
     }
 }
+
 

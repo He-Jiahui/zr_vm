@@ -8,21 +8,16 @@ struct Vector3 {
     pub var z: float;
 }
 
-// 带继承的 struct
 struct Point2D {
     pub var x: float;
     pub var y: float;
-}
-
-struct Point3D : Point2D {
-    pub var z: float;
 }
 
 // 带方法的 struct
 struct Counter {
     pub var count: int;
     
-    pub function increment() {
+    pub increment() {
         count = count + 1;
     }
 }
@@ -30,10 +25,10 @@ struct Counter {
 // 带元函数的 struct
 struct TestStruct {
     pub var value: int;
-    
-    @constructor
-    pub function init(v: int) {
+
+    pub @constructor(v: int) {
         value = v;
     }
 }
+
 

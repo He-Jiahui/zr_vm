@@ -12,6 +12,7 @@
 struct SZrState;
 struct SZrTypeValueOnStack;
 struct SZrString;
+struct SZrObjectPrototype;
 
 struct ZR_STRUCT_ALIGN SZrFunctionClosureVariable {
     struct SZrString *name;
@@ -75,6 +76,12 @@ struct ZR_STRUCT_ALIGN SZrFunction {
         TUInt8 accessModifier;                      // 可见性修饰符 (0=PRIVATE, 1=PUBLIC, 2=PROTECTED)
     } *exportedVariables;                           // 导出变量数组
     TUInt32 exportedVariableLength;                 // 导出变量数量
+    
+    // prototype常量索引和运行时实例（延迟加载）
+    TUInt32 *prototypeConstantIndices;              // prototype常量在常量池中的索引数组
+    TUInt32 prototypeConstantIndicesLength;         // prototype常量索引数组长度
+    struct SZrObjectPrototype **prototypeInstances; // 运行时实例化的prototype对象指针数组
+    TUInt32 prototypeInstancesLength;               // prototype实例数组长度
 };
 
 typedef struct SZrFunction SZrFunction;

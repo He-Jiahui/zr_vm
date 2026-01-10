@@ -12,9 +12,11 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/meta.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_common/zr_array_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
+#include "zr_vm_common/zr_meta_conf.h"
 
 // 编译器状态结构
 typedef struct SZrCompilerState {
@@ -88,6 +90,9 @@ typedef struct SZrCompilerState {
     
     // 类型 Prototype 信息（用于运行时创建）
     SZrArray typePrototypes;              // 待创建的 prototype 信息数组（SZrTypePrototypeInfo）
+    
+    // Prototype常量索引（用于记录prototype常量在常量池中的索引）
+    SZrArray prototypeConstantIndices;    // prototype常量索引数组（TUInt32）
 } SZrCompilerState;
 
 // 作用域信息
@@ -143,7 +148,18 @@ typedef struct SZrTypeMemberInfo {
     SZrString *name;                    // 成员名称
     EZrAccessModifier accessModifier;   // 访问修饰符
     TBool isStatic;                     // 是否为静态成员
-    // 其他成员特定信息可以根据需要扩展
+    
+    // 字段特定信息
+    SZrType *fieldType;                 // 字段类型（用于偏移量计算，可能为ZR_NULL）
+    SZrString *fieldTypeName;           // 字段类型名称（字符串表示，用于运行时类型查找）
+    TUInt32 fieldOffset;                // 字段偏移量（编译时计算的基本偏移，运行时需要对齐）
+    TUInt32 fieldSize;                  // 字段大小（字节数）
+    
+    // 方法特定信息
+    TUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
+    TUInt32 parameterCount;             // 参数数量
+    EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
+    TBool isMetaMethod;                 // 是否为元方法
 } SZrTypeMemberInfo;
 
 // 编译结果结构体
@@ -153,13 +169,55 @@ typedef struct SZrCompileResult {
     TZrSize testFunctionCount;          // 测试函数数量
 } SZrCompileResult;
 
+// 常量引用路径步骤类型
+// 注意：使用负数作为特殊标记，实际使用时会转换为TUInt32（作为无符号整数存储）
+enum EZrConstantReferenceStepType {
+    ZR_CONSTANT_REF_STEP_PARENT = -1,        // 向上引用parent function
+    ZR_CONSTANT_REF_STEP_CHILD = 0,          // 0: childFunctionList[index] (需配合额外参数，实际为正数)
+    ZR_CONSTANT_REF_STEP_CONSTANT_POOL = -2, // 当前函数的常量池索引
+    ZR_CONSTANT_REF_STEP_MODULE = -3,        // 模块引用
+    ZR_CONSTANT_REF_STEP_PROTOTYPE_INDEX = -4, // 下一个数值读取prototype的index
+    ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX = -5, // 下一个数值读取childFunctionList的index
+    // 未来可扩展其他类型
+};
+
+typedef enum EZrConstantReferenceStepType EZrConstantReferenceStepType;
+
+// 辅助宏：将步骤类型转换为TUInt32（用于存储）
+#define ZR_CONSTANT_REF_STEP_TO_UINT32(step) ((TUInt32)(TInt32)(step))
+#define ZR_CONSTANT_REF_STEP_FROM_UINT32(step) ((TInt32)(TUInt32)(step))
+
+// 常量引用路径结构
+// 使用状态机编码模式，例如：5(长度), -1, -5, 0, -4, 1 表示 parent->childFunction[0]->prototypes[1]
+typedef struct SZrConstantReferencePath {
+    TUInt32 depth;              // 路径深度（总步骤数）
+    TUInt32 *steps;             // 路径步骤数组（depth个元素）
+    // steps[i] 含义：
+    //   - 0xFFFFFFFF (-1): parentFunction
+    //   - 0xFFFFFFFE (-2): constantValueList[index] (需配合额外参数)
+    //   - 0xFFFFFFFD (-3): 模块引用 (需配合模块名和索引)
+    //   - 0xFFFFFFFC (-4): 下一个数值读取prototype的index
+    //   - 0xFFFFFFFB (-5): 下一个数值读取childFunctionList的index
+    //   - 正数: childFunctionList[index]  或者prototypes[index]
+    EZrValueType type;          // 常量类型记录
+} SZrConstantReferencePath;
+
+// 引用常量值类型（用于常量池中存储）
+typedef struct SZrConstantReference {
+    TUInt32 pathDepth;          // 路径深度
+    TUInt32 *pathSteps;         // 路径步骤（如果depth>0）
+    TUInt32 targetIndex;        // 目标索引（用于常量池、模块等）
+    TUInt32 referenceType;      // 引用类型（用于区分不同类型的引用）
+    EZrValueType type;          // 常量类型记录
+} SZrConstantReference;
+
 // 初始化编译器状态
 ZR_PARSER_API void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state);
 
 // 清理解译器状态
 ZR_PARSER_API void ZrCompilerStateFree(SZrCompilerState *cs);
 
-// 编译 AST 为函数（旧接口，保持向后兼容）
+// 编译 AST 为函数
 ZR_PARSER_API SZrFunction *ZrCompilerCompile(SZrState *state, SZrAstNode *ast);
 
 // 编译 AST 为函数和测试函数列表（新接口）

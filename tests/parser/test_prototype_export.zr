@@ -26,3 +26,4 @@ pro class ProtectedClass {
     pro var value: int;
 }
 
+

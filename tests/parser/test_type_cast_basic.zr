@@ -48,3 +48,4 @@ var test_bool_cast = () => {
     return result;
 }
 
+

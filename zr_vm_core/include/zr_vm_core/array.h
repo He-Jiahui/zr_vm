@@ -12,9 +12,12 @@
 ZR_FORCE_INLINE void ZrArrayConstruct(SZrArray *array) { array->isValid = ZR_FALSE; }
 
 ZR_FORCE_INLINE void ZrArrayInit(SZrState *state, SZrArray *array, TZrSize elementSize, TZrSize capacity) {
-    ZR_ASSERT(array != ZR_NULL && capacity != 0 && elementSize != 0);
-    array->head =
-            ZR_CAST_UINT8_PTR(ZrMemoryRawMallocWithType(state->global, capacity * elementSize, ZR_MEMORY_NATIVE_TYPE_ARRAY));
+    if (capacity <= 0) {
+        capacity = 1;
+    }
+    ZR_ASSERT(array != ZR_NULL && elementSize != 0);
+    array->head = ZR_CAST_UINT8_PTR(
+            ZrMemoryRawMallocWithType(state->global, capacity * elementSize, ZR_MEMORY_NATIVE_TYPE_ARRAY));
     array->elementSize = elementSize;
     array->length = 0;
     array->capacity = capacity;

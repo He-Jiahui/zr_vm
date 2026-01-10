@@ -38,3 +38,4 @@ var s9 = "unicode\u4E2D";
     return result;
 }
 
+

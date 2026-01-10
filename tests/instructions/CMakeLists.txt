@@ -48,3 +48,4 @@ add_test(NAME instructions_tests COMMAND zr_vm_instructions_test)
 
 
 
+
