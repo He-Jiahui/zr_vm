@@ -48,6 +48,9 @@ struct SZrIoReference {
 
 typedef struct SZrIoReference SZrIoReference;
 
+// 前向声明，用于SZrIoClass和SZrIoStruct
+struct SZrIoFunction;
+
 struct SZrIoFunctionLocalVariable {
     TUInt64 instructionStartIndex;
     TUInt64 instructionEndIndex;
@@ -83,6 +86,32 @@ struct SZrIoFunctionDebugInfo {
 
 typedef struct SZrIoFunctionDebugInfo SZrIoFunctionDebugInfo;
 
+// 前向声明，用于SZrIoClass和SZrIoStruct
+struct SZrIoMemberDeclare;
+typedef struct SZrIoMemberDeclare SZrIoMemberDeclare;
+
+struct SZrIoClass {
+    struct SZrString *name;
+    TZrSize superClassLength;
+    SZrIoReference *superClasses;
+    TZrSize genericParametersLength;
+    TZrSize declaresLength;
+    struct SZrIoMemberDeclare *declares;
+};
+
+typedef struct SZrIoClass SZrIoClass;
+
+struct SZrIoStruct {
+    struct SZrString *name;
+    TZrSize superStructLength;
+    SZrIoReference *superStructs;
+    TZrSize genericParametersLength;
+    TZrSize declaresLength;
+    struct SZrIoMemberDeclare *declares;
+};
+
+typedef struct SZrIoStruct SZrIoStruct;
+
 struct SZrIoFunction {
     struct SZrString *name;
     TUInt64 startLine;
@@ -95,8 +124,9 @@ struct SZrIoFunction {
     SZrIoFunctionLocalVariable *localVariables;
     TZrSize constantVariablesLength;
     SZrIoFunctionConstantVariable *constantVariables;
-    TZrSize prototypeConstantIndicesLength;  // 新增：prototype常量索引数组长度
-    TUInt32 *prototypeConstantIndices;       // 新增：prototype常量索引数组
+    TZrSize prototypesLength;                // prototype 数量
+    SZrIoClass *classes;                      // class prototype 数组（如果 type 是 CLASS）
+    SZrIoStruct *structs;                     // struct prototype 数组（如果 type 是 STRUCT）
     TZrSize closuresLength;
     SZrIoFunctionClosure *closures;
     TZrSize debugInfosLength;
@@ -158,28 +188,6 @@ struct SZrIoMemberDeclare {
 };
 
 typedef struct SZrIoMemberDeclare SZrIoMemberDeclare;
-
-struct SZrIoClass {
-    struct SZrString *name;
-    TZrSize superClassLength;
-    SZrIoReference *superClasses;
-    TZrSize genericParametersLength;
-    TZrSize declaresLength;
-    SZrIoMemberDeclare *declares;
-};
-
-typedef struct SZrIoClass SZrIoClass;
-
-struct SZrIoStruct {
-    struct SZrString *name;
-    TZrSize superStructLength;
-    SZrIoReference *superStructs;
-    TZrSize genericParametersLength;
-    TZrSize declaresLength;
-    SZrIoMemberDeclare *declares;
-};
-
-typedef struct SZrIoStruct SZrIoStruct;
 
 struct SZrIoInterface {
     struct SZrString *name;

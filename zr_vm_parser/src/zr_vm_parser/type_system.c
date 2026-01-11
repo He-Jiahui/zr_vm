@@ -276,6 +276,7 @@ SZrTypeEnvironment *ZrTypeEnvironmentNew(SZrState *state) {
     
     ZrArrayInit(state, &env->variableTypes, sizeof(SZrTypeBinding), 8);
     ZrArrayInit(state, &env->functionReturnTypes, sizeof(SZrFunctionTypeInfo *), 8);
+    ZrArrayInit(state, &env->typeNames, sizeof(SZrString *), 8);
     env->parent = ZR_NULL;
     
     return env;
@@ -316,6 +317,12 @@ void ZrTypeEnvironmentFree(SZrState *state, SZrTypeEnvironment *env) {
             }
         }
         ZrArrayFree(state, &env->functionReturnTypes);
+    }
+    
+    // 释放类型名称数组（字符串本身由GC管理，只需要释放数组）
+    if (env->typeNames.isValid && env->typeNames.head != ZR_NULL && 
+        env->typeNames.capacity > 0 && env->typeNames.elementSize > 0) {
+        ZrArrayFree(state, &env->typeNames);
     }
     
     // 释放环境本身
@@ -429,6 +436,48 @@ TBool ZrTypeEnvironmentLookupFunction(SZrTypeEnvironment *env, SZrString *name, 
     // 在父环境中查找
     if (env->parent != ZR_NULL) {
         return ZrTypeEnvironmentLookupFunction(env->parent, name, result);
+    }
+    
+    return ZR_FALSE;
+}
+
+// 注册类型名称
+TBool ZrTypeEnvironmentRegisterType(SZrState *state, SZrTypeEnvironment *env, SZrString *typeName) {
+    if (state == ZR_NULL || env == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 检查是否已存在
+    for (TZrSize i = 0; i < env->typeNames.length; i++) {
+        SZrString **storedTypeName = (SZrString **)ZrArrayGet(&env->typeNames, i);
+        if (storedTypeName != ZR_NULL && *storedTypeName != ZR_NULL && ZrStringEqual(*storedTypeName, typeName)) {
+            // 已存在，不需要重复注册
+            return ZR_TRUE;
+        }
+    }
+    
+    // 添加类型名称（字符串本身由GC管理，只存储引用）
+    ZrArrayPush(state, &env->typeNames, &typeName);
+    return ZR_TRUE;
+}
+
+// 查找类型名称
+TBool ZrTypeEnvironmentLookupType(SZrTypeEnvironment *env, SZrString *typeName) {
+    if (env == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 在当前环境中查找
+    for (TZrSize i = 0; i < env->typeNames.length; i++) {
+        SZrString **storedTypeName = (SZrString **)ZrArrayGet(&env->typeNames, i);
+        if (storedTypeName != ZR_NULL && *storedTypeName != ZR_NULL && ZrStringEqual(*storedTypeName, typeName)) {
+            return ZR_TRUE;
+        }
+    }
+    
+    // 在父环境中查找
+    if (env->parent != ZR_NULL) {
+        return ZrTypeEnvironmentLookupType(env->parent, typeName);
     }
     
     return ZR_FALSE;

@@ -6,11 +6,24 @@ struct Vector3 {
     pub var x: float;
     pub var y: float;
     pub var z: float;
+
+    pub @constructor(x: float, y: float, z: float){
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
 }
 
+// 带继承的 struct
 struct Point2D {
     pub var x: float;
     pub var y: float;
+}
+
+struct Point3D {
+    pub var x: float;
+    pub var y: float;
+    pub var z: float;
 }
 
 // 带方法的 struct
@@ -31,4 +44,4 @@ struct TestStruct {
     }
 }
 
-
+var v = $Vector3(1,2,3);

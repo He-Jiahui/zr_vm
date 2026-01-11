@@ -90,9 +90,6 @@ typedef struct SZrCompilerState {
     
     // 类型 Prototype 信息（用于运行时创建）
     SZrArray typePrototypes;              // 待创建的 prototype 信息数组（SZrTypePrototypeInfo）
-    
-    // Prototype常量索引（用于记录prototype常量在常量池中的索引）
-    SZrArray prototypeConstantIndices;    // prototype常量索引数组（TUInt32）
 } SZrCompilerState;
 
 // 作用域信息
@@ -160,6 +157,7 @@ typedef struct SZrTypeMemberInfo {
     TUInt32 parameterCount;             // 参数数量
     EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
     TBool isMetaMethod;                 // 是否为元方法
+    SZrString *returnTypeName;          // 返回类型名称（字符串表示，用于运行时类型查找）
 } SZrTypeMemberInfo;
 
 // 编译结果结构体

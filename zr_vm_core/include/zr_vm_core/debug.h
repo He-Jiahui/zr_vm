@@ -112,9 +112,9 @@ ZR_CORE_API void ZrDebugPrintPrototype(struct SZrState *state, struct SZrObjectP
 // 输出object的prototype、字段值等信息
 ZR_CORE_API void ZrDebugPrintObject(struct SZrState *state, struct SZrObject *object, FILE *output);
 
-// Debug工具：从常量池中解析并字符串化prototype信息
+// Debug工具：从prototypeData中解析并字符串化prototype信息
 // 输出类似zri中间表示的格式，用于调试编译后的.zri文件
-ZR_CORE_API void ZrDebugPrintPrototypeFromConstants(struct SZrState *state, struct SZrFunction *entryFunction,
-                                                    FILE *output);
+ZR_CORE_API void ZrDebugPrintPrototypesFromData(struct SZrState *state, struct SZrFunction *entryFunction,
+                                                FILE *output);
 
 #endif // ZR_VM_CORE_DEBUG_H

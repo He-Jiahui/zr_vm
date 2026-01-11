@@ -21,7 +21,7 @@ class Dog : Animal {
 class Person {
     pub var _name: string;
     
-    pub get name: string {
+    pub get name: string{
         return this._name;
     }
 
@@ -38,7 +38,6 @@ class TestClass {
     pub @constructor(v: int) {
         value = v;
     }
-    
 
     pub @destructor() {
         value = 0;

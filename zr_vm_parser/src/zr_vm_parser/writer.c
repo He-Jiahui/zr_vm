@@ -15,9 +15,208 @@
 #include "zr_vm_common/zr_version_info.h"
 #include "zr_vm_common/zr_string_conf.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_common/zr_object_conf.h"
+#include "zr_vm_common/zr_ast_constants.h"
+#include "zr_vm_core/constant_reference.h"
 
 #include <stdio.h>
 #include <string.h>
+
+// 辅助函数：写入字符串（带长度）
+static void write_string_with_length(SZrState *state, FILE *file, SZrString *str) {
+    if (str == ZR_NULL) {
+        TZrSize strLength = 0;
+        fwrite(&strLength, sizeof(TZrSize), 1, file);
+        return;
+    }
+    
+    TZrSize strLength = (str->shortStringLength < ZR_VM_LONG_STRING_FLAG) ?
+                         (TZrSize)str->shortStringLength : 
+                         str->longStringLength;
+    fwrite(&strLength, sizeof(TZrSize), 1, file);
+    if (strLength > 0) {
+        TNativeString strStr = ZrStringGetNativeString(str);
+        if (strStr != ZR_NULL) {
+            fwrite(strStr, sizeof(TChar), strLength, file);
+        }
+    }
+}
+
+// 辅助函数：从常量池索引获取字符串
+static SZrString *get_string_from_constant(SZrState *state, SZrFunction *function, TUInt32 index) {
+    if (function == ZR_NULL || index >= function->constantValueLength) {
+        return ZR_NULL;
+    }
+    
+    const SZrTypeValue *constant = &function->constantValueList[index];
+    if (constant->type == ZR_VALUE_TYPE_STRING && constant->value.object != ZR_NULL) {
+        SZrRawObject *rawObj = constant->value.object;
+        if (rawObj->type == ZR_VALUE_TYPE_STRING) {
+            return ZR_CAST_STRING(state, rawObj);
+        }
+    }
+    
+    return ZR_NULL;
+}
+
+// 辅助函数：写入继承类型引用（.REFERENCE）
+static void write_io_reference(SZrState *state, FILE *file, TUInt32 stringIndex, SZrFunction *function) {
+    // referenceModuleName [string] (空字符串，当前模块内引用)
+    TZrSize moduleNameLength = 0;
+    fwrite(&moduleNameLength, sizeof(TZrSize), 1, file);
+    
+    // referenceModuleMd5 [string] (空字符串)
+    TZrSize md5Length = 0;
+    fwrite(&md5Length, sizeof(TZrSize), 1, file);
+    
+    // referenceIndex [8] (字符串索引)
+    TZrSize referenceIndex = stringIndex;
+    fwrite(&referenceIndex, sizeof(TZrSize), 1, file);
+}
+
+// 辅助函数：写入成员声明（FIELD/METHOD/PROPERTY/META）
+static void write_member_declare(SZrState *state, FILE *file, const SZrCompiledMemberInfo *memberInfo, SZrFunction *function) {
+    TUInt32 memberType = memberInfo->memberType;
+    TUInt32 nameStringIndex = memberInfo->nameStringIndex;
+    
+    // 确定EZrIoMemberDeclareType
+    TUInt32 ioMemberType;
+    if (memberType == ZR_AST_CONSTANT_STRUCT_FIELD || memberType == ZR_AST_CONSTANT_CLASS_FIELD) {
+        ioMemberType = ZR_IO_MEMBER_DECLARE_TYPE_FIELD;
+    } else if (memberType == ZR_AST_CONSTANT_STRUCT_METHOD || memberType == ZR_AST_CONSTANT_CLASS_METHOD) {
+        ioMemberType = ZR_IO_MEMBER_DECLARE_TYPE_METHOD;
+    } else if (memberType == ZR_AST_CONSTANT_CLASS_PROPERTY) {
+        ioMemberType = ZR_IO_MEMBER_DECLARE_TYPE_PROPERTY;
+    } else if (memberType == ZR_AST_CONSTANT_STRUCT_META_FUNCTION || memberType == ZR_AST_CONSTANT_CLASS_META_FUNCTION) {
+        ioMemberType = ZR_IO_MEMBER_DECLARE_TYPE_META;
+    } else {
+        // 未知类型，跳过
+        return;
+    }
+    
+    // TYPE [4]
+    fwrite(&ioMemberType, sizeof(EZrIoMemberDeclareType), 1, file);
+    
+    // 根据类型写入不同的数据
+    switch (ioMemberType) {
+        case ZR_IO_MEMBER_DECLARE_TYPE_FIELD: {
+            // .FIELD: NAME [string]
+            SZrString *fieldName = get_string_from_constant(state, function, nameStringIndex);
+            write_string_with_length(state, file, fieldName);
+            break;
+        }
+        case ZR_IO_MEMBER_DECLARE_TYPE_METHOD: {
+            // .METHOD: NAME [string], FUNCTIONS_LENGTH [8], FUNCTIONS [.FUNCTION]
+            // TODO: 目前只写入名称，函数引用需要从childFunctionList获取
+            SZrString *methodName = get_string_from_constant(state, function, nameStringIndex);
+            write_string_with_length(state, file, methodName);
+            
+            // FUNCTIONS_LENGTH [8] (目前设为0，函数引用暂不支持)
+            TZrSize functionsLength = 0;
+            fwrite(&functionsLength, sizeof(TZrSize), 1, file);
+            break;
+        }
+        case ZR_IO_MEMBER_DECLARE_TYPE_PROPERTY: {
+            // .PROPERTY: NAME [string], PROPERTY_TYPE [4], GETTER_FUNCTION [.FUNCTION], SETTER_FUNCTION [.FUNCTION]
+            SZrString *propertyName = get_string_from_constant(state, function, nameStringIndex);
+            write_string_with_length(state, file, propertyName);
+            
+            // PROPERTY_TYPE [4] (目前设为0)
+            TUInt32 propertyType = 0;
+            fwrite(&propertyType, sizeof(TUInt32), 1, file);
+            
+            // TODO: GETTER和SETTER函数引用需要从childFunctionList获取
+            // 目前写入空的函数占位符
+            // GETTER_FUNCTION [.FUNCTION] - 跳过（需要完整的函数序列化）
+            // SETTER_FUNCTION [.FUNCTION] - 跳过（需要完整的函数序列化）
+            break;
+        }
+        case ZR_IO_MEMBER_DECLARE_TYPE_META: {
+            // .META: META_TYPE [4], FUNCTIONS_LENGTH [8], FUNCTIONS [.FUNCTION]
+            TUInt32 metaType = memberInfo->metaType;
+            fwrite(&metaType, sizeof(TUInt32), 1, file);
+            
+            // FUNCTIONS_LENGTH [8] (目前设为0，函数引用暂不支持)
+            TZrSize functionsLength = 0;
+            fwrite(&functionsLength, sizeof(TZrSize), 1, file);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+// 辅助函数：写入CLASS prototype的结构化数据
+static void write_prototype_class(SZrState *state, FILE *file, const SZrCompiledPrototypeInfo *protoInfo, const TByte *data, SZrFunction *function) {
+    // .CLASS: NAME [string]
+    SZrString *className = get_string_from_constant(state, function, protoInfo->nameStringIndex);
+    write_string_with_length(state, file, className);
+    
+    // SUPER_CLASS_LENGTH [8]
+    TZrSize superClassLength = protoInfo->inheritsCount;
+    fwrite(&superClassLength, sizeof(TZrSize), 1, file);
+    
+    // SUPER_CLASSES [.REFERENCE]
+    if (superClassLength > 0) {
+        const TUInt32 *inheritIndices = (const TUInt32 *)(data + sizeof(SZrCompiledPrototypeInfo));
+        for (TUInt32 i = 0; i < superClassLength; i++) {
+            write_io_reference(state, file, inheritIndices[i], function);
+        }
+    }
+    
+    // GENERIC_LENGTH [8] (目前设为0)
+    TZrSize genericLength = 0;
+    fwrite(&genericLength, sizeof(TZrSize), 1, file);
+    
+    // DECLARES_LENGTH [8]
+    TZrSize declaresLength = protoInfo->membersCount;
+    fwrite(&declaresLength, sizeof(TZrSize), 1, file);
+    
+    // DECLARES [.CLASS_DECLARE] [.FIELD|.PROPERTY|.METHOD|.META]
+    if (declaresLength > 0) {
+        TZrSize inheritArraySize = superClassLength * sizeof(TUInt32);
+        const SZrCompiledMemberInfo *members = (const SZrCompiledMemberInfo *)(data + sizeof(SZrCompiledPrototypeInfo) + inheritArraySize);
+        for (TUInt32 i = 0; i < declaresLength; i++) {
+            write_member_declare(state, file, &members[i], function);
+        }
+    }
+}
+
+// 辅助函数：写入STRUCT prototype的结构化数据
+static void write_prototype_struct(SZrState *state, FILE *file, const SZrCompiledPrototypeInfo *protoInfo, const TByte *data, SZrFunction *function) {
+    // .STRUCT: NAME [string]
+    SZrString *structName = get_string_from_constant(state, function, protoInfo->nameStringIndex);
+    write_string_with_length(state, file, structName);
+    
+    // SUPER_STRUCT_LENGTH [8]
+    TZrSize superStructLength = protoInfo->inheritsCount;
+    fwrite(&superStructLength, sizeof(TZrSize), 1, file);
+    
+    // SUPER_STRUCTS [.REFERENCE]
+    if (superStructLength > 0) {
+        const TUInt32 *inheritIndices = (const TUInt32 *)(data + sizeof(SZrCompiledPrototypeInfo));
+        for (TUInt32 i = 0; i < superStructLength; i++) {
+            write_io_reference(state, file, inheritIndices[i], function);
+        }
+    }
+    
+    // GENERIC_LENGTH [8] (目前设为0)
+    TZrSize genericLength = 0;
+    fwrite(&genericLength, sizeof(TZrSize), 1, file);
+    
+    // DECLARES_LENGTH [8]
+    TZrSize declaresLength = protoInfo->membersCount;
+    fwrite(&declaresLength, sizeof(TZrSize), 1, file);
+    
+    // DECLARES [.STRUCT_DECLARE] [.FIELD|.METHOD|.META]
+    if (declaresLength > 0) {
+        TZrSize inheritArraySize = superStructLength * sizeof(TUInt32);
+        const SZrCompiledMemberInfo *members = (const SZrCompiledMemberInfo *)(data + sizeof(SZrCompiledPrototypeInfo) + inheritArraySize);
+        for (TUInt32 i = 0; i < declaresLength; i++) {
+            write_member_declare(state, file, &members[i], function);
+        }
+    }
+}
 
 // 写入二进制文件 (.zro)
 ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *function, const TChar *filename) {
@@ -219,20 +418,125 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
         fwrite(&endLineConst, sizeof(TUInt64), 1, file);
     }
     
-    // FUNCTION: PROTOTYPE_CONSTANT_INDICES_LENGTH (8 bytes) - 新增字段
-    TUInt64 prototypeConstantIndicesLength = 0;
-    if (function->prototypeConstantIndices != ZR_NULL) {
-        prototypeConstantIndicesLength = function->prototypeConstantIndicesLength;
-    }
-    fwrite(&prototypeConstantIndicesLength, sizeof(TUInt64), 1, file);
+    // FUNCTION: PROTOTYPES_LENGTH (8 bytes) - prototype 数量
+    TUInt64 prototypesLength = 0;
+    TUInt64 classCount = 0;
+    TUInt64 structCount = 0;
     
-    // FUNCTION: PROTOTYPE_CONSTANT_INDICES [.PROTOTYPE_CONSTANT_INDEX] - 新增字段
-    // 每个索引是一个TUInt32
-    if (prototypeConstantIndicesLength > 0 && function->prototypeConstantIndices != ZR_NULL) {
-        for (TUInt64 i = 0; i < prototypeConstantIndicesLength; i++) {
-            TUInt32 index = function->prototypeConstantIndices[i];
-            fwrite(&index, sizeof(TUInt32), 1, file);
+    if (function->prototypeData != ZR_NULL && function->prototypeCount > 0) {
+        prototypesLength = function->prototypeCount;
+        
+        // 统计CLASS和STRUCT的数量
+        const TByte *prototypeData = function->prototypeData + sizeof(TUInt32);
+        TZrSize remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
+        const TByte *currentPos = prototypeData;
+        
+        for (TUInt32 i = 0; i < prototypesLength; i++) {
+            if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
+                break;
+            }
+            
+            const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *)currentPos;
+            TUInt32 type = protoInfo->type;
+            TUInt32 inheritsCount = protoInfo->inheritsCount;
+            TUInt32 membersCount = protoInfo->membersCount;
+            
+            TZrSize inheritArraySize = inheritsCount * sizeof(TUInt32);
+            TZrSize membersArraySize = membersCount * sizeof(SZrCompiledMemberInfo);
+            TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + membersArraySize;
+            
+            if (remainingDataSize < currentPrototypeSize) {
+                break;
+            }
+            
+            if (type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+                classCount++;
+            } else if (type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+                structCount++;
+            }
+            
+            currentPos += currentPrototypeSize;
+            remainingDataSize -= currentPrototypeSize;
         }
+    }
+    
+    fwrite(&prototypesLength, sizeof(TUInt64), 1, file);
+    
+    // FUNCTION: PROTOTYPES - 写入结构化格式
+    // 先写入CLASS数组，再写入STRUCT数组
+    if (prototypesLength > 0 && function->prototypeData != ZR_NULL && function->prototypeDataLength > 0) {
+        const TByte *prototypeData = function->prototypeData + sizeof(TUInt32);
+        TZrSize remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
+        const TByte *currentPos = prototypeData;
+        
+        // 写入CLASS数组
+        fwrite(&classCount, sizeof(TUInt64), 1, file);
+        if (classCount > 0) {
+            for (TUInt32 i = 0; i < prototypesLength; i++) {
+                if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
+                    break;
+                }
+                
+                const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *)currentPos;
+                TUInt32 type = protoInfo->type;
+                TUInt32 inheritsCount = protoInfo->inheritsCount;
+                TUInt32 membersCount = protoInfo->membersCount;
+                
+                TZrSize inheritArraySize = inheritsCount * sizeof(TUInt32);
+                TZrSize membersArraySize = membersCount * sizeof(SZrCompiledMemberInfo);
+                TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + membersArraySize;
+                
+                if (remainingDataSize < currentPrototypeSize) {
+                    break;
+                }
+                
+                if (type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+                    write_prototype_class(state, file, protoInfo, currentPos, function);
+                }
+                
+                currentPos += currentPrototypeSize;
+                remainingDataSize -= currentPrototypeSize;
+            }
+        }
+        
+        // 写入STRUCT数组
+        fwrite(&structCount, sizeof(TUInt64), 1, file);
+        if (structCount > 0) {
+            // 重新遍历以写入STRUCT
+            currentPos = prototypeData;
+            remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
+            
+            for (TUInt32 i = 0; i < prototypesLength; i++) {
+                if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
+                    break;
+                }
+                
+                const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *)currentPos;
+                TUInt32 type = protoInfo->type;
+                TUInt32 inheritsCount = protoInfo->inheritsCount;
+                TUInt32 membersCount = protoInfo->membersCount;
+                
+                TZrSize inheritArraySize = inheritsCount * sizeof(TUInt32);
+                TZrSize membersArraySize = membersCount * sizeof(SZrCompiledMemberInfo);
+                TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + membersArraySize;
+                
+                if (remainingDataSize < currentPrototypeSize) {
+                    break;
+                }
+                
+                if (type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+                    write_prototype_struct(state, file, protoInfo, currentPos, function);
+                }
+                
+                currentPos += currentPrototypeSize;
+                remainingDataSize -= currentPrototypeSize;
+            }
+        }
+    } else {
+        // 没有prototype数据
+        TUInt64 zero = 0;
+        fwrite(&zero, sizeof(TUInt64), 1, file); // classCount = 0
+        fwrite(&zero, sizeof(TUInt64), 1, file); // structCount = 0
     }
     
     // FUNCTION: CLOSURES_LENGTH (8 bytes)
@@ -263,7 +567,23 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
     fprintf(file, "// ZR Intermediate File (.zri)\n");
     fprintf(file, "// Generated from compiled function\n\n");
     
-    fprintf(file, "FUNCTION: __entry\n");
+    // 输出函数名（如果存在，否则使用 "__entry"）
+    if (function->functionName != ZR_NULL) {
+        TNativeString funcNameStr = ZrStringGetNativeString(function->functionName);
+        if (funcNameStr != ZR_NULL) {
+            TZrSize nameLen;
+            if (function->functionName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+                nameLen = function->functionName->shortStringLength;
+            } else {
+                nameLen = function->functionName->longStringLength;
+            }
+            fprintf(file, "FUNCTION: %.*s\n", (int)nameLen, funcNameStr);
+        } else {
+            fprintf(file, "FUNCTION: <unnamed>\n");
+        }
+    } else {
+        fprintf(file, "FUNCTION: <anonymous>\n");
+    }
     fprintf(file, "  START_LINE: %u\n", function->lineInSourceStart);
     fprintf(file, "  END_LINE: %u\n", function->lineInSourceEnd);
     fprintf(file, "  PARAMETERS: %u\n", function->parameterCount);
@@ -318,21 +638,6 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
     }
     fprintf(file, "\n");
     
-    // 输出prototype常量信息（如果有）
-    // 检查最后一个常量是否为prototype数量
-    if (function->constantValueLength > 0) {
-        SZrTypeValue *lastConstant = &function->constantValueList[function->constantValueLength - 1];
-        if (ZR_VALUE_IS_TYPE_INT(lastConstant->type)) {
-            TUInt32 prototypeCount = (TUInt32)lastConstant->value.nativeObject.nativeUInt64;
-            if (prototypeCount > 0) {
-                // 输出prototype信息
-                fprintf(file, "PROTOTYPES:\n");
-                ZrDebugPrintPrototypeFromConstants(state, function, file);
-                fprintf(file, "\n");
-            }
-        }
-    }
-    
     // 局部变量列表
     fprintf(file, "LOCAL_VARIABLES (%u):\n", function->localVariableLength);
     for (TUInt32 i = 0; i < function->localVariableLength; i++) {
@@ -342,6 +647,48 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                 i, nameStr, (TUInt32)local->offsetActivate, (TUInt32)local->offsetDead);
     }
     fprintf(file, "\n");
+    
+    // 闭包变量列表
+    fprintf(file, "CLOSURE_VARIABLES (%u):\n", function->closureValueLength);
+    for (TUInt32 i = 0; i < function->closureValueLength; i++) {
+        SZrFunctionClosureVariable *closure = &function->closureValueList[i];
+        TNativeString nameStr = closure->name ? ZrStringGetNativeString(closure->name) : "<unnamed>";
+        
+        // 输出类型名称
+        const TChar *typeName = "UNKNOWN";
+        switch (closure->valueType) {
+            case ZR_VALUE_TYPE_NULL: typeName = "NULL"; break;
+            case ZR_VALUE_TYPE_BOOL: typeName = "BOOL"; break;
+            case ZR_VALUE_TYPE_INT8: typeName = "INT8"; break;
+            case ZR_VALUE_TYPE_INT16: typeName = "INT16"; break;
+            case ZR_VALUE_TYPE_INT32: typeName = "INT32"; break;
+            case ZR_VALUE_TYPE_INT64: typeName = "INT64"; break;
+            case ZR_VALUE_TYPE_UINT8: typeName = "UINT8"; break;
+            case ZR_VALUE_TYPE_UINT16: typeName = "UINT16"; break;
+            case ZR_VALUE_TYPE_UINT32: typeName = "UINT32"; break;
+            case ZR_VALUE_TYPE_UINT64: typeName = "UINT64"; break;
+            case ZR_VALUE_TYPE_FLOAT: typeName = "FLOAT"; break;
+            case ZR_VALUE_TYPE_DOUBLE: typeName = "DOUBLE"; break;
+            case ZR_VALUE_TYPE_STRING: typeName = "STRING"; break;
+            case ZR_VALUE_TYPE_FUNCTION: typeName = "FUNCTION"; break;
+            case ZR_VALUE_TYPE_CLOSURE: typeName = "CLOSURE"; break;
+            case ZR_VALUE_TYPE_OBJECT: typeName = "OBJECT"; break;
+            case ZR_VALUE_TYPE_ARRAY: typeName = "ARRAY"; break;
+            default: typeName = "UNKNOWN"; break;
+        }
+        
+        fprintf(file, "  [%u] %s: in_stack=%s, index=%u, type=%s\n", 
+                i, nameStr, closure->inStack ? "true" : "false", 
+                closure->index, typeName);
+    }
+    fprintf(file, "\n");
+    
+    // Prototype 数据列表
+    if (function->prototypeData != ZR_NULL && function->prototypeCount > 0) {
+        fprintf(file, "PROTOTYPES (%u):\n", function->prototypeCount);
+        ZrDebugPrintPrototypesFromData(state, function, file);
+        fprintf(file, "\n");
+    }
     
     // 指令列表
     fprintf(file, "INSTRUCTIONS (%u):\n", function->instructionsLength);

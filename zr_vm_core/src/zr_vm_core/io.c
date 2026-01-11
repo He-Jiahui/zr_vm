@@ -160,6 +160,8 @@ static void ZrIoReadFunctionConstantVariables(SZrIo *io, SZrIoFunctionConstantVa
 }
 
 static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count);
+static void ZrIoReadClasses(SZrIo *io, SZrIoClass *classes, TZrSize count);
+static void ZrIoReadStructs(SZrIo *io, SZrIoStruct *structs, TZrSize count);
 
 static void ZrIoReadFunctionClosures(SZrIo *io, SZrIoFunctionClosure *closures, TZrSize count) {
     SZrGlobalState *global = io->state->global;
@@ -205,15 +207,39 @@ static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->constantVariables = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionConstantVariable) *
                                                                                function->constantVariablesLength);
         ZrIoReadFunctionConstantVariables(io, function->constantVariables, function->constantVariablesLength);
-        // 读取PROTOTYPE_CONSTANT_INDICES_LENGTH和PROTOTYPE_CONSTANT_INDICES（新增字段）
-        ZR_IO_READ_NATIVE_TYPE(io, function->prototypeConstantIndicesLength, TZrSize);
-        if (function->prototypeConstantIndicesLength > 0) {
-            function->prototypeConstantIndices = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(TUInt32) * function->prototypeConstantIndicesLength);
-            for (TZrSize i = 0; i < function->prototypeConstantIndicesLength; i++) {
-                ZR_IO_READ_NATIVE_TYPE(io, function->prototypeConstantIndices[i], TUInt32);
+        // 读取PROTOTYPES_LENGTH和PROTOTYPES（结构化格式）
+        ZR_IO_READ_NATIVE_TYPE(io, function->prototypesLength, TZrSize);
+        if (function->prototypesLength > 0) {
+            // 读取CLASS数量
+            TZrSize classCount = 0;
+            ZR_IO_READ_NATIVE_TYPE(io, classCount, TZrSize);
+            
+            // 读取CLASS数组
+            if (classCount > 0) {
+                function->classes = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoClass) * classCount);
+                if (function->classes != ZR_NULL) {
+                    ZrIoReadClasses(io, function->classes, classCount);
+                }
+            } else {
+                function->classes = ZR_NULL;
+            }
+            
+            // 读取STRUCT数量
+            TZrSize structCount = 0;
+            ZR_IO_READ_NATIVE_TYPE(io, structCount, TZrSize);
+            
+            // 读取STRUCT数组
+            if (structCount > 0) {
+                function->structs = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoStruct) * structCount);
+                if (function->structs != ZR_NULL) {
+                    ZrIoReadStructs(io, function->structs, structCount);
+                }
+            } else {
+                function->structs = ZR_NULL;
             }
         } else {
-            function->prototypeConstantIndices = ZR_NULL;
+            function->classes = ZR_NULL;
+            function->structs = ZR_NULL;
         }
         ZR_IO_READ_NATIVE_TYPE(io, function->closuresLength, TZrSize);
         function->closures = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction) * function->closuresLength);
@@ -479,6 +505,8 @@ SZrIoSource *ZrIoReadSourceNew(SZrIo *io) {
 }
 
 void ZrIoReadSourceFree(struct SZrGlobalState *global, SZrIoSource *source) {
+    ZR_UNUSED_PARAMETER(global);
+    ZR_UNUSED_PARAMETER(source);
     // todo: after convert it to vm object, release it.
 }
 

@@ -49,6 +49,7 @@ typedef struct SZrCompiledMemberInfo {
     TUInt32 metaType;                     // EZrMetaType
     TUInt32 functionConstantIndex;        // 函数在常量池中的索引
     TUInt32 parameterCount;               // 参数数量
+    TUInt32 returnTypeNameStringIndex;    // 返回类型名称字符串索引（如果为0表示无返回类型名）
 } SZrCompiledMemberInfo;
 
 // 常量引用路径结构（从parser模块引用）

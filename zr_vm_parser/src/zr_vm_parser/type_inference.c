@@ -512,7 +512,14 @@ TBool infer_primary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrI
                     }
                 }
                 
-                // 函数未找到，报告错误
+                // 函数未找到，检查是否是 struct 构造函数调用
+                if (ZrTypeEnvironmentLookupType(cs->typeEnv, funcName)) {
+                    // 找到类型名称，推断返回类型为对应的 struct 类型
+                    ZrInferredTypeInitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, funcName);
+                    return ZR_TRUE;
+                }
+                
+                // 函数和类型都未找到，报告错误
                 static TChar errorMsg[256];
                 TNativeString nameStr;
                 TZrSize nameLen;

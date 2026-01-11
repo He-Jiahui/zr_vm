@@ -100,6 +100,7 @@ ZR_NO_RETURN void ZrDebugRunError(struct SZrState *state, TNativeString format, 
 
 
 void ZrDebugErrorWhenHandlingError(struct SZrState *state) {
+    ZR_UNUSED_PARAMETER(state);
     // TODO:
 }
 
@@ -364,171 +365,134 @@ static const char *get_access_modifier_name(TUInt32 modifier) {
 }
 
 // 从常量池中解析并字符串化prototype信息
-ZR_CORE_API void ZrDebugPrintPrototypeFromConstants(struct SZrState *state, struct SZrFunction *entryFunction,
-                                                    FILE *output) {
+ZR_CORE_API void ZrDebugPrintPrototypesFromData(struct SZrState *state, struct SZrFunction *entryFunction,
+                                                FILE *output) {
     if (state == ZR_NULL || entryFunction == ZR_NULL || output == ZR_NULL) {
         return;
     }
 
-    // 检查常量池是否有效
-    if (entryFunction->constantValueList == ZR_NULL || entryFunction->constantValueLength == 0) {
-        fprintf(output, "// No constants found\n");
+    // 检查prototypeData是否有效
+    if (entryFunction->prototypeData == ZR_NULL || entryFunction->prototypeDataLength == 0 || 
+        entryFunction->prototypeCount == 0) {
+        fprintf(output, "// No prototype data found\n");
         return;
     }
 
-    // 优先使用新的prototypeConstantIndices机制
-    TUInt32 prototypeCount = 0;
+    // 检查常量池是否有效（用于字符串索引解析）
+    if (entryFunction->constantValueList == ZR_NULL || entryFunction->constantValueLength == 0) {
+        fprintf(output, "// Error: No constants found (needed for string index resolution)\n");
+        return;
+    }
 
-    if (entryFunction->prototypeConstantIndices != ZR_NULL && entryFunction->prototypeConstantIndicesLength > 0) {
-        prototypeCount = entryFunction->prototypeConstantIndicesLength;
-        fprintf(output, "// ========== PROTOTYPES FROM CONSTANTS (new format, count: %u) ==========\n",
-                (unsigned int) prototypeCount);
+    TUInt32 prototypeCount = entryFunction->prototypeCount;
+    fprintf(output, "// ========== PROTOTYPES FROM DATA (count: %u) ==========\n",
+            (unsigned int) prototypeCount);
 
-        // 遍历每个prototype索引
-        for (TUInt32 i = 0; i < prototypeCount; i++) {
-            TUInt32 constantIndex = entryFunction->prototypeConstantIndices[i];
-            if (constantIndex >= entryFunction->constantValueLength) {
-                fprintf(output, "// Error: Invalid prototype constant index %u (>= %u)\n", (unsigned int) constantIndex,
-                        (unsigned int) entryFunction->constantValueLength);
-                continue;
-            }
+    // 读取prototype数据（跳过头部的prototypeCount）
+    const TByte *prototypeData = entryFunction->prototypeData + sizeof(TUInt32);
+    TZrSize remainingDataSize = entryFunction->prototypeDataLength - sizeof(TUInt32);
+    const TByte *currentPos = prototypeData;
 
-            const SZrTypeValue *constant = &entryFunction->constantValueList[constantIndex];
-            if (constant->type != ZR_VALUE_TYPE_STRING) {
-                fprintf(output, "// Error: Prototype constant at index %u is not a string (type: %u)\n",
-                        (unsigned int) constantIndex, (unsigned int) constant->type);
-                continue;
-            }
+    // 遍历每个prototype
+    for (TUInt32 i = 0; i < prototypeCount; i++) {
+        if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
+            fprintf(output, "// Error: Insufficient data for prototype %u\n", (unsigned int) (i + 1));
+            break;
+        }
 
-            // 解析prototype二进制数据
-            SZrString *serializedString = ZR_CAST_STRING(state, constant->value.object);
-            if (serializedString == ZR_NULL) {
-                fprintf(output, "// Error: Failed to cast prototype constant at index %u to string\n",
-                        (unsigned int) constantIndex);
-                continue;
-            }
+        // 解析SZrCompiledPrototypeInfo
+        const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *)currentPos;
+        TUInt32 nameStringIndex = protoInfo->nameStringIndex;
+        TUInt32 type = protoInfo->type;
+        TUInt32 accessModifier = protoInfo->accessModifier;
+        TUInt32 inheritsCount = protoInfo->inheritsCount;
+        TUInt32 membersCount = protoInfo->membersCount;
 
-            TNativeString strData = ZR_NULL;
-            TZrSize strLength = 0;
-            if (serializedString->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-                strData = ZrStringGetNativeStringShort(serializedString);
-                strLength = (TZrSize) serializedString->shortStringLength;
-            } else {
-                TNativeString *longStrPtr = ZrStringGetNativeStringLong(serializedString);
-                if (longStrPtr != ZR_NULL) {
-                    strData = *longStrPtr;
-                    strLength = serializedString->longStringLength;
-                }
-            }
+        // 计算当前prototype数据的大小
+        TZrSize inheritArraySize = inheritsCount * sizeof(TUInt32);
+        TZrSize membersArraySize = membersCount * sizeof(SZrCompiledMemberInfo);
+        TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + membersArraySize;
 
-            if (strData == ZR_NULL || strLength < sizeof(SZrCompiledPrototypeInfo)) {
-                fprintf(output, "// Error: Invalid prototype binary data at index %u (size: %zu, expected: >= %zu)\n",
-                        (unsigned int) constantIndex, (TZrSize) strLength, sizeof(SZrCompiledPrototypeInfo));
-                continue;
-            }
+        if (remainingDataSize < currentPrototypeSize) {
+            fprintf(output, "// Error: Insufficient data for prototype %u (size: %zu, expected: %zu)\n",
+                    (unsigned int) (i + 1), (TZrSize) remainingDataSize, currentPrototypeSize);
+            break;
+        }
 
-            // 解析SZrCompiledPrototypeInfo
-            const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *) strData;
-            TUInt32 nameStringIndex = protoInfo->nameStringIndex;
-            TUInt32 type = protoInfo->type;
-            TUInt32 accessModifier = protoInfo->accessModifier;
-            TUInt32 inheritsCount = protoInfo->inheritsCount;
-            TUInt32 membersCount = protoInfo->membersCount;
-
-            // 读取类型名称
-            TNativeString typeNameStr = "<unknown>";
-            if (nameStringIndex < entryFunction->constantValueLength) {
-                const SZrTypeValue *nameConstant = &entryFunction->constantValueList[nameStringIndex];
-                if (nameConstant->type == ZR_VALUE_TYPE_STRING) {
-                    SZrString *typeName = ZR_CAST_STRING(state, nameConstant->value.object);
-                    if (typeName != ZR_NULL) {
-                        TNativeString tmpStr = ZrStringGetNativeStringShort(typeName);
-                        if (tmpStr == ZR_NULL) {
-                            tmpStr = *ZrStringGetNativeStringLong(typeName);
-                        }
-                        if (tmpStr != ZR_NULL) {
-                            typeNameStr = tmpStr;
-                        }
+        // 读取类型名称
+        TNativeString typeNameStr = "<unknown>";
+        if (nameStringIndex < entryFunction->constantValueLength) {
+            const SZrTypeValue *nameConstant = &entryFunction->constantValueList[nameStringIndex];
+            if (nameConstant->type == ZR_VALUE_TYPE_STRING) {
+                SZrString *typeName = ZR_CAST_STRING(state, nameConstant->value.object);
+                if (typeName != ZR_NULL) {
+                    TNativeString tmpStr = ZrStringGetNativeStringShort(typeName);
+                    if (tmpStr == ZR_NULL) {
+                        tmpStr = *ZrStringGetNativeStringLong(typeName);
+                    }
+                    if (tmpStr != ZR_NULL) {
+                        typeNameStr = tmpStr;
                     }
                 }
             }
+        }
 
-            const char *prototypeTypeName = "unknown";
-            if (type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS)
-                prototypeTypeName = "class";
-            else if (type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT)
-                prototypeTypeName = "struct";
-            else if (type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE)
-                prototypeTypeName = "interface";
-            else if (type == ZR_OBJECT_PROTOTYPE_TYPE_MODULE)
-                prototypeTypeName = "module";
-            else if (type == ZR_OBJECT_PROTOTYPE_TYPE_ENUM)
-                prototypeTypeName = "enum";
-            else if (type == ZR_OBJECT_PROTOTYPE_TYPE_NATIVE)
-                prototypeTypeName = "native";
+        const char *prototypeTypeName = "unknown";
+        if (type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS)
+            prototypeTypeName = "class";
+        else if (type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT)
+            prototypeTypeName = "struct";
+        else if (type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE)
+            prototypeTypeName = "interface";
+        else if (type == ZR_OBJECT_PROTOTYPE_TYPE_MODULE)
+            prototypeTypeName = "module";
+        else if (type == ZR_OBJECT_PROTOTYPE_TYPE_ENUM)
+            prototypeTypeName = "enum";
+        else if (type == ZR_OBJECT_PROTOTYPE_TYPE_NATIVE)
+            prototypeTypeName = "native";
 
-            fprintf(output, "// --- Prototype %u (constant index: %u) ---\n", (unsigned int) (i + 1),
-                    (unsigned int) constantIndex);
-            fprintf(output, "%s %s", prototypeTypeName, typeNameStr);
+        fprintf(output, "// --- Prototype %u ---\n", (unsigned int) (i + 1));
+        fprintf(output, "%s %s", prototypeTypeName, typeNameStr);
 
-            // 读取继承类型
-            if (inheritsCount > 0) {
-                fprintf(output, " : ");
-                const TUInt32 *inheritIndices = (const TUInt32 *) (strData + sizeof(SZrCompiledPrototypeInfo));
-                for (TUInt32 j = 0; j < inheritsCount; j++) {
-                    if (j > 0)
-                        fprintf(output, ", ");
-                    TUInt32 inheritStringIndex = inheritIndices[j];
-                    if (inheritStringIndex < entryFunction->constantValueLength) {
-                        const SZrTypeValue *inheritConstant = &entryFunction->constantValueList[inheritStringIndex];
-                        if (inheritConstant->type == ZR_VALUE_TYPE_STRING) {
-                            SZrString *inheritTypeName = ZR_CAST_STRING(state, inheritConstant->value.object);
-                            if (inheritTypeName != ZR_NULL) {
-                                TNativeString inheritStr = ZrStringGetNativeStringShort(inheritTypeName);
-                                if (inheritStr == ZR_NULL) {
-                                    inheritStr = *ZrStringGetNativeStringLong(inheritTypeName);
-                                }
-                                fprintf(output, "%s", inheritStr != ZR_NULL ? inheritStr : "<unknown>");
+        // 读取继承类型
+        if (inheritsCount > 0) {
+            fprintf(output, " : ");
+            const TUInt32 *inheritIndices = (const TUInt32 *) (currentPos + sizeof(SZrCompiledPrototypeInfo));
+            for (TUInt32 j = 0; j < inheritsCount; j++) {
+                if (j > 0)
+                    fprintf(output, ", ");
+                TUInt32 inheritStringIndex = inheritIndices[j];
+                if (inheritStringIndex < entryFunction->constantValueLength) {
+                    const SZrTypeValue *inheritConstant = &entryFunction->constantValueList[inheritStringIndex];
+                    if (inheritConstant->type == ZR_VALUE_TYPE_STRING) {
+                        SZrString *inheritTypeName = ZR_CAST_STRING(state, inheritConstant->value.object);
+                        if (inheritTypeName != ZR_NULL) {
+                            TNativeString inheritStr = ZrStringGetNativeStringShort(inheritTypeName);
+                            if (inheritStr == ZR_NULL) {
+                                inheritStr = *ZrStringGetNativeStringLong(inheritTypeName);
                             }
+                            fprintf(output, "%s", inheritStr != ZR_NULL ? inheritStr : "<unknown>");
                         }
                     }
                 }
             }
+        }
 
-            fprintf(output, " {\n");
+        fprintf(output, " {\n");
 
-            // 输出访问修饰符名称
-            const char *accessName = "unknown";
-            if (accessModifier == ZR_ACCESS_CONSTANT_PUBLIC)
-                accessName = "public";
-            else if (accessModifier == ZR_ACCESS_CONSTANT_PRIVATE)
-                accessName = "private";
-            else if (accessModifier == ZR_ACCESS_CONSTANT_PROTECTED)
-                accessName = "protected";
-            fprintf(output, "  access: %s (%u),\n", accessName, (unsigned int) accessModifier);
+        // 输出访问修饰符名称
+        const char *accessName = get_access_modifier_name(accessModifier);
+        fprintf(output, "  access: %s (%u),\n", accessName, (unsigned int) accessModifier);
 
-            // 计算成员数据的起始位置
-            // 布局：SZrCompiledPrototypeInfo(20字节) + [inheritsCount * 4字节] + [membersCount *
-            // SZrCompiledMemberInfo(44字节)]
-            TZrSize inheritArraySize = inheritsCount * sizeof(TUInt32);
-            const TByte *membersData = (const TByte *) (strData + sizeof(SZrCompiledPrototypeInfo) + inheritArraySize);
-            TZrSize expectedTotalSize =
-                    sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + membersCount * sizeof(SZrCompiledMemberInfo);
+        // 计算成员数据的起始位置
+        const TByte *membersData = (const TByte *) (currentPos + sizeof(SZrCompiledPrototypeInfo) + inheritArraySize);
 
-            if (strLength < expectedTotalSize) {
-                fprintf(output, "  // Warning: Binary data size (%zu) < expected size (%zu), cannot read all members\n",
-                        (TZrSize) strLength, expectedTotalSize);
-                fprintf(output, "  members: %u (partial data)\n", (unsigned int) membersCount);
-                fprintf(output, "}\n\n");
-                continue;
-            }
+        fprintf(output, "  members: [\n");
 
-            fprintf(output, "  members: [\n");
-
-            // 遍历每个成员
-            for (TUInt32 j = 0; j < membersCount; j++) {
-                const SZrCompiledMemberInfo *memberInfo =
-                        (const SZrCompiledMemberInfo *) (membersData + j * sizeof(SZrCompiledMemberInfo));
+        // 遍历每个成员
+        for (TUInt32 j = 0; j < membersCount; j++) {
+            const SZrCompiledMemberInfo *memberInfo =
+                    (const SZrCompiledMemberInfo *) (membersData + j * sizeof(SZrCompiledMemberInfo));
 
                 TUInt32 memberType = memberInfo->memberType;
                 TUInt32 nameStringIndex = memberInfo->nameStringIndex;
@@ -541,6 +505,7 @@ ZR_CORE_API void ZrDebugPrintPrototypeFromConstants(struct SZrState *state, stru
                 TUInt32 metaType = memberInfo->metaType;
                 TUInt32 functionConstantIndex = memberInfo->functionConstantIndex;
                 TUInt32 parameterCount = memberInfo->parameterCount;
+                TUInt32 returnTypeNameStringIndex = memberInfo->returnTypeNameStringIndex;
 
                 // 读取成员名称
                 TNativeString memberNameStr = "<unnamed>";
@@ -560,9 +525,10 @@ ZR_CORE_API void ZrDebugPrintPrototypeFromConstants(struct SZrState *state, stru
                     }
                 }
 
-                // 根据成员类型输出信息（使用常量值）
+                // 根据成员类型输出信息（使用EZrAstNodeType枚举值）
+                // 注意：实际存储的是EZrAstNodeType枚举值，使用ZR_AST_CONSTANT_*常量进行匹配
                 const char *memberTypeName = "unknown";
-                // 使用switch或if-else匹配所有可能的类型
+                // 使用常量匹配所有可能的类型
                 if (memberType == ZR_AST_CONSTANT_STRUCT_FIELD)
                     memberTypeName = "STRUCT_FIELD";
                 else if (memberType == ZR_AST_CONSTANT_STRUCT_METHOD)
@@ -577,16 +543,6 @@ ZR_CORE_API void ZrDebugPrintPrototypeFromConstants(struct SZrState *state, stru
                     memberTypeName = "CLASS_PROPERTY";
                 else if (memberType == ZR_AST_CONSTANT_CLASS_META_FUNCTION)
                     memberTypeName = "CLASS_META_FUNCTION";
-                // 暂时兼容其他值（可能是不同的enum值或错误的存储）
-                else {
-                    // 尝试根据常见值猜测类型（调试用）
-                    if (memberType == 10)
-                        memberTypeName = "STRUCT_FIELD? (10)"; // 可能是错误的值
-                    else if (memberType == 11)
-                        memberTypeName = "STRUCT_METHOD? (11)"; // 可能是错误的值
-                    else if (memberType == 12)
-                        memberTypeName = "STRUCT_META_FUNCTION? (12)"; // 可能是错误的值
-                }
 
                 fprintf(output, "    {\n");
                 fprintf(output, "      type: %s (%u),\n", memberTypeName, (unsigned int) memberType);
@@ -603,15 +559,15 @@ ZR_CORE_API void ZrDebugPrintPrototypeFromConstants(struct SZrState *state, stru
                 fprintf(output, "      access: %s (%u),\n", memberAccessName, (unsigned int) memberAccess);
                 fprintf(output, "      static: %s,\n", isStatic ? "true" : "false");
 
-                // 判断是否为字段类型（包括可能的错误值10）
+                // 判断是否为字段类型（使用常量）
                 TBool isFieldType = (memberType == ZR_AST_CONSTANT_STRUCT_FIELD ||
-                                     memberType == ZR_AST_CONSTANT_CLASS_FIELD || memberType == 10);
-                // 判断是否为方法类型（包括可能的错误值11）
+                                     memberType == ZR_AST_CONSTANT_CLASS_FIELD);
+                // 判断是否为方法类型（使用常量）
                 TBool isMethodType = (memberType == ZR_AST_CONSTANT_STRUCT_METHOD ||
-                                      memberType == ZR_AST_CONSTANT_CLASS_METHOD || memberType == 11);
-                // 判断是否为元方法类型（包括可能的错误值12）
+                                      memberType == ZR_AST_CONSTANT_CLASS_METHOD);
+                // 判断是否为元方法类型（使用常量）
                 TBool isMetaFunctionType = (memberType == ZR_AST_CONSTANT_STRUCT_META_FUNCTION ||
-                                            memberType == ZR_AST_CONSTANT_CLASS_META_FUNCTION || memberType == 12);
+                                            memberType == ZR_AST_CONSTANT_CLASS_META_FUNCTION);
 
                 // 如果是字段
                 if (isFieldType) {
@@ -641,7 +597,26 @@ ZR_CORE_API void ZrDebugPrintPrototypeFromConstants(struct SZrState *state, stru
                 else if (isMethodType) {
                     fprintf(output, "      isMetaMethod: false,\n");
                     fprintf(output, "      functionConstantIndex: %u,\n", (unsigned int) functionConstantIndex);
-                    fprintf(output, "      parameterCount: %u\n", (unsigned int) parameterCount);
+                    fprintf(output, "      parameterCount: %u,\n", (unsigned int) parameterCount);
+                    // 读取返回类型名称
+                    TNativeString returnTypeNameStr = "<void>";
+                    if (returnTypeNameStringIndex > 0 && returnTypeNameStringIndex < entryFunction->constantValueLength) {
+                        const SZrTypeValue *returnTypeConstant =
+                                &entryFunction->constantValueList[returnTypeNameStringIndex];
+                        if (returnTypeConstant->type == ZR_VALUE_TYPE_STRING) {
+                            SZrString *returnTypeName = ZR_CAST_STRING(state, returnTypeConstant->value.object);
+                            if (returnTypeName != ZR_NULL) {
+                                TNativeString tmpStr = ZrStringGetNativeStringShort(returnTypeName);
+                                if (tmpStr == ZR_NULL) {
+                                    tmpStr = *ZrStringGetNativeStringLong(returnTypeName);
+                                }
+                                if (tmpStr != ZR_NULL) {
+                                    returnTypeNameStr = tmpStr;
+                                }
+                            }
+                        }
+                    }
+                    fprintf(output, "      returnType: \"%s\"\n", returnTypeNameStr);
                 }
                 // 如果是元方法
                 else if (isMetaFunctionType) {
@@ -654,16 +629,59 @@ ZR_CORE_API void ZrDebugPrintPrototypeFromConstants(struct SZrState *state, stru
                     fprintf(output, "      metaType: %s (%u),\n", metaTypeName != ZR_NULL ? metaTypeName : "unknown",
                             (unsigned int) metaType);
                     fprintf(output, "      functionConstantIndex: %u,\n", (unsigned int) functionConstantIndex);
-                    fprintf(output, "      parameterCount: %u\n", (unsigned int) parameterCount);
+                    fprintf(output, "      parameterCount: %u,\n", (unsigned int) parameterCount);
+                    // 读取返回类型名称
+                    TNativeString returnTypeNameStr = "<void>";
+                    if (returnTypeNameStringIndex > 0 && returnTypeNameStringIndex < entryFunction->constantValueLength) {
+                        const SZrTypeValue *returnTypeConstant =
+                                &entryFunction->constantValueList[returnTypeNameStringIndex];
+                        if (returnTypeConstant->type == ZR_VALUE_TYPE_STRING) {
+                            SZrString *returnTypeName = ZR_CAST_STRING(state, returnTypeConstant->value.object);
+                            if (returnTypeName != ZR_NULL) {
+                                TNativeString tmpStr = ZrStringGetNativeStringShort(returnTypeName);
+                                if (tmpStr == ZR_NULL) {
+                                    tmpStr = *ZrStringGetNativeStringLong(returnTypeName);
+                                }
+                                if (tmpStr != ZR_NULL) {
+                                    returnTypeNameStr = tmpStr;
+                                }
+                            }
+                        }
+                    }
+                    fprintf(output, "      returnType: \"%s\"\n", returnTypeNameStr);
                 }
                 // 如果是属性
                 else if (memberType == ZR_AST_CONSTANT_CLASS_PROPERTY) {
                     fprintf(output,
                             "      // Property: getter/setter function indices not yet stored in member info\n");
                 } else {
-                    // 未知类型，输出所有可用信息
+                    // 未知类型，尝试读取类型名称（如果有fieldTypeNameStringIndex）
+                    TNativeString fieldTypeNameStr = "<unknown>";
+                    if (fieldTypeNameStringIndex > 0 && fieldTypeNameStringIndex < entryFunction->constantValueLength) {
+                        const SZrTypeValue *fieldTypeConstant =
+                                &entryFunction->constantValueList[fieldTypeNameStringIndex];
+                        if (fieldTypeConstant->type == ZR_VALUE_TYPE_STRING) {
+                            SZrString *fieldTypeName = ZR_CAST_STRING(state, fieldTypeConstant->value.object);
+                            if (fieldTypeName != ZR_NULL) {
+                                TNativeString tmpStr = ZrStringGetNativeStringShort(fieldTypeName);
+                                if (tmpStr == ZR_NULL) {
+                                    tmpStr = *ZrStringGetNativeStringLong(fieldTypeName);
+                                }
+                                if (tmpStr != ZR_NULL) {
+                                    fieldTypeNameStr = tmpStr;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 输出所有可用信息
                     fprintf(output, "      // Unknown member type, showing all fields:\n");
-                    fprintf(output, "      fieldTypeNameStringIndex: %u,\n", (unsigned int) fieldTypeNameStringIndex);
+                    if (fieldTypeNameStringIndex > 0) {
+                        fprintf(output, "      fieldType: \"%s\",\n", fieldTypeNameStr);
+                        fprintf(output, "      fieldTypeNameStringIndex: %u,\n", (unsigned int) fieldTypeNameStringIndex);
+                    } else {
+                        fprintf(output, "      fieldTypeNameStringIndex: %u,\n", (unsigned int) fieldTypeNameStringIndex);
+                    }
                     fprintf(output, "      fieldOffset: %u,\n", (unsigned int) fieldOffset);
                     fprintf(output, "      fieldSize: %u,\n", (unsigned int) fieldSize);
                     fprintf(output, "      isMetaMethod: %s,\n", isMetaMethod ? "true" : "false");
@@ -672,16 +690,16 @@ ZR_CORE_API void ZrDebugPrintPrototypeFromConstants(struct SZrState *state, stru
                     fprintf(output, "      parameterCount: %u\n", (unsigned int) parameterCount);
                 }
 
-                fprintf(output, "    }%s\n", (j < membersCount - 1) ? "," : "");
-            }
-
-            fprintf(output, "  ]\n");
-            fprintf(output, "}\n\n");
+            fprintf(output, "    }%s\n", (j < membersCount - 1) ? "," : "");
         }
-        return;
+
+        fprintf(output, "  ]\n");
+        fprintf(output, "}\n\n");
+        
+        // 移动到下一个prototype
+        currentPos += currentPrototypeSize;
+        remainingDataSize -= currentPrototypeSize;
     }
 
-    // 没有新格式数据，直接返回
-    fprintf(output, "// No prototypes found in constants\n");
     fprintf(output, "// ========== END OF PROTOTYPES ==========\n");
 }

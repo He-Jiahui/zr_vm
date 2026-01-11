@@ -330,45 +330,94 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     // 处理$和new操作符（这些操作符的参数是类型名称，需要特殊处理）
     if (strcmp(op, "$") == 0) {
         // $操作符：创建struct实例
-        // 参数应该是Identifier（类型名称）
-        // TODO: 支持$TypeName(...)语法，需要parser支持或特殊处理
+        // 参数可能是Identifier（类型名称）或PrimaryExpression（$TypeName(...)）
         SZrString *typeName = ZR_NULL;
+        SZrAstNodeArray *constructorArgs = ZR_NULL;
         
         if (arg != ZR_NULL && arg->type == ZR_AST_IDENTIFIER_LITERAL) {
-            // 参数是类型名称
+            // 参数是类型名称：$TypeName
             typeName = arg->data.identifier.name;
-        } else {
-            // TODO: 处理$TypeName(...)的情况，需要从函数调用表达式中提取类型名称
-            ZrCompilerError(cs, "$ operator currently only supports simple type name, not function call syntax", node->location);
+        } else if (arg != ZR_NULL && arg->type == ZR_AST_PRIMARY_EXPRESSION) {
+            // 参数是主表达式：$TypeName(...)
+            SZrPrimaryExpression *primary = &arg->data.primaryExpression;
+            
+            // 从property中提取类型名称
+            if (primary->property != ZR_NULL && primary->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+                typeName = primary->property->data.identifier.name;
+                
+                // 检查members中是否有函数调用
+                if (primary->members != ZR_NULL && primary->members->count > 0) {
+                    SZrAstNode *firstMember = primary->members->nodes[0];
+                    if (firstMember != ZR_NULL && firstMember->type == ZR_AST_FUNCTION_CALL) {
+                        SZrFunctionCall *call = &firstMember->data.functionCall;
+                        constructorArgs = call->args;
+                    }
+                }
+            }
+        }
+        
+        if (typeName == ZR_NULL) {
+            ZrCompilerError(cs, "$ operator requires a type name", node->location);
             return;
         }
         
-        if (typeName != ZR_NULL) {
-            // 将类型名称添加到常量池
-            SZrTypeValue typeNameValue;
-            ZrValueInitAsRawObject(cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
-            typeNameValue.type = ZR_VALUE_TYPE_STRING;
-            TUInt32 typeNameConstantIndex = add_constant(cs, &typeNameValue);
-            
-            // 创建struct实例（使用TO_STRUCT指令）
-            // TO_STRUCT指令格式: operandExtra = destSlot, operand1[0] = sourceSlot, operand1[1] = typeNameConstantIndex
-            // 对于$操作符，sourceSlot可以是null或空对象
-            TUInt32 nullSlot = allocate_stack_slot(cs);
-            SZrTypeValue nullValue;
-            ZrValueResetAsNull(&nullValue);
-            TUInt32 nullConstantIndex = add_constant(cs, &nullValue);
-            
-            // 先加载null值到栈
-            TZrInstruction nullInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)nullSlot, (TInt32)nullConstantIndex);
-            emit_instruction(cs, nullInst);
-            
-            // 然后使用TO_STRUCT指令创建struct实例
-            TZrInstruction structInst = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_STRUCT), (TUInt16)destSlot, (TUInt16)nullSlot, (TUInt16)typeNameConstantIndex);
-            emit_instruction(cs, structInst);
-            
-            // TODO: 调用constructor（如果存在），需要查找prototype的constructor元方法
-        } else {
-            ZrCompilerError(cs, "$ operator requires a type name", node->location);
+        // 验证类型名称是否在类型环境中
+        if (cs->typeEnv != ZR_NULL && !ZrTypeEnvironmentLookupType(cs->typeEnv, typeName)) {
+            // 类型未找到，检查是否是已定义的struct（通过AST查找）
+            SZrAstNode *typeDecl = find_type_declaration(cs, typeName);
+            if (typeDecl == ZR_NULL || typeDecl->type != ZR_AST_STRUCT_DECLARATION) {
+                static TChar errorMsg[256];
+                TNativeString nameStr;
+                TZrSize nameLen;
+                if (typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+                    nameStr = ZrStringGetNativeStringShort(typeName);
+                    nameLen = typeName->shortStringLength;
+                } else {
+                    nameStr = ZrStringGetNativeString(typeName);
+                    nameLen = typeName->longStringLength;
+                }
+                snprintf(errorMsg, sizeof(errorMsg), "Type '%.*s' not found", (int)nameLen, nameStr);
+                ZrCompilerError(cs, errorMsg, node->location);
+                return;
+            }
+        }
+        
+        // 将类型名称添加到常量池
+        SZrTypeValue typeNameValue;
+        ZrValueInitAsRawObject(cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
+        typeNameValue.type = ZR_VALUE_TYPE_STRING;
+        TUInt32 typeNameConstantIndex = add_constant(cs, &typeNameValue);
+        
+        // 创建struct实例（使用TO_STRUCT指令）
+        // TO_STRUCT指令格式: operandExtra = destSlot, operand1[0] = sourceSlot, operand1[1] = typeNameConstantIndex
+        // 对于$操作符，sourceSlot可以是null或空对象
+        TUInt32 nullSlot = allocate_stack_slot(cs);
+        SZrTypeValue nullValue;
+        ZrValueResetAsNull(&nullValue);
+        TUInt32 nullConstantIndex = add_constant(cs, &nullValue);
+        
+        // 先加载null值到栈
+        TZrInstruction nullInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)nullSlot, (TInt32)nullConstantIndex);
+        emit_instruction(cs, nullInst);
+        
+        // 然后使用TO_STRUCT指令创建struct实例
+        TZrInstruction structInst = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_STRUCT), (TUInt16)destSlot, (TUInt16)nullSlot, (TUInt16)typeNameConstantIndex);
+        emit_instruction(cs, structInst);
+        
+        // 如果有构造函数参数，编译参数并调用constructor（如果存在）
+        // TODO: 调用constructor（如果存在），需要查找prototype的constructor元方法
+        // 这里先编译参数，但constructor调用需要运行时支持
+        if (constructorArgs != ZR_NULL && constructorArgs->count > 0) {
+            // 编译构造函数参数（参数会放在栈上，但暂时不调用constructor）
+            // 实际的constructor调用需要在运行时通过prototype查找
+            for (TZrSize i = 0; i < constructorArgs->count; i++) {
+                SZrAstNode *argNode = constructorArgs->nodes[i];
+                if (argNode != ZR_NULL) {
+                    compile_expression(cs, argNode);
+                }
+            }
+            // 注意：这里只是编译了参数，实际的constructor调用需要在运行时处理
+            // 因为我们需要从prototype中查找constructor元方法
         }
     } else if (strcmp(op, "new") == 0) {
         // new操作符：创建class实例

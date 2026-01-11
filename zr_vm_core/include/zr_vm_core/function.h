@@ -77,9 +77,10 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     } *exportedVariables;                           // 导出变量数组
     TUInt32 exportedVariableLength;                 // 导出变量数量
     
-    // prototype常量索引和运行时实例（延迟加载）
-    TUInt32 *prototypeConstantIndices;              // prototype常量在常量池中的索引数组
-    TUInt32 prototypeConstantIndicesLength;         // prototype常量索引数组长度
+    // prototype数据存储（从常量池迁移）
+    TByte *prototypeData;                           // prototype 二进制数据（序列化后的 SZrCompiledPrototypeInfo 数组）
+    TUInt32 prototypeDataLength;                    // prototype 数据长度（字节数）
+    TUInt32 prototypeCount;                         // prototype 数量
     struct SZrObjectPrototype **prototypeInstances; // 运行时实例化的prototype对象指针数组
     TUInt32 prototypeInstancesLength;               // prototype实例数组长度
 };

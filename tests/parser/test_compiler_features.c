@@ -60,9 +60,6 @@ typedef struct {
         fflush(stdout);                                                                                                \
     } while (0)
 
-void setUp() {}
-
-void tearDown() {}
 // 简单的测试分配器
 static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);

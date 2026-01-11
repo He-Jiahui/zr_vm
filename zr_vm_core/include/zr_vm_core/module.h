@@ -68,10 +68,15 @@ ZR_CORE_API TInt64 ZrImportNativeFunction(struct SZrState *state);
 // 返回: prototype 对象
 ZR_CORE_API TInt64 ZrCreatePrototypeNativeFunction(struct SZrState *state);
 
-// 从编译后的函数的常量池中解析prototype信息并创建prototype实例
+// 从编译后的函数的prototypeData中解析prototype信息并创建prototype实例
 // 将创建的prototype注册到模块的导出中
 // 参数: state - VM状态, module - 目标模块, entryFunction - 编译后的入口函数(__entry)
 // 返回: 成功创建的prototype数量
+ZR_CORE_API TZrSize ZrModuleCreatePrototypesFromData(struct SZrState *state, 
+                                                      struct SZrObjectModule *module,
+                                                      struct SZrFunction *entryFunction);
+
+// 向后兼容：保留旧函数名，内部调用新函数
 ZR_CORE_API TZrSize ZrModuleCreatePrototypesFromConstants(struct SZrState *state, 
                                                           struct SZrObjectModule *module,
                                                           struct SZrFunction *entryFunction);

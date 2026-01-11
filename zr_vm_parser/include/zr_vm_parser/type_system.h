@@ -39,6 +39,7 @@ typedef struct SZrFunctionTypeInfo {
 typedef struct SZrTypeEnvironment {
     SZrArray variableTypes;          // 变量类型绑定数组（SZrTypeBinding）
     SZrArray functionReturnTypes;    // 函数类型信息数组（SZrFunctionTypeInfo*）
+    SZrArray typeNames;              // 类型名称数组（SZrString*），用于存储已定义的struct/class类型名称
     struct SZrTypeEnvironment *parent; // 父类型环境（用于作用域）
 } SZrTypeEnvironment;
 
@@ -88,6 +89,12 @@ ZR_PARSER_API TBool ZrTypeEnvironmentRegisterFunction(SZrState *state, SZrTypeEn
 
 // 查找函数类型
 ZR_PARSER_API TBool ZrTypeEnvironmentLookupFunction(SZrTypeEnvironment *env, SZrString *name, SZrFunctionTypeInfo **result);
+
+// 注册类型名称
+ZR_PARSER_API TBool ZrTypeEnvironmentRegisterType(SZrState *state, SZrTypeEnvironment *env, SZrString *typeName);
+
+// 查找类型名称
+ZR_PARSER_API TBool ZrTypeEnvironmentLookupType(SZrTypeEnvironment *env, SZrString *typeName);
 
 #endif //ZR_VM_PARSER_TYPE_SYSTEM_H
 

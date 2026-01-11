@@ -63,18 +63,18 @@ void ZrConstantReferencePathFree(
 }
 
 // 辅助函数：查找函数的entry function（最顶层的函数，通常是模块入口函数）
-// entry function通常包含prototypeConstantIndices
+// entry function通常包含prototypeData
 static struct SZrFunction *find_entry_function_from_call_stack(struct SZrState *state, struct SZrFunction *currentFunction) {
     if (state == ZR_NULL || currentFunction == ZR_NULL) {
         return ZR_NULL;
     }
     
-    // 如果当前函数已经有prototypeConstantIndices，可能就是entry function
-    if (currentFunction->prototypeConstantIndices != ZR_NULL) {
+    // 如果当前函数已经有prototypeData，可能就是entry function
+    if (currentFunction->prototypeData != ZR_NULL && currentFunction->prototypeCount > 0) {
         return currentFunction;
     }
     
-    // 否则，向上遍历调用栈，查找包含prototypeConstantIndices的函数
+    // 否则，向上遍历调用栈，查找包含prototypeData的函数
     // 查找调用栈中最顶层的函数
     SZrCallInfo *callInfo = state->callInfoList;
     struct SZrFunction *entryFunction = ZR_NULL;
@@ -87,8 +87,8 @@ static struct SZrFunction *find_entry_function_from_call_stack(struct SZrState *
                 SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, closureValue->value.object);
                 if (closure != ZR_NULL && closure->function != ZR_NULL) {
                     struct SZrFunction *func = closure->function;
-                    // 检查是否是entry function（有prototypeConstantIndices）
-                    if (func->prototypeConstantIndices != ZR_NULL) {
+                    // 检查是否是entry function（有prototypeData）
+                    if (func->prototypeData != ZR_NULL && func->prototypeCount > 0) {
                         entryFunction = func;
                         break;  // 找到第一个包含prototype的，通常就是entry function
                     }
@@ -286,59 +286,41 @@ TBool ZrConstantResolveReference(
                     TUInt32 prototypeIndex = path->steps[stepIndex];
                     
                     // 延迟加载prototype实例
-                    if (currentFunction->prototypeConstantIndices == ZR_NULL || 
-                        prototypeIndex >= currentFunction->prototypeConstantIndicesLength) {
+                    // 需要找到entryFunction（包含prototypeData的函数）
+                    struct SZrFunction *entryFunction = find_entry_function_from_call_stack(state, currentFunction);
+                    if (entryFunction == ZR_NULL || entryFunction->prototypeData == ZR_NULL || 
+                        entryFunction->prototypeCount == 0) {
+                        return ZR_FALSE;
+                    }
+                    
+                    // 检查prototypeIndex是否有效
+                    if (prototypeIndex >= entryFunction->prototypeCount) {
                         return ZR_FALSE;
                     }
                     
                     // 检查是否已经实例化
-                    if (currentFunction->prototypeInstances != ZR_NULL && 
-                        prototypeIndex < currentFunction->prototypeInstancesLength &&
-                        currentFunction->prototypeInstances[prototypeIndex] != ZR_NULL) {
+                    if (entryFunction->prototypeInstances != ZR_NULL && 
+                        prototypeIndex < entryFunction->prototypeInstancesLength &&
+                        entryFunction->prototypeInstances[prototypeIndex] != ZR_NULL) {
                         // 已经实例化，直接返回
                         ZrValueInitAsRawObject(state, result, 
-                            ZR_CAST_RAW_OBJECT_AS_SUPER(currentFunction->prototypeInstances[prototypeIndex]));
+                            ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction->prototypeInstances[prototypeIndex]));
                         result->type = ZR_VALUE_TYPE_OBJECT;
                         stepIndex++;
                         continue;
-                    }
-                    
-                    // 需要实例化prototype
-                    // 从prototypeConstantIndices获取常量索引
-                    TUInt32 constantIndex = currentFunction->prototypeConstantIndices[prototypeIndex];
-                    if (constantIndex >= currentFunction->constantValueLength) {
-                        return ZR_FALSE;
-                    }
-                    
-                    const SZrTypeValue *constant = &currentFunction->constantValueList[constantIndex];
-                    if (constant->type != ZR_VALUE_TYPE_STRING) {
-                        return ZR_FALSE;
-                    }
-                    
-                    // 解析prototype二进制数据并实例化
-                    // 需要找到entryFunction（包含prototypeConstantIndices的函数）
-                    struct SZrFunction *entryFunction = find_entry_function_from_call_stack(state, currentFunction);
-                    if (entryFunction == ZR_NULL || entryFunction != currentFunction) {
-                        // 如果当前函数不是entryFunction，需要从entryFunction的prototypeConstantIndices查找
-                        // 但prototypeIndex是相对于当前函数的，这里需要重新映射
-                        // 暂时只支持从当前函数的prototypeConstantIndices读取
-                        if (currentFunction->prototypeConstantIndices == ZR_NULL) {
-                            return ZR_FALSE;
-                        }
-                        entryFunction = currentFunction;
                     }
                     
                     // 确保prototype实例数组已分配
                     if (entryFunction->prototypeInstances == ZR_NULL) {
                         SZrGlobalState *global = state->global;
                         entryFunction->prototypeInstances = (struct SZrObjectPrototype **)ZrMemoryRawMalloc(
-                            global, entryFunction->prototypeConstantIndicesLength * sizeof(struct SZrObjectPrototype *));
+                            global, entryFunction->prototypeCount * sizeof(struct SZrObjectPrototype *));
                         if (entryFunction->prototypeInstances == ZR_NULL) {
                             return ZR_FALSE;
                         }
                         ZrMemoryRawSet(entryFunction->prototypeInstances, 0, 
-                            entryFunction->prototypeConstantIndicesLength * sizeof(struct SZrObjectPrototype *));
-                        entryFunction->prototypeInstancesLength = entryFunction->prototypeConstantIndicesLength;
+                            entryFunction->prototypeCount * sizeof(struct SZrObjectPrototype *));
+                        entryFunction->prototypeInstancesLength = entryFunction->prototypeCount;
                     }
                     
                     // 实例化prototype（使用module.c中的解析逻辑）
@@ -349,53 +331,14 @@ TBool ZrConstantResolveReference(
                         targetModule = find_module_by_entry_function(state, entryFunction);
                     }
                     
-                    // 解析prototype二进制数据
-                    SZrString *serializedString = ZR_CAST_STRING(state, constant->value.object);
-                    if (serializedString == ZR_NULL) {
-                        return ZR_FALSE;
-                    }
-                    
-                    TNativeString strData = ZR_NULL;
-                    TZrSize strLength = 0;
-                    if (serializedString->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-                        strData = ZrStringGetNativeStringShort(serializedString);
-                        strLength = (TZrSize)serializedString->shortStringLength;
-                    } else {
-                        TNativeString *longStrPtr = ZrStringGetNativeStringLong(serializedString);
-                        if (longStrPtr != ZR_NULL) {
-                            strData = *longStrPtr;
-                            strLength = serializedString->longStringLength;
-                        }
-                    }
-                    
-                    if (strData == ZR_NULL || strLength == 0) {
-                        return ZR_FALSE;
-                    }
-                    
-                    // 实例化prototype：通过调用ZrModuleCreatePrototypesFromConstants来创建所有prototype
+                    // 实例化prototype：通过调用ZrModuleCreatePrototypesFromData来创建所有prototype
                     // 这会创建所有prototype，但只有第一次调用时会实际创建，后续调用会检查已存在的实例
-                    // 如果提供了module，使用它；否则尝试通过entryFunction查找
-                    if (targetModule == ZR_NULL) {
-                        // 尝试通过其他方式查找module（例如从全局注册表）
-                        // 暂时如果找不到module，仍然尝试创建（module可以为ZR_NULL，但不会注册导出）
-                        // 注意：如果没有module，prototype无法注册到模块导出，但仍然可以创建
-                    }
-                    
-                    // 触发prototype实例化（延迟加载）
-                    // 注意：即使没有module，也尝试创建prototype实例（但不注册到模块导出）
-                    // 如果entryFunction已经有prototypeInstances，说明已经初始化过
-                    if (targetModule != ZR_NULL || entryFunction->prototypeInstances == ZR_NULL) {
-                        // 有module或者是第一次初始化，调用完整创建流程
-                        if (targetModule != ZR_NULL) {
-                            ZrModuleCreatePrototypesFromConstants(state, targetModule, entryFunction);
-                        } else {
-                            // 没有module，但仍然需要创建prototype实例数组
-                            // 这种情况比较少见，通常prototype应该在模块加载时创建
-                            // 这里只确保数组已分配，但不实际创建prototype对象
-                            // （因为没有模块上下文，无法正确注册）
-                            // 暂时返回失败
-                            return ZR_FALSE;
-                        }
+                    if (targetModule != ZR_NULL) {
+                        ZrModuleCreatePrototypesFromData(state, targetModule, entryFunction);
+                    } else {
+                        // 没有module，无法正确注册prototype到模块导出
+                        // 暂时返回失败
+                        return ZR_FALSE;
                     }
                     
                     // 检查是否已创建

@@ -121,8 +121,11 @@ static const union {
  * LOCALS [.LOCAL]
  * CONSTANTS_LENGTH [8]
  * CONSTANTS [.CONSTANT]
- * PROTOTYPE_CONSTANT_INDICES_LENGTH [8]  (新增：prototype常量索引数组长度)
- * PROTOTYPE_CONSTANT_INDICES [.PROTOTYPE_CONSTANT_INDEX]  (新增：prototype常量索引数组，每个元素为TUInt32)
+ * PROTOTYPES_LENGTH [8]  (prototype 总数)
+ * CLASS_COUNT [8]  (CLASS prototype 数量)
+ * CLASSES [.CLASS]  (CLASS prototype 数组)
+ * STRUCT_COUNT [8]  (STRUCT prototype 数量)
+ * STRUCTS [.STRUCT]  (STRUCT prototype 数组)
  * CLOSURES_LENGTH [8]
  * CLOSURES [.CLOSURE]
  * DEBUG_INFO_LENGTH [8]

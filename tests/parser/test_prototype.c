@@ -200,6 +200,41 @@ static char *find_test_file(const char *filename) {
     return ZR_NULL;
 }
 
+// 生成输出文件名（将 .zr 替换为新的扩展名）
+static char *generate_output_filename(const char *inputFile, const char *newExt) {
+    if (inputFile == ZR_NULL || newExt == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    TZrSize inputLen = strlen(inputFile);
+    TZrSize extLen = strlen(newExt);
+    
+    // 查找 .zr 的位置
+    const char *extPos = strrchr(inputFile, '.');
+    TZrSize baseLen;
+    if (extPos != ZR_NULL && strcmp(extPos, ".zr") == 0) {
+        // 找到 .zr 扩展名
+        baseLen = extPos - inputFile;
+    } else {
+        // 没有找到 .zr 扩展名，使用整个文件名
+        baseLen = inputLen;
+    }
+    
+    // 分配新文件名（base + newExt + null terminator）
+    char *outputFile = (char *)malloc(baseLen + extLen + 1);
+    if (outputFile == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    // 复制基础文件名
+    memcpy(outputFile, inputFile, baseLen);
+    // 复制新扩展名
+    memcpy(outputFile + baseLen, newExt, extLen);
+    outputFile[baseLen + extLen] = '\0';
+    
+    return outputFile;
+}
+
 // 测试函数前向声明
 static void test_struct_prototype_compilation(void);
 static void test_class_prototype_compilation(void);
@@ -262,20 +297,61 @@ static void test_struct_prototype_compilation(void) {
     }
 
 
-    // 从常量池中创建prototype实例并输出debug信息
+    // 测试prototypeData存储
     if (func != ZR_NULL) {
-        // 输出常量池中的prototype信息（类似zri格式）
-        printf("\n  Prototype information from constants (ZRI format):\n");
-        ZrDebugPrintPrototypeFromConstants(state, func, stdout);
+        // 验证prototypeData字段
+        TBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
+                                  func->prototypeDataLength > 0 && 
+                                  func->prototypeCount > 0);
+        if (hasPrototypeData) {
+            printf("\n  Prototype data stored in function->prototypeData:\n");
+            printf("    prototypeCount: %u\n", func->prototypeCount);
+            printf("    prototypeDataLength: %u bytes\n", func->prototypeDataLength);
+            
+            // 验证数据格式（头部应该是prototypeCount）
+            TUInt32 *countPtr = (TUInt32 *)func->prototypeData;
+            if (*countPtr == func->prototypeCount) {
+                printf("    Data format verification: PASS (header count matches)\n");
+            } else {
+                printf("    Data format verification: FAIL (header count mismatch: %u vs %u)\n", 
+                       *countPtr, func->prototypeCount);
+            }
+        } else {
+            printf("\n  WARNING: No prototype data found in function->prototypeData\n");
+        }
+        
+        // 输出prototype信息（使用新函数）
+        printf("\n  Prototype information from prototypeData (new format):\n");
+        ZrDebugPrintPrototypesFromData(state, func, stdout);
+        
+        // 也测试旧的函数（向后兼容性）
+        // 注意：ZrDebugPrintPrototypeFromConstants 已被移除，使用 ZrDebugPrintPrototypesFromData 替代
 
         // 创建模块对象
         struct SZrObjectModule *module = ZrModuleCreate(state);
         if (module != ZR_NULL) {
-            // 从常量池中解析并创建prototype实例
-            TZrSize createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+            // 优先使用新的函数从prototypeData创建
+            TZrSize createdCount = 0;
+            if (hasPrototypeData) {
+                createdCount = ZrModuleCreatePrototypesFromData(state, module, func);
+                if (createdCount > 0) {
+                    printf("\n  Created %zu prototype(s) from prototypeData:\n", createdCount);
+                } else {
+                    // 如果新函数失败，尝试旧函数（向后兼容）
+                    createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+                    if (createdCount > 0) {
+                        printf("\n  Created %zu prototype(s) from constants (legacy fallback):\n", createdCount);
+                    }
+                }
+            } else {
+                // 如果没有新格式数据，尝试旧函数
+                createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+                if (createdCount > 0) {
+                    printf("\n  Created %zu prototype(s) from constants (legacy format):\n", createdCount);
+                }
+            }
 
             if (createdCount > 0) {
-                printf("\n  Created %zu prototype(s) from constants, runtime debug output:\n", createdCount);
 
                 // 查找并输出Vector3 prototype信息
                 SZrString *vector3Name = ZrStringCreateFromNative(state, "Vector3");
@@ -304,6 +380,29 @@ static void test_struct_prototype_compilation(void) {
                     }
                 }
             }
+        }
+    }
+
+    // 生成 ZRI 和 ZRO 文件
+    if (func != ZR_NULL) {
+        // 生成 .zri 文件名
+        char *zriFile = generate_output_filename(testFile, ".zri");
+        if (zriFile != ZR_NULL) {
+            TBool zriResult = ZrWriterWriteIntermediateFile(state, func, zriFile);
+            if (zriResult) {
+                printf("\n  Generated ZRI file: %s\n", zriFile);
+            }
+            free(zriFile);
+        }
+        
+        // 生成 .zro 文件名
+        char *zroFile = generate_output_filename(testFile, ".zro");
+        if (zroFile != ZR_NULL) {
+            TBool zroResult = ZrWriterWriteBinaryFile(state, func, zroFile);
+            if (zroResult) {
+                printf("  Generated ZRO file: %s\n", zroFile);
+            }
+            free(zroFile);
         }
     }
 
@@ -369,7 +468,17 @@ static void test_class_prototype_compilation(void) {
         return;
     }
 
-    // 检查常量池中是否有 prototype 信息
+    // 验证prototypeData存储
+    TBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
+                              func->prototypeDataLength > 0 && 
+                              func->prototypeCount > 0);
+    if (hasPrototypeData) {
+        printf("\n  Prototype data stored in function->prototypeData:\n");
+        printf("    prototypeCount: %u\n", func->prototypeCount);
+        printf("    prototypeDataLength: %u bytes\n", func->prototypeDataLength);
+    }
+    
+    // 检查常量池中是否有 prototype 相关信息（类型名称字符串等）
     TBool hasPrototypeInfo = ZR_FALSE;
     if (func->constantValueList != ZR_NULL && func->constantValueLength > 0) {
         // 查找字符串常量（类型名称）
@@ -388,18 +497,26 @@ static void test_class_prototype_compilation(void) {
         }
     }
 
-    // 输出常量池中的prototype信息和运行时信息
-    if (hasPrototypeInfo && func != ZR_NULL) {
-        printf("\n  Prototype information from constants (ZRI format):\n");
-        ZrDebugPrintPrototypeFromConstants(state, func, stdout);
+    // 输出prototype信息
+    if ((hasPrototypeInfo || hasPrototypeData) && func != ZR_NULL) {
+        printf("\n  Prototype information from prototypeData (new format):\n");
+        ZrDebugPrintPrototypesFromData(state, func, stdout);
+        
+        // 注意：ZrDebugPrintPrototypeFromConstants 已被移除，使用 ZrDebugPrintPrototypesFromData 替代
 
         // 创建模块并加载prototype
         struct SZrObjectModule *module = ZrModuleCreate(state);
         if (module != ZR_NULL) {
-            TZrSize createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+            TZrSize createdCount = 0;
+            if (hasPrototypeData) {
+                createdCount = ZrModuleCreatePrototypesFromData(state, module, func);
+            }
+            if (createdCount == 0) {
+                createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+            }
 
             if (createdCount > 0) {
-                printf("\n  Created %zu prototype(s) from constants, runtime debug output:\n", createdCount);
+                printf("\n  Created %zu prototype(s), runtime debug output:\n", createdCount);
 
                 // 输出Animal prototype
                 SZrString *animalName = ZrStringCreateFromNative(state, "Animal");
@@ -437,10 +554,10 @@ static void test_class_prototype_compilation(void) {
 
     timer.endTime = clock();
 
-    if (hasPrototypeInfo) {
+    if (hasPrototypeData || hasPrototypeInfo) {
         TEST_PASS_CUSTOM(timer, "Class Prototype Compilation");
     } else {
-        TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Prototype information not found in constants");
+        TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Prototype information not found");
     }
 }
 
@@ -728,10 +845,26 @@ static void test_struct_field_offsets(void) {
         return;
     }
 
+    // 验证prototypeData存储
+    TBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
+                              func->prototypeDataLength > 0 && 
+                              func->prototypeCount > 0);
+    if (hasPrototypeData) {
+        printf("\n  Prototype data verification:\n");
+        printf("    prototypeCount: %u\n", func->prototypeCount);
+        printf("    prototypeDataLength: %u bytes\n", func->prototypeDataLength);
+    }
+    
     // 创建模块并加载prototype
     struct SZrObjectModule *module = ZrModuleCreate(state);
     if (module != ZR_NULL) {
-        TZrSize createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+        TZrSize createdCount = 0;
+        if (hasPrototypeData) {
+            createdCount = ZrModuleCreatePrototypesFromData(state, module, func);
+        }
+        if (createdCount == 0) {
+            createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+        }
 
         if (createdCount > 0) {
             // 检查Vector3的字段偏移量
@@ -812,10 +945,26 @@ static void test_prototype_inheritance_loading(void) {
         return;
     }
 
+    // 验证prototypeData存储
+    TBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
+                              func->prototypeDataLength > 0 && 
+                              func->prototypeCount > 0);
+    if (hasPrototypeData) {
+        printf("\n  Prototype data verification:\n");
+        printf("    prototypeCount: %u\n", func->prototypeCount);
+        printf("    prototypeDataLength: %u bytes\n", func->prototypeDataLength);
+    }
+    
     // 创建模块并加载prototype
     struct SZrObjectModule *module = ZrModuleCreate(state);
     if (module != ZR_NULL) {
-        TZrSize createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+        TZrSize createdCount = 0;
+        if (hasPrototypeData) {
+            createdCount = ZrModuleCreatePrototypesFromData(state, module, func);
+        }
+        if (createdCount == 0) {
+            createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+        }
 
         if (createdCount > 0) {
             // 检查Point3D的继承关系（应该继承自Point2D）
