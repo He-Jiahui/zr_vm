@@ -178,8 +178,20 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     if (stmt->expr != ZR_NULL) {
         // 编译返回值表达式（可能在尾调用上下文中使用FUNCTION_TAIL_CALL）
+        TZrSize exprInstBefore = cs->instructions.length;
         compile_expression(cs, stmt->expr);
-        resultSlot = cs->stackSlotCount - 1;
+        TZrSize exprInstAfter = cs->instructions.length;
+        /* 若最后一条为 FUNCTION_TAIL_CALL，返回值在 operandExtra（resultSlot），否则用 stackSlotCount-1 */
+        if (exprInstAfter > exprInstBefore) {
+            TZrInstruction *lastInst = (TZrInstruction *)ZrArrayGet(&cs->instructions, exprInstAfter - 1);
+            if (lastInst != ZR_NULL && lastInst->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)) {
+                resultSlot = lastInst->instruction.operandExtra;
+            } else {
+                resultSlot = cs->stackSlotCount - 1;
+            }
+        } else {
+            resultSlot = cs->stackSlotCount - 1;
+        }
         resultCount = 1;
     } else {
         // 没有返回值，返回 null
@@ -492,7 +504,7 @@ static void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize loopStartLabelId = loopLabel.continueLabelId;
     resolve_label(cs, loopStartLabelId);
     
-    // 获取迭代器（简化实现：假设对象有 iterator 方法）
+    // TODO: 获取迭代器（简化实现：假设对象有 iterator 方法）
     // 创建 "iterator" 字符串常量
     SZrString *iteratorName = ZrStringCreate(cs->state, "iterator", 8);
     if (iteratorName == ZR_NULL) {
@@ -738,10 +750,10 @@ static void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *n
     // 选择目标标签
     TZrSize targetLabelId = stmt->isBreak ? loopLabel->breakLabelId : loopLabel->continueLabelId;
     
-    // 如果有表达式，编译它（用于 break value 或 continue value）
+    // TODO: 简化迭代器功能：break/continue 不再支持返回值
     if (stmt->expr != ZR_NULL) {
-        compile_expression(cs, stmt->expr);
-        // 注意：break/continue 的值通常会被丢弃，但这里先编译表达式
+        ZrCompilerError(cs, stmt->isBreak ? "break statement does not support return value" : "continue statement does not support return value", node->location);
+        return;
     }
     
     // 生成跳转指令

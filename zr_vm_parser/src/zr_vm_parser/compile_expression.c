@@ -218,6 +218,8 @@ static void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
+    TNativeString nameStr = ZrStringGetNativeString(name);
+    
     // 重要：先查找局部变量（包括闭包变量）
     // 如果存在同名的局部变量，它会覆盖全局的 zr 对象
     // 这是作用域规则：局部变量优先于全局对象
@@ -309,6 +311,10 @@ static void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
     TUInt32 destSlot = allocate_stack_slot(cs);
     TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TUInt16)destSlot, (TUInt16)globalObjSlot, (TUInt16)nameSlot);
     emit_instruction(cs, getTableInst);
+    
+    // 注意：不要释放临时栈槽（globalObjSlot 和 nameSlot），因为它们在运行时仍在使用
+    // GETTABLE 指令会在运行时从这些槽位读取值，所以不能提前释放
+    // destSlot 是结果槽位，会保留在栈上
 }
 
 // 编译一元表达式
@@ -405,19 +411,35 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         emit_instruction(cs, structInst);
         
         // 如果有构造函数参数，编译参数并调用constructor（如果存在）
-        // TODO: 调用constructor（如果存在），需要查找prototype的constructor元方法
-        // 这里先编译参数，但constructor调用需要运行时支持
+        // 调用constructor（如果存在），需要查找prototype的constructor元方法
+        // constructor调用在运行时通过元方法机制实现
         if (constructorArgs != ZR_NULL && constructorArgs->count > 0) {
-            // 编译构造函数参数（参数会放在栈上，但暂时不调用constructor）
-            // 实际的constructor调用需要在运行时通过prototype查找
+            // 编译构造函数参数（参数会放在栈上）
+            TUInt32 argCount = (TUInt32)constructorArgs->count;
             for (TZrSize i = 0; i < constructorArgs->count; i++) {
                 SZrAstNode *argNode = constructorArgs->nodes[i];
                 if (argNode != ZR_NULL) {
                     compile_expression(cs, argNode);
                 }
             }
-            // 注意：这里只是编译了参数，实际的constructor调用需要在运行时处理
-            // 因为我们需要从prototype中查找constructor元方法
+            
+            // 调用constructor元方法
+            // 注意：constructor调用在运行时通过prototype的metaTable查找
+            // 这里生成函数调用指令，运行时会在prototype的metaTable中查找CONSTRUCTOR元方法
+            // 对象实例在destSlot，参数在destSlot+1到destSlot+argCount
+            TUInt32 resultSlot = allocate_stack_slot(cs);
+            // 使用FUNCTION_CALL指令调用constructor
+            // 运行时会在prototype的metaTable中查找CONSTRUCTOR元方法并调用
+            TZrInstruction callConstructorInst = create_instruction_2(
+                ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 
+                (TUInt16)resultSlot, 
+                (TUInt16)destSlot,  // 对象实例作为函数值（运行时查找constructor元方法）
+                (TUInt16)argCount
+            );
+            emit_instruction(cs, callConstructorInst);
+            
+            // 注意：实际的constructor查找和调用在运行时通过execution.c中的元方法机制实现
+            // 这里只是生成调用指令，运行时会在prototype链中查找CONSTRUCTOR元方法
         }
     } else if (strcmp(op, "new") == 0) {
         // new操作符：创建class实例
@@ -428,9 +450,19 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         if (arg != ZR_NULL && arg->type == ZR_AST_IDENTIFIER_LITERAL) {
             // 参数是类型名称
             typeName = arg->data.identifier.name;
+        } else if (arg != ZR_NULL && arg->type == ZR_AST_FUNCTION_CALL) {
+            // 处理new TypeName(...)的情况，需要从函数调用表达式中提取类型名称
+            // 函数调用的callee应该是类型名称
+            SZrFunctionCall *call = &arg->data.functionCall;
+            if (call->callee != ZR_NULL && call->callee->type == ZR_AST_IDENTIFIER_LITERAL) {
+                typeName = call->callee->data.identifier.name;
+                constructorArgs = call->args;  // 使用函数调用的参数作为构造函数参数
+            } else {
+                ZrCompilerError(cs, "new operator requires a type name identifier", node->location);
+                return;
+            }
         } else {
-            // TODO: 处理new TypeName(...)的情况，需要从函数调用表达式中提取类型名称
-            ZrCompilerError(cs, "new operator currently only supports simple type name, not function call syntax", node->location);
+            ZrCompilerError(cs, "new operator currently only supports simple type name or TypeName(...) syntax", node->location);
             return;
         }
         
@@ -450,7 +482,12 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
             TZrInstruction toObjInst = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_OBJECT), (TUInt16)destSlot, (TUInt16)destSlot, (TUInt16)typeNameConstantIndex);
             emit_instruction(cs, toObjInst);
             
-            // TODO: 调用constructor（从基类到派生类），需要查找prototype链的constructor元方法
+            // 调用constructor（从基类到派生类），需要查找prototype链的constructor元方法
+            // 注意：constructor调用在运行时通过prototype链查找，从基类到派生类依次调用
+            // TODO: 这里暂时不生成constructor调用指令，因为new操作符创建的对象可能还没有完全初始化
+            // 实际的constructor调用应该在对象创建后，通过prototype链查找CONSTRUCTOR元方法
+            // 如果需要立即调用constructor，可以在TO_OBJECT指令后添加constructor调用
+            // 但通常constructor调用应该在对象完全创建后进行
         } else {
             ZrCompilerError(cs, "new operator requires a type name", node->location);
         }
@@ -568,11 +605,18 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
         }
         
         // 如果未找到类型定义，使用 TO_STRING 作为默认转换
-        // TODO: 可能需要支持从其他模块导入的类型
+        // 可能需要支持从其他模块导入的类型
+        // 注意：从其他模块导入的类型在运行时通过模块系统查找
+        // 编译器无法在编译期确定所有类型，因此使用运行时类型查找
+        // 如果类型未在当前模块找到，运行时会在全局模块注册表中查找
         emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
     } else {
-        // 对于复杂类型（泛型、元组等），暂时使用 TO_STRING
-        // TODO: 实现完整的类型转换逻辑
+        // TODO: 对于复杂类型（泛型、元组等），暂时使用 TO_STRING
+        // 实现完整的类型转换逻辑
+        // 注意：复杂类型的转换需要根据具体类型实现
+        // 泛型类型转换需要实例化类型参数
+        // 元组类型转换需要逐个元素转换
+        // TODO: 这里暂时使用TO_STRING作为默认转换，未来可以扩展支持更多类型
         emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
     }
 }
@@ -643,10 +687,61 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         if (isComparisonOp) {
             // 对于比较操作，不应该根据 resultType（布尔类型）来转换操作数
             // 比较操作的结果才是布尔类型，但操作数应该保持其原始数值类型
-            // 这里我们跳过基于 resultType 的转换，直接使用操作数的原始类型
-            // 类型选择将在后续根据 leftType 和 rightType 的公共类型来决定
-            // 暂时不进行类型提升，直接使用操作数的原始类型进行比较
-            // TODO: 实现完整的类型提升逻辑（例如：int 和 float 比较时，将 int 提升为 float）
+            // 实现完整的类型提升逻辑（例如：int 和 float 比较时，将 int 提升为 float）
+            // 类型提升规则：
+            // 1. 如果一个是float，另一个是int，将int提升为float
+            // 2. 如果一个是更大的整数类型，将较小的整数类型提升为较大的类型
+            // 3. 其他情况保持原类型
+            EZrValueType leftValueType = leftType.type;
+            EZrValueType rightValueType = rightType.type;
+            
+            // 检查是否需要类型提升
+            if (ZR_VALUE_IS_TYPE_FLOAT(leftValueType) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValueType)) {
+                // 左操作数是float，右操作数是int，将右操作数提升为float
+                TUInt32 promotedRightSlot = allocate_stack_slot(cs);
+                emit_type_conversion(cs, promotedRightSlot, rightSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
+                rightSlot = promotedRightSlot;
+            } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValueType) && ZR_VALUE_IS_TYPE_FLOAT(rightValueType)) {
+                // 左操作数是int，右操作数是float，将左操作数提升为float
+                TUInt32 promotedLeftSlot = allocate_stack_slot(cs);
+                emit_type_conversion(cs, promotedLeftSlot, leftSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
+                leftSlot = promotedLeftSlot;
+            } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValueType) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValueType)) {
+                // 两个都是整数类型，提升到较大的类型
+                // 类型提升顺序：INT8 < INT16 < INT32 < INT64
+                if (leftValueType < rightValueType) {
+                    // 左操作数类型较小，提升左操作数
+                    EZrInstructionCode promoteOp = ZR_INSTRUCTION_ENUM(ENUM_MAX);
+                    if (rightValueType == ZR_VALUE_TYPE_INT16) {
+                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT16);
+                    } else if (rightValueType == ZR_VALUE_TYPE_INT32) {
+                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT);
+                    } else if (rightValueType == ZR_VALUE_TYPE_INT64) {
+                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT64);
+                    }
+                    if (promoteOp != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+                        TUInt32 promotedLeftSlot = allocate_stack_slot(cs);
+                        emit_type_conversion(cs, promotedLeftSlot, leftSlot, promoteOp);
+                        leftSlot = promotedLeftSlot;
+                    }
+                } else if (rightValueType < leftValueType) {
+                    // 右操作数类型较小，提升右操作数
+                    EZrInstructionCode promoteOp = ZR_INSTRUCTION_ENUM(ENUM_MAX);
+                    if (leftValueType == ZR_VALUE_TYPE_INT16) {
+                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT16);
+                    } else if (leftValueType == ZR_VALUE_TYPE_INT32) {
+                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT);
+                    } else if (leftValueType == ZR_VALUE_TYPE_INT64) {
+                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT64);
+                    }
+                    if (promoteOp != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+                        TUInt32 promotedRightSlot = allocate_stack_slot(cs);
+                        emit_type_conversion(cs, promotedRightSlot, rightSlot, promoteOp);
+                        rightSlot = promotedRightSlot;
+                    }
+                }
+            }
+            // 其他情况（如都是float，或类型不兼容）保持原类型
         } else {
             // 对于非比较操作，根据结果类型进行转换
             // 检查左操作数是否需要转换
@@ -1204,6 +1299,176 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     resolve_label(cs, endLabelId);
 }
 
+// 在脚本 AST 中查找函数声明
+static SZrAstNode *find_function_declaration(SZrCompilerState *cs, SZrString *funcName) {
+    if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || funcName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    if (cs->scriptAst->type != ZR_AST_SCRIPT) {
+        return ZR_NULL;
+    }
+    
+    SZrScript *script = &cs->scriptAst->data.script;
+    if (script->statements == ZR_NULL) {
+        return ZR_NULL;
+    }
+    
+    // 遍历顶层语句，查找函数声明
+    for (TZrSize i = 0; i < script->statements->count; i++) {
+        SZrAstNode *stmt = script->statements->nodes[i];
+        if (stmt != ZR_NULL && stmt->type == ZR_AST_FUNCTION_DECLARATION) {
+            SZrFunctionDeclaration *funcDecl = &stmt->data.functionDeclaration;
+            if (funcDecl->name != ZR_NULL && funcDecl->name->name != ZR_NULL) {
+                if (ZrStringEqual(funcDecl->name->name, funcName)) {
+                    return stmt;
+                }
+            }
+        }
+    }
+    
+    return ZR_NULL;
+}
+
+// 匹配命名参数到位置参数
+// 返回重新排列后的参数数组，如果匹配失败返回原数组
+static SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs, 
+                                               SZrFunctionCall *call,
+                                               SZrAstNodeArray *paramList) {
+    if (cs == ZR_NULL || call == ZR_NULL || !call->hasNamedArgs || 
+        call->args == ZR_NULL || call->argNames == ZR_NULL || paramList == ZR_NULL) {
+        return call->args;  // 没有命名参数或无法匹配，返回原数组
+    }
+    
+    // 创建参数映射表：参数名 -> 参数索引
+    TZrSize paramCount = paramList->count;
+    SZrString **paramNames = ZrMemoryRawMallocWithType(cs->state->global, 
+                                                       sizeof(SZrString*) * paramCount, 
+                                                       ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (paramNames == ZR_NULL) {
+        return call->args;  // 内存分配失败，返回原数组
+    }
+    
+    // 提取参数名
+    for (TZrSize i = 0; i < paramCount; i++) {
+        SZrAstNode *paramNode = paramList->nodes[i];
+        if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
+            SZrParameter *param = &paramNode->data.parameter;
+            if (param->name != ZR_NULL) {
+                paramNames[i] = param->name->name;
+            } else {
+                paramNames[i] = ZR_NULL;
+            }
+        } else {
+            paramNames[i] = ZR_NULL;
+        }
+    }
+    
+    // 创建重新排列的参数数组
+    SZrAstNodeArray *reorderedArgs = ZrAstNodeArrayNew(cs->state, paramCount);
+    if (reorderedArgs == ZR_NULL) {
+        ZrMemoryRawFreeWithType(cs->state->global, paramNames, sizeof(SZrString*) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        return call->args;
+    }
+    
+    // 初始化数组，所有位置设为 ZR_NULL（表示未提供）
+    // 注意：不能使用 ZrAstNodeArrayAdd 因为当 node 为 ZR_NULL 时会直接返回
+    // 所以直接设置数组元素并手动更新 count
+    for (TZrSize i = 0; i < paramCount; i++) {
+        reorderedArgs->nodes[i] = ZR_NULL;
+    }
+    reorderedArgs->count = paramCount;  // 手动设置 count
+    
+    // 标记哪些参数已被提供
+    TBool *provided = ZrMemoryRawMallocWithType(cs->state->global, 
+                                                sizeof(TBool) * paramCount, 
+                                                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (provided == ZR_NULL) {
+        ZrAstNodeArrayFree(cs->state, reorderedArgs);
+        ZrMemoryRawFreeWithType(cs->state->global, paramNames, sizeof(SZrString*) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        return call->args;
+    }
+    for (TZrSize i = 0; i < paramCount; i++) {
+        provided[i] = ZR_FALSE;
+    }
+    
+    // 处理位置参数（在命名参数之前）
+    TZrSize positionalCount = 0;
+    for (TZrSize i = 0; i < call->args->count; i++) {
+        SZrString **namePtr = (SZrString**)ZrArrayGet(call->argNames, i);
+        if (namePtr != ZR_NULL && *namePtr == ZR_NULL) {
+            // 位置参数
+            if (positionalCount < paramCount) {
+                reorderedArgs->nodes[positionalCount] = call->args->nodes[i];
+                provided[positionalCount] = ZR_TRUE;
+                positionalCount++;
+            } else {
+                // 位置参数过多
+                ZrCompilerError(cs, "Too many positional arguments", call->args->nodes[i]->location);
+                ZrMemoryRawFreeWithType(cs->state->global, provided, sizeof(TBool) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                ZrMemoryRawFreeWithType(cs->state->global, paramNames, sizeof(SZrString*) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                ZrAstNodeArrayFree(cs->state, reorderedArgs);
+                return call->args;
+            }
+        } else {
+            // 遇到命名参数，停止处理位置参数
+            break;
+        }
+    }
+    
+    // 处理命名参数
+    for (TZrSize i = 0; i < call->args->count; i++) {
+        SZrString **namePtr = (SZrString**)ZrArrayGet(call->argNames, i);
+        if (namePtr != ZR_NULL && *namePtr != ZR_NULL) {
+            // 命名参数
+            SZrString *argName = *namePtr;
+            TNativeString argNameStr = ZrStringGetNativeString(argName);
+            TBool found = ZR_FALSE;
+            
+            // 查找参数名对应的位置
+            for (TZrSize j = 0; j < paramCount; j++) {
+                if (paramNames[j] != ZR_NULL) {
+                    TNativeString paramNameStr = ZrStringGetNativeString(paramNames[j]);
+                    if (ZrStringEqual(argName, paramNames[j])) {
+                        if (provided[j]) {
+                            // 参数重复
+                            ZrCompilerError(cs, "Duplicate argument name", call->args->nodes[i]->location);
+                            ZrMemoryRawFreeWithType(cs->state->global, provided, sizeof(TBool) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                            ZrMemoryRawFreeWithType(cs->state->global, paramNames, sizeof(SZrString*) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                            ZrAstNodeArrayFree(cs->state, reorderedArgs);
+                            return call->args;
+                        }
+                        reorderedArgs->nodes[j] = call->args->nodes[i];
+                        provided[j] = ZR_TRUE;
+                        found = ZR_TRUE;
+                        break;
+                    }
+                }
+            }
+            
+            if (!found) {
+                // 未找到匹配的参数名
+                TNativeString nameStr = ZrStringGetNativeString(argName);
+                TChar errorMsg[256];
+                snprintf(errorMsg, sizeof(errorMsg), "Unknown argument name: %s", nameStr ? nameStr : "<null>");
+                ZrCompilerError(cs, errorMsg, call->args->nodes[i]->location);
+                ZrMemoryRawFreeWithType(cs->state->global, provided, sizeof(TBool) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                ZrMemoryRawFreeWithType(cs->state->global, paramNames, sizeof(SZrString*) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                ZrAstNodeArrayFree(cs->state, reorderedArgs);
+                return call->args;
+            }
+        }
+    }
+    
+    // 检查必需参数是否都已提供（TODO: 需要检查默认参数）
+    // TODO: 目前简化处理，假设所有参数都是必需的
+    
+    ZrMemoryRawFreeWithType(cs->state->global, provided, sizeof(TBool) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    ZrMemoryRawFreeWithType(cs->state->global, paramNames, sizeof(SZrString*) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    
+    return reorderedArgs;
+}
+
 // 编译函数调用表达式
 static void compile_function_call(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -1265,6 +1530,9 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     // 1. 编译基础属性（标识符或表达式）
     if (primary->property != ZR_NULL) {
         compile_expression(cs, primary->property);
+        if (cs->hasError) {
+            return;
+        }
     } else {
         ZrCompilerError(cs, "Primary expression property is null", node->location);
         return;
@@ -1302,19 +1570,66 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                 // 函数调用：obj.method(args)
                 SZrFunctionCall *call = &member->data.functionCall;
                 
+                // 尝试匹配命名参数（如果存在）
+                SZrAstNodeArray *argsToCompile = call->args;
+                if (call->hasNamedArgs && primary->property != ZR_NULL && 
+                    primary->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    // 尝试查找函数定义（仅对编译期已知的函数）
+                    SZrString *funcName = primary->property->data.identifier.name;
+                    
+                    // 查找子函数
+                    TUInt32 childFuncIndex = find_child_function_index(cs, funcName);
+                    if (childFuncIndex != (TUInt32)-1) {
+                        // 找到子函数，获取参数列表
+                        SZrFunction *childFunc = (SZrFunction*)ZrArrayGet(&cs->childFunctions, childFuncIndex);
+                        // 从函数对象获取参数列表（需要扩展函数对象存储参数信息）
+                        // 注意：函数对象可能没有存储参数信息，需要从AST中获取
+                        // 这里先尝试从AST查找函数声明来获取参数列表
+                        SZrAstNode *funcDecl = find_function_declaration(cs, funcName);
+                        if (funcDecl != ZR_NULL && funcDecl->type == ZR_AST_FUNCTION_DECLARATION) {
+                            SZrFunctionDeclaration *funcDeclData = &funcDecl->data.functionDeclaration;
+                            if (funcDeclData->params != ZR_NULL) {
+                                // 匹配命名参数
+                                argsToCompile = match_named_arguments(cs, call, funcDeclData->params);
+                            }
+                        }
+                        // 如果函数对象存储了参数信息，可以从childFunc中获取
+                        // 但目前函数对象没有存储参数信息，所以从AST获取
+                    } else {
+                        // 查找脚本级函数声明
+                        SZrAstNode *funcDecl = find_function_declaration(cs, funcName);
+                        if (funcDecl != ZR_NULL && funcDecl->type == ZR_AST_FUNCTION_DECLARATION) {
+                            SZrFunctionDeclaration *funcDeclData = &funcDecl->data.functionDeclaration;
+                            if (funcDeclData->params != ZR_NULL) {
+                                // 匹配命名参数
+                                argsToCompile = match_named_arguments(cs, call, funcDeclData->params);
+                            }
+                        }
+                    }
+                }
+                
                 // 编译参数
-                if (call->args != ZR_NULL) {
-                    for (TZrSize j = 0; j < call->args->count; j++) {
-                        SZrAstNode *arg = call->args->nodes[j];
+                if (argsToCompile != ZR_NULL) {
+                    for (TZrSize j = 0; j < argsToCompile->count; j++) {
+                        SZrAstNode *arg = argsToCompile->nodes[j];
                         if (arg != ZR_NULL) {
                             compile_expression(cs, arg);
+                            if (cs->hasError) {
+                                break;
+                            }
                         }
                     }
                 }
                 
                 // 生成函数调用指令
                 // 检测尾调用：如果在尾调用上下文中，使用FUNCTION_TAIL_CALL
-                TUInt32 argCount = (call->args != ZR_NULL) ? (TUInt32)call->args->count : 0;
+                TUInt32 argCount = (argsToCompile != ZR_NULL) ? (TUInt32)argsToCompile->count : 0;
+                
+                // 函数调用指令格式：
+                // FUNCTION_CALL/FUNCTION_TAIL_CALL: operandExtra = resultSlot, operand1[0] = functionSlot, operand1[1] = argCount
+                // 函数值应该在 functionSlot，参数应该在 functionSlot+1 到 functionSlot+argCount
+                // 但是，由于参数是后编译的，它们会在 currentSlot 之后
+                // 所以需要调整：函数值在 currentSlot，参数在 currentSlot+1 到 currentSlot+argCount
                 TUInt32 resultSlot = allocate_stack_slot(cs);
                 EZrInstructionCode callOpcode = cs->isInTailCallContext ? 
                     ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) : ZR_INSTRUCTION_ENUM(FUNCTION_CALL);
@@ -1322,8 +1637,14 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                 emit_instruction(cs, callInst);
                 
                 // 释放参数栈槽和函数槽
+                // 注意：FUNCTION_CALL 指令会消耗函数值和所有参数，所以需要释放这些栈槽
                 cs->stackSlotCount -= (argCount + 1);  // 参数 + 函数
                 currentSlot = resultSlot;
+                
+                // 如果使用了重新排列的参数数组，释放它
+                if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                    ZrAstNodeArrayFree(cs->state, argsToCompile);
+                }
             }
         }
     }
@@ -1656,7 +1977,7 @@ static void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 4. 生成 CREATE_CLOSURE 指令（在恢复状态之前）
     // 将函数对象添加到常量池，然后生成 CREATE_CLOSURE 指令
-    // 注意：这里简化处理，直接将函数对象作为常量
+    // TODO: 注意：这里简化处理，直接将函数对象作为常量
     // 完整的闭包处理已实现：通过 analyze_external_variables 分析外部变量并捕获
     SZrTypeValue funcValue;
     ZrValueInitAsRawObject(cs->state, &funcValue, ZR_CAST_RAW_OBJECT_AS_SUPER(newFunc));
@@ -2097,20 +2418,14 @@ void compile_expression(SZrCompilerState *cs, SZrAstNode *node) {
             compile_lambda_expression(cs, node);
             break;
         
-        case ZR_AST_IF_EXPRESSION:
-            compile_if_expression(cs, node);
-            break;
-        
-        case ZR_AST_SWITCH_EXPRESSION:
-            compile_switch_expression(cs, node);
-            break;
-        
         case ZR_AST_BLOCK:
             // 块作为表达式使用时，编译块并提取最后一个表达式的值
             compile_block_as_expression(cs, node);
             break;
         
-        // 循环和语句不应该作为表达式编译，应该先转换为语句
+        // 控制流结构和语句不应该作为表达式编译，应该先转换为语句
+        case ZR_AST_IF_EXPRESSION:
+        case ZR_AST_SWITCH_EXPRESSION:
         case ZR_AST_WHILE_LOOP:
         case ZR_AST_FOR_LOOP:
         case ZR_AST_FOREACH_LOOP:

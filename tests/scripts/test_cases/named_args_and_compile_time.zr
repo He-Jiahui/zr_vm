@@ -1,0 +1,100 @@
+module "named_args_and_compile_time";
+
+// 综合测试：命名参数和编译期执行的结合使用
+
+// 编译期配置
+%compileTime var CONFIG_MAX_PARAMS = 5;
+%compileTime var CONFIG_MIN_PARAMS = 1;
+
+%compileTime validateParamCount(count: int): bool {
+    if (count < CONFIG_MIN_PARAMS) {
+        FatalError("Parameter count below minimum");
+    }
+    if (count > CONFIG_MAX_PARAMS) {
+        FatalError("Parameter count exceeds maximum");
+    }
+    return true;
+}
+
+// 使用编译期验证的函数
+flexibleFunction(
+    param1: int,
+    param2: int = 10,
+    param3: int = 20,
+    param4: int = 30,
+    param5: int = 40
+): int {
+    return param1 + param2 + param3 + param4 + param5;
+}
+
+// 编译期验证参数数量
+%compileTime {
+    // 验证函数定义符合配置
+    validateParamCount(5);
+}
+
+%test("namedArgsWithCompileTime") {
+    // 测试1: 使用命名参数调用，参数顺序打乱
+    var result1 = flexibleFunction(
+        param5: 50,
+        param1: 1,
+        param3: 30,
+        param2: 20,
+        param4: 40
+    );
+    // 期望: 1 + 20 + 30 + 40 + 50 = 141
+    
+    // 测试2: 混合位置参数和命名参数
+    var result2 = flexibleFunction(
+        100,
+        param5: 200,
+        param3: 300
+    );
+    // 期望: 100 + 10 + 300 + 30 + 200 = 640
+    
+    // 测试3: 只使用命名参数，跳过中间参数
+    var result3 = flexibleFunction(
+        param1: 1,
+        param5: 5
+    );
+    // 期望: 1 + 10 + 20 + 30 + 5 = 66
+    
+    return result1 + result2 + result3;
+}
+
+// 编译期计算的函数参数
+%compileTime var computedParam1 = 10;
+%compileTime var computedParam2 = 20;
+%compileTime var computedParam3 = 30;
+
+computeSum(a: int, b: int, c: int): int {
+    return a + b + c;
+}
+
+%test("compileTimeComputedArgs") {
+    // 运行时调用，但参数值在编译期计算
+    // 注意：这里需要运行时访问编译期变量，可能需要特殊处理
+    var result = computeSum(computedParam1, computedParam2, computedParam3);
+    // 期望: 10 + 20 + 30 = 60
+    
+    return result;
+}
+
+// 编译期函数用于验证命名参数
+%compileTime checkNamedArgs(
+    hasNamed: bool,
+    argCount: int
+): bool {
+    if (hasNamed && argCount > 3) {
+        // Info("Using named arguments with more than 3 parameters");
+    }
+    return true;
+}
+
+%test("compileTimeValidation") {
+    // 测试编译期验证是否正常工作
+    var result = flexibleFunction(param1: 1, param2: 2);
+    // 期望: 1 + 2 + 20 + 30 + 40 = 93
+    
+    return result;
+}

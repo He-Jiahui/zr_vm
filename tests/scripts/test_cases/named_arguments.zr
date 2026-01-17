@@ -1,0 +1,78 @@
+module "named_arguments";
+
+// 测试1: 基本命名参数
+testBasicNamedArgs(a: int, b: int, c: int): int {
+    return a + b + c;
+}
+
+// 测试2: 位置参数和命名参数混合
+testMixedArgs(a: int, b: int, c: int): int {
+    return a * 100 + b * 10 + c;
+}
+
+// 测试3: 带默认参数的函数
+testDefaultArgs(a: int, b: int = 10, c: int = 20): int {
+    return a + b + c;
+}
+
+// 测试4: 命名参数顺序无关
+testNamedOrder(a: int, b: int, c: int): int {
+    return a - b + c;
+}
+
+// 测试用例
+%test("namedArgumentsBasic") {
+    // 测试1: 基本命名参数调用
+    var result1 = testBasicNamedArgs(c: 3, a: 1, b: 2);
+    // 期望: 1 + 2 + 3 = 6
+    
+    // 测试2: 位置参数和命名参数混合
+    var result2 = testMixedArgs(1, c: 3, b: 2);
+    // 期望: 1*100 + 2*10 + 3 = 123
+    
+    // 测试3: 使用默认参数
+    var result3 = testDefaultArgs(5);
+    // 期望: 5 + 10 + 20 = 35
+    
+    var result4 = testDefaultArgs(5, c: 30);
+    // 期望: 5 + 10 + 30 = 45
+    
+    // 测试4: 命名参数顺序无关
+    var result5 = testNamedOrder(c: 10, a: 5, b: 3);
+    // 期望: 5 - 3 + 10 = 12
+    
+    return result1 + result2 + result3 + result4 + result5;
+}
+
+// 测试5: 复杂函数调用
+complexFunction(x: int, y: int, z: int, w: int): int {
+    return x * 1000 + y * 100 + z * 10 + w;
+}
+
+%test("namedArgumentsComplex") {
+    // 使用命名参数重新排列
+    var result = complexFunction(w: 4, x: 1, z: 3, y: 2);
+    // 期望: 1*1000 + 2*100 + 3*10 + 4 = 1234
+    
+    return result;
+}
+
+// 测试6: 嵌套函数调用中的命名参数
+outerFunc(a: int, b: int): int {
+    return a + b;
+}
+
+innerFunc(x: int, y: int): int {
+    return x * y;
+}
+
+%test("namedArgumentsNested") {
+    // 嵌套调用中使用命名参数
+    var result = outerFunc(
+        a: innerFunc(x: 3, y: 4),
+        b: innerFunc(y: 2, x: 5)
+    );
+    // 期望: (3*4) + (5*2) = 12 + 10 = 22
+    
+    return result;
+}

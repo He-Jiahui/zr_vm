@@ -1,0 +1,75 @@
+module "compile_time_errors";
+
+// 这个文件用于测试编译期执行的错误处理
+// 注意：某些测试用例应该导致编译错误或警告
+
+// 测试1: 编译期FatalError（应该阻止编译）
+// %compileTime {
+//     FatalError("This should stop compilation");
+// }
+
+// 测试2: 编译期Assert失败（应该阻止编译）
+// %compileTime {
+//     Assert(false, "This assertion should fail");
+// }
+
+// 测试3: 编译期访问运行时符号的写操作（应该报错）
+var runtimeVar = 100;
+
+// %compileTime {
+//     runtimeVar = 200; // 应该报错：Compile-time code cannot write to runtime variable
+// }
+
+// 测试4: 编译期访问不存在的编译期标识符（应该报错）
+// %compileTime {
+//     var value = nonExistentVar; // 应该报错：Unknown compile-time identifier
+// }
+
+// 测试5: 编译期函数调用不存在的函数（应该报错）
+// %compileTime {
+//     var result = nonExistentFunc(1, 2); // 应该报错：Unknown compile-time function
+// }
+
+// 测试6: 编译期类型错误（应该报错）
+// %compileTime var invalidType: string = 123; // 应该报错：Type mismatch
+
+// 测试7: 编译期数组越界（应该报错）
+// %compileTime var arr: int[10];
+// %compileTime var value = arr[20]; // 应该报错：Array index out of bounds
+
+// 注意：这些错误测试在实际编译时会被检测到
+// 由于这些是错误情况，实际的测试应该通过编译失败来验证
+
+// 测试8: 编译期Info级别（不应该阻止编译）
+%compileTime {
+    // Info("This is an informational message");
+    // 编译应该继续
+}
+
+// 测试9: 编译期Warning级别（不应该阻止编译）
+%compileTime {
+    // Warning("This is a warning message");
+    // 编译应该继续，但会显示警告
+}
+
+// 测试10: 编译期Error级别（应该阻止编译）
+// %compileTime {
+//     Error("This is an error message");
+//     // 编译应该失败
+// }
+
+// 测试11: 编译期只读访问运行时变量（应该允许）
+var runtimeReadOnly = 50;
+
+%compileTime {
+    // 应该允许读取
+    var readValue = runtimeReadOnly;
+    if (readValue > 0) {
+        // 编译期检查通过
+    }
+}
+
+%test("compileTimeReadOnlyAccess") {
+    // 测试运行时变量仍然可用
+    return runtimeReadOnly;
+}

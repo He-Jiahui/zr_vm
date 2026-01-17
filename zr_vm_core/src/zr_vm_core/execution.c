@@ -146,17 +146,90 @@ static SZrObjectPrototype *find_type_prototype(SZrState *state, SZrString *typeN
         }
     } else {
         // 没有指定模块名，尝试从当前调用栈的闭包中查找模块
-        // 遍历调用栈，查找模块对象（通过闭包变量或其他方式）
-        // TODO: 如果函数有模块信息，从模块中查找类型
-        // 目前先跳过，因为需要额外的机制来关联函数和模块
+        // 如果函数有模块信息，从模块中查找类型
+        // 通过查找调用栈中的entry function，然后查找对应的模块
+        if (state->callInfoList != ZR_NULL) {
+            // 查找当前调用栈中的entry function（包含prototypeData的函数）
+            SZrCallInfo *callInfo = state->callInfoList;
+            while (callInfo != ZR_NULL) {
+                if (callInfo->functionBase.valuePointer >= state->stackBase.valuePointer &&
+                    callInfo->functionBase.valuePointer < state->stackTop.valuePointer) {
+                    SZrTypeValue *closureValue = ZrStackGetValue(callInfo->functionBase.valuePointer);
+                    if (closureValue != ZR_NULL && closureValue->type == ZR_VALUE_TYPE_CLOSURE) {
+                        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, closureValue->value.object);
+                        if (closure != ZR_NULL && closure->function != ZR_NULL) {
+                            struct SZrFunction *func = closure->function;
+                            // 检查是否是entry function（有prototypeData）
+                            if (func->prototypeData != ZR_NULL && func->prototypeCount > 0) {
+                                // 查找对应的模块
+                                // TODO: 注意：这里需要遍历模块注册表查找，简化实现：遍历所有模块
+                                if (state->global != ZR_NULL) {
+                                    SZrGlobalState *global = state->global;
+                                    if (ZrValueIsGarbageCollectable(&global->loadedModulesRegistry) &&
+                                        global->loadedModulesRegistry.type == ZR_VALUE_TYPE_OBJECT) {
+                                        SZrObject *registry = ZR_CAST_OBJECT(state, global->loadedModulesRegistry.value.object);
+                                        if (registry != ZR_NULL && registry->nodeMap.isValid && 
+                                            registry->nodeMap.buckets != ZR_NULL) {
+                                            // 遍历模块注册表，查找包含该entry function的模块
+                                            for (TZrSize i = 0; i < registry->nodeMap.capacity; i++) {
+                                                SZrHashKeyValuePair *pair = registry->nodeMap.buckets[i];
+                                                while (pair != ZR_NULL) {
+                                                    if (pair->value.type == ZR_VALUE_TYPE_OBJECT) {
+                                                        SZrObject *cachedObject = ZR_CAST_OBJECT(state, pair->value.value.object);
+                                                        if (cachedObject != ZR_NULL && 
+                                                            cachedObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+                                                            struct SZrObjectModule *module = (struct SZrObjectModule *)cachedObject;
+                                                            // 检查模块的导出中是否有该类型
+                                                            SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
+                                                            if (prototype != ZR_NULL) {
+                                                                return prototype;
+                                                            }
+                                                        }
+                                                    }
+                                                    pair = pair->next;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                break;  // 找到entry function后，不再继续查找
+                            }
+                        }
+                    }
+                }
+                callInfo = callInfo->previous;
+            }
+        }
         
         // 从全局模块注册表中查找（遍历所有已加载的模块）
-        // 注意：由于 ZrHashSet 没有迭代接口，我们需要通过其他方式查找
-        // 一个可能的方案是：在模块加载时，将类型原型注册到全局类型表中
-        // 或者：通过类型名称的哈希值在注册表中查找对应的模块
-        
-        // 暂时先尝试从全局 zr 对象中查找（如果类型是全局注册的）
-        // 或者：通过元方法机制，让类型系统提供查找功能
+        // 如果上面的查找失败，遍历所有模块查找类型
+        if (state->global != ZR_NULL) {
+            SZrGlobalState *global = state->global;
+            if (ZrValueIsGarbageCollectable(&global->loadedModulesRegistry) &&
+                global->loadedModulesRegistry.type == ZR_VALUE_TYPE_OBJECT) {
+                SZrObject *registry = ZR_CAST_OBJECT(state, global->loadedModulesRegistry.value.object);
+                if (registry != ZR_NULL && registry->nodeMap.isValid && 
+                    registry->nodeMap.buckets != ZR_NULL) {
+                    for (TZrSize i = 0; i < registry->nodeMap.capacity; i++) {
+                        SZrHashKeyValuePair *pair = registry->nodeMap.buckets[i];
+                        while (pair != ZR_NULL) {
+                            if (pair->value.type == ZR_VALUE_TYPE_OBJECT) {
+                                SZrObject *cachedObject = ZR_CAST_OBJECT(state, pair->value.value.object);
+                                if (cachedObject != ZR_NULL && 
+                                    cachedObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+                                    struct SZrObjectModule *module = (struct SZrObjectModule *)cachedObject;
+                                    SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
+                                    if (prototype != ZR_NULL) {
+                                        return prototype;
+                                    }
+                                }
+                            }
+                            pair = pair->next;
+                        }
+                    }
+                }
+            }
+        }
     }
     
     // 如果找不到，返回 ZR_NULL（后续可以通过元方法或创建新原型）
@@ -203,7 +276,7 @@ static TBool convert_to_struct(SZrState *state, SZrTypeValue *source, SZrObjectP
             // 一个方案是：通过元方法 @to_struct 来处理字段复制
             // 或者：如果源对象已经是 struct 类型，直接复制其 nodeMap
             
-            // 暂时先复制所有字段（后续需要根据 struct 定义进行字段验证和类型转换）
+            // TODO: 暂时先复制所有字段（后续需要根据 struct 定义进行字段验证和类型转换）
             // 由于无法直接迭代 nodeMap，我们依赖元方法或构造函数来处理字段复制
             // 如果源对象有 @to_struct 元方法，应该已经在上层调用了
             // 这里只是创建了新的 struct 对象，字段复制由元方法或构造函数完成
@@ -254,7 +327,7 @@ static TBool convert_to_class(SZrState *state, SZrTypeValue *source, SZrObjectPr
             // 一个方案是：通过元方法 @to_object 来处理字段复制
             // 或者：如果源对象已经是 class 类型，直接复制其 nodeMap
             
-            // 暂时先复制所有字段（后续需要根据 class 定义进行字段验证和类型转换）
+            // TODO: 暂时先复制所有字段（后续需要根据 class 定义进行字段验证和类型转换）
             // 由于无法直接迭代 nodeMap，我们依赖元方法或构造函数来处理字段复制
             // 如果源对象有 @to_object 元方法，应该已经在上层调用了
             // 这里只是创建了新的 class 对象，字段复制由元方法或构造函数完成
@@ -661,9 +734,19 @@ LZrReturning: {
                         SZrString *typeName = ZR_CAST_STRING(state, typeNameValue->value.object);
                         
                         // 1. 优先尝试通过元方法进行转换
-                        // 注意：ZR_META_TO_STRUCT 可能不存在，暂时不使用元方法，直接查找原型
-                        // TODO: 如果定义了 ZR_META_TO_STRUCT，使用它；否则直接查找原型
-                        SZrMeta *meta = ZR_NULL; // ZrValueGetMeta(state, opA, ZR_META_TO_STRUCT);
+                        // 如果定义了 ZR_META_TO_STRUCT，使用它；否则直接查找原型
+                        // 注意：ZR_META_TO_STRUCT 可能不在标准元方法列表中，需要检查是否支持
+                        // 如果opA是对象类型，尝试从对象的prototype中查找元方法
+                        SZrMeta *meta = ZR_NULL;
+                        if (opA->type == ZR_VALUE_TYPE_OBJECT) {
+                            SZrObject *obj = ZR_CAST_OBJECT(state, opA->value.object);
+                            if (obj != ZR_NULL && obj->prototype != ZR_NULL) {
+                                // 尝试查找TO_STRUCT元方法（如果存在）
+                                // 注意：ZR_META_TO_STRUCT可能不在标准枚举中，这里先查找原型链
+                                // 如果未来添加了ZR_META_TO_STRUCT，可以在这里使用
+                                // TODO: 目前暂时跳过元方法查找，直接查找原型
+                            }
+                        }
                         if (meta != ZR_NULL && meta->function != ZR_NULL) {
                             // 调用元方法
                             TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
@@ -697,7 +780,7 @@ LZrReturning: {
                                 // 3. 找不到原型，如果源值是对象，尝试直接复制
                                 // 这允许在运行时动态创建 struct（如果类型系统支持）
                                 if (ZR_VALUE_IS_TYPE_OBJECT(opA->type)) {
-                                    // 暂时直接复制对象（后续需要设置正确的原型）
+                                    // TODO: 暂时直接复制对象（后续需要设置正确的原型）
                                     ZrValueCopy(state, destination, opA);
                                 } else {
                                     ZrValueResetAsNull(destination);
@@ -724,9 +807,19 @@ LZrReturning: {
                         SZrString *typeName = ZR_CAST_STRING(state, typeNameValue->value.object);
                         
                         // 1. 优先尝试通过元方法进行转换
-                        // 注意：ZR_META_TO_OBJECT 可能不存在，暂时不使用元方法，直接查找原型
-                        // TODO: 如果定义了 ZR_META_TO_OBJECT，使用它；否则直接查找原型
-                        SZrMeta *meta = ZR_NULL; // ZrValueGetMeta(state, opA, ZR_META_TO_OBJECT);
+                        // 如果定义了 ZR_META_TO_OBJECT，使用它；否则直接查找原型
+                        // 注意：ZR_META_TO_OBJECT 可能不在标准元方法列表中，需要检查是否支持
+                        // 如果opA是对象类型，尝试从对象的prototype中查找元方法
+                        SZrMeta *meta = ZR_NULL;
+                        if (opA->type == ZR_VALUE_TYPE_OBJECT) {
+                            SZrObject *obj = ZR_CAST_OBJECT(state, opA->value.object);
+                            if (obj != ZR_NULL && obj->prototype != ZR_NULL) {
+                                // 尝试查找TO_OBJECT元方法（如果存在）
+                                // 注意：ZR_META_TO_OBJECT可能不在标准枚举中，这里先查找原型链
+                                // 如果未来添加了ZR_META_TO_OBJECT，可以在这里使用
+                                // TODO: 目前暂时跳过元方法查找，直接查找原型
+                            }
+                        }
                         if (meta != ZR_NULL && meta->function != ZR_NULL) {
                             // 调用元方法
                             TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
@@ -760,7 +853,7 @@ LZrReturning: {
                                 // 3. 找不到原型，如果源值是对象，尝试直接复制
                                 // 这允许在运行时动态创建 class（如果类型系统支持）
                                 if (ZR_VALUE_IS_TYPE_OBJECT(opA->type)) {
-                                    // 暂时直接复制对象（后续需要设置正确的原型）
+                                    // TODO: 暂时直接复制对象（后续需要设置正确的原型）
                                     ZrValueCopy(state, destination, opA);
                                 } else {
                                     ZrValueResetAsNull(destination);
@@ -1422,12 +1515,12 @@ LZrReturning: {
             DONE(1);
             ZR_INSTRUCTION_LABEL(FUNCTION_CALL) {
                 // FUNCTION_CALL 指令格式：
-                // operandExtra (E) = resultSlot (返回值槽位)
+                // operandExtra (E) = resultSlot (返回值槽位，用于编译时；ZrFunctionPreCall 需要的是 expectedReturnCount)
                 // operand1[0] (A1) = functionSlot (函数在栈上的槽位)
                 // operand1[1] (B1) = parametersCount (参数数量，直接使用，不从栈读取)
                 TZrSize functionSlot = A1(instruction);
                 TZrSize parametersCount = B1(instruction);  // 参数数量直接使用，不是栈槽位
-                TZrSize returnCount = E(instruction);  // 返回值数量
+                TZrSize expectedReturnCount = 1;  // 期望 1 个返回值；ZrFunctionPreCall 的 resultCount 表示 expectedReturnCount；E(instruction)=resultSlot 仅编译时用
                 
                 opA = &BASE(functionSlot)->value;
                 // 检查函数值是否为空
@@ -1442,9 +1535,9 @@ LZrReturning: {
                     state->stackTop.valuePointer = BASE(functionSlot) + 1;
                 }
                 
-                // save its program counter
-                callInfo->context.context.programCounter = programCounter;
-                SZrCallInfo *nextCallInfo = ZrFunctionPreCall(state, BASE(functionSlot), returnCount);
+                // save 下一条指令的地址：fetch 使用 *(PC+=1)，当前 programCounter 指向本指令，故保存 programCounter+1
+                callInfo->context.context.programCounter = programCounter + 1;
+                SZrCallInfo *nextCallInfo = ZrFunctionPreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     // NULL means native call
                     trap = callInfo->context.context.trap;
@@ -1457,12 +1550,12 @@ LZrReturning: {
             DONE(1);
             ZR_INSTRUCTION_LABEL(FUNCTION_TAIL_CALL) {
                 // FUNCTION_TAIL_CALL 指令格式：
-                // operandExtra (E) = resultSlot (返回值槽位)
+                // operandExtra (E) = resultSlot (返回值槽位，编译时；ZrFunctionPreCall 需要的是 expectedReturnCount)
                 // operand1[0] (A1) = functionSlot (函数在栈上的槽位)
                 // operand1[1] (B1) = parametersCount (参数数量，直接使用，不从栈读取)
                 TZrSize functionSlot = A1(instruction);
                 TZrSize parametersCount = B1(instruction);  // 参数数量直接使用，不是栈槽位
-                TZrSize returnCount = E(instruction);  // 返回值数量
+                TZrSize expectedReturnCount = 1;  // 期望 1 个返回值；E(instruction)=resultSlot 仅编译时用
                 
                 opA = &BASE(functionSlot)->value;
                 // 检查函数值是否为空
@@ -1478,14 +1571,14 @@ LZrReturning: {
                 }
                 
                 // 尾调用：重用当前调用帧
-                // 保存当前程序计数器
-                callInfo->context.context.programCounter = programCounter;
+                // 保存下一条指令的地址：fetch 使用 *(PC+=1)，故保存 programCounter+1
+                callInfo->context.context.programCounter = programCounter + 1;
                 // 设置尾调用标志
                 callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
                 // 准备调用参数（函数在BASE(functionSlot)，参数在BASE(functionSlot+1)到BASE(functionSlot+parametersCount)）
                 TZrStackValuePointer functionPointer = BASE(functionSlot);
-                // 调用函数（重用当前callInfo）
-                SZrCallInfo *nextCallInfo = ZrFunctionPreCall(state, functionPointer, returnCount);
+                // 调用函数（expectedReturnCount=1，与 FUNCTION_CALL 一致）；返回值写入 BASE(E(instruction))
+                SZrCallInfo *nextCallInfo = ZrFunctionPreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     // Native调用，清除尾调用标志
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
@@ -1601,39 +1694,56 @@ LZrReturning: {
                 // 获取父函数的 callInfo
                 SZrCallInfo *parentCallInfo = callInfo->previous;
                 TBool found = ZR_FALSE;
+                SZrFunction *parentFunction = ZR_NULL;
                 
-                if (parentCallInfo != ZR_NULL && ZR_CALL_INFO_IS_VM(parentCallInfo)) {
-                    // 获取父函数的闭包和函数
-                    SZrTypeValue *parentFunctionBaseValue = ZrStackGetValue(parentCallInfo->functionBase.valuePointer);
-                    if (parentFunctionBaseValue != ZR_NULL) {
-                        // 类型检查：确保父函数是函数类型或闭包类型
-                        if (parentFunctionBaseValue->type == ZR_VALUE_TYPE_FUNCTION || 
-                            parentFunctionBaseValue->type == ZR_VALUE_TYPE_CLOSURE) {
-                            SZrClosure *parentClosure = ZR_CAST_VM_CLOSURE(state, parentFunctionBaseValue->value.object);
-                            if (parentClosure != ZR_NULL && parentClosure->function != ZR_NULL) {
-                                SZrFunction *parentFunction = parentClosure->function;
-                                
-                                // 通过索引直接访问 childFunctionList
-                                if (childFunctionIndex < parentFunction->childFunctionLength) {
-                                    SZrFunction *childFunction = &parentFunction->childFunctionList[childFunctionIndex];
-                                    if (childFunction != ZR_NULL && 
-                                        childFunction->super.type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
-                                        // 创建闭包对象
-                                        SZrClosure *childClosure = ZrClosureNew(state, 0);
-                                        if (childClosure != ZR_NULL) {
-                                            childClosure->function = childFunction;
-                                            ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(childClosure));
-                                            destination->type = ZR_VALUE_TYPE_CLOSURE;
-                                            destination->isGarbageCollectable = ZR_TRUE;
-                                            destination->isNative = ZR_FALSE;
-                                            found = ZR_TRUE;
-                                        }
-                                    }
+                if (parentCallInfo != ZR_NULL) {
+                    TBool isVM = ZR_CALL_INFO_IS_VM(parentCallInfo);
+                    if (isVM) {
+                        // 获取父函数的闭包和函数
+                        SZrTypeValue *parentFunctionBaseValue = ZrStackGetValue(parentCallInfo->functionBase.valuePointer);
+                        if (parentFunctionBaseValue != ZR_NULL) {
+                            // 类型检查：确保父函数是函数类型或闭包类型
+                            if (parentFunctionBaseValue->type == ZR_VALUE_TYPE_FUNCTION || 
+                                parentFunctionBaseValue->type == ZR_VALUE_TYPE_CLOSURE) {
+                                SZrClosure *parentClosure = ZR_CAST_VM_CLOSURE(state, parentFunctionBaseValue->value.object);
+                                if (parentClosure != ZR_NULL && parentClosure->function != ZR_NULL) {
+                                    parentFunction = parentClosure->function;
                                 }
+                            } else {
+                                ZrDebugRunError(state, "GET_SUB_FUNCTION: parent must be a function or closure");
                             }
-                        } else {
-                            // 类型错误：父函数不是函数类型
-                            ZrDebugRunError(state, "GET_SUB_FUNCTION: parent must be a function or closure");
+                        }
+                    } else {
+                        // 如果不是 VM 调用，尝试从当前函数的闭包获取子函数
+                        if (closure != ZR_NULL && closure->function != ZR_NULL) {
+                            parentFunction = closure->function;
+                        }
+                    }
+                } else if (parentCallInfo == ZR_NULL) {
+                    // 如果没有父函数的 callInfo，尝试从当前函数的闭包获取子函数
+                    // 这适用于顶层函数或测试函数直接调用的情况
+                    if (closure != ZR_NULL && closure->function != ZR_NULL) {
+                        parentFunction = closure->function;
+                    }
+                }
+                
+                // 从父函数获取子函数
+                if (parentFunction != ZR_NULL) {
+                    // 通过索引直接访问 childFunctionList
+                    if (childFunctionIndex < parentFunction->childFunctionLength) {
+                        SZrFunction *childFunction = &parentFunction->childFunctionList[childFunctionIndex];
+                        if (childFunction != ZR_NULL && 
+                            childFunction->super.type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+                            // 创建闭包对象
+                            SZrClosure *childClosure = ZrClosureNew(state, 0);
+                            if (childClosure != ZR_NULL) {
+                                childClosure->function = childFunction;
+                                ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(childClosure));
+                                destination->type = ZR_VALUE_TYPE_CLOSURE;
+                                destination->isGarbageCollectable = ZR_TRUE;
+                                destination->isNative = ZR_FALSE;
+                                found = ZR_TRUE;
+                            }
                         }
                     }
                 }

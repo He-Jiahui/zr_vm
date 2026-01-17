@@ -20,6 +20,17 @@ typedef struct SZrInferredType {
     TBool isNullable;                // 是否可空
     SZrArray elementTypes;           // 泛型/数组元素类型（SZrInferredType*），可选
     SZrString *typeName;             // 用户定义类型名（struct/class等），可选
+    
+    // 范围约束（用于整数类型和数组长度）
+    TInt64 minValue;                 // 最小值
+    TInt64 maxValue;                 // 最大值
+    TBool hasRangeConstraint;        // 是否有范围约束
+    
+    // 数组大小约束
+    TZrSize arrayFixedSize;          // 数组固定大小（0表示未固定）
+    TZrSize arrayMinSize;            // 数组最小大小
+    TZrSize arrayMaxSize;            // 数组最大大小
+    TBool hasArraySizeConstraint;    // 是否有数组大小约束
 } SZrInferredType;
 
 // 类型绑定（变量名到类型的映射）

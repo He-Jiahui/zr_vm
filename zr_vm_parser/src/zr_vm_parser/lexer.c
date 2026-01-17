@@ -562,6 +562,10 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
                 next_char(ls); // 跳过第三个 '.'
                 return ZR_TK_PARAMS;
             }
+            if (ls->currentChar == '.') {
+                next_char(ls); // 跳过第二个 '.'
+                return ZR_TK_DOT_DOT;
+            }
             return ZR_TK_DOT;
 
         case '?':
@@ -972,13 +976,12 @@ const TChar *ZrLexerTokenToString(SZrLexState *ls, EZrToken token) {
         return charToken;
     }
 
-    TZrSize index = token - ZR_FIRST_RESERVED;
+    // 遍历数组查找匹配的 token（不依赖数组顺序）
     TZrSize tokenInfoCount = sizeof(zr_token_info) / sizeof(zr_token_info[0]);
-    
-    if (index < tokenInfoCount) {
-        // 断言：确保 token 和结构体中的 token 匹配
-        ZR_ASSERT(token == zr_token_info[index].token);
-        return zr_token_info[index].name;
+    for (TZrSize i = 0; i < tokenInfoCount; i++) {
+        if (zr_token_info[i].token == token) {
+            return zr_token_info[i].name;
+        }
     }
 
     return "<unknown>";

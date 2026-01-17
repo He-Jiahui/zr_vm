@@ -9,6 +9,9 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/type_inference.h"
 
+// 前向声明编译期执行函数
+extern TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAstNode *node);
+
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
@@ -28,6 +31,9 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node);
 void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node);
+
+// 编译期执行函数（在 compile_time_executor.c 中实现）
+extern TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node);
 TZrSize create_label(SZrCompilerState *cs);
 void resolve_label(SZrCompilerState *cs, TZrSize labelId);
@@ -88,6 +94,7 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
 
     // 初始化错误状态
     cs->hasError = ZR_FALSE;
+    cs->hasFatalError = ZR_FALSE;
     cs->errorMessage = ZR_NULL;
     cs->errorLocation.start.line = 0;
     cs->errorLocation.start.column = 0;
@@ -111,7 +118,7 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     // 初始化模块导出跟踪数组
     ZrArrayInit(state, &cs->pubVariables, sizeof(SZrExportedVariable), 8);
     ZrArrayInit(state, &cs->proVariables, sizeof(SZrExportedVariable), 8);
-    ZrArrayInit(state, &cs->exportedTypes, sizeof(SZrString *), 4);  // 暂时存储类型名
+    ZrArrayInit(state, &cs->exportedTypes, sizeof(SZrString *), 4);  // TODO: 暂时存储类型名
     
     // 初始化脚本 AST 引用
     cs->scriptAst = ZR_NULL;
@@ -121,6 +128,12 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     
     // 初始化类型 Prototype 信息数组
     ZrArrayInit(state, &cs->typePrototypes, sizeof(SZrTypePrototypeInfo), 8);
+    
+    // 初始化编译期环境
+    cs->compileTimeTypeEnv = ZrTypeEnvironmentNew(state);
+    ZrArrayInit(state, &cs->compileTimeVariables, sizeof(SZrCompileTimeVariable*), 8);
+    ZrArrayInit(state, &cs->compileTimeFunctions, sizeof(SZrCompileTimeFunction*), 8);
+    cs->isInCompileTimeContext = ZR_FALSE;
 }
 
 // 清理解译器状态
@@ -253,6 +266,60 @@ void ZrCompilerStateFree(SZrCompilerState *cs) {
         cs->exportedTypes.capacity > 0 && cs->exportedTypes.elementSize > 0) {
         ZrArrayFree(state, &cs->exportedTypes);
     }
+    
+    // 释放编译期变量表
+    if (cs->compileTimeVariables.isValid && cs->compileTimeVariables.head != ZR_NULL && 
+        cs->compileTimeVariables.capacity > 0 && cs->compileTimeVariables.elementSize > 0) {
+        // 释放每个编译期变量及其类型
+        for (TZrSize i = 0; i < cs->compileTimeVariables.length; i++) {
+            SZrCompileTimeVariable **varPtr = (SZrCompileTimeVariable**)ZrArrayGet(&cs->compileTimeVariables, i);
+            if (varPtr != ZR_NULL && *varPtr != ZR_NULL) {
+                SZrCompileTimeVariable *var = *varPtr;
+                // 释放类型（包括嵌套的elementTypes）
+                ZrInferredTypeFree(state, &var->type);
+                // 释放变量结构体本身（字符串和AST节点由GC管理）
+                ZrMemoryRawFreeWithType(state->global, var, sizeof(SZrCompileTimeVariable), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+        }
+        ZrArrayFree(state, &cs->compileTimeVariables);
+    }
+    
+    // 释放编译期函数表
+    if (cs->compileTimeFunctions.isValid && cs->compileTimeFunctions.head != ZR_NULL && 
+        cs->compileTimeFunctions.capacity > 0 && cs->compileTimeFunctions.elementSize > 0) {
+        // 释放每个编译期函数及其类型信息
+        for (TZrSize i = 0; i < cs->compileTimeFunctions.length; i++) {
+            SZrCompileTimeFunction **funcPtr = (SZrCompileTimeFunction**)ZrArrayGet(&cs->compileTimeFunctions, i);
+            if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL) {
+                SZrCompileTimeFunction *func = *funcPtr;
+                // 释放返回类型（包括嵌套的elementTypes）
+                ZrInferredTypeFree(state, &func->returnType);
+                // 释放参数类型数组中的每个类型
+                if (func->paramTypes.isValid && func->paramTypes.head != ZR_NULL && 
+                    func->paramTypes.capacity > 0 && func->paramTypes.elementSize > 0) {
+                    for (TZrSize j = 0; j < func->paramTypes.length; j++) {
+                        SZrInferredType **paramTypePtr = (SZrInferredType**)ZrArrayGet(&func->paramTypes, j);
+                        if (paramTypePtr != ZR_NULL && *paramTypePtr != ZR_NULL) {
+                            // 释放参数类型（包括嵌套的elementTypes）
+                            ZrInferredTypeFree(state, *paramTypePtr);
+                            // 释放参数类型结构体本身
+                            ZrMemoryRawFreeWithType(state->global, *paramTypePtr, sizeof(SZrInferredType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                        }
+                    }
+                    ZrArrayFree(state, &func->paramTypes);
+                }
+                // 释放函数结构体本身（字符串和AST节点由GC管理）
+                ZrMemoryRawFreeWithType(state->global, func, sizeof(SZrCompileTimeFunction), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+        }
+        ZrArrayFree(state, &cs->compileTimeFunctions);
+    }
+    
+    // 释放编译期类型环境
+    if (cs->compileTimeTypeEnv != ZR_NULL) {
+        ZrTypeEnvironmentFree(state, cs->compileTimeTypeEnv);
+        cs->compileTimeTypeEnv = ZR_NULL;
+    }
 }
 
 // 报告编译错误
@@ -311,6 +378,52 @@ static void print_error_suggestion(const TChar *msg) {
         printf("              2. Invalid compiler state\n");
         printf("              3. Bug in the compiler\n");
         printf("              Please report this issue with the source code that triggered it.\n");
+    }
+}
+
+// 编译期错误报告
+void ZrCompileTimeError(SZrCompilerState *cs, EZrCompileTimeErrorLevel level, const TChar *message, SZrFileRange location) {
+    if (cs == ZR_NULL || message == ZR_NULL) {
+        return;
+    }
+    
+    const TChar *levelStr = "INFO";
+    switch (level) {
+        case ZR_COMPILE_TIME_ERROR_INFO:
+            levelStr = "INFO";
+            break;
+        case ZR_COMPILE_TIME_ERROR_WARNING:
+            levelStr = "WARNING";
+            break;
+        case ZR_COMPILE_TIME_ERROR_ERROR:
+            levelStr = "ERROR";
+            cs->hasError = ZR_TRUE;
+            break;
+        case ZR_COMPILE_TIME_ERROR_FATAL:
+            levelStr = "FATAL";
+            cs->hasError = ZR_TRUE;
+            break;
+    }
+    
+    // 输出错误信息
+    const TChar *fileName = "<unknown>";
+    if (location.source != ZR_NULL) {
+        TNativeString nameStr = ZrStringGetNativeString(location.source);
+        if (nameStr != ZR_NULL) {
+            fileName = nameStr;
+        }
+    }
+    
+    printf("[CompileTime %s] %s:%d:%d: %s\n", 
+           levelStr, fileName, location.start.line, location.start.column, message);
+    
+    // 如果是致命错误，设置错误信息
+    if (level == ZR_COMPILE_TIME_ERROR_FATAL) {
+        cs->hasFatalError = ZR_TRUE;
+        if (cs->errorMessage == ZR_NULL) {
+            cs->errorMessage = message;  // 注意：这里只是保存指针，实际应该复制字符串
+            cs->errorLocation = location;
+        }
     }
 }
 
@@ -803,7 +916,7 @@ void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize la
 
 // 外部变量分析辅助函数（用于闭包捕获）
 
-// 记录引用的外部变量（简化实现：直接添加到列表）
+// TODO: 记录引用的外部变量（简化实现：直接添加到列表）
 static void record_external_var_reference(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || name == ZR_NULL || cs->hasError) {
         return;
@@ -903,7 +1016,7 @@ static void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node
         case ZR_AST_FUNCTION_CALL: {
             SZrFunctionCall *funcCall = &node->data.functionCall;
             // 注意：SZrFunctionCall 结构可能没有 callee 字段，需要检查实际结构
-            // 函数调用在 primary expression 中处理，这里暂时跳过
+            // TODO: 函数调用在 primary expression 中处理，这里暂时跳过
             if (funcCall->args != ZR_NULL) {
                 for (TZrSize i = 0; i < funcCall->args->count; i++) {
                     SZrAstNode *arg = funcCall->args->nodes[i];
@@ -1003,7 +1116,7 @@ static void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node
             break;
         }
         default:
-            // 其他节点类型暂时不处理，可以根据需要扩展
+            // TODO: 其他节点类型暂时不处理，可以根据需要扩展
             break;
     }
 }
@@ -1073,7 +1186,7 @@ static void eliminate_redundant_instructions(SZrCompilerState *cs) {
     
     // 消除无用的栈操作
     // 例如：连续的 SET_STACK 和 GET_STACK 到同一个槽位可以优化
-    // 注意：这是一个简化实现，更复杂的死代码消除需要数据流分析
+    // TODO: 注意：这是一个简化实现，更复杂的死代码消除需要数据流分析
     
     // 遍历指令序列，查找冗余模式
     TZrSize i = 0;
@@ -1114,7 +1227,7 @@ static void eliminate_redundant_instructions(SZrCompilerState *cs) {
     }
     
     // 消除无用的标签（标签没有被引用）
-    // 注意：这需要分析跳转指令，暂时跳过
+    // TODO: 注意：这需要分析跳转指令，暂时跳过
 }
 
 // 优化跳转指令
@@ -1138,7 +1251,7 @@ static void optimize_jumps(SZrCompilerState *cs) {
             // 检查是否是跳转指令
             if (opcode1 == ZR_INSTRUCTION_ENUM(JUMP) || opcode1 == ZR_INSTRUCTION_ENUM(JUMP_IF)) {
                 // 查找跳转目标
-                // 注意：这需要标签解析后才能进行，暂时跳过详细实现
+                // TODO: 注意：这需要标签解析后才能进行，暂时跳过详细实现
                 // 这里只做基本检查
             }
         }
@@ -1148,7 +1261,7 @@ static void optimize_jumps(SZrCompilerState *cs) {
     
     // 合并相同目标的跳转
     // 如果多个跳转指令跳转到同一个标签，可以考虑优化
-    // 注意：这需要更复杂的分析，暂时跳过
+    // TODO: 注意：这需要更复杂的分析，暂时跳过
 }
 
 // 主编译优化入口
@@ -1162,7 +1275,15 @@ static void optimize_instructions(SZrCompilerState *cs) {
     eliminate_redundant_instructions(cs);
     optimize_jumps(cs);
     
-    // TODO: 添加更多优化步骤
+    // 添加更多优化步骤
+    // 可以添加的优化包括：
+    // 1. 常量折叠：在编译期计算常量表达式
+    // 2. 死代码消除：移除永远不会执行的代码
+    // 3. 循环优化：展开小循环、循环不变式外提等
+    // 4. 内联优化：内联小函数
+    // 5. 寄存器分配优化：优化栈槽使用
+    // TODO: 这些优化需要更复杂的分析，暂时作为占位符
+    // 未来可以逐步实现这些优化
 }
 
 // 编译表达式（在 compile_expression.c 中实现）
@@ -1466,12 +1587,19 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 函数名已经存储在函数对象中（newFunc->functionName），父函数只需要维护子函数列表的索引
     // 检查是否是顶层函数声明（脚本级别的函数声明，而不是嵌套函数）
     // 如果当前编译器是脚本级别（isScriptLevel == ZR_TRUE），则这是顶层函数声明
-    if (oldFunction != ZR_NULL && !cs->isScriptLevel) {
-        // 将新函数添加到子函数列表（嵌套函数）
+    if (oldFunction != ZR_NULL) {
+        // 无论是嵌套函数还是顶层函数，都添加到父函数的 childFunctions 中
+        // 这样它们都可以通过 GET_SUB_FUNCTION 访问
         // 子函数在 childFunctions 中的索引就是添加时的位置（cs->childFunctions.length）
         ZrArrayPush(cs->state, &cs->childFunctions, &newFunc);
+        
+        // 更新函数名到索引的映射（用于编译时查找）
+        SZrChildFunctionNameMap nameMap;
+        nameMap.name = funcDecl->name != ZR_NULL ? funcDecl->name->name : ZR_NULL;
+        nameMap.childFunctionIndex = (TUInt32)(cs->childFunctions.length - 1);
+        ZrArrayPush(cs->state, &cs->childFunctionNameMap, &nameMap);
     } else {
-        // 如果是顶层函数声明（脚本级别的函数声明），将其保存到编译器状态
+        // 如果是顶层函数声明且没有父函数（不应该发生），将其保存到编译器状态
         // 这样 ZrCompilerCompile 可以返回它
         cs->topLevelFunction = newFunc;
     }
@@ -1549,7 +1677,13 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 生成测试模式检查（只有测试模式才执行）
     // 测试模式检查在运行时进行，这里先编译测试体
-    // TODO: 实现测试模式标志检查（可以通过全局变量或函数参数实现）
+    // 实现测试模式标志检查（可以通过全局变量或函数参数实现）
+    // 注意：测试模式检查可以通过以下方式实现：
+    // 1. 通过全局变量（如zr.testMode）检查
+    // 2. 通过编译选项/标志
+    // 3. 通过环境变量
+    // TODO: 这里暂时不生成测试模式检查代码，测试体总是编译
+    // 未来可以在测试体前添加条件检查指令
 
     // 创建成功标签（正常执行到末尾）
     TZrSize successLabelId = create_label(cs);
@@ -1568,6 +1702,9 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 编译测试体
     if (testDecl->body != ZR_NULL) {
         compile_statement(cs, testDecl->body);
+        if (cs->hasError) {
+            // 错误已在 compile_statement 中报告
+        }
     }
 
     // 如果正常执行到这里（没有抛出异常），测试成功
@@ -1719,6 +1856,22 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         if (newFunc->closureValueList != ZR_NULL) {
             memcpy(newFunc->closureValueList, cs->closureVars.head, closureVarSize);
             newFunc->closureValueLength = (TUInt32) cs->closureVarCount;
+        }
+    }
+
+    // 复制脚本级（主函数）的 childFunctions 到测试函数，使 GET_SUB_FUNCTION 能解析顶层函数
+    if (cs->childFunctions.length > 0) {
+        TZrSize childFuncSize = cs->childFunctions.length * sizeof(SZrFunction);
+        newFunc->childFunctionList =
+                (struct SZrFunction *) ZrMemoryRawMallocWithType(global, childFuncSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->childFunctionList != ZR_NULL) {
+            SZrFunction **srcArray = (SZrFunction **) cs->childFunctions.head;
+            for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
+                if (srcArray[i] != ZR_NULL) {
+                    newFunc->childFunctionList[i] = *srcArray[i];
+                }
+            }
+            newFunc->childFunctionLength = (TUInt32) cs->childFunctions.length;
         }
     }
 
@@ -2078,7 +2231,7 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             SZrAstNode *inheritType = structDecl->inherits->nodes[i];
             if (inheritType != ZR_NULL && inheritType->type == ZR_AST_TYPE) {
                 SZrType *type = &inheritType->data.type;
-                // 提取类型名称（简化处理，只处理简单类型名）
+                // TODO: 提取类型名称（简化处理，只处理简单类型名）
                 if (type->name != ZR_NULL && type->name->type == ZR_AST_IDENTIFIER_LITERAL) {
                     SZrString *inheritTypeName = type->name->data.identifier.name;
                     if (inheritTypeName != ZR_NULL) {
@@ -2186,7 +2339,9 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         memberInfo.returnTypeName = ZR_NULL; // 无返回类型（void）
                     }
                     // 方法信息（函数引用等）将在方法编译后设置
-                    // TODO: 需要将方法编译为函数并存储函数引用索引
+                    // 需要将方法编译为函数并存储函数引用索引
+                    // 注意：方法编译应该在prototype创建时进行，这里只记录方法信息
+                    // 实际的函数编译和引用索引设置需要在方法编译完成后进行
                     if (method->params != ZR_NULL) {
                         memberInfo.parameterCount = (TUInt32)method->params->count;
                     }
@@ -2321,7 +2476,7 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             SZrAstNode *inheritType = classDecl->inherits->nodes[i];
             if (inheritType != ZR_NULL && inheritType->type == ZR_AST_TYPE) {
                 SZrType *type = &inheritType->data.type;
-                // 提取类型名称（简化处理，只处理简单类型名）
+                // TODO: 提取类型名称（简化处理，只处理简单类型名）
                 if (type->name != ZR_NULL && type->name->type == ZR_AST_IDENTIFIER_LITERAL) {
                     SZrString *inheritTypeName = type->name->data.identifier.name;
                     if (inheritTypeName != ZR_NULL) {
@@ -2435,8 +2590,21 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrClassProperty *property = &member->data.classProperty;
                     memberInfo.accessModifier = property->access;
                     // ClassProperty 包含getter和setter，需要从PropertyGet/PropertySet中提取名称
-                    // TODO: 实现从PropertyGet/PropertySet中提取名称和函数引用
-                    // 暂时跳过属性处理
+                    // 实现从PropertyGet/PropertySet中提取名称和函数引用
+                    if (property->getter != ZR_NULL && property->getter->type == ZR_AST_PROPERTY_GET) {
+                        SZrPropertyGet *getter = &property->getter->data.propertyGet;
+                        if (getter->name != ZR_NULL) {
+                            memberInfo.name = getter->name->name;
+                        }
+                        // getter的函数引用需要从编译后的函数中获取
+                        // 注意：getter的body需要编译为函数，然后获取函数引用索引
+                    }
+                    if (property->setter != ZR_NULL && property->setter->type == ZR_AST_PROPERTY_SET) {
+                        SZrPropertySet *setter = &property->setter->data.propertySet;
+                        // setter的函数引用需要从编译后的函数中获取
+                        // 注意：setter的body需要编译为函数，然后获取函数引用索引
+                    }
+                    // TODO: 暂时跳过属性处理，因为需要完整的getter/setter编译支持
                     break;
                 }
                 case ZR_AST_CLASS_META_FUNCTION: {
@@ -2574,7 +2742,7 @@ static TBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePro
     
     // 注意：为了保持格式兼容，我们仍然使用字符串索引
     // 但这些索引现在指向 prototype 数据内部的字符串表，而不是常量池
-    // 为了简化实现，我们暂时仍然使用常量池索引，但后续会改为内部字符串表
+    // TODO: 为了简化实现，我们暂时仍然使用常量池索引，但后续会改为内部字符串表
     
     // 1. 使用C原生结构收集数据，避免创建VM对象
     // 先将所有字符串添加到常量池，获取索引（临时方案，后续改为内部字符串表）
@@ -2735,17 +2903,47 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 1. 编译模块声明（如果有）
     if (script->moduleName != ZR_NULL) {
-        // TODO: 处理模块声明（注册模块到全局模块表）
-        // 目前先跳过
+        // 处理模块声明（注册模块到全局模块表）
+        // 注意：模块注册在运行时进行，编译器只需要记录模块名称
+        // 模块名称可以通过entry function的常量池或元数据存储
+        // 运行时加载模块时会创建模块对象并注册到全局模块注册表
+        // TODO: 这里暂时不生成特殊指令，模块注册在模块加载时自动进行
     }
 
-    // 2. 编译顶层语句
+    // 2. 首先收集并执行所有编译期声明
     if (script->statements != ZR_NULL) {
-        printf("  Compiling %zu top-level statements (statements array: %p)...\n", script->statements->count,
-               (void *) script->statements);
+        // 第一遍：收集并执行编译期声明
+        printf("  [DEBUG] First pass: executing compile-time declarations (%zu statements)...\n", script->statements->count);
+        fflush(stdout);
+        for (TZrSize i = 0; i < script->statements->count; i++) {
+            SZrAstNode *stmt = script->statements->nodes[i];
+            if (stmt != ZR_NULL && stmt->type == ZR_AST_COMPILE_TIME_DECLARATION) {
+                printf("  [DEBUG] Executing compile-time declaration at index %zu\n", i);
+                fflush(stdout);
+                // 执行编译期声明
+                execute_compile_time_declaration(cs, stmt);
+                
+                // 如果遇到致命错误，停止编译
+                if (cs->hasFatalError) {
+                    printf("  Fatal compile-time error encountered, stopping compilation\n");
+                    return;
+                }
+            }
+        }
+        printf("  [DEBUG] First pass completed.\n");
+        fflush(stdout);
+        
+        // 第二遍：编译运行时代码
+        printf("  [DEBUG] Second pass: compiling runtime code (%zu statements)...\n", script->statements->count);
+        fflush(stdout);
         for (TZrSize i = 0; i < script->statements->count; i++) {
             SZrAstNode *stmt = script->statements->nodes[i];
             if (stmt != ZR_NULL) {
+                // 跳过编译期声明（已在第一遍执行）
+                if (stmt->type == ZR_AST_COMPILE_TIME_DECLARATION) {
+                    continue;
+                }
+                
                 // 根据语句类型编译
                 switch (stmt->type) {
                     case ZR_AST_FUNCTION_DECLARATION:
@@ -2770,20 +2968,34 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                     case ZR_AST_CLASS_DECLARATION:
                         compile_class_declaration(cs, stmt);
                         break;
+                    case ZR_AST_INTERFACE_DECLARATION:
+                        // 处理interface声明
+                        // 注意：interface主要用于类型检查，不需要生成运行时代码
+                        // 可以在这里进行interface的类型信息收集和验证
+                        // TODO: 暂时跳过，后续可以实现interface的类型检查
+                        break;
+                    case ZR_AST_ENUM_DECLARATION:
+                        // 处理enum声明
+                        // TODO: enum可以编译为常量或对象，这里暂时跳过
+                        // 后续可以实现enum的编译
+                        break;
                     default:
-                        // TODO: 其他顶层声明类型（interface, enum, intermediate）
-                        // 目前先跳过，后续实现
+                        // 其他顶层声明类型（intermediate等）
+                        // TODO: 目前先跳过，后续实现
                         printf("    Skipping statement type %d (not implemented yet)\n", stmt->type);
                         break;
                 }
 
                 // 即使有错误，也继续编译后续语句（除非是致命错误）
                 // 这样可以尽可能多地编译成功的语句
-                if (cs->hasError) {
+                if (cs->hasError && !cs->hasFatalError) {
                     printf("    Compilation error at statement %zu, resetting error and continuing...\n", i);
                     // 重置错误状态，继续编译后续语句
                     cs->hasError = ZR_FALSE;
                     cs->errorMessage = ZR_NULL;
+                } else if (cs->hasFatalError) {
+                    printf("  Fatal error encountered, stopping compilation\n");
+                    return;
                 }
             }
         }

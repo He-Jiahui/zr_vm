@@ -182,7 +182,7 @@ void ZrGlobalStateInitRegistry(SZrState *state, SZrGlobalState *global) {
     
     // 将 zr 对象添加到全局状态（TODO: 需要确认如何访问全局作用域）
     // 根据计划，zr 除非被局部作用域名字覆盖，否则全局只读
-    // 这里暂时先创建对象，后续需要在全局作用域中注册
+    // TODO: 这里暂时先创建对象，后续需要在全局作用域中注册
     
     // 注意：compileSource 函数指针由 parser 模块通过 ZrGlobalStateSetCompileSource 设置
     // 这里不直接调用 parser 模块的函数，以避免循环依赖

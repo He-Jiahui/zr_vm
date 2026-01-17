@@ -7,6 +7,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/exception.h"
 
 #define ZR_IO_MALLOC_NATIVE_DATA(GLOBAL, SIZE) ZrMemoryRawMallocWithType(GLOBAL, (SIZE), ZR_MEMORY_NATIVE_TYPE_IO);
 #define ZR_IO_FREE_NATIVE_DATA(GLOBAL, DATA, SIZE)                                                                     \
@@ -477,8 +478,10 @@ TZrSize ZrIoRead(SZrIo *io, TBytePtr buffer, TZrSize size) {
         size -= read;
     }
     // throw error
-    // TODO:
-    // ZrExceptionThrow(io->state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+    // IO读取失败，抛出运行时错误
+    if (io->state != ZR_NULL) {
+        ZrExceptionThrow(io->state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+    }
     return 0;
 }
 

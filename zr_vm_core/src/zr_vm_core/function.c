@@ -131,7 +131,7 @@ static ZR_FORCE_INLINE void ZrFunctionCallInternal(struct SZrState *state, TZrSt
         ZrFunctionCheckNativeStack(state);
     }
     // todo:
-    SZrCallInfo *callInfo = ZrFunctionPreCall(state, stackPointer, resultCount);
+    SZrCallInfo *callInfo = ZrFunctionPreCall(state, stackPointer, resultCount, ZR_NULL);
     if (callInfo != ZR_NULL) {
         callInfo->callStatus = ZR_CALL_STATUS_CREATE_FRAME;
         ZrExecute(state, callInfo);
@@ -157,6 +157,7 @@ static ZR_FORCE_INLINE SZrCallInfo *ZrFunctionPreCallNativeCallInfo(struct SZrSt
     callInfo->expectedReturnCount = resultCount;
     callInfo->callStatus = mask;
     callInfo->functionTop.valuePointer = topPointer;
+    callInfo->returnDestination = ZR_NULL;  /* VM 分支会覆盖；Native 分支保持 ZR_NULL，PostCall 退化为 functionBase */
     return callInfo;
 }
 
@@ -199,7 +200,8 @@ static TZrStackValuePointer ZrFunctionGetMetaCall(SZrState *state, TZrStackValue
     return stackPointer;
 }
 
-SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount) {
+SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount,
+                               TZrStackValuePointer returnDestination) {
     do {
         SZrTypeValue *value = ZrStackGetValue(stackPointer);
         EZrValueType type = value->type;
@@ -220,6 +222,7 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
                     ZrFunctionCheckStackAndGc(state, stackSize, stackPointer);
                     callInfo = ZrFunctionPreCallNativeCallInfo(state, stackPointer, resultCount, ZR_CALL_STATUS_NONE,
                                                                stackPointer + 1 + stackSize);
+                    callInfo->returnDestination = returnDestination;
                     state->callInfoList = callInfo;
                     callInfo->context.context.programCounter = function->instructionsList;
                     for (; argumentsCount < parametersCount; argumentsCount++) {
@@ -255,6 +258,8 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
                     ZrFunctionCheckStackAndGc(state, stackSize, stackPointer);
                     callInfo = ZrFunctionPreCallNativeCallInfo(state, stackPointer, resultCount, ZR_CALL_STATUS_NONE,
                                                                stackPointer + 1 + stackSize);
+                    callInfo->returnDestination = returnDestination;
+                    callInfo->previous = state->callInfoList;
                     state->callInfoList = callInfo;
                     // 验证闭包的 function 字段是否仍然有效
                     SZrTypeValue *callInfoBaseValue = ZrStackGetValue(callInfo->functionBase.valuePointer);
@@ -329,7 +334,10 @@ void ZrFunctionPostCall(struct SZrState *state, struct SZrCallInfo *callInfo, TZ
         ZrDebugHookReturn(state, callInfo, resultCount);
     }
     // move result
-    ZrFunctionMoveReturns(state, callInfo->functionBase.valuePointer, resultCount, expectedReturnCount);
+    TZrStackValuePointer dest = (callInfo->returnDestination != ZR_NULL)
+                                    ? callInfo->returnDestination
+                                    : callInfo->functionBase.valuePointer;
+    ZrFunctionMoveReturns(state, dest, resultCount, expectedReturnCount);
 
     ZR_ASSERT(!(callInfo->callStatus &
                 (ZR_CALL_STATUS_DEBUG_HOOK | ZR_CALL_STATUS_HOOK_YIELD | ZR_CALL_STATUS_DECONSTRUCTOR_CALL |

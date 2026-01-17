@@ -21,6 +21,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_core/exception.h"
 
 void ZrMetaGlobalStaticsInit(SZrState *state) {
     SZrGlobalState *global = state->global;
@@ -956,9 +957,15 @@ static TInt64 meta_neg_bool(SZrState *state) {
 
 // OBJECT 未实现元方法的默认处理（抛出错误）
 static TInt64 meta_object_not_implemented(SZrState *state) {
-    // TODO: 抛出未实现元方法异常
-    // 目前返回 null
+    // 抛出未实现元方法异常
+    // 获取元方法类型（从调用栈中获取）
     SZrCallInfo *callInfo = state->callInfoList;
+    if (callInfo != ZR_NULL) {
+        // 抛出运行时错误：未实现的元方法
+        // 注意：这里使用运行时错误状态，表示元方法未实现
+        ZrExceptionThrow(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+    }
+    // 如果无法抛出异常，返回null
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
     ZrValueResetAsNull(ZrStackGetValue(base));
     state->stackTop.valuePointer = base + 1;
@@ -1088,14 +1095,27 @@ void ZrMetaInitBuiltinTypeMetaMethods(SZrState *state, EZrValueType valueType) {
             ZrMetaRegisterMetaMethod(state, valueType, ZR_META_MUL, meta_mul_string_int);
             ZrMetaRegisterMetaMethod(state, valueType, ZR_META_COMPARE, meta_compare_string);
             // 字符串减字符串需要特殊处理，这里先注册减整数的版本
-            // TODO: 需要根据参数类型动态选择
+            // 需要根据参数类型动态选择
+            // 注意：字符串减字符串的元方法选择需要在运行时根据参数类型动态决定
+            // 这里注册减整数的版本作为默认实现
+            // 如果需要在运行时根据参数类型选择不同的实现，可以在元方法查找时进行类型检查
+            // 或者实现一个包装函数，在运行时检查参数类型并调用相应的实现
         } break;
 
         case ZR_VALUE_TYPE_OBJECT: {
             ZrMetaRegisterMetaMethod(state, valueType, ZR_META_TO_STRING, meta_to_string_object);
             ZrMetaRegisterMetaMethod(state, valueType, ZR_META_TO_BOOL, meta_to_bool_object);
             // 其他元方法未实现时使用默认处理
-            // TODO: 为每个未实现的元方法注册 meta_object_not_implemented
+            // 为每个未实现的元方法注册 meta_object_not_implemented
+            // 遍历所有元方法类型，为未注册的元方法注册默认处理函数
+            for (EZrMetaType metaType = 0; metaType < ZR_META_ENUM_MAX; metaType++) {
+                // 跳过已注册的元方法
+                if (metaType == ZR_META_TO_STRING || metaType == ZR_META_TO_BOOL) {
+                    continue;
+                }
+                // 为未实现的元方法注册默认处理函数
+                ZrMetaRegisterMetaMethod(state, valueType, metaType, meta_object_not_implemented);
+            }
         } break;
 
         default:

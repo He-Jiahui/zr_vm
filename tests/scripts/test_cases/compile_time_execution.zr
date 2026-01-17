@@ -1,0 +1,144 @@
+module "compile_time_execution";
+
+// 测试1: 编译期变量声明和使用
+%compileTime var MAX_SIZE = 100;
+%compileTime var MIN_SIZE = 1;
+%compileTime var DEFAULT_VALUE = 42;
+
+// 测试2: 编译期函数声明
+%compileTime validateSize(size: int): bool {
+    if (size > MAX_SIZE) {
+        FatalError("Size exceeds maximum");
+    }
+    if (size < MIN_SIZE) {
+        FatalError("Size below minimum");
+    }
+    return size > 0;
+}
+
+%compileTime calculateSum(a: int, b: int): int {
+    return a + b;
+}
+
+%compileTime multiply(x: int, y: int): int {
+    return x * y;
+}
+
+// 测试3: 编译期表达式
+%compileTime var computedValue = calculateSum(10, 20);
+%compileTime var product = multiply(5, 6);
+
+// 测试4: 编译期语句块
+%compileTime {
+    var temp = computedValue + product;
+    if (temp > 100) {
+        // 编译期检查通过
+    }
+}
+
+// 运行时代码使用编译期变量
+var runtimeVar = DEFAULT_VALUE;
+var runtimeArray: int[MAX_SIZE];
+
+// 测试用例
+%test("compileTimeVariables") {
+    // 运行时可以使用编译期变量的值
+    var result = runtimeVar;
+    // 期望: 42
+    
+    return result;
+}
+
+%test("compileTimeFunctions") {
+    // 编译期函数已在编译时执行，这里只测试运行时行为
+    var result = runtimeArray.length;
+    // 期望: MAX_SIZE = 100
+    
+    return result;
+}
+
+// 测试5: 编译期错误报告 - Info级别
+%compileTime {
+    // 编译期信息（应该不会阻止编译）
+    // Info("Compile-time check passed");
+}
+
+// 测试6: 编译期错误报告 - Warning级别
+%compileTime {
+    // 编译期警告（应该不会阻止编译）
+    // Warning("This is a compile-time warning");
+}
+
+// 测试7: 编译期访问运行时符号（只读）
+var runtimeReadOnly = 100;
+
+%compileTime {
+    // 应该允许读取运行时变量
+    var readValue = runtimeReadOnly;
+    if (readValue > 50) {
+        // 编译期检查
+    }
+    // 不允许写入运行时变量（应该在编译期报错）
+    // runtimeReadOnly = 200; // 这应该导致编译期错误
+}
+
+// 测试8: 编译期递归调用
+%compileTime factorial(n: int): int {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+%compileTime var fact5 = factorial(5);
+
+%test("compileTimeRecursion") {
+    // 编译期计算的阶乘值
+    var result = fact5;
+    // 期望: 5! = 120
+    
+    return result;
+}
+
+// 测试9: 编译期条件检查
+%compileTime var ENABLE_FEATURE = true;
+
+%compileTime {
+    if (ENABLE_FEATURE) {
+        // 编译期特性启用
+    } else {
+        FatalError("Feature is disabled");
+    }
+}
+
+// 测试10: 编译期数组大小验证
+%compileTime validateArraySize(size: int): bool {
+    return size >= MIN_SIZE && size <= MAX_SIZE;
+}
+
+var validatedArray: int[validateArraySize(50) ? 50 : 10];
+
+%test("compileTimeArrayValidation") {
+    var result = validatedArray.length;
+    // 期望: 50（如果验证通过）
+    
+    return result;
+}
+
+// 测试11: 编译期Assert
+%compileTime {
+    Assert(MAX_SIZE > MIN_SIZE, "MAX_SIZE must be greater than MIN_SIZE");
+    Assert(computedValue == 30, "Computed value should be 30");
+    Assert(product == 30, "Product should be 30");
+}
+
+// 测试12: 编译期复杂表达式
+%compileTime var complexExpr = (calculateSum(1, 2) * multiply(3, 4)) - 10;
+%compileTime var nestedCall = calculateSum(multiply(2, 3), multiply(4, 5));
+
+%test("compileTimeComplexExpressions") {
+    var result = complexExpr + nestedCall;
+    // 期望: ((1+2)*3*4 - 10) + (2*3 + 4*5) = (3*12 - 10) + (6 + 20) = 26 + 26 = 52
+    
+    return result;
+}

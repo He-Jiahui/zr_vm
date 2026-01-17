@@ -55,6 +55,11 @@ struct ZR_STRUCT_ALIGN SZrState {
     TUInt32 debugHookCount;
     volatile FZrDebugHook debugHook;
     volatile TZrDebugSignal debugHookSignal;
+    
+    // 运行时检查标志
+    TBool enableRuntimeBoundsCheck;   // 启用运行时边界检查
+    TBool enableRuntimeTypeCheck;      // 启用运行时类型检查
+    TBool enableRuntimeRangeCheck;     // 启用运行时范围检查
 };
 
 typedef struct SZrState SZrState;

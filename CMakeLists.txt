@@ -79,6 +79,7 @@ add_subdirectory("zr_vm_parser")
 
 add_subdirectory("zr_vm_library")
 
+add_subdirectory("zr_vm_language_server")
 
 add_subdirectory("zr_vm_cli")
 

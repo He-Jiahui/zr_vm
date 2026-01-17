@@ -148,7 +148,8 @@
 // enum EZrOperationCode {
 //     ZR_OPCODE_MOVE,
 //     ZR_OPCODE_LOAD_CONSTANT,
-//     // TODO:
+//     // 注意：这个枚举已被EZrInstructionCode替代，这里保留作为参考
+//     // 实际的指令代码定义在EZrInstructionCode枚举中
 //
 //     // MATH OPERATION
 //     ZR_OPCODE_ADD,

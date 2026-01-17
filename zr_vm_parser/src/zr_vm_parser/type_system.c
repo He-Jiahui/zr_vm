@@ -22,6 +22,17 @@ void ZrInferredTypeInit(SZrState *state, SZrInferredType *type, EZrValueType bas
     type->isNullable = ZR_FALSE;
     type->typeName = ZR_NULL;
     ZrArrayConstruct(&type->elementTypes);
+    
+    // 初始化范围约束
+    type->minValue = 0;
+    type->maxValue = 0;
+    type->hasRangeConstraint = ZR_FALSE;
+    
+    // 初始化数组大小约束
+    type->arrayFixedSize = 0;
+    type->arrayMinSize = 0;
+    type->arrayMaxSize = 0;
+    type->hasArraySizeConstraint = ZR_FALSE;
 }
 
 // 初始化类型（完整版本）
@@ -34,20 +45,38 @@ void ZrInferredTypeInitFull(SZrState *state, SZrInferredType *type, EZrValueType
     type->isNullable = isNullable;
     type->typeName = typeName;
     ZrArrayConstruct(&type->elementTypes);
+    
+    // 初始化范围约束
+    type->minValue = 0;
+    type->maxValue = 0;
+    type->hasRangeConstraint = ZR_FALSE;
+    
+    // 初始化数组大小约束
+    type->arrayFixedSize = 0;
+    type->arrayMinSize = 0;
+    type->arrayMaxSize = 0;
+    type->hasArraySizeConstraint = ZR_FALSE;
 }
 
-// 释放类型
+// 释放类型（递归释放嵌套的类型，避免循环引用导致的内存泄漏）
 void ZrInferredTypeFree(SZrState *state, SZrInferredType *type) {
     if (state == ZR_NULL || type == ZR_NULL) {
         return;
     }
     
-    // 释放元素类型数组
+    // 释放元素类型数组（递归释放嵌套类型，避免循环引用）
     if (type->elementTypes.isValid && type->elementTypes.head != ZR_NULL && 
         type->elementTypes.capacity > 0 && type->elementTypes.elementSize > 0) {
-        // 释放每个元素类型（如果是指针数组）
-        // 注意：这里简化处理，假设elementTypes存储的是SZrInferredType指针
-        // 实际实现可能需要递归释放
+        // 递归释放每个元素类型（elementTypes存储的是SZrInferredType*指针）
+        for (TZrSize i = 0; i < type->elementTypes.length; i++) {
+            SZrInferredType **elementTypePtr = (SZrInferredType**)ZrArrayGet(&type->elementTypes, i);
+            if (elementTypePtr != ZR_NULL && *elementTypePtr != ZR_NULL) {
+                // 递归释放嵌套的类型（包括其elementTypes）
+                ZrInferredTypeFree(state, *elementTypePtr);
+                // 释放类型对象本身
+                ZrMemoryRawFreeWithType(state->global, *elementTypePtr, sizeof(SZrInferredType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+        }
         ZrArrayFree(state, &type->elementTypes);
     }
     
@@ -65,7 +94,7 @@ void ZrInferredTypeCopy(SZrState *state, SZrInferredType *dest, const SZrInferre
     dest->isNullable = src->isNullable;
     dest->typeName = src->typeName; // 字符串由GC管理，直接复制引用
     
-    // 复制元素类型数组（简化处理，仅复制数组结构）
+    // TODO: 复制元素类型数组（简化处理，仅复制数组结构）
     if (src->elementTypes.isValid && src->elementTypes.capacity > 0) {
         ZrArrayInit(state, &dest->elementTypes, sizeof(SZrInferredType *), src->elementTypes.capacity);
         if (src->elementTypes.length > 0 && src->elementTypes.head != ZR_NULL) {
@@ -76,6 +105,17 @@ void ZrInferredTypeCopy(SZrState *state, SZrInferredType *dest, const SZrInferre
     } else {
         ZrArrayConstruct(&dest->elementTypes);
     }
+    
+    // 复制范围约束
+    dest->minValue = src->minValue;
+    dest->maxValue = src->maxValue;
+    dest->hasRangeConstraint = src->hasRangeConstraint;
+    
+    // 复制数组大小约束
+    dest->arrayFixedSize = src->arrayFixedSize;
+    dest->arrayMinSize = src->arrayMinSize;
+    dest->arrayMaxSize = src->arrayMaxSize;
+    dest->hasArraySizeConstraint = src->hasArraySizeConstraint;
 }
 
 // 类型相等比较
@@ -103,7 +143,37 @@ TBool ZrInferredTypeEqual(const SZrInferredType *type1, const SZrInferredType *t
         }
     }
     
-    // TODO: 比较元素类型数组（简化处理，暂时跳过）
+    // 比较元素类型数组
+    // elementTypes存储的是SZrInferredType*指针数组
+    if (type1->elementTypes.length != type2->elementTypes.length) {
+        return ZR_FALSE;
+    }
+    
+    if (type1->elementTypes.length > 0) {
+        // 两个数组都有元素，逐个比较
+        if (type1->elementTypes.head == ZR_NULL || type2->elementTypes.head == ZR_NULL) {
+            // 一个为NULL，另一个不为NULL，不相等
+            return ZR_FALSE;
+        }
+        
+        // 遍历元素类型数组，比较每个元素类型
+        for (TZrSize i = 0; i < type1->elementTypes.length; i++) {
+            SZrInferredType *elemType1 = (SZrInferredType *)ZrArrayGet(&type1->elementTypes, i);
+            SZrInferredType *elemType2 = (SZrInferredType *)ZrArrayGet(&type2->elementTypes, i);
+            
+            if (elemType1 == ZR_NULL || elemType2 == ZR_NULL) {
+                if (elemType1 != elemType2) {
+                    return ZR_FALSE;
+                }
+                continue;
+            }
+            
+            // 递归比较元素类型
+            if (!ZrInferredTypeEqual(elemType1, elemType2)) {
+                return ZR_FALSE;
+            }
+        }
+    }
     
     return ZR_TRUE;
 }
@@ -141,7 +211,7 @@ TBool ZrInferredTypeIsCompatible(const SZrInferredType *fromType, const SZrInfer
     
     // 整数类型提升：较小的整数类型可以转换为较大的整数类型
     if (is_integer_type(fromType->baseType) && is_integer_type(toType->baseType)) {
-        // 简化处理：允许所有整数类型之间的转换（实际应该检查大小）
+        // TODO: 简化处理：允许所有整数类型之间的转换（实际应该检查大小）
         return ZR_TRUE;
     }
     
@@ -205,7 +275,8 @@ TBool ZrInferredTypeGetCommonType(SZrState *state, SZrInferredType *result, cons
         return ZR_TRUE;
     }
     
-    // 2. 如果都是整数类型，选择较大的整数类型（简化处理：使用int64）
+    // 2. 如果都是整数类型，选择较大的整数类型
+    // TODO: 简化处理：使用int64
     if (is_integer_type(type1->baseType) && is_integer_type(type2->baseType)) {
         ZrInferredTypeInit(state, result, ZR_VALUE_TYPE_INT64);
         result->isNullable = type1->isNullable || type2->isNullable;
@@ -252,7 +323,7 @@ EZrInstructionCode ZrInferredTypeGetConversionOpcode(const SZrInferredType *from
         return ZR_INSTRUCTION_ENUM(TO_STRING);
     }
     
-    // 整数类型之间的转换（简化处理，不需要转换指令，运行时处理）
+    // TODO: 整数类型之间的转换（简化处理，不需要转换指令，运行时处理）
     if (is_integer_type(fromType->baseType) && is_integer_type(toType->baseType)) {
         return ZR_INSTRUCTION_ENUM(ENUM_MAX); // 不需要转换指令
     }
@@ -389,7 +460,7 @@ TBool ZrTypeEnvironmentRegisterFunction(SZrState *state, SZrTypeEnvironment *env
         SZrFunctionTypeInfo **funcInfo = (SZrFunctionTypeInfo **)ZrArrayGet(&env->functionReturnTypes, i);
         if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL && 
             (*funcInfo)->name != ZR_NULL && ZrStringEqual((*funcInfo)->name, name)) {
-            // 已存在，更新类型（简化处理，暂时不支持重载）
+            // TODO: 已存在，更新类型（简化处理，暂时不支持重载）
             return ZR_FALSE; // 函数已存在，不允许重复注册
         }
     }

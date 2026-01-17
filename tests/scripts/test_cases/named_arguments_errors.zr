@@ -1,0 +1,26 @@
+module "named_arguments_errors";
+
+// 这个文件用于测试命名参数的错误处理
+// 注意：这些测试用例应该导致编译错误
+
+testFunc(a: int, b: int, c: int): int {
+    return a + b + c;
+}
+
+// 错误测试1: 未知的参数名
+// testFunc(unknown: 1, a: 2, b: 3); // 应该报错：Unknown argument name: unknown
+
+// 错误测试2: 重复的参数名
+// testFunc(a: 1, a: 2, b: 3); // 应该报错：Duplicate argument name: a
+
+// 错误测试3: 位置参数在命名参数之后
+// testFunc(a: 1, 2, c: 3); // 应该报错：Positional arguments cannot come after named arguments
+
+// 错误测试4: 位置参数过多
+// testFunc(1, 2, 3, 4); // 应该报错：Too many positional arguments
+
+// 错误测试5: 必需参数缺失
+// testFunc(a: 1); // 应该报错：Missing required argument: b, c
+
+// 注意：这些错误测试在实际编译时会被检测到
+// 由于这些是错误情况，实际的测试应该通过编译失败来验证

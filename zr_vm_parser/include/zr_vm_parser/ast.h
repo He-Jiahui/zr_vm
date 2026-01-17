@@ -27,6 +27,7 @@ enum EZrAstNodeType {
     ZR_AST_FUNCTION_DECLARATION,
     ZR_AST_VARIABLE_DECLARATION,
     ZR_AST_TEST_DECLARATION,
+    ZR_AST_COMPILE_TIME_DECLARATION,
     ZR_AST_INTERMEDIATE_STATEMENT,
 
     // 结构体成员
@@ -177,6 +178,12 @@ typedef struct SZrType {
     SZrAstNode *name; // Identifier 或 GenericType 或 TupleType
     struct SZrType *subType; // 子类型（可选）
     TInt32 dimensions; // 数组维度
+    
+    // 数组大小约束
+    TZrSize arrayFixedSize;          // 数组固定大小（0表示未固定）
+    TZrSize arrayMinSize;            // 数组最小大小
+    TZrSize arrayMaxSize;            // 数组最大大小
+    TBool hasArraySizeConstraint;    // 是否有数组大小约束
 } SZrType;
 
 // 泛型类型
@@ -294,8 +301,16 @@ typedef struct SZrSwitchDefault {
     SZrAstNode *block;
 } SZrSwitchDefault;
 
+// 命名参数信息
+typedef struct SZrNamedArgument {
+    SZrString *name;                    // 参数名（可选，ZR_NULL表示位置参数）
+    SZrAstNode *value;                  // 参数值表达式
+} SZrNamedArgument;
+
 typedef struct SZrFunctionCall {
-    SZrAstNodeArray *args; // Expression 数组
+    SZrAstNodeArray *args;              // Expression 数组（现有）
+    SZrArray *argNames;                 // 参数名数组（SZrString*），可选，与args对应，ZR_NULL表示位置参数
+    TBool hasNamedArgs;                 // 是否有命名参数
 } SZrFunctionCall;
 
 typedef struct SZrMemberExpression {
@@ -382,6 +397,21 @@ typedef struct SZrTestDeclaration {
     SZrParameter *args; // 可变参数（可选）
     SZrAstNode *body; // Block
 } SZrTestDeclaration;
+
+// 编译期声明类型
+enum EZrCompileTimeDeclarationType {
+    ZR_COMPILE_TIME_FUNCTION,
+    ZR_COMPILE_TIME_VARIABLE,
+    ZR_COMPILE_TIME_STATEMENT,
+    ZR_COMPILE_TIME_EXPRESSION
+};
+
+typedef enum EZrCompileTimeDeclarationType EZrCompileTimeDeclarationType;
+
+typedef struct SZrCompileTimeDeclaration {
+    EZrCompileTimeDeclarationType declarationType;  // FUNCTION, VARIABLE, STATEMENT, EXPRESSION
+    SZrAstNode *declaration;                       // 对应的声明节点（函数、变量等）
+} SZrCompileTimeDeclaration;
 
 typedef struct SZrStructDeclaration {
     SZrIdentifier *name;
@@ -657,6 +687,7 @@ typedef struct SZrAstNode {
         SZrEnumDeclaration enumDeclaration;
         SZrFunctionDeclaration functionDeclaration;
         SZrTestDeclaration testDeclaration;
+        SZrCompileTimeDeclaration compileTimeDeclaration;
         SZrVariableDeclaration variableDeclaration;
 
         // 结构体成员

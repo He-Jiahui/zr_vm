@@ -58,6 +58,7 @@ enum EZrToken {
     ZR_TK_SEMICOLON,     // ";"
     ZR_TK_COMMA,         // ","
     ZR_TK_DOT,           // "."
+    ZR_TK_DOT_DOT,       // ".."
     ZR_TK_TILDE,         // "~"
     ZR_TK_AT,            // "@"
     ZR_TK_SHARP,         // "#"

@@ -77,6 +77,8 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
     TZrCallInfoYieldContext yieldContext;
 
     TZrSize expectedReturnCount;
+    /** 返回值写入的栈槽；ZR_NULL 时 ZrFunctionMoveReturns 使用 functionBase.valuePointer（兼容旧语义） */
+    TZrStackValuePointer returnDestination;
 };
 
 typedef struct SZrCallInfo SZrCallInfo;

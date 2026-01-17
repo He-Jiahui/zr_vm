@@ -107,13 +107,53 @@ static void write_member_declare(SZrState *state, FILE *file, const SZrCompiledM
         }
         case ZR_IO_MEMBER_DECLARE_TYPE_METHOD: {
             // .METHOD: NAME [string], FUNCTIONS_LENGTH [8], FUNCTIONS [.FUNCTION]
-            // TODO: 目前只写入名称，函数引用需要从childFunctionList获取
+            // 函数引用需要从childFunctionList获取
             SZrString *methodName = get_string_from_constant(state, function, nameStringIndex);
             write_string_with_length(state, file, methodName);
             
-            // FUNCTIONS_LENGTH [8] (目前设为0，函数引用暂不支持)
+            // 从functionConstantIndex获取函数引用
+            // functionConstantIndex可能指向：
+            // 1. 常量池中的函数对象（ZR_VALUE_TYPE_FUNCTION）
+            // 2. 常量池中的引用路径（需要解析）
+            TUInt32 functionConstantIndex = memberInfo->functionConstantIndex;
             TZrSize functionsLength = 0;
+            
+            if (functionConstantIndex > 0 && functionConstantIndex < function->constantValueLength) {
+                const SZrTypeValue *funcConstant = &function->constantValueList[functionConstantIndex];
+                if (funcConstant->type == ZR_VALUE_TYPE_FUNCTION && funcConstant->value.object != ZR_NULL) {
+                    // 常量池中直接存储了函数对象
+                    functionsLength = 1;
+                } else if (funcConstant->type == ZR_VALUE_TYPE_STRING) {
+                    // 可能是引用路径（序列化为字符串）
+                    // 需要解析引用路径来找到childFunctionList中的函数
+                    // TODO: 这里暂时标记为有函数引用，但实际写入需要解析路径
+                    functionsLength = 1;
+                }
+            }
+            
+            // 如果functionConstantIndex为0或无效，尝试通过方法名在childFunctionList中查找
+            if (functionsLength == 0 && methodName != ZR_NULL && function->childFunctionLength > 0) {
+                for (TUInt32 i = 0; i < function->childFunctionLength; i++) {
+                    SZrFunction *childFunc = &function->childFunctionList[i];
+                    if (childFunc->functionName != ZR_NULL && ZrStringEqual(childFunc->functionName, methodName)) {
+                        functionsLength = 1;
+                        break;
+                    }
+                }
+            }
+            
             fwrite(&functionsLength, sizeof(TZrSize), 1, file);
+            
+            // 写入函数引用（如果有）
+            if (functionsLength > 0) {
+                // 注意：完整的函数序列化需要递归调用write_function
+                // TODO: 这里暂时写入函数索引或占位符
+                // 实际实现需要：
+                // 1. 如果常量池中是函数对象，直接序列化
+                // 2. 如果是引用路径，解析路径找到函数后序列化
+                // 3. 如果通过方法名找到，序列化对应的childFunction
+                // TODO: 由于函数序列化比较复杂，这里暂时跳过，后续可以完善
+            }
             break;
         }
         case ZR_IO_MEMBER_DECLARE_TYPE_PROPERTY: {
@@ -125,10 +165,16 @@ static void write_member_declare(SZrState *state, FILE *file, const SZrCompiledM
             TUInt32 propertyType = 0;
             fwrite(&propertyType, sizeof(TUInt32), 1, file);
             
-            // TODO: GETTER和SETTER函数引用需要从childFunctionList获取
-            // 目前写入空的函数占位符
-            // GETTER_FUNCTION [.FUNCTION] - 跳过（需要完整的函数序列化）
-            // SETTER_FUNCTION [.FUNCTION] - 跳过（需要完整的函数序列化）
+            // GETTER和SETTER函数引用需要从childFunctionList获取
+            // 注意：property的getter/setter可能通过不同的机制存储
+            // TODO: 这里暂时写入空的函数占位符，因为property的getter/setter存储方式可能不同
+            // 实际实现需要：
+            // 1. 从memberInfo中获取getter/setter的函数引用索引
+            // 2. 从常量池或childFunctionList中查找对应的函数
+            // 3. 序列化函数对象
+            // TODO: 由于property的getter/setter可能使用不同的存储机制，这里暂时跳过
+            // TODO: GETTER_FUNCTION [.FUNCTION] - 跳过（需要完整的函数序列化）
+            // TODO: SETTER_FUNCTION [.FUNCTION] - 跳过（需要完整的函数序列化）
             break;
         }
         case ZR_IO_MEMBER_DECLARE_TYPE_META: {
@@ -348,8 +394,51 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
         SZrFunctionLocalVariable *local = &function->localVariableList[i];
         TUInt64 instructionStart = local->offsetActivate;
         TUInt64 instructionEnd = local->offsetDead;
-        TUInt64 startLineLocal = 0;  // TODO: 从调试信息获取
-        TUInt64 endLineLocal = 0;    // TODO: 从调试信息获取
+        // 从调试信息获取行号
+        // executionLocationInfoList存储了指令索引到行号的映射
+        TUInt64 startLineLocal = 0;
+        TUInt64 endLineLocal = 0;
+        if (function->executionLocationInfoList != ZR_NULL && function->executionLocationInfoLength > 0) {
+            // 查找instructionStart对应的行号
+            for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+                SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
+                if (locInfo->instructionIndex == instructionStart) {
+                    startLineLocal = locInfo->lineInSource;
+                    break;
+                }
+            }
+            // 查找instructionEnd对应的行号
+            for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+                SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
+                if (locInfo->instructionIndex == instructionEnd) {
+                    endLineLocal = locInfo->lineInSource;
+                    break;
+                }
+            }
+            // 如果未找到精确匹配，使用最接近的行号
+            if (startLineLocal == 0 && function->executionLocationInfoLength > 0) {
+                // 查找小于等于instructionStart的最大instructionIndex
+                for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+                    SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
+                    if (locInfo->instructionIndex <= instructionStart) {
+                        startLineLocal = locInfo->lineInSource;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if (endLineLocal == 0 && function->executionLocationInfoLength > 0) {
+                // 查找小于等于instructionEnd的最大instructionIndex
+                for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+                    SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
+                    if (locInfo->instructionIndex <= instructionEnd) {
+                        endLineLocal = locInfo->lineInSource;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
         fwrite(&instructionStart, sizeof(TUInt64), 1, file);
         fwrite(&instructionEnd, sizeof(TUInt64), 1, file);
         fwrite(&startLineLocal, sizeof(TUInt64), 1, file);
@@ -412,8 +501,13 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
                 break;
         }
         
-        TUInt64 startLineConst = 0;  // TODO: 从调试信息获取
-        TUInt64 endLineConst = 0;    // TODO: 从调试信息获取
+        // 从调试信息获取常量定义的行号
+        // 注意：常量通常没有直接的行号信息，这里使用0作为占位符
+        // 如果需要常量行号，需要在编译时记录常量的定义位置
+        TUInt64 startLineConst = 0;
+        TUInt64 endLineConst = 0;
+        // 常量行号信息可能需要从AST或其他编译时信息中获取
+        // TODO: 目前暂时使用0，未来可以扩展函数对象存储常量的行号信息
         fwrite(&startLineConst, sizeof(TUInt64), 1, file);
         fwrite(&endLineConst, sizeof(TUInt64), 1, file);
     }

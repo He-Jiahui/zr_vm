@@ -115,7 +115,7 @@ ZR_CORE_API void ZrFunctionCallWithoutYield(struct SZrState *state, TZrStackValu
                                             TZrSize resultCount);
 
 ZR_CORE_API struct SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stackPointer,
-                                                  TZrSize resultCount);
+                                                  TZrSize resultCount, TZrStackValuePointer returnDestination);
 
 ZR_CORE_API void ZrFunctionPostCall(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount);
 #endif // ZR_VM_CORE_FUNCTION_H

@@ -45,6 +45,9 @@
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/execution.h"
+#include "zr_vm_core/stack.h"
 
 // 测试时间测量结构
 typedef struct {
@@ -791,17 +794,40 @@ void test_execution_basic_type_cast(void) {
     
     TBool compilationSuccess = (func1 != ZR_NULL);
     
-    // 注意：实际执行需要更复杂的设置，这里只验证编译成功
-    // TODO: 添加实际执行测试
+    // 添加实际执行测试
+    TBool executionSuccess = ZR_FALSE;
+    if (compilationSuccess && func1 != ZR_NULL) {
+        // 创建闭包并执行函数
+        SZrClosure *closure = ZrClosureNew(state, 0);
+        if (closure != ZR_NULL) {
+            closure->function = func1;
+            
+            // 创建闭包值并调用函数
+            TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+            TZrStackValuePointer callBase = savedStackTop;
+            ZrStackSetRawObjectValue(state, callBase, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+            state->stackTop.valuePointer = callBase + 1;
+            
+            // 调用函数
+            ZrFunctionCall(state, callBase, 0);
+            
+            // 检查执行是否成功
+            if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                executionSuccess = ZR_TRUE;
+            }
+        }
+    }
     
     ZrGlobalStateFree(global);
     
     timer.endTime = clock();
     
-    if (compilationSuccess) {
+    if (compilationSuccess && executionSuccess) {
         TEST_PASS_CUSTOM(timer, "Execution Basic Type Cast");
-    } else {
+    } else if (!compilationSuccess) {
         TEST_FAIL_CUSTOM(timer, "Execution Basic Type Cast", "Compilation failed");
+    } else {
+        TEST_FAIL_CUSTOM(timer, "Execution Basic Type Cast", "Execution failed");
     }
 }
 
@@ -1017,7 +1043,8 @@ int main(void) {
     TEST_DIVIDER();
     RUN_TEST(test_compiler_basic_type_cast);
     TEST_DIVIDER();
-    // TODO: 结构体/类类型转换编译用例临时跳过，待双重释放问题修复后恢复
+    // 结构体/类类型转换编译用例临时跳过，待双重释放问题修复后恢复
+    // 注意：这些测试在双重释放问题修复后需要恢复
     // RUN_TEST(test_compiler_struct_type_cast);
     // TEST_DIVIDER();
     // RUN_TEST(test_compiler_class_type_cast);
@@ -1030,7 +1057,8 @@ int main(void) {
     TEST_DIVIDER();
     
     // 综合测试
-    // TODO: 全流程测试临时跳过，待内存双重释放问题修复后恢复
+    // 全流程测试临时跳过，待内存双重释放问题修复后恢复
+    // 注意：这些测试在双重释放问题修复后需要恢复
     // RUN_TEST(test_char_literal_full_pipeline);
     // TEST_DIVIDER();
     // RUN_TEST(test_type_cast_full_pipeline);

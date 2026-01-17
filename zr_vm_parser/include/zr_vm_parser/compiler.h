@@ -64,6 +64,7 @@ typedef struct SZrCompilerState {
     TBool hasError;
     const TChar *errorMessage;
     SZrFileRange errorLocation;
+    TBool hasFatalError;                  // 是否有致命错误（阻止编译完成）
     
     // 测试模式
     TBool isTestMode;                    // 是否处于测试模式
@@ -82,7 +83,7 @@ typedef struct SZrCompilerState {
     // 模块导出跟踪（仅用于脚本级变量）
     SZrArray pubVariables;               // pub 变量列表（SZrExportedVariable）
     SZrArray proVariables;                // pro 变量列表（SZrExportedVariable，包含所有 pub）
-    SZrArray exportedTypes;              // 导出的类型列表（暂时作为占位）
+    SZrArray exportedTypes;              // TODO: 导出的类型列表（暂时作为占位）
     TBool isScriptLevel;                  // 是否在脚本级别（用于区分脚本级变量和函数内变量）
     
     // 脚本 AST 引用（用于类型查找）
@@ -90,7 +91,30 @@ typedef struct SZrCompilerState {
     
     // 类型 Prototype 信息（用于运行时创建）
     SZrArray typePrototypes;              // 待创建的 prototype 信息数组（SZrTypePrototypeInfo）
+    
+    // 编译期环境管理
+    SZrTypeEnvironment *compileTimeTypeEnv;   // 编译期类型环境
+    SZrArray compileTimeVariables;            // 编译期变量表（SZrCompileTimeVariable*）
+    SZrArray compileTimeFunctions;            // 编译期函数表（SZrCompileTimeFunction*）
+    TBool isInCompileTimeContext;             // 是否在编译期上下文中
 } SZrCompilerState;
+
+// 编译期变量信息
+typedef struct SZrCompileTimeVariable {
+    SZrString *name;                       // 变量名
+    SZrInferredType type;                  // 变量类型
+    SZrAstNode *value;                     // 变量值（AST节点，用于编译期求值）
+    SZrFileRange location;                  // 声明位置
+} SZrCompileTimeVariable;
+
+// 编译期函数信息
+typedef struct SZrCompileTimeFunction {
+    SZrString *name;                       // 函数名
+    SZrAstNode *declaration;               // 函数声明 AST 节点
+    SZrInferredType returnType;            // 返回类型
+    SZrArray paramTypes;                   // 参数类型数组（SZrInferredType）
+    SZrFileRange location;                  // 声明位置
+} SZrCompileTimeFunction;
 
 // 作用域信息
 typedef struct SZrScope {
@@ -227,6 +251,27 @@ ZR_PARSER_API void ZrCompileResultFree(SZrState *state, SZrCompileResult *result
 
 // 报告编译错误
 ZR_PARSER_API void ZrCompilerError(SZrCompilerState *cs, const TChar *msg, SZrFileRange location);
+
+// 编译期错误级别
+enum EZrCompileTimeErrorLevel {
+    ZR_COMPILE_TIME_ERROR_INFO,      // 信息
+    ZR_COMPILE_TIME_ERROR_WARNING,   // 警告
+    ZR_COMPILE_TIME_ERROR_ERROR,     // 错误
+    ZR_COMPILE_TIME_ERROR_FATAL      // 致命错误（阻止编译完成）
+};
+
+typedef enum EZrCompileTimeErrorLevel EZrCompileTimeErrorLevel;
+
+// 编译期错误报告
+ZR_PARSER_API void ZrCompileTimeError(SZrCompilerState *cs, 
+                                     EZrCompileTimeErrorLevel level,
+                                     const TChar *message,
+                                     SZrFileRange location);
+
+ZR_PARSER_API void analyze_external_variables(SZrCompilerState *cs, SZrAstNode *node, SZrCompilerState *parentCompiler);
+
+// 执行编译期声明
+ZR_PARSER_API TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAstNode *node);
 
 // 编译源代码为函数（封装了从解析到编译的全流程）
 // 这是提供给 globalState 的统一接口

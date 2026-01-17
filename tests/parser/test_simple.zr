@@ -166,19 +166,6 @@ class Person{
         return this._address;
     }
 }
-// 迭代器写法
-// 返回 IEnumerator
-var j = for(var i in [1, 2, 3, 4, 5]){
-    if(i % 2 == 0){
-        continue i;
-    }
-    if(i>=4){
-        break i;
-    }
-    // default continue null;
-};
-// result is [2, 4]
-
 var k = {{
     // out 会寻找最近的block表达式
     // j的类型在编译阶段就已经确定
@@ -205,17 +192,6 @@ class Student:Person, Man{
         for(var i:int=0;i<100;i+=1){}
         for(;;){}
         for(var i in arr){
-            var h = if(i){
-                1;
-            }else{
-                2;
-            };
-
-            var j = switch(i){
-                (1){1;}
-                (2){2;}
-                (){3;}
-            };
         
         }
     }

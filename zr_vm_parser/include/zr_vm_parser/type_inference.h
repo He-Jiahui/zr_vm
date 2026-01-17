@@ -71,5 +71,11 @@ ZR_PARSER_API const TChar *get_type_name_string(SZrState *state, const SZrInferr
 // 将AST类型注解转换为推断类型
 ZR_PARSER_API TBool convert_ast_type_to_inferred_type(SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result);
 
+// 字面量范围检查函数
+ZR_PARSER_API TBool check_literal_range(SZrCompilerState *cs, SZrAstNode *literalNode, const SZrInferredType *targetType, SZrFileRange location);
+
+// 数组索引边界检查函数
+ZR_PARSER_API TBool check_array_index_bounds(SZrCompilerState *cs, SZrAstNode *indexExpr, const SZrInferredType *arrayType, SZrFileRange location);
+
 #endif //ZR_VM_PARSER_TYPE_INFERENCE_H
 

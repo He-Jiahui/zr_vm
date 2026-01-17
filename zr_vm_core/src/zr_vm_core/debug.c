@@ -101,7 +101,10 @@ ZR_NO_RETURN void ZrDebugRunError(struct SZrState *state, TNativeString format, 
 
 void ZrDebugErrorWhenHandlingError(struct SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
-    // TODO:
+    // 处理错误处理过程中的错误
+    // 注意：这个函数在错误处理过程中被调用，需要避免递归错误
+    // TODO: 这里暂时不实现，因为错误处理过程中的错误处理需要特殊处理
+    // 未来可以实现错误处理链或错误恢复机制
 }
 
 

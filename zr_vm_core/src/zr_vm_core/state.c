@@ -4,6 +4,7 @@
 #include "zr_vm_core/state.h"
 
 #include "zr_vm_common/zr_vm_conf.h"
+#include "zr_vm_common/zr_debug_conf.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/gc.h"
@@ -78,6 +79,12 @@ void ZrStateInit(SZrState *state, SZrGlobalState *global) {
     state->debugHookSignal = 0;
     ZrStateResetDebugHookCount(state);
     state->allowDebugHook = ZR_TRUE;
+    
+    // 运行时检查标志（使用默认配置）
+    state->enableRuntimeBoundsCheck = ZR_ENABLE_RUNTIME_BOUNDS_CHECK;
+    state->enableRuntimeTypeCheck = ZR_ENABLE_RUNTIME_TYPE_CHECK;
+    state->enableRuntimeRangeCheck = ZR_ENABLE_RUNTIME_RANGE_CHECK;
+    
     // closures
     state->stackClosureValueList = ZR_NULL;
     // link to self as thread with stack closures
