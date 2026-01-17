@@ -213,7 +213,7 @@ static EZrToken read_identifier(SZrLexState *ls, TZrSemInfo *seminfo) {
     if (token == ZR_TK_BOOLEAN) {
         seminfo->booleanValue = (strncmp(&ls->source[start], "true", 4) == 0) ? ZR_TRUE : ZR_FALSE;
     } else if (token == ZR_TK_IDENTIFIER) {
-        seminfo->stringValue = ZrStringCreate(ls->state, &ls->source[start], length);
+        seminfo->stringValue = ZrStringCreate(ls->state, (TNativeString)&ls->source[start], length);
     }
 
     return token;

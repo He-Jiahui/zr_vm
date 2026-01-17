@@ -1202,7 +1202,6 @@ static void eliminate_redundant_instructions(SZrCompilerState *cs) {
             if (opcode1 == ZR_INSTRUCTION_ENUM(SET_STACK) && opcode2 == ZR_INSTRUCTION_ENUM(GET_STACK)) {
                 TUInt16 destSlot1 = inst1->instruction.operandExtra;
                 TUInt16 destSlot2 = inst2->instruction.operandExtra;
-                TInt32 srcSlot1 = inst1->instruction.operand.operand1[0];
                 TInt32 srcSlot2 = inst2->instruction.operand.operand1[0];
                 
                 // 如果 SET_STACK 的目标槽位和 GET_STACK 的源槽位相同，且目标槽位也相同
@@ -1925,8 +1924,7 @@ static SZrString *get_type_name_from_inferred_type(SZrCompilerState *cs, const S
     }
     
     if (typeNameStr != ZR_NULL) {
-        TZrSize nameLen = strlen(typeNameStr);
-        return ZrStringCreateFromNative(cs->state, typeNameStr);
+        return ZrStringCreateFromNative(cs->state, (TNativeString)typeNameStr);
     }
     
     return ZR_NULL;
@@ -2589,20 +2587,24 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 case ZR_AST_CLASS_PROPERTY: {
                     SZrClassProperty *property = &member->data.classProperty;
                     memberInfo.accessModifier = property->access;
-                    // ClassProperty 包含getter和setter，需要从PropertyGet/PropertySet中提取名称
+                    // ClassProperty 包含modifier（PropertyGet或PropertySet），需要从中提取名称
                     // 实现从PropertyGet/PropertySet中提取名称和函数引用
-                    if (property->getter != ZR_NULL && property->getter->type == ZR_AST_PROPERTY_GET) {
-                        SZrPropertyGet *getter = &property->getter->data.propertyGet;
-                        if (getter->name != ZR_NULL) {
-                            memberInfo.name = getter->name->name;
+                    if (property->modifier != ZR_NULL) {
+                        if (property->modifier->type == ZR_AST_PROPERTY_GET) {
+                            SZrPropertyGet *getter = &property->modifier->data.propertyGet;
+                            if (getter->name != ZR_NULL) {
+                                memberInfo.name = getter->name->name;
+                            }
+                            // getter的函数引用需要从编译后的函数中获取
+                            // 注意：getter的body需要编译为函数，然后获取函数引用索引
+                        } else if (property->modifier->type == ZR_AST_PROPERTY_SET) {
+                            SZrPropertySet *setter = &property->modifier->data.propertySet;
+                            if (setter->name != ZR_NULL) {
+                                memberInfo.name = setter->name->name;
+                            }
+                            // setter的函数引用需要从编译后的函数中获取
+                            // 注意：setter的body需要编译为函数，然后获取函数引用索引
                         }
-                        // getter的函数引用需要从编译后的函数中获取
-                        // 注意：getter的body需要编译为函数，然后获取函数引用索引
-                    }
-                    if (property->setter != ZR_NULL && property->setter->type == ZR_AST_PROPERTY_SET) {
-                        SZrPropertySet *setter = &property->setter->data.propertySet;
-                        // setter的函数引用需要从编译后的函数中获取
-                        // 注意：setter的body需要编译为函数，然后获取函数引用索引
                     }
                     // TODO: 暂时跳过属性处理，因为需要完整的getter/setter编译支持
                     break;

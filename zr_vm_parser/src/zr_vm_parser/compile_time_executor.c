@@ -73,7 +73,7 @@ static TBool check_compile_time_identifier_access(SZrCompilerState *cs, SZrStrin
                 nameStr ? nameStr : "<null>");
         ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, errorMsg, 
                           cs->currentAst != ZR_NULL ? cs->currentAst->location : 
-                          (SZrFileRange){0});
+                          (SZrFileRange){{0}});
         return ZR_FALSE;
     } else {
         // 允许只读访问运行时变量（用于编译期检查）
@@ -332,7 +332,7 @@ static TBool evaluate_compile_time_expression(SZrCompilerState *cs, SZrAstNode *
         
         case ZR_AST_FUNCTION_CALL: {
             // 编译期函数调用
-            SZrFunctionCall *call = &node->data.functionCall;
+            ZR_UNUSED_PARAMETER(&node->data.functionCall);
             
             // 检查是否是内置编译期函数（FatalError, Assert）
             // 注意：函数调用在 primary expression 中，这里需要从上下文中获取函数名
@@ -577,9 +577,9 @@ ZR_PARSER_API TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAs
                             } else if (stmt->type == ZR_AST_VARIABLE_DECLARATION) {
                                 // 变量声明：执行初始化表达式（如果有）
                                 SZrVariableDeclaration *varDecl = &stmt->data.variableDeclaration;
-                                if (varDecl->initializer != ZR_NULL) {
+                                if (varDecl->value != ZR_NULL) {
                                     SZrTypeValue initResult;
-                                    if (evaluate_compile_time_expression(cs, varDecl->initializer, &initResult)) {
+                                    if (evaluate_compile_time_expression(cs, varDecl->value, &initResult)) {
                                         // 初始化表达式求值成功
                                         // 注意：变量声明在编译期执行时不需要存储变量值
                                     }
@@ -592,12 +592,12 @@ ZR_PARSER_API TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAs
                                     if (evaluate_compile_time_expression(cs, ifExpr->condition, &condResult)) {
                                         TBool condition = (condResult.type == ZR_VALUE_TYPE_BOOL && 
                                                           condResult.value.nativeObject.nativeBool != 0);
-                                        if (condition && ifExpr->consequent != ZR_NULL) {
+                                        if (condition && ifExpr->thenExpr != ZR_NULL) {
                                             SZrTypeValue result;
-                                            evaluate_compile_time_expression(cs, ifExpr->consequent, &result);
-                                        } else if (!condition && ifExpr->alternate != ZR_NULL) {
+                                            evaluate_compile_time_expression(cs, ifExpr->thenExpr, &result);
+                                        } else if (!condition && ifExpr->elseExpr != ZR_NULL) {
                                             SZrTypeValue result;
-                                            evaluate_compile_time_expression(cs, ifExpr->alternate, &result);
+                                            evaluate_compile_time_expression(cs, ifExpr->elseExpr, &result);
                                         }
                                     }
                                 }

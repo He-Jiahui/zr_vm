@@ -24,6 +24,7 @@
 
 // 辅助函数：写入字符串（带长度）
 static void write_string_with_length(SZrState *state, FILE *file, SZrString *str) {
+    ZR_UNUSED_PARAMETER(state);
     if (str == ZR_NULL) {
         TZrSize strLength = 0;
         fwrite(&strLength, sizeof(TZrSize), 1, file);
@@ -61,6 +62,8 @@ static SZrString *get_string_from_constant(SZrState *state, SZrFunction *functio
 
 // 辅助函数：写入继承类型引用（.REFERENCE）
 static void write_io_reference(SZrState *state, FILE *file, TUInt32 stringIndex, SZrFunction *function) {
+    ZR_UNUSED_PARAMETER(state);
+    ZR_UNUSED_PARAMETER(function);
     // referenceModuleName [string] (空字符串，当前模块内引用)
     TZrSize moduleNameLength = 0;
     fwrite(&moduleNameLength, sizeof(TZrSize), 1, file);
@@ -402,7 +405,7 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
             // 查找instructionStart对应的行号
             for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
                 SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
-                if (locInfo->instructionIndex == instructionStart) {
+                if (locInfo->currentInstructionOffset == instructionStart) {
                     startLineLocal = locInfo->lineInSource;
                     break;
                 }
@@ -410,17 +413,17 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
             // 查找instructionEnd对应的行号
             for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
                 SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
-                if (locInfo->instructionIndex == instructionEnd) {
+                if (locInfo->currentInstructionOffset == instructionEnd) {
                     endLineLocal = locInfo->lineInSource;
                     break;
                 }
             }
             // 如果未找到精确匹配，使用最接近的行号
             if (startLineLocal == 0 && function->executionLocationInfoLength > 0) {
-                // 查找小于等于instructionStart的最大instructionIndex
+                // 查找小于等于instructionStart的最大currentInstructionOffset
                 for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
                     SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
-                    if (locInfo->instructionIndex <= instructionStart) {
+                    if (locInfo->currentInstructionOffset <= instructionStart) {
                         startLineLocal = locInfo->lineInSource;
                     } else {
                         break;
@@ -428,10 +431,10 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
                 }
             }
             if (endLineLocal == 0 && function->executionLocationInfoLength > 0) {
-                // 查找小于等于instructionEnd的最大instructionIndex
+                // 查找小于等于instructionEnd的最大currentInstructionOffset
                 for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
                     SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
-                    if (locInfo->instructionIndex <= instructionEnd) {
+                    if (locInfo->currentInstructionOffset <= instructionEnd) {
                         endLineLocal = locInfo->lineInSource;
                     } else {
                         break;

@@ -218,7 +218,7 @@ static void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
-    TNativeString nameStr = ZrStringGetNativeString(name);
+    ZR_UNUSED_PARAMETER(ZrStringGetNativeString(name));
     
     // 重要：先查找局部变量（包括闭包变量）
     // 如果存在同名的局部变量，它会覆盖全局的 zr 对象
@@ -443,26 +443,34 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         }
     } else if (strcmp(op, "new") == 0) {
         // new操作符：创建class实例
-        // 参数应该是Identifier（类型名称）
-        // TODO: 支持new TypeName(...)语法，需要parser支持或特殊处理
+        // 参数应该是Identifier（类型名称）或PrimaryExpression（TypeName(...)）
         SZrString *typeName = ZR_NULL;
+        SZrAstNodeArray *constructorArgs = ZR_NULL;
         
         if (arg != ZR_NULL && arg->type == ZR_AST_IDENTIFIER_LITERAL) {
             // 参数是类型名称
             typeName = arg->data.identifier.name;
-        } else if (arg != ZR_NULL && arg->type == ZR_AST_FUNCTION_CALL) {
-            // 处理new TypeName(...)的情况，需要从函数调用表达式中提取类型名称
-            // 函数调用的callee应该是类型名称
-            SZrFunctionCall *call = &arg->data.functionCall;
-            if (call->callee != ZR_NULL && call->callee->type == ZR_AST_IDENTIFIER_LITERAL) {
-                typeName = call->callee->data.identifier.name;
-                constructorArgs = call->args;  // 使用函数调用的参数作为构造函数参数
-            } else {
-                ZrCompilerError(cs, "new operator requires a type name identifier", node->location);
-                return;
+        } else if (arg != ZR_NULL && arg->type == ZR_AST_PRIMARY_EXPRESSION) {
+            // 参数是主表达式：TypeName(...)
+            SZrPrimaryExpression *primary = &arg->data.primaryExpression;
+            
+            // 从property中提取类型名称
+            if (primary->property != ZR_NULL && primary->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+                typeName = primary->property->data.identifier.name;
+                
+                // 检查members中是否有函数调用
+                if (primary->members != ZR_NULL && primary->members->count > 0) {
+                    SZrAstNode *firstMember = primary->members->nodes[0];
+                    if (firstMember != ZR_NULL && firstMember->type == ZR_AST_FUNCTION_CALL) {
+                        SZrFunctionCall *call = &firstMember->data.functionCall;
+                        constructorArgs = call->args;
+                    }
+                }
             }
-        } else {
-            ZrCompilerError(cs, "new operator currently only supports simple type name or TypeName(...) syntax", node->location);
+        }
+        
+        if (typeName == ZR_NULL) {
+            ZrCompilerError(cs, "new operator requires a type name", node->location);
             return;
         }
         
@@ -692,8 +700,8 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
             // 1. 如果一个是float，另一个是int，将int提升为float
             // 2. 如果一个是更大的整数类型，将较小的整数类型提升为较大的类型
             // 3. 其他情况保持原类型
-            EZrValueType leftValueType = leftType.type;
-            EZrValueType rightValueType = rightType.type;
+            EZrValueType leftValueType = leftType.baseType;
+            EZrValueType rightValueType = rightType.baseType;
             
             // 检查是否需要类型提升
             if (ZR_VALUE_IS_TYPE_FLOAT(leftValueType) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValueType)) {
@@ -709,36 +717,29 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
             } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValueType) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValueType)) {
                 // 两个都是整数类型，提升到较大的类型
                 // 类型提升顺序：INT8 < INT16 < INT32 < INT64
+                // 注意：目前只有 TO_INT 指令（提升到 INT32），对于 INT16 和 INT64 的提升需要特殊处理
                 if (leftValueType < rightValueType) {
                     // 左操作数类型较小，提升左操作数
-                    EZrInstructionCode promoteOp = ZR_INSTRUCTION_ENUM(ENUM_MAX);
-                    if (rightValueType == ZR_VALUE_TYPE_INT16) {
-                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT16);
-                    } else if (rightValueType == ZR_VALUE_TYPE_INT32) {
-                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT);
-                    } else if (rightValueType == ZR_VALUE_TYPE_INT64) {
-                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT64);
+                    // 如果目标是 INT32 或更大，使用 TO_INT 提升到 INT32
+                    if (rightValueType == ZR_VALUE_TYPE_INT32 || rightValueType == ZR_VALUE_TYPE_INT64) {
+                        if (leftValueType < ZR_VALUE_TYPE_INT32) {
+                            TUInt32 promotedLeftSlot = allocate_stack_slot(cs);
+                            emit_type_conversion(cs, promotedLeftSlot, leftSlot, ZR_INSTRUCTION_ENUM(TO_INT));
+                            leftSlot = promotedLeftSlot;
+                        }
                     }
-                    if (promoteOp != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
-                        TUInt32 promotedLeftSlot = allocate_stack_slot(cs);
-                        emit_type_conversion(cs, promotedLeftSlot, leftSlot, promoteOp);
-                        leftSlot = promotedLeftSlot;
-                    }
+                    // TODO: 对于 INT16 的提升，需要添加 TO_INT16 指令支持
                 } else if (rightValueType < leftValueType) {
                     // 右操作数类型较小，提升右操作数
-                    EZrInstructionCode promoteOp = ZR_INSTRUCTION_ENUM(ENUM_MAX);
-                    if (leftValueType == ZR_VALUE_TYPE_INT16) {
-                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT16);
-                    } else if (leftValueType == ZR_VALUE_TYPE_INT32) {
-                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT);
-                    } else if (leftValueType == ZR_VALUE_TYPE_INT64) {
-                        promoteOp = ZR_INSTRUCTION_ENUM(TO_INT64);
+                    // 如果目标是 INT32 或更大，使用 TO_INT 提升到 INT32
+                    if (leftValueType == ZR_VALUE_TYPE_INT32 || leftValueType == ZR_VALUE_TYPE_INT64) {
+                        if (rightValueType < ZR_VALUE_TYPE_INT32) {
+                            TUInt32 promotedRightSlot = allocate_stack_slot(cs);
+                            emit_type_conversion(cs, promotedRightSlot, rightSlot, ZR_INSTRUCTION_ENUM(TO_INT));
+                            rightSlot = promotedRightSlot;
+                        }
                     }
-                    if (promoteOp != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
-                        TUInt32 promotedRightSlot = allocate_stack_slot(cs);
-                        emit_type_conversion(cs, promotedRightSlot, rightSlot, promoteOp);
-                        rightSlot = promotedRightSlot;
-                    }
+                    // TODO: 对于 INT16 的提升，需要添加 TO_INT16 指令支持
                 }
             }
             // 其他情况（如都是float，或类型不兼容）保持原类型
@@ -1422,13 +1423,11 @@ static SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs,
         if (namePtr != ZR_NULL && *namePtr != ZR_NULL) {
             // 命名参数
             SZrString *argName = *namePtr;
-            TNativeString argNameStr = ZrStringGetNativeString(argName);
             TBool found = ZR_FALSE;
             
             // 查找参数名对应的位置
             for (TZrSize j = 0; j < paramCount; j++) {
                 if (paramNames[j] != ZR_NULL) {
-                    TNativeString paramNameStr = ZrStringGetNativeString(paramNames[j]);
                     if (ZrStringEqual(argName, paramNames[j])) {
                         if (provided[j]) {
                             // 参数重复
@@ -1581,7 +1580,7 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                     TUInt32 childFuncIndex = find_child_function_index(cs, funcName);
                     if (childFuncIndex != (TUInt32)-1) {
                         // 找到子函数，获取参数列表
-                        SZrFunction *childFunc = (SZrFunction*)ZrArrayGet(&cs->childFunctions, childFuncIndex);
+                        ZR_UNUSED_PARAMETER(ZrArrayGet(&cs->childFunctions, childFuncIndex));
                         // 从函数对象获取参数列表（需要扩展函数对象存储参数信息）
                         // 注意：函数对象可能没有存储参数信息，需要从AST中获取
                         // 这里先尝试从AST查找函数声明来获取参数列表

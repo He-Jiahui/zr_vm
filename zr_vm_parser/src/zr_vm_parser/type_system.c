@@ -158,8 +158,8 @@ TBool ZrInferredTypeEqual(const SZrInferredType *type1, const SZrInferredType *t
         
         // 遍历元素类型数组，比较每个元素类型
         for (TZrSize i = 0; i < type1->elementTypes.length; i++) {
-            SZrInferredType *elemType1 = (SZrInferredType *)ZrArrayGet(&type1->elementTypes, i);
-            SZrInferredType *elemType2 = (SZrInferredType *)ZrArrayGet(&type2->elementTypes, i);
+            SZrInferredType *elemType1 = (SZrInferredType *)ZrArrayGet((SZrArray *)&type1->elementTypes, i);
+            SZrInferredType *elemType2 = (SZrInferredType *)ZrArrayGet((SZrArray *)&type2->elementTypes, i);
             
             if (elemType1 == ZR_NULL || elemType2 == ZR_NULL) {
                 if (elemType1 != elemType2) {

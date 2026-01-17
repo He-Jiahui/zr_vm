@@ -14,13 +14,66 @@
 
 #include <string.h>
 
+// 辅助函数：检查位置是否在范围内
+static TBool is_position_in_range(SZrFileRange position, SZrFileRange symbolRange) {
+    // 首先检查源文件是否相同
+    if (position.source != symbolRange.source && 
+        position.source != ZR_NULL && symbolRange.source != ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 使用offset比较（如果可用）
+    if (symbolRange.start.offset > 0 && symbolRange.end.offset > 0 &&
+        position.start.offset > 0 && position.end.offset > 0) {
+        return (symbolRange.start.offset <= position.start.offset &&
+                position.end.offset <= symbolRange.end.offset);
+    }
+    
+    // 使用行号和列号比较
+    TBool startMatch = (symbolRange.start.line < position.start.line) ||
+                      (symbolRange.start.line == position.start.line && 
+                       symbolRange.start.column <= position.start.column);
+    TBool endMatch = (position.end.line < symbolRange.end.line) ||
+                    (position.end.line == symbolRange.end.line && 
+                     position.end.column <= symbolRange.end.column);
+    
+    return startMatch && endMatch;
+}
+
+// 辅助函数：检查符号是否与范围重叠
+static TBool is_symbol_in_range(SZrFileRange symbolRange, SZrFileRange queryRange) {
+    // 首先检查源文件是否相同
+    if (queryRange.source != symbolRange.source && 
+        queryRange.source != ZR_NULL && symbolRange.source != ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 使用offset比较（如果可用）
+    if (symbolRange.start.offset > 0 && symbolRange.end.offset > 0 &&
+        queryRange.start.offset > 0 && queryRange.end.offset > 0) {
+        // 符号范围与查询范围有重叠
+        return (symbolRange.start.offset <= queryRange.end.offset &&
+                queryRange.start.offset <= symbolRange.end.offset);
+    }
+    
+    // 使用行号和列号比较
+    TBool startOverlap = (symbolRange.start.line < queryRange.end.line) ||
+                        (symbolRange.start.line == queryRange.end.line && 
+                         symbolRange.start.column <= queryRange.end.column);
+    TBool endOverlap = (queryRange.start.line < symbolRange.end.line) ||
+                      (queryRange.start.line == symbolRange.end.line && 
+                       queryRange.start.column <= symbolRange.end.column);
+    
+    return startOverlap && endOverlap;
+}
+
 // 创建符号表
 SZrSymbolTable *ZrSymbolTableNew(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
     }
     
-    SZrSymbolTable *table = (SZrSymbolTable *)ZrMemoryAllocate(state, sizeof(SZrSymbolTable));
+    SZrSymbolTable *table = (SZrSymbolTable *)ZrMemoryRawMalloc(state->global, sizeof(SZrSymbolTable));
     if (table == ZR_NULL) {
         return ZR_NULL;
     }
@@ -48,9 +101,9 @@ SZrSymbolTable *ZrSymbolTableNew(SZrState *state) {
     ZrHashSetInit(state, &table->nameToSymbolsHashSet, 4); // 4 = 16 buckets
     
     // 创建全局作用域
-    table->globalScope = (SZrSymbolScope *)ZrMemoryAllocate(state, sizeof(SZrSymbolScope));
+    table->globalScope = (SZrSymbolScope *)ZrMemoryRawMalloc(state->global, sizeof(SZrSymbolScope));
     if (table->globalScope == ZR_NULL) {
-        ZrMemoryFree(state, table);
+        ZrMemoryRawFree(state->global, table, sizeof(SZrSymbolTable));
         return ZR_NULL;
     }
     
@@ -91,7 +144,7 @@ void ZrSymbolTableFree(SZrState *state, SZrSymbolTable *table) {
                 }
             }
             ZrArrayFree(state, &scope->symbols);
-            ZrMemoryFree(state, scope);
+            ZrMemoryRawFree(state->global, scope, sizeof(SZrSymbolScope));
         }
     }
     
@@ -105,7 +158,7 @@ void ZrSymbolTableFree(SZrState *state, SZrSymbolTable *table) {
             }
         }
         ZrArrayFree(state, &table->globalScope->symbols);
-        ZrMemoryFree(state, table->globalScope);
+        ZrMemoryRawFree(state->global, table->globalScope, sizeof(SZrSymbolScope));
     }
     
     ZrArrayFree(state, &table->scopeStack);
@@ -139,7 +192,7 @@ void ZrSymbolTableFree(SZrState *state, SZrSymbolTable *table) {
         ZrHashSetDeconstruct(state, &table->nameToSymbolsHashSet);
     }
     
-    ZrMemoryFree(state, table);
+    ZrMemoryRawFree(state->global, table, sizeof(SZrSymbolTable));
 }
 
 // 创建符号
@@ -152,7 +205,7 @@ SZrSymbol *ZrSymbolNew(SZrState *state, EZrSymbolType type,
         return ZR_NULL;
     }
     
-    SZrSymbol *symbol = (SZrSymbol *)ZrMemoryAllocate(state, sizeof(SZrSymbol));
+    SZrSymbol *symbol = (SZrSymbol *)ZrMemoryRawMalloc(state->global, sizeof(SZrSymbol));
     if (symbol == ZR_NULL) {
         return ZR_NULL;
     }
@@ -180,7 +233,7 @@ void ZrSymbolFree(SZrState *state, SZrSymbol *symbol) {
     
     ZrArrayFree(state, &symbol->references);
     // 注意：不释放 typeInfo，因为它可能被其他地方引用
-    ZrMemoryFree(state, symbol);
+    ZrMemoryRawFree(state->global, symbol, sizeof(SZrSymbol));
 }
 
 // 添加引用到符号
@@ -510,32 +563,6 @@ SZrSymbol *ZrSymbolTableFindDefinition(SZrSymbolTable *table, SZrFileRange posit
     // 遍历所有作用域查找包含该位置的符号
     // 实现位置比较：检查位置是否在符号的定义范围内
     
-    // 辅助函数：检查位置是否在范围内
-    static TBool is_position_in_range(SZrFileRange position, SZrFileRange symbolRange) {
-        // 首先检查源文件是否相同
-        if (position.source != symbolRange.source && 
-            position.source != ZR_NULL && symbolRange.source != ZR_NULL) {
-            return ZR_FALSE;
-        }
-        
-        // 使用offset比较（如果可用）
-        if (symbolRange.start.offset > 0 && symbolRange.end.offset > 0 &&
-            position.start.offset > 0 && position.end.offset > 0) {
-            return (symbolRange.start.offset <= position.start.offset &&
-                    position.end.offset <= symbolRange.end.offset);
-        }
-        
-        // 使用行号和列号比较
-        TBool startMatch = (symbolRange.start.line < position.start.line) ||
-                          (symbolRange.start.line == position.start.line && 
-                           symbolRange.start.column <= position.start.column);
-        TBool endMatch = (position.end.line < symbolRange.end.line) ||
-                        (position.end.line == symbolRange.end.line && 
-                         position.end.column <= symbolRange.end.column);
-        
-        return startMatch && endMatch;
-    }
-    
     // 从当前作用域栈开始查找（从内到外）
     for (TZrSize stackIdx = table->scopeStack.length; stackIdx > 0; stackIdx--) {
         SZrSymbolScope **scopePtr = (SZrSymbolScope **)ZrArrayGet(&table->scopeStack, stackIdx - 1);
@@ -582,33 +609,6 @@ TBool ZrSymbolTableGetSymbolsInRange(SZrState *state, SZrSymbolTable *table,
     }
     
     // 实现范围查询：查找所有在指定范围内的符号
-    // 辅助函数：检查符号是否与范围重叠
-    static TBool is_symbol_in_range(SZrFileRange symbolRange, SZrFileRange queryRange) {
-        // 首先检查源文件是否相同
-        if (queryRange.source != symbolRange.source && 
-            queryRange.source != ZR_NULL && symbolRange.source != ZR_NULL) {
-            return ZR_FALSE;
-        }
-        
-        // 使用offset比较（如果可用）
-        if (symbolRange.start.offset > 0 && symbolRange.end.offset > 0 &&
-            queryRange.start.offset > 0 && queryRange.end.offset > 0) {
-            // 检查是否有重叠：symbol.start < query.end && query.start < symbol.end
-            return (symbolRange.start.offset < queryRange.end.offset &&
-                    queryRange.start.offset < symbolRange.end.offset);
-        }
-        
-        // 使用行号和列号比较
-        // 检查是否有重叠
-        TBool before = (symbolRange.end.line < queryRange.start.line) ||
-                      (symbolRange.end.line == queryRange.start.line && 
-                       symbolRange.end.column < queryRange.start.column);
-        TBool after = (symbolRange.start.line > queryRange.end.line) ||
-                     (symbolRange.start.line == queryRange.end.line && 
-                      symbolRange.start.column > queryRange.end.column);
-        
-        return !before && !after;
-    }
     
     // 从当前作用域栈开始查找
     for (TZrSize stackIdx = table->scopeStack.length; stackIdx > 0; stackIdx--) {
@@ -677,7 +677,7 @@ void ZrSymbolTableExitScope(SZrSymbolTable *table) {
         SZrSymbolScope *scope = *scopePtr;
         // 注意：不释放符号，因为它们可能被其他地方引用
         ZrArrayFree(table->state, &scope->symbols);
-        ZrMemoryFree(table->state, scope);
+        ZrMemoryRawFree(table->state->global, scope, sizeof(SZrSymbolScope));
     }
 }
 

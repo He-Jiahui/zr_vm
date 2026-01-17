@@ -409,7 +409,7 @@ TBool infer_function_call_type(SZrCompilerState *cs, SZrAstNode *node, SZrInferr
         return ZR_FALSE;
     }
     
-    SZrFunctionCall *funcCall = &node->data.functionCall;
+    ZR_UNUSED_PARAMETER(&node->data.functionCall);
     
     // 注意：函数调用在 PRIMARY_EXPRESSION 中处理
     // SZrFunctionCall 只有 args 字段，被调用的表达式在 PRIMARY_EXPRESSION 的 property 中

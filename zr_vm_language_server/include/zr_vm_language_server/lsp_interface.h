@@ -131,10 +131,18 @@ ZR_LANGUAGE_SERVER_API SZrLspRange ZrLspRangeFromFileRange(SZrFileRange fileRang
 // 转换 LspRange 到 FileRange
 ZR_LANGUAGE_SERVER_API SZrFileRange ZrLspRangeToFileRange(SZrLspRange lspRange, SZrString *uri);
 
+// 转换 LspRange 到 FileRange（带文件内容）
+ZR_LANGUAGE_SERVER_API SZrFileRange ZrLspRangeToFileRangeWithContent(SZrLspRange lspRange, SZrString *uri, 
+                                                                       const TChar *content, TZrSize contentLength);
+
 // 转换 FilePosition 到 LspPosition
 ZR_LANGUAGE_SERVER_API SZrLspPosition ZrLspPositionFromFilePosition(SZrFilePosition filePosition);
 
 // 转换 LspPosition 到 FilePosition
 ZR_LANGUAGE_SERVER_API SZrFilePosition ZrLspPositionToFilePosition(SZrLspPosition lspPosition);
+
+// 转换 LspPosition 到 FilePosition（带文件内容）
+ZR_LANGUAGE_SERVER_API SZrFilePosition ZrLspPositionToFilePositionWithContent(SZrLspPosition lspPosition,
+                                                                                const TChar *content, TZrSize contentLength);
 
 #endif //ZR_VM_LANGUAGE_SERVER_LSP_INTERFACE_H

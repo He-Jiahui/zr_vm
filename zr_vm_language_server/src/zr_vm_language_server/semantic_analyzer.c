@@ -76,7 +76,7 @@ static void perform_type_checking(SZrState *state, SZrSemanticAnalyzer *analyzer
         }
         
         case ZR_AST_FUNCTION_CALL: {
-            SZrFunctionCall *funcCall = &node->data.functionCall;
+            ZR_UNUSED_PARAMETER(&node->data.functionCall);
             // 检查函数调用的参数类型
             // TODO: 注意：这里需要查找函数定义并检查参数类型，简化实现暂时跳过
             // 完整实现需要使用 check_function_call_compatibility
@@ -632,7 +632,7 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
         
         case ZR_AST_FUNCTION_DECLARATION: {
             SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
-            SZrString *name = extract_identifier_name(state, funcDecl->name);
+            SZrString *name = funcDecl->name != ZR_NULL ? funcDecl->name->name : ZR_NULL;
             if (name != ZR_NULL) {
                 // 推断返回类型（集成类型推断系统）
                 SZrInferredType *returnType = (SZrInferredType *)ZrMemoryRawMalloc(state->global, sizeof(SZrInferredType));
@@ -667,7 +667,7 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
         
         case ZR_AST_CLASS_DECLARATION: {
             SZrClassDeclaration *classDecl = &node->data.classDeclaration;
-            SZrString *name = extract_identifier_name(state, classDecl->name);
+            SZrString *name = classDecl->name != ZR_NULL ? classDecl->name->name : ZR_NULL;
             if (name != ZR_NULL) {
                 ZrSymbolTableAddSymbol(state, analyzer->symbolTable,
                                        ZR_SYMBOL_CLASS, name,
@@ -679,7 +679,7 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
         
         case ZR_AST_STRUCT_DECLARATION: {
             SZrStructDeclaration *structDecl = &node->data.structDeclaration;
-            SZrString *name = extract_identifier_name(state, structDecl->name);
+            SZrString *name = structDecl->name != ZR_NULL ? structDecl->name->name : ZR_NULL;
             if (name != ZR_NULL) {
                 ZrSymbolTableAddSymbol(state, analyzer->symbolTable,
                                        ZR_SYMBOL_STRUCT, name,
@@ -1031,7 +1031,6 @@ TBool ZrSemanticAnalyzerGetHoverInfo(SZrState *state,
     
     // 构建悬停信息
     TChar buffer[512];
-    TZrSize offset = 0;
     
     // 符号类型
     const TChar *typeName = "unknown";
@@ -1071,6 +1070,7 @@ TBool ZrSemanticAnalyzerGetCompletions(SZrState *state,
                                        SZrSemanticAnalyzer *analyzer,
                                        SZrFileRange position,
                                        SZrArray *result) {
+    ZR_UNUSED_PARAMETER(position);
     if (state == ZR_NULL || analyzer == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1160,8 +1160,8 @@ SZrDiagnostic *ZrDiagnosticNew(SZrState *state,
     
     diagnostic->severity = severity;
     diagnostic->location = location;
-    diagnostic->message = ZrStringCreate(state, message, strlen(message));
-    diagnostic->code = code != ZR_NULL ? ZrStringCreate(state, code, strlen(code)) : ZR_NULL;
+    diagnostic->message = ZrStringCreate(state, (TNativeString)message, strlen(message));
+    diagnostic->code = code != ZR_NULL ? ZrStringCreate(state, (TNativeString)code, strlen(code)) : ZR_NULL;
     
     if (diagnostic->message == ZR_NULL) {
         ZrMemoryRawFree(state->global, diagnostic, sizeof(SZrDiagnostic));
@@ -1202,10 +1202,10 @@ SZrCompletionItem *ZrCompletionItemNew(SZrState *state,
         return ZR_NULL;
     }
     
-    item->label = ZrStringCreate(state, label, strlen(label));
-    item->kind = kind != ZR_NULL ? ZrStringCreate(state, kind, strlen(kind)) : ZR_NULL;
-    item->detail = detail != ZR_NULL ? ZrStringCreate(state, detail, strlen(detail)) : ZR_NULL;
-    item->documentation = documentation != ZR_NULL ? ZrStringCreate(state, documentation, strlen(documentation)) : ZR_NULL;
+    item->label = ZrStringCreate(state, (TNativeString)label, strlen(label));
+    item->kind = kind != ZR_NULL ? ZrStringCreate(state, (TNativeString)kind, strlen(kind)) : ZR_NULL;
+    item->detail = detail != ZR_NULL ? ZrStringCreate(state, (TNativeString)detail, strlen(detail)) : ZR_NULL;
+    item->documentation = documentation != ZR_NULL ? ZrStringCreate(state, (TNativeString)documentation, strlen(documentation)) : ZR_NULL;
     item->typeInfo = typeInfo; // 不复制，只是引用
     
     if (item->label == ZR_NULL) {
@@ -1251,7 +1251,7 @@ SZrHoverInfo *ZrHoverInfoNew(SZrState *state,
         return ZR_NULL;
     }
     
-    info->contents = ZrStringCreate(state, contents, strlen(contents));
+    info->contents = ZrStringCreate(state, (TNativeString)contents, strlen(contents));
     info->range = range;
     info->typeInfo = typeInfo; // 不复制，只是引用
     

@@ -427,7 +427,7 @@ static SZrAstNode *create_null_literal_node(SZrParserState *ps) {
 // ==================== 字面量解析 ====================
 
 static SZrAstNode *parse_literal(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
+    ZR_UNUSED_PARAMETER(get_current_location(ps));
     EZrToken token = ps->lexer->t.token;
 
     switch (token) {
@@ -995,7 +995,7 @@ static SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
 
 // 解析主表达式
 static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
+    ZR_UNUSED_PARAMETER(get_current_location(ps));
     EZrToken token = ps->lexer->t.token;
     SZrAstNode *base = ZR_NULL;
 
@@ -3049,17 +3049,6 @@ static SZrAstNode *parse_statement(SZrParserState *ps) {
         case ZR_TK_TRY:
             return parse_try_catch_finally_statement(ps);
 
-        case ZR_TK_SWITCH:
-            // 实现 switch 语句
-            // switch语句和switch表达式使用相同的解析函数，通过isStatement标志区分
-            {
-                SZrAstNode *switchNode = parse_switch_expression(ps);
-                if (switchNode != ZR_NULL) {
-                    switchNode->data.switchExpression.isStatement = ZR_TRUE;
-                }
-                return switchNode;
-            }
-
         default:
             // 检查是否是函数声明（identifier(params) { statements} 风格）
             if (token == ZR_TK_IDENTIFIER) {
@@ -3403,17 +3392,6 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
         case ZR_TK_TRY:
             return parse_try_catch_finally_statement(ps);
 
-        case ZR_TK_SWITCH:
-            // 实现 switch 语句
-            // switch语句和switch表达式使用相同的解析函数，通过isStatement标志区分
-            {
-                SZrAstNode *switchNode = parse_switch_expression(ps);
-                if (switchNode != ZR_NULL) {
-                    switchNode->data.switchExpression.isStatement = ZR_TRUE;
-                }
-                return switchNode;
-            }
-
         default:
             // 检查是否是 %compileTime 或 %test 声明
             if (token == ZR_TK_PERCENT) {
@@ -3564,8 +3542,8 @@ static SZrAstNode *parse_script(SZrParserState *ps) {
     
     while (ps->lexer->t.token != ZR_TK_EOS) {
         // 保存错误状态
-        TBool hadError = ps->hasError;
-        const TChar *prevErrorMessage = ps->errorMessage;
+        ZR_UNUSED_PARAMETER(ps->hasError);
+        ZR_UNUSED_PARAMETER(ps->errorMessage);
         
         // 重置错误状态（临时）
         ps->hasError = ZR_FALSE;
@@ -3713,11 +3691,16 @@ void ZrParserFreeAst(SZrState *state, SZrAstNode *node) {
             if (func->body != ZR_NULL) {
                 ZrParserFreeAst(state, func->body);
             }
+            // TODO: SZrType 和 SZrGenericDeclaration 不是 AST 节点，需要专门的释放逻辑
             if (func->returnType != ZR_NULL) {
-                ZrParserFreeAst(state, func->returnType);
+                // SZrType 可能包含指向 AST 节点的指针，需要递归释放
+                // 暂时使用类型转换，但应该实现专门的释放函数
+                ZrParserFreeAst(state, (SZrAstNode *)func->returnType);
             }
             if (func->generic != ZR_NULL) {
-                ZrParserFreeAst(state, func->generic);
+                // SZrGenericDeclaration 可能包含指向 AST 节点的指针，需要递归释放
+                // 暂时使用类型转换，但应该实现专门的释放函数
+                ZrParserFreeAst(state, (SZrAstNode *)func->generic);
             }
             if (func->decorators != ZR_NULL) {
                 for (TZrSize i = 0; i < func->decorators->count; i++) {
@@ -3930,7 +3913,13 @@ void ZrParserFreeAst(SZrState *state, SZrAstNode *node) {
                 ZrParserFreeAst(state, tryStmt->block);
             }
             if (tryStmt->catchPattern != ZR_NULL) {
-                ZrParserFreeAst(state, tryStmt->catchPattern);
+                // catchPattern 是 SZrAstNodeArray *，需要释放数组中的节点
+                for (TZrSize i = 0; i < tryStmt->catchPattern->count; i++) {
+                    if (tryStmt->catchPattern->nodes[i] != ZR_NULL) {
+                        ZrParserFreeAst(state, tryStmt->catchPattern->nodes[i]);
+                    }
+                }
+                ZrAstNodeArrayFree(state, tryStmt->catchPattern);
             }
             if (tryStmt->catchBlock != ZR_NULL) {
                 ZrParserFreeAst(state, tryStmt->catchBlock);
