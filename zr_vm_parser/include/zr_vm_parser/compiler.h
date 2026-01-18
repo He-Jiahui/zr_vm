@@ -97,6 +97,15 @@ typedef struct SZrCompilerState {
     SZrArray compileTimeVariables;            // 编译期变量表（SZrCompileTimeVariable*）
     SZrArray compileTimeFunctions;            // 编译期函数表（SZrCompileTimeFunction*）
     TBool isInCompileTimeContext;             // 是否在编译期上下文中
+    
+    // 构造函数上下文
+    TBool isInConstructor;                     // 是否在构造函数中编译
+    SZrAstNode *currentFunctionNode;          // 当前编译的函数 AST 节点（用于访问参数信息）
+    SZrString *currentTypeName;               // 当前编译的类型名称（用于成员字段 const 检查）
+    
+    // const 变量跟踪（用于编译时检查）
+    SZrArray constLocalVars;                   // const 局部变量名数组（SZrString*）
+    SZrArray constParameters;                  // const 参数名数组（SZrString*）
 } SZrCompilerState;
 
 // 编译期变量信息
@@ -169,6 +178,7 @@ typedef struct SZrTypeMemberInfo {
     SZrString *name;                    // 成员名称
     EZrAccessModifier accessModifier;   // 访问修饰符
     TBool isStatic;                     // 是否为静态成员
+    TBool isConst;                      // 是否为 const 字段
     
     // 字段特定信息
     SZrType *fieldType;                 // 字段类型（用于偏移量计算，可能为ZR_NULL）

@@ -27,6 +27,7 @@
 
 #### 变量和函数
 - `var` - 变量声明
+- `const` - 常量声明（只读变量）
 - `static` - 静态成员声明
 
 #### 访问修饰符
@@ -182,6 +183,9 @@ module module_name;
 var name = value;
 var name: Type = value;
 
+// const 变量声明（只读）
+var const name: Type = value;  // 声明时赋值，之后不可修改
+
 // 解构赋值（对象）
 var {a, b, c} = object;
 
@@ -193,12 +197,18 @@ var [x] = array;
 **说明**:
 - 类型注解可选，支持类型推断
 - 支持对象和数组解构
+- `const` 关键字用于声明只读变量，必须在声明时赋值，之后不可修改
 
 ### 2.3 函数声明
 
 ```zr
 // 普通函数
 functionName(param1: Type, param2: Type): ReturnType {
+    // body
+}
+
+// const 参数（函数内部不会修改该参数）
+functionName(const param: Type) {
     // body
 }
 
@@ -237,18 +247,24 @@ struct Vector3 {
     var z: float = 0;
     var a;  // 类型推断为 object
     
+    // const 字段（仅在构造函数中可赋值）
+    pub const id: int;
+    
     // 静态成员
     static var ZERO = $Vector3(0, 0, 0);
+    static const MAX_SIZE: int = 100;  // 静态 const 字段
     
     // 构造函数
     pub @constructor() {
         this.x = 0;
+        this.id = 1;  // const 字段可以在构造函数中赋值
     }
     
     pub @constructor(x: float, y: float, z: float) {
         this.x = x;
         this.y = y;
         this.z = z;
+        this.id = 2;  // const 字段可以在构造函数中赋值
     }
     
     // 元方法（静态）
@@ -283,6 +299,7 @@ class Person {
     
     // 字段
     pub var id: string;
+    pub const version: int;  // const 字段，仅在构造函数中可赋值
     pri var _address: string;
     pro var telephone: string;
     
@@ -292,6 +309,7 @@ class Person {
     
     // 构造函数
     pub @constructor(id: string) {
+        this.version = 1;  // const 字段可以在构造函数中赋值
     }
     
     // 属性访问器
@@ -331,6 +349,7 @@ class Student: Person, Man {
 ```zr
 interface Man: arr {
     pub var id: string;
+    pub const version: int;  // 接口中的 const 字段，实现类必须也标记为 const
     pub var telephone;
     pro var _address: string;
     
@@ -805,6 +824,84 @@ pub set propertyName(val: Type) {
 pub get set propertyName: Type;
 ```
 
+### 3.6 const 关键字
+
+`const` 关键字用于声明只读变量，支持树摇优化。一旦实例化即无法更改。
+
+#### 3.6.1 局部 const 变量
+
+```zr
+var const a: int = 1;  // 声明时赋值，之后不可修改
+// a = 2;  // 编译错误：Cannot assign to const variable after declaration
+```
+
+#### 3.6.2 类/结构体 const 字段
+
+```zr
+class MyClass {
+    pub const id: int;  // const 字段，仅在构造函数中可赋值
+    
+    pub @constructor() {
+        this.id = 1;  // 允许：在构造函数中赋值
+    }
+    
+    pub update() {
+        // this.id = 2;  // 编译错误：Cannot assign to const field outside constructor
+    }
+}
+```
+
+#### 3.6.3 接口 const 字段
+
+```zr
+interface MyInterface {
+    pub const version: int;  // 接口中的 const 字段
+}
+
+class MyClass: MyInterface {
+    pub const version: int;  // 实现类必须也标记为 const
+    
+    pub @constructor() {
+        this.version = 1;
+    }
+}
+```
+
+#### 3.6.4 函数 const 参数
+
+```zr
+function process(const data: MyType) {
+    // data 参数标记为 const，函数内部不会修改该参数
+    // data.field = value;  // 编译错误：Cannot assign to const parameter
+    return data.value;  // 允许：读取 const 参数
+}
+```
+
+#### 3.6.5 静态 const 字段
+
+```zr
+class MyClass {
+    static const MAX_SIZE: int = 100;  // 静态 const 字段，必须在声明时初始化
+    // static const MAX_SIZE: int;  // 编译错误：静态 const 字段必须初始化
+}
+```
+
+**const 使用规则**:
+- const 关键字必须紧跟在 `var` 关键字之后
+- const 局部变量必须在声明时赋值，之后不可修改
+- const 成员字段可以不初始化，但必须在构造函数中赋值
+- const 成员字段可以在构造函数中多次赋值（最后一次有效）
+- 接口中的 const 字段必须在实现类中也标记为 const
+- 函数参数的 const 标记主要用于文档和优化提示，函数内部不能修改 const 参数
+- 静态 const 字段必须在声明时初始化，且之后不可修改
+
+**树摇优化相关**:
+- const 标记帮助编译器识别不可变数据
+- 未使用的 const 字段可以安全地移除（死代码消除）
+- const 字段可以内联到使用处，减少内存访问
+- const 变量可以更精确地进行类型推断
+- const 参数可以帮助编译器决定是否内联函数
+
 ### 3.6 强制类型转换
 
 ```zr
@@ -1036,7 +1133,7 @@ var y: uint8 = -1;       // 编译错误：负数不能赋值给无符号类型
 
 **类型声明**: `module`, `struct`, `class`, `interface`, `enum`, `intermediate`
 
-**变量和函数**: `var`, `static`
+**变量和函数**: `var`, `const`, `static`
 
 **访问修饰符**: `pub`, `pri`, `pro`
 

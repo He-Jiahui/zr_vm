@@ -60,23 +60,33 @@ typedef struct {
 // 简单的测试分配器
 static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
-    ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
     
     if (newSize == 0) {
-        if (pointer != ZR_NULL && (TZrPtr)pointer >= (TZrPtr)0x1000) {
-            free(pointer);
+        // 释放内存
+        if (pointer != ZR_NULL) {
+            // 检查指针是否在合理范围内（避免释放无效指针）
+            // 同时检查 originalSize 是否合理（避免释放时传入错误的 size）
+            if ((TZrPtr)pointer >= (TZrPtr)0x1000 && originalSize > 0 && originalSize < 1024 * 1024 * 1024) {
+                free(pointer);
+            }
+            // 如果指针无效，不调用free，避免崩溃
         }
         return ZR_NULL;
     }
     
     if (pointer == ZR_NULL) {
+        // 分配新内存
         return malloc(newSize);
     } else {
-        if ((TZrPtr)pointer >= (TZrPtr)0x1000) {
+        // 重新分配内存
+        // 检查指针是否在合理范围内（避免realloc无效指针）
+        if ((TZrPtr)pointer >= (TZrPtr)0x1000 && originalSize > 0 && originalSize < 1024 * 1024 * 1024) {
             return realloc(pointer, newSize);
+        } else {
+            // 无效指针，分配新内存
+            return malloc(newSize);
         }
-        return ZR_NULL;
     }
 }
 

@@ -213,7 +213,11 @@ struct SZrIoModuleDeclare {
     EZrIoModuleDeclareType type;
 
     union {
+#ifdef __cplusplus
+        SZrIoClass *class_;
+#else
         SZrIoClass *class;
+#endif
         SZrIoStruct *struct_;
         SZrIoInterface *interface;
         SZrIoFunction *function;

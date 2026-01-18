@@ -66,6 +66,9 @@ dkms.conf
 /lua
 /out
 /build
+/build_wasm
+/build_wasm_test
+
 
 /.devcontainer
 

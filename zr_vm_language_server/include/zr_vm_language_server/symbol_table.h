@@ -42,6 +42,7 @@ typedef struct SZrSymbol {
     SZrArray references;              // 引用位置数组（SZrFileRange）
     TBool isExported;                 // 是否导出
     EZrAccessModifier accessModifier; // 访问修饰符
+    TBool isConst;                    // 是否为 const 符号
     SZrAstNode *astNode;              // 关联的 AST 节点（可选）
     struct SZrSymbolScope *scope;     // 所属作用域
     TZrSize referenceCount;           // 引用计数

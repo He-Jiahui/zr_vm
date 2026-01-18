@@ -59,10 +59,13 @@ ZR_FORCE_INLINE void ZrArrayPush(SZrState *state, SZrArray *array, TZrPtr elemen
 ZR_FORCE_INLINE void ZrArrayEmpty(SZrArray *array) { array->length = 0; }
 
 ZR_FORCE_INLINE void ZrArrayFree(SZrState *state, SZrArray *array) {
-    ZR_ASSERT(array->head != ZR_NULL);
+    if (array == ZR_NULL || !array->isValid || array->head == ZR_NULL) {
+        return;
+    }
     SZrGlobalState *global = state->global;
     ZrMemoryRawFreeWithType(global, array->head, array->capacity * array->elementSize, ZR_MEMORY_NATIVE_TYPE_ARRAY);
     array->isValid = ZR_FALSE;
+    array->head = ZR_NULL;
 }
 
 ZR_FORCE_INLINE void ZrArrayAppend(SZrState *state, SZrArray *array, TZrPtr elements, TZrSize length) {

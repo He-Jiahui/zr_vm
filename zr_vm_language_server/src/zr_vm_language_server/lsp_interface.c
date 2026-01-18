@@ -157,24 +157,30 @@ void ZrLspContextFree(SZrState *state, SZrLspContext *context) {
     }
     
     // 释放所有分析器
-    if (context->uriToAnalyzerMap.isValid) {
-        // 遍历哈希表释放所有分析器
+    if (context->uriToAnalyzerMap.isValid && context->uriToAnalyzerMap.buckets != ZR_NULL) {
+        // 遍历哈希表释放所有分析器和节点
         for (TZrSize i = 0; i < context->uriToAnalyzerMap.capacity; i++) {
-            SZrHashKeyValuePair *bucket = context->uriToAnalyzerMap.buckets[i];
-            if (bucket != ZR_NULL) {
-                for (TZrSize j = 0; j < context->uriToAnalyzerMap.bucketSize; j++) {
-                    if (bucket[j].key.type != ZR_VALUE_TYPE_NULL) {
-                        if (bucket[j].value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-                            SZrSemanticAnalyzer *analyzer = 
-                                (SZrSemanticAnalyzer *)bucket[j].value.value.nativeObject.nativePointer;
-                            if (analyzer != ZR_NULL) {
-                                ZrSemanticAnalyzerFree(state, analyzer);
-                            }
+            SZrHashKeyValuePair *pair = context->uriToAnalyzerMap.buckets[i];
+            while (pair != ZR_NULL) {
+                // 释放节点中存储的数据
+                if (pair->key.type != ZR_VALUE_TYPE_NULL) {
+                    if (pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+                        SZrSemanticAnalyzer *analyzer = 
+                            (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+                        if (analyzer != ZR_NULL) {
+                            ZrSemanticAnalyzerFree(state, analyzer);
                         }
                     }
                 }
+                // 释放节点本身
+                SZrHashKeyValuePair *next = pair->next;
+                ZrMemoryRawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
+                                       ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+                pair = next;
             }
+            context->uriToAnalyzerMap.buckets[i] = ZR_NULL;
         }
+        // 释放 buckets 数组
         ZrHashSetDeconstruct(state, &context->uriToAnalyzerMap);
     }
     

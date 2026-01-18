@@ -207,6 +207,7 @@ typedef struct SZrParameter {
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
     SZrAstNode *defaultValue; // 可选表达式
+    TBool isConst; // 是否为 const 参数
 } SZrParameter;
 
 // 字面量节点结构
@@ -379,6 +380,7 @@ typedef struct SZrVariableDeclaration {
     SZrAstNode *value; // Expression
     SZrType *typeInfo; // 可选
     EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
+    TBool isConst; // 是否为 const 变量
 } SZrVariableDeclaration;
 
 typedef struct SZrFunctionDeclaration {
@@ -424,6 +426,7 @@ typedef struct SZrStructDeclaration {
 typedef struct SZrStructField {
     EZrAccessModifier access;
     TBool isStatic;
+    TBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
     SZrAstNode *init; // 可选表达式
@@ -478,6 +481,7 @@ typedef struct SZrClassField {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TBool isStatic;
+    TBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
     SZrAstNode *init; // 可选表达式
@@ -544,6 +548,7 @@ typedef struct SZrInterfaceDeclaration {
 // 接口字段声明
 typedef struct SZrInterfaceFieldDeclaration {
     EZrAccessModifier access;
+    TBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
 } SZrInterfaceFieldDeclaration;

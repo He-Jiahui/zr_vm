@@ -35,6 +35,7 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node);
 // 编译期执行函数（在 compile_time_executor.c 中实现）
 extern TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node);
+static void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType metaType);
 TZrSize create_label(SZrCompilerState *cs);
 void resolve_label(SZrCompilerState *cs, TZrSize labelId);
 
@@ -134,6 +135,15 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     ZrArrayInit(state, &cs->compileTimeVariables, sizeof(SZrCompileTimeVariable*), 8);
     ZrArrayInit(state, &cs->compileTimeFunctions, sizeof(SZrCompileTimeFunction*), 8);
     cs->isInCompileTimeContext = ZR_FALSE;
+    
+    // 初始化构造函数上下文
+    cs->isInConstructor = ZR_FALSE;
+    cs->currentFunctionNode = ZR_NULL;
+    cs->currentTypeName = ZR_NULL;
+    
+    // 初始化 const 变量跟踪数组
+    ZrArrayInit(state, &cs->constLocalVars, sizeof(SZrString *), 8);
+    ZrArrayInit(state, &cs->constParameters, sizeof(SZrString *), 8);
 }
 
 // 清理解译器状态
@@ -282,6 +292,16 @@ void ZrCompilerStateFree(SZrCompilerState *cs) {
             }
         }
         ZrArrayFree(state, &cs->compileTimeVariables);
+    }
+    
+    // 释放 const 变量跟踪数组
+    if (cs->constLocalVars.isValid && cs->constLocalVars.head != ZR_NULL && 
+        cs->constLocalVars.capacity > 0 && cs->constLocalVars.elementSize > 0) {
+        ZrArrayFree(state, &cs->constLocalVars);
+    }
+    if (cs->constParameters.isValid && cs->constParameters.head != ZR_NULL && 
+        cs->constParameters.capacity > 0 && cs->constParameters.elementSize > 0) {
+        ZrArrayFree(state, &cs->constParameters);
     }
     
     // 释放编译期函数表
@@ -1303,6 +1323,16 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
+    
+    // 保存当前函数节点（用于访问参数信息）
+    cs->currentFunctionNode = node;
+    
+    // 检查是否是构造函数，设置 isInConstructor 标志
+    // 普通函数不是构造函数
+    cs->isInConstructor = ZR_FALSE;
+    
+    // 清空 const 参数列表（为新函数）
+    cs->constParameters.length = 0;
 
     // 注册函数类型到类型环境（在编译函数体之前注册，以便递归调用）
     if (cs->typeEnv != ZR_NULL && funcDecl->name != ZR_NULL && funcDecl->name->name != ZR_NULL) {
@@ -1405,6 +1435,11 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         TUInt32 paramIndex = allocate_local_var(cs, paramName);
                         parameterCount++;
                         
+                        // 如果是 const 参数，记录到 constParameters 数组
+                        if (param->isConst) {
+                            ZrArrayPush(cs->state, &cs->constParameters, &paramName);
+                        }
+                        
                         // 注册参数类型到类型环境（用于类型推断）
                         if (cs->typeEnv != ZR_NULL) {
                             SZrInferredType paramType;
@@ -1504,6 +1539,11 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 退出函数作用域
     exit_scope(cs);
+    
+    // 清空 const 变量跟踪（函数编译完成）
+    cs->constLocalVars.length = 0;
+    cs->constParameters.length = 0;
+    cs->currentFunctionNode = ZR_NULL;
 
     // 3. 将编译结果复制到函数对象
     SZrFunction *newFunc = cs->currentFunction;
@@ -2214,6 +2254,10 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
+    // 设置当前类型名称（用于成员字段 const 检查）
+    SZrString *oldTypeName = cs->currentTypeName;
+    cs->currentTypeName = typeName;
+    
     // 创建 prototype 信息结构
     SZrTypePrototypeInfo info;
     info.name = typeName;
@@ -2255,6 +2299,7 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             // 初始化所有字段
             memberInfo.memberType = member->type;
             memberInfo.isStatic = ZR_FALSE;
+            memberInfo.isConst = ZR_FALSE;
             memberInfo.accessModifier = ZR_ACCESS_PRIVATE;
             memberInfo.name = ZR_NULL;
             memberInfo.fieldType = ZR_NULL;
@@ -2273,6 +2318,7 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrStructField *field = &member->data.structField;
                     memberInfo.accessModifier = field->access;
                     memberInfo.isStatic = field->isStatic;
+                    memberInfo.isConst = field->isConst;
                     if (field->name != ZR_NULL) {
                         memberInfo.name = field->name->name;
                     }
@@ -2432,6 +2478,314 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs->typeEnv != ZR_NULL) {
         ZrTypeEnvironmentRegisterType(cs->state, cs->typeEnv, typeName);
     }
+    
+    // 编译元函数（特别是构造函数）
+    if (structDecl->members != ZR_NULL && structDecl->members->count > 0) {
+        for (TZrSize i = 0; i < structDecl->members->count; i++) {
+            SZrAstNode *member = structDecl->members->nodes[i];
+            if (member == ZR_NULL) {
+                continue;
+            }
+            
+            if (member->type == ZR_AST_STRUCT_META_FUNCTION) {
+                SZrStructMetaFunction *metaFunc = &member->data.structMetaFunction;
+                if (metaFunc->meta != ZR_NULL) {
+                    TNativeString metaName = ZrStringGetNativeStringShort(metaFunc->meta->name);
+                    if (metaName != ZR_NULL) {
+                        EZrMetaType metaType = 0;
+                        if (strcmp(metaName, "constructor") == 0) {
+                            metaType = ZR_META_CONSTRUCTOR;
+                        } else if (strcmp(metaName, "destructor") == 0) {
+                            metaType = ZR_META_DESTRUCTOR;
+                        } else if (strcmp(metaName, "add") == 0) {
+                            metaType = ZR_META_ADD;
+                        } else if (strcmp(metaName, "toString") == 0) {
+                            metaType = ZR_META_TO_STRING;
+                        }
+                        
+                        if (metaType != 0) {
+                            compile_meta_function(cs, member, metaType);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 恢复当前类型名称
+    cs->currentTypeName = oldTypeName;
+}
+
+// 编译元函数（@constructor, @destructor 等）
+static void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType metaType) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+    
+    SZrStructMetaFunction *metaFunc = ZR_NULL;
+    SZrClassMetaFunction *classMetaFunc = ZR_NULL;
+    
+    if (node->type == ZR_AST_STRUCT_META_FUNCTION) {
+        metaFunc = &node->data.structMetaFunction;
+    } else if (node->type == ZR_AST_CLASS_META_FUNCTION) {
+        classMetaFunc = &node->data.classMetaFunction;
+    } else {
+        ZrCompilerError(cs, "Expected meta function node", node->location);
+        return;
+    }
+    
+    // 保存当前编译器状态
+    SZrFunction *oldFunction = cs->currentFunction;
+    TZrSize oldInstructionCount = cs->instructionCount;
+    TZrSize oldStackSlotCount = cs->stackSlotCount;
+    TZrSize oldLocalVarCount = cs->localVarCount;
+    TZrSize oldConstantCount = cs->constantCount;
+    TZrSize oldClosureVarCount = cs->closureVarCount;
+    TBool oldIsInConstructor = cs->isInConstructor;
+    
+    // 设置 isInConstructor 标志（如果是构造函数）
+    cs->isInConstructor = (metaType == ZR_META_CONSTRUCTOR) ? ZR_TRUE : ZR_FALSE;
+    cs->currentFunctionNode = node;
+    
+    // 清空 const 变量跟踪（为新函数）
+    cs->constLocalVars.length = 0;
+    cs->constParameters.length = 0;
+    
+    // 创建新的函数对象
+    cs->currentFunction = ZrFunctionNew(cs->state);
+    if (cs->currentFunction == ZR_NULL) {
+        ZrCompilerError(cs, "Failed to create meta function object", node->location);
+        cs->isInConstructor = oldIsInConstructor;
+        return;
+    }
+    
+    // 重置编译器状态（为新函数）
+    cs->instructionCount = 0;
+    cs->stackSlotCount = 0;
+    cs->localVarCount = 0;
+    cs->constantCount = 0;
+    cs->closureVarCount = 0;
+    
+    // 清空数组（但保留已分配的内存）
+    cs->instructions.length = 0;
+    cs->localVars.length = 0;
+    cs->constants.length = 0;
+    cs->closureVars.length = 0;
+    
+    // 进入函数作用域
+    enter_scope(cs);
+    
+    // 编译参数列表
+    TUInt32 parameterCount = 0;
+    SZrAstNodeArray *params = ZR_NULL;
+    if (metaFunc != ZR_NULL) {
+        params = metaFunc->params;
+    } else if (classMetaFunc != ZR_NULL) {
+        params = classMetaFunc->params;
+    }
+    
+    if (params != ZR_NULL) {
+        for (TZrSize i = 0; i < params->count; i++) {
+            SZrAstNode *paramNode = params->nodes[i];
+            if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
+                SZrParameter *param = &paramNode->data.parameter;
+                if (param->name != ZR_NULL) {
+                    SZrString *paramName = param->name->name;
+                    if (paramName != ZR_NULL) {
+                        // 分配参数槽位
+                        TUInt32 paramIndex = allocate_local_var(cs, paramName);
+                        parameterCount++;
+                        
+                        // 如果是 const 参数，记录到 constParameters 数组
+                        if (param->isConst) {
+                            ZrArrayPush(cs->state, &cs->constParameters, &paramName);
+                        }
+                        
+                        // 注册参数类型到类型环境
+                        if (cs->typeEnv != ZR_NULL) {
+                            SZrInferredType paramType;
+                            if (param->typeInfo != ZR_NULL) {
+                                if (convert_ast_type_to_inferred_type(cs, param->typeInfo, &paramType)) {
+                                    ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, paramName, &paramType);
+                                    ZrInferredTypeFree(cs->state, &paramType);
+                                }
+                            } else {
+                                ZrInferredTypeInit(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+                                ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, paramName, &paramType);
+                                ZrInferredTypeFree(cs->state, &paramType);
+                            }
+                        }
+                        
+                        // 如果有默认值，编译默认值表达式
+                        if (param->defaultValue != ZR_NULL) {
+                            compile_expression(cs, param->defaultValue);
+                            TUInt32 defaultSlot = cs->stackSlotCount - 1;
+                            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                                                       (TUInt16) paramIndex, (TInt32) defaultSlot);
+                            emit_instruction(cs, inst);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 编译函数体
+    SZrAstNode *body = ZR_NULL;
+    if (metaFunc != ZR_NULL) {
+        body = metaFunc->body;
+    } else if (classMetaFunc != ZR_NULL) {
+        body = classMetaFunc->body;
+    }
+    
+    if (body != ZR_NULL) {
+        compile_statement(cs, body);
+    }
+    
+    // 如果没有显式返回，添加隐式返回
+    if (!cs->hasError) {
+        if (cs->instructions.length == 0) {
+            TUInt32 resultSlot = allocate_stack_slot(cs);
+            SZrTypeValue nullValue;
+            ZrValueResetAsNull(&nullValue);
+            TUInt32 constantIndex = add_constant(cs, &nullValue);
+            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16) resultSlot,
+                                                       (TInt32) constantIndex);
+            emit_instruction(cs, inst);
+            TZrInstruction returnInst =
+                    create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TUInt16) resultSlot, 0);
+            emit_instruction(cs, returnInst);
+        } else {
+            if (cs->instructions.length > 0) {
+                TZrInstruction *lastInst =
+                        (TZrInstruction *) ZrArrayGet(&cs->instructions, cs->instructions.length - 1);
+                if (lastInst != ZR_NULL) {
+                    EZrInstructionCode lastOpcode = (EZrInstructionCode) lastInst->instruction.operationCode;
+                    if (lastOpcode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+                        TUInt32 resultSlot = allocate_stack_slot(cs);
+                        SZrTypeValue nullValue;
+                        ZrValueResetAsNull(&nullValue);
+                        TUInt32 constantIndex = add_constant(cs, &nullValue);
+                        TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                                                                   (TUInt16) resultSlot, (TInt32) constantIndex);
+                        emit_instruction(cs, inst);
+                        TZrInstruction returnInst =
+                                create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TUInt16) resultSlot, 0);
+                        emit_instruction(cs, returnInst);
+                    }
+                }
+            }
+        }
+    }
+    
+    // 退出函数作用域
+    exit_scope(cs);
+    
+    // 检查是否有编译错误
+    if (cs->hasError) {
+        // 如果有错误，释放函数对象并恢复状态
+        if (cs->currentFunction != ZR_NULL) {
+            ZrFunctionFree(cs->state, cs->currentFunction);
+            cs->currentFunction = ZR_NULL;
+        }
+        cs->currentFunction = oldFunction;
+        cs->instructionCount = oldInstructionCount;
+        cs->stackSlotCount = oldStackSlotCount;
+        cs->localVarCount = oldLocalVarCount;
+        cs->constantCount = oldConstantCount;
+        cs->closureVarCount = oldClosureVarCount;
+        cs->isInConstructor = oldIsInConstructor;
+        cs->currentFunctionNode = ZR_NULL;
+        cs->constLocalVars.length = 0;
+        cs->constParameters.length = 0;
+        cs->instructions.length = 0;
+        cs->localVars.length = 0;
+        cs->constants.length = 0;
+        cs->closureVars.length = 0;
+        return;
+    }
+    
+    // 清空 const 变量跟踪
+    cs->constLocalVars.length = 0;
+    cs->constParameters.length = 0;
+    cs->currentFunctionNode = ZR_NULL;
+    
+    // 将编译结果复制到函数对象（类似 compile_function_declaration）
+    SZrFunction *newFunc = cs->currentFunction;
+    SZrGlobalState *global = cs->state->global;
+    
+    // 复制指令列表
+    if (cs->instructions.length > 0) {
+        TZrSize instSize = cs->instructions.length * sizeof(TZrInstruction);
+        newFunc->instructionsList =
+                (TZrInstruction *) ZrMemoryRawMallocWithType(global, instSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->instructionsList != ZR_NULL) {
+            memcpy(newFunc->instructionsList, cs->instructions.head, instSize);
+            newFunc->instructionsLength = (TUInt32) cs->instructions.length;
+        }
+    }
+    
+    // 复制常量列表
+    if (cs->constants.length > 0) {
+        TZrSize constSize = cs->constants.length * sizeof(SZrTypeValue);
+        newFunc->constantValueList =
+                (SZrTypeValue *) ZrMemoryRawMallocWithType(global, constSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->constantValueList != ZR_NULL) {
+            memcpy(newFunc->constantValueList, cs->constants.head, constSize);
+            newFunc->constantValueLength = (TUInt32) cs->constants.length;
+        }
+    }
+    
+    // 复制局部变量列表
+    if (cs->localVars.length > 0) {
+        TZrSize localVarSize = cs->localVars.length * sizeof(SZrFunctionLocalVariable);
+        newFunc->localVariableList = (SZrFunctionLocalVariable *) ZrMemoryRawMallocWithType(
+                global, localVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->localVariableList != ZR_NULL) {
+            memcpy(newFunc->localVariableList, cs->localVars.head, localVarSize);
+            newFunc->localVariableLength = (TUInt32) cs->localVars.length;
+        }
+    }
+    
+    // 设置函数元数据
+    newFunc->stackSize = (TUInt32) cs->stackSlotCount;
+    newFunc->parameterCount = (TUInt16) parameterCount;
+    newFunc->hasVariableArguments = ZR_FALSE;
+    newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TUInt32) node->location.start.line : 0;
+    newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TUInt32) node->location.end.line : 0;
+    
+    // 将新函数添加到子函数列表
+    // 注意：对于元函数，即使 oldFunction 为 ZR_NULL（在类型声明编译时），
+    // 也应该将函数添加到当前函数的 childFunctions 中（如果存在）
+    // 但如果没有父函数，元函数可能无法正确管理，这里暂时不添加到列表
+    // TODO: 需要更完善的元函数管理机制
+    if (oldFunction != ZR_NULL) {
+        ZrArrayPush(cs->state, &cs->childFunctions, &newFunc);
+    } else {
+        // 如果没有父函数，元函数暂时不添加到列表
+        // 注意：这可能导致元函数无法被正确访问，需要后续完善
+        // 但是，如果没有父函数，我们需要释放这个函数对象，避免内存泄漏
+        // 因为元函数在类型声明编译时不应该被保留（它们会在运行时通过类型原型创建）
+        if (newFunc != ZR_NULL) {
+            ZrFunctionFree(cs->state, newFunc);
+            newFunc = ZR_NULL;
+        }
+    }
+    
+    // 恢复编译器状态
+    cs->currentFunction = oldFunction;
+    cs->instructionCount = oldInstructionCount;
+    cs->stackSlotCount = oldStackSlotCount;
+    cs->localVarCount = oldLocalVarCount;
+    cs->constantCount = oldConstantCount;
+    cs->closureVarCount = oldClosureVarCount;
+    cs->isInConstructor = oldIsInConstructor;
+    
+    // 清空数组（但保留已分配的内存）
+    cs->instructions.length = 0;
+    cs->localVars.length = 0;
+    cs->constants.length = 0;
+    cs->closureVars.length = 0;
 }
 
 // 编译 class 声明
@@ -2458,6 +2812,10 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         ZrCompilerError(cs, "Class name is null", node->location);
         return;
     }
+    
+    // 设置当前类型名称（用于成员字段 const 检查）
+    SZrString *oldTypeName = cs->currentTypeName;
+    cs->currentTypeName = typeName;
     
     // 创建 prototype 信息结构
     SZrTypePrototypeInfo info;
@@ -2500,6 +2858,7 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             // 初始化所有字段
             memberInfo.memberType = member->type;
             memberInfo.isStatic = ZR_FALSE;
+            memberInfo.isConst = ZR_FALSE;
             memberInfo.accessModifier = ZR_ACCESS_PRIVATE;
             memberInfo.name = ZR_NULL;
             memberInfo.fieldType = ZR_NULL;
@@ -2518,6 +2877,7 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrClassField *field = &member->data.classField;
                     memberInfo.accessModifier = field->access;
                     memberInfo.isStatic = field->isStatic; // class字段也有isStatic
+                    memberInfo.isConst = field->isConst;
                     if (field->name != ZR_NULL) {
                         memberInfo.name = field->name->name;
                     }
@@ -2658,6 +3018,47 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 将 prototype 信息添加到数组
     ZrArrayPush(cs->state, &cs->typePrototypes, &info);
+    
+    // 注册类型名称到类型环境
+    if (cs->typeEnv != ZR_NULL) {
+        ZrTypeEnvironmentRegisterType(cs->state, cs->typeEnv, typeName);
+    }
+    
+    // 编译元函数（特别是构造函数）
+    if (classDecl->members != ZR_NULL && classDecl->members->count > 0) {
+        for (TZrSize i = 0; i < classDecl->members->count; i++) {
+            SZrAstNode *member = classDecl->members->nodes[i];
+            if (member == ZR_NULL) {
+                continue;
+            }
+            
+            if (member->type == ZR_AST_CLASS_META_FUNCTION) {
+                SZrClassMetaFunction *metaFunc = &member->data.classMetaFunction;
+                if (metaFunc->meta != ZR_NULL) {
+                    TNativeString metaName = ZrStringGetNativeStringShort(metaFunc->meta->name);
+                    if (metaName != ZR_NULL) {
+                        EZrMetaType metaType = 0;
+                        if (strcmp(metaName, "constructor") == 0) {
+                            metaType = ZR_META_CONSTRUCTOR;
+                        } else if (strcmp(metaName, "destructor") == 0) {
+                            metaType = ZR_META_DESTRUCTOR;
+                        } else if (strcmp(metaName, "add") == 0) {
+                            metaType = ZR_META_ADD;
+                        } else if (strcmp(metaName, "toString") == 0) {
+                            metaType = ZR_META_TO_STRING;
+                        }
+                        
+                        if (metaType != 0) {
+                            compile_meta_function(cs, member, metaType);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 恢复当前类型名称
+    cs->currentTypeName = oldTypeName;
 }
 
 // 序列化的prototype信息结构（紧凑二进制格式）
@@ -2717,6 +3118,7 @@ typedef struct SZrCompiledMemberInfo {
     TUInt32 nameStringIndex;              // 成员名称字符串在常量池中的索引（如果为0表示无名）
     TUInt32 accessModifier;               // EZrAccessModifier
     TUInt32 isStatic;                     // TBool (0或1)
+    TUInt32 isConst;                      // TBool (0或1)
     
     // 字段特定信息（仅当memberType为STRUCT_FIELD或CLASS_FIELD时有效）
     TUInt32 fieldTypeNameStringIndex;     // 字段类型名称字符串索引（如果为0表示无类型名）
@@ -2819,6 +3221,7 @@ static TBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePro
         compiledMember->memberType = (TUInt32)memberInfo->memberType;
         compiledMember->accessModifier = (TUInt32)memberInfo->accessModifier;
         compiledMember->isStatic = memberInfo->isStatic ? ZR_TRUE : ZR_FALSE;
+        compiledMember->isConst = memberInfo->isConst ? ZR_TRUE : ZR_FALSE;
         
         // 添加成员名称字符串到常量池（临时方案）
         if (memberInfo->name != ZR_NULL) {
@@ -2847,6 +3250,7 @@ static TBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePro
             compiledMember->metaType = 0;
             compiledMember->functionConstantIndex = 0;
             compiledMember->parameterCount = 0;
+            compiledMember->returnTypeNameStringIndex = 0;
         }
         
         // 方法特定信息

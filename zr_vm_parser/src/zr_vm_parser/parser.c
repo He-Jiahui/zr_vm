@@ -2132,6 +2132,13 @@ static SZrAstNode *parse_parameter(SZrParserState *ps) {
         ZrLexerNext(ps->lexer);
     }
     
+    // 解析 const 关键字（可选）
+    TBool isConst = ZR_FALSE;
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        isConst = ZR_TRUE;
+        ZrLexerNext(ps->lexer);
+    }
+    
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
@@ -2161,6 +2168,7 @@ static SZrAstNode *parse_parameter(SZrParserState *ps) {
     node->data.parameter.name = name;
     node->data.parameter.typeInfo = typeInfo;
     node->data.parameter.defaultValue = defaultValue;
+    node->data.parameter.isConst = isConst;
     return node;
 }
 
@@ -2232,6 +2240,13 @@ static SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
     
     expect_token(ps, ZR_TK_VAR);
     ZrLexerNext(ps->lexer);
+
+    // 解析 const 关键字（可选）
+    TBool isConst = ZR_FALSE;
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        isConst = ZR_TRUE;
+        ZrLexerNext(ps->lexer);
+    }
 
     // 解析模式（标识符或解构）
     SZrAstNode *pattern = ZR_NULL;
@@ -2318,6 +2333,7 @@ static SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
     node->data.variableDeclaration.value = value;
     node->data.variableDeclaration.typeInfo = typeInfo;
     node->data.variableDeclaration.accessModifier = accessModifier;
+    node->data.variableDeclaration.isConst = isConst;
     return node;
 }
 
@@ -3720,8 +3736,18 @@ void ZrParserFreeAst(SZrState *state, SZrAstNode *node) {
                 }
                 ZrAstNodeArrayFree(state, decl->members);
             }
+            // 注意：decl->name 是指向 AST 节点内部的 SZrIdentifier 指针
+            // 它指向 nameNode->data.identifier，我们需要从 name 指针计算 nameNode 的地址
+            // nameNode 的地址 = name 的地址 - offsetof(SZrAstNode, data.identifier)
             if (decl->name != ZR_NULL) {
-                ZrParserFreeAst(state, (SZrAstNode *)decl->name);
+                // 计算 nameNode 的地址：name 指向 data.identifier，我们需要找到包含它的 SZrAstNode
+                // 使用 offsetof 来计算偏移量
+                TZrSize identifierOffset = (TZrPtr)&((SZrAstNode *)0)->data.identifier - (TZrPtr)0;
+                SZrAstNode *nameNode = (SZrAstNode *)((TZrPtr)decl->name - identifierOffset);
+                // 验证 nameNode 是否有效（检查类型）
+                if (nameNode != ZR_NULL && nameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    ZrParserFreeAst(state, nameNode);
+                }
             }
             break;
         }
@@ -3970,9 +3996,27 @@ static SZrAstNode *parse_struct_field(SZrParserState *ps) {
         ZrLexerNext(ps->lexer);
     }
     
-    // 期望 var 关键字
-    expect_token(ps, ZR_TK_VAR);
-    ZrLexerNext(ps->lexer);
+    // 解析 const 关键字（可选，可以在 var 之前或之后）
+    TBool isConst = ZR_FALSE;
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        isConst = ZR_TRUE;
+        ZrLexerNext(ps->lexer);
+    }
+    
+    // var 关键字是可选的（如果已经有 const，可以省略 var）
+    if (ps->lexer->t.token == ZR_TK_VAR) {
+        ZrLexerNext(ps->lexer);
+        
+        // 如果 var 后面还有 const，也解析它（支持 var const 语法）
+        if (ps->lexer->t.token == ZR_TK_CONST) {
+            isConst = ZR_TRUE;
+            ZrLexerNext(ps->lexer);
+        }
+    } else if (!isConst) {
+        // 如果没有 const 也没有 var，期望 var 关键字
+        expect_token(ps, ZR_TK_VAR);
+        ZrLexerNext(ps->lexer);
+    }
     
     // 解析字段名
     SZrAstNode *nameNode = parse_identifier(ps);
@@ -4007,6 +4051,7 @@ static SZrAstNode *parse_struct_field(SZrParserState *ps) {
     
     node->data.structField.access = access;
     node->data.structField.isStatic = isStatic;
+    node->data.structField.isConst = isConst;
     node->data.structField.name = name;
     node->data.structField.typeInfo = typeInfo;
     node->data.structField.init = init;
@@ -4251,10 +4296,10 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
         SZrAstNode *member = ZR_NULL;
         
-        // 检查是否是字段（以 var 开头，可能前面有访问修饰符和 static）
+        // 检查是否是字段（以 var 开头，可能前面有访问修饰符、static 或 const）
         EZrToken token = ps->lexer->t.token;
         if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO || 
-            token == ZR_TK_STATIC || token == ZR_TK_VAR) {
+            token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_VAR) {
             // 可能是字段，尝试解析
             // 需要向前看一个 token 来确定
             TZrSize savedPos = ps->lexer->currentPos;
@@ -4268,9 +4313,10 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             TInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
             
-            // 跳过访问修饰符和 static
+            // 跳过访问修饰符、static 和 const（用于 lookahead）
             while (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || 
-                   ps->lexer->t.token == ZR_TK_PRO || ps->lexer->t.token == ZR_TK_STATIC) {
+                   ps->lexer->t.token == ZR_TK_PRO || ps->lexer->t.token == ZR_TK_STATIC ||
+                   ps->lexer->t.token == ZR_TK_CONST) {
                 ZrLexerNext(ps->lexer);
             }
             
@@ -4447,7 +4493,7 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
         
         // 检查是否是装饰器或访问修饰符（可能是字段、方法或属性）
         if (token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO || 
-            token == ZR_TK_STATIC || token == ZR_TK_VAR) {
+            token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_VAR) {
             // 保存状态以便向前看
             TZrSize savedPos = ps->lexer->currentPos;
             TInt32 savedChar = ps->lexer->currentChar;
@@ -4465,13 +4511,15 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
                 parse_decorator_expression(ps);
             }
             
-            // 跳过访问修饰符和 static
+            // 跳过访问修饰符和 static（用于 lookahead）
+            // 注意：不跳过 const，因为 const 可能是字段的一部分
             while (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || 
                    ps->lexer->t.token == ZR_TK_PRO || ps->lexer->t.token == ZR_TK_STATIC) {
                 ZrLexerNext(ps->lexer);
             }
             
             // 检查是字段、属性还是方法
+            // 如果下一个 token 是 const 或 var，则是字段
             EZrToken nextToken = ps->lexer->t.token;
             
             // 恢复状态，让成员解析函数处理
@@ -4486,8 +4534,8 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             ps->lexer->lookaheadLine = savedLookaheadLine;
             ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
             
-            if (nextToken == ZR_TK_VAR) {
-                // 字段
+            if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_CONST) {
+                // 字段（var 或 const 都可以表示字段）
                 member = parse_class_field(ps);
             } else if (nextToken == ZR_TK_GET || nextToken == ZR_TK_SET) {
                 // 属性
@@ -4554,6 +4602,13 @@ static SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     expect_token(ps, ZR_TK_VAR);
     ZrLexerNext(ps->lexer);
     
+    // 解析 const 关键字（可选）
+    TBool isConst = ZR_FALSE;
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        isConst = ZR_TRUE;
+        ZrLexerNext(ps->lexer);
+    }
+    
     // 解析字段名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
@@ -4580,6 +4635,7 @@ static SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     }
     
     node->data.interfaceFieldDeclaration.access = access;
+    node->data.interfaceFieldDeclaration.isConst = isConst;
     node->data.interfaceFieldDeclaration.name = name;
     node->data.interfaceFieldDeclaration.typeInfo = typeInfo;
     return node;
@@ -5681,9 +5737,27 @@ static SZrAstNode *parse_class_field(SZrParserState *ps) {
         ZrLexerNext(ps->lexer);
     }
     
-    // 期望 var 关键字
-    expect_token(ps, ZR_TK_VAR);
-    ZrLexerNext(ps->lexer);
+    // 解析 const 关键字（可选，可以在 var 之前或之后）
+    TBool isConst = ZR_FALSE;
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        isConst = ZR_TRUE;
+        ZrLexerNext(ps->lexer);
+    }
+    
+    // var 关键字是可选的（如果已经有 const，可以省略 var）
+    if (ps->lexer->t.token == ZR_TK_VAR) {
+        ZrLexerNext(ps->lexer);
+        
+        // 如果 var 后面还有 const，也解析它（支持 var const 语法）
+        if (ps->lexer->t.token == ZR_TK_CONST) {
+            isConst = ZR_TRUE;
+            ZrLexerNext(ps->lexer);
+        }
+    } else if (!isConst) {
+        // 如果没有 const 也没有 var，期望 var 关键字
+        expect_token(ps, ZR_TK_VAR);
+        ZrLexerNext(ps->lexer);
+    }
     
     // 解析字段名
     SZrAstNode *nameNode = parse_identifier(ps);
@@ -5721,6 +5795,7 @@ static SZrAstNode *parse_class_field(SZrParserState *ps) {
     node->data.classField.decorators = decorators;
     node->data.classField.access = access;
     node->data.classField.isStatic = isStatic;
+    node->data.classField.isConst = isConst;
     node->data.classField.name = name;
     node->data.classField.typeInfo = typeInfo;
     node->data.classField.init = init;

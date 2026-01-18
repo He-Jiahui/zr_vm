@@ -1,0 +1,76 @@
+{
+  "name": "zr-vm-language-server",
+  "displayName": "Zr Language Support",
+  "description": "Language support for Zr programming language with LSP features",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:zr"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "zr",
+        "aliases": [
+          "Zr",
+          "zr"
+        ],
+        "extensions": [
+          ".zr"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "zr",
+        "scopeName": "source.zr",
+        "path": "./syntaxes/zr.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Zr Language Server",
+      "properties": {
+        "zr.languageServer.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Zr language server"
+        },
+        "zr.languageServer.trace": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the language server"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "build:wasm": "echo 'WASM build should be done via CMake'"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^8.1.0",
+    "vscode-languageserver-protocol": "^3.17.0"
+  }
+}

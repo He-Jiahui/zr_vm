@@ -131,11 +131,15 @@ void ZrSymbolTableFree(SZrState *state, SZrSymbolTable *table) {
     }
     
     // 释放所有作用域和符号
-    // 递归释放所有作用域（从栈顶开始）
+    // 递归释放所有作用域（从栈顶开始，但不包括全局作用域）
     while (table->scopeStack.length > 0) {
         SZrSymbolScope **scopePtr = (SZrSymbolScope **)ZrArrayPop(&table->scopeStack);
         if (scopePtr != ZR_NULL && *scopePtr != ZR_NULL) {
             SZrSymbolScope *scope = *scopePtr;
+            // 跳过全局作用域，它会在后面单独释放
+            if (scope == table->globalScope) {
+                continue;
+            }
             // 释放作用域内的所有符号
             for (TZrSize i = 0; i < scope->symbols.length; i++) {
                 SZrSymbol **symbolPtr = (SZrSymbol **)ZrArrayGet(&scope->symbols, i);
@@ -163,32 +167,70 @@ void ZrSymbolTableFree(SZrState *state, SZrSymbolTable *table) {
     
     ZrArrayFree(state, &table->scopeStack);
     
-    // 释放映射对象（GC 会自动处理，但我们需要清理引用）
+    // 释放映射对象（GC 会自动处理，但我们需要清理内部的数组引用）
     if (table->nameToSymbolsMap != ZR_NULL) {
-        // Object 会被 GC 管理，这里不需要手动释放
-        // 但需要清理内部的数组引用
-        table->nameToSymbolsMap = ZR_NULL;
-    }
-    
-    // 释放哈希表中的数组
-    if (table->nameToSymbolsHashSet.isValid) {
-        for (TZrSize i = 0; i < table->nameToSymbolsHashSet.capacity; i++) {
-            SZrHashKeyValuePair *bucket = table->nameToSymbolsHashSet.buckets[i];
-            if (bucket != ZR_NULL) {
-                for (TZrSize j = 0; j < table->nameToSymbolsHashSet.bucketSize; j++) {
-                    if (bucket[j].key.type != ZR_VALUE_TYPE_NULL) {
-                        if (bucket[j].value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+        // 清理 Object 内部的 nodeMap，释放所有存储的数组和节点
+        SZrHashSet *nodeMap = &table->nameToSymbolsMap->nodeMap;
+        if (nodeMap->isValid && nodeMap->buckets != ZR_NULL && nodeMap->capacity > 0) {
+            // 遍历 nodeMap 中的所有键值对，释放存储的数组和节点
+            for (TZrSize i = 0; i < nodeMap->capacity; i++) {
+                SZrHashKeyValuePair *pair = nodeMap->buckets[i];
+                while (pair != ZR_NULL) {
+                    // 释放节点中存储的数组
+                    if (pair->key.type != ZR_VALUE_TYPE_NULL) {
+                        if (pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
                             SZrArray *symbolArray = 
-                                (SZrArray *)bucket[j].value.value.nativeObject.nativePointer;
-                            if (symbolArray != ZR_NULL) {
+                                (SZrArray *)pair->value.value.nativeObject.nativePointer;
+                            if (symbolArray != ZR_NULL && symbolArray->isValid) {
                                 ZrArrayFree(state, symbolArray);
                                 ZrMemoryRawFree(state->global, symbolArray, sizeof(SZrArray));
                             }
                         }
                     }
+                    // 释放节点本身
+                    SZrHashKeyValuePair *next = pair->next;
+                    ZrMemoryRawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
+                                           ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+                    pair = next;
                 }
+                nodeMap->buckets[i] = ZR_NULL;
             }
+            nodeMap->elementCount = 0;
+            // 释放 buckets 数组
+            ZrHashSetDeconstruct(state, nodeMap);
         }
+        // Object 会被 GC 管理，这里不需要手动释放
+        // 但需要清理引用
+        table->nameToSymbolsMap = ZR_NULL;
+    }
+    
+    // 释放哈希表中的数组和节点
+    if (table->nameToSymbolsHashSet.isValid && table->nameToSymbolsHashSet.buckets != ZR_NULL && 
+        table->nameToSymbolsHashSet.capacity > 0) {
+        for (TZrSize i = 0; i < table->nameToSymbolsHashSet.capacity; i++) {
+            SZrHashKeyValuePair *pair = table->nameToSymbolsHashSet.buckets[i];
+            while (pair != ZR_NULL) {
+                // 释放节点中存储的数据
+                if (pair->key.type != ZR_VALUE_TYPE_NULL) {
+                    if (pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+                        SZrArray *symbolArray = 
+                            (SZrArray *)pair->value.value.nativeObject.nativePointer;
+                        if (symbolArray != ZR_NULL && symbolArray->isValid) {
+                            ZrArrayFree(state, symbolArray);
+                            ZrMemoryRawFree(state->global, symbolArray, sizeof(SZrArray));
+                        }
+                    }
+                }
+                // 释放节点本身
+                SZrHashKeyValuePair *next = pair->next;
+                ZrMemoryRawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
+                                       ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+                pair = next;
+            }
+            table->nameToSymbolsHashSet.buckets[i] = ZR_NULL;
+        }
+        table->nameToSymbolsHashSet.elementCount = 0;
+        // 释放 buckets 数组
         ZrHashSetDeconstruct(state, &table->nameToSymbolsHashSet);
     }
     
@@ -216,9 +258,25 @@ SZrSymbol *ZrSymbolNew(SZrState *state, EZrSymbolType type,
     symbol->typeInfo = typeInfo; // 注意：不复制，只是引用
     symbol->isExported = ZR_FALSE;
     symbol->accessModifier = accessModifier;
+    symbol->isConst = ZR_FALSE; // 默认不是 const
     symbol->astNode = astNode;
     symbol->scope = ZR_NULL;
     symbol->referenceCount = 0;
+    
+    // 从 AST 节点中提取 isConst 信息
+    if (astNode != ZR_NULL) {
+        if (astNode->type == ZR_AST_VARIABLE_DECLARATION) {
+            symbol->isConst = astNode->data.variableDeclaration.isConst;
+        } else if (astNode->type == ZR_AST_PARAMETER) {
+            symbol->isConst = astNode->data.parameter.isConst;
+        } else if (astNode->type == ZR_AST_STRUCT_FIELD) {
+            symbol->isConst = astNode->data.structField.isConst;
+        } else if (astNode->type == ZR_AST_CLASS_FIELD) {
+            symbol->isConst = astNode->data.classField.isConst;
+        } else if (astNode->type == ZR_AST_INTERFACE_FIELD_DECLARATION) {
+            symbol->isConst = astNode->data.interfaceFieldDeclaration.isConst;
+        }
+    }
     
     ZrArrayInit(state, &symbol->references, sizeof(SZrFileRange), 4);
     
@@ -335,24 +393,20 @@ TBool ZrSymbolTableAddSymbol(SZrState *state, SZrSymbolTable *table,
         const SZrTypeValue *existingValue = ZrObjectGetValue(state, table->nameToSymbolsMap, &key);
         SZrArray *symbolArray = ZR_NULL;
         
-        if (existingValue != ZR_NULL && existingValue->type == ZR_VALUE_TYPE_OBJECT) {
-            SZrObject *arrayObj = ZR_CAST_OBJECT(state, existingValue->value.object);
-            if (arrayObj != ZR_NULL) {
-                symbolArray = (SZrArray *)((TByte *)arrayObj + sizeof(SZrObject));
-            }
+        if (existingValue != ZR_NULL && existingValue->type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+            symbolArray = (SZrArray *)existingValue->value.nativeObject.nativePointer;
         }
         
         // 如果不存在，创建新数组
         if (symbolArray == ZR_NULL || !symbolArray->isValid) {
-            // 创建数组对象
-            SZrObject *arrayObj = ZrObjectNew(state, ZR_NULL);
-            if (arrayObj != ZR_NULL) {
-                symbolArray = (SZrArray *)((TByte *)arrayObj + sizeof(SZrObject));
+            // 单独分配 SZrArray（不能嵌入在 SZrObject 中）
+            symbolArray = (SZrArray *)ZrMemoryRawMalloc(state->global, sizeof(SZrArray));
+            if (symbolArray != ZR_NULL) {
                 ZrArrayInit(state, symbolArray, sizeof(SZrSymbol *), 4);
                 
-                // 添加到 Object 映射
+                // 添加到 Object 映射（使用 NATIVE_POINTER 类型）
                 SZrTypeValue value;
-                ZrValueInitAsRawObject(state, &value, &arrayObj->super);
+                ZrValueInitAsNativePointer(state, &value, (TZrPtr)symbolArray);
                 ZrObjectSetValue(state, table->nameToSymbolsMap, &key, &value);
             }
         }
@@ -441,48 +495,45 @@ TBool ZrSymbolTableLookupAll(SZrState *state, SZrSymbolTable *table,
     // 首先从 Object 映射中查找（支持重载）
     if (table->nameToSymbolsMap != ZR_NULL) {
         const SZrTypeValue *existingValue = ZrObjectGetValue(state, table->nameToSymbolsMap, &key);
-        if (existingValue != ZR_NULL && existingValue->type == ZR_VALUE_TYPE_OBJECT) {
-            SZrObject *arrayObj = ZR_CAST_OBJECT(state, existingValue->value.object);
-            if (arrayObj != ZR_NULL) {
-                SZrArray *symbolArray = (SZrArray *)((TByte *)arrayObj + sizeof(SZrObject));
-                if (symbolArray->isValid) {
-                    // 检查作用域可见性
-                    SZrSymbolScope *currentScope = scope;
-                    if (currentScope == ZR_NULL) {
-                        currentScope = ZrSymbolTableGetCurrentScope(table);
-                    }
-                    
-                    for (TZrSize i = 0; i < symbolArray->length; i++) {
-                        SZrSymbol **symbolPtr = (SZrSymbol **)ZrArrayGet(symbolArray, i);
-                        if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
-                            SZrSymbol *symbol = *symbolPtr;
-                            
-                            // 检查作用域可见性
-                            TBool isVisible = ZR_FALSE;
-                            SZrSymbolScope *symbolScope = symbol->scope;
-                            
-                            // 检查是否在可见的作用域内
-                            SZrSymbolScope *checkScope = currentScope;
-                            while (checkScope != ZR_NULL) {
-                                if (checkScope == symbolScope) {
-                                    isVisible = ZR_TRUE;
-                                    break;
-                                }
-                                checkScope = checkScope->parent;
-                            }
-                            
-                            // 如果是全局作用域，也可见
-                            if (symbolScope == table->globalScope) {
+        if (existingValue != ZR_NULL && existingValue->type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+            SZrArray *symbolArray = (SZrArray *)existingValue->value.nativeObject.nativePointer;
+            if (symbolArray != ZR_NULL && symbolArray->isValid) {
+                // 检查作用域可见性
+                SZrSymbolScope *currentScope = scope;
+                if (currentScope == ZR_NULL) {
+                    currentScope = ZrSymbolTableGetCurrentScope(table);
+                }
+                
+                for (TZrSize i = 0; i < symbolArray->length; i++) {
+                    SZrSymbol **symbolPtr = (SZrSymbol **)ZrArrayGet(symbolArray, i);
+                    if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
+                        SZrSymbol *symbol = *symbolPtr;
+                        
+                        // 检查作用域可见性
+                        TBool isVisible = ZR_FALSE;
+                        SZrSymbolScope *symbolScope = symbol->scope;
+                        
+                        // 检查是否在可见的作用域内
+                        SZrSymbolScope *checkScope = currentScope;
+                        while (checkScope != ZR_NULL) {
+                            if (checkScope == symbolScope) {
                                 isVisible = ZR_TRUE;
+                                break;
                             }
-                            
-                            if (isVisible) {
-                                ZrArrayPush(state, result, &symbol);
-                            }
+                            checkScope = checkScope->parent;
+                        }
+                        
+                        // 如果是全局作用域，也可见
+                        if (symbolScope == table->globalScope) {
+                            isVisible = ZR_TRUE;
+                        }
+                        
+                        if (isVisible) {
+                            ZrArrayPush(state, result, &symbol);
                         }
                     }
-                    return ZR_TRUE;
                 }
+                return ZR_TRUE;
             }
         }
     }

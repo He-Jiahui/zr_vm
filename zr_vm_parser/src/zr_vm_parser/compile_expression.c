@@ -125,6 +125,42 @@ static SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeNa
     return ZR_NULL;
 }
 
+// 辅助函数：查找类型成员信息（检查字段是否是 const）
+static TBool find_type_member_is_const(SZrCompilerState *cs, SZrString *typeName, SZrString *memberName) {
+    if (cs == ZR_NULL || typeName == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    // 从 typePrototypes 中查找类型
+    for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
+        SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrArrayGet(&cs->typePrototypes, i);
+        if (info == ZR_NULL) {
+            continue;
+        }
+        
+        if (info->name != ZR_NULL && ZrStringEqual(info->name, typeName)) {
+            // 查找成员
+            for (TZrSize j = 0; j < info->members.length; j++) {
+                SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrArrayGet(&info->members, j);
+                if (memberInfo == ZR_NULL) {
+                    continue;
+                }
+                
+                if (memberInfo->name != ZR_NULL && ZrStringEqual(memberInfo->name, memberName)) {
+                    // 检查是否是字段且是 const
+                    if ((memberInfo->memberType == ZR_AST_STRUCT_FIELD || 
+                         memberInfo->memberType == ZR_AST_CLASS_FIELD) &&
+                        memberInfo->isConst) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+        }
+    }
+    
+    return ZR_FALSE;
+}
+
 // 编译字面量
 static void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -913,6 +949,24 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
 }
 
+// 辅助函数：检查变量名是否在 const 数组中
+static TBool is_const_variable(SZrCompilerState *cs, SZrString *name, SZrArray *constArray) {
+    if (cs == ZR_NULL || name == ZR_NULL || constArray == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    
+    for (TZrSize i = 0; i < constArray->length; i++) {
+        SZrString **varNamePtr = (SZrString **)ZrArrayGet(constArray, i);
+        if (varNamePtr != ZR_NULL && *varNamePtr != ZR_NULL) {
+            if (ZrStringEqual(*varNamePtr, name)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    
+    return ZR_FALSE;
+}
+
 // 编译赋值表达式
 static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -935,6 +989,33 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     // 处理左值（标识符）
     if (left->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrString *name = left->data.identifier.name;
+        
+        // 检查是否是 const 函数参数
+        if (is_const_variable(cs, name, &cs->constParameters)) {
+            TChar errorMsg[256];
+            TNativeString nameStr = ZrStringGetNativeStringShort(name);
+            if (nameStr != ZR_NULL) {
+                snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const parameter '%s'", nameStr);
+            } else {
+                snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const parameter");
+            }
+            ZrCompilerError(cs, errorMsg, node->location);
+            return;
+        }
+        
+        // 检查是否是 const 局部变量
+        if (is_const_variable(cs, name, &cs->constLocalVars)) {
+            TChar errorMsg[256];
+            TNativeString nameStr = ZrStringGetNativeStringShort(name);
+            if (nameStr != ZR_NULL) {
+                snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const variable '%s' after declaration", nameStr);
+            } else {
+                snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const variable after declaration");
+            }
+            ZrCompilerError(cs, errorMsg, node->location);
+            return;
+        }
+        
         TUInt32 localVarIndex = find_local_var(cs, name);
         
         if (localVarIndex != (TUInt32)-1) {
@@ -1111,6 +1192,40 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                         // 处理成员访问链，获取最后一个成员访问的键
                         SZrMemberExpression *memberExpr = &lastMember->data.memberExpression;
                         if (memberExpr->property != ZR_NULL) {
+                            // 检查成员字段是否是 const
+                            // 如果字段是 const 且当前不在构造函数中，报告错误
+                            if (memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+                                SZrString *fieldName = memberExpr->property->data.identifier.name;
+                                if (fieldName != ZR_NULL && !cs->isInConstructor) {
+                                    // 查找类型定义，检查字段是否是 const
+                                    // 尝试从 primary->property 推断类型（如果是 this）
+                                    if (primary->property != ZR_NULL && 
+                                        primary->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+                                        SZrString *objName = primary->property->data.identifier.name;
+                                        if (objName != ZR_NULL) {
+                                            TNativeString objNameStr = ZrStringGetNativeStringShort(objName);
+                                            if (objNameStr != ZR_NULL && strcmp(objNameStr, "this") == 0) {
+                                                // 这是 this.field 的赋值
+                                                // 使用当前类型名称查找字段是否是 const
+                                                if (cs->currentTypeName != ZR_NULL) {
+                                                    if (find_type_member_is_const(cs, cs->currentTypeName, fieldName)) {
+                                                        TChar errorMsg[256];
+                                                        TNativeString fieldNameStr = ZrStringGetNativeStringShort(fieldName);
+                                                        if (fieldNameStr != ZR_NULL) {
+                                                            snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const field '%s' outside constructor", fieldNameStr);
+                                                        } else {
+                                                            snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const field outside constructor");
+                                                        }
+                                                        ZrCompilerError(cs, errorMsg, node->location);
+                                                        return;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
                             compile_expression(cs, memberExpr->property);
                             TUInt32 keySlot = cs->stackSlotCount - 1;
                             

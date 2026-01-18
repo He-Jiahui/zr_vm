@@ -71,6 +71,44 @@ static void perform_type_checking(SZrState *state, SZrSemanticAnalyzer *analyzer
                                                         "type_mismatch");
                     }
                 }
+                
+                // 检查 const 变量赋值限制
+                if (assignExpr->left != ZR_NULL && assignExpr->left->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    SZrString *varName = assignExpr->left->data.identifier.name;
+                    if (varName != ZR_NULL) {
+                        // 查找符号
+                        SZrSymbol *symbol = ZrSymbolTableLookup(analyzer->symbolTable, varName, ZR_NULL);
+                        if (symbol != ZR_NULL && symbol->isConst) {
+                            // 检查是否是 const 变量
+                            if (symbol->type == ZR_SYMBOL_VARIABLE) {
+                                // const 局部变量：只能在声明时赋值
+                                // TODO: 需要检查是否在声明语句中（通过 AST 上下文判断）
+                                // 暂时报告错误，后续完善
+                                ZrSemanticAnalyzerAddDiagnostic(state, analyzer,
+                                                                ZR_DIAGNOSTIC_ERROR,
+                                                                node->location,
+                                                                "Cannot assign to const variable after declaration",
+                                                                "const_assignment");
+                            } else if (symbol->type == ZR_SYMBOL_PARAMETER) {
+                                // const 函数参数：不能在函数体内修改
+                                ZrSemanticAnalyzerAddDiagnostic(state, analyzer,
+                                                                ZR_DIAGNOSTIC_ERROR,
+                                                                node->location,
+                                                                "Cannot assign to const parameter",
+                                                                "const_assignment");
+                            } else if (symbol->type == ZR_SYMBOL_FIELD) {
+                                // const 成员字段：只能在构造函数中赋值
+                                // TODO: 需要检查是否在构造函数中（通过检查当前函数是否为 @constructor 元方法）
+                                // 暂时报告错误，后续完善
+                                ZrSemanticAnalyzerAddDiagnostic(state, analyzer,
+                                                                ZR_DIAGNOSTIC_ERROR,
+                                                                node->location,
+                                                                "Cannot assign to const field outside constructor",
+                                                                "const_assignment");
+                            }
+                        }
+                    }
+                }
             }
             break;
         }
@@ -673,6 +711,78 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
                                        ZR_SYMBOL_CLASS, name,
                                        node->location, ZR_NULL,
                                        classDecl->accessModifier, node);
+                
+                // 检查类实现的接口，验证 const 字段匹配
+                if (classDecl->inherits != ZR_NULL && classDecl->inherits->count > 0) {
+                    for (TZrSize i = 0; i < classDecl->inherits->count; i++) {
+                        SZrAstNode *inheritNode = classDecl->inherits->nodes[i];
+                        if (inheritNode != ZR_NULL && inheritNode->type == ZR_AST_TYPE) {
+                            // 查找接口定义
+                            SZrType *inheritType = &inheritNode->data.type;
+                            if (inheritType->name != ZR_NULL && 
+                                inheritType->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+                                SZrString *interfaceName = inheritType->name->data.identifier.name;
+                                if (interfaceName != ZR_NULL) {
+                                    SZrSymbol *interfaceSymbol = ZrSymbolTableLookup(analyzer->symbolTable, interfaceName, ZR_NULL);
+                                    if (interfaceSymbol != ZR_NULL && 
+                                        interfaceSymbol->type == ZR_SYMBOL_INTERFACE &&
+                                        interfaceSymbol->astNode != ZR_NULL &&
+                                        interfaceSymbol->astNode->type == ZR_AST_INTERFACE_DECLARATION) {
+                                        // 检查接口中的 const 字段是否在类中也标记为 const
+                                        SZrInterfaceDeclaration *interfaceDecl = &interfaceSymbol->astNode->data.interfaceDeclaration;
+                                        if (interfaceDecl->members != ZR_NULL) {
+                                            for (TZrSize j = 0; j < interfaceDecl->members->count; j++) {
+                                                SZrAstNode *interfaceMember = interfaceDecl->members->nodes[j];
+                                                if (interfaceMember != ZR_NULL && 
+                                                    interfaceMember->type == ZR_AST_INTERFACE_FIELD_DECLARATION) {
+                                                    SZrInterfaceFieldDeclaration *interfaceField = &interfaceMember->data.interfaceFieldDeclaration;
+                                                    if (interfaceField->isConst && interfaceField->name != ZR_NULL) {
+                                                        SZrString *fieldName = interfaceField->name->name;
+                                                        // 在类中查找对应的字段
+                                                        if (classDecl->members != ZR_NULL) {
+                                                            TBool found = ZR_FALSE;
+                                                            for (TZrSize k = 0; k < classDecl->members->count; k++) {
+                                                                SZrAstNode *classMember = classDecl->members->nodes[k];
+                                                                if (classMember != ZR_NULL && 
+                                                                    classMember->type == ZR_AST_CLASS_FIELD) {
+                                                                    SZrClassField *classField = &classMember->data.classField;
+                                                                    if (classField->name != ZR_NULL && 
+                                                                        ZrStringEqual(classField->name->name, fieldName)) {
+                                                                        found = ZR_TRUE;
+                                                                        // 检查类字段是否也是 const
+                                                                        if (!classField->isConst) {
+                                                                            TChar errorMsg[256];
+                                                                            TNativeString fieldNameStr = ZrStringGetNativeStringShort(fieldName);
+                                                                            if (fieldNameStr != ZR_NULL) {
+                                                                                snprintf(errorMsg, sizeof(errorMsg), 
+                                                                                        "Interface field '%s' is const, but implementation field is not const", 
+                                                                                        fieldNameStr);
+                                                                            } else {
+                                                                                snprintf(errorMsg, sizeof(errorMsg), 
+                                                                                        "Interface field is const, but implementation field is not const");
+                                                                            }
+                                                                            ZrSemanticAnalyzerAddDiagnostic(state, analyzer,
+                                                                                                            ZR_DIAGNOSTIC_ERROR,
+                                                                                                            classMember->location,
+                                                                                                            errorMsg,
+                                                                                                            "const_interface_mismatch");
+                                                                        }
+                                                                        break;
+                                                                    }
+                                                                }
+                                                            }
+                                                            // TODO: 如果字段未找到，也应该报告错误（字段缺失）
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             break;
         }

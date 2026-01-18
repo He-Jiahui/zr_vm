@@ -153,24 +153,30 @@ void ZrIncrementalParserFree(SZrState *state, SZrIncrementalParser *parser) {
     }
     
     // 释放所有文件版本
-    if (parser->uriToFileMap.isValid) {
-        // 遍历哈希表释放所有文件版本
+    if (parser->uriToFileMap.isValid && parser->uriToFileMap.buckets != ZR_NULL) {
+        // 遍历哈希表释放所有文件版本和节点
         for (TZrSize i = 0; i < parser->uriToFileMap.capacity; i++) {
-            SZrHashKeyValuePair *bucket = parser->uriToFileMap.buckets[i];
-            if (bucket != ZR_NULL) {
-                for (TZrSize j = 0; j < parser->uriToFileMap.bucketSize; j++) {
-                    if (bucket[j].key.type != ZR_VALUE_TYPE_NULL) {
-                        if (bucket[j].value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-                            SZrFileVersion *fileVersion = 
-                                (SZrFileVersion *)bucket[j].value.value.nativeObject.nativePointer;
-                            if (fileVersion != ZR_NULL) {
-                                ZrFileVersionFree(state, fileVersion);
-                            }
+            SZrHashKeyValuePair *pair = parser->uriToFileMap.buckets[i];
+            while (pair != ZR_NULL) {
+                // 释放节点中存储的数据
+                if (pair->key.type != ZR_VALUE_TYPE_NULL) {
+                    if (pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+                        SZrFileVersion *fileVersion = 
+                            (SZrFileVersion *)pair->value.value.nativeObject.nativePointer;
+                        if (fileVersion != ZR_NULL) {
+                            ZrFileVersionFree(state, fileVersion);
                         }
                     }
                 }
+                // 释放节点本身
+                SZrHashKeyValuePair *next = pair->next;
+                ZrMemoryRawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
+                                       ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+                pair = next;
             }
+            parser->uriToFileMap.buckets[i] = ZR_NULL;
         }
+        // 释放 buckets 数组
         ZrHashSetDeconstruct(state, &parser->uriToFileMap);
     }
     

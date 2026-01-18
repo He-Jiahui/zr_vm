@@ -89,6 +89,11 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         // 分配局部变量槽位
         TUInt32 varIndex = allocate_local_var(cs, varName);
         
+        // 如果是 const 变量，记录到 constLocalVars 数组
+        if (decl->isConst) {
+            ZrArrayPush(cs->state, &cs->constLocalVars, &varName);
+        }
+        
         // 如果是脚本级变量且可见性为 pub 或 pro，记录到导出列表
         if (cs->isScriptLevel && decl->accessModifier != ZR_ACCESS_PRIVATE) {
             SZrExportedVariable exportedVar;

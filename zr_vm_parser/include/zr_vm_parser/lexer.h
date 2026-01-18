@@ -42,6 +42,7 @@ enum EZrToken {
     ZR_TK_SET,
     ZR_TK_GET,
     ZR_TK_STATIC,
+    ZR_TK_CONST,
     ZR_TK_IN,
     ZR_TK_OUT,
     ZR_TK_THROW,

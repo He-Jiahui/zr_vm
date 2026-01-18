@@ -53,25 +53,31 @@ void ZrReferenceTrackerFree(SZrState *state, SZrReferenceTracker *tracker) {
     
     ZrArrayFree(state, &tracker->allReferences);
     
-    // 释放哈希表中的引用数组
-    if (tracker->symbolToReferencesMap.isValid) {
+    // 释放哈希表中的引用数组和节点
+    if (tracker->symbolToReferencesMap.isValid && tracker->symbolToReferencesMap.buckets != ZR_NULL) {
         for (TZrSize i = 0; i < tracker->symbolToReferencesMap.capacity; i++) {
-            SZrHashKeyValuePair *bucket = tracker->symbolToReferencesMap.buckets[i];
-            if (bucket != ZR_NULL) {
-                for (TZrSize j = 0; j < tracker->symbolToReferencesMap.bucketSize; j++) {
-                    if (bucket[j].key.type != ZR_VALUE_TYPE_NULL) {
-                        if (bucket[j].value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-                            SZrArray *refArray = 
-                                (SZrArray *)bucket[j].value.value.nativeObject.nativePointer;
-                            if (refArray != ZR_NULL) {
-                                ZrArrayFree(state, refArray);
-                                ZrMemoryRawFree(state->global, refArray, sizeof(SZrArray));
-                            }
+            SZrHashKeyValuePair *pair = tracker->symbolToReferencesMap.buckets[i];
+            while (pair != ZR_NULL) {
+                // 释放节点中存储的数据
+                if (pair->key.type != ZR_VALUE_TYPE_NULL) {
+                    if (pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+                        SZrArray *refArray = 
+                            (SZrArray *)pair->value.value.nativeObject.nativePointer;
+                        if (refArray != ZR_NULL && refArray->isValid) {
+                            ZrArrayFree(state, refArray);
+                            ZrMemoryRawFree(state->global, refArray, sizeof(SZrArray));
                         }
                     }
                 }
+                // 释放节点本身
+                SZrHashKeyValuePair *next = pair->next;
+                ZrMemoryRawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
+                                       ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+                pair = next;
             }
+            tracker->symbolToReferencesMap.buckets[i] = ZR_NULL;
         }
+        // 释放 buckets 数组
         ZrHashSetDeconstruct(state, &tracker->symbolToReferencesMap);
     }
     
