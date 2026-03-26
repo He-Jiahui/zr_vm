@@ -11,6 +11,14 @@
 #include "zr_vm_common/zr_instruction_conf.h"
 #include <sys/stat.h>
 
+#ifndef ZR_VM_SCRIPTS_SOURCE_DIR
+#define ZR_VM_SCRIPTS_SOURCE_DIR "tests/scripts"
+#endif
+
+#ifndef ZR_VM_SCRIPTS_BINARY_DIR
+#define ZR_VM_SCRIPTS_BINARY_DIR "tests/scripts"
+#endif
+
 // 包含cJSON库
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +35,30 @@ extern "C" {
 #else
     #include <unistd.h>
 #endif
+
+static void ensure_directory(const TChar* path) {
+    if (path == ZR_NULL || path[0] == '\0') {
+        return;
+    }
+    mkdir(path, 0755);
+}
+
+static void build_output_path(const TChar* rootDir, const TChar* baseName, const TChar* subDir, const TChar* extension,
+                              TChar* outPath, TZrSize maxLen) {
+    if (rootDir == ZR_NULL || baseName == ZR_NULL || subDir == ZR_NULL || extension == ZR_NULL || outPath == ZR_NULL ||
+        maxLen == 0) {
+        return;
+    }
+
+    TChar outputDir[1024];
+    TChar targetDir[1024];
+    snprintf(outputDir, sizeof(outputDir), "%s/output", rootDir);
+    snprintf(targetDir, sizeof(targetDir), "%s/%s", outputDir, subDir);
+    ensure_directory(outputDir);
+    ensure_directory(targetDir);
+
+    snprintf(outPath, maxLen, "%s/%s%s", targetDir, baseName, extension);
+}
 
 // 简单的测试分配器
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
@@ -205,39 +237,19 @@ TBool execute_function(SZrState* state, SZrFunction* function, SZrTypeValue* res
 
 // 获取输出目录路径
 void get_output_path(const TChar* baseName, const TChar* subDir, const TChar* extension, TChar* outPath, TZrSize maxLen) {
-    if (baseName == ZR_NULL || subDir == ZR_NULL || extension == ZR_NULL || outPath == ZR_NULL) {
+    build_output_path(ZR_VM_SCRIPTS_BINARY_DIR, baseName, subDir, extension, outPath, maxLen);
+}
+
+void get_golden_output_path(const TChar* baseName, const TChar* subDir, const TChar* extension, TChar* outPath, TZrSize maxLen) {
+    build_output_path(ZR_VM_SCRIPTS_SOURCE_DIR, baseName, subDir, extension, outPath, maxLen);
+}
+
+void get_test_case_path(const TChar* fileName, TChar* outPath, TZrSize maxLen) {
+    if (fileName == ZR_NULL || outPath == ZR_NULL || maxLen == 0) {
         return;
     }
-    
-    // 尝试多个可能的输出目录
-    const TChar* possibleDirs[] = {
-        "tests/scripts/output",
-        "output",
-        ".",
-        ZR_NULL
-    };
-    
-    for (TZrSize i = 0; possibleDirs[i] != ZR_NULL; i++) {
-        TChar path[1024];
-        snprintf(path, sizeof(path), "%s/%s/%s%s", possibleDirs[i], subDir, baseName, extension);
-        
-        // 检查目录是否存在，如果不存在则创建
-        TChar dirPath[1024];
-        snprintf(dirPath, sizeof(dirPath), "%s/%s", possibleDirs[i], subDir);
-        mkdir(dirPath, 0755);
-        
-        // 检查文件是否可以写入
-        FILE* testFile = fopen(path, "w");
-        if (testFile != ZR_NULL) {
-            fclose(testFile);
-            strncpy(outPath, path, maxLen - 1);
-            outPath[maxLen - 1] = '\0';
-            return;
-        }
-    }
-    
-    // 如果都失败，使用当前目录
-    snprintf(outPath, maxLen, "%s%s", baseName, extension);
+
+    snprintf(outPath, maxLen, "%s/test_cases/%s", ZR_VM_SCRIPTS_SOURCE_DIR, fileName);
 }
 
 // 辅助函数：将AST节点序列化为JSON（简化版本）
@@ -405,6 +417,16 @@ TBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const TC
     return textResult;
 }
 
+TBool dump_binary_to_file(SZrState* state, SZrFunction* function, const TChar* basePath) {
+    if (state == ZR_NULL || function == ZR_NULL || basePath == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    TChar binaryPath[1024];
+    get_output_path(basePath, "binary", ".zro", binaryPath, sizeof(binaryPath));
+    return ZrWriterWriteBinaryFile(state, function, binaryPath);
+}
+
 // 输出运行状态到文件（文本和JSON）
 TBool dump_runtime_state(SZrState* state, const TChar* basePath) {
     if (state == ZR_NULL || basePath == ZR_NULL) {
@@ -486,4 +508,3 @@ void free_test_result(SZrTestResult* result) {
     
     free(result);
 }
-

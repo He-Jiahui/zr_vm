@@ -3,61 +3,53 @@
 //
 #include "zr_vm_cli.h"
 #include <stdio.h>
-#include <stdlib.h>
 #include "zr_vm_core.h"
+#include "zr_vm_core/string.h"
+#include "zr_vm_core/value.h"
+#include "zr_vm_parser/compiler.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/project.h"
 
-// static TZrPtr TestAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
-//     ZR_UNUSED_PARAMETER(userData);
-//     ZR_UNUSED_PARAMETER(originalSize);
-//     ZR_UNUSED_PARAMETER(flag);
-//     if (newSize == 0) {
-//         free(pointer);
-//         return ZR_NULL;
-//     }
-//     return (TZrPtr) realloc(pointer, newSize);
-// }
-//
-// static void AfterStateInitialized(SZrState *state) {
-//     ZR_UNUSED_PARAMETER(state);
-//     TNativeString str = ZrNativeStringFormat(state, "%d is %s at %p", 1, "one", &AfterStateInitialized);
-//     printf("%s\n", str);
-//     // ZrExceptionThrow(state, ZR_THREAD_STATUS_EXCEPTION_ERROR);
-// }
-
-void ZrCliMain(const int argc, char **argv) {
-    printf("use argc %d\n", argc);
-    for (int i = 0; i < argc; i++) {
-        printf("argv %d is '%s'\n", i, argv[i]);
+static int ZrCliRun(const int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "usage: zr_vm_cli <project.zrp>\n");
+        return 1;
     }
-    Hello();
-    // SZrCallbackGlobal callback = {
-    //     .afterStateInitialized = AfterStateInitialized,
-    //     .afterThreadInitialized = ZR_NULL,
-    //     .beforeStateReleased = ZR_NULL,
-    //     .beforeThreadReleased = ZR_NULL,
-    // };
-    // printf("%p",(TZrPtr)ZrStringObjectCreate("hello world", 11));
-    // SZrGlobalState *global = ZrGlobalStateNew(TestAllocator, ZR_NULL, 0x1234567890ABCDEF, &callback);
-    // if (global == ZR_NULL) {
-    //     printf("global is null\n");
-    //     return;
-    // }
-    // ZrGlobalStateFree(global);
-    // global = ZR_NULL;
+
     SZrGlobalState *global = ZrLibrary_CommonState_CommonGlobalState_New(argv[1]);
     if (global == ZR_NULL) {
-        printf("global is null\n");
-        return;
+        fprintf(stderr, "failed to load project: %s\n", argv[1]);
+        return 1;
     }
 
-    ZrLibrary_Project_Do(global->mainThreadState);
+    ZrParserRegisterToGlobalState(global->mainThreadState);
+
+    SZrTypeValue result;
+    ZrValueResetAsNull(&result);
+    EZrThreadStatus status = ZrLibrary_Project_Run(global->mainThreadState, &result);
+
+    if (status != ZR_THREAD_STATUS_FINE) {
+        fprintf(stderr, "project execution failed with status %d\n", (int) status);
+        ZrLibrary_CommonState_CommonGlobalState_Free(global);
+        return 1;
+    }
+
+    SZrString *resultString = ZrValueConvertToString(global->mainThreadState, &result);
+    if (resultString == ZR_NULL) {
+        fprintf(stderr, "failed to stringify project result\n");
+        ZrLibrary_CommonState_CommonGlobalState_Free(global);
+        return 1;
+    }
+
+    printf("%s\n", ZrStringGetNativeString(resultString));
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
-    global = ZR_NULL;
+    return 0;
+}
+
+void ZrCliMain(const int argc, char **argv) {
+    (void) ZrCliRun(argc, argv);
 }
 
 int main(const int argc, char **argv) {
-    ZrCliMain(argc, argv);
-    return 0;
+    return ZrCliRun(argc, argv);
 }

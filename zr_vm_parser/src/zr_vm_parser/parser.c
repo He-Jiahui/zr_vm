@@ -10,6 +10,7 @@
 
 #include <string.h>
 #include <math.h>
+#include <stddef.h>
 
 // 辅助函数声明
 static void expect_token(SZrParserState *ps, EZrToken expected);
@@ -865,6 +866,35 @@ static SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNa
     return args;
 }
 
+static SZrAstNode *append_primary_member(SZrParserState *ps, SZrAstNode *base, SZrAstNode *memberNode, SZrFileRange startLoc) {
+    if (ps == ZR_NULL || base == ZR_NULL || memberNode == ZR_NULL) {
+        return base;
+    }
+
+    if (base->type == ZR_AST_PRIMARY_EXPRESSION) {
+        if (base->data.primaryExpression.members == ZR_NULL) {
+            base->data.primaryExpression.members = ZrAstNodeArrayNew(ps->state, 1);
+            if (base->data.primaryExpression.members == ZR_NULL) {
+                return base;
+            }
+        }
+        ZrAstNodeArrayAdd(ps->state, base->data.primaryExpression.members, memberNode);
+        return base;
+    }
+
+    SZrAstNode *primaryNode = create_ast_node(ps, ZR_AST_PRIMARY_EXPRESSION, startLoc);
+    if (primaryNode == ZR_NULL) {
+        return base;
+    }
+    primaryNode->data.primaryExpression.property = base;
+    primaryNode->data.primaryExpression.members = ZrAstNodeArrayNew(ps->state, 1);
+    if (primaryNode->data.primaryExpression.members == ZR_NULL) {
+        return base;
+    }
+    ZrAstNodeArrayAdd(ps->state, primaryNode->data.primaryExpression.members, memberNode);
+    return primaryNode;
+}
+
 // 解析成员访问和函数调用
 static SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
     SZrFileRange startLoc = base->location;
@@ -894,19 +924,7 @@ static SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             memberNode->data.memberExpression.property = property;
             memberNode->data.memberExpression.computed = ZR_FALSE;
 
-            // 创建主表达式包装
-            SZrAstNode *primaryNode = create_ast_node(ps, ZR_AST_PRIMARY_EXPRESSION, startLoc);
-            if (primaryNode == ZR_NULL) {
-                return base;
-            }
-            primaryNode->data.primaryExpression.property = base;
-            SZrAstNodeArray *members = ZrAstNodeArrayNew(ps->state, 1);
-            if (members == ZR_NULL) {
-                return base;
-            }
-            ZrAstNodeArrayAdd(ps->state, members, memberNode);
-            primaryNode->data.primaryExpression.members = members;
-            base = primaryNode;
+            base = append_primary_member(ps, base, memberNode, startLoc);
         }
         // 方括号成员访问
         else if (consume_token(ps, ZR_TK_LBRACKET)) {
@@ -924,19 +942,7 @@ static SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             memberNode->data.memberExpression.property = property;
             memberNode->data.memberExpression.computed = ZR_TRUE;
 
-            // 创建主表达式包装
-            SZrAstNode *primaryNode = create_ast_node(ps, ZR_AST_PRIMARY_EXPRESSION, startLoc);
-            if (primaryNode == ZR_NULL) {
-                return base;
-            }
-            primaryNode->data.primaryExpression.property = base;
-            SZrAstNodeArray *members = ZrAstNodeArrayNew(ps->state, 1);
-            if (members == ZR_NULL) {
-                return base;
-            }
-            ZrAstNodeArrayAdd(ps->state, members, memberNode);
-            primaryNode->data.primaryExpression.members = members;
-            base = primaryNode;
+            base = append_primary_member(ps, base, memberNode, startLoc);
         }
         // 函数调用
         else if (consume_token(ps, ZR_TK_LPAREN)) {
@@ -971,19 +977,7 @@ static SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 }
             }
 
-            // 创建主表达式包装
-            SZrAstNode *primaryNode = create_ast_node(ps, ZR_AST_PRIMARY_EXPRESSION, startLoc);
-            if (primaryNode == ZR_NULL) {
-                return base;
-            }
-            primaryNode->data.primaryExpression.property = base;
-            SZrAstNodeArray *members = ZrAstNodeArrayNew(ps->state, 1);
-            if (members == ZR_NULL) {
-                return base;
-            }
-            ZrAstNodeArrayAdd(ps->state, members, callNode);
-            primaryNode->data.primaryExpression.members = members;
-            base = primaryNode;
+            base = append_primary_member(ps, base, callNode, startLoc);
         }
         else {
             break;
@@ -3741,9 +3735,9 @@ void ZrParserFreeAst(SZrState *state, SZrAstNode *node) {
             // nameNode 的地址 = name 的地址 - offsetof(SZrAstNode, data.identifier)
             if (decl->name != ZR_NULL) {
                 // 计算 nameNode 的地址：name 指向 data.identifier，我们需要找到包含它的 SZrAstNode
-                // 使用 offsetof 来计算偏移量
-                TZrSize identifierOffset = (TZrPtr)&((SZrAstNode *)0)->data.identifier - (TZrPtr)0;
-                SZrAstNode *nameNode = (SZrAstNode *)((TZrPtr)decl->name - identifierOffset);
+                // 使用标准 offsetof 计算偏移量，避免依赖 void* 指针算术
+                SZrAstNode *nameNode =
+                        (SZrAstNode *) ((char *) decl->name - offsetof(SZrAstNode, data.identifier));
                 // 验证 nameNode 是否有效（检查类型）
                 if (nameNode != ZR_NULL && nameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
                     ZrParserFreeAst(state, nameNode);
@@ -6184,4 +6178,3 @@ static SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     node->data.classMetaFunction.body = body;
     return node;
 }
-

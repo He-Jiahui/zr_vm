@@ -5,6 +5,8 @@ project(ZR_VM
         DESCRIPTION "A ZR VM"
 )
 
+enable_testing()
+
 # 是否构建静态库（默认 ON）
 option(BUILD_STATIC_LIB "Build static library" OFF)
 

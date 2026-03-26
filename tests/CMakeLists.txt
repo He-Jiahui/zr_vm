@@ -25,6 +25,14 @@ if((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     add_subdirectory(scripts)
 endif()
 
+# Projects CLI 集成测试（如果构建了 parser/core/library/cli 模块）
+if(TARGET zr_vm_cli_executable AND
+   (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
+   (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static) AND
+   (TARGET zr_vm_library_shared OR TARGET zr_vm_library_static))
+    add_subdirectory(projects)
+endif()
+
 # Exceptions 测试（如果构建了 parser 和 core 模块）
 if((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND 
    (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static))

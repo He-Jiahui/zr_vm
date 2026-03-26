@@ -1,0 +1,6 @@
+{
+  "name": "hello_world",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

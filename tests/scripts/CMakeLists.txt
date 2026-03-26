@@ -1,46 +1,51 @@
 # ZR-VM Scripts Comprehensive Tests CMakeLists.txt
 
-# 添加测试源文件
-set(SCRIPTS_TEST_SOURCES
-    test_comprehensive.c
+set(SCRIPTS_SOURCE_DIR_NORMALIZED "${CMAKE_CURRENT_SOURCE_DIR}")
+set(SCRIPTS_BINARY_DIR_NORMALIZED "${CMAKE_CURRENT_BINARY_DIR}")
+file(TO_CMAKE_PATH "${SCRIPTS_SOURCE_DIR_NORMALIZED}" SCRIPTS_SOURCE_DIR_NORMALIZED)
+file(TO_CMAKE_PATH "${SCRIPTS_BINARY_DIR_NORMALIZED}" SCRIPTS_BINARY_DIR_NORMALIZED)
+
+set(SCRIPTS_COMMON_SOURCES
     test_utils.c
     ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/cJSON.c
-)
-
-# 创建测试可执行文件
-add_executable(zr_vm_scripts_test ${SCRIPTS_TEST_SOURCES})
-
-# 包含Unity测试框架
-target_include_directories(zr_vm_scripts_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
-
-# 添加Unity源文件
-set(UNITY_SOURCES
     ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src/unity.c
 )
 
-# 链接必要的库
-if (BUILD_SHARED_LIB)
-    target_link_libraries(zr_vm_scripts_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
-else()
-    target_link_libraries(zr_vm_scripts_test PRIVATE zr_vm_parser_static zr_vm_core_static)
-endif()
+function(zr_vm_configure_scripts_target target_name)
+    target_include_directories(${target_name} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+        ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON
+        ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src
+    )
 
-# 添加Unity源文件到目标
-target_sources(zr_vm_scripts_test PRIVATE ${UNITY_SOURCES})
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(${target_name} PRIVATE zr_vm_parser_shared zr_vm_core_shared)
+    else()
+        target_link_libraries(${target_name} PRIVATE zr_vm_parser_static zr_vm_core_static)
+    endif()
 
-# 包含头文件目录
-target_include_directories(zr_vm_scripts_test PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-    ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-    ${CMAKE_SOURCE_DIR}/zr_vm_common/include
-    ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON
+    target_compile_definitions(${target_name} PRIVATE
+        UNITY_USE_FLUSH_STDOUT
+        ZR_VM_SCRIPTS_SOURCE_DIR="${SCRIPTS_SOURCE_DIR_NORMALIZED}"
+        ZR_VM_SCRIPTS_BINARY_DIR="${SCRIPTS_BINARY_DIR_NORMALIZED}"
+    )
+endfunction()
+
+# 创建测试可执行文件
+add_executable(zr_vm_scripts_test
+    test_comprehensive.c
+    ${SCRIPTS_COMMON_SOURCES}
 )
+zr_vm_configure_scripts_target(zr_vm_scripts_test)
 
-# 显式启用UNITY输出
-target_compile_definitions(zr_vm_scripts_test PRIVATE
-    UNITY_USE_FLUSH_STDOUT
+add_executable(zr_vm_artifact_golden_test
+    test_artifact_golden.c
+    ${SCRIPTS_COMMON_SOURCES}
 )
+zr_vm_configure_scripts_target(zr_vm_artifact_golden_test)
 
 # 复制测试用例文件到构建目录
 file(GLOB TEST_CASE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/test_cases/*.zr")
@@ -69,10 +74,11 @@ endforeach()
 
 # 创建输出目录
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/tests/scripts/output/ast)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/tests/scripts/output/binary)
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/tests/scripts/output/intermediate)
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/tests/scripts/output/runtime)
 
 # 添加测试目标
 enable_testing()
 add_test(NAME scripts_tests COMMAND zr_vm_scripts_test)
-
+add_test(NAME scripts_artifact_golden COMMAND zr_vm_artifact_golden_test)

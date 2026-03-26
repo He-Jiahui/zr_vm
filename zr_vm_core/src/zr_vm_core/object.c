@@ -69,12 +69,34 @@ const SZrTypeValue *ZrObjectGetValue(struct SZrState *state, SZrObject *object, 
         ZrLogError(state, "attempt to get value with null key");
         return ZR_NULL;
     }
-    SZrHashSet *nodeMap = &object->nodeMap;
-    SZrHashKeyValuePair *pair = ZrHashSetFind(state, nodeMap, key);
-    if (pair == ZR_NULL) {
+    SZrHashKeyValuePair *pair = ZrHashSetFind(state, &object->nodeMap, key);
+    if (pair != ZR_NULL) {
+        return &pair->value;
+    }
+
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        SZrObjectPrototype *prototype = (SZrObjectPrototype *)object;
+        prototype = prototype->superPrototype;
+        while (prototype != ZR_NULL) {
+            pair = ZrHashSetFind(state, &prototype->super.nodeMap, key);
+            if (pair != ZR_NULL) {
+                return &pair->value;
+            }
+            prototype = prototype->superPrototype;
+        }
         return ZR_NULL;
     }
-    return &pair->value;
+
+    SZrObjectPrototype *prototype = object->prototype;
+    while (prototype != ZR_NULL) {
+        pair = ZrHashSetFind(state, &prototype->super.nodeMap, key);
+        if (pair != ZR_NULL) {
+            return &pair->value;
+        }
+        prototype = prototype->superPrototype;
+    }
+
+    return ZR_NULL;
 }
 
 // 创建基础 ObjectPrototype

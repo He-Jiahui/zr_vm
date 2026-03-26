@@ -161,6 +161,171 @@ static TBool find_type_member_is_const(SZrCompilerState *cs, SZrString *typeName
     return ZR_FALSE;
 }
 
+static SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName) {
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
+        SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrArrayGet(&cs->typePrototypes, i);
+        if (info != ZR_NULL && info->name != ZR_NULL && ZrStringEqual(info->name, typeName)) {
+            return info;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrTypeMemberInfo *find_compiler_type_member(SZrCompilerState *cs, SZrString *typeName, SZrString *memberName) {
+    SZrTypePrototypeInfo *info = find_compiler_type_prototype(cs, typeName);
+    if (info == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize i = 0; i < info->members.length; i++) {
+        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrArrayGet(&info->members, i);
+        if (memberInfo != ZR_NULL && memberInfo->name != ZR_NULL && ZrStringEqual(memberInfo->name, memberName)) {
+            return memberInfo;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TBool class_has_constructor(SZrCompilerState *cs, SZrString *typeName) {
+    SZrTypePrototypeInfo *info = find_compiler_type_prototype(cs, typeName);
+    if (info == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = 0; i < info->members.length; i++) {
+        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrArrayGet(&info->members, i);
+        if (memberInfo != ZR_NULL && memberInfo->isMetaMethod && memberInfo->metaType == ZR_META_CONSTRUCTOR) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void collapse_stack_to_slot(SZrCompilerState *cs, TUInt32 slot) {
+    if (cs == ZR_NULL) {
+        return;
+    }
+
+    if (cs->stackSlotCount > (TZrSize)slot + 1) {
+        cs->stackSlotCount = (TZrSize)slot + 1;
+    }
+}
+
+static TUInt32 normalize_top_result_to_slot(SZrCompilerState *cs, TUInt32 targetSlot) {
+    if (cs == ZR_NULL || cs->hasError || cs->stackSlotCount == 0) {
+        return (TUInt32)-1;
+    }
+
+    TUInt32 resultSlot = (TUInt32)(cs->stackSlotCount - 1);
+    if (resultSlot != targetSlot) {
+        TZrInstruction copyInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)targetSlot, (TInt32)resultSlot);
+        emit_instruction(cs, copyInst);
+    }
+
+    collapse_stack_to_slot(cs, targetSlot);
+    return targetSlot;
+}
+
+static void compile_expression_non_tail(SZrCompilerState *cs, SZrAstNode *node) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    TBool oldTailCallContext = cs->isInTailCallContext;
+    cs->isInTailCallContext = ZR_FALSE;
+    compile_expression(cs, node);
+    cs->isInTailCallContext = oldTailCallContext;
+}
+
+static TUInt32 emit_string_constant(SZrCompilerState *cs, SZrString *value) {
+    if (cs == ZR_NULL || value == ZR_NULL || cs->hasError) {
+        return (TUInt32)-1;
+    }
+
+    SZrTypeValue constantValue;
+    ZrValueInitAsRawObject(cs->state, &constantValue, ZR_CAST_RAW_OBJECT_AS_SUPER(value));
+    constantValue.type = ZR_VALUE_TYPE_STRING;
+
+    TUInt32 constantIndex = add_constant(cs, &constantValue);
+    TUInt32 slot = allocate_stack_slot(cs);
+    TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), slot, (TInt32)constantIndex);
+    emit_instruction(cs, inst);
+    return slot;
+}
+
+static TUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TUInt32 targetSlot) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return (TUInt32)-1;
+    }
+
+    compile_expression_non_tail(cs, node);
+    if (cs->hasError) {
+        return (TUInt32)-1;
+    }
+
+    return normalize_top_result_to_slot(cs, targetSlot);
+}
+
+static TUInt32 compile_member_key_into_slot(SZrCompilerState *cs, SZrMemberExpression *memberExpr, TUInt32 targetSlot) {
+    if (cs == ZR_NULL || memberExpr == ZR_NULL || memberExpr->property == ZR_NULL || cs->hasError) {
+        return (TUInt32)-1;
+    }
+
+    if (!memberExpr->computed && memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+        SZrString *fieldName = memberExpr->property->data.identifier.name;
+        if (fieldName == ZR_NULL) {
+            return (TUInt32)-1;
+        }
+
+        if (emit_string_constant(cs, fieldName) == (TUInt32)-1) {
+            return (TUInt32)-1;
+        }
+        return normalize_top_result_to_slot(cs, targetSlot);
+    }
+
+    return compile_expression_into_slot(cs, memberExpr->property, targetSlot);
+}
+
+static TBool expression_uses_dynamic_object_access(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_PRIMARY_EXPRESSION: {
+            SZrPrimaryExpression *primary = &node->data.primaryExpression;
+            if (primary->members != ZR_NULL && primary->members->count > 0) {
+                return ZR_TRUE;
+            }
+            return expression_uses_dynamic_object_access(primary->property);
+        }
+        case ZR_AST_MEMBER_EXPRESSION:
+        case ZR_AST_FUNCTION_CALL:
+            return ZR_TRUE;
+        case ZR_AST_BINARY_EXPRESSION:
+            return expression_uses_dynamic_object_access(node->data.binaryExpression.left) ||
+                   expression_uses_dynamic_object_access(node->data.binaryExpression.right);
+        case ZR_AST_UNARY_EXPRESSION:
+            return expression_uses_dynamic_object_access(node->data.unaryExpression.argument);
+        case ZR_AST_CONDITIONAL_EXPRESSION:
+            return expression_uses_dynamic_object_access(node->data.conditionalExpression.test) ||
+                   expression_uses_dynamic_object_access(node->data.conditionalExpression.consequent) ||
+                   expression_uses_dynamic_object_access(node->data.conditionalExpression.alternate);
+        case ZR_AST_ASSIGNMENT_EXPRESSION:
+            return expression_uses_dynamic_object_access(node->data.assignmentExpression.left) ||
+                   expression_uses_dynamic_object_access(node->data.assignmentExpression.right);
+        default:
+            return ZR_FALSE;
+    }
+}
+
 // 编译字面量
 static void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -335,22 +500,15 @@ static void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
     emit_instruction(cs, getGlobalInst);
     
     // 2. 将属性名作为字符串常量压栈
-    SZrTypeValue nameValue;
-    ZrValueInitAsRawObject(cs->state, &nameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(name));
-    nameValue.type = ZR_VALUE_TYPE_STRING;
-    TUInt32 nameConstantIndex = add_constant(cs, &nameValue);
-    TUInt32 nameSlot = allocate_stack_slot(cs);
-    TZrInstruction getNameInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), nameSlot, (TInt32)nameConstantIndex);
-    emit_instruction(cs, getNameInst);
+    TUInt32 nameSlot = emit_string_constant(cs, name);
+    if (nameSlot == (TUInt32)-1) {
+        return;
+    }
     
     // 3. 使用 GETTABLE 访问属性
-    TUInt32 destSlot = allocate_stack_slot(cs);
-    TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TUInt16)destSlot, (TUInt16)globalObjSlot, (TUInt16)nameSlot);
+    TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TUInt16)globalObjSlot, (TUInt16)globalObjSlot, (TUInt16)nameSlot);
     emit_instruction(cs, getTableInst);
-    
-    // 注意：不要释放临时栈槽（globalObjSlot 和 nameSlot），因为它们在运行时仍在使用
-    // GETTABLE 指令会在运行时从这些槽位读取值，所以不能提前释放
-    // destSlot 是结果槽位，会保留在栈上
+    collapse_stack_to_slot(cs, globalObjSlot);
 }
 
 // 编译一元表达式
@@ -525,19 +683,46 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
             // 然后使用TO_OBJECT指令设置prototype
             TZrInstruction toObjInst = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_OBJECT), (TUInt16)destSlot, (TUInt16)destSlot, (TUInt16)typeNameConstantIndex);
             emit_instruction(cs, toObjInst);
-            
-            // 调用constructor（从基类到派生类），需要查找prototype链的constructor元方法
-            // 注意：constructor调用在运行时通过prototype链查找，从基类到派生类依次调用
-            // TODO: 这里暂时不生成constructor调用指令，因为new操作符创建的对象可能还没有完全初始化
-            // 实际的constructor调用应该在对象创建后，通过prototype链查找CONSTRUCTOR元方法
-            // 如果需要立即调用constructor，可以在TO_OBJECT指令后添加constructor调用
-            // 但通常constructor调用应该在对象完全创建后进行
+
+            if (class_has_constructor(cs, typeName)) {
+                TUInt32 constructorKeySlot = emit_string_constant(cs, ZrStringCreateFromNative(cs->state, "__constructor"));
+                if (constructorKeySlot != (TUInt32)-1) {
+                    constructorKeySlot = normalize_top_result_to_slot(cs, destSlot + 1);
+                    TUInt32 functionSlot = allocate_stack_slot(cs);
+                    TZrInstruction getConstructorInst =
+                            create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TUInt16)functionSlot,
+                                                 (TUInt16)destSlot, (TUInt16)constructorKeySlot);
+                    emit_instruction(cs, getConstructorInst);
+
+                    TUInt32 receiverSlot = allocate_stack_slot(cs);
+                    TZrInstruction copyReceiverInst =
+                            create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)receiverSlot, (TInt32)destSlot);
+                    emit_instruction(cs, copyReceiverInst);
+
+                    TUInt32 argCount = 1;
+                    if (constructorArgs != ZR_NULL) {
+                        for (TZrSize i = 0; i < constructorArgs->count; i++) {
+                            SZrAstNode *argNode = constructorArgs->nodes[i];
+                            if (argNode != ZR_NULL) {
+                                compile_expression_into_slot(cs, argNode, receiverSlot + 1 + (TUInt32)i);
+                            }
+                        }
+                        argCount += (TUInt32)constructorArgs->count;
+                    }
+
+                    TZrInstruction callConstructorInst =
+                            create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL), (TUInt16)functionSlot,
+                                                 (TUInt16)functionSlot, (TUInt16)argCount);
+                    emit_instruction(cs, callConstructorInst);
+                    collapse_stack_to_slot(cs, destSlot);
+                }
+            }
         } else {
             ZrCompilerError(cs, "new operator requires a type name", node->location);
         }
     } else {
         // 其他一元操作符：先编译操作数
-        compile_expression(cs, arg);
+        compile_expression_non_tail(cs, arg);
         TUInt32 argSlot = cs->stackSlotCount - 1;
         
         if (strcmp(op, "!") == 0) {
@@ -583,7 +768,7 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
     }
     
     // 先编译要转换的表达式
-    compile_expression(cs, expression);
+    compile_expression_non_tail(cs, expression);
     
     TUInt32 srcSlot = cs->stackSlotCount - 1;
     TUInt32 destSlot = allocate_stack_slot(cs);
@@ -679,7 +864,6 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     const TChar *op = node->data.binaryExpression.op.op;
     SZrAstNode *left = node->data.binaryExpression.left;
     SZrAstNode *right = node->data.binaryExpression.right;
-    
     // 调试：检查操作符字符串
     if (op == ZR_NULL) {
         ZrCompilerError(cs, "Binary operator string is NULL", node->location);
@@ -693,8 +877,13 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 推断左右操作数的类型
     SZrInferredType leftType, rightType, resultType;
+    ZrInferredTypeInit(cs->state, &leftType, ZR_VALUE_TYPE_OBJECT);
+    ZrInferredTypeInit(cs->state, &rightType, ZR_VALUE_TYPE_OBJECT);
+    ZrInferredTypeInit(cs->state, &resultType, ZR_VALUE_TYPE_OBJECT);
     TBool hasTypeInfo = ZR_FALSE;
-    if (cs->typeEnv != ZR_NULL) {
+    if (cs->typeEnv != ZR_NULL &&
+        !expression_uses_dynamic_object_access(left) &&
+        !expression_uses_dynamic_object_access(right)) {
         if (infer_expression_type(cs, left, &leftType) && infer_expression_type(cs, right, &rightType)) {
             hasTypeInfo = ZR_TRUE;
             // 推断结果类型
@@ -714,11 +903,11 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     // 编译左操作数
-    compile_expression(cs, left);
+    compile_expression_non_tail(cs, left);
     TUInt32 leftSlot = cs->stackSlotCount - 1;
     
     // 编译右操作数
-    compile_expression(cs, right);
+    compile_expression_non_tail(cs, right);
     TUInt32 rightSlot = cs->stackSlotCount - 1;
     
     // 如果需要类型转换，插入转换指令
@@ -1226,8 +1415,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                 }
                             }
                             
-                            compile_expression(cs, memberExpr->property);
-                            TUInt32 keySlot = cs->stackSlotCount - 1;
+                            TUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, objSlot + 1);
+                            if (keySlot == (TUInt32)-1) {
+                                return;
+                            }
                             
                             // 使用 SETTABLE 设置对象属性
                             // SETTABLE 格式: operandExtra = valueSlot, operand1[0] = tableSlot, operand1[1] = keySlot
@@ -1297,7 +1488,7 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
     SZrAstNode *right = node->data.logicalExpression.right;
     
     // 编译左操作数
-    compile_expression(cs, left);
+    compile_expression_non_tail(cs, left);
     TUInt32 leftSlot = cs->stackSlotCount - 1;
     
     // 分配结果槽位
@@ -1320,7 +1511,7 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
         add_pending_jump(cs, jumpIfIndex, shortCircuitLabelId);
         
         // 编译右操作数
-        compile_expression(cs, right);
+        compile_expression_non_tail(cs, right);
         TUInt32 rightSlot = cs->stackSlotCount - 1;
         
         // 将右操作数复制到结果槽位
@@ -1352,7 +1543,7 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
         
         // 左操作数为false，需要计算右操作数
         // 编译右操作数
-        compile_expression(cs, right);
+        compile_expression_non_tail(cs, right);
         TUInt32 rightSlot = cs->stackSlotCount - 1;
         
         // 将右操作数复制到结果槽位
@@ -1383,7 +1574,7 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     SZrAstNode *alternate = node->data.conditionalExpression.alternate;
     
     // 编译条件
-    compile_expression(cs, test);
+    compile_expression_non_tail(cs, test);
     TUInt32 testSlot = cs->stackSlotCount - 1;
     
     // 创建 else 和 end 标签
@@ -1397,7 +1588,7 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     add_pending_jump(cs, jumpIfIndex, elseLabelId);
     
     // 编译 then 分支
-    compile_expression(cs, consequent);
+    compile_expression_non_tail(cs, consequent);
     
     // JUMP -> end
     TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
@@ -1409,7 +1600,7 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     resolve_label(cs, elseLabelId);
     
     // 编译 else 分支
-    compile_expression(cs, alternate);
+    compile_expression_non_tail(cs, alternate);
     
     // 解析 end 标签
     resolve_label(cs, endLabelId);
@@ -1640,10 +1831,9 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     SZrPrimaryExpression *primary = &node->data.primaryExpression;
-    
     // 1. 编译基础属性（标识符或表达式）
     if (primary->property != ZR_NULL) {
-        compile_expression(cs, primary->property);
+        compile_expression_non_tail(cs, primary->property);
         if (cs->hasError) {
             return;
         }
@@ -1653,6 +1843,14 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     TUInt32 currentSlot = cs->stackSlotCount - 1;
+    TUInt32 pendingReceiverSlot = (TUInt32)-1;
+    SZrString *rootTypeName = ZR_NULL;
+    if (primary->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+        SZrString *candidateType = primary->property->data.identifier.name;
+        if (find_compiler_type_prototype(cs, candidateType) != ZR_NULL) {
+            rootTypeName = candidateType;
+        }
+    }
     
     // 2. 依次处理成员访问链和函数调用链
     if (primary->members != ZR_NULL) {
@@ -1665,20 +1863,54 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
             if (member->type == ZR_AST_MEMBER_EXPRESSION) {
                 // 成员访问：obj.member 或 obj[key]
                 SZrMemberExpression *memberExpr = &member->data.memberExpression;
+                SZrString *memberName = ZR_NULL;
+                TBool isStaticMember = ZR_FALSE;
+                TBool nextIsFunctionCall =
+                        (i + 1 < primary->members->count &&
+                         primary->members->nodes[i + 1] != ZR_NULL &&
+                         primary->members->nodes[i + 1]->type == ZR_AST_FUNCTION_CALL);
+
+                if (!memberExpr->computed && memberExpr->property != ZR_NULL &&
+                    memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    memberName = memberExpr->property->data.identifier.name;
+                }
+
+                if (rootTypeName != ZR_NULL && memberName != ZR_NULL) {
+                    SZrTypeMemberInfo *typeMember = find_compiler_type_member(cs, rootTypeName, memberName);
+                    if (typeMember != ZR_NULL && typeMember->isStatic) {
+                        isStaticMember = ZR_TRUE;
+                    }
+                }
                 
                 // 编译键表达式（标识符或计算属性）
                 if (memberExpr->property != ZR_NULL) {
-                    compile_expression(cs, memberExpr->property);
-                    TUInt32 keySlot = cs->stackSlotCount - 1;
-                    
-                    // 使用 GETTABLE 获取值
-                    TUInt32 resultSlot = allocate_stack_slot(cs);
-                    TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TUInt16)resultSlot, (TUInt16)currentSlot, (TUInt16)keySlot);
+                    if (nextIsFunctionCall && !isStaticMember) {
+                        pendingReceiverSlot = allocate_stack_slot(cs);
+                        TZrInstruction copyReceiverInst = create_instruction_1(
+                                ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)pendingReceiverSlot, (TInt32)currentSlot);
+                        emit_instruction(cs, copyReceiverInst);
+                    } else {
+                        pendingReceiverSlot = (TUInt32)-1;
+                    }
+
+                    TUInt32 keyTargetSlot = (pendingReceiverSlot != (TUInt32)-1) ? currentSlot + 2 : currentSlot + 1;
+                    TUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, keyTargetSlot);
+                    if (keySlot == (TUInt32)-1) {
+                        return;
+                    }
+
+                    // 使用 GETTABLE 获取值，并将结果覆盖到当前对象槽位
+                    TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE),
+                                                                       (TUInt16)currentSlot, (TUInt16)currentSlot,
+                                                                       (TUInt16)keySlot);
                     emit_instruction(cs, getTableInst);
-                    
-                    // 释放临时栈槽
-                    cs->stackSlotCount -= 2;  // keySlot 和 currentSlot
-                    currentSlot = resultSlot;
+                    if (pendingReceiverSlot == (TUInt32)-1) {
+                        collapse_stack_to_slot(cs, currentSlot);
+                    }
+                }
+
+                if (!isStaticMember) {
+                    rootTypeName = ZR_NULL;
                 }
             } else if (member->type == ZR_AST_FUNCTION_CALL) {
                 // 函数调用：obj.method(args)
@@ -1723,37 +1955,41 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                 }
                 
                 // 编译参数
+                TUInt32 argCount = 0;
+                TUInt32 argBaseSlot = currentSlot + 1;
+                if (pendingReceiverSlot != (TUInt32)-1) {
+                    argCount = 1;
+                    argBaseSlot = pendingReceiverSlot + 1;
+                }
+
                 if (argsToCompile != ZR_NULL) {
                     for (TZrSize j = 0; j < argsToCompile->count; j++) {
                         SZrAstNode *arg = argsToCompile->nodes[j];
                         if (arg != ZR_NULL) {
-                            compile_expression(cs, arg);
-                            if (cs->hasError) {
+                            TUInt32 argSlot =
+                                    compile_expression_into_slot(cs, arg, argBaseSlot + (TUInt32)j);
+                            if (argSlot == (TUInt32)-1 || cs->hasError) {
                                 break;
                             }
                         }
                     }
+                    argCount += (TUInt32)argsToCompile->count;
                 }
                 
                 // 生成函数调用指令
                 // 检测尾调用：如果在尾调用上下文中，使用FUNCTION_TAIL_CALL
-                TUInt32 argCount = (argsToCompile != ZR_NULL) ? (TUInt32)argsToCompile->count : 0;
-                
                 // 函数调用指令格式：
                 // FUNCTION_CALL/FUNCTION_TAIL_CALL: operandExtra = resultSlot, operand1[0] = functionSlot, operand1[1] = argCount
                 // 函数值应该在 functionSlot，参数应该在 functionSlot+1 到 functionSlot+argCount
                 // 但是，由于参数是后编译的，它们会在 currentSlot 之后
                 // 所以需要调整：函数值在 currentSlot，参数在 currentSlot+1 到 currentSlot+argCount
-                TUInt32 resultSlot = allocate_stack_slot(cs);
                 EZrInstructionCode callOpcode = cs->isInTailCallContext ? 
                     ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) : ZR_INSTRUCTION_ENUM(FUNCTION_CALL);
-                TZrInstruction callInst = create_instruction_2(callOpcode, (TUInt16)resultSlot, (TUInt16)currentSlot, (TUInt16)argCount);
+                TZrInstruction callInst = create_instruction_2(callOpcode, (TUInt16)currentSlot, (TUInt16)currentSlot, (TUInt16)argCount);
                 emit_instruction(cs, callInst);
-                
-                // 释放参数栈槽和函数槽
-                // 注意：FUNCTION_CALL 指令会消耗函数值和所有参数，所以需要释放这些栈槽
-                cs->stackSlotCount -= (argCount + 1);  // 参数 + 函数
-                currentSlot = resultSlot;
+                collapse_stack_to_slot(cs, currentSlot);
+                pendingReceiverSlot = (TUInt32)-1;
+                rootTypeName = ZR_NULL;
                 
                 // 如果使用了重新排列的参数数组，释放它
                 if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
@@ -1919,6 +2155,10 @@ static void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
+    TZrSize oldInstructionLength = cs->instructions.length;
+    TZrSize oldLocalVarLength = cs->localVars.length;
+    TZrSize oldConstantLength = cs->constants.length;
+    TZrSize oldClosureVarLength = cs->closureVars.length;
     
     // 创建新的函数对象
     cs->currentFunction = ZrFunctionNew(cs->state);
@@ -2084,27 +2324,6 @@ static void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     // 设置函数名（lambda 表达式是匿名函数，所以为 ZR_NULL）
     newFunc->functionName = ZR_NULL;
     
-    // 将新函数添加到子函数列表
-    if (oldFunction != ZR_NULL) {
-        ZrArrayPush(cs->state, &cs->childFunctions, &newFunc);
-    }
-    
-    // 4. 生成 CREATE_CLOSURE 指令（在恢复状态之前）
-    // 将函数对象添加到常量池，然后生成 CREATE_CLOSURE 指令
-    // TODO: 注意：这里简化处理，直接将函数对象作为常量
-    // 完整的闭包处理已实现：通过 analyze_external_variables 分析外部变量并捕获
-    SZrTypeValue funcValue;
-    ZrValueInitAsRawObject(cs->state, &funcValue, ZR_CAST_RAW_OBJECT_AS_SUPER(newFunc));
-    // 函数对象在 VM 中通常作为 CLOSURE 类型处理
-    funcValue.type = ZR_VALUE_TYPE_CLOSURE;
-    TUInt32 funcConstantIndex = add_constant(cs, &funcValue);
-    
-    // 分配目标槽位
-    TUInt32 destSlot = allocate_stack_slot(cs);
-    
-    // 保存闭包变量数量（在恢复状态之前）
-    TUInt32 closureVarCount = (TUInt32)newFunc->closureValueLength;
-    
     // 恢复旧的编译器状态
     cs->currentFunction = oldFunction;
     cs->instructionCount = oldInstructionCount;
@@ -2112,10 +2331,27 @@ static void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
-    
-    // 生成 CREATE_CLOSURE 指令
+    cs->instructions.length = oldInstructionLength;
+    cs->localVars.length = oldLocalVarLength;
+    cs->constants.length = oldConstantLength;
+    cs->closureVars.length = oldClosureVarLength;
+
+    // 4. 在父函数上下文中生成 CREATE_CLOSURE。
+    // Lambda 运行时值属于外层函数，常量索引和结果槽也必须从外层函数分配。
+    SZrTypeValue funcValue;
+    ZrValueInitAsRawObject(cs->state, &funcValue, ZR_CAST_RAW_OBJECT_AS_SUPER(newFunc));
+    funcValue.type = ZR_VALUE_TYPE_CLOSURE;
+
+    TUInt32 funcConstantIndex = add_constant(cs, &funcValue);
+    TUInt32 destSlot = allocate_stack_slot(cs);
+    TUInt32 closureVarCount = (TUInt32)newFunc->closureValueLength;
+
     // CREATE_CLOSURE 的格式: operandExtra = destSlot, operand1[0] = functionConstantIndex, operand1[1] = closureVarCount
-    TZrInstruction createClosureInst = create_instruction_2(ZR_INSTRUCTION_ENUM(CREATE_CLOSURE), (TUInt16)destSlot, (TUInt16)funcConstantIndex, (TUInt16)closureVarCount);
+    TZrInstruction createClosureInst = create_instruction_2(
+            ZR_INSTRUCTION_ENUM(CREATE_CLOSURE),
+            (TUInt16)destSlot,
+            (TUInt16)funcConstantIndex,
+            (TUInt16)closureVarCount);
     emit_instruction(cs, createClosureInst);
 }
 
@@ -2599,4 +2835,3 @@ void compile_expression(SZrCompilerState *cs, SZrAstNode *node) {
             break;
     }
 }
-

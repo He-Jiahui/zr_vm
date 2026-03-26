@@ -1,0 +1,6 @@
+{
+  "name": "import_basic",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

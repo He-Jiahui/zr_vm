@@ -1,0 +1,3 @@
+pub var greet = () => {
+    return "hello from import";
+};

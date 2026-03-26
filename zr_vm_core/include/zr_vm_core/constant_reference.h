@@ -19,7 +19,8 @@ struct SZrObjectModule;
 // 布局：SZrCompiledPrototypeInfo(24字节) + [inheritsCount * 4字节] + [membersCount * SZrCompiledMemberInfo(44字节)]
 
 // 编译时prototype信息结构（序列化格式头部）
-// 注意：结构体大小必须是4字节对齐，实际大小为20字节（5个TUInt32）
+// 这是磁盘/内存共享的二进制协议，必须显式禁止编译器填充。
+#pragma pack(push, 1)
 typedef struct SZrCompiledPrototypeInfo {
     TUInt32 nameStringIndex;              // 类型名称字符串在常量池中的索引
     TUInt32 type;                         // EZrObjectPrototypeType
@@ -38,6 +39,7 @@ typedef struct SZrCompiledMemberInfo {
     TUInt32 nameStringIndex;              // 成员名称字符串在常量池中的索引（如果为0表示无名）
     TUInt32 accessModifier;               // EZrAccessModifier
     TUInt32 isStatic;                     // TBool (0或1)
+    TUInt32 isConst;                      // TBool (0或1)
     
     // 字段特定信息（仅当memberType为STRUCT_FIELD或CLASS_FIELD时有效）
     TUInt32 fieldTypeNameStringIndex;     // 字段类型名称字符串索引（如果为0表示无类型名）
@@ -51,6 +53,7 @@ typedef struct SZrCompiledMemberInfo {
     TUInt32 parameterCount;               // 参数数量
     TUInt32 returnTypeNameStringIndex;    // 返回类型名称字符串索引（如果为0表示无返回类型名）
 } SZrCompiledMemberInfo;
+#pragma pack(pop)
 
 // 常量引用路径结构（从parser模块引用）
 typedef struct SZrConstantReferencePath {

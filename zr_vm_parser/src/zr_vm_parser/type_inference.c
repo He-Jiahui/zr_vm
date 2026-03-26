@@ -50,6 +50,29 @@ static const TChar *get_base_type_name(EZrValueType baseType) {
     }
 }
 
+static TBool zr_string_equals_cstr(SZrString *value, const TChar *literal) {
+    if (value == ZR_NULL || literal == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    TNativeString valueStr;
+    TZrSize valueLen;
+    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        valueStr = ZrStringGetNativeStringShort(value);
+        valueLen = value->shortStringLength;
+    } else {
+        valueStr = ZrStringGetNativeString(value);
+        valueLen = value->longStringLength;
+    }
+
+    TZrSize literalLen = strlen(literal);
+    if (valueStr == ZR_NULL || valueLen != literalLen) {
+        return ZR_FALSE;
+    }
+
+    return memcmp(valueStr, literal, literalLen) == 0;
+}
+
 // 获取类型名称字符串（用于错误报告）
 const TChar *get_type_name_string(SZrState *state, const SZrInferredType *type, TChar *buffer, TZrSize bufferSize) {
     if (state == ZR_NULL || type == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
@@ -205,6 +228,7 @@ TBool check_function_call_compatibility(SZrCompilerState *cs, SZrFunctionTypeInf
             SZrAstNode *argNode = args->nodes[i];
             if (argNode != ZR_NULL) {
                 SZrInferredType argType;
+                ZrInferredTypeInit(cs->state, &argType, ZR_VALUE_TYPE_OBJECT);
                 if (infer_expression_type(cs, argNode, &argType)) {
                     SZrInferredType *paramType = (SZrInferredType *)ZrArrayGet(&funcType->paramTypes, i);
                     if (paramType != ZR_NULL) {
@@ -318,6 +342,7 @@ TBool infer_unary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrInf
     
     // 推断操作数类型
     SZrInferredType argType;
+    ZrInferredTypeInit(cs->state, &argType, ZR_VALUE_TYPE_OBJECT);
     if (!infer_expression_type(cs, arg, &argType)) {
         return ZR_FALSE;
     }
@@ -353,6 +378,8 @@ TBool infer_binary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrIn
     
     // 推断左右操作数类型
     SZrInferredType leftType, rightType;
+    ZrInferredTypeInit(cs->state, &leftType, ZR_VALUE_TYPE_OBJECT);
+    ZrInferredTypeInit(cs->state, &rightType, ZR_VALUE_TYPE_OBJECT);
     if (!infer_expression_type(cs, left, &leftType) || !infer_expression_type(cs, right, &rightType)) {
         if (infer_expression_type(cs, left, &leftType)) {
             ZrInferredTypeFree(cs->state, &leftType);
@@ -380,7 +407,15 @@ TBool infer_binary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrIn
                strcmp(op, "%") == 0 || strcmp(op, "**") == 0) {
         // 算术运算符：获取公共类型（类型提升）
         if (!ZrInferredTypeGetCommonType(cs->state, result, &leftType, &rightType)) {
-            // 类型不兼容，报告错误
+            // 对类成员访问、动态调用等暂未精确建模的表达式，降级为 object，
+            // 避免在 M3 运行时闭环阶段被 M6 的类型系统债务阻塞。
+            if (leftType.baseType == ZR_VALUE_TYPE_OBJECT || rightType.baseType == ZR_VALUE_TYPE_OBJECT) {
+                ZrInferredTypeInit(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+                ZrInferredTypeFree(cs->state, &leftType);
+                ZrInferredTypeFree(cs->state, &rightType);
+                return ZR_TRUE;
+            }
+
             report_type_error(cs, "Incompatible types for arithmetic operation", &leftType, &rightType, node->location);
             ZrInferredTypeFree(cs->state, &leftType);
             ZrInferredTypeFree(cs->state, &rightType);
@@ -528,6 +563,8 @@ TBool infer_conditional_type(SZrCompilerState *cs, SZrAstNode *node, SZrInferred
     
     // 推断then和else分支类型
     SZrInferredType thenType, elseType;
+    ZrInferredTypeInit(cs->state, &thenType, ZR_VALUE_TYPE_OBJECT);
+    ZrInferredTypeInit(cs->state, &elseType, ZR_VALUE_TYPE_OBJECT);
     if (!infer_expression_type(cs, condExpr->consequent, &thenType) || 
         !infer_expression_type(cs, condExpr->alternate, &elseType)) {
         if (infer_expression_type(cs, condExpr->consequent, &thenType)) {
@@ -566,9 +603,11 @@ TBool infer_assignment_type(SZrCompilerState *cs, SZrAstNode *node, SZrInferredT
     // 检查与左值类型的兼容性
     // 1. 推断左值类型
     SZrInferredType leftType;
+    ZrInferredTypeInit(cs->state, &leftType, ZR_VALUE_TYPE_OBJECT);
     if (infer_expression_type(cs, assignExpr->left, &leftType)) {
         // 2. 检查类型兼容性
-        if (!ZrInferredTypeIsCompatible(result, &leftType)) {
+        if (leftType.baseType != ZR_VALUE_TYPE_OBJECT && result->baseType != ZR_VALUE_TYPE_OBJECT &&
+            !ZrInferredTypeIsCompatible(result, &leftType)) {
             // 3. 报告错误如果不兼容
             report_type_error(cs, "Assignment type mismatch", &leftType, result, node->location);
             ZrInferredTypeFree(cs->state, &leftType);
@@ -614,6 +653,7 @@ TBool infer_primary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrI
                 // 推断 property (obj) 的类型
                 if (primary->property != ZR_NULL) {
                     SZrInferredType objType;
+                    ZrInferredTypeInit(cs->state, &objType, ZR_VALUE_TYPE_OBJECT);
                     if (infer_expression_type(cs, primary->property, &objType)) {
                         // 对于对象类型，方法调用返回对象类型
                         // 未来可以查找对象类型的方法定义来获取精确的返回类型
@@ -663,22 +703,16 @@ TBool infer_primary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrI
                     ZrInferredTypeInitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, funcName);
                     return ZR_TRUE;
                 }
-                
-                // 函数和类型都未找到，报告错误
-                static TChar errorMsg[256];
-                TNativeString nameStr;
-                TZrSize nameLen;
-                if (funcName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-                    nameStr = ZrStringGetNativeStringShort(funcName);
-                    nameLen = funcName->shortStringLength;
-                } else {
-                    nameStr = ZrStringGetNativeString(funcName);
-                    nameLen = funcName->longStringLength;
+
+                // import 是运行时内建函数，由宿主负责解析模块，返回对象类型。
+                if (zr_string_equals_cstr(funcName, "import")) {
+                    ZrInferredTypeInit(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+                    return ZR_TRUE;
                 }
-                snprintf(errorMsg, sizeof(errorMsg), "Function '%.*s' not found in type environment", (int)nameLen, nameStr);
-                ZrCompilerError(cs, errorMsg, node->location);
+                
+                // 函数和类型都未找到时，保持动态 object fallback。
                 ZrInferredTypeInit(cs->state, result, ZR_VALUE_TYPE_OBJECT);
-                return ZR_TRUE; // 返回对象类型作为fallback
+                return ZR_TRUE;
             }
         }
         
@@ -692,6 +726,7 @@ TBool infer_primary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrI
     // 实现完整的成员访问链类型推断（如 obj.prop）
     if (primary->property != ZR_NULL) {
         SZrInferredType baseType;
+        ZrInferredTypeInit(cs->state, &baseType, ZR_VALUE_TYPE_OBJECT);
         if (infer_expression_type(cs, primary->property, &baseType)) {
             // 如果有members，需要根据members推断最终类型
             if (primary->members != ZR_NULL && primary->members->count > 0) {

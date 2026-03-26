@@ -25,6 +25,7 @@ struct ZR_STRUCT_ALIGN SZrIo {
     TBytePtr pointer;
     TZrPtr customData;
     FZrIoClose close;
+    TBool isBinary;
 };
 
 typedef struct SZrIo SZrIo;
@@ -63,11 +64,21 @@ typedef struct SZrIoFunctionLocalVariable SZrIoFunctionLocalVariable;
 struct SZrIoFunctionConstantVariable {
     EZrValueType type;
     TZrPureValue value;
+    TBool hasFunctionValue;
+    struct SZrIoFunction *functionValue;
     TUInt64 startLine; // debug
     TUInt64 endLine; // debug
 };
 
 typedef struct SZrIoFunctionConstantVariable SZrIoFunctionConstantVariable;
+
+struct SZrIoFunctionExportedVariable {
+    struct SZrString *name;
+    TUInt32 stackSlot;
+    TUInt8 accessModifier;
+};
+
+typedef struct SZrIoFunctionExportedVariable SZrIoFunctionExportedVariable;
 
 struct SZrIoFunction;
 
@@ -118,12 +129,15 @@ struct SZrIoFunction {
     TUInt64 endLine;
     TZrSize parametersLength;
     TUInt64 hasVarArgs;
+    TUInt32 stackSize;
     TZrSize instructionsLength;
     TZrInstruction *instructions;
     TZrSize localVariablesLength;
     SZrIoFunctionLocalVariable *localVariables;
     TZrSize constantVariablesLength;
     SZrIoFunctionConstantVariable *constantVariables;
+    TZrSize exportedVariablesLength;
+    SZrIoFunctionExportedVariable *exportedVariables;
     TZrSize prototypesLength;                // prototype 数量
     SZrIoClass *classes;                      // class prototype 数组（如果 type 是 CLASS）
     SZrIoStruct *structs;                     // struct prototype 数组（如果 type 是 STRUCT）

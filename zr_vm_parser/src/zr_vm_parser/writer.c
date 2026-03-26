@@ -267,6 +267,314 @@ static void write_prototype_struct(SZrState *state, FILE *file, const SZrCompile
     }
 }
 
+static TBool write_io_function(SZrState *state, FILE *file, SZrFunction *function, const TChar *defaultName);
+
+static void write_function_name(SZrState *state, FILE *file, SZrFunction *function, const TChar *defaultName) {
+    if (function != ZR_NULL && function->functionName != ZR_NULL) {
+        write_string_with_length(state, file, function->functionName);
+        return;
+    }
+
+    if (defaultName != ZR_NULL) {
+        SZrString *fallbackName = ZrStringCreate(state, defaultName, strlen(defaultName));
+        write_string_with_length(state, file, fallbackName);
+        return;
+    }
+
+    write_string_with_length(state, file, ZR_NULL);
+}
+
+static void write_function_local_variables(FILE *file, SZrFunction *function) {
+    TUInt64 localLength = function->localVariableLength;
+    fwrite(&localLength, sizeof(TUInt64), 1, file);
+
+    for (TUInt64 i = 0; i < localLength; i++) {
+        SZrFunctionLocalVariable *local = &function->localVariableList[i];
+        TUInt64 instructionStart = local->offsetActivate;
+        TUInt64 instructionEnd = local->offsetDead;
+        TUInt64 startLineLocal = 0;
+        TUInt64 endLineLocal = 0;
+        if (function->executionLocationInfoList != ZR_NULL && function->executionLocationInfoLength > 0) {
+            for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+                SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
+                if (locInfo->currentInstructionOffset == instructionStart) {
+                    startLineLocal = locInfo->lineInSource;
+                    break;
+                }
+            }
+            for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+                SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
+                if (locInfo->currentInstructionOffset == instructionEnd) {
+                    endLineLocal = locInfo->lineInSource;
+                    break;
+                }
+            }
+            if (startLineLocal == 0) {
+                for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+                    SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
+                    if (locInfo->currentInstructionOffset <= instructionStart) {
+                        startLineLocal = locInfo->lineInSource;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if (endLineLocal == 0) {
+                for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+                    SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
+                    if (locInfo->currentInstructionOffset <= instructionEnd) {
+                        endLineLocal = locInfo->lineInSource;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        fwrite(&instructionStart, sizeof(TUInt64), 1, file);
+        fwrite(&instructionEnd, sizeof(TUInt64), 1, file);
+        fwrite(&startLineLocal, sizeof(TUInt64), 1, file);
+        fwrite(&endLineLocal, sizeof(TUInt64), 1, file);
+    }
+}
+
+static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *constant) {
+    TUInt32 type = (TUInt32) constant->type;
+    fwrite(&type, sizeof(TUInt32), 1, file);
+
+    switch (constant->type) {
+        case ZR_VALUE_TYPE_NULL:
+            break;
+        case ZR_VALUE_TYPE_BOOL: {
+            TUInt8 boolValue = constant->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
+            fwrite(&boolValue, sizeof(TUInt8), 1, file);
+            break;
+        }
+        case ZR_VALUE_TYPE_INT8:
+        case ZR_VALUE_TYPE_INT16:
+        case ZR_VALUE_TYPE_INT32:
+        case ZR_VALUE_TYPE_INT64:
+            fwrite(&constant->value, sizeof(TInt64), 1, file);
+            break;
+        case ZR_VALUE_TYPE_FLOAT:
+        case ZR_VALUE_TYPE_DOUBLE:
+            fwrite(&constant->value, sizeof(TDouble), 1, file);
+            break;
+        case ZR_VALUE_TYPE_STRING: {
+            SZrString *str = ZR_NULL;
+            if (constant->value.object != ZR_NULL) {
+                SZrRawObject *rawObj = constant->value.object;
+                if (rawObj->type == ZR_RAW_OBJECT_TYPE_STRING) {
+                    str = ZR_CAST_STRING(state, rawObj);
+                }
+            }
+            write_string_with_length(state, file, str);
+            break;
+        }
+        case ZR_VALUE_TYPE_FUNCTION:
+        case ZR_VALUE_TYPE_CLOSURE: {
+            TBool hasFunctionValue = ZR_FALSE;
+            SZrFunction *functionValue = ZR_NULL;
+            if (constant->value.object != ZR_NULL) {
+                SZrRawObject *rawObj = constant->value.object;
+                if (rawObj->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+                    functionValue = ZR_CAST(SZrFunction *, rawObj);
+                    hasFunctionValue = ZR_TRUE;
+                }
+            }
+            fwrite(&hasFunctionValue, sizeof(TBool), 1, file);
+            if (hasFunctionValue) {
+                write_io_function(state, file, functionValue, ZR_NULL);
+            }
+            break;
+        }
+        default:
+            break;
+    }
+
+    {
+        TUInt64 startLineConst = 0;
+        TUInt64 endLineConst = 0;
+        fwrite(&startLineConst, sizeof(TUInt64), 1, file);
+        fwrite(&endLineConst, sizeof(TUInt64), 1, file);
+    }
+}
+
+static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *function) {
+    TUInt64 prototypesLength = 0;
+    TUInt64 classCount = 0;
+    TUInt64 structCount = 0;
+
+    if (function->prototypeData != ZR_NULL && function->prototypeCount > 0) {
+        prototypesLength = function->prototypeCount;
+
+        const TByte *prototypeData = function->prototypeData + sizeof(TUInt32);
+        TZrSize remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
+        const TByte *currentPos = prototypeData;
+
+        for (TUInt32 i = 0; i < prototypesLength; i++) {
+            if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
+                break;
+            }
+
+            const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *) currentPos;
+            TUInt32 inheritsCount = protoInfo->inheritsCount;
+            TUInt32 membersCount = protoInfo->membersCount;
+            TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) +
+                                           inheritsCount * sizeof(TUInt32) +
+                                           membersCount * sizeof(SZrCompiledMemberInfo);
+            if (remainingDataSize < currentPrototypeSize) {
+                break;
+            }
+
+            if (protoInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+                classCount++;
+            } else if (protoInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+                structCount++;
+            }
+
+            currentPos += currentPrototypeSize;
+            remainingDataSize -= currentPrototypeSize;
+        }
+    }
+
+    fwrite(&prototypesLength, sizeof(TUInt64), 1, file);
+
+    if (prototypesLength == 0 || function->prototypeData == ZR_NULL || function->prototypeDataLength == 0) {
+        TUInt64 zero = 0;
+        fwrite(&zero, sizeof(TUInt64), 1, file);
+        fwrite(&zero, sizeof(TUInt64), 1, file);
+        return;
+    }
+
+    {
+        const TByte *prototypeData = function->prototypeData + sizeof(TUInt32);
+        TZrSize remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
+        const TByte *currentPos = prototypeData;
+
+        fwrite(&classCount, sizeof(TUInt64), 1, file);
+        if (classCount > 0) {
+            for (TUInt32 i = 0; i < prototypesLength; i++) {
+                if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
+                    break;
+                }
+
+                const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *) currentPos;
+                TUInt32 inheritsCount = protoInfo->inheritsCount;
+                TUInt32 membersCount = protoInfo->membersCount;
+                TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) +
+                                               inheritsCount * sizeof(TUInt32) +
+                                               membersCount * sizeof(SZrCompiledMemberInfo);
+                if (remainingDataSize < currentPrototypeSize) {
+                    break;
+                }
+
+                if (protoInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+                    write_prototype_class(state, file, protoInfo, currentPos, function);
+                }
+
+                currentPos += currentPrototypeSize;
+                remainingDataSize -= currentPrototypeSize;
+            }
+        }
+
+        currentPos = prototypeData;
+        remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
+        fwrite(&structCount, sizeof(TUInt64), 1, file);
+        if (structCount > 0) {
+            for (TUInt32 i = 0; i < prototypesLength; i++) {
+                if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
+                    break;
+                }
+
+                const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *) currentPos;
+                TUInt32 inheritsCount = protoInfo->inheritsCount;
+                TUInt32 membersCount = protoInfo->membersCount;
+                TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) +
+                                               inheritsCount * sizeof(TUInt32) +
+                                               membersCount * sizeof(SZrCompiledMemberInfo);
+                if (remainingDataSize < currentPrototypeSize) {
+                    break;
+                }
+
+                if (protoInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+                    write_prototype_struct(state, file, protoInfo, currentPos, function);
+                }
+
+                currentPos += currentPrototypeSize;
+                remainingDataSize -= currentPrototypeSize;
+            }
+        }
+    }
+}
+
+static TBool write_io_function(SZrState *state, FILE *file, SZrFunction *function, const TChar *defaultName) {
+    if (state == ZR_NULL || file == ZR_NULL || function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    write_function_name(state, file, function, defaultName);
+
+    {
+        TUInt64 startLine = function->lineInSourceStart;
+        TUInt64 endLine = function->lineInSourceEnd;
+        TUInt64 parametersLength = function->parameterCount;
+        TUInt64 hasVarArgs = function->hasVariableArguments ? ZR_TRUE : ZR_FALSE;
+        TUInt32 stackSize = function->stackSize;
+        TUInt64 instructionsLength = function->instructionsLength;
+
+        fwrite(&startLine, sizeof(TUInt64), 1, file);
+        fwrite(&endLine, sizeof(TUInt64), 1, file);
+        fwrite(&parametersLength, sizeof(TUInt64), 1, file);
+        fwrite(&hasVarArgs, sizeof(TUInt64), 1, file);
+        fwrite(&stackSize, sizeof(TUInt32), 1, file);
+        fwrite(&instructionsLength, sizeof(TUInt64), 1, file);
+
+        for (TUInt64 i = 0; i < instructionsLength; i++) {
+            TUInt64 rawValue = function->instructionsList[i].value;
+            fwrite(&rawValue, sizeof(TUInt64), 1, file);
+        }
+    }
+
+    write_function_local_variables(file, function);
+
+    {
+        TUInt64 constantsLength = function->constantValueLength;
+        fwrite(&constantsLength, sizeof(TUInt64), 1, file);
+        for (TUInt64 i = 0; i < constantsLength; i++) {
+            write_function_constant(file, state, &function->constantValueList[i]);
+        }
+    }
+
+    {
+        TUInt64 exportedVariablesLength = function->exportedVariableLength;
+        fwrite(&exportedVariablesLength, sizeof(TUInt64), 1, file);
+        for (TUInt64 i = 0; i < exportedVariablesLength; i++) {
+            struct SZrFunctionExportedVariable *exported = &function->exportedVariables[i];
+            write_string_with_length(state, file, exported->name);
+            fwrite(&exported->stackSlot, sizeof(TUInt32), 1, file);
+            fwrite(&exported->accessModifier, sizeof(TUInt8), 1, file);
+        }
+    }
+
+    write_function_prototypes(state, file, function);
+
+    {
+        TUInt64 closuresLength = function->childFunctionLength;
+        fwrite(&closuresLength, sizeof(TUInt64), 1, file);
+        for (TUInt64 i = 0; i < closuresLength; i++) {
+            write_io_function(state, file, &function->childFunctionList[i], ZR_NULL);
+        }
+    }
+
+    {
+        TUInt64 debugInfoLength = 0;
+        fwrite(&debugInfoLength, sizeof(TUInt64), 1, file);
+    }
+
+    return ZR_TRUE;
+}
+
 // 写入二进制文件 (.zro)
 ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *function, const TChar *filename) {
     if (state == ZR_NULL || function == ZR_NULL || filename == ZR_NULL) {
@@ -348,303 +656,7 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
     fwrite(&declaresLength, sizeof(TUInt64), 1, file);
     
     // MODULE: ENTRY [.FUNCTION]
-    // FUNCTION: NAME [string]
-    // 使用函数对象中的 functionName，如果不存在则使用默认名称
-    SZrString *funcName = function->functionName;
-    if (funcName == ZR_NULL) {
-        funcName = ZrStringCreate(state, "__entry", 7);
-    }
-    TZrSize funcNameLength = (funcName->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? 
-                              (TZrSize)funcName->shortStringLength : 
-                              funcName->longStringLength;
-    fwrite(&funcNameLength, sizeof(TZrSize), 1, file);
-    TNativeString funcNameStr = ZrStringGetNativeString(funcName);
-    fwrite(funcNameStr, sizeof(TChar), funcNameLength, file);
-    
-    // FUNCTION: START_LINE (8 bytes)
-    TUInt64 startLine = function->lineInSourceStart;
-    fwrite(&startLine, sizeof(TUInt64), 1, file);
-    
-    // FUNCTION: END_LINE (8 bytes)
-    TUInt64 endLine = function->lineInSourceEnd;
-    fwrite(&endLine, sizeof(TUInt64), 1, file);
-    
-    // FUNCTION: PARAMETERS_LENGTH (8 bytes)
-    TUInt64 parametersLength = function->parameterCount;
-    fwrite(&parametersLength, sizeof(TUInt64), 1, file);
-    
-    // FUNCTION: HAS_VAR_ARGS (8 bytes)
-    TUInt64 hasVarArgs = function->hasVariableArguments ? ZR_TRUE : ZR_FALSE;
-    fwrite(&hasVarArgs, sizeof(TUInt64), 1, file);
-    
-    // FUNCTION: INSTRUCTIONS_LENGTH (8 bytes)
-    TUInt64 instructionsLength = function->instructionsLength;
-    fwrite(&instructionsLength, sizeof(TUInt64), 1, file);
-    
-    // FUNCTION: INSTRUCTIONS [.INSTRUCTION]
-    for (TUInt64 i = 0; i < instructionsLength; i++) {
-        TZrInstruction *inst = &function->instructionsList[i];
-        TUInt64 rawValue = inst->value;
-        fwrite(&rawValue, sizeof(TUInt64), 1, file);
-    }
-    
-    // FUNCTION: LOCAL_LENGTH (8 bytes)
-    TUInt64 localLength = function->localVariableLength;
-    fwrite(&localLength, sizeof(TUInt64), 1, file);
-    
-    // FUNCTION: LOCALS [.LOCAL]
-    for (TUInt64 i = 0; i < localLength; i++) {
-        SZrFunctionLocalVariable *local = &function->localVariableList[i];
-        TUInt64 instructionStart = local->offsetActivate;
-        TUInt64 instructionEnd = local->offsetDead;
-        // 从调试信息获取行号
-        // executionLocationInfoList存储了指令索引到行号的映射
-        TUInt64 startLineLocal = 0;
-        TUInt64 endLineLocal = 0;
-        if (function->executionLocationInfoList != ZR_NULL && function->executionLocationInfoLength > 0) {
-            // 查找instructionStart对应的行号
-            for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
-                SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
-                if (locInfo->currentInstructionOffset == instructionStart) {
-                    startLineLocal = locInfo->lineInSource;
-                    break;
-                }
-            }
-            // 查找instructionEnd对应的行号
-            for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
-                SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
-                if (locInfo->currentInstructionOffset == instructionEnd) {
-                    endLineLocal = locInfo->lineInSource;
-                    break;
-                }
-            }
-            // 如果未找到精确匹配，使用最接近的行号
-            if (startLineLocal == 0 && function->executionLocationInfoLength > 0) {
-                // 查找小于等于instructionStart的最大currentInstructionOffset
-                for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
-                    SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
-                    if (locInfo->currentInstructionOffset <= instructionStart) {
-                        startLineLocal = locInfo->lineInSource;
-                    } else {
-                        break;
-                    }
-                }
-            }
-            if (endLineLocal == 0 && function->executionLocationInfoLength > 0) {
-                // 查找小于等于instructionEnd的最大currentInstructionOffset
-                for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
-                    SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
-                    if (locInfo->currentInstructionOffset <= instructionEnd) {
-                        endLineLocal = locInfo->lineInSource;
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-        fwrite(&instructionStart, sizeof(TUInt64), 1, file);
-        fwrite(&instructionEnd, sizeof(TUInt64), 1, file);
-        fwrite(&startLineLocal, sizeof(TUInt64), 1, file);
-        fwrite(&endLineLocal, sizeof(TUInt64), 1, file);
-    }
-    
-    // FUNCTION: CONSTANTS_LENGTH (8 bytes)
-    TUInt64 constantsLength = function->constantValueLength;
-    fwrite(&constantsLength, sizeof(TUInt64), 1, file);
-    
-    // FUNCTION: CONSTANTS [.CONSTANT]
-    for (TUInt64 i = 0; i < constantsLength; i++) {
-        SZrTypeValue *constant = &function->constantValueList[i];
-        TUInt32 type = (TUInt32)constant->type;
-        fwrite(&type, sizeof(TUInt32), 1, file);
-        
-        // 写入值（根据类型）
-        switch (constant->type) {
-            case ZR_VALUE_TYPE_NULL:
-                // 无数据
-                break;
-            case ZR_VALUE_TYPE_BOOL:
-            case ZR_VALUE_TYPE_INT8:
-            case ZR_VALUE_TYPE_INT16:
-            case ZR_VALUE_TYPE_INT32:
-            case ZR_VALUE_TYPE_INT64:
-                fwrite(&constant->value, sizeof(TInt64), 1, file);
-                break;
-            case ZR_VALUE_TYPE_FLOAT:
-            case ZR_VALUE_TYPE_DOUBLE:
-                fwrite(&constant->value, sizeof(TDouble), 1, file);
-                break;
-            case ZR_VALUE_TYPE_STRING: {
-                // 检查 object 是否为 NULL 或类型不匹配
-                if (constant->value.object == ZR_NULL) {
-                    // 空字符串
-                    TZrSize strLength = 0;
-                    fwrite(&strLength, sizeof(TZrSize), 1, file);
-                } else {
-                    // 验证对象类型
-                    SZrRawObject *rawObj = constant->value.object;
-                    if (rawObj->type == ZR_VALUE_TYPE_STRING) {
-                        SZrString *str = ZR_CAST_STRING(state, rawObj);
-                        TZrSize strLength = (str->shortStringLength < ZR_VM_LONG_STRING_FLAG) ?
-                                             (TZrSize)str->shortStringLength : 
-                                             str->longStringLength;
-                        fwrite(&strLength, sizeof(TZrSize), 1, file);
-                        TNativeString strStr = ZrStringGetNativeString(str);
-                        fwrite(strStr, sizeof(TChar), strLength, file);
-                    } else {
-                        // 类型不匹配，写入空字符串
-                        TZrSize strLength = 0;
-                        fwrite(&strLength, sizeof(TZrSize), 1, file);
-                    }
-                }
-                break;
-            }
-            default:
-                // 其他类型暂不支持
-                break;
-        }
-        
-        // 从调试信息获取常量定义的行号
-        // 注意：常量通常没有直接的行号信息，这里使用0作为占位符
-        // 如果需要常量行号，需要在编译时记录常量的定义位置
-        TUInt64 startLineConst = 0;
-        TUInt64 endLineConst = 0;
-        // 常量行号信息可能需要从AST或其他编译时信息中获取
-        // TODO: 目前暂时使用0，未来可以扩展函数对象存储常量的行号信息
-        fwrite(&startLineConst, sizeof(TUInt64), 1, file);
-        fwrite(&endLineConst, sizeof(TUInt64), 1, file);
-    }
-    
-    // FUNCTION: PROTOTYPES_LENGTH (8 bytes) - prototype 数量
-    TUInt64 prototypesLength = 0;
-    TUInt64 classCount = 0;
-    TUInt64 structCount = 0;
-    
-    if (function->prototypeData != ZR_NULL && function->prototypeCount > 0) {
-        prototypesLength = function->prototypeCount;
-        
-        // 统计CLASS和STRUCT的数量
-        const TByte *prototypeData = function->prototypeData + sizeof(TUInt32);
-        TZrSize remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
-        const TByte *currentPos = prototypeData;
-        
-        for (TUInt32 i = 0; i < prototypesLength; i++) {
-            if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
-                break;
-            }
-            
-            const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *)currentPos;
-            TUInt32 type = protoInfo->type;
-            TUInt32 inheritsCount = protoInfo->inheritsCount;
-            TUInt32 membersCount = protoInfo->membersCount;
-            
-            TZrSize inheritArraySize = inheritsCount * sizeof(TUInt32);
-            TZrSize membersArraySize = membersCount * sizeof(SZrCompiledMemberInfo);
-            TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + membersArraySize;
-            
-            if (remainingDataSize < currentPrototypeSize) {
-                break;
-            }
-            
-            if (type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
-                classCount++;
-            } else if (type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
-                structCount++;
-            }
-            
-            currentPos += currentPrototypeSize;
-            remainingDataSize -= currentPrototypeSize;
-        }
-    }
-    
-    fwrite(&prototypesLength, sizeof(TUInt64), 1, file);
-    
-    // FUNCTION: PROTOTYPES - 写入结构化格式
-    // 先写入CLASS数组，再写入STRUCT数组
-    if (prototypesLength > 0 && function->prototypeData != ZR_NULL && function->prototypeDataLength > 0) {
-        const TByte *prototypeData = function->prototypeData + sizeof(TUInt32);
-        TZrSize remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
-        const TByte *currentPos = prototypeData;
-        
-        // 写入CLASS数组
-        fwrite(&classCount, sizeof(TUInt64), 1, file);
-        if (classCount > 0) {
-            for (TUInt32 i = 0; i < prototypesLength; i++) {
-                if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
-                    break;
-                }
-                
-                const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *)currentPos;
-                TUInt32 type = protoInfo->type;
-                TUInt32 inheritsCount = protoInfo->inheritsCount;
-                TUInt32 membersCount = protoInfo->membersCount;
-                
-                TZrSize inheritArraySize = inheritsCount * sizeof(TUInt32);
-                TZrSize membersArraySize = membersCount * sizeof(SZrCompiledMemberInfo);
-                TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + membersArraySize;
-                
-                if (remainingDataSize < currentPrototypeSize) {
-                    break;
-                }
-                
-                if (type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
-                    write_prototype_class(state, file, protoInfo, currentPos, function);
-                }
-                
-                currentPos += currentPrototypeSize;
-                remainingDataSize -= currentPrototypeSize;
-            }
-        }
-        
-        // 写入STRUCT数组
-        fwrite(&structCount, sizeof(TUInt64), 1, file);
-        if (structCount > 0) {
-            // 重新遍历以写入STRUCT
-            currentPos = prototypeData;
-            remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
-            
-            for (TUInt32 i = 0; i < prototypesLength; i++) {
-                if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
-                    break;
-                }
-                
-                const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *)currentPos;
-                TUInt32 type = protoInfo->type;
-                TUInt32 inheritsCount = protoInfo->inheritsCount;
-                TUInt32 membersCount = protoInfo->membersCount;
-                
-                TZrSize inheritArraySize = inheritsCount * sizeof(TUInt32);
-                TZrSize membersArraySize = membersCount * sizeof(SZrCompiledMemberInfo);
-                TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + membersArraySize;
-                
-                if (remainingDataSize < currentPrototypeSize) {
-                    break;
-                }
-                
-                if (type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
-                    write_prototype_struct(state, file, protoInfo, currentPos, function);
-                }
-                
-                currentPos += currentPrototypeSize;
-                remainingDataSize -= currentPrototypeSize;
-            }
-        }
-    } else {
-        // 没有prototype数据
-        TUInt64 zero = 0;
-        fwrite(&zero, sizeof(TUInt64), 1, file); // classCount = 0
-        fwrite(&zero, sizeof(TUInt64), 1, file); // structCount = 0
-    }
-    
-    // FUNCTION: CLOSURES_LENGTH (8 bytes)
-    TUInt64 closuresLength = function->childFunctionLength;
-    fwrite(&closuresLength, sizeof(TUInt64), 1, file);
-    
-    // FUNCTION: CLOSURES [.CLOSURE] (TODO: 递归写入子函数)
-    
-    // FUNCTION: DEBUG_INFO_LENGTH (8 bytes)
-    TUInt64 debugInfoLength = 0;
-    fwrite(&debugInfoLength, sizeof(TUInt64), 1, file);
+    write_io_function(state, file, function, "__entry");
     
     fclose(file);
     return ZR_TRUE;
@@ -1679,4 +1691,3 @@ ZR_PARSER_API TBool ZrWriterWriteSyntaxTreeFile(SZrState *state, SZrAstNode *ast
     fclose(file);
     return ZR_TRUE;
 }
-

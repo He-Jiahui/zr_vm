@@ -8,7 +8,7 @@
 #include "zr_vm_library/conf.h"
 
 
-#define ZR_LIBRARY_BINARY_FILE_EXT ".zrb"
+#define ZR_LIBRARY_BINARY_FILE_EXT ".zro"
 
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrString *file;
@@ -32,6 +32,8 @@ typedef struct SZrLibrary_Project SZrLibrary_Project;
 ZR_LIBRARY_API SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TNativeString raw, TNativeString file);
 
 ZR_LIBRARY_API void ZrLibrary_Project_Free(SZrState *state, SZrLibrary_Project *project);
+
+ZR_LIBRARY_API EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result);
 
 ZR_LIBRARY_API void ZrLibrary_Project_Do(SZrState *state);
 

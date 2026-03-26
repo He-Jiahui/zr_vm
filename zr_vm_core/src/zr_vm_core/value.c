@@ -148,7 +148,7 @@ SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset
         // is native function closure
         SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, functionBaseValue);
         return (closureIndex <= (TZrMemoryOffset) closure->closureValueCount)
-                       ? &closure->closureValuesExtend[closureIndex - 1]
+                       ? closure->closureValuesExtend[closureIndex - 1]
                        : &global->nullValue;
     }
     // no such closure or closure is lightweight function
@@ -250,24 +250,24 @@ SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
     if (!ZrValueCanValueToString(state, value)) {
         return ZR_NULL;
     }
-    
+
     // 优先查找并调用 TO_STRING 元方法
     SZrMeta *meta = ZrValueGetMeta(state, value, ZR_META_TO_STRING);
     if (meta != ZR_NULL && meta->function != ZR_NULL) {
         // 保存当前栈状态
         TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
         SZrCallInfo *savedCallInfo = state->callInfoList;
-        
+
         // 准备调用元方法：将 meta->function 和 self 放到栈上
         ZrFunctionCheckStackAndGc(state, 2, savedStackTop);
         TZrStackValuePointer base = savedStackTop;
         ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
         ZrStackCopyValue(state, base + 1, value);
         state->stackTop.valuePointer = base + 2;
-        
+
         // 调用元方法
         ZrFunctionCallWithoutYield(state, base, 1);
-        
+
         // 检查执行状态
         if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
             // 获取返回值
@@ -280,12 +280,12 @@ SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
                 return result;
             }
         }
-        
+
         // 恢复栈状态
         state->stackTop.valuePointer = savedStackTop;
         state->callInfoList = savedCallInfo;
     }
-    
+
     // 如果元方法不存在或调用失败，使用现有的直接转换逻辑作为后备
     EZrValueType type = value->type;
     switch (type) {
@@ -302,7 +302,7 @@ SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
             // 如果元方法调用失败，返回默认字符串
             SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
             char buffer[64];
-            snprintf(buffer, sizeof(buffer), "[object type=%d]", (int)object->internalType);
+            snprintf(buffer, sizeof(buffer), "[object type=%d]", (int) object->internalType);
             return ZrStringCreateFromNative(state, buffer);
         } break;
 
@@ -341,32 +341,32 @@ struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrM
 }
 
 // 调用指定值的元方法并返回结果
-TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType,
-                             SZrTypeValue *result, TZrSize argumentCount, ...) {
+TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType, SZrTypeValue *result,
+                            TZrSize argumentCount, ...) {
     if (state == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
     }
-    
+
     SZrMeta *meta = ZrValueGetMeta(state, value, metaType);
     if (meta == ZR_NULL || meta->function == ZR_NULL) {
         return ZR_FALSE;
     }
-    
+
     // 保存当前栈状态
     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
     SZrCallInfo *savedCallInfo = state->callInfoList;
-    
+
     // 准备调用元方法
     TZrStackValuePointer base = savedStackTop;
     TZrSize totalArgs = 1 + argumentCount; // self + 其他参数
     ZrFunctionCheckStackAndGc(state, totalArgs, base);
-    
+
     // 将 meta->function 放到栈上
     ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-    
+
     // 将 self 放到栈上
     ZrStackCopyValue(state, base + 1, value);
-    
+
     // 处理可变参数
     if (argumentCount > 0) {
         va_list args;
@@ -377,12 +377,12 @@ TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMeta
         }
         va_end(args);
     }
-    
+
     state->stackTop.valuePointer = base + 1 + totalArgs;
-    
+
     // 调用元方法
     ZrFunctionCallWithoutYield(state, base, 1);
-    
+
     // 检查执行状态
     TBool success = ZR_FALSE;
     if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
@@ -393,11 +393,11 @@ TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMeta
         }
         success = ZR_TRUE;
     }
-    
+
     // 恢复栈状态
     state->stackTop.valuePointer = savedStackTop;
     state->callInfoList = savedCallInfo;
-    
+
     return success;
 }
 
@@ -406,23 +406,23 @@ SZrString *ZrValueCallMetaToString(struct SZrState *state, SZrTypeValue *value) 
     if (state == ZR_NULL || value == ZR_NULL) {
         return ZR_NULL;
     }
-    
+
     SZrTypeValue result;
     TBool success = ZrValueCallMetaMethod(state, value, ZR_META_TO_STRING, &result, 0);
     if (success && result.type == ZR_VALUE_TYPE_STRING) {
         return ZR_CAST_STRING(state, result.value.object);
     }
-    
+
     return ZR_NULL;
 }
-
+#define MAX_DEBUG_BUFFER_SIZE 2048
 // 将值转换为调试字符串，包含详细信息（用于测试和调试）
 SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
     if (state == ZR_NULL || value == ZR_NULL) {
         return ZrStringCreateFromNative(state, "<null>");
     }
 
-    const TZrSize MAX_DEBUG_BUFFER_SIZE = 2048;
+
     const TZrSize MAX_ELEMENTS_TO_SHOW = 10;
     char buffer[MAX_DEBUG_BUFFER_SIZE];
     TZrSize offset = 0;
@@ -443,8 +443,7 @@ SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
                 }
             }
 
-            offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, 
-                             "<object type=%s>{", typeName);
+            offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "<object type=%s>{", typeName);
 
             // 遍历 nodeMap 获取字段（最多10个）
             TZrSize fieldCount = 0;
@@ -469,7 +468,8 @@ SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
                                 if (valueStr != ZR_NULL) {
                                     TNativeString valueNative = ZrStringGetNativeString(valueStr);
                                     if (valueNative != ZR_NULL) {
-                                        offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "%s", valueNative);
+                                        offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "%s",
+                                                           valueNative);
                                     }
                                 } else {
                                     offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "<?>");
@@ -489,7 +489,8 @@ SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
 
             // 只有当总数 >= 10 时才显示 count 信息
             if (totalFieldCount >= MAX_ELEMENTS_TO_SHOW) {
-                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, " | count = %lu}", (unsigned long)totalFieldCount);
+                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, " | count = %lu}",
+                                   (unsigned long) totalFieldCount);
             } else {
                 offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "}");
             }
@@ -538,7 +539,8 @@ SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
 
             // 只有当总数 >= 10 时才显示 count 信息
             if (totalElementCount >= MAX_ELEMENTS_TO_SHOW) {
-                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, " | count = %lu]", (unsigned long)totalElementCount);
+                offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, " | count = %lu]",
+                                   (unsigned long) totalElementCount);
             } else {
                 offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "]");
             }

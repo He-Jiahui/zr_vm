@@ -186,10 +186,11 @@ typedef struct SZrTypeMemberInfo {
     TUInt32 fieldOffset;                // 字段偏移量（编译时计算的基本偏移，运行时需要对齐）
     TUInt32 fieldSize;                  // 字段大小（字节数）
     
-    // 方法特定信息
-    TUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
-    TUInt32 parameterCount;             // 参数数量
-    EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
+      // 方法特定信息
+      SZrFunction *compiledFunction;       // 编译后的函数对象（用于最终序列化时重新落常量池）
+      TUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
+      TUInt32 parameterCount;             // 参数数量
+      EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
     TBool isMetaMethod;                 // 是否为元方法
     SZrString *returnTypeName;          // 返回类型名称（字符串表示，用于运行时类型查找）
 } SZrTypeMemberInfo;
@@ -295,4 +296,3 @@ ZR_PARSER_API void ZrParserRegisterToGlobalState(struct SZrState *state);
 // 这些函数用于指令生成、常量管理、变量管理等
 
 #endif //ZR_VM_PARSER_COMPILER_H
-

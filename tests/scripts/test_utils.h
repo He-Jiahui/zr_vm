@@ -56,6 +56,9 @@ TBool dump_ast_to_file(SZrState* state, SZrAstNode* ast, const TChar* basePath);
 // 输出中间码到文件（文本和JSON）
 TBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const TChar* basePath);
 
+// 输出二进制文件（.zro）
+TBool dump_binary_to_file(SZrState* state, SZrFunction* function, const TChar* basePath);
+
 // 输出运行状态到文件（文本和JSON）
 TBool dump_runtime_state(SZrState* state, const TChar* basePath);
 
@@ -68,8 +71,13 @@ void free_test_result(SZrTestResult* result);
 // 获取输出目录路径
 void get_output_path(const TChar* baseName, const TChar* subDir, const TChar* extension, TChar* outPath, TZrSize maxLen);
 
-#endif //ZR_VM_SCRIPTS_TEST_UTILS_H
+// 获取源码仓库中的 golden 文件路径
+void get_golden_output_path(const TChar* baseName, const TChar* subDir, const TChar* extension, TChar* outPath, TZrSize maxLen);
 
+// 获取脚本测试用例路径
+void get_test_case_path(const TChar* fileName, TChar* outPath, TZrSize maxLen);
+
+#endif //ZR_VM_SCRIPTS_TEST_UTILS_H
 
 
 

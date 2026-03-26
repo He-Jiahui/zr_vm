@@ -1,0 +1,49 @@
+class BaseCounter {
+    pub var baseValue: int;
+
+    pub getBaseValue(): int {
+        return this.baseValue;
+    }
+}
+
+class DerivedCounter: BaseCounter {
+    pub var derivedValue: int;
+
+    pub @constructor() {
+        this.baseValue = 10;
+        this.derivedValue = 20;
+    }
+
+    pub getTotal(): int {
+        return this.getBaseValue() + this.derivedValue;
+    }
+}
+
+class MutableCounter {
+    pub var value: int;
+
+    pub @constructor(initial: int) {
+        this.value = initial;
+    }
+
+    pub add(x: int): int {
+        this.value = this.value + x;
+        return this.value;
+    }
+
+    pub multiply(x: int): int {
+        this.value = this.value * x;
+        return this.value;
+    }
+}
+
+class Util {
+    pub static magic(): int {
+        return 7;
+    }
+}
+
+var derived = new DerivedCounter();
+var counter = new MutableCounter(5);
+
+return derived.getTotal() + counter.add(3) + counter.multiply(2) + Util.magic();

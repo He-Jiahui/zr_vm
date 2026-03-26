@@ -5,6 +5,7 @@
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/constant_reference.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_common/zr_string_conf.h"
@@ -19,9 +20,47 @@ typedef struct {
     EZrObjectPrototypeType prototypeType;
     EZrAccessModifier accessModifier;
     SZrArray inheritTypeNames;  // SZrString*数组，存储继承类型名称
-    SZrArray *membersArray;     // 成员信息数组指针（从Object中读取）
+    const SZrCompiledMemberInfo *members;
     TUInt32 membersCount;
 } SZrPrototypeCreationInfo;
+
+static void register_prototype_in_global_scope(SZrState *state, SZrString *typeName,
+                                               const SZrTypeValue *prototypeValue) {
+    if (state == ZR_NULL || state->global == ZR_NULL || typeName == ZR_NULL || prototypeValue == ZR_NULL) {
+        return;
+    }
+
+    if (state->global->zrObject.type != ZR_VALUE_TYPE_OBJECT) {
+        return;
+    }
+
+    SZrObject *zrObject = ZR_CAST_OBJECT(state, state->global->zrObject.value.object);
+    if (zrObject == ZR_NULL) {
+        return;
+    }
+
+    SZrTypeValue key;
+    ZrValueInitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrObjectSetValue(state, zrObject, &key, prototypeValue);
+}
+
+static SZrFunction *get_function_from_constant(SZrState *state, const SZrTypeValue *constant) {
+    if (state == ZR_NULL || constant == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (constant->type != ZR_VALUE_TYPE_FUNCTION && constant->type != ZR_VALUE_TYPE_CLOSURE) {
+        return ZR_NULL;
+    }
+
+    SZrRawObject *rawObject = constant->value.object;
+    if (rawObject == ZR_NULL || rawObject->type != ZR_RAW_OBJECT_TYPE_FUNCTION) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_FUNCTION(state, rawObject);
+}
 
 // 辅助函数：检查一个常量是否是prototype信息对象
 // 通过检查Object的__type属性来判断
@@ -130,6 +169,309 @@ static SZrObjectPrototype *find_prototype_by_name(struct SZrState *state,
     }
     
     return ZR_NULL;
+}
+
+static SZrObjectPrototype *find_local_created_prototype_by_name(SZrArray *prototypeInfos, SZrString *typeName) {
+    if (prototypeInfos == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize i = 0; i < prototypeInfos->length; i++) {
+        SZrPrototypeCreationInfo *protoInfo =
+                (SZrPrototypeCreationInfo *)ZrArrayGet(prototypeInfos, i);
+        if (protoInfo == ZR_NULL || protoInfo->prototype == ZR_NULL || protoInfo->typeName == ZR_NULL) {
+            continue;
+        }
+
+        if (ZrStringEqual(protoInfo->typeName, typeName)) {
+            return protoInfo->prototype;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TBool refill_io_chunk(SZrIo *io) {
+    if (io == ZR_NULL || io->read == ZR_NULL || io->state == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    SZrState *state = io->state;
+    TZrSize readSize = 0;
+    ZR_THREAD_UNLOCK(state);
+    TBytePtr buffer = io->read(state, io->customData, &readSize);
+    ZR_THREAD_LOCK(state);
+    if (buffer == ZR_NULL || readSize == 0) {
+        return ZR_FALSE;
+    }
+
+    io->pointer = buffer;
+    io->remained = readSize;
+    return ZR_TRUE;
+}
+
+static TBytePtr read_all_from_io(SZrState *state, SZrIo *io, TZrSize *outSize) {
+    if (state == ZR_NULL || io == ZR_NULL || outSize == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    SZrGlobalState *global = state->global;
+    TZrSize capacity = (io->remained > 0) ? io->remained : 4096;
+    TBytePtr buffer = (TBytePtr)ZrMemoryRawMallocWithType(global, capacity + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    if (buffer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    TZrSize totalSize = 0;
+    while (io->remained > 0 || refill_io_chunk(io)) {
+        if (totalSize + io->remained + 1 > capacity) {
+            TZrSize newCapacity = capacity;
+            while (totalSize + io->remained + 1 > newCapacity) {
+                newCapacity *= 2;
+            }
+
+            TBytePtr newBuffer =
+                    (TBytePtr)ZrMemoryRawMallocWithType(global, newCapacity + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            if (newBuffer == ZR_NULL) {
+                ZrMemoryRawFreeWithType(global, buffer, capacity + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+                return ZR_NULL;
+            }
+
+            if (totalSize > 0) {
+                ZrMemoryRawCopy(newBuffer, buffer, totalSize);
+            }
+            ZrMemoryRawFreeWithType(global, buffer, capacity + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            buffer = newBuffer;
+            capacity = newCapacity;
+        }
+
+        ZrMemoryRawCopy(buffer + totalSize, io->pointer, io->remained);
+        totalSize += io->remained;
+        io->pointer += io->remained;
+        io->remained = 0;
+    }
+
+    buffer[totalSize] = '\0';
+    *outSize = totalSize;
+    return buffer;
+}
+
+static void init_inline_runtime_function(SZrFunction *function) {
+    ZrMemoryRawSet(function, 0, sizeof(SZrFunction));
+    ZrRawObjectConstruct(&function->super, ZR_RAW_OBJECT_TYPE_FUNCTION);
+}
+
+static TBool populate_runtime_function(SZrState *state, const SZrIoFunction *source, SZrFunction *function);
+
+static TBool convert_io_constant_to_runtime_value(SZrState *state, const SZrIoFunctionConstantVariable *source,
+                                                  SZrTypeValue *destination) {
+    if (state == ZR_NULL || source == ZR_NULL || destination == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (source->type) {
+        case ZR_VALUE_TYPE_NULL: {
+            ZrValueResetAsNull(destination);
+            return ZR_TRUE;
+        }
+        case ZR_VALUE_TYPE_BOOL: {
+            destination->type = ZR_VALUE_TYPE_BOOL;
+            destination->value.nativeObject.nativeBool = source->value.nativeObject.nativeBool;
+            destination->isGarbageCollectable = ZR_FALSE;
+            destination->isNative = ZR_TRUE;
+            return ZR_TRUE;
+        }
+        case ZR_VALUE_TYPE_INT8:
+        case ZR_VALUE_TYPE_INT16:
+        case ZR_VALUE_TYPE_INT32:
+        case ZR_VALUE_TYPE_INT64: {
+            destination->type = source->type;
+            destination->value.nativeObject.nativeInt64 = source->value.nativeObject.nativeInt64;
+            destination->isGarbageCollectable = ZR_FALSE;
+            destination->isNative = ZR_TRUE;
+            return ZR_TRUE;
+        }
+        case ZR_VALUE_TYPE_UINT8:
+        case ZR_VALUE_TYPE_UINT16:
+        case ZR_VALUE_TYPE_UINT32:
+        case ZR_VALUE_TYPE_UINT64: {
+            destination->type = source->type;
+            destination->value.nativeObject.nativeUInt64 = source->value.nativeObject.nativeUInt64;
+            destination->isGarbageCollectable = ZR_FALSE;
+            destination->isNative = ZR_TRUE;
+            return ZR_TRUE;
+        }
+        case ZR_VALUE_TYPE_FLOAT:
+        case ZR_VALUE_TYPE_DOUBLE: {
+            destination->type = source->type;
+            destination->value.nativeObject.nativeDouble = source->value.nativeObject.nativeDouble;
+            destination->isGarbageCollectable = ZR_FALSE;
+            destination->isNative = ZR_TRUE;
+            return ZR_TRUE;
+        }
+        case ZR_VALUE_TYPE_STRING: {
+            if (source->value.object == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            ZrValueInitAsRawObject(state, destination, source->value.object);
+            destination->type = ZR_VALUE_TYPE_STRING;
+            return ZR_TRUE;
+        }
+        case ZR_VALUE_TYPE_FUNCTION:
+        case ZR_VALUE_TYPE_CLOSURE: {
+            if (!source->hasFunctionValue || source->functionValue == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            SZrFunction *functionValue = ZrFunctionNew(state);
+            if (functionValue == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            if (!populate_runtime_function(state, source->functionValue, functionValue)) {
+                ZrFunctionFree(state, functionValue);
+                return ZR_FALSE;
+            }
+
+            ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(functionValue));
+            destination->type = source->type;
+            return ZR_TRUE;
+        }
+        default: {
+            return ZR_FALSE;
+        }
+    }
+}
+
+static TBool populate_runtime_function(SZrState *state, const SZrIoFunction *source, SZrFunction *function) {
+    if (state == ZR_NULL || source == ZR_NULL || function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    SZrGlobalState *global = state->global;
+    function->functionName = source->name;
+    function->parameterCount = (TUInt16) source->parametersLength;
+    function->hasVariableArguments = source->hasVarArgs ? ZR_TRUE : ZR_FALSE;
+    function->stackSize = source->stackSize;
+    function->lineInSourceStart = (TUInt32) source->startLine;
+    function->lineInSourceEnd = (TUInt32) source->endLine;
+
+    if (source->instructionsLength > 0) {
+        TZrSize instructionBytes = sizeof(TZrInstruction) * source->instructionsLength;
+        function->instructionsList =
+                (TZrInstruction *) ZrMemoryRawMallocWithType(global, instructionBytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->instructionsList == ZR_NULL) {
+            ZrFunctionFree(state, function);
+            return ZR_FALSE;
+        }
+        ZrMemoryRawCopy(function->instructionsList, source->instructions, instructionBytes);
+        function->instructionsLength = (TUInt32) source->instructionsLength;
+    }
+
+    if (source->localVariablesLength > 0) {
+        TZrSize localBytes = sizeof(SZrFunctionLocalVariable) * source->localVariablesLength;
+        function->localVariableList = (SZrFunctionLocalVariable *) ZrMemoryRawMallocWithType(
+                global, localBytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->localVariableList == ZR_NULL) {
+            ZrFunctionFree(state, function);
+            return ZR_FALSE;
+        }
+
+        for (TZrSize i = 0; i < source->localVariablesLength; i++) {
+            function->localVariableList[i].name = ZR_NULL;
+            function->localVariableList[i].offsetActivate = (TZrMemoryOffset) source->localVariables[i].instructionStartIndex;
+            function->localVariableList[i].offsetDead = (TZrMemoryOffset) source->localVariables[i].instructionEndIndex;
+        }
+        function->localVariableLength = (TUInt32) source->localVariablesLength;
+    }
+
+    if (source->constantVariablesLength > 0) {
+        TZrSize constantBytes = sizeof(SZrTypeValue) * source->constantVariablesLength;
+        function->constantValueList =
+                (SZrTypeValue *) ZrMemoryRawMallocWithType(global, constantBytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->constantValueList == ZR_NULL) {
+            ZrFunctionFree(state, function);
+            return ZR_FALSE;
+        }
+
+        for (TZrSize i = 0; i < source->constantVariablesLength; i++) {
+            if (!convert_io_constant_to_runtime_value(state, &source->constantVariables[i],
+                                                      &function->constantValueList[i])) {
+                ZrFunctionFree(state, function);
+                return ZR_FALSE;
+            }
+        }
+        function->constantValueLength = (TUInt32) source->constantVariablesLength;
+    }
+
+    if (source->exportedVariablesLength > 0) {
+        TZrSize exportBytes = sizeof(struct SZrFunctionExportedVariable) * source->exportedVariablesLength;
+        function->exportedVariables = (struct SZrFunctionExportedVariable *) ZrMemoryRawMallocWithType(
+                global, exportBytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->exportedVariables == ZR_NULL) {
+            ZrFunctionFree(state, function);
+            return ZR_FALSE;
+        }
+
+        for (TZrSize i = 0; i < source->exportedVariablesLength; i++) {
+            function->exportedVariables[i].name = source->exportedVariables[i].name;
+            function->exportedVariables[i].stackSlot = source->exportedVariables[i].stackSlot;
+            function->exportedVariables[i].accessModifier = source->exportedVariables[i].accessModifier;
+        }
+        function->exportedVariableLength = (TUInt32) source->exportedVariablesLength;
+    }
+
+    if (source->closuresLength > 0) {
+        TZrSize childBytes = sizeof(SZrFunction) * source->closuresLength;
+        function->childFunctionList =
+                (SZrFunction *) ZrMemoryRawMallocWithType(global, childBytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->childFunctionList == ZR_NULL) {
+            ZrFunctionFree(state, function);
+            return ZR_FALSE;
+        }
+
+        for (TZrSize i = 0; i < source->closuresLength; i++) {
+            init_inline_runtime_function(&function->childFunctionList[i]);
+            if (source->closures[i].subFunction == ZR_NULL ||
+                !populate_runtime_function(state, source->closures[i].subFunction, &function->childFunctionList[i])) {
+                ZrFunctionFree(state, function);
+                return ZR_FALSE;
+            }
+        }
+        function->childFunctionLength = (TUInt32) source->closuresLength;
+    }
+
+    return ZR_TRUE;
+}
+
+static SZrFunction *convert_io_function_to_runtime(SZrState *state, const SZrIoFunction *source) {
+    if (state == ZR_NULL || source == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    SZrFunction *function = ZrFunctionNew(state);
+    if (function == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (!populate_runtime_function(state, source, function)) {
+        ZrFunctionFree(state, function);
+        return ZR_NULL;
+    }
+
+    return function;
+}
+
+static SZrFunction *load_entry_function_from_io_source(SZrState *state, const SZrIoSource *source) {
+    if (state == ZR_NULL || source == ZR_NULL || source->modulesLength == 0 || source->modules == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    const SZrIoModule *module = &source->modules[0];
+    if (module->entryFunction == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return convert_io_function_to_runtime(state, module->entryFunction);
 }
 
 #include "zr_vm_core/object.h"
@@ -371,12 +713,17 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     // 获取函数参数（路径字符串）
     TZrStackValuePointer functionBase = state->callInfoList->functionBase.valuePointer;
     TZrStackValuePointer argBase = functionBase + 1;
+#define ZR_RETURN_IMPORT_RESULT()       \
+    do {                                \
+        state->stackTop.valuePointer = functionBase + 1; \
+        return 1;                       \
+    } while (0)
     
     // 检查参数数量
     if (state->stackTop.valuePointer <= argBase) {
         // 没有参数，返回 null
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_IMPORT_RESULT();
     }
     
     // 获取路径参数
@@ -384,13 +731,13 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     if (pathValue->type != ZR_VALUE_TYPE_STRING) {
         // 参数类型错误，返回 null
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_IMPORT_RESULT();
     }
     
     SZrString *path = ZR_CAST_STRING(state, pathValue->value.object);
     if (path == ZR_NULL) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_IMPORT_RESULT();
     }
     
     // 检查缓存
@@ -400,7 +747,7 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
         SZrTypeValue *result = ZrStackGetValue(functionBase);
         ZrValueInitAsRawObject(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(cachedModule));
         result->type = ZR_VALUE_TYPE_OBJECT;
-        return 1;
+        ZR_RETURN_IMPORT_RESULT();
     }
     
     // 缓存未命中，需要加载、编译和执行
@@ -408,7 +755,7 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     if (global->sourceLoader == ZR_NULL) {
         // 没有源加载器，返回 null
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_IMPORT_RESULT();
     }
     
     // 获取路径字符串内容
@@ -424,95 +771,76 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     
     if (pathStr == ZR_NULL || pathLen == 0) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_IMPORT_RESULT();
     }
     
     // 加载源文件
     SZrIo io;
     TBool loadSuccess = global->sourceLoader(state, pathStr, ZR_NULL, &io);
-    if (!loadSuccess || io.pointer == ZR_NULL) {
+    if (!loadSuccess) {
         // 加载失败，返回 null
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
-    }
-    
-    // 读取源文件内容
-    TZrSize sourceSize = io.remained;
-    TBytePtr sourceBuffer = (TBytePtr)ZrMemoryRawMallocWithType(global, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-    if (sourceBuffer == ZR_NULL) {
-        if (io.close != ZR_NULL) {
-            io.close(state, io.customData);
-        }
-        ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
-    }
-    
-    TZrSize readSize = ZrIoRead(&io, sourceBuffer, sourceSize);
-    sourceBuffer[readSize] = '\0';
-    if (io.close != ZR_NULL) {
-        io.close(state, io.customData);
-    }
-    
-    if (readSize == 0) {
-        if (io.close != ZR_NULL) {
-            io.close(state, io.customData);
-        }
-        ZrMemoryRawFreeWithType(global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-        ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
-    }
-    
-    // 检查文件扩展名，判断是源代码还是二进制文件
-    TBool isBinaryFile = ZR_FALSE;
-    if (pathLen >= 4) {
-        const TChar *ext = pathStr + pathLen - 4;
-        if (ext[0] == '.' && ext[1] == 'z' && ext[2] == 'r' && ext[3] == 'o') {
-            isBinaryFile = ZR_TRUE;
-        }
+        ZR_RETURN_IMPORT_RESULT();
     }
     
     SZrFunction *func = ZR_NULL;
-    
-    if (isBinaryFile) {
-        // 加载.zro二进制文件
+
+    if (io.isBinary) {
+        SZrIoSource *ioSource = ZrIoReadSourceNew(&io);
         if (io.close != ZR_NULL) {
             io.close(state, io.customData);
         }
-        ZrMemoryRawFreeWithType(global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-        
-        // 重新加载为二进制文件
-        SZrIoSource *ioSource = ZrIoLoadSource(state, pathStr, ZR_NULL);
+
         if (ioSource == ZR_NULL) {
             ZrValueResetAsNull(ZrStackGetValue(functionBase));
-            return 1;
+            ZR_RETURN_IMPORT_RESULT();
         }
-        
-        // 从二进制文件创建模块（TODO: 实现从SZrIoSource创建函数的逻辑）
-        // 目前先返回null，等待实现
+
+        func = load_entry_function_from_io_source(state, ioSource);
         ZrIoReadSourceFree(global, ioSource);
-        ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        if (func == ZR_NULL) {
+            ZrValueResetAsNull(ZrStackGetValue(functionBase));
+            ZR_RETURN_IMPORT_RESULT();
+        }
     } else {
-        // 源代码文件，需要parser和compiler
-        if (global->compileSource == ZR_NULL) {
-            // 没有parser/compiler，无法处理源代码文件
+        // 读取整个源文件内容
+        TZrSize sourceSize = 0;
+        TBytePtr sourceBuffer = read_all_from_io(state, &io, &sourceSize);
+        if (sourceBuffer == ZR_NULL) {
             if (io.close != ZR_NULL) {
                 io.close(state, io.customData);
             }
+            ZrValueResetAsNull(ZrStackGetValue(functionBase));
+            ZR_RETURN_IMPORT_RESULT();
+        }
+
+        if (io.close != ZR_NULL) {
+            io.close(state, io.customData);
+        }
+
+        if (sourceSize == 0) {
             ZrMemoryRawFreeWithType(global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
             ZrValueResetAsNull(ZrStackGetValue(functionBase));
-            return 1;
+            ZR_RETURN_IMPORT_RESULT();
+        }
+
+        // 源代码文件，需要parser和compiler
+        if (global->compileSource == ZR_NULL) {
+            // 没有parser/compiler，无法处理源代码文件
+            ZrMemoryRawFreeWithType(global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            ZrValueResetAsNull(ZrStackGetValue(functionBase));
+            ZR_RETURN_IMPORT_RESULT();
         }
         
         // 编译源代码（封装了从解析到编译的全流程）
         SZrString *sourceName = ZrStringCreate(state, pathStr, pathLen);
-        func = global->compileSource(state, (const TChar *)sourceBuffer, readSize, sourceName);
+        func = global->compileSource(state, (const TChar *)sourceBuffer, sourceSize, sourceName);
         ZrMemoryRawFreeWithType(global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
         
         if (func == ZR_NULL) {
             // 编译失败，返回 null
             ZrValueResetAsNull(ZrStackGetValue(functionBase));
-            return 1;
+            ZR_RETURN_IMPORT_RESULT();
         }
     }
     
@@ -521,7 +849,7 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     if (closure == ZR_NULL) {
         ZrFunctionFree(state, func);
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_IMPORT_RESULT();
     }
     
     closure->function = func;
@@ -531,12 +859,18 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     if (module == ZR_NULL) {
         // sourceBuffer已经在编译后释放，不需要再次释放
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_IMPORT_RESULT();
     }
     
     // 设置模块信息
     TUInt64 pathHash = ZrModuleCalculatePathHash(state, path);
     ZrModuleSetInfo(state, module, ZR_NULL, pathHash, path);
+
+    if (func != ZR_NULL) {
+        ZrModuleCreatePrototypesFromConstants(state, module, func);
+    }
+
+    ZrModuleAddToCache(state, path, module);
     
     // 执行函数（调用 __entry）
     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
@@ -548,13 +882,14 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
     // 执行后，栈上的变量值已经可用
     // 收集 pub 和 pro 变量到 module object
     if (func != ZR_NULL && func->exportedVariables != ZR_NULL && func->exportedVariableLength > 0) {
+        TZrStackValuePointer exportedValuesTop = callBase + 1 + func->stackSize;
         for (TUInt32 i = 0; i < func->exportedVariableLength; i++) {
             struct SZrFunctionExportedVariable *exportVar = &func->exportedVariables[i];
             if (exportVar->name != ZR_NULL) {
                 // 从栈上获取变量值（需要根据 stackSlot 计算位置）
                 // 注意：stackSlot 是相对于 functionBase 的偏移
                 TZrStackValuePointer varPointer = callBase + 1 + exportVar->stackSlot;
-                if (varPointer < state->stackTop.valuePointer) {
+                if (varPointer < exportedValuesTop) {
                     SZrTypeValue *varValue = ZrStackGetValue(varPointer);
                     if (varValue != ZR_NULL) {
                         if (exportVar->accessModifier == ZR_ACCESS_CONSTANT_PUBLIC) {
@@ -568,23 +903,14 @@ TInt64 ZrImportNativeFunction(SZrState *state) {
         }
     }
     
-    // 创建 prototype（从编译时收集的信息）
-    // 从函数的常量池中读取 prototype 信息并创建
-    // 调用 ZrModuleCreatePrototypesFromConstants 从常量池中创建所有prototype实例
-    if (func != ZR_NULL) {
-        ZrModuleCreatePrototypesFromConstants(state, module, func);
-    }
-    
-    // 添加到缓存
-    ZrModuleAddToCache(state, path, module);
-    
     // 返回模块对象
     SZrTypeValue *result = ZrStackGetValue(functionBase);
     ZrValueInitAsRawObject(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(module));
     result->type = ZR_VALUE_TYPE_OBJECT;
-    
-    state->stackTop.valuePointer = savedStackTop;
-    return 1;
+
+    ZR_UNUSED_PARAMETER(savedStackTop);
+    ZR_RETURN_IMPORT_RESULT();
+#undef ZR_RETURN_IMPORT_RESULT
 }
 
 // 创建并注册 prototype 的 native 函数
@@ -598,24 +924,29 @@ TInt64 ZrCreatePrototypeNativeFunction(SZrState *state) {
     // 获取函数参数
     TZrStackValuePointer functionBase = state->callInfoList->functionBase.valuePointer;
     TZrStackValuePointer argBase = functionBase + 1;
+#define ZR_RETURN_CREATE_PROTOTYPE_RESULT() \
+    do {                                     \
+        state->stackTop.valuePointer = functionBase + 1; \
+        return 1;                            \
+    } while (0)
     
     // 检查参数数量（至少需要 4 个参数：module, typeName, prototypeType, accessModifier）
     if (state->stackTop.valuePointer <= argBase + 3) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_CREATE_PROTOTYPE_RESULT();
     }
     
     // 获取 module 参数
     SZrTypeValue *moduleValue = ZrStackGetValue(argBase);
     if (moduleValue->type != ZR_VALUE_TYPE_OBJECT) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_CREATE_PROTOTYPE_RESULT();
     }
     
     SZrObject *moduleObject = ZR_CAST_OBJECT(state, moduleValue->value.object);
     if (moduleObject == ZR_NULL || moduleObject->internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_CREATE_PROTOTYPE_RESULT();
     }
     
     struct SZrObjectModule *module = (struct SZrObjectModule *)moduleObject;
@@ -624,33 +955,33 @@ TInt64 ZrCreatePrototypeNativeFunction(SZrState *state) {
     SZrTypeValue *typeNameValue = ZrStackGetValue(argBase + 1);
     if (typeNameValue->type != ZR_VALUE_TYPE_STRING) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_CREATE_PROTOTYPE_RESULT();
     }
     
     SZrString *typeName = ZR_CAST_STRING(state, typeNameValue->value.object);
     if (typeName == ZR_NULL) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_CREATE_PROTOTYPE_RESULT();
     }
     
     // 获取 prototypeType 参数
     SZrTypeValue *typeValue = ZrStackGetValue(argBase + 2);
     if (!ZR_VALUE_IS_TYPE_INT(typeValue->type)) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_CREATE_PROTOTYPE_RESULT();
     }
     
     EZrObjectPrototypeType prototypeType = (EZrObjectPrototypeType)typeValue->value.nativeObject.nativeUInt64;
     if (prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT && prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_CREATE_PROTOTYPE_RESULT();
     }
     
     // 获取 accessModifier 参数
     SZrTypeValue *accessModifierValue = ZrStackGetValue(argBase + 3);
     if (!ZR_VALUE_IS_TYPE_INT(accessModifierValue->type)) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_CREATE_PROTOTYPE_RESULT();
     }
     
     EZrAccessModifier accessModifier = (EZrAccessModifier)accessModifierValue->value.nativeObject.nativeUInt64;
@@ -665,7 +996,7 @@ TInt64 ZrCreatePrototypeNativeFunction(SZrState *state) {
     
     if (prototype == ZR_NULL) {
         ZrValueResetAsNull(ZrStackGetValue(functionBase));
-        return 1;
+        ZR_RETURN_CREATE_PROTOTYPE_RESULT();
     }
     
     // 注册到模块导出
@@ -685,8 +1016,9 @@ TInt64 ZrCreatePrototypeNativeFunction(SZrState *state) {
     // 返回 prototype 对象
     SZrTypeValue *result = ZrStackGetValue(functionBase);
     ZrValueCopy(state, result, &prototypeValue);
-    
-    return 1;
+
+    ZR_RETURN_CREATE_PROTOTYPE_RESULT();
+#undef ZR_RETURN_CREATE_PROTOTYPE_RESULT
 }
 
 // 辅助函数：从序列化的二进制数据解析prototype信息
@@ -763,12 +1095,10 @@ static TBool parse_compiled_prototype_info(struct SZrState *state,
     // const TByte *membersData = serializedData + sizeof(SZrCompiledPrototypeInfo) + inheritsCount * sizeof(TUInt32);
     // const SZrCompiledMemberInfo *members = (const SZrCompiledMemberInfo *)membersData;
     
-    // 将成员信息存储到临时数组中（稍后在ZrModuleCreatePrototypesFromData中处理）
-    // 注意：这里只是存储指针，实际的成员处理需要解析函数引用等
     protoInfo->membersCount = membersCount;
-    // 由于protoInfo->membersArray是SZrArray*类型，我们需要创建一个数组来存储成员信息
-    // TODO: 但为了简化，暂时存储为ZR_NULL，在ZrModuleCreatePrototypesFromData中处理
-    protoInfo->membersArray = ZR_NULL;  // 成员信息将在后续处理中解析
+    protoInfo->members =
+            (const SZrCompiledMemberInfo *)(serializedData + sizeof(SZrCompiledPrototypeInfo) +
+                                            inheritsCount * sizeof(TUInt32));
     
     return ZR_TRUE;
 }
@@ -833,7 +1163,7 @@ TZrSize ZrModuleCreatePrototypesFromData(struct SZrState *state,
         protoInfoData.prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
         protoInfoData.accessModifier = ZR_ACCESS_CONSTANT_PRIVATE;
         ZrArrayInit(state, &protoInfoData.inheritTypeNames, sizeof(SZrString *), 4);
-        protoInfoData.membersArray = ZR_NULL;
+        protoInfoData.members = ZR_NULL;
         protoInfoData.membersCount = 0;
         
         if (parse_compiled_prototype_info(state, entryFunction, currentPos, currentPrototypeSize, &protoInfoData)) {
@@ -862,6 +1192,7 @@ TZrSize ZrModuleCreatePrototypesFromData(struct SZrState *state,
                         ZrModuleAddProExport(state, module, protoInfoData.typeName, &prototypeValue);
                     }
                     // PRIVATE 不导出，但仍然创建prototype对象
+                    register_prototype_in_global_scope(state, protoInfoData.typeName, &prototypeValue);
                     
                     // 保存prototype信息到数组，用于第二遍处理继承关系和成员信息
                     ZrArrayPush(state, &prototypeInfos, &protoInfoData);
@@ -892,26 +1223,77 @@ TZrSize ZrModuleCreatePrototypesFromData(struct SZrState *state,
         if (protoInfo->inheritTypeNames.length > 0) {
             SZrString **inheritTypeNamePtr = (SZrString **)ZrArrayGet(&protoInfo->inheritTypeNames, 0);
             if (inheritTypeNamePtr != ZR_NULL && *inheritTypeNamePtr != ZR_NULL) {
-                SZrObjectPrototype *superPrototype = find_prototype_by_name(state, module, *inheritTypeNamePtr);
+                SZrObjectPrototype *superPrototype =
+                        find_local_created_prototype_by_name(&prototypeInfos, *inheritTypeNamePtr);
+                if (superPrototype == ZR_NULL) {
+                    superPrototype = find_prototype_by_name(state, module, *inheritTypeNamePtr);
+                }
                 if (superPrototype != ZR_NULL) {
                     ZrObjectPrototypeSetSuper(state, protoInfo->prototype, superPrototype);
                 }
             }
         }
         
-        // 处理成员信息（方法、字段等）
-        // 需要从序列化的SZrCompiledMemberInfo中读取成员信息并添加到prototype
-        // 注意：完整处理需要解析函数引用、字段偏移等，这里实现基础框架
-        if (protoInfo->membersCount > 0) {
-            // 成员信息在parse_compiled_prototype_info中已读取，但存储在序列化数据中
-            // 需要重新解析成员信息（因为protoInfo->membersArray是ZR_NULL）
-            // TODO: 这里暂时跳过完整处理，因为需要：
-            // 1. 解析函数引用（从常量池中获取函数对象）
-            // 2. 注册元方法到prototype的metaTable
-            // 3. 设置字段偏移（对于struct/class字段）
-            // 4. 处理属性访问器（getter/setter）
-            // TODO: 这些功能需要更完整的实现，暂时跳过
-            // 未来实现：遍历membersCount，解析每个SZrCompiledMemberInfo，根据memberType处理
+        // 处理成员信息（字段、方法、构造函数）
+        if (protoInfo->members != ZR_NULL && entryFunction->constantValueList != ZR_NULL) {
+            for (TUInt32 memberIndex = 0; memberIndex < protoInfo->membersCount; memberIndex++) {
+                const SZrCompiledMemberInfo *member = &protoInfo->members[memberIndex];
+                if (member == ZR_NULL || member->nameStringIndex >= entryFunction->constantValueLength) {
+                    continue;
+                }
+
+                const SZrTypeValue *nameConstant = &entryFunction->constantValueList[member->nameStringIndex];
+                if (nameConstant->type != ZR_VALUE_TYPE_STRING) {
+                    continue;
+                }
+
+                SZrString *memberName = ZR_CAST_STRING(state, nameConstant->value.object);
+                if (memberName == ZR_NULL) {
+                    continue;
+                }
+
+                if ((member->memberType == ZR_AST_CONSTANT_CLASS_METHOD ||
+                     member->memberType == ZR_AST_CONSTANT_STRUCT_METHOD ||
+                     member->memberType == ZR_AST_CONSTANT_CLASS_META_FUNCTION ||
+                     member->memberType == ZR_AST_CONSTANT_STRUCT_META_FUNCTION) &&
+                    member->functionConstantIndex < entryFunction->constantValueLength) {
+                    const SZrTypeValue *functionConstant =
+                            &entryFunction->constantValueList[member->functionConstantIndex];
+                    SZrFunction *function = get_function_from_constant(state, functionConstant);
+                    if (function == ZR_NULL) {
+                        continue;
+                    }
+
+                    if (member->isMetaMethod) {
+                        ZrObjectPrototypeAddMeta(state, protoInfo->prototype, (EZrMetaType)member->metaType, function);
+                        if (member->metaType == ZR_META_CONSTRUCTOR) {
+                            SZrString *constructorName = ZrStringCreateFromNative(state, "__constructor");
+                            if (constructorName != ZR_NULL) {
+                                SZrTypeValue constructorKey;
+                                SZrTypeValue constructorValue;
+                                ZrValueInitAsRawObject(state, &constructorKey,
+                                                       ZR_CAST_RAW_OBJECT_AS_SUPER(constructorName));
+                                constructorKey.type = ZR_VALUE_TYPE_STRING;
+                                ZrValueInitAsRawObject(state, &constructorValue,
+                                                       ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+                                constructorValue.type = functionConstant->type;
+                                ZrObjectSetValue(state, &protoInfo->prototype->super, &constructorKey,
+                                                 &constructorValue);
+                            }
+                        }
+                        continue;
+                    }
+
+                    SZrTypeValue methodValue;
+                    ZrValueInitAsRawObject(state, &methodValue, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+                    methodValue.type = functionConstant->type;
+
+                    SZrTypeValue methodKey;
+                    ZrValueInitAsRawObject(state, &methodKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+                    methodKey.type = ZR_VALUE_TYPE_STRING;
+                    ZrObjectSetValue(state, &protoInfo->prototype->super, &methodKey, &methodValue);
+                }
+            }
         }
         
         // 清理继承类型名称数组

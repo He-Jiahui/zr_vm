@@ -36,6 +36,8 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node);
 extern TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType metaType);
+static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *node,
+                                                  TBool injectThis, TUInt32 *outParameterCount);
 TZrSize create_label(SZrCompilerState *cs);
 void resolve_label(SZrCompilerState *cs, TZrSize labelId);
 
@@ -578,6 +580,10 @@ TUInt32 add_constant(SZrCompilerState *cs, SZrTypeValue *value) {
         return 0;
     }
 
+    if (cs->constantCount != cs->constants.length) {
+        cs->constantCount = cs->constants.length;
+    }
+
     // 检查常量是否已存在（常量去重）
     // 遍历已有的常量，查找相同的值
     for (TZrSize i = 0; i < cs->constants.length; i++) {
@@ -593,8 +599,8 @@ TUInt32 add_constant(SZrCompilerState *cs, SZrTypeValue *value) {
 
     // 常量不存在，添加新常量
     ZrArrayPush(cs->state, &cs->constants, value);
-    TUInt32 index = (TUInt32) cs->constantCount;
-    cs->constantCount++;
+    TUInt32 index = (TUInt32)(cs->constants.length - 1);
+    cs->constantCount = cs->constants.length;
     return index;
 }
 
@@ -2306,6 +2312,7 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.fieldTypeName = ZR_NULL;
             memberInfo.fieldOffset = 0;
             memberInfo.fieldSize = 0;
+            memberInfo.compiledFunction = ZR_NULL;
             memberInfo.functionConstantIndex = 0;
             memberInfo.parameterCount = 0;
             memberInfo.metaType = 0; // ZR_META_ENUM_MAX表示非元方法
@@ -2788,6 +2795,284 @@ static void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMet
     cs->closureVars.length = 0;
 }
 
+static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *node,
+                                                  TBool injectThis, TUInt32 *outParameterCount) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return ZR_NULL;
+    }
+
+    SZrAstNodeArray *params = ZR_NULL;
+    SZrAstNode *body = ZR_NULL;
+    SZrString *functionName = ZR_NULL;
+    TBool isConstructor = ZR_FALSE;
+
+    if (node->type == ZR_AST_CLASS_METHOD) {
+        SZrClassMethod *method = &node->data.classMethod;
+        params = method->params;
+        body = method->body;
+        functionName = method->name != ZR_NULL ? method->name->name : ZR_NULL;
+    } else if (node->type == ZR_AST_CLASS_META_FUNCTION) {
+        SZrClassMetaFunction *metaFunc = &node->data.classMetaFunction;
+        params = metaFunc->params;
+        body = metaFunc->body;
+        functionName = metaFunc->meta != ZR_NULL ? metaFunc->meta->name : ZR_NULL;
+        if (metaFunc->meta != ZR_NULL) {
+            TNativeString metaName = ZrStringGetNativeStringShort(metaFunc->meta->name);
+            if (metaName != ZR_NULL && strcmp(metaName, "constructor") == 0) {
+                isConstructor = ZR_TRUE;
+            }
+        }
+    } else {
+        ZrCompilerError(cs, "Expected class method or class meta function", node->location);
+        return ZR_NULL;
+    }
+
+    SZrFunction *oldFunction = cs->currentFunction;
+    TZrSize oldInstructionCount = cs->instructionCount;
+    TZrSize oldStackSlotCount = cs->stackSlotCount;
+    TZrSize oldLocalVarCount = cs->localVarCount;
+    TZrSize oldConstantCount = cs->constantCount;
+    TZrSize oldClosureVarCount = cs->closureVarCount;
+    TZrSize oldInstructionLength = cs->instructions.length;
+    TZrSize oldLocalVarLength = cs->localVars.length;
+    TZrSize oldConstantLength = cs->constants.length;
+    TZrSize oldClosureVarLength = cs->closureVars.length;
+    TBool oldIsInConstructor = cs->isInConstructor;
+    SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
+    SZrTypeValue *savedParentConstants = ZR_NULL;
+    TZrSize savedParentConstantsSize = oldConstantLength * sizeof(SZrTypeValue);
+
+    if (savedParentConstantsSize > 0) {
+        savedParentConstants = (SZrTypeValue *)ZrMemoryRawMallocWithType(
+                cs->state->global, savedParentConstantsSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (savedParentConstants == ZR_NULL) {
+            ZrCompilerError(cs, "Failed to backup parent constants for class member compilation", node->location);
+            return ZR_NULL;
+        }
+        memcpy(savedParentConstants, cs->constants.head, savedParentConstantsSize);
+    }
+
+    cs->isInConstructor = isConstructor ? ZR_TRUE : ZR_FALSE;
+    cs->currentFunctionNode = node;
+    cs->constLocalVars.length = 0;
+    cs->constParameters.length = 0;
+
+    cs->currentFunction = ZrFunctionNew(cs->state);
+    if (cs->currentFunction == ZR_NULL) {
+        ZrCompilerError(cs, "Failed to create class member function object", node->location);
+        cs->isInConstructor = oldIsInConstructor;
+        cs->currentFunctionNode = oldFunctionNode;
+        return ZR_NULL;
+    }
+
+    cs->instructionCount = 0;
+    cs->stackSlotCount = 0;
+    cs->localVarCount = 0;
+    cs->constantCount = 0;
+    cs->closureVarCount = 0;
+    cs->instructions.length = 0;
+    cs->localVars.length = 0;
+    cs->constants.length = 0;
+    cs->closureVars.length = 0;
+
+    enter_scope(cs);
+
+    TUInt32 parameterCount = 0;
+    if (injectThis) {
+        SZrString *thisName = ZrStringCreateFromNative(cs->state, "this");
+        if (thisName != ZR_NULL) {
+            allocate_local_var(cs, thisName);
+            parameterCount++;
+            if (cs->typeEnv != ZR_NULL) {
+                SZrInferredType thisType;
+                ZrInferredTypeInit(cs->state, &thisType, ZR_VALUE_TYPE_OBJECT);
+                ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, thisName, &thisType);
+                ZrInferredTypeFree(cs->state, &thisType);
+            }
+        }
+    }
+
+    if (params != ZR_NULL) {
+        for (TZrSize i = 0; i < params->count; i++) {
+            SZrAstNode *paramNode = params->nodes[i];
+            if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
+                SZrParameter *param = &paramNode->data.parameter;
+                if (param->name != ZR_NULL && param->name->name != ZR_NULL) {
+                    SZrString *paramName = param->name->name;
+                    TUInt32 paramIndex = allocate_local_var(cs, paramName);
+                    parameterCount++;
+
+                    if (param->isConst) {
+                        ZrArrayPush(cs->state, &cs->constParameters, &paramName);
+                    }
+
+                    if (cs->typeEnv != ZR_NULL) {
+                        SZrInferredType paramType;
+                        if (param->typeInfo != ZR_NULL &&
+                            convert_ast_type_to_inferred_type(cs, param->typeInfo, &paramType)) {
+                            ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, paramName, &paramType);
+                            ZrInferredTypeFree(cs->state, &paramType);
+                        } else {
+                            ZrInferredTypeInit(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+                            ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, paramName, &paramType);
+                            ZrInferredTypeFree(cs->state, &paramType);
+                        }
+                    }
+
+                    if (param->defaultValue != ZR_NULL) {
+                        compile_expression(cs, param->defaultValue);
+                        if (!cs->hasError) {
+                            TUInt32 defaultSlot = (TUInt32)(cs->stackSlotCount - 1);
+                            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                                                       (TUInt16)paramIndex, (TInt32)defaultSlot);
+                            emit_instruction(cs, inst);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (body != ZR_NULL) {
+        compile_statement(cs, body);
+    }
+
+    if (!cs->hasError) {
+        if (cs->instructions.length == 0) {
+            TUInt32 resultSlot = allocate_stack_slot(cs);
+            SZrTypeValue nullValue;
+            ZrValueResetAsNull(&nullValue);
+            TUInt32 constantIndex = add_constant(cs, &nullValue);
+            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)resultSlot,
+                                                       (TInt32)constantIndex);
+            emit_instruction(cs, inst);
+            TZrInstruction returnInst =
+                    create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TUInt16)resultSlot, 0);
+            emit_instruction(cs, returnInst);
+        } else {
+            TZrInstruction *lastInst =
+                    (TZrInstruction *)ZrArrayGet(&cs->instructions, cs->instructions.length - 1);
+            if (lastInst != ZR_NULL &&
+                (EZrInstructionCode)lastInst->instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+                TUInt32 resultSlot = allocate_stack_slot(cs);
+                SZrTypeValue nullValue;
+                ZrValueResetAsNull(&nullValue);
+                TUInt32 constantIndex = add_constant(cs, &nullValue);
+                TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)resultSlot,
+                                                           (TInt32)constantIndex);
+                emit_instruction(cs, inst);
+                TZrInstruction returnInst =
+                        create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TUInt16)resultSlot, 0);
+                emit_instruction(cs, returnInst);
+            }
+        }
+    }
+
+    exit_scope(cs);
+
+    if (cs->hasError) {
+        if (cs->currentFunction != ZR_NULL) {
+            ZrFunctionFree(cs->state, cs->currentFunction);
+        }
+        if (savedParentConstants != ZR_NULL) {
+            ZrMemoryRawFreeWithType(cs->state->global, savedParentConstants, savedParentConstantsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        cs->currentFunction = oldFunction;
+        cs->instructionCount = oldInstructionCount;
+        cs->stackSlotCount = oldStackSlotCount;
+        cs->localVarCount = oldLocalVarCount;
+        cs->constantCount = oldConstantCount;
+        cs->closureVarCount = oldClosureVarCount;
+        cs->instructions.length = oldInstructionLength;
+        cs->localVars.length = oldLocalVarLength;
+        cs->constants.length = oldConstantLength;
+        cs->closureVars.length = oldClosureVarLength;
+        cs->isInConstructor = oldIsInConstructor;
+        cs->currentFunctionNode = oldFunctionNode;
+        cs->constLocalVars.length = 0;
+        cs->constParameters.length = 0;
+        return ZR_NULL;
+    }
+
+    SZrFunction *newFunc = cs->currentFunction;
+    SZrGlobalState *global = cs->state->global;
+
+    if (cs->instructions.length > 0) {
+        TZrSize instSize = cs->instructions.length * sizeof(TZrInstruction);
+        newFunc->instructionsList =
+                (TZrInstruction *)ZrMemoryRawMallocWithType(global, instSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->instructionsList != ZR_NULL) {
+            memcpy(newFunc->instructionsList, cs->instructions.head, instSize);
+            newFunc->instructionsLength = (TUInt32)cs->instructions.length;
+        }
+    }
+
+    if (cs->constants.length > 0) {
+        TZrSize constSize = cs->constants.length * sizeof(SZrTypeValue);
+        newFunc->constantValueList =
+                (SZrTypeValue *)ZrMemoryRawMallocWithType(global, constSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->constantValueList != ZR_NULL) {
+            memcpy(newFunc->constantValueList, cs->constants.head, constSize);
+            newFunc->constantValueLength = (TUInt32)cs->constants.length;
+        }
+    }
+
+    if (cs->localVars.length > 0) {
+        TZrSize localVarSize = cs->localVars.length * sizeof(SZrFunctionLocalVariable);
+        newFunc->localVariableList = (SZrFunctionLocalVariable *)ZrMemoryRawMallocWithType(
+                global, localVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->localVariableList != ZR_NULL) {
+            memcpy(newFunc->localVariableList, cs->localVars.head, localVarSize);
+            newFunc->localVariableLength = (TUInt32)cs->localVars.length;
+        }
+    }
+
+    if (cs->closureVarCount > 0) {
+        TZrSize closureVarSize = cs->closureVarCount * sizeof(SZrFunctionClosureVariable);
+        newFunc->closureValueList = (SZrFunctionClosureVariable *)ZrMemoryRawMallocWithType(
+                global, closureVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->closureValueList != ZR_NULL) {
+            memcpy(newFunc->closureValueList, cs->closureVars.head, closureVarSize);
+            newFunc->closureValueLength = (TUInt32)cs->closureVarCount;
+        }
+    }
+
+    newFunc->stackSize = (TUInt32)cs->stackSlotCount;
+    newFunc->parameterCount = (TUInt16)parameterCount;
+    newFunc->hasVariableArguments = ZR_FALSE;
+    newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TUInt32)node->location.start.line : 0;
+    newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TUInt32)node->location.end.line : 0;
+    newFunc->functionName = functionName;
+
+    if (savedParentConstants != ZR_NULL && savedParentConstantsSize > 0) {
+        memcpy(cs->constants.head, savedParentConstants, savedParentConstantsSize);
+        ZrMemoryRawFreeWithType(cs->state->global, savedParentConstants, savedParentConstantsSize,
+                                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+
+    cs->currentFunction = oldFunction;
+    cs->instructionCount = oldInstructionCount;
+    cs->stackSlotCount = oldStackSlotCount;
+    cs->localVarCount = oldLocalVarCount;
+    cs->constantCount = oldConstantCount;
+    cs->closureVarCount = oldClosureVarCount;
+    cs->instructions.length = oldInstructionLength;
+    cs->localVars.length = oldLocalVarLength;
+    cs->constants.length = oldConstantLength;
+    cs->closureVars.length = oldClosureVarLength;
+    cs->isInConstructor = oldIsInConstructor;
+    cs->currentFunctionNode = oldFunctionNode;
+    cs->constLocalVars.length = 0;
+    cs->constParameters.length = 0;
+
+    if (outParameterCount != ZR_NULL) {
+        *outParameterCount = parameterCount;
+    }
+
+    return newFunc;
+}
+
 // 编译 class 声明
 static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -2825,7 +3110,6 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 初始化继承数组
     ZrArrayInit(cs->state, &info.inherits, sizeof(SZrString *), 4);
-    
     // 处理继承关系
     if (classDecl->inherits != ZR_NULL && classDecl->inherits->count > 0) {
         for (TZrSize i = 0; i < classDecl->inherits->count; i++) {
@@ -2865,6 +3149,7 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.fieldTypeName = ZR_NULL;
             memberInfo.fieldOffset = 0;
             memberInfo.fieldSize = 0;
+            memberInfo.compiledFunction = ZR_NULL;
             memberInfo.functionConstantIndex = 0;
             memberInfo.parameterCount = 0;
             memberInfo.metaType = 0;
@@ -2936,10 +3221,20 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     } else {
                         memberInfo.returnTypeName = ZR_NULL; // 无返回类型（void）
                     }
-                    // 方法信息（函数引用等）将在方法编译后设置
-                    // TODO: 需要将方法编译为函数并存储函数引用索引
-                    if (method->params != ZR_NULL) {
-                        memberInfo.parameterCount = (TUInt32)method->params->count;
+                    {
+                        TUInt32 compiledParameterCount = 0;
+                        SZrFunction *compiledMethod =
+                                compile_class_member_function(cs, member, !method->isStatic, &compiledParameterCount);
+                        if (compiledMethod == ZR_NULL) {
+                            return;
+                        }
+
+                        SZrTypeValue functionValue;
+                        ZrValueInitAsRawObject(cs->state, &functionValue,
+                                               ZR_CAST_RAW_OBJECT_AS_SUPER(compiledMethod));
+                        memberInfo.compiledFunction = compiledMethod;
+                        memberInfo.functionConstantIndex = add_constant(cs, &functionValue);
+                        memberInfo.parameterCount = compiledParameterCount;
                     }
                     memberInfo.isMetaMethod = ZR_FALSE;
                     break;
@@ -2998,10 +3293,20 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     } else {
                         memberInfo.returnTypeName = ZR_NULL; // 无返回类型（void）
                     }
-                    // 元方法的函数引用索引将在编译后设置
-                    // TODO: 需要将元方法编译为函数并存储函数引用索引
-                    if (metaFunc->params != ZR_NULL) {
-                        memberInfo.parameterCount = (TUInt32)metaFunc->params->count;
+                    if (memberInfo.isMetaMethod) {
+                        TUInt32 compiledParameterCount = 0;
+                        SZrFunction *compiledMeta =
+                                compile_class_member_function(cs, member, !metaFunc->isStatic, &compiledParameterCount);
+                        if (compiledMeta == ZR_NULL) {
+                            return;
+                        }
+
+                        SZrTypeValue functionValue;
+                        ZrValueInitAsRawObject(cs->state, &functionValue,
+                                               ZR_CAST_RAW_OBJECT_AS_SUPER(compiledMeta));
+                        memberInfo.compiledFunction = compiledMeta;
+                        memberInfo.functionConstantIndex = add_constant(cs, &functionValue);
+                        memberInfo.parameterCount = compiledParameterCount;
                     }
                     break;
                 }
@@ -3022,39 +3327,6 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 注册类型名称到类型环境
     if (cs->typeEnv != ZR_NULL) {
         ZrTypeEnvironmentRegisterType(cs->state, cs->typeEnv, typeName);
-    }
-    
-    // 编译元函数（特别是构造函数）
-    if (classDecl->members != ZR_NULL && classDecl->members->count > 0) {
-        for (TZrSize i = 0; i < classDecl->members->count; i++) {
-            SZrAstNode *member = classDecl->members->nodes[i];
-            if (member == ZR_NULL) {
-                continue;
-            }
-            
-            if (member->type == ZR_AST_CLASS_META_FUNCTION) {
-                SZrClassMetaFunction *metaFunc = &member->data.classMetaFunction;
-                if (metaFunc->meta != ZR_NULL) {
-                    TNativeString metaName = ZrStringGetNativeStringShort(metaFunc->meta->name);
-                    if (metaName != ZR_NULL) {
-                        EZrMetaType metaType = 0;
-                        if (strcmp(metaName, "constructor") == 0) {
-                            metaType = ZR_META_CONSTRUCTOR;
-                        } else if (strcmp(metaName, "destructor") == 0) {
-                            metaType = ZR_META_DESTRUCTOR;
-                        } else if (strcmp(metaName, "add") == 0) {
-                            metaType = ZR_META_ADD;
-                        } else if (strcmp(metaName, "toString") == 0) {
-                            metaType = ZR_META_TO_STRING;
-                        }
-                        
-                        if (metaType != 0) {
-                            compile_meta_function(cs, member, metaType);
-                        }
-                    }
-                }
-            }
-        }
     }
     
     // 恢复当前类型名称
@@ -3096,42 +3368,33 @@ typedef struct SZrSerializedMemberInfo {
     TUInt32 parameterCount;               // 参数数量
 } SZrSerializedMemberInfo;
 
-// 编译时使用的C原生结构（用于序列化prototype信息）
-// 完全使用C原生结构，避免任何VM对象
-// 布局：固定大小头部 + 可变数据
-// 格式：[头部] [继承索引数组] [成员信息数组]
+// 编译时使用的prototype二进制格式。
+// 显式 pack(1) 以确保与 runtime 解析协议一致。
+#pragma pack(push, 1)
 typedef struct SZrCompiledPrototypeInfo {
-    TUInt32 nameStringIndex;              // 类型名称字符串在常量池中的索引
-    TUInt32 type;                         // EZrObjectPrototypeType
-    TUInt32 accessModifier;               // EZrAccessModifier
-    TUInt32 inheritsCount;                // 继承类型数量
-    TUInt32 membersCount;                 // 成员数量
-    // 注意：inheritStringIndices数组紧跟在结构体后面（不是指针）
-    // 运行时通过 inheritsCount 和固定偏移量访问：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo)
-    // 成员数据紧跟在继承数组后面：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo) + inheritsCount * sizeof(TUInt32)
-    // 布局：SZrCompiledPrototypeInfo(20字节) + [inheritsCount * 4字节] + [membersCount * SZrCompiledMemberInfo]
+    TUInt32 nameStringIndex;
+    TUInt32 type;
+    TUInt32 accessModifier;
+    TUInt32 inheritsCount;
+    TUInt32 membersCount;
 } SZrCompiledPrototypeInfo;
 
-// 编译时使用的C原生结构（用于序列化成员信息）
 typedef struct SZrCompiledMemberInfo {
-    TUInt32 memberType;                   // EZrAstNodeType
-    TUInt32 nameStringIndex;              // 成员名称字符串在常量池中的索引（如果为0表示无名）
-    TUInt32 accessModifier;               // EZrAccessModifier
-    TUInt32 isStatic;                     // TBool (0或1)
-    TUInt32 isConst;                      // TBool (0或1)
-    
-    // 字段特定信息（仅当memberType为STRUCT_FIELD或CLASS_FIELD时有效）
-    TUInt32 fieldTypeNameStringIndex;     // 字段类型名称字符串索引（如果为0表示无类型名）
-    TUInt32 fieldOffset;                  // 字段偏移量
-    TUInt32 fieldSize;                    // 字段大小
-    
-    // 方法特定信息（仅当memberType为METHOD或META_FUNCTION时有效）
-    TUInt32 isMetaMethod;                 // TBool (0或1)
-    TUInt32 metaType;                     // EZrMetaType
-    TUInt32 functionConstantIndex;        // 函数在常量池中的索引
-    TUInt32 parameterCount;               // 参数数量
-    TUInt32 returnTypeNameStringIndex;    // 返回类型名称字符串索引（如果为0表示无返回类型名）
+    TUInt32 memberType;
+    TUInt32 nameStringIndex;
+    TUInt32 accessModifier;
+    TUInt32 isStatic;
+    TUInt32 isConst;
+    TUInt32 fieldTypeNameStringIndex;
+    TUInt32 fieldOffset;
+    TUInt32 fieldSize;
+    TUInt32 isMetaMethod;
+    TUInt32 metaType;
+    TUInt32 functionConstantIndex;
+    TUInt32 parameterCount;
+    TUInt32 returnTypeNameStringIndex;
 } SZrCompiledMemberInfo;
+#pragma pack(pop)
 
 // 将prototype信息序列化为二进制数据（不存储到常量池）
 // 编译时使用C原生结构，避免创建VM对象，提高编译速度
@@ -3260,7 +3523,14 @@ static TBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePro
             memberInfo->memberType == ZR_AST_CLASS_META_FUNCTION) {
             compiledMember->isMetaMethod = memberInfo->isMetaMethod ? ZR_TRUE : ZR_FALSE;
             compiledMember->metaType = (TUInt32)memberInfo->metaType;
-            compiledMember->functionConstantIndex = memberInfo->functionConstantIndex;
+            if (memberInfo->compiledFunction != ZR_NULL) {
+                SZrTypeValue functionValue;
+                ZrValueInitAsRawObject(cs->state, &functionValue,
+                                       ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->compiledFunction));
+                compiledMember->functionConstantIndex = add_constant(cs, &functionValue);
+            } else {
+                compiledMember->functionConstantIndex = memberInfo->functionConstantIndex;
+            }
             compiledMember->parameterCount = memberInfo->parameterCount;
             // 处理返回类型名称
             if (memberInfo->returnTypeName != ZR_NULL) {
@@ -3319,13 +3589,9 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     // 2. 首先收集并执行所有编译期声明
     if (script->statements != ZR_NULL) {
         // 第一遍：收集并执行编译期声明
-        printf("  [DEBUG] First pass: executing compile-time declarations (%zu statements)...\n", script->statements->count);
-        fflush(stdout);
         for (TZrSize i = 0; i < script->statements->count; i++) {
             SZrAstNode *stmt = script->statements->nodes[i];
             if (stmt != ZR_NULL && stmt->type == ZR_AST_COMPILE_TIME_DECLARATION) {
-                printf("  [DEBUG] Executing compile-time declaration at index %zu\n", i);
-                fflush(stdout);
                 // 执行编译期声明
                 execute_compile_time_declaration(cs, stmt);
                 
@@ -3336,12 +3602,7 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 }
             }
         }
-        printf("  [DEBUG] First pass completed.\n");
-        fflush(stdout);
-        
         // 第二遍：编译运行时代码
-        printf("  [DEBUG] Second pass: compiling runtime code (%zu statements)...\n", script->statements->count);
-        fflush(stdout);
         for (TZrSize i = 0; i < script->statements->count; i++) {
             SZrAstNode *stmt = script->statements->nodes[i];
             if (stmt != ZR_NULL) {

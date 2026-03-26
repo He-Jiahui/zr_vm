@@ -1251,4 +1251,3 @@ static void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *patter
         cs->stackSlotCount--;
     }
 }
-

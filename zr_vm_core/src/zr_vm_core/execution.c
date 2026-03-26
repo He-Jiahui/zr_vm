@@ -115,6 +115,117 @@ static void parse_type_name(SZrState *state, SZrString *fullTypeName, SZrString 
     }
 }
 
+static TInt64 value_to_int64(const SZrTypeValue *value) {
+    if (value == ZR_NULL) {
+        return 0;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+        return value->value.nativeObject.nativeInt64;
+    }
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+        return (TInt64)value->value.nativeObject.nativeUInt64;
+    }
+    if (ZR_VALUE_IS_TYPE_BOOL(value->type)) {
+        return value->value.nativeObject.nativeBool ? 1 : 0;
+    }
+    if (ZR_VALUE_IS_TYPE_FLOAT(value->type)) {
+        return (TInt64)value->value.nativeObject.nativeDouble;
+    }
+
+    return 0;
+}
+
+static TUInt64 value_to_uint64(const SZrTypeValue *value) {
+    if (value == ZR_NULL) {
+        return 0;
+    }
+
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+        return value->value.nativeObject.nativeUInt64;
+    }
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+        return (TUInt64)value->value.nativeObject.nativeInt64;
+    }
+    if (ZR_VALUE_IS_TYPE_BOOL(value->type)) {
+        return value->value.nativeObject.nativeBool ? 1u : 0u;
+    }
+    if (ZR_VALUE_IS_TYPE_FLOAT(value->type)) {
+        return (TUInt64)value->value.nativeObject.nativeDouble;
+    }
+
+    return 0;
+}
+
+static TDouble value_to_double(const SZrTypeValue *value) {
+    if (value == ZR_NULL) {
+        return 0.0;
+    }
+
+    if (ZR_VALUE_IS_TYPE_FLOAT(value->type)) {
+        return value->value.nativeObject.nativeDouble;
+    }
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+        return (TDouble)value->value.nativeObject.nativeInt64;
+    }
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+        return (TDouble)value->value.nativeObject.nativeUInt64;
+    }
+    if (ZR_VALUE_IS_TYPE_BOOL(value->type)) {
+        return value->value.nativeObject.nativeBool ? 1.0 : 0.0;
+    }
+
+    return 0.0;
+}
+
+static TBool try_builtin_add(SZrState *state, SZrTypeValue *destination, const SZrTypeValue *opA, const SZrTypeValue *opB) {
+    if (state == ZR_NULL || destination == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type)) {
+        SZrString *str1 = ZR_CAST_STRING(state, opA->value.object);
+        SZrString *str2 = ZR_CAST_STRING(state, opB->value.object);
+        TNativeString native1 = ZrStringGetNativeString(str1);
+        TNativeString native2 = ZrStringGetNativeString(str2);
+        TZrSize len1 = (str1->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str1->shortStringLength : str1->longStringLength;
+        TZrSize len2 = (str2->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str2->shortStringLength : str2->longStringLength;
+        TZrSize totalLen = len1 + len2;
+        char *buffer = (char *)malloc(totalLen + 1);
+        if (buffer == ZR_NULL) {
+            ZrValueResetAsNull(destination);
+            return ZR_TRUE;
+        }
+
+        memcpy(buffer, native1, len1);
+        memcpy(buffer + len1, native2, len2);
+        buffer[totalLen] = '\0';
+        SZrString *result = ZrStringCreateFromNative(state, buffer);
+        free(buffer);
+        if (result != ZR_NULL) {
+            ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(result));
+        } else {
+            ZrValueResetAsNull(destination);
+        }
+        return ZR_TRUE;
+    }
+
+    if ((ZR_VALUE_IS_TYPE_NUMBER(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opA->type)) &&
+        (ZR_VALUE_IS_TYPE_NUMBER(opB->type) || ZR_VALUE_IS_TYPE_BOOL(opB->type))) {
+        if (ZR_VALUE_IS_TYPE_FLOAT(opA->type) || ZR_VALUE_IS_TYPE_FLOAT(opB->type)) {
+            ZrValueInitAsFloat(state, destination, value_to_double(opA) + value_to_double(opB));
+        } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) || ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type) ||
+                   ZR_VALUE_IS_TYPE_BOOL(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opB->type)) {
+            ZrValueInitAsInt(state, destination, value_to_int64(opA) + value_to_int64(opB));
+        } else {
+            ZrValueInitAsUInt(state, destination, value_to_uint64(opA) + value_to_uint64(opB));
+        }
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 // 辅助函数：查找类型原型（从当前模块或全局模块注册表）
 // 返回找到的原型对象，如果未找到返回 ZR_NULL
 static SZrObjectPrototype *find_type_prototype(SZrState *state, SZrString *typeName, EZrObjectPrototypeType expectedType) {
@@ -232,6 +343,26 @@ static SZrObjectPrototype *find_type_prototype(SZrState *state, SZrString *typeN
         }
     }
     
+    if (state->global != ZR_NULL && state->global->zrObject.type == ZR_VALUE_TYPE_OBJECT) {
+        SZrObject *zrObject = ZR_CAST_OBJECT(state, state->global->zrObject.value.object);
+        if (zrObject != ZR_NULL) {
+            SZrTypeValue key;
+            ZrValueInitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(actualTypeName));
+            key.type = ZR_VALUE_TYPE_STRING;
+            const SZrTypeValue *prototypeValue = ZrObjectGetValue(state, zrObject, &key);
+            if (prototypeValue != ZR_NULL && prototypeValue->type == ZR_VALUE_TYPE_OBJECT) {
+                SZrObject *candidate = ZR_CAST_OBJECT(state, prototypeValue->value.object);
+                if (candidate != ZR_NULL &&
+                    candidate->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+                    SZrObjectPrototype *prototype = (SZrObjectPrototype *)candidate;
+                    if (prototype->type == expectedType) {
+                        return prototype;
+                    }
+                }
+            }
+        }
+    }
+
     // 如果找不到，返回 ZR_NULL（后续可以通过元方法或创建新原型）
     // 注意：完整的实现需要：
     // - 模块加载时将类型原型注册到全局类型表
@@ -264,6 +395,7 @@ static TBool convert_to_struct(SZrState *state, SZrTypeValue *source, SZrObjectP
         if (structObject == ZR_NULL) {
             return ZR_FALSE;
         }
+        ZrObjectInit(state, structObject);
         
         // 设置内部类型为 STRUCT
         structObject->internalType = ZR_OBJECT_INTERNAL_TYPE_STRUCT;
@@ -315,6 +447,7 @@ static TBool convert_to_class(SZrState *state, SZrTypeValue *source, SZrObjectPr
         if (classObject == ZR_NULL) {
             return ZR_FALSE;
         }
+        ZrObjectInit(state, classObject);
         
         // 设置内部类型为 OBJECT（class 是引用类型）
         classObject->internalType = ZR_OBJECT_INTERNAL_TYPE_OBJECT;
@@ -873,31 +1006,35 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(ADD) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                SZrMeta *meta = ZrValueGetMeta(state, opA, ZR_META_ADD);
-                if (meta != ZR_NULL && meta->function != ZR_NULL) {
-                    // 调用元方法
-                    TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-                    SZrCallInfo *savedCallInfo = state->callInfoList;
-                    PROTECT_E(state, callInfo, {
-                        ZrFunctionCheckStackAndGc(state, 3, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrStackSetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrStackCopyValue(state, metaBase + 1, opA);
-                        ZrStackCopyValue(state, metaBase + 2, opB);
-                        state->stackTop.valuePointer = metaBase + 3;
-                        ZrFunctionCallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
-                            SZrTypeValue *returnValue = ZrStackGetValue(metaBase);
-                            ZrValueCopy(state, destination, returnValue);
-                        } else {
-                            ZrValueResetAsNull(destination);
-                        }
-                        state->stackTop.valuePointer = savedStackTop;
-                        state->callInfoList = savedCallInfo;
-                    });
+                if (try_builtin_add(state, destination, opA, opB)) {
+                    // 基础数值和字符串拼接直接在运行时处理。
                 } else {
-                    // 无元方法，返回 null
-                    ZrValueResetAsNull(destination);
+                    SZrMeta *meta = ZrValueGetMeta(state, opA, ZR_META_ADD);
+                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                    // 调用元方法
+                        TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+                        SZrCallInfo *savedCallInfo = state->callInfoList;
+                        PROTECT_E(state, callInfo, {
+                            ZrFunctionCheckStackAndGc(state, 3, savedStackTop);
+                            TZrStackValuePointer metaBase = savedStackTop;
+                            ZrStackSetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+                            ZrStackCopyValue(state, metaBase + 1, opA);
+                            ZrStackCopyValue(state, metaBase + 2, opB);
+                            state->stackTop.valuePointer = metaBase + 3;
+                            ZrFunctionCallWithoutYield(state, metaBase, 1);
+                            if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                                SZrTypeValue *returnValue = ZrStackGetValue(metaBase);
+                                ZrValueCopy(state, destination, returnValue);
+                            } else {
+                                ZrValueResetAsNull(destination);
+                            }
+                            state->stackTop.valuePointer = savedStackTop;
+                            state->callInfoList = savedCallInfo;
+                        });
+                    } else {
+                        // 无元方法，返回 null
+                        ZrValueResetAsNull(destination);
+                    }
                 }
             }
             DONE(1);

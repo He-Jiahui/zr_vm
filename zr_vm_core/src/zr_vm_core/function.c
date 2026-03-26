@@ -215,7 +215,19 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
                     return ZR_NULL;
                 } else {
                     SZrCallInfo *callInfo = ZR_NULL;
-                    SZrFunction *function = ZR_CAST_VM_CLOSURE(state, value->value.object)->function;
+                    SZrFunction *function = ZR_CAST_FUNCTION(state, value->value.object);
+                    if (function == ZR_NULL) {
+                        return ZR_NULL;
+                    }
+                    SZrClosure *closure = ZrClosureNew(state, 0);
+                    if (closure == ZR_NULL) {
+                        return ZR_NULL;
+                    }
+                    closure->function = function;
+                    ZrValueInitAsRawObject(state, value, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+                    value->type = ZR_VALUE_TYPE_CLOSURE;
+                    value->isGarbageCollectable = ZR_TRUE;
+                    value->isNative = ZR_FALSE;
                     TZrSize argumentsCount = ZR_CAST_INT64(state->stackTop.valuePointer - stackPointer) - 1;
                     TZrSize parametersCount = function->parameterCount;
                     TZrSize stackSize = function->stackSize;
@@ -223,6 +235,7 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
                     callInfo = ZrFunctionPreCallNativeCallInfo(state, stackPointer, resultCount, ZR_CALL_STATUS_NONE,
                                                                stackPointer + 1 + stackSize);
                     callInfo->returnDestination = returnDestination;
+                    callInfo->previous = state->callInfoList;
                     state->callInfoList = callInfo;
                     callInfo->context.context.programCounter = function->instructionsList;
                     for (; argumentsCount < parametersCount; argumentsCount++) {

@@ -1,0 +1,11 @@
+module "artifact_baseline";
+
+pub var greet = () => {
+    return "hello artifact";
+};
+
+var buildMessage = () => {
+    return greet();
+};
+
+return buildMessage();

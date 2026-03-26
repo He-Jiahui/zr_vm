@@ -43,31 +43,38 @@ TBool ZrLibrary_File_GetDirectory(TNativeString path, ZR_OUT TNativeString direc
 }
 
 void ZrLibrary_File_PathJoin(TNativeString path1, TNativeString path2, ZR_OUT TNativeString result) {
+    if (result == ZR_NULL) {
+        return;
+    }
     if (path1 == ZR_NULL || path2 == ZR_NULL) {
+        result[0] = '\0';
         return;
     }
-    if (path1[0] == '\0') {
-        TZrSize totalLength = ZrNativeStringLength(path2);
-        snprintf(result, totalLength, "%s", path2) + 1;
+    TZrSize length1 = ZrNativeStringLength(path1);
+    TZrSize length2 = ZrNativeStringLength(path2);
+
+    if (length1 == 0) {
+        snprintf(result, ZR_LIBRARY_MAX_PATH_LENGTH, "%s", path2);
         return;
     }
-    if (path2[0] == '\0') {
-        TZrSize totalLength = ZrNativeStringLength(path1) + 1;
-        snprintf(result, totalLength, "%s", path1);
+    if (length2 == 0) {
+        snprintf(result, ZR_LIBRARY_MAX_PATH_LENGTH, "%s", path1);
         return;
     }
-    if (path1[ZrNativeStringLength(path1) - 1] == '/' && path2[0] == '/') {
-        TZrSize totalLength = ZrNativeStringLength(path1) + ZrNativeStringLength(path2);
-        snprintf(result, totalLength, "%s%s", path1, path2 + 1);
+
+    TBool path1HasSeparator = path1[length1 - 1] == '/' || path1[length1 - 1] == '\\';
+    TBool path2HasSeparator = path2[0] == '/' || path2[0] == '\\';
+
+    if (path1HasSeparator && path2HasSeparator) {
+        snprintf(result, ZR_LIBRARY_MAX_PATH_LENGTH, "%s%s", path1, path2 + 1);
         return;
     }
-    if (path1[ZrNativeStringLength(path1) - 1] == '/' || path2[0] == '/') {
-        TZrSize totalLength = ZrNativeStringLength(path1) + ZrNativeStringLength(path2) + 1;
-        snprintf(result, totalLength, "%s%s", path1, path2);
+    if (path1HasSeparator || path2HasSeparator) {
+        snprintf(result, ZR_LIBRARY_MAX_PATH_LENGTH, "%s%s", path1, path2);
         return;
     }
-    TZrSize totalLength = ZrNativeStringLength(path1) + ZrNativeStringLength(path2) + 2;
-    snprintf(result, totalLength, "%s%c%s", path1, ZR_SEPARATOR, path2);
+
+    snprintf(result, ZR_LIBRARY_MAX_PATH_LENGTH, "%s%c%s", path1, ZR_SEPARATOR, path2);
 }
 
 TNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TNativeString path) {
@@ -75,8 +82,20 @@ TNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TNativeString path)
     if (reader == ZR_NULL) {
         return ZR_NULL;
     }
-    TNativeString buffer = ZrMemoryRawMallocWithType(global, reader->size, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
-    fread(buffer, 1, reader->size, reader->file);
+    TNativeString buffer = ZrMemoryRawMallocWithType(global, reader->size + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    if (buffer == ZR_NULL) {
+        ZrLibrary_File_CloseRead(global, reader);
+        return ZR_NULL;
+    }
+
+    TZrSize readSize = fread(buffer, 1, reader->size, reader->file);
+    buffer[readSize] = '\0';
+    if (readSize != reader->size && ferror(reader->file)) {
+        ZrLibrary_File_CloseRead(global, reader);
+        ZrMemoryRawFreeWithType(global, buffer, reader->size + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+        return ZR_NULL;
+    }
+
     ZrLibrary_File_CloseRead(global, reader);
     return buffer;
 }
@@ -87,7 +106,14 @@ SZrLibrary_File_Reader *ZrLibrary_File_OpenRead(SZrGlobalState *global, TNativeS
     }
     SZrLibrary_File_Reader *reader =
             ZrMemoryRawMallocWithType(global, sizeof(SZrLibrary_File_Reader), ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
+    if (reader == ZR_NULL) {
+        return ZR_NULL;
+    }
     reader->file = fopen(path, isBinary ? "rb" : "r");
+    if (reader->file == ZR_NULL) {
+        ZrMemoryRawFreeWithType(global, reader, sizeof(SZrLibrary_File_Reader), ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
+        return ZR_NULL;
+    }
     // get file size
     fseek(reader->file, 0, SEEK_END);
     reader->size = ftell(reader->file);

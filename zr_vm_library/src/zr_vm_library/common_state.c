@@ -47,8 +47,13 @@ SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TNativeString config
         return ZR_NULL;
     }
     SZrLibrary_Project *project = ZrLibrary_Project_New(global->mainThreadState, configContent, configFilePath);
-    ZrMemoryRawFreeWithType(global, configContent, ZrNativeStringLength(configContent),
+    TZrSize configLength = ZrNativeStringLength(configContent);
+    ZrMemoryRawFreeWithType(global, configContent, configLength + 1,
                             ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    if (project == ZR_NULL) {
+        ZrGlobalStateFree(global);
+        return ZR_NULL;
+    }
     global->userData = project;
     global->sourceLoader = ZrLibrary_Project_SourceLoadImplementation;
     return global;

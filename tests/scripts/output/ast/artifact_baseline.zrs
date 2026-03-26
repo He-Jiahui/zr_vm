@@ -1,0 +1,21 @@
+// ZR Syntax Tree File (.zrs)
+// Generated from parsed AST
+
+SCRIPT [line:1:col:7]
+  module:   MODULE_DECLARATION [line:1:col:7]
+    STRING_LITERAL [line:1:col:1]
+  value: "artifact_baseline"
+  statements (3):
+    VARIABLE_DECLARATION [line:3:col:5]
+      pattern:       IDENTIFIER [line:3:col:17]
+  name: "greet"
+      value:       LAMBDA_EXPRESSION [line:3:col:20]
+        params: ()
+        body:         BLOCK [line:3:col:1]
+    VARIABLE_DECLARATION [line:7:col:5]
+      pattern:       IDENTIFIER [line:7:col:20]
+  name: "buildMessage"
+      value:       LAMBDA_EXPRESSION [line:7:col:23]
+        params: ()
+        body:         BLOCK [line:7:col:1]
+    RETURN_STATEMENT [line:11:col:8]
