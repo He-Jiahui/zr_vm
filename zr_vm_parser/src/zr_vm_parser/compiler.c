@@ -99,6 +99,7 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     // 初始化错误状态
     cs->hasError = ZR_FALSE;
     cs->hasFatalError = ZR_FALSE;
+    cs->hasCompileTimeError = ZR_FALSE;
     cs->errorMessage = ZR_NULL;
     cs->errorLocation.start.line = 0;
     cs->errorLocation.start.column = 0;
@@ -419,10 +420,12 @@ void ZrCompileTimeError(SZrCompilerState *cs, EZrCompileTimeErrorLevel level, co
         case ZR_COMPILE_TIME_ERROR_ERROR:
             levelStr = "ERROR";
             cs->hasError = ZR_TRUE;
+            cs->hasCompileTimeError = ZR_TRUE;
             break;
         case ZR_COMPILE_TIME_ERROR_FATAL:
             levelStr = "FATAL";
             cs->hasError = ZR_TRUE;
+            cs->hasCompileTimeError = ZR_TRUE;
             break;
     }
     
@@ -439,12 +442,17 @@ void ZrCompileTimeError(SZrCompilerState *cs, EZrCompileTimeErrorLevel level, co
            levelStr, fileName, location.start.line, location.start.column, message);
     
     // 如果是致命错误，设置错误信息
-    if (level == ZR_COMPILE_TIME_ERROR_FATAL) {
-        cs->hasFatalError = ZR_TRUE;
+    if (level == ZR_COMPILE_TIME_ERROR_ERROR || level == ZR_COMPILE_TIME_ERROR_FATAL) {
         if (cs->errorMessage == ZR_NULL) {
-            cs->errorMessage = message;  // 注意：这里只是保存指针，实际应该复制字符串
+            cs->errorMessage = (level == ZR_COMPILE_TIME_ERROR_FATAL)
+                                       ? "Fatal compile-time evaluation failed"
+                                       : "Compile-time evaluation failed";
             cs->errorLocation = location;
         }
+    }
+
+    if (level == ZR_COMPILE_TIME_ERROR_FATAL) {
+        cs->hasFatalError = ZR_TRUE;
     }
 }
 
@@ -601,6 +609,118 @@ TUInt32 add_constant(SZrCompilerState *cs, SZrTypeValue *value) {
     TUInt32 index = (TUInt32)(cs->constants.length - 1);
     cs->constantCount = cs->constants.length;
     return index;
+}
+
+#define ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH 64
+
+static TBool compiler_value_is_compile_time_function_pointer(SZrCompilerState *cs, const SZrTypeValue *value) {
+    TZrPtr pointerValue;
+
+    if (cs == ZR_NULL || value == ZR_NULL || value->type != ZR_VALUE_TYPE_NATIVE_POINTER) {
+        return ZR_FALSE;
+    }
+
+    pointerValue = value->value.nativeObject.nativePointer;
+    if (pointerValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = 0; i < cs->compileTimeFunctions.length; i++) {
+        SZrCompileTimeFunction **funcPtr =
+                (SZrCompileTimeFunction **)ZrArrayGet(&cs->compileTimeFunctions, i);
+        if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL && (TZrPtr)(*funcPtr) == pointerValue) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TBool compiler_is_runtime_safe_compile_time_value_internal(SZrCompilerState *cs,
+                                                                  const SZrTypeValue *value,
+                                                                  SZrRawObject **visitedObjects,
+                                                                  TZrSize visitedCount,
+                                                                  TUInt32 depth) {
+    if (cs == ZR_NULL || value == ZR_NULL || visitedObjects == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (depth > ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH) {
+        return ZR_FALSE;
+    }
+
+    switch (value->type) {
+        case ZR_VALUE_TYPE_NATIVE_POINTER:
+            return ZR_FALSE;
+        case ZR_VALUE_TYPE_OBJECT:
+        case ZR_VALUE_TYPE_ARRAY: {
+            SZrRawObject *rawObject = ZrValueGetRawObject(value);
+            SZrObject *object;
+
+            if (rawObject == ZR_NULL) {
+                return ZR_TRUE;
+            }
+
+            for (TZrSize i = 0; i < visitedCount; i++) {
+                if (visitedObjects[i] == rawObject) {
+                    return ZR_TRUE;
+                }
+            }
+
+            if (visitedCount >= ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH) {
+                return ZR_FALSE;
+            }
+
+            object = ZR_CAST_OBJECT(cs->state, rawObject);
+            if (object == ZR_NULL || !object->nodeMap.isValid || object->nodeMap.buckets == ZR_NULL) {
+                return ZR_TRUE;
+            }
+
+            visitedObjects[visitedCount] = rawObject;
+            for (TZrSize bucketIndex = 0; bucketIndex < object->nodeMap.capacity; bucketIndex++) {
+                SZrHashKeyValuePair *pair = object->nodeMap.buckets[bucketIndex];
+                while (pair != ZR_NULL) {
+                    if (!compiler_is_runtime_safe_compile_time_value_internal(cs, &pair->key, visitedObjects,
+                                                                              visitedCount + 1, depth + 1) ||
+                        !compiler_is_runtime_safe_compile_time_value_internal(cs, &pair->value, visitedObjects,
+                                                                              visitedCount + 1, depth + 1)) {
+                        return ZR_FALSE;
+                    }
+                    pair = pair->next;
+                }
+            }
+            return ZR_TRUE;
+        }
+        default:
+            return ZR_TRUE;
+    }
+}
+
+ZR_PARSER_API TBool ZrCompilerValidateRuntimeProjectionValue(SZrCompilerState *cs,
+                                                             const SZrTypeValue *value,
+                                                             SZrFileRange location) {
+    SZrRawObject *visitedObjects[ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH];
+    const TChar *message;
+
+    if (cs == ZR_NULL || value == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = 0; i < ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH; i++) {
+        visitedObjects[i] = ZR_NULL;
+    }
+
+    if (compiler_is_runtime_safe_compile_time_value_internal(cs, value, visitedObjects, 0, 0)) {
+        return ZR_TRUE;
+    }
+
+    cs->hasCompileTimeError = ZR_TRUE;
+    cs->hasFatalError = ZR_TRUE;
+    message = compiler_value_is_compile_time_function_pointer(cs, value)
+                      ? "Compile-time value cannot be projected to runtime because it is a compile-time-only function reference"
+                      : "Compile-time value cannot be projected to runtime because it contains native pointer values such as compile-time-only function references";
+    ZrCompilerError(cs, message, location);
+    return ZR_FALSE;
 }
 
 // 分配局部变量槽位
@@ -2022,7 +2142,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->closureVars.length = oldClosureVarLength;
     cs->isInConstructor = oldIsInConstructor;
     cs->currentFunctionNode = oldFunctionNode;
-    cs->constLocalVars.length = oldConstLocalVarLength;
+    cs->constLocalVars.length = 0;
     cs->constParameters.length = oldConstParameterLength;
 
     // 将新函数添加到子函数列表
@@ -2182,18 +2302,18 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    // 重置编译器状态（为新函数）
-    cs->instructionCount = 0;
-    cs->stackSlotCount = 0;
-    cs->localVarCount = 0;
-    cs->constantCount = 0;
-    cs->closureVarCount = 0;
+    // 测试函数应继承当前脚本已经编译出的脚本级初始化与局部变量布局。
+    // 这样直接执行测试函数时，会先运行前置脚本初始化，再进入测试体。
+    cs->instructionCount = oldInstructionCount;
+    cs->stackSlotCount = oldStackSlotCount;
+    cs->localVarCount = oldLocalVarCount;
+    cs->constantCount = oldConstantCount;
+    cs->closureVarCount = oldClosureVarCount;
 
-    // 清空数组（但保留已分配的内存）
-    cs->instructions.length = 0;
-    cs->localVars.length = 0;
-    cs->constants.length = 0;
-    cs->closureVars.length = 0;
+    cs->instructions.length = oldInstructionLength;
+    cs->localVars.length = oldLocalVarLength;
+    cs->constants.length = oldConstantLength;
+    cs->closureVars.length = oldClosureVarLength;
 
     // 进入函数作用域
     enter_scope(cs);
@@ -4330,6 +4450,12 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 }
             }
         }
+
+        if (cs->hasCompileTimeError) {
+            cs->hasError = ZR_TRUE;
+            return;
+        }
+
         // 第二遍：编译运行时代码
         for (TZrSize i = 0; i < script->statements->count; i++) {
             SZrAstNode *stmt = script->statements->nodes[i];
@@ -4379,6 +4505,11 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                         // TODO: 目前先跳过，后续实现
                         printf("    Skipping statement type %d (not implemented yet)\n", stmt->type);
                         break;
+                }
+
+                if (cs->hasCompileTimeError) {
+                    cs->hasError = ZR_TRUE;
+                    return;
                 }
 
                 // 即使有错误，也继续编译后续语句（除非是致命错误）

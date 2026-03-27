@@ -96,6 +96,9 @@ static char* test_realpath(const char* path, char* resolved_path) {
 #define realpath test_realpath
 #endif
 
+void setUp(void) {}
+void tearDown(void) {}
+
 // 简单的测试分配器
 static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);

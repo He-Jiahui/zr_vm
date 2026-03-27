@@ -887,6 +887,52 @@ static SZrAstNode *append_primary_member(SZrParserState *ps, SZrAstNode *base, S
     return primaryNode;
 }
 
+static TBool is_lambda_expression_after_lparen(SZrParserState *ps) {
+    TZrSize savedPos = ps->lexer->currentPos;
+    TInt32 savedChar = ps->lexer->currentChar;
+    TInt32 savedLine = ps->lexer->lineNumber;
+    TInt32 savedLastLine = ps->lexer->lastLine;
+    SZrToken savedToken = ps->lexer->t;
+    SZrToken savedLookahead = ps->lexer->lookahead;
+    TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
+    TInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
+    TInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
+    TInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
+    TInt32 depth = 0;
+    TBool isLambda = ZR_FALSE;
+
+    if (ps->lexer->t.token != ZR_TK_LPAREN) {
+        return ZR_FALSE;
+    }
+
+    ZrLexerNext(ps->lexer);
+    depth = 1;
+    while (depth > 0 && ps->lexer->t.token != ZR_TK_EOS) {
+        if (ps->lexer->t.token == ZR_TK_LPAREN) {
+            depth++;
+        } else if (ps->lexer->t.token == ZR_TK_RPAREN) {
+            depth--;
+        }
+        ZrLexerNext(ps->lexer);
+    }
+
+    if (depth == 0 && ps->lexer->t.token == ZR_TK_RIGHT_ARROW) {
+        isLambda = ZR_TRUE;
+    }
+
+    ps->lexer->currentPos = savedPos;
+    ps->lexer->currentChar = savedChar;
+    ps->lexer->lineNumber = savedLine;
+    ps->lexer->lastLine = savedLastLine;
+    ps->lexer->t = savedToken;
+    ps->lexer->lookahead = savedLookahead;
+    ps->lexer->lookaheadPos = savedLookaheadPos;
+    ps->lexer->lookaheadChar = savedLookaheadChar;
+    ps->lexer->lookaheadLine = savedLookaheadLine;
+    ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+    return isLambda;
+}
+
 // 解析成员访问和函数调用
 static SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
     SZrFileRange startLoc = base->location;
@@ -1034,42 +1080,43 @@ static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
         }
     }
     // Lambda 表达式或括号表达式
-    else if (consume_token(ps, ZR_TK_LPAREN)) {
-        // 检查是否是 lambda 表达式：先尝试解析参数列表，然后检查下一个 token 是否是 =>
-        // 这样可以处理空参数列表 () => { ... } 的情况
-        SZrFileRange lambdaLoc = get_current_location(ps);
-        SZrAstNodeArray *params = ZR_NULL;
-        SZrParameter *args = ZR_NULL;
+    else if (token == ZR_TK_LPAREN) {
+        if (is_lambda_expression_after_lparen(ps)) {
+            SZrFileRange lambdaLoc;
+            SZrAstNodeArray *params = ZR_NULL;
+            SZrParameter *args = ZR_NULL;
 
-        // 尝试解析参数列表（可能是空的）
-        if (ps->lexer->t.token == ZR_TK_PARAMS) {
-            // 只有可变参数
-            ZrLexerNext(ps->lexer);
-            SZrAstNode *argsNode = parse_parameter(ps);
-            if (argsNode != ZR_NULL) {
-                args = &argsNode->data.parameter;
-            }
-            params = ZrAstNodeArrayNew(ps->state, 0);
-        } else {
-            // 解析参数列表（可能是空的）
-            params = parse_parameter_list(ps);
-            if (consume_token(ps, ZR_TK_COMMA)) {
-                if (ps->lexer->t.token == ZR_TK_PARAMS) {
-                    ZrLexerNext(ps->lexer);
+            consume_token(ps, ZR_TK_LPAREN);
+            lambdaLoc = get_current_location(ps);
+
+            if (ps->lexer->t.token == ZR_TK_PARAMS) {
+                ZrLexerNext(ps->lexer);
+                {
                     SZrAstNode *argsNode = parse_parameter(ps);
                     if (argsNode != ZR_NULL) {
                         args = &argsNode->data.parameter;
                     }
                 }
+                params = ZrAstNodeArrayNew(ps->state, 0);
+            } else {
+                params = parse_parameter_list(ps);
+                if (consume_token(ps, ZR_TK_COMMA) && ps->lexer->t.token == ZR_TK_PARAMS) {
+                    ZrLexerNext(ps->lexer);
+                    {
+                        SZrAstNode *argsNode = parse_parameter(ps);
+                        if (argsNode != ZR_NULL) {
+                            args = &argsNode->data.parameter;
+                        }
+                    }
+                }
             }
-        }
 
-        // 检查下一个 token 是否是 =>，如果是，就是 lambda 表达式
-        if (consume_token(ps, ZR_TK_RPAREN)) {
-            if (ps->lexer->t.token == ZR_TK_RIGHT_ARROW) {
-                // 是 lambda 表达式
-                ZrLexerNext(ps->lexer);  // 消费 =>
-                
+            expect_token(ps, ZR_TK_RPAREN);
+            consume_token(ps, ZR_TK_RPAREN);
+            expect_token(ps, ZR_TK_RIGHT_ARROW);
+            ZrLexerNext(ps->lexer);
+
+            {
                 SZrAstNode *block = parse_block(ps);
                 if (block != ZR_NULL) {
                     SZrFileRange endLoc = get_current_location(ps);
@@ -1082,23 +1129,13 @@ static SZrAstNode *parse_primary_expression(SZrParserState *ps) {
                         return parse_member_access(ps, lambdaNode);
                     }
                 }
-                // 如果创建 lambda 节点失败，继续解析为普通表达式
             }
+        } else {
+            consume_token(ps, ZR_TK_LPAREN);
+            base = parse_expression(ps);
+            expect_token(ps, ZR_TK_RPAREN);
+            consume_token(ps, ZR_TK_RPAREN);
         }
-        
-        // 如果不是 lambda，解析为普通括号表达式
-        // 注意：如果参数列表已经被解析了，这里需要重新解析
-        // TODO: 简化处理：如果参数列表为空，直接解析表达式；否则，可能需要报错
-        // 实际上，如果已经消费了 )，需要回退，但回退很复杂
-        // TODO: 这里简化：假设如果不是 lambda，就是普通括号表达式
-        // 但参数列表可能已经被解析了，所以这里可能会有问题
-        // 更好的方法是：不消费 )，先检查下一个 token
-        // TODO: 为了简化，我们假设如果参数列表为空且后面不是 =>，就是普通括号表达式
-        // 但 ) 已经被消费了，所以这里需要特殊处理
-        // TODO: 暂时：如果不是 lambda，就解析为普通表达式（可能会出错，但先这样）
-        base = parse_expression(ps);
-        expect_token(ps, ZR_TK_RPAREN);
-        consume_token(ps, ZR_TK_RPAREN);
     }
     else {
         report_error(ps, "Expected primary expression");
@@ -1711,6 +1748,7 @@ static SZrType *parse_type(SZrParserState *ps) {
     type->arrayMinSize = 0;
     type->arrayMaxSize = 0;
     type->hasArraySizeConstraint = ZR_FALSE;
+    type->arraySizeExpression = ZR_NULL;
 
     // 解析类型名称（可能是标识符、泛型类型或元组类型）
     if (ps->lexer->t.token == ZR_TK_LBRACKET) {
@@ -1756,26 +1794,20 @@ static SZrType *parse_type(SZrParserState *ps) {
 
     // 解析数组维度和大小约束
     while (consume_token(ps, ZR_TK_LBRACKET)) {
-        // 检查是否有大小约束（数字或范围）
-        if (ps->lexer->t.token == ZR_TK_INTEGER) {
-            // 解析数组大小约束
+        if (consume_token(ps, ZR_TK_RBRACKET)) {
+            // 普通数组维度（无大小约束）
+            type->dimensions++;
+        } else {
             if (!parse_array_size_constraint(ps, type)) {
                 ZrMemoryRawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 return ZR_NULL;
             }
-            // 继续解析下一个维度（如果有）
             if (!consume_token(ps, ZR_TK_RBRACKET)) {
                 report_error(ps, "Expected ] after array size constraint");
                 ZrMemoryRawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 return ZR_NULL;
             }
             type->dimensions++;
-        } else if (consume_token(ps, ZR_TK_RBRACKET)) {
-            // 普通数组维度（无大小约束）
-            type->dimensions++;
-        } else {
-            report_error(ps, "Expected ] for array dimension or array size constraint");
-            break;
         }
     }
 
@@ -1798,6 +1830,7 @@ static SZrType *parse_type_no_generic(SZrParserState *ps) {
     type->arrayMinSize = 0;
     type->arrayMaxSize = 0;
     type->hasArraySizeConstraint = ZR_FALSE;
+    type->arraySizeExpression = ZR_NULL;
 
     // 解析类型名称（可能是标识符或元组类型，但不解析泛型类型）
     if (ps->lexer->t.token == ZR_TK_LBRACKET) {
@@ -1831,26 +1864,20 @@ static SZrType *parse_type_no_generic(SZrParserState *ps) {
 
     // 解析数组维度和大小约束
     while (consume_token(ps, ZR_TK_LBRACKET)) {
-        // 检查是否有大小约束（数字或范围）
-        if (ps->lexer->t.token == ZR_TK_INTEGER) {
-            // 解析数组大小约束
+        if (consume_token(ps, ZR_TK_RBRACKET)) {
+            // 普通数组维度（无大小约束）
+            type->dimensions++;
+        } else {
             if (!parse_array_size_constraint(ps, type)) {
                 ZrMemoryRawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 return ZR_NULL;
             }
-            // 继续解析下一个维度（如果有）
             if (!consume_token(ps, ZR_TK_RBRACKET)) {
                 report_error(ps, "Expected ] after array size constraint");
                 ZrMemoryRawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 return ZR_NULL;
             }
             type->dimensions++;
-        } else if (consume_token(ps, ZR_TK_RBRACKET)) {
-            // 普通数组维度（无大小约束）
-            type->dimensions++;
-        } else {
-            report_error(ps, "Expected ] for array dimension or array size constraint");
-            break;
         }
     }
 
@@ -1863,49 +1890,89 @@ static SZrType *parse_type_no_generic(SZrParserState *ps) {
 //   [M..N]   - 范围约束
 //   [N..]    - 最小大小
 static TBool parse_array_size_constraint(SZrParserState *ps, SZrType *type) {
+    TZrSize savedPos;
+    TInt32 savedChar;
+    TInt32 savedLine;
+    TInt32 savedLastLine;
+    SZrToken savedToken;
+    SZrToken savedLookahead;
+    TZrSize savedLookaheadPos;
+    TInt32 savedLookaheadChar;
+    TInt32 savedLookaheadLine;
+    TInt32 savedLookaheadLastLine;
+
     if (ps == ZR_NULL || type == ZR_NULL) {
         return ZR_FALSE;
     }
-    
-    // 读取第一个数字（固定大小或最小值）
-    if (ps->lexer->t.token != ZR_TK_INTEGER) {
-        report_error(ps, "Expected integer for array size constraint");
-        return ZR_FALSE;
-    }
-    
-    TInt64 firstValue = ps->lexer->t.seminfo.intValue;
-    if (firstValue < 0) {
-        report_error(ps, "Array size must be non-negative");
-        return ZR_FALSE;
-    }
-    
-    ZrLexerNext(ps->lexer);
-    
-    // 检查是否有范围操作符 ..
-    if (consume_token(ps, ZR_TK_DOT_DOT)) {
-        // 范围约束：[M..N] 或 [N..]
-        type->arrayMinSize = (TZrSize)firstValue;
-        type->hasArraySizeConstraint = ZR_TRUE;
-        
-        // 检查是否有第二个数字（最大值）
-        if (ps->lexer->t.token == ZR_TK_INTEGER) {
-            TInt64 secondValue = ps->lexer->t.seminfo.intValue;
-            if (secondValue < 0 || secondValue < firstValue) {
-                report_error(ps, "Invalid array size range: max must be >= min");
-                return ZR_FALSE;
-            }
-            type->arrayMaxSize = (TZrSize)secondValue;
-            ZrLexerNext(ps->lexer);
-        } else {
-            // [N..] 语法，只有最小值，没有最大值
-            type->arrayMaxSize = 0;  // 0 表示无上限
+
+    savedPos = ps->lexer->currentPos;
+    savedChar = ps->lexer->currentChar;
+    savedLine = ps->lexer->lineNumber;
+    savedLastLine = ps->lexer->lastLine;
+    savedToken = ps->lexer->t;
+    savedLookahead = ps->lexer->lookahead;
+    savedLookaheadPos = ps->lexer->lookaheadPos;
+    savedLookaheadChar = ps->lexer->lookaheadChar;
+    savedLookaheadLine = ps->lexer->lookaheadLine;
+    savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
+
+    if (ps->lexer->t.token == ZR_TK_INTEGER) {
+        TInt64 firstValue = ps->lexer->t.seminfo.intValue;
+        if (firstValue < 0) {
+            report_error(ps, "Array size must be non-negative");
+            return ZR_FALSE;
         }
-    } else {
-        // 固定大小：[N]
-        type->arrayFixedSize = (TZrSize)firstValue;
-        type->hasArraySizeConstraint = ZR_TRUE;
+
+        ZrLexerNext(ps->lexer);
+
+        if (ps->lexer->t.token == ZR_TK_RBRACKET) {
+            type->arrayFixedSize = (TZrSize)firstValue;
+            type->arrayMinSize = (TZrSize)firstValue;
+            type->arrayMaxSize = (TZrSize)firstValue;
+            type->hasArraySizeConstraint = ZR_TRUE;
+            type->arraySizeExpression = ZR_NULL;
+            return ZR_TRUE;
+        }
+
+        if (consume_token(ps, ZR_TK_DOT_DOT)) {
+            type->arrayMinSize = (TZrSize)firstValue;
+            type->arrayMaxSize = 0;
+            type->hasArraySizeConstraint = ZR_TRUE;
+            type->arraySizeExpression = ZR_NULL;
+
+            if (ps->lexer->t.token == ZR_TK_INTEGER) {
+                TInt64 secondValue = ps->lexer->t.seminfo.intValue;
+                if (secondValue < 0 || secondValue < firstValue) {
+                    report_error(ps, "Invalid array size range: max must be >= min");
+                    return ZR_FALSE;
+                }
+                type->arrayMaxSize = (TZrSize)secondValue;
+                ZrLexerNext(ps->lexer);
+            }
+            return ZR_TRUE;
+        }
     }
-    
+
+    ps->lexer->currentPos = savedPos;
+    ps->lexer->currentChar = savedChar;
+    ps->lexer->lineNumber = savedLine;
+    ps->lexer->lastLine = savedLastLine;
+    ps->lexer->t = savedToken;
+    ps->lexer->lookahead = savedLookahead;
+    ps->lexer->lookaheadPos = savedLookaheadPos;
+    ps->lexer->lookaheadChar = savedLookaheadChar;
+    ps->lexer->lookaheadLine = savedLookaheadLine;
+    ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+
+    type->arrayFixedSize = 0;
+    type->arrayMinSize = 0;
+    type->arrayMaxSize = 0;
+    type->arraySizeExpression = parse_expression(ps);
+    if (type->arraySizeExpression == ZR_NULL) {
+        report_error(ps, "Expected array size constraint expression");
+        return ZR_FALSE;
+    }
+    type->hasArraySizeConstraint = ZR_TRUE;
     return ZR_TRUE;
 }
 
@@ -2263,27 +2330,22 @@ static SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
         }
     }
 
-    // 等号和值
-    if (!consume_token(ps, ZR_TK_EQUALS)) {
-        const TChar *tokenStr = ZrLexerTokenToString(ps->lexer, ps->lexer->t.token);
-        TChar errorMsg[256];
-        snprintf(errorMsg, sizeof(errorMsg), "期望 '='，但遇到 '%s'", tokenStr);
-        report_error_with_token(ps, errorMsg, ps->lexer->t.token);
-        return ZR_NULL;
-    }
-
-    SZrAstNode *value = parse_expression(ps);
-    if (value == ZR_NULL) {
-        // 如果解析表达式失败，尝试错误恢复
-        if (ps->hasError) {
+    // 可选初始值
+    SZrAstNode *value = ZR_NULL;
+    if (consume_token(ps, ZR_TK_EQUALS)) {
+        value = parse_expression(ps);
+        if (value == ZR_NULL) {
+            // 如果解析表达式失败，尝试错误恢复
+            if (ps->hasError) {
+                return ZR_NULL;
+            }
+            // 如果没有错误但返回 NULL，可能是遇到了不支持的语法
+            const TChar *tokenStr = ZrLexerTokenToString(ps->lexer, ps->lexer->t.token);
+            TChar errorMsg[256];
+            snprintf(errorMsg, sizeof(errorMsg), "无法解析表达式（遇到 '%s'）", tokenStr);
+            report_error_with_token(ps, errorMsg, ps->lexer->t.token);
             return ZR_NULL;
         }
-        // 如果没有错误但返回 NULL，可能是遇到了不支持的语法
-        const TChar *tokenStr = ZrLexerTokenToString(ps->lexer, ps->lexer->t.token);
-        TChar errorMsg[256];
-        snprintf(errorMsg, sizeof(errorMsg), "无法解析表达式（遇到 '%s'）", tokenStr);
-        report_error_with_token(ps, errorMsg, ps->lexer->t.token);
-        return ZR_NULL;
     }
 
     // 分号是可选的（在某些情况下）

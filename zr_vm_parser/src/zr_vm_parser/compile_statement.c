@@ -36,6 +36,126 @@ extern TZrSize create_label(SZrCompilerState *cs);
 extern void resolve_label(SZrCompilerState *cs, TZrSize labelId);
 extern void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId);
 
+static void emit_constant_to_slot_local(SZrCompilerState *cs, TUInt32 slot, const SZrTypeValue *value,
+                                        SZrFileRange location) {
+    if (cs == ZR_NULL || value == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (!ZrCompilerValidateRuntimeProjectionValue(cs, value, location)) {
+        return;
+    }
+
+    SZrTypeValue constantValue = *value;
+    TUInt32 constantIndex = add_constant(cs, &constantValue);
+    TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                                               (TUInt16)slot,
+                                               (TInt32)constantIndex);
+    emit_instruction(cs, inst);
+}
+
+static TBool emit_cstring_constant_to_slot_local(SZrCompilerState *cs, TUInt32 slot, const TChar *literal) {
+    SZrString *stringValue;
+    SZrTypeValue constantValue;
+
+    if (cs == ZR_NULL || literal == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    stringValue = ZrStringCreate(cs->state, literal, strlen(literal));
+    if (stringValue == ZR_NULL) {
+        ZrCompilerError(cs, "Failed to allocate string constant", cs->errorLocation);
+        return ZR_FALSE;
+    }
+
+    ZrValueInitAsRawObject(cs->state, &constantValue, ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue));
+    constantValue.type = ZR_VALUE_TYPE_STRING;
+    emit_constant_to_slot_local(cs, slot, &constantValue, cs->errorLocation);
+    return !cs->hasError;
+}
+
+static TBool resolve_fixed_array_size(const SZrInferredType *type, TZrSize *fixedSize) {
+    if (type == ZR_NULL || fixedSize == ZR_NULL ||
+        type->baseType != ZR_VALUE_TYPE_ARRAY || !type->hasArraySizeConstraint) {
+        return ZR_FALSE;
+    }
+
+    if (type->arrayFixedSize > 0) {
+        *fixedSize = type->arrayFixedSize;
+        return ZR_TRUE;
+    }
+
+    if (type->arrayMinSize > 0 && type->arrayMinSize == type->arrayMaxSize) {
+        *fixedSize = type->arrayMinSize;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static void compile_default_fixed_array_initialization(SZrCompilerState *cs,
+                                                       TUInt32 arraySlot,
+                                                       TZrSize fixedSize,
+                                                       SZrFileRange location) {
+    SZrTypeValue nullValue;
+    TUInt32 nullConstantIndex;
+
+    if (cs == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    emit_instruction(cs,
+                     create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_ARRAY),
+                                          (TUInt16)arraySlot));
+
+    ZrValueResetAsNull(&nullValue);
+    nullConstantIndex = add_constant(cs, &nullValue);
+
+    for (TZrSize i = 0; i < fixedSize; i++) {
+        SZrTypeValue indexValue;
+        TUInt32 valueSlot = allocate_stack_slot(cs);
+        TUInt32 indexSlot;
+
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                                              (TUInt16)valueSlot,
+                                              (TInt32)nullConstantIndex));
+
+        ZrValueInitAsInt(cs->state, &indexValue, (TInt64)i);
+        indexSlot = allocate_stack_slot(cs);
+        emit_constant_to_slot_local(cs, indexSlot, &indexValue, location);
+
+        emit_instruction(cs,
+                         create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE),
+                                              (TUInt16)valueSlot,
+                                              (TUInt16)arraySlot,
+                                              (TUInt16)indexSlot));
+        cs->stackSlotCount -= 2;
+    }
+
+    {
+        SZrTypeValue lengthValue;
+        TUInt32 keySlot = allocate_stack_slot(cs);
+        TUInt32 valueSlot = allocate_stack_slot(cs);
+
+        if (!emit_cstring_constant_to_slot_local(cs, keySlot, "length")) {
+            return;
+        }
+
+        ZrValueInitAsInt(cs->state, &lengthValue, (TInt64)fixedSize);
+        emit_constant_to_slot_local(cs, valueSlot, &lengthValue, location);
+
+        emit_instruction(cs,
+                         create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE),
+                                              (TUInt16)valueSlot,
+                                              (TUInt16)arraySlot,
+                                              (TUInt16)keySlot));
+        cs->stackSlotCount -= 2;
+    }
+
+    ZR_UNUSED_PARAMETER(location);
+}
+
 // 编译变量声明
 static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -58,31 +178,39 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
     // 处理单个变量声明（标识符 pattern）
     if (decl->pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrString *varName = decl->pattern->data.identifier.name;
+        SZrInferredType resolvedType;
+        TBool resolvedTypeInitialized = ZR_FALSE;
+        TBool hasResolvedType = ZR_FALSE;
         if (varName == ZR_NULL) {
             ZrCompilerError(cs, "Variable name is null", node->location);
             return;
         }
-        
-        // 注册变量类型到类型环境
+
+        if (decl->typeInfo != ZR_NULL) {
+            ZrInferredTypeInit(cs->state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
+            resolvedTypeInitialized = ZR_TRUE;
+            hasResolvedType = convert_ast_type_to_inferred_type(cs, decl->typeInfo, &resolvedType);
+        } else if (decl->value != ZR_NULL) {
+            ZrInferredTypeInit(cs->state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
+            resolvedTypeInitialized = ZR_TRUE;
+            hasResolvedType = infer_expression_type(cs, decl->value, &resolvedType);
+        }
+
+        if (cs->hasError) {
+            if (resolvedTypeInitialized) {
+                ZrInferredTypeFree(cs->state, &resolvedType);
+            }
+            return;
+        }
+
         if (cs->typeEnv != ZR_NULL) {
-            SZrInferredType varType;
-            if (decl->typeInfo != ZR_NULL) {
-                // 从类型注解推断类型
-                if (convert_ast_type_to_inferred_type(cs, decl->typeInfo, &varType)) {
-                    ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, varName, &varType);
-                    ZrInferredTypeFree(cs->state, &varType);
-                }
-            } else if (decl->value != ZR_NULL) {
-                // 从初始值推断类型
-                if (infer_expression_type(cs, decl->value, &varType)) {
-                    ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, varName, &varType);
-                    ZrInferredTypeFree(cs->state, &varType);
-                }
+            if (hasResolvedType) {
+                ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, varName, &resolvedType);
             } else {
-                // 没有类型注解和初始值，注册为对象类型
-                ZrInferredTypeInit(cs->state, &varType, ZR_VALUE_TYPE_OBJECT);
-                ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, varName, &varType);
-                ZrInferredTypeFree(cs->state, &varType);
+                SZrInferredType defaultType;
+                ZrInferredTypeInit(cs->state, &defaultType, ZR_VALUE_TYPE_OBJECT);
+                ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, varName, &defaultType);
+                ZrInferredTypeFree(cs->state, &defaultType);
             }
         }
         
@@ -120,15 +248,23 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)varIndex, (TInt32)initSlot);
             emit_instruction(cs, inst);
         } else {
-            // 没有初始值，设置为 null
-            SZrTypeValue nullValue;
-            ZrValueResetAsNull(&nullValue);
-            TUInt32 constantIndex = add_constant(cs, &nullValue);
-            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)varIndex, (TInt32)constantIndex);
-            emit_instruction(cs, inst);
-            
-            TZrInstruction setInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)varIndex, (TInt32)varIndex);
-            emit_instruction(cs, setInst);
+            TZrSize fixedArraySize;
+
+            if (hasResolvedType && resolve_fixed_array_size(&resolvedType, &fixedArraySize)) {
+                compile_default_fixed_array_initialization(cs, varIndex, fixedArraySize, node->location);
+            } else {
+                // 没有初始值，设置为 null
+                SZrTypeValue nullValue;
+                ZrValueResetAsNull(&nullValue);
+                emit_constant_to_slot_local(cs, varIndex, &nullValue, node->location);
+
+                TZrInstruction setInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TUInt16)varIndex, (TInt32)varIndex);
+                emit_instruction(cs, setInst);
+            }
+        }
+
+        if (resolvedTypeInitialized) {
+            ZrInferredTypeFree(cs->state, &resolvedType);
         }
     } else if (decl->pattern->type == ZR_AST_DESTRUCTURING_OBJECT) {
         // 处理解构对象赋值：var {key1, key2, ...} = value;

@@ -12,6 +12,8 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/io.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/closure.h"
@@ -69,6 +71,75 @@ static void destroyTestState(SZrState* state) {
     zr_test_destroy_state(state);
 }
 
+typedef struct {
+    const TChar* path;
+    const TChar* source;
+} SZrCompileTimeImportFixture;
+
+typedef struct {
+    const TByte* bytes;
+    TZrSize length;
+    TBool consumed;
+} SZrCompileTimeImportReader;
+
+static const SZrCompileTimeImportFixture* gCompileTimeImportFixtures = ZR_NULL;
+static TZrSize gCompileTimeImportFixtureCount = 0;
+
+static TBytePtr compile_time_import_reader_read(SZrState* state, TZrPtr customData, TZrSize* size) {
+    SZrCompileTimeImportReader* reader = (SZrCompileTimeImportReader*)customData;
+
+    ZR_UNUSED_PARAMETER(state);
+
+    if (reader == ZR_NULL || size == ZR_NULL || reader->consumed) {
+        if (size != ZR_NULL) {
+            *size = 0;
+        }
+        return ZR_NULL;
+    }
+
+    reader->consumed = ZR_TRUE;
+    *size = reader->length;
+    return (TBytePtr)reader->bytes;
+}
+
+static void compile_time_import_reader_close(SZrState* state, TZrPtr customData) {
+    ZR_UNUSED_PARAMETER(state);
+
+    if (customData != ZR_NULL) {
+        free(customData);
+    }
+}
+
+static TBool compile_time_import_source_loader(SZrState* state, TNativeString sourcePath, TNativeString md5, SZrIo* io) {
+    TZrSize i;
+
+    ZR_UNUSED_PARAMETER(md5);
+
+    if (state == ZR_NULL || sourcePath == ZR_NULL || io == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (i = 0; i < gCompileTimeImportFixtureCount; i++) {
+        const SZrCompileTimeImportFixture* fixture = &gCompileTimeImportFixtures[i];
+        if (fixture->path != ZR_NULL && fixture->source != ZR_NULL && strcmp(fixture->path, sourcePath) == 0) {
+            SZrCompileTimeImportReader* reader =
+                    (SZrCompileTimeImportReader*)malloc(sizeof(SZrCompileTimeImportReader));
+            if (reader == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            reader->bytes = (const TByte*)fixture->source;
+            reader->length = strlen(fixture->source);
+            reader->consumed = ZR_FALSE;
+            ZrIoInit(state, io, compile_time_import_reader_read, compile_time_import_reader_close, reader);
+            io->isBinary = ZR_FALSE;
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TBool execute_test_function(SZrState* state, SZrFunction* testFunc, TInt64 expectedValue, const TChar* testName) {
     TInt64 actualValue = 0;
 
@@ -85,11 +156,39 @@ static TBool execute_test_function(SZrState* state, SZrFunction* testFunc, TInt6
     return ZR_TRUE;
 }
 
+static void reset_loaded_module_registry(SZrState* state) {
+    SZrObject* registry;
+
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return;
+    }
+
+    registry = ZrObjectNew(state, ZR_NULL);
+    if (registry == ZR_NULL) {
+        return;
+    }
+
+    ZrObjectInit(state, registry);
+    ZrValueInitAsRawObject(state, &state->global->loadedModulesRegistry, ZR_CAST_RAW_OBJECT_AS_SUPER(registry));
+    state->global->loadedModulesRegistry.type = ZR_VALUE_TYPE_OBJECT;
+}
+
 // 测试初始化和清理
 void setUp(void) {
 }
 
 void tearDown(void) {
+}
+
+static void assert_compile_time_compile_failure(SZrState* state, const TChar* source, const TChar* sourceNameText) {
+    SZrString* sourceName = ZrStringCreate(state, (TNativeString)sourceNameText, strlen(sourceNameText));
+    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrCompileResult compileResult;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE(ZrCompilerCompileWithTests(state, ast, &compileResult));
+
+    ZrParserFreeAst(state, ast);
 }
 
 // ==================== 编译期执行测试 ====================
@@ -419,7 +518,6 @@ void test_compile_time_array_validation(void) {
     
     TEST_START(testSummary);
     timer.startTime = clock();
-    
     SZrState* state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     
@@ -475,6 +573,486 @@ void test_compile_time_array_validation(void) {
     TEST_DIVIDER();
 }
 
+// 测试7: 编译期函数结果投影到后续运行时代码编译
+void test_compile_time_function_projection_to_runtime(void) {
+    SZrTestTimer timer;
+    const TChar* testSummary = "Compile-Time Execution - Function Projection";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Compile-time function result projection",
+              "Testing runtime initializer uses %compileTime function call directly");
+
+    const TChar* source =
+        "module \"test\";\n"
+        "%compileTime calculateSum(a: int, b: int): int {\n"
+        "    return a + b;\n"
+        "}\n"
+        "var runtimeVar = calculateSum(10, 20);\n"
+        "%test(\"test\") {\n"
+        "    return runtimeVar;\n"
+        "}\n";
+
+    SZrString* sourceName = ZrStringCreate(state, "test_compile_time_projection.zr", 31);
+    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+
+    if (ast == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
+        destroyTestState(state);
+        TEST_FAIL_MESSAGE("Parse failed");
+    }
+
+    SZrCompileResult compileResult;
+    if (!ZrCompilerCompileWithTests(state, ast, &compileResult)) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
+        ZrParserFreeAst(state, ast);
+        destroyTestState(state);
+        TEST_FAIL_MESSAGE("Compile with tests failed");
+    }
+
+    if (compileResult.testFunctionCount > 0) {
+        SZrFunction* testFunc = compileResult.testFunctions[0];
+        if (testFunc != ZR_NULL) {
+            if (!execute_test_function(state, testFunc, 30, testSummary)) {
+                timer.endTime = clock();
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute test function");
+                TEST_FAIL_MESSAGE("Execute test function failed");
+            }
+        }
+    }
+
+    ZrCompileResultFree(state, &compileResult);
+    ZrParserFreeAst(state, ast);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+// 测试8: %compileTime block 内声明持久注册并投影到运行时代码
+void test_compile_time_block_persistent_registration(void) {
+    SZrTestTimer timer;
+    const TChar* testSummary = "Compile-Time Execution - Block Persistent Registration";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Compile-time block persistent declarations",
+              "Testing var/function declared inside %compileTime block remain available afterwards");
+
+    const TChar* source =
+        "module \"test\";\n"
+        "%compileTime {\n"
+        "    var BLOCK_VALUE = 40;\n"
+        "    addOffset(base: int): int {\n"
+        "        return base + BLOCK_VALUE + 2;\n"
+        "    }\n"
+        "}\n"
+        "var runtimeValue = addOffset(0);\n"
+        "%test(\"test\") {\n"
+        "    return runtimeValue;\n"
+        "}\n";
+
+    SZrString* sourceName = ZrStringCreate(state, "test_compile_time_block_registration.zr", 40);
+    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+
+    if (ast == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
+        destroyTestState(state);
+        TEST_FAIL_MESSAGE("Parse failed");
+    }
+
+    SZrCompileResult compileResult;
+    if (!ZrCompilerCompileWithTests(state, ast, &compileResult)) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
+        ZrParserFreeAst(state, ast);
+        destroyTestState(state);
+        TEST_FAIL_MESSAGE("Compile with tests failed");
+    }
+
+    if (compileResult.testFunctionCount > 0) {
+        SZrFunction* testFunc = compileResult.testFunctions[0];
+        if (testFunc != ZR_NULL) {
+            if (!execute_test_function(state, testFunc, 42, testSummary)) {
+                timer.endTime = clock();
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute test function");
+                TEST_FAIL_MESSAGE("Execute test function failed");
+            }
+        }
+    }
+
+    ZrCompileResultFree(state, &compileResult);
+    ZrParserFreeAst(state, ast);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+// 测试9: 编译期函数命名参数和默认参数投影
+void test_compile_time_named_and_default_argument_projection(void) {
+    SZrTestTimer timer;
+    const TChar* testSummary = "Compile-Time Execution - Named Default Projection";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Compile-time function named/default args projection",
+              "Testing runtime initializer uses named args and default args from %compileTime function");
+
+    const TChar* source =
+        "module \"test\";\n"
+        "%compileTime combine(a: int, b: int = 10, c: int = 100): int {\n"
+        "    return a + b + c;\n"
+        "}\n"
+        "var runtimeNamed = combine(c: 3, a: 1);\n"
+        "var runtimeDefault = combine(a: 4, c: 6);\n"
+        "var runtimeAllDefaults = combine(a: 4);\n"
+        "%test(\"test\") {\n"
+        "    return runtimeNamed + runtimeDefault + runtimeAllDefaults;\n"
+        "}\n";
+
+    SZrString* sourceName = ZrStringCreate(state, "test_compile_time_named_default_projection.zr", 47);
+    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+
+    if (ast == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
+        destroyTestState(state);
+        TEST_FAIL_MESSAGE("Parse failed");
+    }
+
+    SZrCompileResult compileResult;
+    if (!ZrCompilerCompileWithTests(state, ast, &compileResult)) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
+        ZrParserFreeAst(state, ast);
+        destroyTestState(state);
+        TEST_FAIL_MESSAGE("Compile with tests failed");
+    }
+
+    if (compileResult.testFunctionCount > 0) {
+        SZrFunction* testFunc = compileResult.testFunctions[0];
+        if (testFunc != ZR_NULL) {
+            if (!execute_test_function(state, testFunc, 148, testSummary)) {
+                timer.endTime = clock();
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute test function");
+                TEST_FAIL_MESSAGE("Execute test function failed");
+            }
+        }
+    }
+
+    ZrCompileResultFree(state, &compileResult);
+    ZrParserFreeAst(state, ast);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+// 测试10: %compileTime block 内前向依赖应给出诊断并阻止编译
+void test_compile_time_block_forward_reference_diagnostic(void) {
+    SZrTestTimer timer;
+    const TChar* testSummary = "Compile-Time Execution - Block Forward Reference";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Compile-time block forward reference diagnostic",
+              "Testing %compileTime block rejects references to declarations defined later in the same block");
+
+    assert_compile_time_compile_failure(
+            state,
+            "module \"test\";\n"
+            "%compileTime {\n"
+            "    var computed = laterValue + 1;\n"
+            "    var laterValue = 41;\n"
+            "}\n"
+            "var runtimeValue = 0;\n"
+            "%test(\"test\") {\n"
+            "    return runtimeValue;\n"
+            "}\n",
+            "test_compile_time_forward_reference.zr");
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+// 测试11: 重复声明采用最后一次覆盖策略
+void test_compile_time_duplicate_declaration_override(void) {
+    SZrTestTimer timer;
+    const TChar* testSummary = "Compile-Time Execution - Duplicate Override";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Compile-time duplicate declaration override",
+              "Testing later %compileTime var/function declarations override earlier ones");
+
+    const TChar* source =
+            "module \"test\";\n"
+            "%compileTime {\n"
+            "    var VALUE = 1;\n"
+            "    var VALUE = 2;\n"
+            "    pick(): int {\n"
+            "        return VALUE;\n"
+            "    }\n"
+            "    pick(): int {\n"
+            "        return VALUE + 40;\n"
+            "    }\n"
+            "}\n"
+            "var runtimeValue = pick();\n"
+            "%test(\"test\") {\n"
+            "    return runtimeValue;\n"
+            "}\n";
+
+    SZrString* sourceName = ZrStringCreate(state, "test_compile_time_duplicate_override.zr", 39);
+    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(ast);
+
+    SZrCompileResult compileResult;
+    TEST_ASSERT_TRUE(ZrCompilerCompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+    reset_loaded_module_registry(state);
+    state->global->sourceLoader = ZR_NULL;
+    TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
+
+    ZrCompileResultFree(state, &compileResult);
+    ZrParserFreeAst(state, ast);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+// 测试12: 编译期对象成员调用投影
+void test_compile_time_member_call_projection(void) {
+    SZrTestTimer timer;
+    const TChar* testSummary = "Compile-Time Execution - Member Call Projection";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Compile-time object member call projection",
+              "Testing compile-time object members can reference compile-time functions and project member calls");
+
+    const TChar* source =
+            "module \"test\";\n"
+            "%compileTime addImpl(a: int, b: int): int {\n"
+            "    return a + b;\n"
+            "}\n"
+            "%compileTime var helper = { add: addImpl };\n"
+            "var runtimeValue = helper.add(19, 23);\n"
+            "%test(\"test\") {\n"
+            "    return runtimeValue;\n"
+            "}\n";
+
+    SZrString* sourceName = ZrStringCreate(state, "test_compile_time_member_call_projection.zr", 43);
+    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(ast);
+
+    SZrCompileResult compileResult;
+    TEST_ASSERT_TRUE(ZrCompilerCompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+    TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
+
+    ZrCompileResultFree(state, &compileResult);
+    ZrParserFreeAst(state, ast);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+// 测试13: import + member-call 的编译期投影
+void test_compile_time_import_member_call_projection(void) {
+    static const SZrCompileTimeImportFixture fixtures[] = {
+            {
+                    "helper",
+                    "module \"helper\";\n"
+                    "pub var greet = () => {\n"
+                    "    return 42;\n"
+                    "};\n",
+            },
+    };
+
+    SZrTestTimer timer;
+    const TChar* testSummary = "Compile-Time Execution - Import Member Call Projection";
+    const SZrCompileTimeImportFixture* previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrParserRegisterToGlobalState(state);
+    gCompileTimeImportFixtures = fixtures;
+    gCompileTimeImportFixtureCount = sizeof(fixtures) / sizeof(fixtures[0]);
+    state->global->sourceLoader = compile_time_import_source_loader;
+
+    TEST_INFO("Compile-time import member call projection",
+              "Testing import(\"helper\").greet() is projected during compilation");
+
+    const TChar* source =
+            "module \"test\";\n"
+            "var runtimeValue = import(\"helper\").greet();\n"
+            "%test(\"test\") {\n"
+            "    return runtimeValue;\n"
+            "}\n";
+
+    SZrString* sourceName = ZrStringCreate(state, "test_compile_time_import_member_call_projection.zr", 50);
+    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(ast);
+
+    SZrCompileResult compileResult;
+    TEST_ASSERT_TRUE(ZrCompilerCompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+    TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
+
+    ZrCompileResultFree(state, &compileResult);
+    ZrParserFreeAst(state, ast);
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+// 测试14: 编译期对象中包含 compile-time function ref 时禁止投影到 runtime
+void test_compile_time_projection_rejects_function_ref_leak(void) {
+    SZrTestTimer timer;
+    const TChar* testSummary = "Compile-Time Execution - Reject Function Ref Leak";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Compile-time object projection leak guard",
+              "Testing runtime projection fails when compile-time object contains compile-time-only function refs");
+
+    assert_compile_time_compile_failure(
+            state,
+            "module \"test\";\n"
+            "%compileTime addImpl(a: int, b: int): int {\n"
+            "    return a + b;\n"
+            "}\n"
+            "%compileTime buildHelper() {\n"
+            "    return { add: addImpl };\n"
+            "}\n"
+            "var leaked = buildHelper();\n"
+            "%test(\"test\") {\n"
+            "    return 1;\n"
+            "}\n",
+            "test_compile_time_function_ref_leak.zr");
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+// 测试15: 更深层 import/member-call 组合的编译期投影
+void test_compile_time_import_deep_member_call_projection(void) {
+    static const SZrCompileTimeImportFixture fixtures[] = {
+            {
+                    "helper",
+                    "module \"helper\";\n"
+                    "pub var toolkit = {\n"
+                    "    math: {\n"
+                    "        greet: () => {\n"
+                    "            return 42;\n"
+                    "        }\n"
+                    "    }\n"
+                    "};\n",
+            },
+    };
+
+    SZrTestTimer timer;
+    const TChar* testSummary = "Compile-Time Execution - Deep Import Member Call Projection";
+    const SZrCompileTimeImportFixture* previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrParserRegisterToGlobalState(state);
+    gCompileTimeImportFixtures = fixtures;
+    gCompileTimeImportFixtureCount = sizeof(fixtures) / sizeof(fixtures[0]);
+    state->global->sourceLoader = compile_time_import_source_loader;
+
+    TEST_INFO("Compile-time deep import member-call projection",
+              "Testing import(\"helper\").toolkit.math.greet() is fully projected during compilation");
+
+    {
+        const TChar* source =
+                "module \"test\";\n"
+                "var runtimeValue = import(\"helper\").toolkit.math.greet();\n"
+                "%test(\"test\") {\n"
+                "    return runtimeValue;\n"
+                "}\n";
+
+        SZrString* sourceName = ZrStringCreate(state, "test_compile_time_import_deep_member_call_projection.zr", 55);
+        SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrCompilerCompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+
+        reset_loaded_module_registry(state);
+        state->global->sourceLoader = ZR_NULL;
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
+
+        ZrCompileResultFree(state, &compileResult);
+        ZrParserFreeAst(state, ast);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
 // 主函数
 int main(void) {
     UNITY_BEGIN();
@@ -489,6 +1067,15 @@ int main(void) {
     RUN_TEST(test_compile_time_recursion);
     RUN_TEST(test_compile_time_statements);
     RUN_TEST(test_compile_time_array_validation);
+    RUN_TEST(test_compile_time_function_projection_to_runtime);
+    RUN_TEST(test_compile_time_block_persistent_registration);
+    RUN_TEST(test_compile_time_named_and_default_argument_projection);
+    RUN_TEST(test_compile_time_block_forward_reference_diagnostic);
+    RUN_TEST(test_compile_time_duplicate_declaration_override);
+    RUN_TEST(test_compile_time_member_call_projection);
+    RUN_TEST(test_compile_time_import_member_call_projection);
+    RUN_TEST(test_compile_time_projection_rejects_function_ref_leak);
+    RUN_TEST(test_compile_time_import_deep_member_call_projection);
     
     return UNITY_END();
 }

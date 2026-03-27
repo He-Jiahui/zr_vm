@@ -59,6 +59,90 @@ void enter_scope(SZrCompilerState *cs);
 void exit_scope(SZrCompilerState *cs);
 void compile_statement(SZrCompilerState *cs, SZrAstNode *node);
 
+static void emit_constant_to_slot_local(SZrCompilerState *cs, TUInt32 slot, const SZrTypeValue *value,
+                                        SZrFileRange location) {
+    if (cs == ZR_NULL || value == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (!ZrCompilerValidateRuntimeProjectionValue(cs, value, location)) {
+        return;
+    }
+
+    SZrTypeValue constantValue = *value;
+    TUInt32 constantIndex = add_constant(cs, &constantValue);
+    TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TUInt16)slot, (TInt32)constantIndex);
+    emit_instruction(cs, inst);
+}
+
+static TBool zr_string_equals_cstr_local(SZrString *value, const TChar *literal) {
+    TNativeString nativeValue;
+
+    if (value == ZR_NULL || literal == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nativeValue = ZrStringGetNativeString(value);
+    return nativeValue != ZR_NULL && strcmp(nativeValue, literal) == 0;
+}
+
+static TBool is_compile_time_projection_candidate(SZrCompilerState *cs, SZrString *rootName) {
+    SZrFunctionTypeInfo *funcInfo = ZR_NULL;
+
+    if (cs == ZR_NULL || rootName == ZR_NULL || cs->compileTimeTypeEnv == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (zr_string_equals_cstr_local(rootName, "Assert") ||
+        zr_string_equals_cstr_local(rootName, "FatalError") ||
+        zr_string_equals_cstr_local(rootName, "import")) {
+        return ZR_TRUE;
+    }
+
+    {
+        SZrInferredType variableType;
+        ZrInferredTypeInit(cs->state, &variableType, ZR_VALUE_TYPE_OBJECT);
+        if (ZrTypeEnvironmentLookupVariable(cs->state, cs->compileTimeTypeEnv, rootName, &variableType)) {
+            ZrInferredTypeFree(cs->state, &variableType);
+            return ZR_TRUE;
+        }
+        ZrInferredTypeFree(cs->state, &variableType);
+    }
+
+    return ZrTypeEnvironmentLookupFunction(cs->compileTimeTypeEnv, rootName, &funcInfo);
+}
+
+static TBool try_emit_compile_time_function_call(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrPrimaryExpression *primary;
+    SZrString *rootName;
+    SZrTypeValue compileTimeValue;
+    TUInt32 destSlot;
+
+    if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION ||
+        cs->compileTimeTypeEnv == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    primary = &node->data.primaryExpression;
+    if (primary->property == ZR_NULL || primary->property->type != ZR_AST_IDENTIFIER_LITERAL ||
+        primary->members == ZR_NULL || primary->members->count == 0) {
+        return ZR_FALSE;
+    }
+
+    rootName = primary->property->data.identifier.name;
+    if (!is_compile_time_projection_candidate(cs, rootName)) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrCompilerEvaluateCompileTimeExpression(cs, node, &compileTimeValue)) {
+        return ZR_TRUE;
+    }
+
+    destSlot = allocate_stack_slot(cs);
+    emit_constant_to_slot_local(cs, destSlot, &compileTimeValue, node->location);
+    return ZR_TRUE;
+}
+
 // 类型转换辅助函数
 static void emit_type_conversion(SZrCompilerState *cs, TUInt32 destSlot, TUInt32 srcSlot, EZrInstructionCode conversionOpcode) {
     if (cs == ZR_NULL || cs->hasError) {
@@ -660,6 +744,15 @@ static void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
             emit_instruction(cs, inst);
         }
         return;
+    }
+
+    {
+        SZrTypeValue compileTimeValue;
+        if (ZrCompilerTryGetCompileTimeValue(cs, name, &compileTimeValue)) {
+            TUInt32 destSlot = allocate_stack_slot(cs);
+            emit_constant_to_slot_local(cs, destSlot, &compileTimeValue, node->location);
+            return;
+        }
     }
     
     // 只有在没有找到局部变量和闭包变量的情况下，才检查是否是全局关键字 "zr"
@@ -2067,6 +2160,10 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     if (node->type != ZR_AST_PRIMARY_EXPRESSION) {
         ZrCompilerError(cs, "Expected primary expression", node->location);
+        return;
+    }
+
+    if (try_emit_compile_time_function_call(cs, node)) {
         return;
     }
     

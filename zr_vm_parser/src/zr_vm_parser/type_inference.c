@@ -92,6 +92,44 @@ static SZrString *extract_constructed_type_name(SZrAstNode *node) {
     return ZR_NULL;
 }
 
+static TBool resolve_compile_time_array_size(SZrCompilerState *cs,
+                                             const SZrType *astType,
+                                             TZrSize *resolvedSize) {
+    SZrTypeValue evaluatedValue;
+    TInt64 signedSize;
+
+    if (cs == ZR_NULL || astType == ZR_NULL || resolvedSize == ZR_NULL ||
+        astType->arraySizeExpression == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrCompilerEvaluateCompileTimeExpression(cs, astType->arraySizeExpression, &evaluatedValue)) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_INT(evaluatedValue.type)) {
+        signedSize = evaluatedValue.value.nativeObject.nativeInt64;
+        if (signedSize < 0) {
+            ZrCompilerError(cs,
+                            "Array size expression must evaluate to a non-negative integer",
+                            astType->arraySizeExpression->location);
+            return ZR_FALSE;
+        }
+        *resolvedSize = (TZrSize)signedSize;
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(evaluatedValue.type)) {
+        *resolvedSize = (TZrSize)evaluatedValue.value.nativeObject.nativeUInt64;
+        return ZR_TRUE;
+    }
+
+    ZrCompilerError(cs,
+                    "Array size expression must evaluate to an integer",
+                    astType->arraySizeExpression->location);
+    return ZR_FALSE;
+}
+
 // 获取类型名称字符串（用于错误报告）
 const TChar *get_type_name_string(SZrState *state, const SZrInferredType *type, TChar *buffer, TZrSize bufferSize) {
     if (state == ZR_NULL || type == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
@@ -706,10 +744,18 @@ TBool infer_primary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrI
         // 函数调用：从property中提取函数名
         if (primary->property != ZR_NULL && primary->property->type == ZR_AST_IDENTIFIER_LITERAL) {
             SZrString *funcName = primary->property->data.identifier.name;
-            if (funcName != ZR_NULL && cs->typeEnv != ZR_NULL) {
+            if (funcName != ZR_NULL) {
                 // 在类型环境中查找函数类型
                 SZrFunctionTypeInfo *funcTypeInfo = ZR_NULL;
-                if (ZrTypeEnvironmentLookupFunction(cs->typeEnv, funcName, &funcTypeInfo)) {
+                TBool foundFunctionType = ZR_FALSE;
+                if (cs->typeEnv != ZR_NULL) {
+                    foundFunctionType = ZrTypeEnvironmentLookupFunction(cs->typeEnv, funcName, &funcTypeInfo);
+                }
+                if (!foundFunctionType && cs->compileTimeTypeEnv != ZR_NULL) {
+                    foundFunctionType = ZrTypeEnvironmentLookupFunction(cs->compileTimeTypeEnv, funcName, &funcTypeInfo);
+                }
+
+                if (foundFunctionType) {
                     if (funcTypeInfo != ZR_NULL) {
                         // 复制返回类型
                         ZrInferredTypeCopy(cs->state, result, &funcTypeInfo->returnType);
@@ -725,7 +771,7 @@ TBool infer_primary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrI
                 }
                 
                 // 函数未找到，检查是否是 struct 构造函数调用
-                if (ZrTypeEnvironmentLookupType(cs->typeEnv, funcName)) {
+                if (cs->typeEnv != ZR_NULL && ZrTypeEnvironmentLookupType(cs->typeEnv, funcName)) {
                     // 找到类型名称，推断返回类型为对应的 struct 类型
                     ZrInferredTypeInitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, funcName);
                     return ZR_TRUE;
@@ -1036,9 +1082,19 @@ TBool convert_ast_type_to_inferred_type(SZrCompilerState *cs, const SZrType *ast
         
         // 复制数组大小约束
         if (astType->hasArraySizeConstraint) {
-            result->arrayFixedSize = astType->arrayFixedSize;
-            result->arrayMinSize = astType->arrayMinSize;
-            result->arrayMaxSize = astType->arrayMaxSize;
+            if (astType->arraySizeExpression != ZR_NULL) {
+                TZrSize resolvedSize;
+                if (!resolve_compile_time_array_size(cs, astType, &resolvedSize)) {
+                    return ZR_FALSE;
+                }
+                result->arrayFixedSize = resolvedSize;
+                result->arrayMinSize = resolvedSize;
+                result->arrayMaxSize = resolvedSize;
+            } else {
+                result->arrayFixedSize = astType->arrayFixedSize;
+                result->arrayMinSize = astType->arrayMinSize;
+                result->arrayMaxSize = astType->arrayMaxSize;
+            }
             result->hasArraySizeConstraint = ZR_TRUE;
         }
     } else {

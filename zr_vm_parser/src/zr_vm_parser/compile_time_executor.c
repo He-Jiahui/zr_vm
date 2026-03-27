@@ -6,620 +6,1257 @@
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/type_inference.h"
 
+#include "zr_vm_core/array.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/module.h"
+#include "zr_vm_core/object.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
-#include "zr_vm_core/array.h"
-#include "zr_vm_common/zr_common_conf.h"
 
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
-// 前向声明
-static TBool evaluate_compile_time_expression(SZrCompilerState *cs, SZrAstNode *node, SZrTypeValue *result);
-static TBool check_compile_time_identifier_access(SZrCompilerState *cs, SZrString *name, TBool isWrite);
+typedef struct SZrCompileTimeBinding {
+    SZrString *name;
+    SZrTypeValue value;
+} SZrCompileTimeBinding;
 
-// 检查标识符是否为编译期标识符
-static TBool is_compile_time_identifier(SZrCompilerState *cs, SZrString *name) {
-    if (cs == ZR_NULL || name == ZR_NULL) {
+typedef struct SZrCompileTimeFrame {
+    SZrArray bindings;
+    struct SZrCompileTimeFrame *parent;
+} SZrCompileTimeFrame;
+
+static TBool evaluate_compile_time_expression_internal(SZrCompilerState *cs,
+                                                       SZrAstNode *node,
+                                                       SZrCompileTimeFrame *frame,
+                                                       SZrTypeValue *result);
+static TBool execute_compile_time_statement(SZrCompilerState *cs,
+                                            SZrAstNode *node,
+                                            SZrCompileTimeFrame *frame,
+                                            TBool *didReturn,
+                                            SZrTypeValue *result);
+static TBool execute_compile_time_block(SZrCompilerState *cs,
+                                        SZrAstNode *node,
+                                        SZrCompileTimeFrame *frame,
+                                        TBool *didReturn,
+                                        SZrTypeValue *result);
+static TBool register_compile_time_variable_declaration(SZrCompilerState *cs,
+                                                        SZrAstNode *node,
+                                                        SZrFileRange location);
+static TBool register_compile_time_function_declaration(SZrCompilerState *cs,
+                                                        SZrAstNode *node,
+                                                        SZrFileRange location);
+static TBool ct_eval_object_literal(SZrCompilerState *cs,
+                                    SZrAstNode *node,
+                                    SZrCompileTimeFrame *frame,
+                                    SZrTypeValue *result);
+static TBool ct_eval_member_access(SZrCompilerState *cs,
+                                   SZrAstNode *callSite,
+                                   const SZrTypeValue *baseValue,
+                                   SZrMemberExpression *memberExpr,
+                                   SZrCompileTimeFrame *frame,
+                                   SZrTypeValue *result);
+static TBool ct_call_value(SZrCompilerState *cs,
+                           SZrAstNode *callSite,
+                           const SZrTypeValue *callableValue,
+                           SZrFunctionCall *call,
+                           SZrCompileTimeFrame *frame,
+                           SZrTypeValue *result);
+
+static const TChar *ct_name(SZrString *name) {
+    if (name == ZR_NULL) {
+        return "<null>";
+    }
+    TNativeString nameStr = ZrStringGetNativeString(name);
+    return nameStr != ZR_NULL ? nameStr : "<null>";
+}
+
+static void ct_error_name(SZrCompilerState *cs, SZrString *name, const TChar *prefix, SZrFileRange location) {
+    TChar msg[256];
+    snprintf(msg, sizeof(msg), "%s%s", prefix, ct_name(name));
+    ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, msg, location);
+}
+
+static TBool ct_truthy(const SZrTypeValue *value) {
+    if (value == ZR_NULL) {
         return ZR_FALSE;
     }
-    
-    // 检查编译期变量表
-    if (cs->compileTimeVariables.isValid && cs->compileTimeVariables.length > 0) {
-        for (TZrSize i = 0; i < cs->compileTimeVariables.length; i++) {
-            SZrCompileTimeVariable **varPtr = (SZrCompileTimeVariable**)ZrArrayGet(&cs->compileTimeVariables, i);
-            if (varPtr != ZR_NULL && *varPtr != ZR_NULL) {
-                if (ZrStringEqual((*varPtr)->name, name)) {
-                    return ZR_TRUE;
-                }
+    switch (value->type) {
+        case ZR_VALUE_TYPE_NULL:
+            return ZR_FALSE;
+        case ZR_VALUE_TYPE_BOOL:
+            return value->value.nativeObject.nativeBool != 0;
+        case ZR_VALUE_TYPE_FLOAT:
+        case ZR_VALUE_TYPE_DOUBLE:
+            return value->value.nativeObject.nativeDouble != 0.0;
+        default:
+            if (ZR_VALUE_IS_TYPE_INT(value->type)) {
+                return value->value.nativeObject.nativeInt64 != 0;
             }
+            return ZR_TRUE;
+    }
+}
+
+static void ct_init_type_from_value(SZrCompilerState *cs, const SZrTypeValue *value, SZrInferredType *result) {
+    ZrInferredTypeInit(cs->state, result, value != ZR_NULL ? value->type : ZR_VALUE_TYPE_OBJECT);
+}
+
+static TBool ct_string_equals(SZrString *value, const TChar *literal) {
+    TNativeString nativeValue;
+
+    if (value == ZR_NULL || literal == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nativeValue = ZrStringGetNativeString(value);
+    return nativeValue != ZR_NULL && strcmp(nativeValue, literal) == 0;
+}
+
+static void ct_frame_init(SZrCompilerState *cs, SZrCompileTimeFrame *frame, SZrCompileTimeFrame *parent) {
+    frame->parent = parent;
+    ZrArrayInit(cs->state, &frame->bindings, sizeof(SZrCompileTimeBinding), 4);
+}
+
+static void ct_frame_free(SZrCompilerState *cs, SZrCompileTimeFrame *frame) {
+    if (frame->bindings.isValid && frame->bindings.head != ZR_NULL) {
+        ZrArrayFree(cs->state, &frame->bindings);
+    }
+}
+
+static TBool ct_frame_get(SZrCompileTimeFrame *frame, SZrString *name, SZrTypeValue *result) {
+    if (frame == ZR_NULL || name == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize i = frame->bindings.length; i > 0; i--) {
+        SZrCompileTimeBinding *binding = (SZrCompileTimeBinding *)ZrArrayGet(&frame->bindings, i - 1);
+        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrStringEqual(binding->name, name)) {
+            *result = binding->value;
+            return ZR_TRUE;
         }
     }
-    
-    // 检查编译期函数表
-    if (cs->compileTimeFunctions.isValid && cs->compileTimeFunctions.length > 0) {
-        for (TZrSize i = 0; i < cs->compileTimeFunctions.length; i++) {
-            SZrCompileTimeFunction **funcPtr = (SZrCompileTimeFunction**)ZrArrayGet(&cs->compileTimeFunctions, i);
-            if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL) {
-                if (ZrStringEqual((*funcPtr)->name, name)) {
-                    return ZR_TRUE;
-                }
-            }
+    return frame->parent != ZR_NULL ? ct_frame_get(frame->parent, name, result) : ZR_FALSE;
+}
+
+static TBool ct_frame_set(SZrCompilerState *cs, SZrCompileTimeFrame *frame, SZrString *name, const SZrTypeValue *value) {
+    if (cs == ZR_NULL || frame == ZR_NULL || name == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize i = frame->bindings.length; i > 0; i--) {
+        SZrCompileTimeBinding *binding = (SZrCompileTimeBinding *)ZrArrayGet(&frame->bindings, i - 1);
+        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrStringEqual(binding->name, name)) {
+            binding->value = *value;
+            return ZR_TRUE;
         }
     }
-    
+    SZrCompileTimeBinding binding;
+    binding.name = name;
+    binding.value = *value;
+    ZrArrayPush(cs->state, &frame->bindings, &binding);
+    return ZR_TRUE;
+}
+
+static SZrCompileTimeVariable *find_compile_time_variable(SZrCompilerState *cs, SZrString *name) {
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrSize i = 0; i < cs->compileTimeVariables.length; i++) {
+        SZrCompileTimeVariable **varPtr = (SZrCompileTimeVariable **)ZrArrayGet(&cs->compileTimeVariables, i);
+        if (varPtr != ZR_NULL && *varPtr != ZR_NULL && (*varPtr)->name != ZR_NULL &&
+            ZrStringEqual((*varPtr)->name, name)) {
+            return *varPtr;
+        }
+    }
+    return ZR_NULL;
+}
+
+static SZrCompileTimeFunction *find_compile_time_function(SZrCompilerState *cs, SZrString *name) {
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrSize i = 0; i < cs->compileTimeFunctions.length; i++) {
+        SZrCompileTimeFunction **funcPtr = (SZrCompileTimeFunction **)ZrArrayGet(&cs->compileTimeFunctions, i);
+        if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL && (*funcPtr)->name != ZR_NULL &&
+            ZrStringEqual((*funcPtr)->name, name)) {
+            return *funcPtr;
+        }
+    }
+    return ZR_NULL;
+}
+
+static TBool ct_value_from_compile_time_function(SZrCompilerState *cs,
+                                                 SZrCompileTimeFunction *func,
+                                                 SZrTypeValue *result) {
+    if (cs == ZR_NULL || func == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrValueInitAsNativePointer(cs->state, result, func);
+    return ZR_TRUE;
+}
+
+static TBool ct_value_try_get_compile_time_function(SZrCompilerState *cs,
+                                                    const SZrTypeValue *value,
+                                                    SZrCompileTimeFunction **result) {
+    TZrPtr pointerValue;
+
+    if (cs == ZR_NULL || value == ZR_NULL || result == ZR_NULL ||
+        value->type != ZR_VALUE_TYPE_NATIVE_POINTER) {
+        return ZR_FALSE;
+    }
+
+    pointerValue = value->value.nativeObject.nativePointer;
+    if (pointerValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = 0; i < cs->compileTimeFunctions.length; i++) {
+        SZrCompileTimeFunction **funcPtr =
+                (SZrCompileTimeFunction **)ZrArrayGet(&cs->compileTimeFunctions, i);
+        if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL && (TZrPtr)(*funcPtr) == pointerValue) {
+            *result = *funcPtr;
+            return ZR_TRUE;
+        }
+    }
+
     return ZR_FALSE;
 }
 
-// 检查编译期对运行时符号的访问（只读访问）
-static TBool check_compile_time_identifier_access(SZrCompilerState *cs, SZrString *name, TBool isWrite) {
-    if (cs == ZR_NULL || name == ZR_NULL) {
+ZR_PARSER_API TBool ZrCompilerTryGetCompileTimeValue(SZrCompilerState *cs,
+                                                     SZrString *name,
+                                                     SZrTypeValue *result) {
+    if (cs == ZR_NULL || name == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
-    
-    // 如果是编译期标识符，允许访问
-    if (is_compile_time_identifier(cs, name)) {
-        return ZR_TRUE;
-    }
-    
-    // 如果是运行时标识符
-    if (isWrite) {
-        // 禁止写入运行时变量
-        TNativeString nameStr = ZrStringGetNativeString(name);
-        TChar errorMsg[256];
-        snprintf(errorMsg, sizeof(errorMsg), 
-                "Compile-time code cannot write to runtime variable: %s", 
-                nameStr ? nameStr : "<null>");
-        ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, errorMsg, 
-                          cs->currentAst != ZR_NULL ? cs->currentAst->location : 
-                          (SZrFileRange){{0}});
+
+    SZrCompileTimeVariable *var = find_compile_time_variable(cs, name);
+    if (var == ZR_NULL) {
         return ZR_FALSE;
-    } else {
-        // 允许只读访问运行时变量（用于编译期检查）
+    }
+    if (var->hasEvaluatedValue) {
+        *result = var->evaluatedValue;
         return ZR_TRUE;
     }
+    if (var->isEvaluating) {
+        ct_error_name(cs, name, "Circular compile-time variable dependency: ", var->location);
+        return ZR_FALSE;
+    }
+
+    var->isEvaluating = ZR_TRUE;
+    if (var->value == ZR_NULL) {
+        ZrValueResetAsNull(&var->evaluatedValue);
+        var->hasEvaluatedValue = ZR_TRUE;
+        var->isEvaluating = ZR_FALSE;
+        *result = var->evaluatedValue;
+        return ZR_TRUE;
+    }
+
+    if (!evaluate_compile_time_expression_internal(cs, var->value, ZR_NULL, &var->evaluatedValue)) {
+        var->isEvaluating = ZR_FALSE;
+        return ZR_FALSE;
+    }
+
+    var->hasEvaluatedValue = ZR_TRUE;
+    var->isEvaluating = ZR_FALSE;
+    *result = var->evaluatedValue;
+    return ZR_TRUE;
 }
 
-// 编译期表达式求值
-static TBool evaluate_compile_time_expression(SZrCompilerState *cs, SZrAstNode *node, SZrTypeValue *result) {
+static TBool ct_eval_binary(SZrCompilerState *cs, SZrAstNode *node, SZrCompileTimeFrame *frame, SZrTypeValue *result) {
+    SZrBinaryExpression *expr = &node->data.binaryExpression;
+    SZrTypeValue leftValue;
+    SZrTypeValue rightValue;
+    const TChar *op = expr->op.op;
+
+    if (!evaluate_compile_time_expression_internal(cs, expr->left, frame, &leftValue) ||
+        !evaluate_compile_time_expression_internal(cs, expr->right, frame, &rightValue) ||
+        op == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 || strcmp(op, "*") == 0 || strcmp(op, "/") == 0) {
+        if (!ZR_VALUE_IS_TYPE_NUMBER(leftValue.type) || !ZR_VALUE_IS_TYPE_NUMBER(rightValue.type)) {
+            ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Compile-time arithmetic requires numeric operands", node->location);
+            return ZR_FALSE;
+        }
+        if (strcmp(op, "/") == 0) {
+            TBool isZero = ZR_VALUE_IS_TYPE_INT(rightValue.type)
+                               ? (rightValue.value.nativeObject.nativeInt64 == 0)
+                               : (rightValue.value.nativeObject.nativeDouble == 0.0);
+            if (isZero) {
+                ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Division by zero in compile-time expression", node->location);
+                return ZR_FALSE;
+            }
+        }
+        if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
+            TInt64 left = leftValue.value.nativeObject.nativeInt64;
+            TInt64 right = rightValue.value.nativeObject.nativeInt64;
+            if (strcmp(op, "+") == 0) {
+                ZrValueInitAsInt(cs->state, result, left + right);
+            } else if (strcmp(op, "-") == 0) {
+                ZrValueInitAsInt(cs->state, result, left - right);
+            } else if (strcmp(op, "*") == 0) {
+                ZrValueInitAsInt(cs->state, result, left * right);
+            } else {
+                ZrValueInitAsInt(cs->state, result, left / right);
+            }
+            return ZR_TRUE;
+        }
+
+        TDouble left = leftValue.value.nativeObject.nativeDouble;
+        TDouble right = rightValue.value.nativeObject.nativeDouble;
+        if (strcmp(op, "+") == 0) {
+            ZrValueInitAsFloat(cs->state, result, left + right);
+        } else if (strcmp(op, "-") == 0) {
+            ZrValueInitAsFloat(cs->state, result, left - right);
+        } else if (strcmp(op, "*") == 0) {
+            ZrValueInitAsFloat(cs->state, result, left * right);
+        } else {
+            ZrValueInitAsFloat(cs->state, result, left / right);
+        }
+        return ZR_TRUE;
+    }
+
+    if (strcmp(op, "%") == 0) {
+        if (!ZR_VALUE_IS_TYPE_INT(leftValue.type) || !ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
+            ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Compile-time modulo requires integer operands", node->location);
+            return ZR_FALSE;
+        }
+        if (rightValue.value.nativeObject.nativeInt64 == 0) {
+            ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Modulo by zero in compile-time expression", node->location);
+            return ZR_FALSE;
+        }
+        ZrValueInitAsInt(cs->state, result, leftValue.value.nativeObject.nativeInt64 % rightValue.value.nativeObject.nativeInt64);
+        return ZR_TRUE;
+    }
+
+    if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||
+        strcmp(op, "<") == 0 || strcmp(op, "<=") == 0 ||
+        strcmp(op, ">") == 0 || strcmp(op, ">=") == 0) {
+        TBool value = ZR_FALSE;
+        if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0) {
+            if (leftValue.type == rightValue.type) {
+                if (ZR_VALUE_IS_TYPE_INT(leftValue.type)) {
+                    value = leftValue.value.nativeObject.nativeInt64 == rightValue.value.nativeObject.nativeInt64;
+                } else if (ZR_VALUE_IS_TYPE_FLOAT(leftValue.type)) {
+                    value = leftValue.value.nativeObject.nativeDouble == rightValue.value.nativeObject.nativeDouble;
+                } else if (leftValue.type == ZR_VALUE_TYPE_BOOL) {
+                    value = leftValue.value.nativeObject.nativeBool == rightValue.value.nativeObject.nativeBool;
+                } else if (leftValue.type == ZR_VALUE_TYPE_NULL) {
+                    value = ZR_TRUE;
+                }
+            }
+            if (strcmp(op, "!=") == 0) {
+                value = !value;
+            }
+        } else if (ZR_VALUE_IS_TYPE_NUMBER(leftValue.type) && ZR_VALUE_IS_TYPE_NUMBER(rightValue.type)) {
+            if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
+                TInt64 left = leftValue.value.nativeObject.nativeInt64;
+                TInt64 right = rightValue.value.nativeObject.nativeInt64;
+                value = strcmp(op, "<") == 0 ? left < right :
+                        strcmp(op, "<=") == 0 ? left <= right :
+                        strcmp(op, ">") == 0 ? left > right : left >= right;
+            } else {
+                TDouble left = leftValue.value.nativeObject.nativeDouble;
+                TDouble right = rightValue.value.nativeObject.nativeDouble;
+                value = strcmp(op, "<") == 0 ? left < right :
+                        strcmp(op, "<=") == 0 ? left <= right :
+                        strcmp(op, ">") == 0 ? left > right : left >= right;
+            }
+        } else {
+            ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Compile-time comparison requires compatible operands", node->location);
+            return ZR_FALSE;
+        }
+
+        ZrValueInitAsUInt(cs->state, result, value ? 1 : 0);
+        result->type = ZR_VALUE_TYPE_BOOL;
+        return ZR_TRUE;
+    }
+
+    ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Unsupported compile-time binary expression", node->location);
+    return ZR_FALSE;
+}
+
+static TBool ct_eval_logical(SZrCompilerState *cs, SZrAstNode *node, SZrCompileTimeFrame *frame, SZrTypeValue *result) {
+    SZrLogicalExpression *expr = &node->data.logicalExpression;
+    SZrTypeValue leftValue;
+    TBool value;
+
+    if (!evaluate_compile_time_expression_internal(cs, expr->left, frame, &leftValue)) {
+        return ZR_FALSE;
+    }
+
+    if (strcmp(expr->op, "&&") == 0) {
+        value = ct_truthy(&leftValue);
+        if (value) {
+            SZrTypeValue rightValue;
+            if (!evaluate_compile_time_expression_internal(cs, expr->right, frame, &rightValue)) {
+                return ZR_FALSE;
+            }
+            value = ct_truthy(&rightValue);
+        }
+    } else if (strcmp(expr->op, "||") == 0) {
+        value = ct_truthy(&leftValue);
+        if (!value) {
+            SZrTypeValue rightValue;
+            if (!evaluate_compile_time_expression_internal(cs, expr->right, frame, &rightValue)) {
+                return ZR_FALSE;
+            }
+            value = ct_truthy(&rightValue);
+        }
+    } else {
+        ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Unsupported compile-time logical expression", node->location);
+        return ZR_FALSE;
+    }
+
+    ZrValueInitAsUInt(cs->state, result, value ? 1 : 0);
+    result->type = ZR_VALUE_TYPE_BOOL;
+    return ZR_TRUE;
+}
+
+static TBool ct_eval_unary(SZrCompilerState *cs, SZrAstNode *node, SZrCompileTimeFrame *frame, SZrTypeValue *result) {
+    SZrUnaryExpression *expr = &node->data.unaryExpression;
+    SZrTypeValue argValue;
+
+    if (!evaluate_compile_time_expression_internal(cs, expr->argument, frame, &argValue)) {
+        return ZR_FALSE;
+    }
+
+    if (strcmp(expr->op.op, "!") == 0) {
+        ZrValueInitAsUInt(cs->state, result, ct_truthy(&argValue) ? 0 : 1);
+        result->type = ZR_VALUE_TYPE_BOOL;
+        return ZR_TRUE;
+    }
+    if (strcmp(expr->op.op, "+") == 0) {
+        *result = argValue;
+        return ZR_TRUE;
+    }
+    if (strcmp(expr->op.op, "-") == 0) {
+        if (ZR_VALUE_IS_TYPE_INT(argValue.type)) {
+            ZrValueInitAsInt(cs->state, result, -argValue.value.nativeObject.nativeInt64);
+            return ZR_TRUE;
+        }
+        if (ZR_VALUE_IS_TYPE_FLOAT(argValue.type)) {
+            ZrValueInitAsFloat(cs->state, result, -argValue.value.nativeObject.nativeDouble);
+            return ZR_TRUE;
+        }
+    }
+
+    ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Unsupported compile-time unary expression", node->location);
+    return ZR_FALSE;
+}
+
+static TBool ct_eval_builtin_call(SZrCompilerState *cs,
+                                  SZrAstNode *node,
+                                  SZrString *funcName,
+                                  SZrFunctionCall *call,
+                                  SZrCompileTimeFrame *frame,
+                                  SZrTypeValue *result) {
+    const TChar *nameStr = ct_name(funcName);
+
+    if (strcmp(nameStr, "FatalError") == 0) {
+        const TChar *msg = "FatalError";
+        if (call != ZR_NULL && call->args != ZR_NULL && call->args->count > 0) {
+            SZrTypeValue msgValue;
+            if (evaluate_compile_time_expression_internal(cs, call->args->nodes[0], frame, &msgValue) &&
+                msgValue.type == ZR_VALUE_TYPE_STRING) {
+                msg = ct_name((SZrString *)ZrValueGetRawObject(&msgValue));
+            }
+        }
+        ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_FATAL, msg, node->location);
+        return ZR_FALSE;
+    }
+
+    if (strcmp(nameStr, "Assert") == 0) {
+        if (call == ZR_NULL || call->args == ZR_NULL || call->args->count == 0) {
+            ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Assert requires at least one argument", node->location);
+            return ZR_FALSE;
+        }
+
+        SZrTypeValue condValue;
+        if (!evaluate_compile_time_expression_internal(cs, call->args->nodes[0], frame, &condValue)) {
+            return ZR_FALSE;
+        }
+        if (!ct_truthy(&condValue)) {
+            const TChar *msg = "Assertion failed";
+            if (call->args->count > 1) {
+                SZrTypeValue msgValue;
+                if (evaluate_compile_time_expression_internal(cs, call->args->nodes[1], frame, &msgValue) &&
+                    msgValue.type == ZR_VALUE_TYPE_STRING) {
+                    msg = ct_name((SZrString *)ZrValueGetRawObject(&msgValue));
+                }
+            }
+            ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_FATAL, msg, node->location);
+            return ZR_FALSE;
+        }
+        ZrValueInitAsUInt(cs->state, result, 1);
+        result->type = ZR_VALUE_TYPE_BOOL;
+        return ZR_TRUE;
+    }
+
+    if (strcmp(nameStr, "import") == 0) {
+        SZrTypeValue importCallable;
+        SZrClosureNative *importClosure = ZrClosureNativeNew(cs->state, 0);
+        if (importClosure == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        importClosure->nativeFunction = ZrImportNativeFunction;
+        ZrValueInitAsRawObject(cs->state, &importCallable, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
+        importCallable.isNative = ZR_TRUE;
+        return ct_call_value(cs, node, &importCallable, call, frame, result);
+    }
+
+    return ZR_FALSE;
+}
+
+static TBool ct_eval_call_arg(SZrCompilerState *cs,
+                              SZrFunctionCall *call,
+                              SZrParameter *param,
+                              TZrSize paramIndex,
+                              SZrCompileTimeFrame *frame,
+                              SZrTypeValue *result) {
+    TZrSize positionalCount = 0;
+
+    if (call != ZR_NULL && call->hasNamedArgs && call->argNames != ZR_NULL &&
+        param != ZR_NULL && param->name != ZR_NULL && param->name->name != ZR_NULL) {
+        for (TZrSize i = 0; i < call->argNames->length && i < call->args->count; i++) {
+            SZrString **argNamePtr = (SZrString **)ZrArrayGet(call->argNames, i);
+            if (argNamePtr != ZR_NULL && *argNamePtr == ZR_NULL) {
+                positionalCount++;
+                continue;
+            }
+            break;
+        }
+
+        for (TZrSize i = 0; i < call->argNames->length && i < call->args->count; i++) {
+            SZrString **argNamePtr = (SZrString **)ZrArrayGet(call->argNames, i);
+            if (argNamePtr != ZR_NULL && *argNamePtr != ZR_NULL &&
+                ZrStringEqual(*argNamePtr, param->name->name)) {
+                return evaluate_compile_time_expression_internal(cs, call->args->nodes[i], frame, result);
+            }
+        }
+
+        if (paramIndex < positionalCount) {
+            return evaluate_compile_time_expression_internal(cs, call->args->nodes[paramIndex], frame, result);
+        }
+    } else if (call != ZR_NULL && call->args != ZR_NULL && paramIndex < call->args->count) {
+        return evaluate_compile_time_expression_internal(cs, call->args->nodes[paramIndex], frame, result);
+    }
+
+    if (param != ZR_NULL && param->defaultValue != ZR_NULL) {
+        return evaluate_compile_time_expression_internal(cs, param->defaultValue, frame, result);
+    }
+
+    ct_error_name(cs,
+                  param != ZR_NULL && param->name != ZR_NULL ? param->name->name : ZR_NULL,
+                  "Missing compile-time argument for parameter: ",
+                  (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL});
+    return ZR_FALSE;
+}
+
+static TBool ct_call_function(SZrCompilerState *cs,
+                              SZrAstNode *callSite,
+                              SZrCompileTimeFunction *func,
+                              SZrFunctionCall *call,
+                              SZrCompileTimeFrame *parentFrame,
+                              SZrTypeValue *result) {
+    SZrFunctionDeclaration *decl;
+    SZrCompileTimeFrame frame;
+    TBool success = ZR_FALSE;
+    TBool didReturn = ZR_FALSE;
+
+    if (cs == ZR_NULL || func == ZR_NULL || func->declaration == ZR_NULL ||
+        func->declaration->type != ZR_AST_FUNCTION_DECLARATION || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    decl = &func->declaration->data.functionDeclaration;
+    ct_frame_init(cs, &frame, parentFrame);
+
+    if (decl->params != ZR_NULL) {
+        for (TZrSize i = 0; i < decl->params->count; i++) {
+            SZrAstNode *paramNode = decl->params->nodes[i];
+            SZrParameter *param;
+            SZrTypeValue argValue;
+
+            if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+                continue;
+            }
+
+            param = &paramNode->data.parameter;
+            if (!ct_eval_call_arg(cs, call, param, i, &frame, &argValue) ||
+                param->name == ZR_NULL || param->name->name == ZR_NULL ||
+                !ct_frame_set(cs, &frame, param->name->name, &argValue)) {
+                goto cleanup;
+            }
+        }
+    }
+
+    if (call != ZR_NULL && call->args != ZR_NULL && !call->hasNamedArgs) {
+        TZrSize expectedArgs = decl->params != ZR_NULL ? decl->params->count : 0;
+        if (call->args->count > expectedArgs) {
+            ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Too many arguments for compile-time function call", callSite->location);
+            goto cleanup;
+        }
+    }
+
+    if (decl->body == ZR_NULL) {
+        ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Compile-time function body is null", callSite->location);
+        goto cleanup;
+    }
+
+    success = decl->body->type == ZR_AST_BLOCK
+                  ? execute_compile_time_block(cs, decl->body, &frame, &didReturn, result)
+                  : execute_compile_time_statement(cs, decl->body, &frame, &didReturn, result);
+    if (success && !didReturn) {
+        ZrValueResetAsNull(result);
+    }
+
+cleanup:
+    ct_frame_free(cs, &frame);
+    return success;
+}
+
+static TBool ct_invoke_runtime_callable(SZrCompilerState *cs,
+                                        SZrAstNode *callSite,
+                                        const SZrTypeValue *callableValue,
+                                        SZrFunctionCall *call,
+                                        SZrCompileTimeFrame *frame,
+                                        SZrTypeValue *result) {
+    SZrState *state;
+    TZrStackValuePointer base;
+    TZrSize argCount;
+
+    if (cs == ZR_NULL || callableValue == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (call != ZR_NULL && call->hasNamedArgs) {
+        ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR,
+                           "Named arguments are not supported for runtime callable projection in compile-time evaluation",
+                           callSite != ZR_NULL ? callSite->location : (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL});
+        return ZR_FALSE;
+    }
+
+    state = cs->state;
+    argCount = (call != ZR_NULL && call->args != ZR_NULL) ? call->args->count : 0;
+    base = state->stackTop.valuePointer;
+    base = ZrFunctionCheckStackAndGc(state, argCount + 1, base);
+    state->stackTop.valuePointer = base;
+    ZrValueCopy(state, ZrStackGetValue(base), callableValue);
+    state->stackTop.valuePointer = base + 1;
+
+    if (call != ZR_NULL && call->args != ZR_NULL) {
+        for (TZrSize i = 0; i < call->args->count; i++) {
+            SZrTypeValue argValue;
+            if (!evaluate_compile_time_expression_internal(cs, call->args->nodes[i], frame, &argValue)) {
+                state->stackTop.valuePointer = base;
+                return ZR_FALSE;
+            }
+            ZrValueCopy(state, ZrStackGetValue(base + 1 + i), &argValue);
+            state->stackTop.valuePointer = base + 2 + i;
+        }
+    }
+
+    ZrFunctionCall(state, base, 1);
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR,
+                           "Runtime callable failed during compile-time evaluation",
+                           callSite != ZR_NULL ? callSite->location : (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL});
+        return ZR_FALSE;
+    }
+
+    ZrValueCopy(state, result, ZrStackGetValue(base));
+    return ZR_TRUE;
+}
+
+static TBool ct_eval_object_key(SZrCompilerState *cs,
+                                SZrAstNode *keyNode,
+                                SZrCompileTimeFrame *frame,
+                                SZrTypeValue *result) {
+    if (cs == ZR_NULL || keyNode == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (keyNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+        ZrValueInitAsRawObject(cs->state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(keyNode->data.identifier.name));
+        result->type = ZR_VALUE_TYPE_STRING;
+        return ZR_TRUE;
+    }
+
+    return evaluate_compile_time_expression_internal(cs, keyNode, frame, result);
+}
+
+static TBool ct_eval_object_literal(SZrCompilerState *cs,
+                                    SZrAstNode *node,
+                                    SZrCompileTimeFrame *frame,
+                                    SZrTypeValue *result) {
+    SZrObjectLiteral *objectLiteral;
+    SZrObject *object;
+
+    if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_OBJECT_LITERAL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    objectLiteral = &node->data.objectLiteral;
+    object = ZrObjectNew(cs->state, ZR_NULL);
+    if (object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrObjectInit(cs->state, object);
+
+    if (objectLiteral->properties != ZR_NULL) {
+        for (TZrSize i = 0; i < objectLiteral->properties->count; i++) {
+            SZrAstNode *propertyNode = objectLiteral->properties->nodes[i];
+            SZrTypeValue keyValue;
+            SZrTypeValue propertyValue;
+
+            if (propertyNode == ZR_NULL) {
+                continue;
+            }
+
+            if (propertyNode->type != ZR_AST_KEY_VALUE_PAIR) {
+                ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR,
+                                   "Unsupported compile-time object literal property",
+                                   propertyNode->location);
+                return ZR_FALSE;
+            }
+
+            if (!ct_eval_object_key(cs, propertyNode->data.keyValuePair.key, frame, &keyValue) ||
+                !evaluate_compile_time_expression_internal(cs, propertyNode->data.keyValuePair.value, frame, &propertyValue)) {
+                return ZR_FALSE;
+            }
+
+            ZrObjectSetValue(cs->state, object, &keyValue, &propertyValue);
+        }
+    }
+
+    ZrValueInitAsRawObject(cs->state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(object));
+    result->type = ZR_VALUE_TYPE_OBJECT;
+    return ZR_TRUE;
+}
+
+static TBool ct_eval_member_access(SZrCompilerState *cs,
+                                   SZrAstNode *callSite,
+                                   const SZrTypeValue *baseValue,
+                                   SZrMemberExpression *memberExpr,
+                                   SZrCompileTimeFrame *frame,
+                                   SZrTypeValue *result) {
+    SZrTypeValue keyValue;
+    const SZrTypeValue *memberValue;
+
+    if (cs == ZR_NULL || baseValue == ZR_NULL || memberExpr == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (baseValue->type != ZR_VALUE_TYPE_OBJECT && baseValue->type != ZR_VALUE_TYPE_ARRAY) {
+        ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR,
+                           "Compile-time member access requires object or array value",
+                           callSite != ZR_NULL ? callSite->location : (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL});
+        return ZR_FALSE;
+    }
+
+    if (!memberExpr->computed && memberExpr->property != ZR_NULL &&
+        memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+        ZrValueInitAsRawObject(cs->state, &keyValue,
+                               ZR_CAST_RAW_OBJECT_AS_SUPER(memberExpr->property->data.identifier.name));
+        keyValue.type = ZR_VALUE_TYPE_STRING;
+    } else if (!evaluate_compile_time_expression_internal(cs, memberExpr->property, frame, &keyValue)) {
+        return ZR_FALSE;
+    }
+
+    memberValue = ZrObjectGetValue(cs->state, ZR_CAST_OBJECT(cs->state, baseValue->value.object), &keyValue);
+    if (memberValue == ZR_NULL) {
+        TChar message[256];
+        snprintf(message, sizeof(message), "Unknown compile-time member: %s",
+                 (!memberExpr->computed && memberExpr->property != ZR_NULL &&
+                  memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL)
+                         ? ct_name(memberExpr->property->data.identifier.name)
+                         : "<computed>");
+        ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, message,
+                           callSite != ZR_NULL ? callSite->location : (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL});
+        return ZR_FALSE;
+    }
+
+    *result = *memberValue;
+    return ZR_TRUE;
+}
+
+static TBool ct_call_value(SZrCompilerState *cs,
+                           SZrAstNode *callSite,
+                           const SZrTypeValue *callableValue,
+                           SZrFunctionCall *call,
+                           SZrCompileTimeFrame *frame,
+                           SZrTypeValue *result) {
+    SZrCompileTimeFunction *compileTimeFunction = ZR_NULL;
+
+    if (ct_value_try_get_compile_time_function(cs, callableValue, &compileTimeFunction)) {
+        return ct_call_function(cs, callSite, compileTimeFunction, call, frame, result);
+    }
+
+    return ct_invoke_runtime_callable(cs, callSite, callableValue, call, frame, result);
+}
+
+static TBool ct_eval_primary(SZrCompilerState *cs, SZrAstNode *node, SZrCompileTimeFrame *frame, SZrTypeValue *result) {
+    SZrPrimaryExpression *primary = &node->data.primaryExpression;
+    SZrTypeValue currentValue;
+    TZrSize startIndex = 0;
+
+    if (primary->members == ZR_NULL || primary->members->count == 0) {
+        return primary->property != ZR_NULL
+                   ? evaluate_compile_time_expression_internal(cs, primary->property, frame, result)
+                   : ZR_FALSE;
+    }
+
+    if (primary->property != ZR_NULL &&
+        primary->property->type == ZR_AST_IDENTIFIER_LITERAL &&
+        primary->members->nodes[0] != ZR_NULL &&
+        primary->members->nodes[0]->type == ZR_AST_FUNCTION_CALL) {
+        SZrString *funcName = primary->property->data.identifier.name;
+        SZrFunctionCall *call = &primary->members->nodes[0]->data.functionCall;
+
+        if (ct_string_equals(funcName, "FatalError") ||
+            ct_string_equals(funcName, "Assert") ||
+            ct_string_equals(funcName, "import")) {
+            if (!ct_eval_builtin_call(cs, node, funcName, call, frame, &currentValue)) {
+                return ZR_FALSE;
+            }
+            startIndex = 1;
+        } else if (!evaluate_compile_time_expression_internal(cs, primary->property, frame, &currentValue)) {
+            return ZR_FALSE;
+        }
+    } else if (!evaluate_compile_time_expression_internal(cs, primary->property, frame, &currentValue)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = startIndex; i < primary->members->count; i++) {
+        SZrAstNode *memberNode = primary->members->nodes[i];
+
+        if (memberNode == ZR_NULL) {
+            continue;
+        }
+
+        if (memberNode->type == ZR_AST_MEMBER_EXPRESSION) {
+            if (!ct_eval_member_access(cs, memberNode, &currentValue, &memberNode->data.memberExpression, frame,
+                                       &currentValue)) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+
+        if (memberNode->type == ZR_AST_FUNCTION_CALL) {
+            if (!ct_call_value(cs, memberNode, &currentValue, &memberNode->data.functionCall, frame, &currentValue)) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+
+        ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR,
+                           "Unsupported compile-time primary expression member",
+                           memberNode->location);
+        return ZR_FALSE;
+    }
+
+    *result = currentValue;
+    return ZR_TRUE;
+}
+
+static TBool evaluate_compile_time_expression_internal(SZrCompilerState *cs,
+                                                       SZrAstNode *node,
+                                                       SZrCompileTimeFrame *frame,
+                                                       SZrTypeValue *result) {
+    TBool oldContext;
+
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
-    
-    // 保存当前上下文
-    TBool oldContext = cs->isInCompileTimeContext;
+
+    oldContext = cs->isInCompileTimeContext;
     cs->isInCompileTimeContext = ZR_TRUE;
-    
-    TBool success = ZR_FALSE;
-    
+
     switch (node->type) {
-        case ZR_AST_INTEGER_LITERAL: {
+        case ZR_AST_INTEGER_LITERAL:
             ZrValueInitAsInt(cs->state, result, node->data.integerLiteral.value);
-            success = ZR_TRUE;
             break;
-        }
-        
-        case ZR_AST_FLOAT_LITERAL: {
+        case ZR_AST_FLOAT_LITERAL:
             ZrValueInitAsFloat(cs->state, result, node->data.floatLiteral.value);
-            success = ZR_TRUE;
             break;
-        }
-        
-        case ZR_AST_BOOLEAN_LITERAL: {
+        case ZR_AST_BOOLEAN_LITERAL:
             ZrValueInitAsUInt(cs->state, result, node->data.booleanLiteral.value ? 1 : 0);
             result->type = ZR_VALUE_TYPE_BOOL;
-            success = ZR_TRUE;
             break;
-        }
-        
-        case ZR_AST_STRING_LITERAL: {
-            if (node->data.stringLiteral.value != ZR_NULL) {
-                ZrValueInitAsRawObject(cs->state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(node->data.stringLiteral.value));
-                result->type = ZR_VALUE_TYPE_STRING;
-                success = ZR_TRUE;
-            }
+        case ZR_AST_STRING_LITERAL:
+            ZrValueInitAsRawObject(cs->state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(node->data.stringLiteral.value));
+            result->type = ZR_VALUE_TYPE_STRING;
             break;
-        }
-        
-        case ZR_AST_NULL_LITERAL: {
+        case ZR_AST_NULL_LITERAL:
             ZrValueResetAsNull(result);
-            success = ZR_TRUE;
             break;
-        }
-        
-        case ZR_AST_IDENTIFIER_LITERAL: {
-            // 查找编译期变量
-            SZrString *name = node->data.identifier.name;
-            if (name != ZR_NULL && check_compile_time_identifier_access(cs, name, ZR_FALSE)) {
-                // 查找编译期变量值
-                if (cs->compileTimeVariables.isValid && cs->compileTimeVariables.length > 0) {
-                    for (TZrSize i = 0; i < cs->compileTimeVariables.length; i++) {
-                        SZrCompileTimeVariable **varPtr = (SZrCompileTimeVariable**)ZrArrayGet(&cs->compileTimeVariables, i);
-                        if (varPtr != ZR_NULL && *varPtr != ZR_NULL) {
-                            if (ZrStringEqual((*varPtr)->name, name)) {
-                                // 递归求值变量值
-                                if ((*varPtr)->value != ZR_NULL) {
-                                    success = evaluate_compile_time_expression(cs, (*varPtr)->value, result);
-                                }
-                                break;
-                            }
-                        }
-                    }
+        case ZR_AST_IDENTIFIER_LITERAL:
+            if (!ct_frame_get(frame, node->data.identifier.name, result) &&
+                !ZrCompilerTryGetCompileTimeValue(cs, node->data.identifier.name, result)) {
+                SZrCompileTimeFunction *func = find_compile_time_function(cs, node->data.identifier.name);
+                if (func != ZR_NULL && ct_value_from_compile_time_function(cs, func, result)) {
+                    break;
                 }
+                ct_error_name(cs, node->data.identifier.name, "Unknown compile-time identifier: ", node->location);
+                cs->isInCompileTimeContext = oldContext;
+                return ZR_FALSE;
             }
             break;
-        }
-        
-        case ZR_AST_BINARY_EXPRESSION: {
-            // 编译期二元表达式求值
-            SZrBinaryExpression *binExpr = &node->data.binaryExpression;
-            SZrTypeValue leftValue, rightValue;
-            
-            if (evaluate_compile_time_expression(cs, binExpr->left, &leftValue) &&
-                evaluate_compile_time_expression(cs, binExpr->right, &rightValue)) {
-                // 根据操作符计算结果
-                const TChar *op = binExpr->op.op;
-                if (strcmp(op, "+") == 0) {
-                    if (ZR_VALUE_IS_TYPE_NUMBER(leftValue.type) && ZR_VALUE_IS_TYPE_NUMBER(rightValue.type)) {
-                        if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
-                            TInt64 left = leftValue.value.nativeObject.nativeInt64;
-                            TInt64 right = rightValue.value.nativeObject.nativeInt64;
-                            ZrValueInitAsInt(cs->state, result, left + right);
-                            success = ZR_TRUE;
-                        } else {
-                            TDouble left = leftValue.value.nativeObject.nativeDouble;
-                            TDouble right = rightValue.value.nativeObject.nativeDouble;
-                            ZrValueInitAsFloat(cs->state, result, left + right);
-                            success = ZR_TRUE;
-                        }
-                    }
-                } else if (strcmp(op, "-") == 0) {
-                    if (ZR_VALUE_IS_TYPE_NUMBER(leftValue.type) && ZR_VALUE_IS_TYPE_NUMBER(rightValue.type)) {
-                        if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
-                            TInt64 left = leftValue.value.nativeObject.nativeInt64;
-                            TInt64 right = rightValue.value.nativeObject.nativeInt64;
-                            ZrValueInitAsInt(cs->state, result, left - right);
-                            success = ZR_TRUE;
-                        } else {
-                            TDouble left = leftValue.value.nativeObject.nativeDouble;
-                            TDouble right = rightValue.value.nativeObject.nativeDouble;
-                            ZrValueInitAsFloat(cs->state, result, left - right);
-                            success = ZR_TRUE;
-                        }
-                    }
-                } else if (strcmp(op, "*") == 0) {
-                    if (ZR_VALUE_IS_TYPE_NUMBER(leftValue.type) && ZR_VALUE_IS_TYPE_NUMBER(rightValue.type)) {
-                        if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
-                            TInt64 left = leftValue.value.nativeObject.nativeInt64;
-                            TInt64 right = rightValue.value.nativeObject.nativeInt64;
-                            ZrValueInitAsInt(cs->state, result, left * right);
-                            success = ZR_TRUE;
-                        } else {
-                            TDouble left = leftValue.value.nativeObject.nativeDouble;
-                            TDouble right = rightValue.value.nativeObject.nativeDouble;
-                            ZrValueInitAsFloat(cs->state, result, left * right);
-                            success = ZR_TRUE;
-                        }
-                    }
-                } else if (strcmp(op, "/") == 0) {
-                    if (ZR_VALUE_IS_TYPE_NUMBER(leftValue.type) && ZR_VALUE_IS_TYPE_NUMBER(rightValue.type)) {
-                        if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
-                            TInt64 left = leftValue.value.nativeObject.nativeInt64;
-                            TInt64 right = rightValue.value.nativeObject.nativeInt64;
-                            if (right != 0) {
-                                ZrValueInitAsInt(cs->state, result, left / right);
-                                success = ZR_TRUE;
-                            }
-                        } else {
-                            TDouble left = leftValue.value.nativeObject.nativeDouble;
-                            TDouble right = rightValue.value.nativeObject.nativeDouble;
-                            if (right != 0.0) {
-                                ZrValueInitAsFloat(cs->state, result, left / right);
-                                success = ZR_TRUE;
-                            }
-                        }
-                    }
-                } else if (strcmp(op, "==") == 0) {
-                    TBool equal = ZR_FALSE;
-                    if (leftValue.type == rightValue.type) {
-                        if (ZR_VALUE_IS_TYPE_INT(leftValue.type)) {
-                            equal = (leftValue.value.nativeObject.nativeInt64 == rightValue.value.nativeObject.nativeInt64);
-                        } else if (ZR_VALUE_IS_TYPE_FLOAT(leftValue.type)) {
-                            equal = (leftValue.value.nativeObject.nativeDouble == rightValue.value.nativeObject.nativeDouble);
-                        } else if (leftValue.type == ZR_VALUE_TYPE_BOOL) {
-                            equal = (leftValue.value.nativeObject.nativeBool != 0) == (rightValue.value.nativeObject.nativeBool != 0);
-                        }
-                    }
-                    ZrValueInitAsUInt(cs->state, result, equal ? 1 : 0);
-                    result->type = ZR_VALUE_TYPE_BOOL;
-                    success = ZR_TRUE;
-                } else if (strcmp(op, "!=") == 0) {
-                    TBool notEqual = ZR_TRUE;
-                    if (leftValue.type == rightValue.type) {
-                        if (ZR_VALUE_IS_TYPE_INT(leftValue.type)) {
-                            notEqual = (leftValue.value.nativeObject.nativeInt64 != rightValue.value.nativeObject.nativeInt64);
-                        } else if (ZR_VALUE_IS_TYPE_FLOAT(leftValue.type)) {
-                            notEqual = (leftValue.value.nativeObject.nativeDouble != rightValue.value.nativeObject.nativeDouble);
-                        } else if (leftValue.type == ZR_VALUE_TYPE_BOOL) {
-                            notEqual = (leftValue.value.nativeObject.nativeBool != 0) != (rightValue.value.nativeObject.nativeBool != 0);
-                        }
-                    }
-                    ZrValueInitAsUInt(cs->state, result, notEqual ? 1 : 0);
-                    result->type = ZR_VALUE_TYPE_BOOL;
-                    success = ZR_TRUE;
-                } else if (strcmp(op, "%") == 0) {
-                    // 取模运算
-                    if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
-                        TInt64 left = leftValue.value.nativeObject.nativeInt64;
-                        TInt64 right = rightValue.value.nativeObject.nativeInt64;
-                        if (right != 0) {
-                            ZrValueInitAsInt(cs->state, result, left % right);
-                            success = ZR_TRUE;
-                        }
-                    }
-                } else if (strcmp(op, "<") == 0) {
-                    // 小于比较
-                    TBool less = ZR_FALSE;
-                    if (ZR_VALUE_IS_TYPE_NUMBER(leftValue.type) && ZR_VALUE_IS_TYPE_NUMBER(rightValue.type)) {
-                        if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
-                            less = (leftValue.value.nativeObject.nativeInt64 < rightValue.value.nativeObject.nativeInt64);
-                        } else {
-                            less = (leftValue.value.nativeObject.nativeDouble < rightValue.value.nativeObject.nativeDouble);
-                        }
-                    }
-                    ZrValueInitAsUInt(cs->state, result, less ? 1 : 0);
-                    result->type = ZR_VALUE_TYPE_BOOL;
-                    success = ZR_TRUE;
-                } else if (strcmp(op, ">") == 0) {
-                    // 大于比较
-                    TBool greater = ZR_FALSE;
-                    if (ZR_VALUE_IS_TYPE_NUMBER(leftValue.type) && ZR_VALUE_IS_TYPE_NUMBER(rightValue.type)) {
-                        if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
-                            greater = (leftValue.value.nativeObject.nativeInt64 > rightValue.value.nativeObject.nativeInt64);
-                        } else {
-                            greater = (leftValue.value.nativeObject.nativeDouble > rightValue.value.nativeObject.nativeDouble);
-                        }
-                    }
-                    ZrValueInitAsUInt(cs->state, result, greater ? 1 : 0);
-                    result->type = ZR_VALUE_TYPE_BOOL;
-                    success = ZR_TRUE;
-                } else if (strcmp(op, "<=") == 0) {
-                    // 小于等于比较
-                    TBool lessEqual = ZR_FALSE;
-                    if (ZR_VALUE_IS_TYPE_NUMBER(leftValue.type) && ZR_VALUE_IS_TYPE_NUMBER(rightValue.type)) {
-                        if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
-                            lessEqual = (leftValue.value.nativeObject.nativeInt64 <= rightValue.value.nativeObject.nativeInt64);
-                        } else {
-                            lessEqual = (leftValue.value.nativeObject.nativeDouble <= rightValue.value.nativeObject.nativeDouble);
-                        }
-                    }
-                    ZrValueInitAsUInt(cs->state, result, lessEqual ? 1 : 0);
-                    result->type = ZR_VALUE_TYPE_BOOL;
-                    success = ZR_TRUE;
-                } else if (strcmp(op, ">=") == 0) {
-                    // 大于等于比较
-                    TBool greaterEqual = ZR_FALSE;
-                    if (ZR_VALUE_IS_TYPE_NUMBER(leftValue.type) && ZR_VALUE_IS_TYPE_NUMBER(rightValue.type)) {
-                        if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
-                            greaterEqual = (leftValue.value.nativeObject.nativeInt64 >= rightValue.value.nativeObject.nativeInt64);
-                        } else {
-                            greaterEqual = (leftValue.value.nativeObject.nativeDouble >= rightValue.value.nativeObject.nativeDouble);
-                        }
-                    }
-                    ZrValueInitAsUInt(cs->state, result, greaterEqual ? 1 : 0);
-                    result->type = ZR_VALUE_TYPE_BOOL;
-                    success = ZR_TRUE;
-                } else if (strcmp(op, "&&") == 0) {
-                    // 逻辑与
-                    TBool leftBool = (leftValue.type == ZR_VALUE_TYPE_BOOL && leftValue.value.nativeObject.nativeBool != 0);
-                    TBool rightBool = (rightValue.type == ZR_VALUE_TYPE_BOOL && rightValue.value.nativeObject.nativeBool != 0);
-                    ZrValueInitAsUInt(cs->state, result, (leftBool && rightBool) ? 1 : 0);
-                    result->type = ZR_VALUE_TYPE_BOOL;
-                    success = ZR_TRUE;
-                } else if (strcmp(op, "||") == 0) {
-                    // 逻辑或
-                    TBool leftBool = (leftValue.type == ZR_VALUE_TYPE_BOOL && leftValue.value.nativeObject.nativeBool != 0);
-                    TBool rightBool = (rightValue.type == ZR_VALUE_TYPE_BOOL && rightValue.value.nativeObject.nativeBool != 0);
-                    ZrValueInitAsUInt(cs->state, result, (leftBool || rightBool) ? 1 : 0);
-                    result->type = ZR_VALUE_TYPE_BOOL;
-                    success = ZR_TRUE;
-                }
-                // 支持更多操作符（已支持基本算术、比较和逻辑运算）
+        case ZR_AST_OBJECT_LITERAL:
+            cs->isInCompileTimeContext = oldContext;
+            return ct_eval_object_literal(cs, node, frame, result);
+        case ZR_AST_BINARY_EXPRESSION:
+            cs->isInCompileTimeContext = oldContext;
+            return ct_eval_binary(cs, node, frame, result);
+        case ZR_AST_LOGICAL_EXPRESSION:
+            cs->isInCompileTimeContext = oldContext;
+            return ct_eval_logical(cs, node, frame, result);
+        case ZR_AST_UNARY_EXPRESSION:
+            cs->isInCompileTimeContext = oldContext;
+            return ct_eval_unary(cs, node, frame, result);
+        case ZR_AST_CONDITIONAL_EXPRESSION: {
+            SZrConditionalExpression *expr = &node->data.conditionalExpression;
+            SZrTypeValue condValue;
+            if (!evaluate_compile_time_expression_internal(cs, expr->test, frame, &condValue)) {
+                cs->isInCompileTimeContext = oldContext;
+                return ZR_FALSE;
             }
-            break;
+            cs->isInCompileTimeContext = oldContext;
+            return evaluate_compile_time_expression_internal(cs, ct_truthy(&condValue) ? expr->consequent : expr->alternate, frame, result);
         }
-        
-        case ZR_AST_FUNCTION_CALL: {
-            // 编译期函数调用
-            ZR_UNUSED_PARAMETER(&node->data.functionCall);
-            
-            // 检查是否是内置编译期函数（FatalError, Assert）
-            // 注意：函数调用在 primary expression 中，这里需要从上下文中获取函数名
-            // 实现完整的编译期函数调用
-            // 注意：编译期函数调用需要：
-            // 1. 求值参数
-            // 2. 查找编译期函数定义
-            // 3. 执行函数体
-            // 4. 返回结果
-            // TODO: 由于函数调用通常在primary expression中处理，这里暂时跳过
-            // 完整的编译期函数调用在primary expression求值时实现
-            break;
-        }
-        
-        case ZR_AST_PRIMARY_EXPRESSION: {
-            // 处理编译期函数调用（如 FatalError, Assert）
-            SZrPrimaryExpression *primary = &node->data.primaryExpression;
-            if (primary->property != ZR_NULL && primary->property->type == ZR_AST_IDENTIFIER_LITERAL) {
-                SZrString *funcName = primary->property->data.identifier.name;
-                if (funcName != ZR_NULL) {
-                    TNativeString nameStr = ZrStringGetNativeString(funcName);
-                    if (nameStr != ZR_NULL) {
-                        // 检查是否是 FatalError 或 Assert
-                        if (strcmp(nameStr, "FatalError") == 0) {
-                            // FatalError(message)
-                            if (primary->members != ZR_NULL && primary->members->count > 0) {
-                                SZrAstNode *callNode = primary->members->nodes[0];
-                                if (callNode != ZR_NULL && callNode->type == ZR_AST_FUNCTION_CALL) {
-                                    SZrFunctionCall *funcCall = &callNode->data.functionCall;
-                                    if (funcCall->args != ZR_NULL && funcCall->args->count > 0) {
-                                        SZrAstNode *argNode = funcCall->args->nodes[0];
-                                        if (argNode != ZR_NULL && argNode->type == ZR_AST_STRING_LITERAL) {
-                                            SZrString *msg = argNode->data.stringLiteral.value;
-                                            TNativeString msgStr = ZrStringGetNativeString(msg);
-                                            if (msgStr != ZR_NULL) {
-                                                ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_FATAL, msgStr, node->location);
-                                                success = ZR_FALSE;  // 致命错误，返回失败
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else if (strcmp(nameStr, "Assert") == 0) {
-                            // Assert(condition, message?)
-                            if (primary->members != ZR_NULL && primary->members->count > 0) {
-                                SZrAstNode *callNode = primary->members->nodes[0];
-                                if (callNode != ZR_NULL && callNode->type == ZR_AST_FUNCTION_CALL) {
-                                    SZrFunctionCall *funcCall = &callNode->data.functionCall;
-                                    if (funcCall->args != ZR_NULL && funcCall->args->count > 0) {
-                                        // 求值第一个参数（条件）
-                                        SZrTypeValue conditionValue;
-                                        if (evaluate_compile_time_expression(cs, funcCall->args->nodes[0], &conditionValue)) {
-                                            TBool condition = ZR_FALSE;
-                                            if (conditionValue.type == ZR_VALUE_TYPE_BOOL) {
-                                                condition = (conditionValue.value.nativeObject.nativeBool != 0);
-                                            } else if (ZR_VALUE_IS_TYPE_INT(conditionValue.type)) {
-                                                condition = (conditionValue.value.nativeObject.nativeInt64 != 0);
-                                            }
-                                            
-                                            if (!condition) {
-                                                // 断言失败
-                                                const TChar *msg = "Assertion failed";
-                                                if (funcCall->args->count > 1) {
-                                                    SZrAstNode *msgNode = funcCall->args->nodes[1];
-                                                    if (msgNode != ZR_NULL && msgNode->type == ZR_AST_STRING_LITERAL) {
-                                                        SZrString *msgStr = msgNode->data.stringLiteral.value;
-                                                        TNativeString msgNative = ZrStringGetNativeString(msgStr);
-                                                        if (msgNative != ZR_NULL) {
-                                                            msg = msgNative;
-                                                        }
-                                                    }
-                                                }
-                                                ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_FATAL, msg, node->location);
-                                                success = ZR_FALSE;
-                                            } else {
-                                                success = ZR_TRUE;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            // 查找编译期函数
-                            if (cs->compileTimeFunctions.isValid && cs->compileTimeFunctions.length > 0) {
-                                for (TZrSize i = 0; i < cs->compileTimeFunctions.length; i++) {
-                                    SZrCompileTimeFunction **funcPtr = (SZrCompileTimeFunction**)ZrArrayGet(&cs->compileTimeFunctions, i);
-                                    if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL) {
-                                        if (ZrStringEqual((*funcPtr)->name, funcName)) {
-                                            // 实现编译期函数调用
-                                            // 需要：1. 求值参数 2. 执行函数体 3. 返回结果
-                                            // 注意：编译期函数调用需要递归执行函数体
-                                            // TODO: 这里暂时跳过，因为需要完整的函数执行环境
-                                            // 未来可以实现编译期函数调用的完整支持
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            break;
-        }
-        
+        case ZR_AST_PRIMARY_EXPRESSION:
+            cs->isInCompileTimeContext = oldContext;
+            return ct_eval_primary(cs, node, frame, result);
+        case ZR_AST_EXPRESSION_STATEMENT:
+            cs->isInCompileTimeContext = oldContext;
+            return evaluate_compile_time_expression_internal(cs, node->data.expressionStatement.expr, frame, result);
         default:
-            // 不支持的类型
-            break;
+            ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Unsupported compile-time expression node", node->location);
+            cs->isInCompileTimeContext = oldContext;
+            return ZR_FALSE;
     }
-    
-    // 恢复上下文
+
     cs->isInCompileTimeContext = oldContext;
-    
-    return success;
+    return ZR_TRUE;
 }
 
-// 执行编译期声明
+ZR_PARSER_API TBool ZrCompilerEvaluateCompileTimeExpression(SZrCompilerState *cs,
+                                                            SZrAstNode *node,
+                                                            SZrTypeValue *result) {
+    return evaluate_compile_time_expression_internal(cs, node, ZR_NULL, result);
+}
+
+static TBool register_compile_time_variable_declaration(SZrCompilerState *cs,
+                                                        SZrAstNode *node,
+                                                        SZrFileRange location) {
+    SZrVariableDeclaration *varDecl;
+    SZrString *varName;
+    SZrCompileTimeVariable *var;
+    SZrTypeValue value;
+
+    if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION ||
+        node->data.variableDeclaration.pattern == ZR_NULL ||
+        node->data.variableDeclaration.pattern->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    varDecl = &node->data.variableDeclaration;
+    varName = varDecl->pattern->data.identifier.name;
+    var = find_compile_time_variable(cs, varName);
+    if (var == ZR_NULL) {
+        var = ZrMemoryRawMallocWithType(cs->state->global,
+                                        sizeof(SZrCompileTimeVariable),
+                                        ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        if (var == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        var->name = varName;
+        ZrInferredTypeInit(cs->state, &var->type, ZR_VALUE_TYPE_OBJECT);
+        ZrArrayPush(cs->state, &cs->compileTimeVariables, &var);
+    } else {
+        ZrInferredTypeFree(cs->state, &var->type);
+        ZrInferredTypeInit(cs->state, &var->type, ZR_VALUE_TYPE_OBJECT);
+    }
+
+    var->value = varDecl->value;
+    var->location = location;
+    var->hasEvaluatedValue = ZR_FALSE;
+    var->isEvaluating = ZR_FALSE;
+
+    if (varDecl->typeInfo != ZR_NULL &&
+        !convert_ast_type_to_inferred_type(cs, varDecl->typeInfo, &var->type)) {
+        ZrInferredTypeFree(cs->state, &var->type);
+        ZrInferredTypeInit(cs->state, &var->type, ZR_VALUE_TYPE_OBJECT);
+    }
+
+    if (varDecl->value != ZR_NULL) {
+        if (!ZrCompilerTryGetCompileTimeValue(cs, varName, &value)) {
+            return ZR_FALSE;
+        }
+        if (varDecl->typeInfo == ZR_NULL) {
+            ZrInferredTypeFree(cs->state, &var->type);
+            ct_init_type_from_value(cs, &value, &var->type);
+        }
+    } else {
+        ZrValueResetAsNull(&var->evaluatedValue);
+        var->hasEvaluatedValue = ZR_TRUE;
+        if (varDecl->typeInfo == ZR_NULL) {
+            ZrInferredTypeFree(cs->state, &var->type);
+            ZrInferredTypeInit(cs->state, &var->type, ZR_VALUE_TYPE_NULL);
+        }
+    }
+
+    if (cs->compileTimeTypeEnv != ZR_NULL) {
+        ZrTypeEnvironmentRegisterVariable(cs->state, cs->compileTimeTypeEnv, varName, &var->type);
+    }
+    if (cs->typeEnv != ZR_NULL) {
+        ZrTypeEnvironmentRegisterVariable(cs->state, cs->typeEnv, varName, &var->type);
+    }
+
+    return ZR_TRUE;
+}
+
+static TBool register_compile_time_function_declaration(SZrCompilerState *cs,
+                                                        SZrAstNode *node,
+                                                        SZrFileRange location) {
+    SZrFunctionDeclaration *funcDecl;
+    SZrCompileTimeFunction *func;
+
+    if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_FUNCTION_DECLARATION ||
+        node->data.functionDeclaration.name == ZR_NULL ||
+        node->data.functionDeclaration.name->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    funcDecl = &node->data.functionDeclaration;
+    func = find_compile_time_function(cs, funcDecl->name->name);
+    if (func == ZR_NULL) {
+        func = ZrMemoryRawMallocWithType(cs->state->global,
+                                         sizeof(SZrCompileTimeFunction),
+                                         ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        if (func == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrArrayInit(cs->state, &func->paramTypes, sizeof(SZrInferredType),
+                    funcDecl->params != ZR_NULL ? funcDecl->params->count : 0);
+        ZrInferredTypeInit(cs->state, &func->returnType, ZR_VALUE_TYPE_OBJECT);
+        ZrArrayPush(cs->state, &cs->compileTimeFunctions, &func);
+    } else {
+        for (TZrSize i = 0; i < func->paramTypes.length; i++) {
+            SZrInferredType *paramType = (SZrInferredType *)ZrArrayGet(&func->paramTypes, i);
+            if (paramType != ZR_NULL) {
+                ZrInferredTypeFree(cs->state, paramType);
+            }
+        }
+        func->paramTypes.length = 0;
+        ZrInferredTypeFree(cs->state, &func->returnType);
+        ZrInferredTypeInit(cs->state, &func->returnType, ZR_VALUE_TYPE_OBJECT);
+    }
+
+    func->name = funcDecl->name->name;
+    func->declaration = node;
+    func->location = location;
+
+    if (funcDecl->returnType != ZR_NULL &&
+        !convert_ast_type_to_inferred_type(cs, funcDecl->returnType, &func->returnType)) {
+        ZrInferredTypeFree(cs->state, &func->returnType);
+        ZrInferredTypeInit(cs->state, &func->returnType, ZR_VALUE_TYPE_OBJECT);
+    }
+
+    if (funcDecl->params != ZR_NULL) {
+        for (TZrSize i = 0; i < funcDecl->params->count; i++) {
+            SZrAstNode *paramNode = funcDecl->params->nodes[i];
+            SZrInferredType paramType;
+            if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+                continue;
+            }
+            if (paramNode->data.parameter.typeInfo != ZR_NULL &&
+                !convert_ast_type_to_inferred_type(cs, paramNode->data.parameter.typeInfo, &paramType)) {
+                ZrInferredTypeInit(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+            } else if (paramNode->data.parameter.typeInfo == ZR_NULL) {
+                ZrInferredTypeInit(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+            }
+            ZrArrayPush(cs->state, &func->paramTypes, &paramType);
+        }
+    }
+
+    if (cs->compileTimeTypeEnv != ZR_NULL) {
+        ZrTypeEnvironmentRegisterFunction(cs->state, cs->compileTimeTypeEnv, func->name, &func->returnType, &func->paramTypes);
+    }
+
+    return ZR_TRUE;
+}
+
+static TBool execute_compile_time_statement(SZrCompilerState *cs,
+                                            SZrAstNode *node,
+                                            SZrCompileTimeFrame *frame,
+                                            TBool *didReturn,
+                                            SZrTypeValue *result) {
+    if (didReturn != ZR_NULL) {
+        *didReturn = ZR_FALSE;
+    }
+    if (cs == ZR_NULL || node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_BLOCK:
+            return execute_compile_time_block(cs, node, frame, didReturn, result);
+        case ZR_AST_RETURN_STATEMENT: {
+            SZrReturnStatement *stmt = &node->data.returnStatement;
+            if (result == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            if (stmt->expr == ZR_NULL) {
+                ZrValueResetAsNull(result);
+            } else if (!evaluate_compile_time_expression_internal(cs, stmt->expr, frame, result)) {
+                return ZR_FALSE;
+            }
+            if (didReturn != ZR_NULL) {
+                *didReturn = ZR_TRUE;
+            }
+            return ZR_TRUE;
+        }
+        case ZR_AST_VARIABLE_DECLARATION: {
+            SZrVariableDeclaration *decl = &node->data.variableDeclaration;
+            SZrTypeValue value;
+            if (frame == ZR_NULL) {
+                return register_compile_time_variable_declaration(cs, node, node->location);
+            }
+            if (decl->pattern == ZR_NULL || decl->pattern->type != ZR_AST_IDENTIFIER_LITERAL) {
+                return ZR_TRUE;
+            }
+            if (decl->value != ZR_NULL && !evaluate_compile_time_expression_internal(cs, decl->value, frame, &value)) {
+                return ZR_FALSE;
+            }
+            if (decl->value == ZR_NULL) {
+                ZrValueResetAsNull(&value);
+            }
+            return ct_frame_set(cs, frame, decl->pattern->data.identifier.name, &value);
+        }
+        case ZR_AST_IF_EXPRESSION: {
+            SZrIfExpression *expr = &node->data.ifExpression;
+            SZrTypeValue condValue;
+            SZrAstNode *branch;
+            if (!evaluate_compile_time_expression_internal(cs, expr->condition, frame, &condValue)) {
+                return ZR_FALSE;
+            }
+            branch = ct_truthy(&condValue) ? expr->thenExpr : expr->elseExpr;
+            if (branch == ZR_NULL) {
+                return ZR_TRUE;
+            }
+            if (branch->type == ZR_AST_BLOCK || branch->type == ZR_AST_RETURN_STATEMENT ||
+                branch->type == ZR_AST_IF_EXPRESSION || branch->type == ZR_AST_VARIABLE_DECLARATION ||
+                branch->type == ZR_AST_FUNCTION_DECLARATION ||
+                branch->type == ZR_AST_EXPRESSION_STATEMENT) {
+                return execute_compile_time_statement(cs, branch, frame, didReturn, result);
+            }
+            return result != ZR_NULL ? evaluate_compile_time_expression_internal(cs, branch, frame, result) : ZR_TRUE;
+        }
+        case ZR_AST_FUNCTION_DECLARATION:
+            if (frame == ZR_NULL) {
+                return register_compile_time_function_declaration(cs, node, node->location);
+            }
+            ZrCompileTimeError(cs, ZR_COMPILE_TIME_ERROR_ERROR,
+                               "Nested compile-time function declarations are not supported in local frames",
+                               node->location);
+            return ZR_FALSE;
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            return execute_compile_time_declaration(cs, node);
+        default: {
+            SZrTypeValue ignored;
+            return evaluate_compile_time_expression_internal(cs, node, frame, result != ZR_NULL ? result : &ignored);
+        }
+    }
+}
+
+static TBool execute_compile_time_block(SZrCompilerState *cs,
+                                        SZrAstNode *node,
+                                        SZrCompileTimeFrame *frame,
+                                        TBool *didReturn,
+                                        SZrTypeValue *result) {
+    SZrBlock *block;
+    if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_BLOCK) {
+        return ZR_FALSE;
+    }
+    block = &node->data.block;
+    if (block->body == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    for (TZrSize i = 0; i < block->body->count; i++) {
+        TBool returned = ZR_FALSE;
+        if (!execute_compile_time_statement(cs, block->body->nodes[i], frame, &returned, result)) {
+            return ZR_FALSE;
+        }
+        if (returned) {
+            if (didReturn != ZR_NULL) {
+                *didReturn = ZR_TRUE;
+            }
+            return ZR_TRUE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 ZR_PARSER_API TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrCompileTimeDeclaration *decl;
+    SZrAstNode *body;
+    TBool oldContext;
+
     if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_COMPILE_TIME_DECLARATION) {
         return ZR_FALSE;
     }
-    
-    SZrCompileTimeDeclaration *compileTimeDecl = &node->data.compileTimeDeclaration;
-    SZrAstNode *declaration = compileTimeDecl->declaration;
-    
-    if (declaration == ZR_NULL) {
+
+    decl = &node->data.compileTimeDeclaration;
+    body = decl->declaration;
+    if (body == ZR_NULL) {
         return ZR_FALSE;
     }
-    
-    // 保存当前上下文
-    TBool oldContext = cs->isInCompileTimeContext;
+
+    oldContext = cs->isInCompileTimeContext;
     cs->isInCompileTimeContext = ZR_TRUE;
-    
-    TBool success = ZR_FALSE;
-    
-    switch (compileTimeDecl->declarationType) {
+
+    switch (decl->declarationType) {
         case ZR_COMPILE_TIME_VARIABLE: {
-            // 编译期变量声明
-            if (declaration->type == ZR_AST_VARIABLE_DECLARATION) {
-                SZrVariableDeclaration *varDecl = &declaration->data.variableDeclaration;
-                if (varDecl->pattern != ZR_NULL && varDecl->pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
-                    SZrString *varName = varDecl->pattern->data.identifier.name;
-                    if (varName != ZR_NULL) {
-                        // 创建编译期变量
-                        SZrCompileTimeVariable *var = ZrMemoryRawMallocWithType(
-                            cs->state->global, sizeof(SZrCompileTimeVariable), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                        if (var != ZR_NULL) {
-                            var->name = varName;
-                            var->value = varDecl->value;
-                            var->location = node->location;
-                            
-                            // 推断类型
-                            if (varDecl->typeInfo != ZR_NULL) {
-                                convert_ast_type_to_inferred_type(cs, varDecl->typeInfo, &var->type);
-                            } else if (varDecl->value != ZR_NULL) {
-                                infer_expression_type(cs, varDecl->value, &var->type);
-                            } else {
-                                ZrInferredTypeInit(cs->state, &var->type, ZR_VALUE_TYPE_OBJECT);
-                            }
-                            
-                            // 添加到编译期变量表
-                            ZrArrayPush(cs->state, &cs->compileTimeVariables, &var);
-                            success = ZR_TRUE;
-                        }
-                    }
-                }
+            if (!register_compile_time_variable_declaration(cs, body, node->location)) {
+                cs->isInCompileTimeContext = oldContext;
+                return ZR_FALSE;
             }
-            break;
+            cs->isInCompileTimeContext = oldContext;
+            return ZR_TRUE;
         }
-        
+
         case ZR_COMPILE_TIME_FUNCTION: {
-            // 编译期函数声明
-            if (declaration->type == ZR_AST_FUNCTION_DECLARATION) {
-                SZrFunctionDeclaration *funcDecl = &declaration->data.functionDeclaration;
-                if (funcDecl->name != ZR_NULL && funcDecl->name->name != ZR_NULL) {
-                    // 创建编译期函数
-                    SZrCompileTimeFunction *func = ZrMemoryRawMallocWithType(
-                        cs->state->global, sizeof(SZrCompileTimeFunction), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                    if (func != ZR_NULL) {
-                        func->name = funcDecl->name->name;
-                        func->declaration = declaration;
-                        func->location = node->location;
-                        
-                        // 推断返回类型
-                        if (funcDecl->returnType != ZR_NULL) {
-                            convert_ast_type_to_inferred_type(cs, funcDecl->returnType, &func->returnType);
-                        } else {
-                            ZrInferredTypeInit(cs->state, &func->returnType, ZR_VALUE_TYPE_OBJECT);
-                        }
-                        
-                        // 初始化参数类型数组（内联存储 SZrInferredType）
-                        ZrArrayInit(cs->state, &func->paramTypes, sizeof(SZrInferredType),
-                                    funcDecl->params != ZR_NULL ? funcDecl->params->count : 0);
-                        
-                        // 提取参数类型
-                        if (funcDecl->params != ZR_NULL) {
-                            for (TZrSize i = 0; i < funcDecl->params->count; i++) {
-                                SZrAstNode *paramNode = funcDecl->params->nodes[i];
-                                if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
-                                    SZrParameter *param = &paramNode->data.parameter;
-                                    SZrInferredType paramType;
-                                    if (param->typeInfo != ZR_NULL) {
-                                        if (!convert_ast_type_to_inferred_type(cs, param->typeInfo, &paramType)) {
-                                            ZrInferredTypeInit(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
-                                        }
-                                    } else {
-                                        ZrInferredTypeInit(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
-                                    }
-                                    ZrArrayPush(cs->state, &func->paramTypes, &paramType);
-                                }
-                            }
-                        }
-                        
-                        // 添加到编译期函数表
-                        ZrArrayPush(cs->state, &cs->compileTimeFunctions, &func);
-                        success = ZR_TRUE;
-                    }
-                }
+            if (!register_compile_time_function_declaration(cs, body, node->location)) {
+                cs->isInCompileTimeContext = oldContext;
+                return ZR_FALSE;
             }
-            break;
+            cs->isInCompileTimeContext = oldContext;
+            return ZR_TRUE;
         }
-        
+
         case ZR_COMPILE_TIME_STATEMENT: {
-            // 编译期语句块
-            if (declaration->type == ZR_AST_BLOCK) {
-                SZrBlock *block = &declaration->data.block;
-                if (block->body != ZR_NULL) {
-                    // 执行语句块中的每个语句
-                    for (TZrSize i = 0; i < block->body->count; i++) {
-                        SZrAstNode *stmt = block->body->nodes[i];
-                        if (stmt != ZR_NULL) {
-                            // 递归执行编译期声明
-                            if (stmt->type == ZR_AST_COMPILE_TIME_DECLARATION) {
-                                execute_compile_time_declaration(cs, stmt);
-                            } else if (stmt->type == ZR_AST_EXPRESSION_STATEMENT) {
-                                // 执行表达式语句（可能包含 FatalError 调用）
-                                SZrTypeValue result;
-                                if (evaluate_compile_time_expression(cs, stmt->data.expressionStatement.expr, &result)) {
-                                    // 表达式求值成功
-                                }
-                            } else if (stmt->type == ZR_AST_VARIABLE_DECLARATION) {
-                                // 变量声明：执行初始化表达式（如果有）
-                                SZrVariableDeclaration *varDecl = &stmt->data.variableDeclaration;
-                                if (varDecl->value != ZR_NULL) {
-                                    SZrTypeValue initResult;
-                                    if (evaluate_compile_time_expression(cs, varDecl->value, &initResult)) {
-                                        // 初始化表达式求值成功
-                                        // 注意：变量声明在编译期执行时不需要存储变量值
-                                    }
-                                }
-                            } else if (stmt->type == ZR_AST_IF_EXPRESSION || stmt->type == ZR_AST_CONDITIONAL_EXPRESSION) {
-                                // if表达式：根据条件执行相应分支
-                                SZrIfExpression *ifExpr = &stmt->data.ifExpression;
-                                if (ifExpr->condition != ZR_NULL) {
-                                    SZrTypeValue condResult;
-                                    if (evaluate_compile_time_expression(cs, ifExpr->condition, &condResult)) {
-                                        TBool condition = (condResult.type == ZR_VALUE_TYPE_BOOL && 
-                                                          condResult.value.nativeObject.nativeBool != 0);
-                                        if (condition && ifExpr->thenExpr != ZR_NULL) {
-                                            SZrTypeValue result;
-                                            evaluate_compile_time_expression(cs, ifExpr->thenExpr, &result);
-                                        } else if (!condition && ifExpr->elseExpr != ZR_NULL) {
-                                            SZrTypeValue result;
-                                            evaluate_compile_time_expression(cs, ifExpr->elseExpr, &result);
-                                        }
-                                    }
-                                }
-                            }
-                            // 支持更多语句类型（已支持表达式语句、变量声明、if表达式）
-                        }
-                    }
-                    success = ZR_TRUE;
-                }
-            }
-            break;
+            TBool didReturn = ZR_FALSE;
+            SZrTypeValue ignored;
+            TBool ok = body->type == ZR_AST_BLOCK
+                           ? execute_compile_time_block(cs, body, ZR_NULL, &didReturn, &ignored)
+                           : execute_compile_time_statement(cs, body, ZR_NULL, &didReturn, &ignored);
+            cs->isInCompileTimeContext = oldContext;
+            return ok;
         }
-        
+
         case ZR_COMPILE_TIME_EXPRESSION: {
-            // 编译期表达式
-            SZrTypeValue result;
-            success = evaluate_compile_time_expression(cs, declaration, &result);
-            break;
+            SZrTypeValue ignored;
+            TBool ok = evaluate_compile_time_expression_internal(cs, body, ZR_NULL, &ignored);
+            cs->isInCompileTimeContext = oldContext;
+            return ok;
         }
     }
-    
-    // 恢复上下文
+
     cs->isInCompileTimeContext = oldContext;
-    
-    return success;
+    return ZR_FALSE;
 }

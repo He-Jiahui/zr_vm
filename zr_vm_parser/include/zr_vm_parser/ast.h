@@ -184,6 +184,7 @@ typedef struct SZrType {
     TZrSize arrayMinSize;            // 数组最小大小
     TZrSize arrayMaxSize;            // 数组最大大小
     TBool hasArraySizeConstraint;    // 是否有数组大小约束
+    SZrAstNode *arraySizeExpression; // 编译期数组长度表达式（可选）
 } SZrType;
 
 // 泛型类型

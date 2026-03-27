@@ -65,6 +65,7 @@ typedef struct SZrCompilerState {
     const TChar *errorMessage;
     SZrFileRange errorLocation;
     TBool hasFatalError;                  // 是否有致命错误（阻止编译完成）
+    TBool hasCompileTimeError;            // 是否发生过编译期错误（不能在后续语句中被吞掉）
     
     // 测试模式
     TBool isTestMode;                    // 是否处于测试模式
@@ -114,6 +115,9 @@ typedef struct SZrCompileTimeVariable {
     SZrString *name;                       // 变量名
     SZrInferredType type;                  // 变量类型
     SZrAstNode *value;                     // 变量值（AST节点，用于编译期求值）
+    SZrTypeValue evaluatedValue;           // 已求值的编译期结果
+    TBool hasEvaluatedValue;               // 是否已经求值完成
+    TBool isEvaluating;                    // 是否正在求值（用于循环依赖检测）
     SZrFileRange location;                  // 声明位置
 } SZrCompileTimeVariable;
 
@@ -284,6 +288,17 @@ ZR_PARSER_API void analyze_external_variables(SZrCompilerState *cs, SZrAstNode *
 
 // 执行编译期声明
 ZR_PARSER_API TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAstNode *node);
+
+// 查询已注册的编译期变量值；如果尚未求值，会按当前编译期环境求值并缓存
+ZR_PARSER_API TBool ZrCompilerTryGetCompileTimeValue(SZrCompilerState *cs, SZrString *name, SZrTypeValue *result);
+
+// 在编译期上下文中直接求值 AST 表达式
+ZR_PARSER_API TBool ZrCompilerEvaluateCompileTimeExpression(SZrCompilerState *cs, SZrAstNode *node, SZrTypeValue *result);
+
+// 校验编译期值是否可以安全投影到运行时常量池；失败时会直接写入编译错误
+ZR_PARSER_API TBool ZrCompilerValidateRuntimeProjectionValue(SZrCompilerState *cs,
+                                                             const SZrTypeValue *value,
+                                                             SZrFileRange location);
 
 // 编译源代码为函数（封装了从解析到编译的全流程）
 // 这是提供给 globalState 的统一接口
