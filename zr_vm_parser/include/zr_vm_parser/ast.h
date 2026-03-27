@@ -515,6 +515,7 @@ typedef struct SZrClassMetaFunction {
     SZrIdentifier *meta; // MetaIdentifier
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
+    TBool hasSuperCall; // 是否显式声明了 super(...)
     SZrAstNodeArray *superArgs; // Expression 数组（可选）
     SZrType *returnType; // 可选
     SZrAstNode *body; // Block

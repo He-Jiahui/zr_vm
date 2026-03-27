@@ -8,6 +8,7 @@
 #include <time.h>
 #include <setjmp.h>
 #include "unity.h"
+#include "test_support.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/call_info.h"
@@ -69,30 +70,6 @@ typedef struct {
         fflush(stdout);                                                                                                \
     } while (0)
 
-// 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
-    ZR_UNUSED_PARAMETER(userData);
-    ZR_UNUSED_PARAMETER(originalSize);
-    ZR_UNUSED_PARAMETER(flag);
-
-    if (newSize == 0) {
-        if (pointer != ZR_NULL && (TZrPtr) pointer >= (TZrPtr) 0x1000) {
-            free(pointer);
-        }
-        return ZR_NULL;
-    }
-
-    if (pointer == ZR_NULL) {
-        return malloc(newSize);
-    } else {
-        if ((TZrPtr) pointer >= (TZrPtr) 0x1000) {
-            return realloc(pointer, newSize);
-        } else {
-            return malloc(newSize);
-        }
-    }
-}
-
 // 测试panic处理函数（用于捕获未处理的异常信息并使用longjmp跳出）
 static void testPanicHandler(SZrState *state) {
     if (state == ZR_NULL) {
@@ -133,33 +110,12 @@ static void testPanicHandler(SZrState *state) {
     // 如果没有设置jmp_buf，则继续执行（会触发abort）
 }
 
-// 创建测试用的SZrState
 static SZrState *createTestState(void) {
-    SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
-    if (!global)
-        return ZR_NULL;
-
-    SZrState *mainState = global->mainThreadState;
-    if (mainState) {
-        ZrGlobalStateInitRegistry(mainState, global);
-        
-        // 注册panic处理函数以获取异常信息
-        global->panicHandlingFunction = testPanicHandler;
-    }
-
-    return mainState;
+    return zr_test_create_state(testPanicHandler);
 }
 
-// 销毁测试用的SZrState
 static void destroyTestState(SZrState *state) {
-    if (!state)
-        return;
-
-    SZrGlobalState *global = state->global;
-    if (global) {
-        ZrGlobalStateFree(global);
-    }
+    zr_test_destroy_state(state);
 }
 
 // 创建测试函数（简化版本，用于指令测试）
@@ -357,48 +313,9 @@ static TBool executeTestFunctionAndGetResult(SZrState *state, SZrFunction *funct
     
     // 使用setjmp设置恢复点
     if (setjmp(jumpBuffer) == 0) {
-        // 正常执行路径
-        
-        // 创建闭包
-        SZrClosure *closure = ZrClosureNew(state, 0);
-        if (closure == ZR_NULL) {
-            global->userData = oldUserData;  // 恢复userData
-            return ZR_FALSE;
-        }
-        closure->function = function;
-        ZrClosureInitValue(state, closure);
-
-        // 准备调用栈
-        TZrStackValuePointer base = state->stackTop.valuePointer;
-        ZrFunctionCheckStackAndGc(state, function->stackSize + 1, base);
-
-        // 将闭包压栈
-        SZrTypeValue *closureValue = ZrStackGetValue(state->stackTop.valuePointer);
-        ZrValueInitAsRawObject(state, closureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-        closureValue->type = ZR_VALUE_TYPE_FUNCTION;
-        closureValue->isGarbageCollectable = ZR_TRUE;
-        closureValue->isNative = ZR_FALSE;
-        state->stackTop.valuePointer++;
-
-        // 调用函数
-        ZrFunctionCall(state, base, 1);
-
-        // 恢复userData
+        TBool execSuccess = zr_test_execute_function_expect_int64(state, function, result);
         global->userData = oldUserData;
-
-        // 检查执行状态
-        if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
-            return ZR_FALSE;
-        }
-
-        // 获取返回值
-        SZrTypeValue *returnValue = ZrStackGetValue(base);
-        if (ZR_VALUE_IS_TYPE_INT(returnValue->type)) {
-            *result = returnValue->value.nativeObject.nativeInt64;
-            return ZR_TRUE;
-        }
-
-        return ZR_FALSE;
+        return execSuccess;
     } else {
         // longjmp返回路径（panic处理函数调用了longjmp）
         // 恢复userData
@@ -571,4 +488,3 @@ int main(void) {
 
     return UNITY_END();
 }
-

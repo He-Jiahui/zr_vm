@@ -59,6 +59,7 @@ dkms.conf
 /.vs
 /CMakeSettings.json
 /.notes
+/.codex
 
 # dist dir
 /zig-out
@@ -75,3 +76,4 @@ dkms.conf
 /.cursor
 
 .cache/
+

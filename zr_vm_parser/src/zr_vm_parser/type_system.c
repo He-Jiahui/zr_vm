@@ -64,17 +64,13 @@ void ZrInferredTypeFree(SZrState *state, SZrInferredType *type) {
         return;
     }
     
-    // 释放元素类型数组（递归释放嵌套类型，避免循环引用）
+    // elementTypes stores inline SZrInferredType values.
     if (type->elementTypes.isValid && type->elementTypes.head != ZR_NULL && 
         type->elementTypes.capacity > 0 && type->elementTypes.elementSize > 0) {
-        // 递归释放每个元素类型（elementTypes存储的是SZrInferredType*指针）
         for (TZrSize i = 0; i < type->elementTypes.length; i++) {
-            SZrInferredType **elementTypePtr = (SZrInferredType**)ZrArrayGet(&type->elementTypes, i);
-            if (elementTypePtr != ZR_NULL && *elementTypePtr != ZR_NULL) {
-                // 递归释放嵌套的类型（包括其elementTypes）
-                ZrInferredTypeFree(state, *elementTypePtr);
-                // 释放类型对象本身
-                ZrMemoryRawFreeWithType(state->global, *elementTypePtr, sizeof(SZrInferredType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            SZrInferredType *elementType = (SZrInferredType *)ZrArrayGet(&type->elementTypes, i);
+            if (elementType != ZR_NULL) {
+                ZrInferredTypeFree(state, elementType);
             }
         }
         ZrArrayFree(state, &type->elementTypes);
@@ -94,13 +90,18 @@ void ZrInferredTypeCopy(SZrState *state, SZrInferredType *dest, const SZrInferre
     dest->isNullable = src->isNullable;
     dest->typeName = src->typeName; // 字符串由GC管理，直接复制引用
     
-    // TODO: 复制元素类型数组（简化处理，仅复制数组结构）
+    // Deep-copy nested inline element types.
     if (src->elementTypes.isValid && src->elementTypes.capacity > 0) {
-        ZrArrayInit(state, &dest->elementTypes, sizeof(SZrInferredType *), src->elementTypes.capacity);
+        ZrArrayInit(state, &dest->elementTypes, sizeof(SZrInferredType), src->elementTypes.capacity);
         if (src->elementTypes.length > 0 && src->elementTypes.head != ZR_NULL) {
-            memcpy(dest->elementTypes.head, src->elementTypes.head, 
-                   src->elementTypes.length * src->elementTypes.elementSize);
-            dest->elementTypes.length = src->elementTypes.length;
+            for (TZrSize i = 0; i < src->elementTypes.length; i++) {
+                SZrInferredType *srcElement = (SZrInferredType *)ZrArrayGet((SZrArray *)&src->elementTypes, i);
+                if (srcElement != ZR_NULL) {
+                    SZrInferredType copiedElement;
+                    ZrInferredTypeCopy(state, &copiedElement, srcElement);
+                    ZrArrayPush(state, &dest->elementTypes, &copiedElement);
+                }
+            }
         }
     } else {
         ZrArrayConstruct(&dest->elementTypes);
@@ -143,8 +144,7 @@ TBool ZrInferredTypeEqual(const SZrInferredType *type1, const SZrInferredType *t
         }
     }
     
-    // 比较元素类型数组
-    // elementTypes存储的是SZrInferredType*指针数组
+    // Compare inline element type arrays.
     if (type1->elementTypes.length != type2->elementTypes.length) {
         return ZR_FALSE;
     }
@@ -156,7 +156,6 @@ TBool ZrInferredTypeEqual(const SZrInferredType *type1, const SZrInferredType *t
             return ZR_FALSE;
         }
         
-        // 遍历元素类型数组，比较每个元素类型
         for (TZrSize i = 0; i < type1->elementTypes.length; i++) {
             SZrInferredType *elemType1 = (SZrInferredType *)ZrArrayGet((SZrArray *)&type1->elementTypes, i);
             SZrInferredType *elemType2 = (SZrInferredType *)ZrArrayGet((SZrArray *)&type2->elementTypes, i);
@@ -382,6 +381,13 @@ void ZrTypeEnvironmentFree(SZrState *state, SZrTypeEnvironment *env) {
                 // 释放函数类型信息
                 ZrInferredTypeFree(state, &(*funcInfo)->returnType);
                 if ((*funcInfo)->paramTypes.isValid) {
+                    for (TZrSize j = 0; j < (*funcInfo)->paramTypes.length; j++) {
+                        SZrInferredType *paramType =
+                                (SZrInferredType *)ZrArrayGet(&(*funcInfo)->paramTypes, j);
+                        if (paramType != ZR_NULL) {
+                            ZrInferredTypeFree(state, paramType);
+                        }
+                    }
                     ZrArrayFree(state, &(*funcInfo)->paramTypes);
                 }
                 ZrMemoryRawFreeWithType(state->global, *funcInfo, sizeof(SZrFunctionTypeInfo), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
@@ -475,11 +481,17 @@ TBool ZrTypeEnvironmentRegisterFunction(SZrState *state, SZrTypeEnvironment *env
     funcInfo->name = name;
     ZrInferredTypeCopy(state, &funcInfo->returnType, returnType);
     
-    // 复制参数类型数组
+    // Deep-copy parameter type array values.
     if (paramTypes != ZR_NULL && paramTypes->isValid && paramTypes->capacity > 0 && paramTypes->length > 0) {
         ZrArrayInit(state, &funcInfo->paramTypes, sizeof(SZrInferredType), paramTypes->capacity);
-        memcpy(funcInfo->paramTypes.head, paramTypes->head, paramTypes->length * paramTypes->elementSize);
-        funcInfo->paramTypes.length = paramTypes->length;
+        for (TZrSize i = 0; i < paramTypes->length; i++) {
+            SZrInferredType *paramType = (SZrInferredType *)ZrArrayGet(paramTypes, i);
+            if (paramType != ZR_NULL) {
+                SZrInferredType copiedType;
+                ZrInferredTypeCopy(state, &copiedType, paramType);
+                ZrArrayPush(state, &funcInfo->paramTypes, &copiedType);
+            }
+        }
     } else {
         ZrArrayConstruct(&funcInfo->paramTypes);
     }

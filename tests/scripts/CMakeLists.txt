@@ -7,6 +7,7 @@ file(TO_CMAKE_PATH "${SCRIPTS_BINARY_DIR_NORMALIZED}" SCRIPTS_BINARY_DIR_NORMALI
 
 set(SCRIPTS_COMMON_SOURCES
     test_utils.c
+    ${CMAKE_SOURCE_DIR}/tests/test_support.c
     ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/cJSON.c
     ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src/unity.c
 )
@@ -14,6 +15,7 @@ set(SCRIPTS_COMMON_SOURCES
 function(zr_vm_configure_scripts_target target_name)
     target_include_directories(${target_name} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/tests
         ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
         ${CMAKE_SOURCE_DIR}/zr_vm_core/include
         ${CMAKE_SOURCE_DIR}/zr_vm_common/include

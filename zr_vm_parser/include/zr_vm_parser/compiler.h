@@ -91,6 +91,7 @@ typedef struct SZrCompilerState {
     
     // 类型 Prototype 信息（用于运行时创建）
     SZrArray typePrototypes;              // 待创建的 prototype 信息数组（SZrTypePrototypeInfo）
+    struct SZrTypePrototypeInfo *currentTypePrototypeInfo; // 当前正在构建的类型原型
     
     // 编译期环境管理
     SZrTypeEnvironment *compileTimeTypeEnv;   // 编译期类型环境

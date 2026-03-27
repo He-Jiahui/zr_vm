@@ -1,6 +1,10 @@
 set(HELLO_WORLD_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/hello_world/hello_world.zrp)
 set(IMPORT_BASIC_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/import_basic/import_basic.zrp)
 set(CLASSES_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes/classes.zrp)
+set(CLASSES_FULL_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_full/classes_full.zrp)
+set(CLASSES_STATIC_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_static/classes_static.zrp)
+set(CLASSES_SUPER_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_super/classes_super.zrp)
+set(CLASSES_PROPERTIES_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_properties/classes_properties.zrp)
 
 add_executable(
     zr_vm_project_fixture_builder
@@ -73,6 +77,46 @@ add_test(
 
 set_tests_properties(zr_project_classes PROPERTIES
     PASS_REGULAR_EXPRESSION "61"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error"
+)
+
+add_test(
+    NAME zr_project_classes_full
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${CLASSES_FULL_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_classes_full PROPERTIES
+    PASS_REGULAR_EXPRESSION "127"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error"
+)
+
+add_test(
+    NAME zr_project_classes_static
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${CLASSES_STATIC_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_classes_static PROPERTIES
+    PASS_REGULAR_EXPRESSION "82"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error"
+)
+
+add_test(
+    NAME zr_project_classes_super
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${CLASSES_SUPER_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_classes_super PROPERTIES
+    PASS_REGULAR_EXPRESSION "42"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error"
+)
+
+add_test(
+    NAME zr_project_classes_properties
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${CLASSES_PROPERTIES_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_classes_properties PROPERTIES
+    PASS_REGULAR_EXPRESSION "40"
     FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error"
 )
 

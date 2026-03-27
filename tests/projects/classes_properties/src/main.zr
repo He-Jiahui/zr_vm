@@ -1,0 +1,38 @@
+class PropertyBox {
+    pri var _value: int = 0;
+
+    pub @constructor(initial: int) {
+        this._value = initial;
+    }
+
+    pub get value: int {
+        return this._value;
+    }
+
+    pub set value(v: int) {
+        this._value = v;
+    }
+
+    pub bump(delta: int): int {
+        this.value = this.value + delta;
+        return this.value;
+    }
+}
+
+class PropertyStatics {
+    pri static var _count: int = 0;
+
+    pub static get count: int {
+        return PropertyStatics._count;
+    }
+
+    pub static set count(v: int) {
+        PropertyStatics._count = v;
+    }
+}
+
+var box = new PropertyBox(10);
+box.value = box.value + 7;
+PropertyStatics.count = box.bump(3);
+
+return PropertyStatics.count + box.value;

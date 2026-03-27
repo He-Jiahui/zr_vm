@@ -1,0 +1,26 @@
+class BaseCounter {
+    pub var baseValue: int;
+
+    pub @constructor(seed: int) {
+        this.baseValue = seed;
+    }
+
+    pub getBaseValue(): int {
+        return this.baseValue;
+    }
+}
+
+class DerivedCounter: BaseCounter {
+    pub var delta: int;
+
+    pub @constructor(seed: int, delta: int) super(seed) {
+        this.delta = delta;
+    }
+
+    pub total(): int {
+        return this.getBaseValue() + this.delta;
+    }
+}
+
+var counter = new DerivedCounter(40, 2);
+return counter.total();

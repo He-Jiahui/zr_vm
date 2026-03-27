@@ -724,7 +724,6 @@ static SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNa
         *argNames = ZR_NULL;
     }
     TBool hasNamedArgs = ZR_FALSE;
-    TBool hasPositionalArgs = ZR_FALSE;
 
     if (ps->lexer->t.token != ZR_TK_RPAREN) {
         // 检查第一个参数是否为命名参数（identifier: expression）
@@ -756,7 +755,6 @@ static SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNa
                 ZrArrayPush(ps->state, names, &paramName);
             }
         } else {
-            hasPositionalArgs = ZR_TRUE;
             // 位置参数，参数名为 ZR_NULL
             if (names == ZR_NULL) {
                 names = ZrMemoryRawMallocWithType(ps->state->global, sizeof(SZrArray), ZR_MEMORY_NATIVE_TYPE_ARRAY);
@@ -800,11 +798,6 @@ static SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNa
                 EZrToken lookahead = peek_token(ps);
                 if (lookahead == ZR_TK_COLON) {
                     isNamed = ZR_TRUE;
-                    if (hasPositionalArgs) {
-                        // 位置参数必须在命名参数之前
-                        report_error(ps, "Positional arguments must come before named arguments");
-                        break;
-                    }
                     ZrLexerNext(ps->lexer);  // 跳过 identifier
                     consume_token(ps, ZR_TK_COLON);  // 跳过 :
                 }
@@ -827,7 +820,6 @@ static SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNa
                     ZrArrayPush(ps->state, names, &paramName);
                 }
             } else {
-                hasPositionalArgs = ZR_TRUE;
                 if (hasNamedArgs) {
                     // 命名参数后不能再有位置参数
                     report_error(ps, "Positional arguments cannot come after named arguments");
@@ -5248,6 +5240,57 @@ static SZrAstNode *parse_test_declaration(SZrParserState *ps) {
     return node;
 }
 
+static TBool is_compile_time_function_declaration(SZrParserState *ps) {
+    TZrSize savedPos = ps->lexer->currentPos;
+    TInt32 savedChar = ps->lexer->currentChar;
+    TInt32 savedLine = ps->lexer->lineNumber;
+    TInt32 savedLastLine = ps->lexer->lastLine;
+    SZrToken savedToken = ps->lexer->t;
+    SZrToken savedLookahead = ps->lexer->lookahead;
+    TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
+    TInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
+    TInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
+    TInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
+    TInt32 parenDepth = 0;
+    TBool isFunctionDeclaration = ZR_FALSE;
+
+    if (ps->lexer->t.token != ZR_TK_IDENTIFIER) {
+        return ZR_FALSE;
+    }
+
+    ZrLexerNext(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_LPAREN) {
+        goto restore;
+    }
+
+    do {
+        if (ps->lexer->t.token == ZR_TK_LPAREN) {
+            parenDepth++;
+        } else if (ps->lexer->t.token == ZR_TK_RPAREN) {
+            parenDepth--;
+        }
+        ZrLexerNext(ps->lexer);
+    } while (parenDepth > 0 && ps->lexer->t.token != ZR_TK_EOS);
+
+    if (parenDepth == 0 &&
+        (ps->lexer->t.token == ZR_TK_LBRACE || ps->lexer->t.token == ZR_TK_COLON)) {
+        isFunctionDeclaration = ZR_TRUE;
+    }
+
+restore:
+    ps->lexer->currentPos = savedPos;
+    ps->lexer->currentChar = savedChar;
+    ps->lexer->lineNumber = savedLine;
+    ps->lexer->lastLine = savedLastLine;
+    ps->lexer->t = savedToken;
+    ps->lexer->lookahead = savedLookahead;
+    ps->lexer->lookaheadPos = savedLookaheadPos;
+    ps->lexer->lookaheadChar = savedLookaheadChar;
+    ps->lexer->lookaheadLine = savedLookaheadLine;
+    ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+    return isFunctionDeclaration;
+}
+
 // 语法：%compileTime function/variable/statement/expression
 static SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
     SZrFileRange startLoc;
@@ -5291,16 +5334,14 @@ static SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
         declType = ZR_COMPILE_TIME_VARIABLE;
         declaration = parse_variable_declaration(ps);
     } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-        // 可能是函数声明或表达式
-        EZrToken lookahead = peek_token(ps);
-        if (lookahead == ZR_TK_LPAREN) {
-            // 函数调用表达式：%compileTime func()
-            declType = ZR_COMPILE_TIME_EXPRESSION;
-            declaration = parse_expression(ps);
-        } else {
+        if (is_compile_time_function_declaration(ps)) {
             // 函数声明：%compileTime functionName(...) { ... }
             declType = ZR_COMPILE_TIME_FUNCTION;
             declaration = parse_function_declaration(ps);
+        } else {
+            // 函数调用表达式或其他编译期表达式
+            declType = ZR_COMPILE_TIME_EXPRESSION;
+            declaration = parse_expression(ps);
         }
     } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         // 编译期语句块：%compileTime { ... }
@@ -6112,8 +6153,10 @@ static SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     consume_token(ps, ZR_TK_RPAREN);
     
     // 解析 super 调用参数（可选）
+    TBool hasSuperCall = ZR_FALSE;
     SZrAstNodeArray *superArgs = ZrAstNodeArrayNew(ps->state, 0);
     if (consume_token(ps, ZR_TK_SUPER)) {
+        hasSuperCall = ZR_TRUE;
         expect_token(ps, ZR_TK_LPAREN);
         ZrLexerNext(ps->lexer);
         
@@ -6173,6 +6216,7 @@ static SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     node->data.classMetaFunction.meta = meta;
     node->data.classMetaFunction.params = params;
     node->data.classMetaFunction.args = args;
+    node->data.classMetaFunction.hasSuperCall = hasSuperCall;
     node->data.classMetaFunction.superArgs = superArgs;
     node->data.classMetaFunction.returnType = returnType;
     node->data.classMetaFunction.body = body;

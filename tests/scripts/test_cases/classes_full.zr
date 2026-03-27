@@ -1,0 +1,53 @@
+module "classes_full";
+
+class BaseHero {
+    pri var _hp: int = 0;
+
+    pub @constructor(seed: int) {
+        this._hp = seed;
+    }
+
+    pub get hp: int {
+        return this._hp;
+    }
+
+    pub set hp(v: int) {
+        this._hp = v;
+    }
+
+    pub heal(amount: int): int {
+        this.hp = this.hp + amount;
+        return this.hp;
+    }
+}
+
+class ScoreBoard {
+    pri static var _bonus: int = 5;
+
+    pub static get bonus: int {
+        return ScoreBoard._bonus;
+    }
+
+    pub static set bonus(v: int) {
+        ScoreBoard._bonus = v;
+    }
+}
+
+class BossHero: BaseHero {
+    pub static var created: int = 0;
+
+    pub @constructor(seed: int) super(seed) {
+        BossHero.created = BossHero.created + 1;
+    }
+
+    pub total(): int {
+        return this.hp + ScoreBoard.bonus + BossHero.created;
+    }
+}
+
+%test("classesFullProjectShape") {
+    var boss = new BossHero(30);
+    boss.hp = boss.hp + 7;
+    ScoreBoard.bonus = boss.heal(5);
+    return boss.total() + ScoreBoard.bonus;
+}

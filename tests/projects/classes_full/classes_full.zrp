@@ -1,0 +1,6 @@
+{
+  "name": "classes_full",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

@@ -9,7 +9,17 @@
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/memory.h"
-ZR_FORCE_INLINE void ZrArrayConstruct(SZrArray *array) { array->isValid = ZR_FALSE; }
+ZR_FORCE_INLINE void ZrArrayConstruct(SZrArray *array) {
+    if (array == ZR_NULL) {
+        return;
+    }
+
+    array->head = ZR_NULL;
+    array->elementSize = 0;
+    array->length = 0;
+    array->capacity = 0;
+    array->isValid = ZR_FALSE;
+}
 
 ZR_FORCE_INLINE void ZrArrayInit(SZrState *state, SZrArray *array, TZrSize elementSize, TZrSize capacity) {
     if (capacity <= 0) {
@@ -64,8 +74,11 @@ ZR_FORCE_INLINE void ZrArrayFree(SZrState *state, SZrArray *array) {
     }
     SZrGlobalState *global = state->global;
     ZrMemoryRawFreeWithType(global, array->head, array->capacity * array->elementSize, ZR_MEMORY_NATIVE_TYPE_ARRAY);
-    array->isValid = ZR_FALSE;
     array->head = ZR_NULL;
+    array->elementSize = 0;
+    array->length = 0;
+    array->capacity = 0;
+    array->isValid = ZR_FALSE;
 }
 
 ZR_FORCE_INLINE void ZrArrayAppend(SZrState *state, SZrArray *array, TZrPtr elements, TZrSize length) {

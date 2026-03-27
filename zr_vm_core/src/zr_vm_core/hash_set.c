@@ -34,7 +34,7 @@ void ZrHashSetRehash(SZrState *state, SZrHashSet *set, TZrSize newCapacity) {
     set->capacity = newCapacity;
     set->bucketSize = newBucketCount;
     set->resizeThreshold = newCapacity * 3 / 4;
-    ZrMemoryRawSet(set->buckets + oldBucketCount, 0, newBucketCount - oldBucketCount);
+    ZrMemoryRawSet(set->buckets + oldCapacity, 0, newBucketCount - oldBucketCount);
     for (TZrSize i = 0; i < oldCapacity; i++) {
         SZrHashKeyValuePair *objectPtr = newBuckets[i];
         newBuckets[i] = ZR_NULL;

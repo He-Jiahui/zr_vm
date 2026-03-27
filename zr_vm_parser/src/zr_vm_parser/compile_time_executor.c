@@ -523,9 +523,9 @@ ZR_PARSER_API TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAs
                             ZrInferredTypeInit(cs->state, &func->returnType, ZR_VALUE_TYPE_OBJECT);
                         }
                         
-                        // 初始化参数类型数组
-                        ZrArrayInit(cs->state, &func->paramTypes, sizeof(SZrInferredType*), 
-                                   funcDecl->params != ZR_NULL ? funcDecl->params->count : 0);
+                        // 初始化参数类型数组（内联存储 SZrInferredType）
+                        ZrArrayInit(cs->state, &func->paramTypes, sizeof(SZrInferredType),
+                                    funcDecl->params != ZR_NULL ? funcDecl->params->count : 0);
                         
                         // 提取参数类型
                         if (funcDecl->params != ZR_NULL) {
@@ -533,16 +533,15 @@ ZR_PARSER_API TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAs
                                 SZrAstNode *paramNode = funcDecl->params->nodes[i];
                                 if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
                                     SZrParameter *param = &paramNode->data.parameter;
-                                    SZrInferredType *paramType = ZrMemoryRawMallocWithType(
-                                        cs->state->global, sizeof(SZrInferredType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                                    if (paramType != ZR_NULL) {
-                                        if (param->typeInfo != ZR_NULL) {
-                                            convert_ast_type_to_inferred_type(cs, param->typeInfo, paramType);
-                                        } else {
-                                            ZrInferredTypeInit(cs->state, paramType, ZR_VALUE_TYPE_OBJECT);
+                                    SZrInferredType paramType;
+                                    if (param->typeInfo != ZR_NULL) {
+                                        if (!convert_ast_type_to_inferred_type(cs, param->typeInfo, &paramType)) {
+                                            ZrInferredTypeInit(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
                                         }
-                                        ZrArrayPush(cs->state, &func->paramTypes, &paramType);
+                                    } else {
+                                        ZrInferredTypeInit(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
                                     }
+                                    ZrArrayPush(cs->state, &func->paramTypes, &paramType);
                                 }
                             }
                         }

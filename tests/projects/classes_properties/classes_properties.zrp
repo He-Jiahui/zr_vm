@@ -1,0 +1,6 @@
+{
+  "name": "classes_properties",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

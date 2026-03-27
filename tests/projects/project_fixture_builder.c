@@ -63,8 +63,8 @@ static char *read_text_file(const char *path, TZrSize *outLength) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 3) {
-        fprintf(stderr, "usage: zr_vm_project_fixture_builder <input.zr> <output.zro>\n");
+    if (argc < 3 || argc > 4) {
+        fprintf(stderr, "usage: zr_vm_project_fixture_builder <input.zr> <output.zro> [output.zri]\n");
         return 1;
     }
 
@@ -96,6 +96,12 @@ int main(int argc, char **argv) {
 
     if (!ZrWriterWriteBinaryFile(state, function, argv[2])) {
         fprintf(stderr, "failed to write binary fixture: %s\n", argv[2]);
+        ZrGlobalStateFree(global);
+        return 1;
+    }
+
+    if (argc == 4 && !ZrWriterWriteIntermediateFile(state, function, argv[3])) {
+        fprintf(stderr, "failed to write intermediate fixture: %s\n", argv[3]);
         ZrGlobalStateFree(global);
         return 1;
     }

@@ -1,0 +1,6 @@
+{
+  "name": "classes_super",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

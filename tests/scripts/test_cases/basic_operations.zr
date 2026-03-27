@@ -19,7 +19,13 @@ var logical_test = () => {
     var and = a && b;       // false
     var or = a || b;        // true
     var not = !a;           // false
-    return if (and) { 1; } else if (or) { 2; } else { 3; };
+    if (and) {
+        return 1;
+    } else if (or) {
+        return 2;
+    } else {
+        return 3;
+    }
 };
 
 // 比较运算测试
@@ -32,7 +38,11 @@ var comparison_test = () => {
     var gt = a > b;         // false
     var le = a <= b;        // true
     var ge = a >= b;        // false
-    return if (lt && ne) { 1; } else { 0; };
+    if (lt && ne) {
+        return 1;
+    } else {
+        return 0;
+    }
 };
 
 // 位运算测试
@@ -142,4 +152,3 @@ var break_continue_test = () => {
     result = result + break_continue_test();
     return result;
 }
-

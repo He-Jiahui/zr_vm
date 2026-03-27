@@ -1,0 +1,62 @@
+class BaseHero {
+    pri var _hp: int = 0;
+
+    pub @constructor(seed: int) {
+        this._hp = seed;
+    }
+
+    pub get hp: int {
+        return this._hp;
+    }
+
+    pub set hp(v: int) {
+        this._hp = v;
+    }
+
+    pub heal(amount: int): int {
+        this.hp = this.hp + amount;
+        return this.hp;
+    }
+}
+
+class ScoreBoard {
+    pri static var _bonus: int = 5;
+
+    pub static get bonus: int {
+        return ScoreBoard._bonus;
+    }
+
+    pub static set bonus(v: int) {
+        ScoreBoard._bonus = v;
+    }
+}
+
+pub class BossHero: BaseHero {
+    pub static var created: int = 0;
+
+    pub @constructor(seed: int) super(seed) {
+        BossHero.created = BossHero.created + 1;
+    }
+
+    pub total(): int {
+        return this.hp + ScoreBoard.bonus + BossHero.created;
+    }
+
+    pub prepare(amount: int): int {
+        this.hp = this.hp + amount;
+        return this.hp;
+    }
+
+    pub afterBattle(amount: int): int {
+        ScoreBoard.bonus = this.heal(amount);
+        return this.total();
+    }
+}
+
+runBossScenarioImpl(seed: int, prepareAmount: int, battleAmount: int) {
+    var boss = new BossHero(seed);
+    boss.prepare(prepareAmount);
+    return boss.afterBattle(battleAmount) + boss.heal(0);
+}
+
+pub var runBossScenario = runBossScenarioImpl;

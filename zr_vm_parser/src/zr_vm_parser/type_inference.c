@@ -73,6 +73,25 @@ static TBool zr_string_equals_cstr(SZrString *value, const TChar *literal) {
     return memcmp(valueStr, literal, literalLen) == 0;
 }
 
+static SZrString *extract_constructed_type_name(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return node->data.identifier.name;
+    }
+
+    if (node->type == ZR_AST_PRIMARY_EXPRESSION) {
+        SZrPrimaryExpression *primary = &node->data.primaryExpression;
+        if (primary->property != ZR_NULL && primary->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+            return primary->property->data.identifier.name;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 // 获取类型名称字符串（用于错误报告）
 const TChar *get_type_name_string(SZrState *state, const SZrInferredType *type, TChar *buffer, TZrSize bufferSize) {
     if (state == ZR_NULL || type == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
@@ -339,6 +358,14 @@ TBool infer_unary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrInf
     
     const TChar *op = node->data.unaryExpression.op.op;
     SZrAstNode *arg = node->data.unaryExpression.argument;
+
+    if ((strcmp(op, "new") == 0 || strcmp(op, "$") == 0) && arg != ZR_NULL) {
+        SZrString *typeName = extract_constructed_type_name(arg);
+        if (typeName != ZR_NULL) {
+            ZrInferredTypeInitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, typeName);
+            return ZR_TRUE;
+        }
+    }
     
     // 推断操作数类型
     SZrInferredType argType;
@@ -731,7 +758,10 @@ TBool infer_primary_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrI
             // 如果有members，需要根据members推断最终类型
             if (primary->members != ZR_NULL && primary->members->count > 0) {
                 // 遍历members链，逐步推断类型
-                SZrInferredType currentType = baseType;
+                SZrInferredType currentType;
+                ZrInferredTypeInit(cs->state, &currentType, ZR_VALUE_TYPE_OBJECT);
+                ZrInferredTypeCopy(cs->state, &currentType, &baseType);
+                ZrInferredTypeFree(cs->state, &baseType);
                 for (TZrSize i = 0; i < primary->members->count; i++) {
                     SZrAstNode *member = primary->members->nodes[i];
                     if (member != ZR_NULL && member->type == ZR_AST_MEMBER_EXPRESSION) {
@@ -822,6 +852,8 @@ TBool infer_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrInferredT
             {
                 SZrIfExpression *ifExpr = &node->data.ifExpression;
                 SZrInferredType thenType, elseType;
+                ZrInferredTypeInit(cs->state, &thenType, ZR_VALUE_TYPE_OBJECT);
+                ZrInferredTypeInit(cs->state, &elseType, ZR_VALUE_TYPE_OBJECT);
                 if (ifExpr->thenExpr != ZR_NULL && ifExpr->elseExpr != ZR_NULL) {
                     if (infer_expression_type(cs, ifExpr->thenExpr, &thenType) &&
                         infer_expression_type(cs, ifExpr->elseExpr, &elseType)) {
@@ -850,6 +882,7 @@ TBool infer_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrInferredT
             {
                 SZrSwitchExpression *switchExpr = &node->data.switchExpression;
                 SZrInferredType commonType;
+                ZrInferredTypeInit(cs->state, &commonType, ZR_VALUE_TYPE_OBJECT);
                 TBool hasType = ZR_FALSE;
                 
                 // 遍历所有case，推断类型
@@ -860,12 +893,14 @@ TBool infer_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrInferredT
                             SZrSwitchCase *switchCase = &caseNode->data.switchCase;
                             if (switchCase->block != ZR_NULL) {
                                 SZrInferredType caseType;
+                                ZrInferredTypeInit(cs->state, &caseType, ZR_VALUE_TYPE_OBJECT);
                                 if (infer_expression_type(cs, switchCase->block, &caseType)) {
                                     if (!hasType) {
                                         ZrInferredTypeCopy(cs->state, &commonType, &caseType);
                                         hasType = ZR_TRUE;
                                     } else {
                                         SZrInferredType newCommonType;
+                                        ZrInferredTypeInit(cs->state, &newCommonType, ZR_VALUE_TYPE_OBJECT);
                                         if (ZrInferredTypeGetCommonType(cs->state, &newCommonType, &commonType, &caseType)) {
                                             ZrInferredTypeFree(cs->state, &commonType);
                                             commonType = newCommonType;
@@ -883,12 +918,14 @@ TBool infer_expression_type(SZrCompilerState *cs, SZrAstNode *node, SZrInferredT
                     SZrSwitchDefault *switchDefault = &switchExpr->defaultCase->data.switchDefault;
                     if (switchDefault->block != ZR_NULL) {
                         SZrInferredType defaultType;
+                        ZrInferredTypeInit(cs->state, &defaultType, ZR_VALUE_TYPE_OBJECT);
                         if (infer_expression_type(cs, switchDefault->block, &defaultType)) {
                             if (!hasType) {
                                 ZrInferredTypeCopy(cs->state, &commonType, &defaultType);
                                 hasType = ZR_TRUE;
                             } else {
                                 SZrInferredType newCommonType;
+                                ZrInferredTypeInit(cs->state, &newCommonType, ZR_VALUE_TYPE_OBJECT);
                                 if (ZrInferredTypeGetCommonType(cs->state, &newCommonType, &commonType, &defaultType)) {
                                     ZrInferredTypeFree(cs->state, &commonType);
                                     commonType = newCommonType;
@@ -989,6 +1026,7 @@ TBool convert_ast_type_to_inferred_type(SZrCompilerState *cs, const SZrType *ast
         if (astType->subType != ZR_NULL) {
             // 递归转换子类型
             SZrInferredType elementType;
+            ZrInferredTypeInit(cs->state, &elementType, ZR_VALUE_TYPE_OBJECT);
             if (convert_ast_type_to_inferred_type(cs, astType->subType, &elementType)) {
                 // 将元素类型添加到elementTypes数组
                 ZrArrayInit(cs->state, &result->elementTypes, sizeof(SZrInferredType), 1);

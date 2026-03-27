@@ -2,27 +2,11 @@
 // Created by Auto on 2025/01/XX.
 //
 
-// 定义GNU源以支持realpath函数（Linux系统）
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
-// 定义POSIX源以支持realpath函数（备用）
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 200112L
-#endif
-
 #include <stdio.h>
 #include <time.h>
 #include <string.h>
-#include <stdlib.h>
-#include <limits.h>
-#ifdef _MSC_VER
-    #include <direct.h>
-    #define getcwd _getcwd
-#else
-    #include <unistd.h>
-#endif
 #include "unity.h"
+#include "test_support.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -77,98 +61,28 @@ typedef struct {
     fflush(stdout); \
 } while(0)
 
-// 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
-    ZR_UNUSED_PARAMETER(userData);
-    ZR_UNUSED_PARAMETER(originalSize);
-    ZR_UNUSED_PARAMETER(flag);
-    
-    if (newSize == 0) {
-        if (pointer != ZR_NULL && (TZrPtr)pointer >= (TZrPtr)0x1000) {
-            free(pointer);
-        }
-        return ZR_NULL;
-    }
-    
-    if (pointer == ZR_NULL) {
-        return malloc(newSize);
-    } else {
-        if ((TZrPtr)pointer >= (TZrPtr)0x1000) {
-            return realloc(pointer, newSize);
-        } else {
-            return malloc(newSize);
-        }
-    }
-}
-
-// 创建测试用的SZrState
 static SZrState* createTestState(void) {
-    SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState* global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
-    if (!global) return ZR_NULL;
-    
-    SZrState* mainState = global->mainThreadState;
-    if (mainState) {
-        ZrGlobalStateInitRegistry(mainState, global);
-    }
-    
-    return mainState;
+    return zr_test_create_state(ZR_NULL);
 }
 
-// 销毁测试用的SZrState
 static void destroyTestState(SZrState* state) {
-    if (!state) return;
-    
-    SZrGlobalState* global = state->global;
-    if (global) {
-        ZrGlobalStateFree(global);
-    }
+    zr_test_destroy_state(state);
 }
 
-// 辅助函数：执行测试函数
 static TBool execute_test_function(SZrState* state, SZrFunction* testFunc, TInt64 expectedValue, const TChar* testName) {
-    if (state == ZR_NULL || testFunc == ZR_NULL) {
+    TInt64 actualValue = 0;
+
+    ZR_UNUSED_PARAMETER(testName);
+
+    if (!zr_test_execute_function_expect_int64(state, testFunc, &actualValue)) {
         return ZR_FALSE;
     }
-    
-    // 创建闭包
-    SZrClosure* closure = ZrClosureNew(state, 0);
-    if (closure == ZR_NULL) {
-        return ZR_FALSE;
+
+    if (expectedValue >= 0) {
+        TEST_ASSERT_EQUAL_INT64(expectedValue, actualValue);
     }
-    
-    closure->function = testFunc;
-    ZrClosureInitValue(state, closure);
-    
-    // 准备调用栈
-    TZrStackValuePointer base = state->stackTop.valuePointer;
-    ZrFunctionCheckStackAndGc(state, testFunc->stackSize + 1, base);
-    
-    // 将闭包压栈
-    SZrTypeValue* closureValue = ZrStackGetValue(state->stackTop.valuePointer);
-    ZrValueInitAsRawObject(state, closureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    closureValue->type = ZR_VALUE_TYPE_FUNCTION;
-    closureValue->isGarbageCollectable = ZR_TRUE;
-    closureValue->isNative = ZR_FALSE;
-    state->stackTop.valuePointer++;
-    
-    // 调用函数
-    ZrFunctionCall(state, base, 1);
-    
-    // 检查执行状态
-    if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
-        // 获取返回值
-        SZrTypeValue* returnValue = ZrStackGetValue(base);
-        if (ZR_VALUE_IS_TYPE_INT(returnValue->type)) {
-            TInt64 value = returnValue->value.nativeObject.nativeInt64;
-            if (expectedValue >= 0) {
-                TEST_ASSERT_EQUAL_INT64(expectedValue, value);
-            }
-            return ZR_TRUE;
-        }
-    }
-    
-    return ZR_FALSE;
+
+    return ZR_TRUE;
 }
 
 // 测试初始化和清理
@@ -225,7 +139,9 @@ void test_compile_time_variables(void) {
         SZrFunction* testFunc = compileResult.testFunctions[0];
         if (testFunc != ZR_NULL) {
             if (!execute_test_function(state, testFunc, 42, testSummary)) {
+                timer.endTime = clock();
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute test function");
+                TEST_FAIL_MESSAGE("Execute test function failed");
             }
         }
     }
@@ -282,11 +198,12 @@ void test_compile_time_functions(void) {
     }
     
     if (compileResult.testFunctionCount > 0) {
-        SZrFunction** testFuncPtr = (SZrFunction**)ZrArrayGet(&compileResult.testFunctions, 0);
-        if (testFuncPtr != ZR_NULL && *testFuncPtr != ZR_NULL) {
-            SZrFunction* testFunc = *testFuncPtr;
+        SZrFunction* testFunc = compileResult.testFunctions[0];
+        if (testFunc != ZR_NULL) {
             if (!execute_test_function(state, testFunc, 30, testSummary)) {
+                timer.endTime = clock();
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute test function");
+                TEST_FAIL_MESSAGE("Execute test function failed");
             }
         }
     }
@@ -349,7 +266,9 @@ static void test_compile_time_expressions(void) {
         SZrFunction* testFunc = compileResult.testFunctions[0];
         if (testFunc != ZR_NULL) {
             if (!execute_test_function(state, testFunc, 26, testSummary)) {
+                timer.endTime = clock();
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute test function");
+                TEST_FAIL_MESSAGE("Execute test function failed");
             }   
         }
     }
@@ -412,7 +331,9 @@ void test_compile_time_recursion(void) {
         SZrFunction* testFunc = compileResult.testFunctions[0];
         if (testFunc != ZR_NULL) {
             if (!execute_test_function(state, testFunc, 120, testSummary)) {
+                timer.endTime = clock();
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute test function");
+                TEST_FAIL_MESSAGE("Execute test function failed");
             }
         }
     }
@@ -475,7 +396,9 @@ void test_compile_time_statements(void) {
         SZrFunction* testFunc = compileResult.testFunctions[0];
         if (testFunc != ZR_NULL) {
             if (!execute_test_function(state, testFunc, 42, testSummary)) {
+                timer.endTime = clock();
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute test function");
+                TEST_FAIL_MESSAGE("Execute test function failed");
             }
         }
     }
@@ -536,7 +459,9 @@ void test_compile_time_array_validation(void) {
         SZrFunction* testFunc = compileResult.testFunctions[0];
         if (testFunc != ZR_NULL) {
             if (!execute_test_function(state, testFunc, 50, testSummary)) {
+                timer.endTime = clock();
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute test function");
+                TEST_FAIL_MESSAGE("Execute test function failed");
             }
         }
     }

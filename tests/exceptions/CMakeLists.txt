@@ -3,6 +3,7 @@
 # 添加异常测试源文件
 set(EXCEPTIONS_TEST_SOURCES
     test_exceptions.c
+    ${CMAKE_SOURCE_DIR}/tests/test_support.c
 )
 
 # 创建异常测试可执行文件
@@ -28,6 +29,7 @@ target_sources(zr_vm_exceptions_test PRIVATE ${UNITY_SOURCES})
 
 # 包含头文件目录
 target_include_directories(zr_vm_exceptions_test PRIVATE 
+    ${CMAKE_SOURCE_DIR}/tests
     ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
@@ -41,7 +43,6 @@ target_compile_definitions(zr_vm_exceptions_test PRIVATE
 # 添加测试目标
 enable_testing()
 add_test(NAME exceptions_tests COMMAND zr_vm_exceptions_test)
-
 
 
 

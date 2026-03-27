@@ -1,0 +1,6 @@
+{
+  "name": "classes_static",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

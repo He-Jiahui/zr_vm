@@ -9,6 +9,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_common/zr_instruction_conf.h"
+#include "test_support.h"
 #include <sys/stat.h>
 
 #ifndef ZR_VM_SCRIPTS_SOURCE_DIR
@@ -60,52 +61,14 @@ static void build_output_path(const TChar* rootDir, const TChar* baseName, const
     snprintf(outPath, maxLen, "%s/%s%s", targetDir, baseName, extension);
 }
 
-// 简单的测试分配器
-static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
-    ZR_UNUSED_PARAMETER(userData);
-    ZR_UNUSED_PARAMETER(originalSize);
-    ZR_UNUSED_PARAMETER(flag);
-    
-    if (newSize == 0) {
-        if (pointer != ZR_NULL && (TZrPtr)pointer >= (TZrPtr)0x1000) {
-            free(pointer);
-        }
-        return ZR_NULL;
-    }
-    
-    if (pointer == ZR_NULL) {
-        return malloc(newSize);
-    } else {
-        if ((TZrPtr)pointer >= (TZrPtr)0x1000) {
-            return realloc(pointer, newSize);
-        } else {
-            return malloc(newSize);
-        }
-    }
-}
-
 // 创建测试用的VM状态
 SZrState* create_test_state(void) {
-    SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState* global = ZrGlobalStateNew(test_allocator, ZR_NULL, 12345, &callbacks);
-    if (!global) return ZR_NULL;
-    
-    SZrState* mainState = global->mainThreadState;
-    if (mainState) {
-        ZrGlobalStateInitRegistry(mainState, global);
-    }
-    
-    return mainState;
+    return zr_test_create_state(ZR_NULL);
 }
 
 // 销毁测试状态
 void destroy_test_state(SZrState* state) {
-    if (!state) return;
-    
-    SZrGlobalState* global = state->global;
-    if (global) {
-        ZrGlobalStateFree(global);
-    }
+    zr_test_destroy_state(state);
 }
 
 // 加载zr文件内容
@@ -195,44 +158,7 @@ SZrTestResult* parse_and_compile(SZrState* state, const TChar* source, TZrSize s
 
 // 执行函数
 TBool execute_function(SZrState* state, SZrFunction* function, SZrTypeValue* result) {
-    if (state == ZR_NULL || function == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    
-    // 创建闭包
-    SZrClosure* closure = ZrClosureNew(state, 0);
-    if (closure == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    
-    closure->function = function;
-    ZrClosureInitValue(state, closure);
-    
-    // 准备调用栈
-    TZrStackValuePointer base = state->stackTop.valuePointer;
-    ZrFunctionCheckStackAndGc(state, function->stackSize + 1, base);
-    
-    // 将闭包压栈
-    SZrTypeValue* closureValue = ZrStackGetValue(state->stackTop.valuePointer);
-    ZrValueInitAsRawObject(state, closureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    closureValue->type = ZR_VALUE_TYPE_FUNCTION;
-    closureValue->isGarbageCollectable = ZR_TRUE;
-    closureValue->isNative = ZR_FALSE;
-    state->stackTop.valuePointer++;
-    
-    // 调用函数
-    ZrFunctionCall(state, base, 1);
-    
-    // 检查执行状态
-    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
-        return ZR_FALSE;
-    }
-    
-    // 获取返回值
-    SZrTypeValue* returnValue = ZrStackGetValue(base);
-    ZrValueCopy(state, result, returnValue);
-    
-    return ZR_TRUE;
+    return zr_test_execute_function(state, function, result);
 }
 
 // 获取输出目录路径

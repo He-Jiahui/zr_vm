@@ -49,7 +49,7 @@ class MethodTest {
 class PropertyTest {
     pri var _value: int = 0;
     
-    pub get value(): int {
+pub get value: int {
         return this._value;
     }
     
@@ -113,4 +113,3 @@ class AccessModifierTest {
     
     return result;
 }
-
