@@ -7,6 +7,7 @@
 
 #include "zr_vm_language_server/conf.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_core/state.h"
@@ -46,6 +47,9 @@ typedef struct SZrSymbol {
     SZrAstNode *astNode;              // 关联的 AST 节点（可选）
     struct SZrSymbolScope *scope;     // 所属作用域
     TZrSize referenceCount;           // 引用计数
+    TZrSymbolId semanticId;           // 语义层稳定符号 ID
+    TZrTypeId semanticTypeId;         // 语义层类型 ID
+    TZrOverloadSetId overloadSetId;   // 语义层重载集 ID
 } SZrSymbol;
 
 // 作用域节点
@@ -83,6 +87,13 @@ ZR_LANGUAGE_SERVER_API TBool ZrSymbolTableAddSymbol(SZrState *state, SZrSymbolTa
                                                       SZrInferredType *typeInfo,
                                                       EZrAccessModifier accessModifier,
                                                       SZrAstNode *astNode);
+ZR_LANGUAGE_SERVER_API TBool ZrSymbolTableAddSymbolEx(SZrState *state, SZrSymbolTable *table,
+                                                      EZrSymbolType type, SZrString *name,
+                                                      SZrFileRange location,
+                                                      SZrInferredType *typeInfo,
+                                                      EZrAccessModifier accessModifier,
+                                                      SZrAstNode *astNode,
+                                                      SZrSymbol **outSymbol);
 
 // 查找符号（返回第一个匹配的符号，如果有重载则返回第一个）
 ZR_LANGUAGE_SERVER_API SZrSymbol *ZrSymbolTableLookup(SZrSymbolTable *table, SZrString *name, 

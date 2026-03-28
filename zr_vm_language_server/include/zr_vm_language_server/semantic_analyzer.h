@@ -69,6 +69,8 @@ typedef struct SZrSemanticAnalyzer {
     SZrAnalysisCache *cache;           // 分析结果缓存
     TBool enableCache;                 // 是否启用缓存
     SZrCompilerState *compilerState;   // 编译器状态（用于类型推断）
+    SZrSemanticContext *semanticContext; // 当前分析共享的语义上下文（借用）
+    SZrHirModule *hirModule;           // 当前分析共享的 HIR 模块（借用）
 } SZrSemanticAnalyzer;
 
 // 语义分析器管理函数

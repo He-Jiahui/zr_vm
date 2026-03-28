@@ -77,6 +77,11 @@ ZR_CORE_API void ZrClosureCloseStackValue(struct SZrState *state, TZrStackValueP
 ZR_CORE_API TZrStackValuePointer ZrClosureCloseClosure(struct SZrState *state, TZrStackValuePointer stackPointer,
                                                        EZrThreadStatus errorStatus, TBool isYield);
 
+ZR_CORE_API TZrSize ZrClosureCloseRegisteredValues(struct SZrState *state,
+                                                   TZrSize count,
+                                                   EZrThreadStatus errorStatus,
+                                                   TBool isYield);
+
 ZR_CORE_API void ZrClosurePushToStack(struct SZrState *state, struct SZrFunction *function,
                                       SZrClosureValue **closureValueList, TZrStackValuePointer base,
                                       TZrStackValuePointer closurePointer);

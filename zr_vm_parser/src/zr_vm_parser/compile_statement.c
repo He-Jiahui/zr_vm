@@ -12,14 +12,16 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 
+#include <stdio.h>
 #include <string.h>
 
 // 前向声明
 extern void compile_expression(SZrCompilerState *cs, SZrAstNode *node);
-void compile_statement(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API void compile_statement(SZrCompilerState *cs, SZrAstNode *node);
 extern void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value);
 static void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value);
+static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node);
 
 // 辅助函数声明（在 compiler.c 中实现）
 extern void emit_instruction(SZrCompilerState *cs, TZrInstruction instruction);
@@ -154,6 +156,161 @@ static void compile_default_fixed_array_initialization(SZrCompilerState *cs,
     }
 
     ZR_UNUSED_PARAMETER(location);
+}
+
+static TZrTypeId resolve_using_resource_type_id(SZrCompilerState *cs, SZrAstNode *resource) {
+    SZrInferredType inferredType;
+    TBool hasInferredType = ZR_FALSE;
+    TZrTypeId typeId = 0;
+    EZrSemanticTypeKind semanticKind = ZR_SEMANTIC_TYPE_KIND_REFERENCE;
+
+    if (cs == ZR_NULL || resource == ZR_NULL || cs->semanticContext == ZR_NULL) {
+        return 0;
+    }
+
+    ZrInferredTypeInit(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+
+    if (resource->type == ZR_AST_IDENTIFIER_LITERAL && cs->typeEnv != ZR_NULL &&
+        resource->data.identifier.name != ZR_NULL) {
+        hasInferredType = ZrTypeEnvironmentLookupVariable(cs->state,
+                                                          cs->typeEnv,
+                                                          resource->data.identifier.name,
+                                                          &inferredType);
+    }
+
+    if (!hasInferredType) {
+        hasInferredType = infer_expression_type(cs, resource, &inferredType);
+    }
+
+    if (hasInferredType) {
+        if (inferredType.baseType != ZR_VALUE_TYPE_OBJECT &&
+            inferredType.baseType != ZR_VALUE_TYPE_ARRAY &&
+            inferredType.baseType != ZR_VALUE_TYPE_STRING) {
+            semanticKind = ZR_SEMANTIC_TYPE_KIND_VALUE;
+        }
+
+        typeId = ZrSemanticRegisterInferredType(cs->semanticContext,
+                                                &inferredType,
+                                                semanticKind,
+                                                inferredType.typeName,
+                                                resource);
+    }
+
+    ZrInferredTypeFree(cs->state, &inferredType);
+    return typeId;
+}
+
+static TZrSymbolId register_using_resource_symbol(SZrCompilerState *cs, SZrAstNode *resource) {
+    TZrTypeId typeId;
+
+    if (cs == ZR_NULL || resource == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        resource->type != ZR_AST_IDENTIFIER_LITERAL ||
+        resource->data.identifier.name == ZR_NULL) {
+        return 0;
+    }
+
+    typeId = resolve_using_resource_type_id(cs, resource);
+    return ZrSemanticRegisterSymbol(cs->semanticContext,
+                                    resource->data.identifier.name,
+                                    ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+                                    typeId,
+                                    0,
+                                    resource,
+                                    resource->location);
+}
+
+static SZrScope *get_current_scope(SZrCompilerState *cs) {
+    if (cs == ZR_NULL || cs->scopeStack.length == 0) {
+        return ZR_NULL;
+    }
+
+    return (SZrScope *)ZrArrayGet(&cs->scopeStack, cs->scopeStack.length - 1);
+}
+
+static SZrString *create_hidden_using_local_name(SZrCompilerState *cs) {
+    TChar buffer[64];
+    int length;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    length = snprintf(buffer,
+                      sizeof(buffer),
+                      "__zr_using_%u_%u",
+                      (unsigned)cs->scopeStack.length,
+                      (unsigned)cs->localVars.length);
+    if (length < 0) {
+        return ZR_NULL;
+    }
+
+    if ((size_t)length >= sizeof(buffer)) {
+        length = (int)sizeof(buffer) - 1;
+        buffer[length] = '\0';
+    }
+
+    return ZrStringCreate(cs->state, buffer, (TZrSize)length);
+}
+
+static TBool compile_using_resource_slot(SZrCompilerState *cs, SZrAstNode *resource, TUInt32 *slot) {
+    TUInt32 targetSlot;
+    TUInt32 valueSlot;
+    SZrString *hiddenName;
+    TUInt32 existingLocalSlot;
+
+    if (slot == ZR_NULL || cs == ZR_NULL || resource == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    if (resource->type == ZR_AST_IDENTIFIER_LITERAL && resource->data.identifier.name != ZR_NULL) {
+        existingLocalSlot = find_local_var(cs, resource->data.identifier.name);
+        if (existingLocalSlot != (TUInt32)-1) {
+            *slot = existingLocalSlot;
+            return ZR_TRUE;
+        }
+    }
+
+    hiddenName = create_hidden_using_local_name(cs);
+    if (hiddenName == ZR_NULL) {
+        ZrCompilerError(cs, "Failed to create using resource slot", resource->location);
+        return ZR_FALSE;
+    }
+
+    targetSlot = allocate_local_var(cs, hiddenName);
+    compile_expression(cs, resource);
+    if (cs->hasError || cs->stackSlotCount == 0) {
+        return ZR_FALSE;
+    }
+
+    valueSlot = (TUInt32)(cs->stackSlotCount - 1);
+    if (valueSlot != targetSlot) {
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TUInt16)targetSlot,
+                                              (TInt32)valueSlot));
+    }
+
+    cs->stackSlotCount = (TZrSize)targetSlot + 1;
+    *slot = targetSlot;
+    return ZR_TRUE;
+}
+
+static void register_using_cleanup_slot(SZrCompilerState *cs, TUInt32 slot) {
+    SZrScope *scope;
+
+    if (cs == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    scope = get_current_scope(cs);
+    if (scope == ZR_NULL) {
+        return;
+    }
+
+    emit_instruction(cs,
+                     create_instruction_0(ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED),
+                                          (TUInt16)slot));
+    scope->cleanupRegistrationCount++;
 }
 
 // 编译变量声明
@@ -385,6 +542,59 @@ static void compile_block_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 退出作用域
     exit_scope(cs);
+}
+
+static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrUsingStatement *stmt;
+    TZrLifetimeRegionId regionId = 0;
+    TZrSymbolId symbolId = 0;
+    TUInt32 resourceSlot = 0;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (node->type != ZR_AST_USING_STATEMENT) {
+        ZrCompilerError(cs, "Expected using statement", node->location);
+        return;
+    }
+
+    stmt = &node->data.usingStatement;
+
+    if (cs->semanticContext != ZR_NULL) {
+        SZrDeterministicCleanupStep cleanupStep;
+
+        regionId = ZrSemanticReserveLifetimeRegionId(cs->semanticContext);
+        symbolId = register_using_resource_symbol(cs, stmt->resource);
+
+        cleanupStep.kind = ZR_DETERMINISTIC_CLEANUP_KIND_BLOCK_SCOPE;
+        cleanupStep.regionId = regionId;
+        cleanupStep.ownerRegionId = regionId;
+        cleanupStep.symbolId = symbolId;
+        cleanupStep.declarationOrder = (TInt32)cs->semanticContext->cleanupPlan.length;
+        cleanupStep.callsClose = ZR_TRUE;
+        cleanupStep.callsDestructor = ZR_TRUE;
+        ZrSemanticAppendCleanupStep(cs->semanticContext, &cleanupStep);
+    }
+
+    if (stmt->body != ZR_NULL) {
+        enter_scope(cs);
+    }
+
+    if (stmt->resource != ZR_NULL) {
+        if (!compile_using_resource_slot(cs, stmt->resource, &resourceSlot)) {
+            return;
+        }
+        register_using_cleanup_slot(cs, resourceSlot);
+    }
+
+    if (stmt->body != ZR_NULL) {
+        compile_statement(cs, stmt->body);
+        if (cs->hasError) {
+            return;
+        }
+        exit_scope(cs);
+    }
 }
 
 // 编译 if 语句
@@ -1102,7 +1312,7 @@ static void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode
 }
 
 // 主编译语句函数
-void compile_statement(SZrCompilerState *cs, SZrAstNode *node) {
+ZR_PARSER_API void compile_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
@@ -1114,6 +1324,10 @@ void compile_statement(SZrCompilerState *cs, SZrAstNode *node) {
         
         case ZR_AST_EXPRESSION_STATEMENT:
             compile_expression_statement(cs, node);
+            break;
+
+        case ZR_AST_USING_STATEMENT:
+            compile_using_statement(cs, node);
             break;
         
         case ZR_AST_RETURN_STATEMENT:

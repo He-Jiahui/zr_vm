@@ -178,36 +178,88 @@ static TDouble value_to_double(const SZrTypeValue *value) {
     return 0.0;
 }
 
+static TBool concat_values_to_destination(SZrState *state,
+                                          SZrTypeValue *destination,
+                                          const SZrTypeValue *opA,
+                                          const SZrTypeValue *opB,
+                                          TBool safeMode) {
+    TZrMemoryOffset savedStackTopOffset;
+    TZrStackValuePointer savedStackTop;
+    TZrStackValuePointer tempBase;
+    SZrCallInfo *currentCallInfo;
+    SZrTypeValue *resultValue;
+
+    if (state == ZR_NULL || destination == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    savedStackTop = state->stackTop.valuePointer;
+    savedStackTopOffset = ZrStackSavePointerAsOffset(state, savedStackTop);
+    currentCallInfo = state->callInfoList;
+    tempBase = currentCallInfo != ZR_NULL ? currentCallInfo->functionTop.valuePointer : savedStackTop;
+    tempBase = ZrFunctionCheckStackAndGc(state, 2, tempBase);
+    if (currentCallInfo != ZR_NULL) {
+        tempBase = currentCallInfo->functionTop.valuePointer;
+    }
+
+    ZrStackCopyValue(state, tempBase, (SZrTypeValue *)opA);
+    ZrStackCopyValue(state, tempBase + 1, (SZrTypeValue *)opB);
+    state->stackTop.valuePointer = tempBase + 2;
+    if (currentCallInfo != ZR_NULL && currentCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+        currentCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
+
+    if (safeMode) {
+        ZrStringConcatSafe(state, 2);
+    } else {
+        ZrStringConcat(state, 2);
+    }
+
+    resultValue = ZrStackGetValue(tempBase);
+    if (resultValue != ZR_NULL) {
+        ZrValueCopy(state, destination, resultValue);
+    } else {
+        ZrValueResetAsNull(destination);
+    }
+    state->stackTop.valuePointer = ZrStackLoadOffsetToPointer(state, savedStackTopOffset);
+    return ZR_TRUE;
+}
+
+static TZrSize close_scope_cleanup_registrations(SZrState *state, TZrSize cleanupCount) {
+    TZrSize closedCount = 0;
+    TZrMemoryOffset savedStackTopOffset;
+    SZrCallInfo *currentCallInfo;
+
+    if (state == ZR_NULL || cleanupCount == 0) {
+        return 0;
+    }
+
+    savedStackTopOffset = ZrStackSavePointerAsOffset(state, state->stackTop.valuePointer);
+    currentCallInfo = state->callInfoList;
+    if (currentCallInfo != ZR_NULL &&
+        state->stackTop.valuePointer < currentCallInfo->functionTop.valuePointer) {
+        state->stackTop.valuePointer = currentCallInfo->functionTop.valuePointer;
+    }
+
+    while (closedCount < cleanupCount &&
+           state->toBeClosedValueList.valuePointer > state->stackBase.valuePointer) {
+        TZrStackPointer toBeClosed = state->toBeClosedValueList;
+        ZrClosureCloseStackValue(state, toBeClosed.valuePointer);
+        ZrClosureCloseRegisteredValues(state, 1, ZR_THREAD_STATUS_INVALID, ZR_FALSE);
+        closedCount++;
+    }
+
+    state->stackTop.valuePointer = ZrStackLoadOffsetToPointer(state, savedStackTopOffset);
+    return closedCount;
+}
+
 static TBool try_builtin_add(SZrState *state, SZrTypeValue *destination, const SZrTypeValue *opA, const SZrTypeValue *opB) {
     if (state == ZR_NULL || destination == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
         return ZR_FALSE;
     }
 
     if (ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type)) {
-        SZrString *str1 = ZR_CAST_STRING(state, opA->value.object);
-        SZrString *str2 = ZR_CAST_STRING(state, opB->value.object);
-        TNativeString native1 = ZrStringGetNativeString(str1);
-        TNativeString native2 = ZrStringGetNativeString(str2);
-        TZrSize len1 = (str1->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str1->shortStringLength : str1->longStringLength;
-        TZrSize len2 = (str2->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str2->shortStringLength : str2->longStringLength;
-        TZrSize totalLen = len1 + len2;
-        char *buffer = (char *)malloc(totalLen + 1);
-        if (buffer == ZR_NULL) {
-            ZrValueResetAsNull(destination);
-            return ZR_TRUE;
-        }
-
-        memcpy(buffer, native1, len1);
-        memcpy(buffer + len1, native2, len2);
-        buffer[totalLen] = '\0';
-        SZrString *result = ZrStringCreateFromNative(state, buffer);
-        free(buffer);
-        if (result != ZR_NULL) {
-            ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(result));
-        } else {
-            ZrValueResetAsNull(destination);
-        }
-        return ZR_TRUE;
+        return concat_values_to_destination(state, destination, opA, opB, ZR_FALSE);
     }
 
     if ((ZR_VALUE_IS_TYPE_NUMBER(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opA->type)) &&
@@ -1061,26 +1113,7 @@ LZrReturning: {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type));
-                SZrString *str1 = ZR_CAST_STRING(state, opA->value.object);
-                SZrString *str2 = ZR_CAST_STRING(state, opB->value.object);
-                TNativeString native1 = ZrStringGetNativeString(str1);
-                TNativeString native2 = ZrStringGetNativeString(str2);
-                TZrSize len1 = (str1->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str1->shortStringLength : str1->longStringLength;
-                TZrSize len2 = (str2->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str2->shortStringLength : str2->longStringLength;
-                TZrSize totalLen = len1 + len2;
-                char *buffer = (char *) malloc(totalLen + 1);
-                if (buffer != ZR_NULL) {
-                    memcpy(buffer, native1, len1);
-                    memcpy(buffer + len1, native2, len2);
-                    buffer[totalLen] = '\0';
-                    SZrString *result = ZrStringCreateFromNative(state, buffer);
-                    free(buffer);
-                    if (result != ZR_NULL) {
-                        ZrValueInitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(result));
-                    } else {
-                        ZrValueResetAsNull(destination);
-                    }
-                } else {
+                if (!concat_values_to_destination(state, destination, opA, opB, ZR_FALSE)) {
                     ZrValueResetAsNull(destination);
                 }
             }
@@ -1483,17 +1516,21 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(LOGICAL_NOT) {
                 opA = &BASE(A1(instruction))->value;
                 if (ZR_VALUE_IS_TYPE_NULL(opA->type)) {
-                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_VALUE_TYPE_BOOL, ZR_TRUE);
+                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_TRUE, ZR_VALUE_TYPE_BOOL);
                 } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
                     ALGORITHM_1(nativeBool, !, ZR_VALUE_TYPE_BOOL);
                 } else if (ZR_VALUE_IS_TYPE_INT(opA->type)) {
-                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_VALUE_TYPE_BOOL,
-                                      opA->value.nativeObject.nativeInt64 == 0);
+                    ZR_VALUE_FAST_SET(destination,
+                                      nativeBool,
+                                      opA->value.nativeObject.nativeInt64 == 0,
+                                      ZR_VALUE_TYPE_BOOL);
                 } else if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
-                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_VALUE_TYPE_BOOL,
-                                      opA->value.nativeObject.nativeDouble == 0);
+                    ZR_VALUE_FAST_SET(destination,
+                                      nativeBool,
+                                      opA->value.nativeObject.nativeDouble == 0,
+                                      ZR_VALUE_TYPE_BOOL);
                 } else {
-                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_VALUE_TYPE_BOOL, ZR_FALSE);
+                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_FALSE, ZR_VALUE_TYPE_BOOL);
                 }
             }
             DONE(1);
@@ -1742,19 +1779,17 @@ LZrReturning: {
 
                 // save its program counter
                 callInfo->context.context.programCounter = programCounter;
-                // means the flag of closures to be closed
-                // if (A1(instruction)) {
-                //     callInfo->yieldContext.returnValueCount = returnCount;
-                //     if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
-                //         state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
-                //     }
-                //     // todo close closure values:
-                //
-                //     trap = callInfo->context.context.trap;
-                //     if (ZR_UNLIKELY(trap)) {
-                //         base = callInfo->functionBase.valuePointer + 1;
-                //     }
-                // }
+
+                if (state->toBeClosedValueList.valuePointer > callInfo->functionBase.valuePointer) {
+                    if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
+                        state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+                    }
+                    ZrClosureCloseClosure(state,
+                                          callInfo->functionBase.valuePointer + 1,
+                                          ZR_THREAD_STATUS_INVALID,
+                                          ZR_FALSE);
+                }
+
                 // 如果是可变参数函数，需要调整 functionBase 指针
                 // 参考 Lua: if (nparams1) ci->func.p -= ci->u.l.nextraargs + nparams1;
                 if (variableArguments > 0) {
@@ -2030,6 +2065,16 @@ LZrReturning: {
                 } else {
                     ZrValueResetAsNull(destination);
                 }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(MARK_TO_BE_CLOSED) {
+                TZrSize closeSlot = E(instruction);
+                TZrStackValuePointer closePointer = BASE(closeSlot);
+                ZrClosureToBeClosedValueClosureNew(state, closePointer);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(CLOSE_SCOPE) {
+                close_scope_cleanup_registrations(state, E(instruction));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TRY) {

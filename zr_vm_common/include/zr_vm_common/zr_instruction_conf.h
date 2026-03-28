@@ -95,6 +95,8 @@
     Z(CREATE_CLOSURE)                                                                                                  \
     Z(CREATE_OBJECT)                                                                                                   \
     Z(CREATE_ARRAY)                                                                                                    \
+    Z(MARK_TO_BE_CLOSED)                                                                                               \
+    Z(CLOSE_SCOPE)                                                                                                     \
     Z(TRY)                                                                                                             \
     Z(THROW)                                                                                                           \
     Z(CATCH)

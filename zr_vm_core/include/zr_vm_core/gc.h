@@ -84,12 +84,20 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     TUInt64 gcStepMultiplierPercent;
     TUInt64 gcStepSizeLog2;
     TUInt64 gcPauseThresholdPercent;
+    TUInt64 gcPauseBudget;
+    TUInt64 gcSweepSliceBudget;
 
     TZrMemoryOffset managedMemories;
     TZrMemoryOffset gcDebtSize;
 
     TZrSize atomicMemories;
     TZrSize aliveMemories;
+    TZrSize ignoredObjectCount;
+    TZrSize ignoredObjectCapacity;
+    TZrSize gcLastStepWork;
+    EZrGarbageCollectRunningStatus gcLastCompletedRunningStatus;
+
+    SZrRawObject **ignoredObjects;
 
     SZrRawObject *aliveObjectList;
     SZrRawObject *circleMoreObjectList;
@@ -110,6 +118,10 @@ ZR_CORE_API void ZrGarbageCollectorAddDebtSpace(struct SZrGlobalState *global, T
 ZR_CORE_API void ZrGarbageCollectorGcFull(struct SZrState *state, TBool isImmediate);
 
 ZR_CORE_API void ZrGarbageCollectorGcStep(struct SZrState *state);
+
+ZR_CORE_API TBool ZrGarbageCollectorIgnoreObject(struct SZrState *state, SZrRawObject *object);
+ZR_CORE_API TBool ZrGarbageCollectorUnignoreObject(struct SZrGlobalState *global, SZrRawObject *object);
+ZR_CORE_API TBool ZrGarbageCollectorIsObjectIgnored(struct SZrGlobalState *global, SZrRawObject *object);
 
 ZR_CORE_API TBool ZrGarbageCollectorIsInvariant(struct SZrGlobalState *global);
 

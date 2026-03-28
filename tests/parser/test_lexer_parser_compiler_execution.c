@@ -288,6 +288,46 @@ void test_lexer_string_literal_token(void) {
     }
 }
 
+void test_lexer_integer_literal_preserves_numeric_and_raw_literal(void) {
+    TEST_START("Lexer Integer Literal Preserves Numeric And Raw Literal");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    TEST_INFO("Lexer integer literal semantic payload",
+              "Testing that integer tokens retain both parsed numeric value and original literal text");
+
+    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 123519, ZR_NULL);
+    if (global == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Lexer Integer Literal Preserves Numeric And Raw Literal",
+                         "Failed to create global state");
+        return;
+    }
+
+    {
+        const char *source = "12345";
+        SZrState *state = global->mainThreadState;
+        SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
+        SZrLexState lexer;
+        TNativeString literalString = ZR_NULL;
+
+        ZrLexerInit(&lexer, state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_EQUAL_INT(ZR_TK_INTEGER, lexer.t.token);
+        TEST_ASSERT_EQUAL_INT64(12345, lexer.t.seminfo.intValue);
+        TEST_ASSERT_NOT_NULL(lexer.t.seminfo.stringValue);
+
+        literalString = ZrStringGetNativeString(lexer.t.seminfo.stringValue);
+        TEST_ASSERT_NOT_NULL(literalString);
+        TEST_ASSERT_EQUAL_STRING("12345", literalString);
+    }
+
+    ZrGlobalStateFree(global);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Lexer Integer Literal Preserves Numeric And Raw Literal");
+}
+
 // 测试字符转义序列
 void test_lexer_char_escape_sequences(void) {
     TEST_START("Lexer Char Escape Sequences");
@@ -1030,6 +1070,8 @@ int main(void) {
     TEST_DIVIDER();
     RUN_TEST(test_lexer_string_literal_token);
     TEST_DIVIDER();
+    RUN_TEST(test_lexer_integer_literal_preserves_numeric_and_raw_literal);
+    TEST_DIVIDER();
     RUN_TEST(test_lexer_char_escape_sequences);
     TEST_DIVIDER();
     
@@ -1069,4 +1111,3 @@ int main(void) {
     
     return UNITY_END();
 }
-

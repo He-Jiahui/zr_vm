@@ -532,14 +532,14 @@ static void test_set_stack(void) {
 
     // 创建测试函数：设置栈槽1的值为100
     // GET_CONSTANT 0 -> stack[0] (值为100)
-    // SET_STACK 0, 1 (将stack[0]的值设置到stack[1])
+    // SET_STACK 1, 0 (将stack[0]的值复制到stack[1])
     SZrTypeValue constant;
     ZrValueInitAsInt(state, &constant, 100);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] =
-            create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), 0, 1); // E=0, A2=1 (将stack[0]的值设置到stack[1])
+            create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), 1, 0); // E=1, A2=0 (将stack[0]的值复制到stack[1])
 
     SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 3);
     TEST_ASSERT_NOT_NULL(function);
@@ -549,9 +549,12 @@ static void test_set_stack(void) {
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 1);
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
-    TEST_ASSERT_EQUAL_INT64(100, result->value.nativeObject.nativeInt64);
+    SZrTypeValue *source = ZrStackGetValue(base + 1);
+    SZrTypeValue *destination = ZrStackGetValue(base + 2);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(source->type));
+    TEST_ASSERT_EQUAL_INT64(100, source->value.nativeObject.nativeInt64);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(destination->type));
+    TEST_ASSERT_EQUAL_INT64(100, destination->value.nativeObject.nativeInt64);
 
     ZrFunctionFree(state, function);
     destroyTestState(state);

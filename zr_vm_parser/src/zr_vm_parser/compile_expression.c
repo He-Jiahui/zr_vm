@@ -16,8 +16,9 @@
 #include <string.h>
 
 // 前向声明
-void compile_expression(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API void compile_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_literal(SZrCompilerState *cs, SZrAstNode *node);
+static void compile_template_string_literal(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_identifier(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node);
@@ -263,16 +264,18 @@ static SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, 
         return ZR_NULL;
     }
 
-    if (cs->currentTypePrototypeInfo != ZR_NULL && cs->currentTypePrototypeInfo->name != ZR_NULL &&
-        ZrStringEqual(cs->currentTypePrototypeInfo->name, typeName)) {
-        return cs->currentTypePrototypeInfo;
-    }
-
     for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
         SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrArrayGet(&cs->typePrototypes, i);
         if (info != ZR_NULL && info->name != ZR_NULL && ZrStringEqual(info->name, typeName)) {
             return info;
         }
+    }
+
+    // Fall back to the in-progress prototype only when the type has not been
+    // published into the stable prototype table yet.
+    if (cs->currentTypePrototypeInfo != ZR_NULL && cs->currentTypePrototypeInfo->name != ZR_NULL &&
+        ZrStringEqual(cs->currentTypePrototypeInfo->name, typeName)) {
+        return cs->currentTypePrototypeInfo;
     }
 
     return ZR_NULL;
@@ -615,6 +618,141 @@ static TBool expression_uses_dynamic_object_access(SZrAstNode *node) {
     }
 }
 
+static void record_template_segment_semantics(SZrCompilerState *cs, SZrAstNode *segmentNode) {
+    SZrTemplateSegment segment;
+
+    if (cs == ZR_NULL || segmentNode == ZR_NULL || cs->semanticContext == ZR_NULL) {
+        return;
+    }
+
+    memset(&segment, 0, sizeof(segment));
+    if (segmentNode->type == ZR_AST_STRING_LITERAL) {
+        segment.isInterpolation = ZR_FALSE;
+        segment.staticText = segmentNode->data.stringLiteral.value;
+        if (segment.staticText == ZR_NULL) {
+            segment.staticText = ZrStringCreate(cs->state, "", 0);
+        }
+    } else if (segmentNode->type == ZR_AST_INTERPOLATED_SEGMENT) {
+        segment.isInterpolation = ZR_TRUE;
+        segment.expression = segmentNode->data.interpolatedSegment.expression;
+    } else {
+        return;
+    }
+
+    ZrSemanticAppendTemplateSegment(cs->semanticContext, &segment);
+}
+
+static TUInt32 compile_template_segment_into_string_slot(SZrCompilerState *cs,
+                                                         SZrAstNode *segmentNode,
+                                                         TUInt32 targetSlot) {
+    SZrInferredType inferredType;
+    TBool hasInferredType = ZR_FALSE;
+
+    if (cs == ZR_NULL || segmentNode == ZR_NULL || cs->hasError) {
+        return (TUInt32)-1;
+    }
+
+    if (segmentNode->type == ZR_AST_STRING_LITERAL) {
+        SZrString *value = segmentNode->data.stringLiteral.value;
+        if (value == ZR_NULL) {
+            value = ZrStringCreate(cs->state, "", 0);
+            if (value == ZR_NULL) {
+                ZrCompilerError(cs,
+                                "Failed to allocate empty template string segment",
+                                segmentNode->location);
+                return (TUInt32)-1;
+            }
+        }
+
+        if (emit_string_constant(cs, value) == (TUInt32)-1) {
+            return (TUInt32)-1;
+        }
+        return normalize_top_result_to_slot(cs, targetSlot);
+    }
+
+    if (segmentNode->type != ZR_AST_INTERPOLATED_SEGMENT) {
+        ZrCompilerError(cs, "Unexpected template string segment", segmentNode->location);
+        return (TUInt32)-1;
+    }
+
+    if (segmentNode->data.interpolatedSegment.expression == ZR_NULL) {
+        SZrString *emptyString = ZrStringCreate(cs->state, "", 0);
+        if (emptyString == ZR_NULL || emit_string_constant(cs, emptyString) == (TUInt32)-1) {
+            ZrCompilerError(cs, "Failed to allocate empty template string segment", segmentNode->location);
+            return (TUInt32)-1;
+        }
+        return normalize_top_result_to_slot(cs, targetSlot);
+    }
+
+    if (compile_expression_into_slot(cs,
+                                     segmentNode->data.interpolatedSegment.expression,
+                                     targetSlot) == (TUInt32)-1) {
+        return (TUInt32)-1;
+    }
+
+    ZrInferredTypeInit(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    hasInferredType = infer_expression_type(cs,
+                                            segmentNode->data.interpolatedSegment.expression,
+                                            &inferredType);
+    if (!hasInferredType || inferredType.baseType != ZR_VALUE_TYPE_STRING) {
+        emit_type_conversion(cs, targetSlot, targetSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
+    }
+    if (hasInferredType) {
+        ZrInferredTypeFree(cs->state, &inferredType);
+    }
+
+    collapse_stack_to_slot(cs, targetSlot);
+    return targetSlot;
+}
+
+static void compile_template_string_literal(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrAstNodeArray *segments;
+    TUInt32 resultSlot;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (node->type != ZR_AST_TEMPLATE_STRING_LITERAL) {
+        ZrCompilerError(cs, "Expected template string literal", node->location);
+        return;
+    }
+
+    segments = node->data.templateStringLiteral.segments;
+    if (segments == ZR_NULL || segments->count == 0) {
+        SZrString *emptyString = ZrStringCreate(cs->state, "", 0);
+        if (emptyString == ZR_NULL || emit_string_constant(cs, emptyString) == (TUInt32)-1) {
+            ZrCompilerError(cs, "Failed to allocate empty template string", node->location);
+        }
+        return;
+    }
+
+    for (TZrSize i = 0; i < segments->count; i++) {
+        record_template_segment_semantics(cs, segments->nodes[i]);
+    }
+
+    resultSlot = allocate_stack_slot(cs);
+    if (compile_template_segment_into_string_slot(cs, segments->nodes[0], resultSlot) == (TUInt32)-1) {
+        return;
+    }
+
+    for (TZrSize i = 1; i < segments->count; i++) {
+        TUInt32 nextSlot = allocate_stack_slot(cs);
+        TZrInstruction addInst;
+
+        if (compile_template_segment_into_string_slot(cs, segments->nodes[i], nextSlot) == (TUInt32)-1) {
+            return;
+        }
+
+        addInst = create_instruction_2(ZR_INSTRUCTION_ENUM(ADD_STRING),
+                                       (TUInt16)resultSlot,
+                                       (TUInt16)resultSlot,
+                                       (TUInt16)nextSlot);
+        emit_instruction(cs, addInst);
+        collapse_stack_to_slot(cs, resultSlot);
+    }
+}
+
 // 编译字面量
 static void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -933,6 +1071,7 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
             // 注意：实际的constructor查找和调用在运行时通过execution.c中的元方法机制实现
             // 这里只是生成调用指令，运行时会在prototype链中查找CONSTRUCTOR元方法
         }
+        collapse_stack_to_slot(cs, destSlot);
     } else if (strcmp(op, "new") == 0) {
         // new操作符：创建class实例
         // 参数应该是Identifier（类型名称）或PrimaryExpression（TypeName(...)）
@@ -1012,9 +1151,9 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                             create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL), (TUInt16)functionSlot,
                                                  (TUInt16)functionSlot, (TUInt16)argCount);
                     emit_instruction(cs, callConstructorInst);
-                    collapse_stack_to_slot(cs, destSlot);
                 }
             }
+            collapse_stack_to_slot(cs, destSlot);
         } else {
             ZrCompilerError(cs, "new operator requires a type name", node->location);
         }
@@ -1042,6 +1181,10 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
             emit_instruction(cs, inst);
         } else {
             ZrCompilerError(cs, "Unknown unary operator", node->location);
+        }
+
+        if (!cs->hasError) {
+            collapse_stack_to_slot(cs, destSlot);
         }
     }
 }
@@ -3197,7 +3340,7 @@ static void compile_switch_expression(SZrCompilerState *cs, SZrAstNode *node) {
 }
 
 // 主编译表达式函数
-void compile_expression(SZrCompilerState *cs, SZrAstNode *node) {
+ZR_PARSER_API void compile_expression(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
@@ -3211,6 +3354,10 @@ void compile_expression(SZrCompilerState *cs, SZrAstNode *node) {
         case ZR_AST_CHAR_LITERAL:
         case ZR_AST_NULL_LITERAL:
             compile_literal(cs, node);
+            break;
+
+        case ZR_AST_TEMPLATE_STRING_LITERAL:
+            compile_template_string_literal(cs, node);
             break;
         
         case ZR_AST_IDENTIFIER_LITERAL:

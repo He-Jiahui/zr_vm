@@ -9,6 +9,8 @@
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/stack.h"
+#include "zr_vm_core/value.h"
 
 static void ZrNativeStringPushStringToStack(SZrNativeStringFormatBuffer *buffer, TNativeString string, TZrSize length) {
     SZrState *state = buffer->state;
@@ -87,6 +89,157 @@ static void ZrNativeStringAddNumberToBuffer(SZrNativeStringFormatBuffer *buffer,
     TChar *numberBuffer = ZrNativeStringGetFromFormatStringBuffer(buffer, ZR_NUMBER_TO_STRING_LENGTH_MAX);
     TZrSize length = ZrNativeStringNumberToStringBuffer(value, numberBuffer);
     buffer->length += length;
+}
+
+static TZrSize zr_string_length_local(const SZrString *string) {
+    if (string == ZR_NULL) {
+        return 0;
+    }
+
+    return string->shortStringLength < ZR_VM_LONG_STRING_FLAG
+                   ? (TZrSize)string->shortStringLength
+                   : string->longStringLength;
+}
+
+static void zr_string_collapse_stack_window(SZrState *state,
+                                            TZrStackValuePointer firstSlot,
+                                            SZrString *result) {
+    if (state == ZR_NULL || firstSlot == ZR_NULL) {
+        return;
+    }
+
+    if (result != ZR_NULL) {
+        ZrStackSetRawObjectValue(state, firstSlot, ZR_CAST_RAW_OBJECT_AS_SUPER(result));
+    } else {
+        ZrValueResetAsNull(ZrStackGetValue(firstSlot));
+    }
+
+    state->stackTop.valuePointer = firstSlot + 1;
+}
+
+static void zr_string_concat_stack_values(SZrState *state, TZrSize count, TBool convertNonStrings) {
+    SZrGlobalState *global;
+    TZrSize availableCount;
+    TZrStackValuePointer firstSlot;
+    SZrString **stringValues = ZR_NULL;
+    TNativeString buffer = ZR_NULL;
+    TZrSize totalLength = 0;
+
+    if (state == ZR_NULL || count == 0 || state->global == ZR_NULL) {
+        return;
+    }
+
+    availableCount = (TZrSize)(state->stackTop.valuePointer - state->stackBase.valuePointer);
+    if (availableCount < count) {
+        return;
+    }
+
+    global = state->global;
+    firstSlot = state->stackTop.valuePointer - count;
+    if (count == 1) {
+        SZrTypeValue *value = ZrStackGetValue(firstSlot);
+        SZrString *singleString = ZR_NULL;
+
+        if (value == ZR_NULL) {
+            zr_string_collapse_stack_window(state, firstSlot, ZR_NULL);
+            return;
+        }
+
+        if (value->type == ZR_VALUE_TYPE_STRING) {
+            state->stackTop.valuePointer = firstSlot + 1;
+            return;
+        }
+
+        if (!convertNonStrings) {
+            zr_string_collapse_stack_window(state, firstSlot, ZR_NULL);
+            return;
+        }
+
+        singleString = ZrValueConvertToString(state, value);
+        zr_string_collapse_stack_window(state, firstSlot, singleString);
+        return;
+    }
+
+    stringValues = (SZrString **)ZrMemoryRawMallocWithType(global,
+                                                           count * sizeof(SZrString *),
+                                                           ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (stringValues == ZR_NULL) {
+        zr_string_collapse_stack_window(state, firstSlot, ZR_NULL);
+        return;
+    }
+
+    for (TZrSize i = 0; i < count; i++) {
+        SZrTypeValue *value = ZrStackGetValue(firstSlot + i);
+        SZrString *stringValue = ZR_NULL;
+
+        if (value == ZR_NULL) {
+            goto concat_fail;
+        }
+
+        if (value->type == ZR_VALUE_TYPE_STRING) {
+            stringValue = ZR_CAST_STRING(state, value->value.object);
+        } else if (convertNonStrings) {
+            stringValue = ZrValueConvertToString(state, value);
+        }
+
+        if (stringValue == ZR_NULL) {
+            goto concat_fail;
+        }
+
+        stringValues[i] = stringValue;
+        totalLength += zr_string_length_local(stringValue);
+    }
+
+    buffer = (TNativeString)ZrMemoryRawMallocWithType(global,
+                                                      totalLength + 1,
+                                                      ZR_MEMORY_NATIVE_TYPE_STRING);
+    if (buffer == ZR_NULL) {
+        goto concat_fail;
+    }
+
+    {
+        TChar *cursor = buffer;
+        for (TZrSize i = 0; i < count; i++) {
+            SZrString *stringValue = stringValues[i];
+            TZrSize length = zr_string_length_local(stringValue);
+            TNativeString nativeString = ZrStringGetNativeString(stringValue);
+
+            if (length > 0 && nativeString != ZR_NULL) {
+                memcpy(cursor, nativeString, length);
+                cursor += length;
+            }
+        }
+        *cursor = '\0';
+    }
+
+    {
+        SZrString *result = ZrStringCreate(state, buffer, totalLength);
+        ZrMemoryRawFreeWithType(global,
+                                buffer,
+                                totalLength + 1,
+                                ZR_MEMORY_NATIVE_TYPE_STRING);
+        ZrMemoryRawFreeWithType(global,
+                                stringValues,
+                                count * sizeof(SZrString *),
+                                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        zr_string_collapse_stack_window(state, firstSlot, result);
+        return;
+    }
+
+concat_fail:
+    if (buffer != ZR_NULL) {
+        ZrMemoryRawFreeWithType(global,
+                                buffer,
+                                totalLength + 1,
+                                ZR_MEMORY_NATIVE_TYPE_STRING);
+    }
+    if (stringValues != ZR_NULL) {
+        ZrMemoryRawFreeWithType(global,
+                                stringValues,
+                                count * sizeof(SZrString *),
+                                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    zr_string_collapse_stack_window(state, firstSlot, ZR_NULL);
 }
 
 TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format, va_list args) {
@@ -334,23 +487,11 @@ TBool ZrStringEqual(SZrString *string1, SZrString *string2) {
 }
 
 void ZrStringConcat(struct SZrState *state, TZrSize count) {
-    ZR_TODO_PARAMETER(state);
-    ZR_TODO_PARAMETER(count);
-    // todo:
-    if (count == 0) {
-        return;
-    }
-    // do {
-    //     // TZrStackValuePointer top = state->stackTop.valuePointer;
-    //     // int n = 2;
-    //     // ZrStackGetValue(top - 2);
-    //     // if () {
-    //     // }
-    // } while (count > 0);
+    zr_string_concat_stack_values(state, count, ZR_FALSE);
 }
 
 void ZrStringConcatSafe(struct SZrState *state, TZrSize count) {
-    // todo:
+    zr_string_concat_stack_values(state, count, ZR_TRUE);
 }
 
 SZrString *ZrStringFromNumber(struct SZrState *state, struct SZrTypeValue *value) {

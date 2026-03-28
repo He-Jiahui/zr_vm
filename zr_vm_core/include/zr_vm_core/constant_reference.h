@@ -16,7 +16,7 @@ struct SZrObjectModule;
 
 // 编译时和运行时共享的prototype序列化结构定义
 // 这些结构用于将prototype信息序列化为紧凑二进制格式存储到常量池
-// 布局：SZrCompiledPrototypeInfo(24字节) + [inheritsCount * 4字节] + [membersCount * SZrCompiledMemberInfo(44字节)]
+// 布局：SZrCompiledPrototypeInfo + [inheritsCount * 4字节] + [membersCount * SZrCompiledMemberInfo]
 
 // 编译时prototype信息结构（序列化格式头部）
 // 这是磁盘/内存共享的二进制协议，必须显式禁止编译器填充。
@@ -30,7 +30,7 @@ typedef struct SZrCompiledPrototypeInfo {
     // 注意：inheritStringIndices数组紧跟在结构体后面（不是指针）
     // 运行时通过 inheritsCount 和固定偏移量访问：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo)
     // 成员数据紧跟在继承数组后面：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo) + inheritsCount * sizeof(TUInt32)
-    // 布局：SZrCompiledPrototypeInfo(20字节) + [inheritsCount * 4字节] + [membersCount * SZrCompiledMemberInfo(44字节)]
+    // 布局：SZrCompiledPrototypeInfo + [inheritsCount * 4字节] + [membersCount * SZrCompiledMemberInfo]
 } SZrCompiledPrototypeInfo;
 
 // 编译时成员信息结构（序列化格式）
@@ -52,6 +52,11 @@ typedef struct SZrCompiledMemberInfo {
     TUInt32 functionConstantIndex;        // 函数在常量池中的索引
     TUInt32 parameterCount;               // 参数数量
     TUInt32 returnTypeNameStringIndex;    // 返回类型名称字符串索引（如果为0表示无返回类型名）
+    TUInt32 isUsingManaged;               // TBool (0或1)
+    TUInt32 ownershipQualifier;           // EZrOwnershipQualifier（跨模块时按数值传递）
+    TUInt32 callsClose;                   // TBool (0或1)
+    TUInt32 callsDestructor;              // TBool (0或1)
+    TUInt32 declarationOrder;             // 成员声明顺序
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 

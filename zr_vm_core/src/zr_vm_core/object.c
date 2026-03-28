@@ -8,6 +8,49 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
+#include <string.h>
+
+static TBool ensure_managed_field_capacity(SZrState *state, SZrObjectPrototype *prototype, TUInt32 minimumCapacity) {
+    SZrManagedFieldInfo *newFields;
+    TUInt32 newCapacity;
+    TZrSize newSize;
+
+    if (state == ZR_NULL || prototype == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (prototype->managedFieldCapacity >= minimumCapacity) {
+        return ZR_TRUE;
+    }
+
+    newCapacity = prototype->managedFieldCapacity > 0 ? prototype->managedFieldCapacity : 4;
+    while (newCapacity < minimumCapacity) {
+        newCapacity *= 2;
+    }
+
+    newSize = newCapacity * sizeof(SZrManagedFieldInfo);
+    newFields = (SZrManagedFieldInfo *)ZrMemoryRawMallocWithType(state->global,
+                                                                 newSize,
+                                                                 ZR_MEMORY_NATIVE_TYPE_OBJECT);
+    if (newFields == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(newFields, 0, newSize);
+    if (prototype->managedFields != ZR_NULL && prototype->managedFieldCount > 0) {
+        memcpy(newFields,
+               prototype->managedFields,
+               prototype->managedFieldCount * sizeof(SZrManagedFieldInfo));
+        ZrMemoryRawFreeWithType(state->global,
+                                prototype->managedFields,
+                                prototype->managedFieldCapacity * sizeof(SZrManagedFieldInfo),
+                                ZR_MEMORY_NATIVE_TYPE_OBJECT);
+    }
+
+    prototype->managedFields = newFields;
+    prototype->managedFieldCapacity = newCapacity;
+    return ZR_TRUE;
+}
 
 
 SZrObject *ZrObjectNew(SZrState *state, SZrObjectPrototype *prototype) {
@@ -120,6 +163,9 @@ SZrObjectPrototype *ZrObjectPrototypeNew(SZrState *state, SZrString *name, EZrOb
     prototype->name = name;
     prototype->type = type;
     prototype->superPrototype = ZR_NULL;
+    prototype->managedFields = ZR_NULL;
+    prototype->managedFieldCount = 0;
+    prototype->managedFieldCapacity = 0;
     
     // 初始化 metaTable
     ZrMetaTableConstruct(&prototype->metaTable);
@@ -151,6 +197,9 @@ SZrStructPrototype *ZrStructPrototypeNew(SZrState *state, SZrString *name) {
     prototype->super.name = name;
     prototype->super.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
     prototype->super.superPrototype = ZR_NULL;
+    prototype->super.managedFields = ZR_NULL;
+    prototype->super.managedFieldCount = 0;
+    prototype->super.managedFieldCapacity = 0;
     
     // 初始化 metaTable
     ZrMetaTableConstruct(&prototype->super.metaTable);
@@ -228,4 +277,33 @@ void ZrObjectPrototypeAddMeta(SZrState *state, SZrObjectPrototype *prototype, EZ
     
     // 添加到 metaTable
     prototype->metaTable.metas[metaType] = meta;
+}
+
+void ZrObjectPrototypeAddManagedField(SZrState *state,
+                                      SZrObjectPrototype *prototype,
+                                      SZrString *fieldName,
+                                      TUInt32 fieldOffset,
+                                      TUInt32 fieldSize,
+                                      TUInt32 ownershipQualifier,
+                                      TBool callsClose,
+                                      TBool callsDestructor,
+                                      TUInt32 declarationOrder) {
+    SZrManagedFieldInfo *fieldInfo;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || fieldName == ZR_NULL) {
+        return;
+    }
+
+    if (!ensure_managed_field_capacity(state, prototype, prototype->managedFieldCount + 1)) {
+        return;
+    }
+
+    fieldInfo = &prototype->managedFields[prototype->managedFieldCount++];
+    fieldInfo->name = fieldName;
+    fieldInfo->fieldOffset = fieldOffset;
+    fieldInfo->fieldSize = fieldSize;
+    fieldInfo->ownershipQualifier = ownershipQualifier;
+    fieldInfo->callsClose = callsClose;
+    fieldInfo->callsDestructor = callsDestructor;
+    fieldInfo->declarationOrder = declarationOrder;
 }

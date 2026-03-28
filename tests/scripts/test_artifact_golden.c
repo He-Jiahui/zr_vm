@@ -14,6 +14,46 @@ void tearDown(void) {}
 
 void test_basic_operations_artifacts_match_golden(void);
 
+static TBool is_text_artifact_extension(const TChar* extension) {
+    if (extension == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return strcmp(extension, ".zrs") == 0 || strcmp(extension, ".zri") == 0;
+}
+
+static TBool normalize_text_newlines(const TBytePtr buffer,
+                                     TZrSize length,
+                                     TBytePtr* outBuffer,
+                                     TZrSize* outLength) {
+    TZrSize sourceIndex = 0;
+    TZrSize targetIndex = 0;
+    TBytePtr normalized;
+
+    if (buffer == ZR_NULL || outBuffer == ZR_NULL || outLength == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    normalized = (TBytePtr)malloc(length + 1);
+    if (normalized == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    while (sourceIndex < length) {
+        if (buffer[sourceIndex] == '\r') {
+            sourceIndex++;
+            continue;
+        }
+
+        normalized[targetIndex++] = buffer[sourceIndex++];
+    }
+
+    normalized[targetIndex] = '\0';
+    *outBuffer = normalized;
+    *outLength = targetIndex;
+    return ZR_TRUE;
+}
+
 static TBool read_file_bytes(const TChar* path, TBytePtr* outBuffer, TZrSize* outLength) {
     if (path == ZR_NULL || outBuffer == ZR_NULL || outLength == ZR_NULL) {
         return ZR_FALSE;
@@ -67,6 +107,28 @@ static void assert_file_matches_golden(const TChar* baseName, const TChar* subDi
 
     TEST_ASSERT_TRUE_MESSAGE(read_file_bytes(generatedPath, &generatedBuffer, &generatedLength), generatedPath);
     TEST_ASSERT_TRUE_MESSAGE(read_file_bytes(goldenPath, &goldenBuffer, &goldenLength), goldenPath);
+
+    if (is_text_artifact_extension(extension)) {
+        TBytePtr normalizedGenerated = ZR_NULL;
+        TBytePtr normalizedGolden = ZR_NULL;
+        TZrSize normalizedGeneratedLength = 0;
+        TZrSize normalizedGoldenLength = 0;
+
+        TEST_ASSERT_TRUE_MESSAGE(
+            normalize_text_newlines(generatedBuffer, generatedLength, &normalizedGenerated, &normalizedGeneratedLength),
+            generatedPath);
+        TEST_ASSERT_TRUE_MESSAGE(
+            normalize_text_newlines(goldenBuffer, goldenLength, &normalizedGolden, &normalizedGoldenLength),
+            goldenPath);
+
+        free(generatedBuffer);
+        free(goldenBuffer);
+        generatedBuffer = normalizedGenerated;
+        goldenBuffer = normalizedGolden;
+        generatedLength = normalizedGeneratedLength;
+        goldenLength = normalizedGoldenLength;
+    }
+
     TEST_ASSERT_EQUAL_UINT64_MESSAGE(goldenLength, generatedLength, goldenPath);
     TEST_ASSERT_EQUAL_MEMORY_MESSAGE(goldenBuffer, generatedBuffer, goldenLength, goldenPath);
 

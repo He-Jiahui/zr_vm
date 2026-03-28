@@ -60,7 +60,12 @@ ZR_PARSER_API TBool check_type_compatibility(SZrCompilerState *cs, const SZrInfe
 ZR_PARSER_API TBool check_assignment_compatibility(SZrCompilerState *cs, const SZrInferredType *leftType, const SZrInferredType *rightType, SZrFileRange location);
 
 // 检查函数调用参数兼容性
-ZR_PARSER_API TBool check_function_call_compatibility(SZrCompilerState *cs, SZrFunctionTypeInfo *funcType, SZrAstNodeArray *args, SZrFileRange location);
+ZR_PARSER_API TBool check_function_call_compatibility(SZrCompilerState *cs,
+                                                      SZrTypeEnvironment *env,
+                                                      SZrString *funcName,
+                                                      SZrFunctionCall *call,
+                                                      SZrFunctionTypeInfo *funcType,
+                                                      SZrFileRange location);
 
 // 报告类型错误
 ZR_PARSER_API void report_type_error(SZrCompilerState *cs, const TChar *message, const SZrInferredType *expectedType, const SZrInferredType *actualType, SZrFileRange location);
@@ -78,4 +83,3 @@ ZR_PARSER_API TBool check_literal_range(SZrCompilerState *cs, SZrAstNode *litera
 ZR_PARSER_API TBool check_array_index_bounds(SZrCompilerState *cs, SZrAstNode *indexExpr, const SZrInferredType *arrayType, SZrFileRange location);
 
 #endif //ZR_VM_PARSER_TYPE_INFERENCE_H
-

@@ -31,6 +31,7 @@ static const SZrTokenInfo zr_token_info[] = {
     {"test", ZR_TK_TEST},
     {"intermediate", ZR_TK_INTERMEDIATE},
     {"var", ZR_TK_VAR},
+    {"using", ZR_TK_USING},
     {"pub", ZR_TK_PUB},
     {"pri", ZR_TK_PRI},
     {"pro", ZR_TK_PRO},
@@ -105,6 +106,7 @@ static const SZrTokenInfo zr_token_info[] = {
     {"<integer>", ZR_TK_INTEGER},
     {"<float>", ZR_TK_FLOAT},
     {"<string>", ZR_TK_STRING},
+    {"<template-string>", ZR_TK_TEMPLATE_STRING},
     {"<char>", ZR_TK_CHAR},
     {"<null>", ZR_TK_NULL},
     {"<identifier>", ZR_TK_IDENTIFIER},
@@ -124,6 +126,7 @@ static const struct {
                    {"test", ZR_TK_TEST},
                    {"intermediate", ZR_TK_INTERMEDIATE},
                    {"var", ZR_TK_VAR},
+                   {"using", ZR_TK_USING},
                    {"pub", ZR_TK_PUB},
                    {"pri", ZR_TK_PRI},
                    {"pro", ZR_TK_PRO},
@@ -209,7 +212,7 @@ static EZrToken read_identifier(SZrLexState *ls, TZrSemInfo *seminfo) {
         save_char(ls, (TChar) ls->currentChar);
         next_char(ls);
     }
-    TZrSize length = ls->currentPos - 1 - start;
+    TZrSize length = ls->bufferLength;
     EZrToken token = find_keyword(&ls->source[start], length);
 
     if (token == ZR_TK_BOOLEAN) {
@@ -246,6 +249,7 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
                 value = value * 8 + (ls->source[i] - '0');
             }
             seminfo->intValue = value;
+            seminfo->stringValue = ZrStringCreate(ls->state, ls->buffer, ls->bufferLength);
             return ZR_TK_INTEGER;
         }
     }
@@ -292,6 +296,7 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
     // 解析数字
     if (isFloat) {
         seminfo->floatValue = strtod(&ls->source[start], ZR_NULL);
+        seminfo->stringValue = ZrStringCreate(ls->state, ls->buffer, ls->bufferLength);
         return ZR_TK_FLOAT;
     } else {
         if (isHex) {
@@ -299,6 +304,7 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
         } else {
             seminfo->intValue = (TInt64) strtoll(&ls->source[start], ZR_NULL, 10);
         }
+        seminfo->stringValue = ZrStringCreate(ls->state, ls->buffer, ls->bufferLength);
         return ZR_TK_INTEGER;
     }
 }
@@ -403,6 +409,59 @@ static void read_string(SZrLexState *ls, TZrSemInfo *seminfo) {
     }
 
     next_char(ls); // 跳过结束引号
+    seminfo->stringValue = ZrStringCreate(ls->state, ls->buffer, ls->bufferLength);
+}
+
+// 读取模板字符串（使用反引号包裹，允许换行，插值在 parser 中拆分）
+static void read_template_string(SZrLexState *ls, TZrSemInfo *seminfo) {
+    next_char(ls); // 跳过开始反引号
+
+    reset_buffer(ls);
+    while (ls->currentChar != '`' && ls->currentChar != ZR_LEXER_EOZ) {
+        if (ls->currentChar == '\\') {
+            next_char(ls);
+            switch (ls->currentChar) {
+                case 'n':
+                    save_char(ls, '\n');
+                    next_char(ls);
+                    break;
+                case 't':
+                    save_char(ls, '\t');
+                    next_char(ls);
+                    break;
+                case 'r':
+                    save_char(ls, '\r');
+                    next_char(ls);
+                    break;
+                case '`':
+                    save_char(ls, '`');
+                    next_char(ls);
+                    break;
+                case '\\':
+                    save_char(ls, '\\');
+                    next_char(ls);
+                    break;
+                default:
+                    save_char(ls, '\\');
+                    if (ls->currentChar != ZR_LEXER_EOZ) {
+                        save_char(ls, (TChar)ls->currentChar);
+                        next_char(ls);
+                    }
+                    break;
+            }
+            continue;
+        }
+
+        save_char(ls, (TChar)ls->currentChar);
+        next_char(ls);
+    }
+
+    if (ls->currentChar == ZR_LEXER_EOZ) {
+        ZrLexerSyntaxError(ls, "unfinished template string");
+        return;
+    }
+
+    next_char(ls); // 跳过结束反引号
     seminfo->stringValue = ZrStringCreate(ls->state, ls->buffer, ls->bufferLength);
 }
 
@@ -551,6 +610,10 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
             // 双引号表示字符串
             read_string(ls, seminfo);
             return ZR_TK_STRING;
+
+        case '`':
+            read_template_string(ls, seminfo);
+            return ZR_TK_TEMPLATE_STRING;
         
         case '\'':
             // 单引号表示字符字面量
@@ -798,6 +861,7 @@ void ZrLexerNext(SZrLexState *ls) {
         ls->lookahead.token = ZR_TK_EOS;  // 清除 lookahead 缓存
     } else {
         TZrSemInfo seminfo;
+        memset(&seminfo, 0, sizeof(seminfo));
         ls->t.token = llex(ls, &seminfo);
         ls->t.seminfo = seminfo;
     }
@@ -815,6 +879,7 @@ EZrToken ZrLexerLookahead(SZrLexState *ls) {
 
         // 读取下一个 token
         TZrSemInfo seminfo;
+        memset(&seminfo, 0, sizeof(seminfo));
         ls->lookahead.token = llex(ls, &seminfo);
         ls->lookahead.seminfo = seminfo;
 

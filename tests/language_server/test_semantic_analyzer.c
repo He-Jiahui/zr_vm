@@ -12,6 +12,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/callback.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
 
@@ -90,6 +91,68 @@ static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSiz
     }
 }
 
+static const SZrSemanticOverloadSetRecord *findOverloadSetRecord(SZrSemanticContext *context,
+                                                                 const char *name) {
+    TZrSize i;
+
+    if (context == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (i = 0; i < context->overloadSets.length; i++) {
+        SZrSemanticOverloadSetRecord *record =
+            (SZrSemanticOverloadSetRecord *)ZrArrayGet(&context->overloadSets, i);
+        if (record != ZR_NULL && record->name != ZR_NULL) {
+            TNativeString nativeName = ZrStringGetNativeStringShort(record->name);
+            if (nativeName != ZR_NULL && strcmp(nativeName, name) == 0) {
+                return record;
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TBool cleanup_plan_targets_symbol(const SZrSemanticContext *context,
+                                         TZrSymbolId symbolId) {
+    TZrSize i;
+
+    if (context == ZR_NULL || symbolId == 0) {
+        return ZR_FALSE;
+    }
+
+    for (i = 0; i < context->cleanupPlan.length; i++) {
+        const SZrDeterministicCleanupStep *step =
+            (const SZrDeterministicCleanupStep *)ZrArrayGet((SZrArray *)&context->cleanupPlan, i);
+        if (step != ZR_NULL && step->symbolId == symbolId) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TBool has_diagnostic_code(SZrSemanticAnalyzer *analyzer, const char *code) {
+    TZrSize i;
+
+    if (analyzer == ZR_NULL || code == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (i = 0; i < analyzer->diagnostics.length; i++) {
+        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrArrayGet(&analyzer->diagnostics, i);
+        if (diagPtr == ZR_NULL || *diagPtr == ZR_NULL || (*diagPtr)->code == ZR_NULL) {
+            continue;
+        }
+
+        if (strcmp(ZrStringGetNativeStringShort((*diagPtr)->code), code) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 // 测试语义分析器创建和释放
 static void test_semantic_analyzer_create_and_free(SZrState *state) {
     SZrTestTimer timer;
@@ -160,6 +223,391 @@ static void test_semantic_analyzer_analyze(SZrState *state) {
     ZrParserFreeAst(state, ast);
     ZrSemanticAnalyzerFree(state, analyzer);
     TEST_PASS(timer, "Semantic Analyzer Analyze");
+}
+
+// 测试 assignment + binary 表达式路径的类型检查
+static void test_semantic_analyzer_type_checking_assignment_path(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Type Checking Assignment Path");
+
+    TEST_INFO("Type Checking", "Analyzing assignment and binary expression path");
+
+    SZrSemanticAnalyzer *analyzer = ZrSemanticAnalyzerNew(state);
+    if (analyzer == ZR_NULL) {
+        TEST_FAIL(timer, "Semantic Analyzer Type Checking Assignment Path", "Failed to create semantic analyzer");
+        return;
+    }
+
+    const TChar *testCode = "var x = 1; x = x + 2;";
+    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParserParse(state, testCode, strlen(testCode), sourceName);
+    if (ast == ZR_NULL) {
+        ZrSemanticAnalyzerFree(state, analyzer);
+        TEST_FAIL(timer, "Semantic Analyzer Type Checking Assignment Path", "Failed to parse test code");
+        return;
+    }
+
+    if (!ZrSemanticAnalyzerAnalyze(state, analyzer, ast)) {
+        ZrParserFreeAst(state, ast);
+        ZrSemanticAnalyzerFree(state, analyzer);
+        TEST_FAIL(timer, "Semantic Analyzer Type Checking Assignment Path", "Failed to analyze AST");
+        return;
+    }
+
+    ZrParserFreeAst(state, ast);
+    ZrSemanticAnalyzerFree(state, analyzer);
+    TEST_PASS(timer, "Semantic Analyzer Type Checking Assignment Path");
+}
+
+static void test_semantic_analyzer_populates_semantic_context(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Populates Semantic Context");
+    timer.startTime = clock();
+
+    TEST_INFO("Semantic context integration",
+              "Analyzing declarations should populate semantic symbols, types, HIR module and overload sets");
+
+    SZrSemanticAnalyzer *analyzer = ZrSemanticAnalyzerNew(state);
+    if (analyzer == ZR_NULL) {
+        TEST_FAIL(timer, "Semantic Analyzer Populates Semantic Context", "Failed to create semantic analyzer");
+        return;
+    }
+
+    const TChar *testCode =
+        "var x = 1; "
+        "add(a: int): int { return a; } "
+        "add(a: int, b: int): int { return a + b; }";
+    SZrString *sourceName = ZrStringCreate(state, "semantic_context_test.zr", 24);
+    SZrAstNode *ast = ZrParserParse(state, testCode, strlen(testCode), sourceName);
+    if (ast == ZR_NULL) {
+        ZrSemanticAnalyzerFree(state, analyzer);
+        TEST_FAIL(timer, "Semantic Analyzer Populates Semantic Context", "Failed to parse test code");
+        return;
+    }
+
+    if (!ZrSemanticAnalyzerAnalyze(state, analyzer, ast)) {
+        ZrParserFreeAst(state, ast);
+        ZrSemanticAnalyzerFree(state, analyzer);
+        TEST_FAIL(timer, "Semantic Analyzer Populates Semantic Context", "Failed to analyze AST");
+        return;
+    }
+
+    if (analyzer->semanticContext == ZR_NULL || analyzer->hirModule == ZR_NULL) {
+        ZrParserFreeAst(state, ast);
+        ZrSemanticAnalyzerFree(state, analyzer);
+        TEST_FAIL(timer, "Semantic Analyzer Populates Semantic Context",
+                  "Semantic context or HIR module was not attached");
+        return;
+    }
+
+    if (analyzer->hirModule->semantic != analyzer->semanticContext ||
+        analyzer->hirModule->rootAst != ast) {
+        ZrParserFreeAst(state, ast);
+        ZrSemanticAnalyzerFree(state, analyzer);
+        TEST_FAIL(timer, "Semantic Analyzer Populates Semantic Context",
+                  "HIR module does not reference the current semantic context/AST");
+        return;
+    }
+
+    if (analyzer->semanticContext->symbols.length < 3 ||
+        analyzer->semanticContext->types.length == 0 ||
+        analyzer->semanticContext->overloadSets.length == 0) {
+        ZrParserFreeAst(state, ast);
+        ZrSemanticAnalyzerFree(state, analyzer);
+        TEST_FAIL(timer, "Semantic Analyzer Populates Semantic Context",
+                  "Semantic context did not record declarations");
+        return;
+    }
+
+    SZrString *funcName = ZrStringCreate(state, "add", 3);
+    SZrSymbol *symbol = ZrSymbolTableLookup(analyzer->symbolTable, funcName, ZR_NULL);
+    const SZrSemanticOverloadSetRecord *overloadSet =
+        findOverloadSetRecord(analyzer->semanticContext, "add");
+    if (symbol == ZR_NULL || symbol->semanticId == 0 || symbol->overloadSetId == 0 ||
+        overloadSet == ZR_NULL || overloadSet->members.length < 2) {
+        ZrParserFreeAst(state, ast);
+        ZrSemanticAnalyzerFree(state, analyzer);
+        TEST_FAIL(timer, "Semantic Analyzer Populates Semantic Context",
+                  "Function symbol was not linked into semantic overload records");
+        return;
+    }
+
+    ZrParserFreeAst(state, ast);
+    ZrSemanticAnalyzerFree(state, analyzer);
+    TEST_PASS(timer, "Semantic Analyzer Populates Semantic Context");
+}
+
+static void test_semantic_analyzer_records_using_cleanup_and_template_segments(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Records Using Cleanup And Template Segments");
+
+    TEST_INFO("Using/template semantic metadata",
+              "Analyzing using statements should populate cleanup plan and template segments in semantic context");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrSemanticAnalyzerNew(state);
+        const TChar *testCode =
+            "var resource = 1; "
+            "using resource; "
+            "using (resource) { var message = `hello ${resource}`; }";
+        SZrString *sourceName = ZrStringCreate(state, "using_template_test.zr", 22);
+        SZrAstNode *ast;
+        SZrString *resourceName;
+        SZrSymbol *resourceSymbol;
+        TBool foundStatic = ZR_FALSE;
+        TBool foundInterpolation = ZR_FALSE;
+        TZrSize i;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Using Cleanup And Template Segments",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        ast = ZrParserParse(state, testCode, strlen(testCode), sourceName);
+        if (ast == ZR_NULL) {
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Using Cleanup And Template Segments",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrSemanticAnalyzerAnalyze(state, analyzer, ast)) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Using Cleanup And Template Segments",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (analyzer->semanticContext == ZR_NULL ||
+            analyzer->semanticContext->cleanupPlan.length < 2 ||
+            analyzer->semanticContext->templateSegments.length < 3) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Using Cleanup And Template Segments",
+                      "Semantic context did not record cleanup steps or template segments");
+            return;
+        }
+
+        resourceName = ZrStringCreate(state, "resource", 8);
+        resourceSymbol = ZrSymbolTableLookup(analyzer->symbolTable, resourceName, ZR_NULL);
+        if (resourceSymbol == ZR_NULL || resourceSymbol->semanticId == 0 ||
+            !cleanup_plan_targets_symbol(analyzer->semanticContext, resourceSymbol->semanticId)) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Using Cleanup And Template Segments",
+                      "Using statement did not bind deterministic cleanup to the resource symbol");
+            return;
+        }
+
+        for (i = 0; i < analyzer->semanticContext->templateSegments.length; i++) {
+            const SZrTemplateSegment *segment =
+                (const SZrTemplateSegment *)ZrArrayGet(&analyzer->semanticContext->templateSegments, i);
+            if (segment == ZR_NULL) {
+                continue;
+            }
+            if (segment->isInterpolation) {
+                foundInterpolation = ZR_TRUE;
+            } else if (segment->staticText != ZR_NULL) {
+                foundStatic = ZR_TRUE;
+            }
+        }
+
+        if (!foundStatic || !foundInterpolation) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Using Cleanup And Template Segments",
+                      "Template string semantic segments were flattened instead of preserved");
+            return;
+        }
+
+        ZrParserFreeAst(state, ast);
+        ZrSemanticAnalyzerFree(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Records Using Cleanup And Template Segments");
+}
+
+static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Records Field-Scoped Using Cleanup Metadata");
+
+    TEST_INFO("Field-scoped using semantic metadata",
+              "Analyzing `using var` fields should register field symbols and distinguish struct-value cleanup from instance-field cleanup");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrSemanticAnalyzerNew(state);
+        const TChar *testCode =
+            "struct HandleBox { using var handle: unique<Resource>; }\n"
+            "class Holder { using var resource: unique<Resource>; }";
+        SZrString *sourceName = ZrStringCreate(state, "field_using_semantic_test.zr", 28);
+        SZrAstNode *ast;
+        SZrString *handleName;
+        SZrString *resourceName;
+        SZrSymbol *handleSymbol;
+        SZrSymbol *resourceSymbol;
+        const SZrDeterministicCleanupStep *firstStep;
+        const SZrDeterministicCleanupStep *secondStep;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        ast = ZrParserParse(state, testCode, strlen(testCode), sourceName);
+        if (ast == ZR_NULL) {
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrSemanticAnalyzerAnalyze(state, analyzer, ast)) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (analyzer->semanticContext == ZR_NULL ||
+            analyzer->semanticContext->cleanupPlan.length != 2) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Expected one struct-value cleanup step and one instance-field cleanup step");
+            return;
+        }
+
+        handleName = ZrStringCreate(state, "handle", 6);
+        resourceName = ZrStringCreate(state, "resource", 8);
+        handleSymbol = ZrSymbolTableLookup(analyzer->symbolTable, handleName, ZR_NULL);
+        resourceSymbol = ZrSymbolTableLookup(analyzer->symbolTable, resourceName, ZR_NULL);
+        if (handleSymbol == ZR_NULL || resourceSymbol == ZR_NULL ||
+            handleSymbol->type != ZR_SYMBOL_FIELD ||
+            resourceSymbol->type != ZR_SYMBOL_FIELD ||
+            handleSymbol->semanticId == 0 || resourceSymbol->semanticId == 0) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Using-managed fields were not registered as semantic field symbols");
+            return;
+        }
+
+        firstStep = (const SZrDeterministicCleanupStep *)ZrArrayGet(&analyzer->semanticContext->cleanupPlan, 0);
+        secondStep = (const SZrDeterministicCleanupStep *)ZrArrayGet(&analyzer->semanticContext->cleanupPlan, 1);
+        if (firstStep == ZR_NULL || secondStep == ZR_NULL) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Cleanup plan entries were missing");
+            return;
+        }
+
+        if (firstStep->ownerRegionId == 0 || secondStep->ownerRegionId == 0) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Cleanup plan entries did not record owner lifetime regions");
+            return;
+        }
+
+        if (!(firstStep->kind == ZR_DETERMINISTIC_CLEANUP_KIND_STRUCT_VALUE_FIELD ||
+              secondStep->kind == ZR_DETERMINISTIC_CLEANUP_KIND_STRUCT_VALUE_FIELD) ||
+            !(firstStep->kind == ZR_DETERMINISTIC_CLEANUP_KIND_INSTANCE_FIELD ||
+              secondStep->kind == ZR_DETERMINISTIC_CLEANUP_KIND_INSTANCE_FIELD)) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Cleanup plan did not distinguish struct-value fields from instance fields");
+            return;
+        }
+
+        if (!cleanup_plan_targets_symbol(analyzer->semanticContext, handleSymbol->semanticId) ||
+            !cleanup_plan_targets_symbol(analyzer->semanticContext, resourceSymbol->semanticId)) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Cleanup plan did not target the registered using-managed field symbols");
+            return;
+        }
+
+        ZrParserFreeAst(state, ast);
+        ZrSemanticAnalyzerFree(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata");
+}
+
+static void test_semantic_analyzer_rejects_static_using_field(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Rejects Static Using Field");
+
+    TEST_INFO("Static using diagnostic",
+              "Analyzing `static using var` should emit a compile-time diagnostic instead of silently accepting lifecycle-managed static fields");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrSemanticAnalyzerNew(state);
+        const TChar *testCode = "class Holder { static using var resource: unique<Resource>; }";
+        SZrString *sourceName = ZrStringCreate(state, "static_using_field_test.zr", 26);
+        SZrAstNode *ast;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Rejects Static Using Field",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        ast = ZrParserParse(state, testCode, strlen(testCode), sourceName);
+        if (ast == ZR_NULL) {
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Rejects Static Using Field",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrSemanticAnalyzerAnalyze(state, analyzer, ast)) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Rejects Static Using Field",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (!has_diagnostic_code(analyzer, "static_using_field")) {
+            ZrParserFreeAst(state, ast);
+            ZrSemanticAnalyzerFree(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Rejects Static Using Field",
+                      "Expected a static_using_field diagnostic for lifecycle-managed static fields");
+            return;
+        }
+
+        ZrParserFreeAst(state, ast);
+        ZrSemanticAnalyzerFree(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Rejects Static Using Field");
 }
 
 // 测试获取诊断信息
@@ -238,7 +686,7 @@ static void test_semantic_analyzer_get_completions(SZrState *state) {
     
     SZrArray completions;
     ZrArrayInit(state, &completions, sizeof(SZrCompletionItem *), 4);
-    TBool success = ZrSemanticAnalyzerGetCompletions(state, analyzer, position, &completions);
+    ZrSemanticAnalyzerGetCompletions(state, analyzer, position, &completions);
     
     if (ast != ZR_NULL) {
         ZrParserFreeAst(state, ast);
@@ -323,7 +771,20 @@ int main() {
     
     test_semantic_analyzer_analyze(state);
     TEST_DIVIDER();
-    
+
+    test_semantic_analyzer_type_checking_assignment_path(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_populates_semantic_context(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_records_using_cleanup_and_template_segments(state);
+    TEST_DIVIDER();
+    test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(state);
+    TEST_DIVIDER();
+    test_semantic_analyzer_rejects_static_using_field(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_get_diagnostics(state);
     TEST_DIVIDER();
     

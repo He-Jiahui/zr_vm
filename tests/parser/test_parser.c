@@ -717,6 +717,114 @@ void test_struct_declaration(void) {
     TEST_DIVIDER();
 }
 
+void test_field_scoped_using_field_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Field-Scoped Using Field Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Field-scoped using parsing",
+              "Testing parsing of `using var` fields in struct/class members, including static+using syntax that should be rejected later by semantic analysis");
+
+    {
+        const char *source =
+            "struct HandleBox { using var handle: unique<Resource>; }\n"
+            "class Holder { static using var resource: unique<Resource>; }";
+        SZrString *sourceName = ZrStringCreate(state, "using_fields.zr", 15);
+        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrAstNode *structDecl;
+        SZrAstNode *classDecl;
+        SZrAstNode *structFieldNode;
+        SZrAstNode *classFieldNode;
+        SZrStructField *structField;
+        SZrClassField *classField;
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        structDecl = ast->data.script.statements->nodes[0];
+        classDecl = ast->data.script.statements->nodes[1];
+        TEST_ASSERT_NOT_NULL(structDecl);
+        TEST_ASSERT_NOT_NULL(classDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, structDecl->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, classDecl->type);
+
+        TEST_ASSERT_NOT_NULL(structDecl->data.structDeclaration.members);
+        TEST_ASSERT_NOT_NULL(classDecl->data.classDeclaration.members);
+        TEST_ASSERT_EQUAL_INT(1, (int)structDecl->data.structDeclaration.members->count);
+        TEST_ASSERT_EQUAL_INT(1, (int)classDecl->data.classDeclaration.members->count);
+
+        structFieldNode = structDecl->data.structDeclaration.members->nodes[0];
+        classFieldNode = classDecl->data.classDeclaration.members->nodes[0];
+        TEST_ASSERT_NOT_NULL(structFieldNode);
+        TEST_ASSERT_NOT_NULL(classFieldNode);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_FIELD, structFieldNode->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_FIELD, classFieldNode->type);
+
+        structField = &structFieldNode->data.structField;
+        classField = &classFieldNode->data.classField;
+
+        TEST_ASSERT_TRUE(structField->isUsingManaged);
+        TEST_ASSERT_FALSE(structField->isStatic);
+        TEST_ASSERT_NOT_NULL(structField->typeInfo);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+                              structField->typeInfo->ownershipQualifier);
+
+        TEST_ASSERT_TRUE(classField->isUsingManaged);
+        TEST_ASSERT_TRUE(classField->isStatic);
+        TEST_ASSERT_NOT_NULL(classField->typeInfo);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+                              classField->typeInfo->ownershipQualifier);
+
+        ZrParserFreeAst(state, ast);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+void test_field_scoped_using_field_requires_var_keyword(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Field-Scoped Using Requires Var Keyword";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Field-scoped using syntax rejection",
+              "Testing that `using` fields without the required `var` keyword are rejected instead of silently becoming ordinary fields");
+
+    {
+        const char *source = "struct Broken { using handle: unique<Resource>; }";
+        SZrString *sourceName = ZrStringCreate(state, "using_missing_var.zr", 20);
+        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_TRUE(ast->data.script.statements->count >= 1);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, ast->data.script.statements->nodes[0]->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[0]->data.structDeclaration.members);
+        TEST_ASSERT_EQUAL_INT(0, (int)ast->data.script.statements->nodes[0]->data.structDeclaration.members->count);
+        ZrParserFreeAst(state, ast);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
 // ==================== 语句测试 ====================
 
 // 测试 if 语句解析
@@ -1295,6 +1403,8 @@ int main(void) {
     // 声明测试
     RUN_TEST(test_function_declaration);
     RUN_TEST(test_struct_declaration);
+    RUN_TEST(test_field_scoped_using_field_parsing);
+    RUN_TEST(test_field_scoped_using_field_requires_var_keyword);
     
     TEST_MODULE_DIVIDER();
     printf("Statement Tests\n");
@@ -1326,4 +1436,3 @@ int main(void) {
     
     return UNITY_END();
 }
-

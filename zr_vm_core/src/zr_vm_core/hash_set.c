@@ -17,6 +17,11 @@ void ZrHashSetDeconstruct(struct SZrState *state, SZrHashSet *set) {
         ZrMemoryAllocate(global, oldBuckets, oldBucketCount, 0, ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET);
         set->buckets = ZR_NULL;
     }
+    set->bucketSize = 0;
+    set->elementCount = 0;
+    set->capacity = 0;
+    set->resizeThreshold = 0;
+    set->isValid = ZR_FALSE;
 }
 
 void ZrHashSetRehash(SZrState *state, SZrHashSet *set, TZrSize newCapacity) {

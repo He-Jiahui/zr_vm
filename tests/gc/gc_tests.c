@@ -618,6 +618,223 @@ void test_gc_barrier(void) {
     TEST_DIVIDER();
 }
 
+void test_gc_pause_budget_consumes_multiple_incremental_steps(void) {
+    SZrTestTimer timer;
+    const char* testSummary = "GC Pause Budget Consumes Multiple Incremental Steps";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Propagation budget setup",
+              "Preparing two wait-to-scan native-data objects so one GC step must honor pause budget > 1");
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrGarbageCollector* gc = state->global->garbageCollector;
+        struct SZrNativeData* first = createTestNativeData(state, 1);
+        struct SZrNativeData* second = createTestNativeData(state, 1);
+
+        TEST_ASSERT_NOT_NULL(first);
+        TEST_ASSERT_NOT_NULL(second);
+
+        ZrRawObjectMarkAsWaitToScan(ZR_CAST_RAW_OBJECT_AS_SUPER(first));
+        ZrRawObjectMarkAsWaitToScan(ZR_CAST_RAW_OBJECT_AS_SUPER(second));
+        ZR_CAST_RAW_OBJECT_AS_SUPER(first)->gcList = ZR_CAST_RAW_OBJECT_AS_SUPER(second);
+        ZR_CAST_RAW_OBJECT_AS_SUPER(second)->gcList = ZR_NULL;
+
+        gc->waitToScanObjectList = ZR_CAST_RAW_OBJECT_AS_SUPER(first);
+        gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION;
+        gc->gcStatus = ZR_GARBAGE_COLLECT_STATUS_RUNNING;
+        gc->gcPauseBudget = 2;
+        gc->gcDebtSize = 4096;
+
+        ZrGarbageCollectorGcStep(state);
+
+        TEST_ASSERT_TRUE(ZR_GC_IS_REFERENCED(ZR_CAST_RAW_OBJECT_AS_SUPER(first)));
+        TEST_ASSERT_TRUE(ZR_GC_IS_REFERENCED(ZR_CAST_RAW_OBJECT_AS_SUPER(second)));
+        TEST_ASSERT_NULL(gc->waitToScanObjectList);
+        TEST_ASSERT_TRUE(gc->gcLastStepWork >= 2);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_gc_sweep_slice_budget_limits_single_step_sweep(void) {
+    SZrTestTimer timer;
+    const char* testSummary = "GC Sweep Slice Budget Limits Single Step Sweep";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Sweep budget setup",
+              "Preparing multiple dead objects so one GC step must honor the configured sweep slice budget");
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrGarbageCollector* gc = state->global->garbageCollector;
+        SZrRawObject* first = createTestObject(state, ZR_VALUE_TYPE_NATIVE_POINTER, sizeof(SZrRawObject));
+        SZrRawObject* second = createTestObject(state, ZR_VALUE_TYPE_NATIVE_POINTER, sizeof(SZrRawObject));
+        SZrRawObject* third = createTestObject(state, ZR_VALUE_TYPE_NATIVE_POINTER, sizeof(SZrRawObject));
+
+        TEST_ASSERT_NOT_NULL(first);
+        TEST_ASSERT_NOT_NULL(second);
+        TEST_ASSERT_NOT_NULL(third);
+
+        ZrRawObjectMarkAsInit(state, first);
+        ZrRawObjectMarkAsInit(state, second);
+        ZrRawObjectMarkAsInit(state, third);
+        first->garbageCollectMark.generation = ZR_GC_OTHER_GENERATION(gc);
+        second->garbageCollectMark.generation = ZR_GC_OTHER_GENERATION(gc);
+        third->garbageCollectMark.generation = ZR_GC_OTHER_GENERATION(gc);
+
+        gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS;
+        gc->gcStatus = ZR_GARBAGE_COLLECT_STATUS_RUNNING;
+        gc->gcSweepSliceBudget = 1;
+        gc->gcObjectListSweeper = &gc->gcObjectList;
+        gc->gcDebtSize = 4096;
+
+        ZrGarbageCollectorGcStep(state);
+
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->gcLastStepWork);
+        TEST_ASSERT_EQUAL_PTR(second, gc->gcObjectList);
+        TEST_ASSERT_EQUAL_INT(ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS,
+                              gc->gcRunningStatus);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_gc_ignore_registry_and_phase_metadata(void) {
+    SZrTestTimer timer;
+    const char* testSummary = "GC Ignore Registry And Phase Metadata";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Test environment initialization",
+              "Creating test state for ignore registry and phased GC metadata testing");
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrGarbageCollector* gc = state->global->garbageCollector;
+        SZrRawObject* ignoredObject =
+            createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+        TEST_ASSERT_NOT_NULL(ignoredObject);
+
+        TEST_INFO("Initial phased-GC metadata",
+                  "Verifying that pause budget, sweep slice budget, and ignore registry are initialized");
+        TEST_ASSERT_TRUE(gc->gcPauseBudget > 0);
+        TEST_ASSERT_TRUE(gc->gcSweepSliceBudget > 0);
+        TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
+        TEST_ASSERT_EQUAL_INT(ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED,
+                              gc->gcLastCompletedRunningStatus);
+
+        TEST_INFO("Ignore registry registration",
+                  "Registering an object in the ignore registry should make it queryable and counted");
+        TEST_ASSERT_TRUE(ZrGarbageCollectorIgnoreObject(state, ignoredObject));
+        TEST_ASSERT_TRUE(ZrGarbageCollectorIsObjectIgnored(state->global, ignoredObject));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+
+        TEST_INFO("Ignore registry round-trip",
+                  "Removing an ignored object should drop it from the registry and restore the count");
+        TEST_ASSERT_TRUE(ZrGarbageCollectorUnignoreObject(state->global, ignoredObject));
+        TEST_ASSERT_FALSE(ZrGarbageCollectorIsObjectIgnored(state->global, ignoredObject));
+        TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
+
+        TEST_ASSERT_TRUE(ZrGarbageCollectorIgnoreObject(state, ignoredObject));
+        TEST_ASSERT_TRUE(ZrGarbageCollectorIsObjectIgnored(state->global, ignoredObject));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+
+        TEST_INFO("Phase metadata after GC step",
+                  "Executing a GC step with debt should update last-step metadata without dropping ignore registry state");
+        ZrGarbageCollectorAddDebtSpace(state->global, 4096);
+        ZrGarbageCollectorGcStep(state);
+        TEST_ASSERT_TRUE(gc->gcLastStepWork > 0);
+        TEST_ASSERT_TRUE(gc->gcLastCompletedRunningStatus ==
+                             ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED ||
+                         gc->gcLastCompletedRunningStatus ==
+                             ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION ||
+                         gc->gcLastCompletedRunningStatus ==
+                             ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC ||
+                         gc->gcLastCompletedRunningStatus ==
+                             ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS ||
+                         gc->gcLastCompletedRunningStatus ==
+                             ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_WAIT_TO_RELEASE_OBJECTS ||
+                         gc->gcLastCompletedRunningStatus ==
+                             ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END);
+        TEST_ASSERT_TRUE(ZrGarbageCollectorIsObjectIgnored(state->global, ignoredObject));
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_gc_barrier_unignores_escaped_object(void) {
+    SZrTestTimer timer;
+    const char* testSummary = "GC Barrier Unignores Escaped Object";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Test environment initialization",
+              "Creating test state for ignored-object escape testing");
+    SZrState* state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrGarbageCollector* gc = state->global->garbageCollector;
+        SZrRawObject* parent = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+        SZrRawObject* child = createTestObject(state, ZR_VALUE_TYPE_STRING, sizeof(SZrRawObject));
+
+        TEST_ASSERT_NOT_NULL(parent);
+        TEST_ASSERT_NOT_NULL(child);
+
+        TEST_INFO("Prepare referenced parent and ignored child",
+                  "The ignored child simulates a unique-owned object before it escapes into a shared GC graph");
+        ZrRawObjectMarkAsReferenced(parent);
+        ZrRawObjectMarkAsInit(state, child);
+        TEST_ASSERT_TRUE(ZrGarbageCollectorIgnoreObject(state, child));
+        TEST_ASSERT_TRUE(ZrGarbageCollectorIsObjectIgnored(state->global, child));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+
+        TEST_INFO("Barrier on shared escape",
+                  "Writing an ignored child through the GC barrier should restore normal tracing ownership");
+        ZrGarbageCollectorBarrier(state, parent, child);
+
+        TEST_ASSERT_FALSE(ZrGarbageCollectorIsObjectIgnored(state->global, child));
+        TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
+        TEST_ASSERT_TRUE(ZR_GC_IS_WAIT_TO_SCAN(child) || ZR_GC_IS_REFERENCED(child));
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // 主测试函数
 int main(void) {
     printf("\n");
@@ -655,6 +872,10 @@ int main(void) {
     RUN_TEST(test_gc_full_collection);
     RUN_TEST(test_gc_step);
     RUN_TEST(test_gc_barrier);
+    RUN_TEST(test_gc_pause_budget_consumes_multiple_incremental_steps);
+    RUN_TEST(test_gc_sweep_slice_budget_limits_single_step_sweep);
+    RUN_TEST(test_gc_ignore_registry_and_phase_metadata);
+    RUN_TEST(test_gc_barrier_unignores_escaped_object);
     
     printf("\n");
     TEST_MODULE_DIVIDER();

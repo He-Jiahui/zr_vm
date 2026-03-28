@@ -72,6 +72,10 @@ set(UNITY_SOURCES
     ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src/unity.c
 )
 
+set(UNITY_NOOP_LIFECYCLE_SOURCE
+    ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+)
+
 # 链接必要的库
 if (BUILD_SHARED_LIB)
     target_link_libraries(zr_vm_parser_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
@@ -102,6 +106,10 @@ target_sources(zr_vm_char_and_type_cast_test PRIVATE ${UNITY_SOURCES})
 target_sources(zr_vm_lexer_parser_compiler_execution_test PRIVATE ${UNITY_SOURCES})
 target_sources(zr_vm_prototype_test PRIVATE ${UNITY_SOURCES})
 target_sources(zr_vm_const_keyword_test PRIVATE ${UNITY_SOURCES})
+
+target_sources(zr_vm_char_and_type_cast_test PRIVATE ${UNITY_NOOP_LIFECYCLE_SOURCE})
+target_sources(zr_vm_prototype_test PRIVATE ${UNITY_NOOP_LIFECYCLE_SOURCE})
+target_sources(zr_vm_const_keyword_test PRIVATE ${UNITY_NOOP_LIFECYCLE_SOURCE})
 
 # 包含Unity测试框架
 target_include_directories(zr_vm_instruction_execution_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
@@ -358,4 +366,3 @@ add_test(NAME char_and_type_cast_tests COMMAND zr_vm_char_and_type_cast_test)
 add_test(NAME lexer_parser_compiler_execution_tests COMMAND zr_vm_lexer_parser_compiler_execution_test)
 add_test(NAME prototype_tests COMMAND zr_vm_prototype_test)
 add_test(NAME const_keyword_tests COMMAND zr_vm_const_keyword_test)
-

@@ -257,21 +257,29 @@ SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
         // 保存当前栈状态
         TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
         SZrCallInfo *savedCallInfo = state->callInfoList;
+        TZrStackValuePointer scratchBase =
+                savedCallInfo != ZR_NULL ? savedCallInfo->functionTop.valuePointer : savedStackTop;
 
         // 准备调用元方法：将 meta->function 和 self 放到栈上
-        ZrFunctionCheckStackAndGc(state, 2, savedStackTop);
-        TZrStackValuePointer base = savedStackTop;
-        ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-        ZrStackCopyValue(state, base + 1, value);
-        state->stackTop.valuePointer = base + 2;
+        scratchBase = ZrFunctionCheckStackAndGc(state, 2, scratchBase);
+        if (savedCallInfo != ZR_NULL) {
+            scratchBase = savedCallInfo->functionTop.valuePointer;
+        }
+        ZrStackSetRawObjectValue(state, scratchBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+        ZrStackCopyValue(state, scratchBase + 1, value);
+        state->stackTop.valuePointer = scratchBase + 2;
+        if (savedCallInfo != ZR_NULL &&
+            savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+            savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+        }
 
         // 调用元方法
-        ZrFunctionCallWithoutYield(state, base, 1);
+        ZrFunctionCallWithoutYield(state, scratchBase, 1);
 
         // 检查执行状态
         if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
             // 获取返回值
-            SZrTypeValue *returnValue = ZrStackGetValue(base);
+            SZrTypeValue *returnValue = ZrStackGetValue(scratchBase);
             if (returnValue->type == ZR_VALUE_TYPE_STRING) {
                 SZrString *result = ZR_CAST_STRING(state, returnValue->value.object);
                 // 恢复栈状态
@@ -357,9 +365,14 @@ TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMeta
     SZrCallInfo *savedCallInfo = state->callInfoList;
 
     // 准备调用元方法
-    TZrStackValuePointer base = savedStackTop;
     TZrSize totalArgs = 1 + argumentCount; // self + 其他参数
-    ZrFunctionCheckStackAndGc(state, totalArgs, base);
+    TZrSize scratchSlots = 1 + totalArgs; // function + self + 其他参数
+    TZrStackValuePointer base =
+            savedCallInfo != ZR_NULL ? savedCallInfo->functionTop.valuePointer : savedStackTop;
+    base = ZrFunctionCheckStackAndGc(state, scratchSlots, base);
+    if (savedCallInfo != ZR_NULL) {
+        base = savedCallInfo->functionTop.valuePointer;
+    }
 
     // 将 meta->function 放到栈上
     ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
@@ -379,6 +392,10 @@ TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMeta
     }
 
     state->stackTop.valuePointer = base + 1 + totalArgs;
+    if (savedCallInfo != ZR_NULL &&
+        savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+        savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
 
     // 调用元方法
     ZrFunctionCallWithoutYield(state, base, 1);

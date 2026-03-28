@@ -11,6 +11,7 @@
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
@@ -121,6 +122,87 @@ static void destroyTestState(SZrState *state) {
     if (global) {
         ZrGlobalStateFree(global);
     }
+}
+
+static SZrObjectPrototype *get_module_exported_prototype(SZrState *state,
+                                                         SZrObjectModule *module,
+                                                         const TChar *typeName) {
+    SZrString *name;
+    const SZrTypeValue *exportedValue;
+    SZrObject *object;
+
+    if (state == ZR_NULL || module == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    name = ZrStringCreate(state, (TNativeString)typeName, strlen(typeName));
+    if (name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    exportedValue = ZrModuleGetPubExport(state, module, name);
+    if (exportedValue == ZR_NULL || exportedValue->type != ZR_VALUE_TYPE_OBJECT || exportedValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = ZR_CAST_OBJECT(state, exportedValue->value.object);
+    if (object == ZR_NULL || object->internalType != ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        return ZR_NULL;
+    }
+
+    return (SZrObjectPrototype *)object;
+}
+
+static const SZrManagedFieldInfo *find_managed_field_info(const SZrObjectPrototype *prototype,
+                                                          SZrState *state,
+                                                          const TChar *fieldName) {
+    SZrString *expectedName;
+
+    if (prototype == ZR_NULL || state == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    expectedName = ZrStringCreate(state, (TNativeString)fieldName, strlen(fieldName));
+    if (expectedName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TUInt32 i = 0; i < prototype->managedFieldCount; i++) {
+        const SZrManagedFieldInfo *info = &prototype->managedFields[i];
+        if (info->name != ZR_NULL && ZrStringEqual(info->name, expectedName)) {
+            return info;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TBool lookup_struct_field_offset(SZrState *state,
+                                        SZrStructPrototype *prototype,
+                                        const TChar *fieldName,
+                                        TUInt64 *outOffset) {
+    SZrString *fieldNameString;
+    SZrTypeValue key;
+    SZrHashKeyValuePair *pair;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || fieldName == ZR_NULL || outOffset == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fieldNameString = ZrStringCreate(state, (TNativeString)fieldName, strlen(fieldName));
+    if (fieldNameString == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrValueInitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldNameString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    pair = ZrHashSetFind(state, &prototype->keyOffsetMap, &key);
+    if (pair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outOffset = pair->value.value.nativeObject.nativeUInt64;
+    return ZR_TRUE;
 }
 
 // 测试初始化和清理
@@ -411,8 +493,14 @@ void test_zr_import_function_call(void) {
 
     const SZrTypeValue *importValue = ZrObjectGetValue(state, zrObject, &importKey);
     TEST_ASSERT_NOT_NULL(importValue);
-    TEST_ASSERT_TRUE(importValue->type == ZR_VALUE_TYPE_FUNCTION);
+    TEST_ASSERT_TRUE(importValue->type == ZR_VALUE_TYPE_CLOSURE);
     TEST_ASSERT_TRUE(importValue->isNative);
+    TEST_ASSERT_NOT_NULL(importValue->value.object);
+    {
+        SZrClosureNative *importClosure = (SZrClosureNative *) importValue->value.object;
+        TEST_ASSERT_NOT_NULL(importClosure);
+        TEST_ASSERT_NOT_NULL(importClosure->nativeFunction);
+    }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -707,6 +795,90 @@ void test_complete_module_loading_flow(void) {
     TEST_DIVIDER();
 }
 
+void test_module_restores_field_scoped_using_prototype_metadata(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Module Restores Field-Scoped Using Metadata";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Field-scoped using runtime metadata",
+              "Testing that prototypeData loading restores struct field offsets and managed-field metadata for `using var` fields");
+
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        const char *source =
+            "module \"field_meta\";\n"
+            "pub struct HandleBox { using var handle: unique<Resource>; var count: int; }\n"
+            "pub class Holder { using var resource: shared<Resource>; var version: int; }";
+        SZrString *sourceName = ZrStringCreate(state, "field_meta.zr", 13);
+        SZrFunction *entryFunction = ZrParserCompileSource(state, source, strlen(source), sourceName);
+        SZrObjectModule *module;
+        SZrObjectPrototype *handleBoxPrototype;
+        SZrObjectPrototype *holderPrototype;
+        const SZrManagedFieldInfo *handleInfo;
+        const SZrManagedFieldInfo *resourceInfo;
+        TUInt64 handleOffset = 0;
+        TUInt64 countOffset = 0;
+        TZrSize createdCount;
+
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        TEST_ASSERT_NOT_NULL(entryFunction->prototypeData);
+        TEST_ASSERT_EQUAL_UINT32(2, entryFunction->prototypeCount);
+
+        module = ZrModuleCreate(state);
+        TEST_ASSERT_NOT_NULL(module);
+        ZrModuleSetInfo(state,
+                        module,
+                        ZrStringCreate(state, "field_meta", 10),
+                        ZrModuleCalculatePathHash(state, ZrStringCreate(state, "field_meta.zr", 13)),
+                        ZrStringCreate(state, "field_meta.zr", 13));
+
+        createdCount = ZrModuleCreatePrototypesFromData(state, module, entryFunction);
+        TEST_ASSERT_EQUAL_UINT64(2, createdCount);
+
+        handleBoxPrototype = get_module_exported_prototype(state, module, "HandleBox");
+        holderPrototype = get_module_exported_prototype(state, module, "Holder");
+        TEST_ASSERT_NOT_NULL(handleBoxPrototype);
+        TEST_ASSERT_NOT_NULL(holderPrototype);
+
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, handleBoxPrototype->type);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_CLASS, holderPrototype->type);
+
+        TEST_ASSERT_EQUAL_UINT32(1, handleBoxPrototype->managedFieldCount);
+        TEST_ASSERT_EQUAL_UINT32(1, holderPrototype->managedFieldCount);
+
+        handleInfo = find_managed_field_info(handleBoxPrototype, state, "handle");
+        resourceInfo = find_managed_field_info(holderPrototype, state, "resource");
+        TEST_ASSERT_NOT_NULL(handleInfo);
+        TEST_ASSERT_NOT_NULL(resourceInfo);
+
+        TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_UNIQUE, handleInfo->ownershipQualifier);
+        TEST_ASSERT_TRUE(handleInfo->callsClose);
+        TEST_ASSERT_TRUE(handleInfo->callsDestructor);
+        TEST_ASSERT_EQUAL_UINT32(0, handleInfo->declarationOrder);
+
+        TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_SHARED, resourceInfo->ownershipQualifier);
+        TEST_ASSERT_TRUE(resourceInfo->callsClose);
+        TEST_ASSERT_TRUE(resourceInfo->callsDestructor);
+        TEST_ASSERT_EQUAL_UINT32(0, resourceInfo->declarationOrder);
+
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)handleBoxPrototype, "handle", &handleOffset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)handleBoxPrototype, "count", &countOffset));
+        TEST_ASSERT_EQUAL_UINT64(0, handleOffset);
+        TEST_ASSERT_TRUE(countOffset > handleOffset);
+
+        ZrFunctionFree(state, entryFunction);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
 // ==================== 主函数 ====================
 
 int main(void) {
@@ -745,6 +917,9 @@ int main(void) {
 
     // 10. 完整模块加载流程
     RUN_TEST(test_complete_module_loading_flow);
+
+    // 11. prototypeData 中 using 字段元数据恢复
+    RUN_TEST(test_module_restores_field_scoped_using_prototype_metadata);
 
     return UNITY_END();
 }

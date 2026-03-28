@@ -262,6 +262,9 @@ SZrSymbol *ZrSymbolNew(SZrState *state, EZrSymbolType type,
     symbol->astNode = astNode;
     symbol->scope = ZR_NULL;
     symbol->referenceCount = 0;
+    symbol->semanticId = 0;
+    symbol->semanticTypeId = 0;
+    symbol->overloadSetId = 0;
     
     // 从 AST 节点中提取 isConst 信息
     if (astNode != ZR_NULL) {
@@ -357,12 +360,13 @@ static SZrSymbol *lookup_symbol_in_scope(SZrSymbolScope *scope, SZrString *name)
 }
 
 // 添加符号定义
-TBool ZrSymbolTableAddSymbol(SZrState *state, SZrSymbolTable *table, 
-                              EZrSymbolType type, SZrString *name,
-                              SZrFileRange location, 
-                              SZrInferredType *typeInfo,
-                              EZrAccessModifier accessModifier,
-                              SZrAstNode *astNode) {
+TBool ZrSymbolTableAddSymbolEx(SZrState *state, SZrSymbolTable *table,
+                               EZrSymbolType type, SZrString *name,
+                               SZrFileRange location,
+                               SZrInferredType *typeInfo,
+                               EZrAccessModifier accessModifier,
+                               SZrAstNode *astNode,
+                               SZrSymbol **outSymbol) {
     if (state == ZR_NULL || table == ZR_NULL || name == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -377,6 +381,10 @@ TBool ZrSymbolTableAddSymbol(SZrState *state, SZrSymbolTable *table,
     SZrSymbol *symbol = ZrSymbolNew(state, type, name, location, typeInfo, accessModifier, astNode);
     if (symbol == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (outSymbol != ZR_NULL) {
+        *outSymbol = symbol;
     }
     
     symbol->scope = currentScope;
@@ -450,6 +458,23 @@ TBool ZrSymbolTableAddSymbol(SZrState *state, SZrSymbolTable *table,
     }
     
     return ZR_TRUE;
+}
+
+TBool ZrSymbolTableAddSymbol(SZrState *state, SZrSymbolTable *table,
+                             EZrSymbolType type, SZrString *name,
+                             SZrFileRange location,
+                             SZrInferredType *typeInfo,
+                             EZrAccessModifier accessModifier,
+                             SZrAstNode *astNode) {
+    return ZrSymbolTableAddSymbolEx(state,
+                                    table,
+                                    type,
+                                    name,
+                                    location,
+                                    typeInfo,
+                                    accessModifier,
+                                    astNode,
+                                    ZR_NULL);
 }
 
 // 查找符号（返回第一个匹配的符号）

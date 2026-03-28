@@ -57,6 +57,8 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     cs->state = state;
     cs->currentFunction = ZR_NULL;
     cs->currentAst = ZR_NULL;
+    cs->semanticContext = ZrSemanticContextNew(state);
+    cs->hirModule = ZR_NULL;
 
     // 初始化常量池
     ZrArrayInit(state, &cs->constants, sizeof(SZrTypeValue), 16);
@@ -66,6 +68,7 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     ZrArrayInit(state, &cs->localVars, sizeof(SZrFunctionLocalVariable), 16);
     cs->localVarCount = 0;
     cs->stackSlotCount = 0;
+    cs->maxStackSlotCount = 0;
 
     // 初始化闭包变量数组
     ZrArrayInit(state, &cs->closureVars, sizeof(SZrFunctionClosureVariable), 8);
@@ -118,6 +121,9 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     
     // 初始化类型环境
     cs->typeEnv = ZrTypeEnvironmentNew(state);
+    if (cs->typeEnv != ZR_NULL) {
+        cs->typeEnv->semanticContext = cs->semanticContext;
+    }
     ZrArrayInit(state, &cs->typeEnvStack, sizeof(SZrTypeEnvironment *), 8);
     
     // 初始化模块导出跟踪数组
@@ -137,6 +143,9 @@ void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state) {
     
     // 初始化编译期环境
     cs->compileTimeTypeEnv = ZrTypeEnvironmentNew(state);
+    if (cs->compileTimeTypeEnv != ZR_NULL) {
+        cs->compileTimeTypeEnv->semanticContext = ZR_NULL;
+    }
     ZrArrayInit(state, &cs->compileTimeVariables, sizeof(SZrCompileTimeVariable*), 8);
     ZrArrayInit(state, &cs->compileTimeFunctions, sizeof(SZrCompileTimeFunction*), 8);
     cs->isInCompileTimeContext = ZR_FALSE;
@@ -245,6 +254,11 @@ void ZrCompilerStateFree(SZrCompilerState *cs) {
         ZrTypeEnvironmentFree(state, cs->typeEnv);
         cs->typeEnv = ZR_NULL;
     }
+
+    if (cs->hirModule != ZR_NULL) {
+        ZrHirModuleFree(state, cs->hirModule);
+        cs->hirModule = ZR_NULL;
+    }
     
     // 释放类型 Prototype 信息数组
     if (cs->typePrototypes.isValid && cs->typePrototypes.head != ZR_NULL &&
@@ -341,6 +355,11 @@ void ZrCompilerStateFree(SZrCompilerState *cs) {
     if (cs->compileTimeTypeEnv != ZR_NULL) {
         ZrTypeEnvironmentFree(state, cs->compileTimeTypeEnv);
         cs->compileTimeTypeEnv = ZR_NULL;
+    }
+
+    if (cs->semanticContext != ZR_NULL) {
+        ZrSemanticContextFree(cs->semanticContext);
+        cs->semanticContext = ZR_NULL;
     }
 }
 
@@ -739,6 +758,16 @@ TUInt32 allocate_local_var(SZrCompilerState *cs, SZrString *name) {
     cs->localVarCount = cs->localVars.length;
     TUInt32 index = (TUInt32) (cs->localVarCount - 1);
     cs->stackSlotCount++;
+    if (cs->maxStackSlotCount < cs->stackSlotCount) {
+        cs->maxStackSlotCount = cs->stackSlotCount;
+    }
+
+    if (cs->scopeStack.length > 0) {
+        SZrScope *scope = (SZrScope *)ZrArrayGet(&cs->scopeStack, cs->scopeStack.length - 1);
+        if (scope != ZR_NULL) {
+            scope->varCount++;
+        }
+    }
 
     return index;
 }
@@ -904,6 +933,9 @@ TUInt32 allocate_stack_slot(SZrCompilerState *cs) {
 
     TUInt32 slot = (TUInt32) cs->stackSlotCount;
     cs->stackSlotCount++;
+    if (cs->maxStackSlotCount < cs->stackSlotCount) {
+        cs->maxStackSlotCount = cs->stackSlotCount;
+    }
     return slot;
 }
 
@@ -1143,6 +1175,7 @@ void enter_scope(SZrCompilerState *cs) {
     SZrScope scope;
     scope.startVarIndex = cs->localVarCount;
     scope.varCount = 0;
+    scope.cleanupRegistrationCount = 0;
     // 如果当前编译器有父编译器，则新作用域的父编译器就是当前编译器
     // 否则，如果当前编译器是顶层编译器，其父编译器为NULL
     scope.parentCompiler = cs->currentFunction != ZR_NULL ? cs : ZR_NULL;
@@ -1162,6 +1195,13 @@ void exit_scope(SZrCompilerState *cs) {
 
     SZrScope *scope = (SZrScope *) ZrArrayPop(&cs->scopeStack);
     if (scope != ZR_NULL) {
+        if (scope->cleanupRegistrationCount > 0) {
+            TZrInstruction cleanupInst = create_instruction_0(
+                ZR_INSTRUCTION_ENUM(CLOSE_SCOPE),
+                (TUInt16)scope->cleanupRegistrationCount);
+            emit_instruction(cs, cleanupInst);
+        }
+
         // 标记作用域内变量的结束位置
         TZrMemoryOffset endOffset = (TZrMemoryOffset) cs->instructionCount;
         // 使用 localVars.length 而不是 localVarCount，确保同步
@@ -1191,6 +1231,9 @@ void enter_type_scope(SZrCompilerState *cs) {
     
     // 设置父环境为当前环境
     newEnv->parent = cs->typeEnv;
+    newEnv->semanticContext = (cs->typeEnv != ZR_NULL)
+                                  ? cs->typeEnv->semanticContext
+                                  : cs->semanticContext;
     
     // 将当前环境推入栈
     if (cs->typeEnv != ZR_NULL) {
@@ -1741,6 +1784,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrFunction *oldFunction = cs->currentFunction;
     TZrSize oldInstructionCount = cs->instructionCount;
     TZrSize oldStackSlotCount = cs->stackSlotCount;
+    TZrSize oldMaxStackSlotCount = cs->maxStackSlotCount;
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
@@ -1857,6 +1901,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 重置编译器状态（为新函数）
     cs->instructionCount = 0;
     cs->stackSlotCount = 0;
+    cs->maxStackSlotCount = 0;
     cs->localVarCount = 0;
     cs->constantCount = 0;
     cs->closureVarCount = 0;
@@ -2019,6 +2064,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunction = oldFunction;
         cs->instructionCount = oldInstructionCount;
         cs->stackSlotCount = oldStackSlotCount;
+        cs->maxStackSlotCount = oldMaxStackSlotCount;
         cs->localVarCount = oldLocalVarCount;
         cs->constantCount = oldConstantCount;
         cs->closureVarCount = oldClosureVarCount;
@@ -2095,7 +2141,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     // 设置函数元数据
-    newFunc->stackSize = (TUInt32) cs->stackSlotCount;
+    newFunc->stackSize = (TUInt32) cs->maxStackSlotCount;
     newFunc->parameterCount = (TUInt16) parameterCount;
     newFunc->hasVariableArguments = hasVariableArguments;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TUInt32) node->location.start.line : 0;
@@ -2133,6 +2179,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->currentFunction = oldFunction;
     cs->instructionCount = oldInstructionCount;
     cs->stackSlotCount = oldStackSlotCount;
+    cs->maxStackSlotCount = oldMaxStackSlotCount;
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
@@ -2187,6 +2234,7 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrFunction *oldFunction = cs->currentFunction;
     TZrSize oldInstructionCount = cs->instructionCount;
     TZrSize oldStackSlotCount = cs->stackSlotCount;
+    TZrSize oldMaxStackSlotCount = cs->maxStackSlotCount;
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
@@ -2306,6 +2354,7 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 这样直接执行测试函数时，会先运行前置脚本初始化，再进入测试体。
     cs->instructionCount = oldInstructionCount;
     cs->stackSlotCount = oldStackSlotCount;
+    cs->maxStackSlotCount = oldMaxStackSlotCount;
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
@@ -2492,6 +2541,7 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunction = oldFunction;
         cs->instructionCount = oldInstructionCount;
         cs->stackSlotCount = oldStackSlotCount;
+        cs->maxStackSlotCount = oldMaxStackSlotCount;
         cs->localVarCount = oldLocalVarCount;
         cs->constantCount = oldConstantCount;
         cs->closureVarCount = oldClosureVarCount;
@@ -2576,7 +2626,7 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     // 设置函数元数据
-    newFunc->stackSize = (TUInt32) cs->stackSlotCount;
+    newFunc->stackSize = (TUInt32) cs->maxStackSlotCount;
     newFunc->parameterCount = (TUInt16) parameterCount;
     newFunc->hasVariableArguments = hasVariableArguments;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TUInt32) node->location.start.line : 0;
@@ -2606,6 +2656,7 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->currentFunction = oldFunction;
     cs->instructionCount = oldInstructionCount;
     cs->stackSlotCount = oldStackSlotCount;
+    cs->maxStackSlotCount = oldMaxStackSlotCount;
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
@@ -2991,6 +3042,11 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.memberType = member->type;
             memberInfo.isStatic = ZR_FALSE;
             memberInfo.isConst = ZR_FALSE;
+            memberInfo.isUsingManaged = ZR_FALSE;
+            memberInfo.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+            memberInfo.callsClose = ZR_FALSE;
+            memberInfo.callsDestructor = ZR_FALSE;
+            memberInfo.declarationOrder = (TUInt32)i;
             memberInfo.accessModifier = ZR_ACCESS_PRIVATE;
             memberInfo.name = ZR_NULL;
             memberInfo.fieldType = ZR_NULL;
@@ -3011,14 +3067,26 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.accessModifier = field->access;
                     memberInfo.isStatic = field->isStatic;
                     memberInfo.isConst = field->isConst;
+                    memberInfo.isUsingManaged = field->isUsingManaged;
                     if (field->name != ZR_NULL) {
                         memberInfo.name = field->name->name;
+                    }
+
+                    if (field->isStatic && field->isUsingManaged) {
+                        ZrCompileTimeError(cs,
+                                           ZR_COMPILE_TIME_ERROR_ERROR,
+                                           "static using fields are not supported",
+                                           member->location);
+                        cs->currentTypeName = oldTypeName;
+                        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                        return;
                     }
                     
                     // 处理字段类型信息
                     if (field->typeInfo != ZR_NULL) {
                         memberInfo.fieldType = field->typeInfo;
                         memberInfo.fieldTypeName = extract_type_name_string(cs, field->typeInfo);
+                        memberInfo.ownershipQualifier = field->typeInfo->ownershipQualifier;
                         // 计算字段大小（用于偏移量计算）
                         memberInfo.fieldSize = calculate_type_size(cs, field->typeInfo);
                     } else if (field->init != ZR_NULL) {
@@ -3026,6 +3094,7 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         SZrInferredType inferredType;
                         if (infer_expression_type(cs, field->init, &inferredType)) {
                             memberInfo.fieldTypeName = get_type_name_from_inferred_type(cs, &inferredType);
+                            memberInfo.ownershipQualifier = inferredType.ownershipQualifier;
                             // 根据推断类型计算字段大小
                             switch (inferredType.baseType) {
                                 case ZR_VALUE_TYPE_INT8: memberInfo.fieldSize = sizeof(TInt8); break;
@@ -3055,6 +3124,12 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         // 没有类型注解和初始值，默认为object类型（8字节指针）
                         memberInfo.fieldTypeName = ZrStringCreateFromNative(cs->state, "object");
                         memberInfo.fieldSize = sizeof(TZrPtr);
+                    }
+
+                    if (memberInfo.isUsingManaged &&
+                        memberInfo.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_WEAK) {
+                        memberInfo.callsClose = ZR_TRUE;
+                        memberInfo.callsDestructor = ZR_TRUE;
                     }
                     
                     // 字段偏移量将在所有字段收集后统一计算
@@ -3231,6 +3306,7 @@ static void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMet
     SZrFunction *oldFunction = cs->currentFunction;
     TZrSize oldInstructionCount = cs->instructionCount;
     TZrSize oldStackSlotCount = cs->stackSlotCount;
+    TZrSize oldMaxStackSlotCount = cs->maxStackSlotCount;
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
@@ -3255,6 +3331,7 @@ static void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMet
     // 重置编译器状态（为新函数）
     cs->instructionCount = 0;
     cs->stackSlotCount = 0;
+    cs->maxStackSlotCount = 0;
     cs->localVarCount = 0;
     cs->constantCount = 0;
     cs->closureVarCount = 0;
@@ -3375,6 +3452,7 @@ static void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMet
         cs->currentFunction = oldFunction;
         cs->instructionCount = oldInstructionCount;
         cs->stackSlotCount = oldStackSlotCount;
+        cs->maxStackSlotCount = oldMaxStackSlotCount;
         cs->localVarCount = oldLocalVarCount;
         cs->constantCount = oldConstantCount;
         cs->closureVarCount = oldClosureVarCount;
@@ -3432,7 +3510,7 @@ static void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMet
     }
     
     // 设置函数元数据
-    newFunc->stackSize = (TUInt32) cs->stackSlotCount;
+    newFunc->stackSize = (TUInt32) cs->maxStackSlotCount;
     newFunc->parameterCount = (TUInt16) parameterCount;
     newFunc->hasVariableArguments = ZR_FALSE;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TUInt32) node->location.start.line : 0;
@@ -3460,6 +3538,7 @@ static void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMet
     cs->currentFunction = oldFunction;
     cs->instructionCount = oldInstructionCount;
     cs->stackSlotCount = oldStackSlotCount;
+    cs->maxStackSlotCount = oldMaxStackSlotCount;
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
@@ -3537,6 +3616,7 @@ static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNo
     SZrFunction *oldFunction = cs->currentFunction;
     TZrSize oldInstructionCount = cs->instructionCount;
     TZrSize oldStackSlotCount = cs->stackSlotCount;
+    TZrSize oldMaxStackSlotCount = cs->maxStackSlotCount;
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
@@ -3634,6 +3714,7 @@ static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNo
 
     cs->instructionCount = 0;
     cs->stackSlotCount = 0;
+    cs->maxStackSlotCount = 0;
     cs->localVarCount = 0;
     cs->constantCount = 0;
     cs->closureVarCount = 0;
@@ -3784,6 +3865,7 @@ static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNo
         cs->currentFunction = oldFunction;
         cs->instructionCount = oldInstructionCount;
         cs->stackSlotCount = oldStackSlotCount;
+        cs->maxStackSlotCount = oldMaxStackSlotCount;
         cs->localVarCount = oldLocalVarCount;
         cs->constantCount = oldConstantCount;
         cs->closureVarCount = oldClosureVarCount;
@@ -3841,7 +3923,7 @@ static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNo
         }
     }
 
-    newFunc->stackSize = (TUInt32)cs->stackSlotCount;
+    newFunc->stackSize = (TUInt32)cs->maxStackSlotCount;
     newFunc->parameterCount = (TUInt16)parameterCount;
     newFunc->hasVariableArguments = ZR_FALSE;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TUInt32)node->location.start.line : 0;
@@ -3875,6 +3957,7 @@ static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNo
     cs->currentFunction = oldFunction;
     cs->instructionCount = oldInstructionCount;
     cs->stackSlotCount = oldStackSlotCount;
+    cs->maxStackSlotCount = oldMaxStackSlotCount;
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
@@ -3964,6 +4047,11 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.memberType = member->type;
             memberInfo.isStatic = ZR_FALSE;
             memberInfo.isConst = ZR_FALSE;
+            memberInfo.isUsingManaged = ZR_FALSE;
+            memberInfo.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+            memberInfo.callsClose = ZR_FALSE;
+            memberInfo.callsDestructor = ZR_FALSE;
+            memberInfo.declarationOrder = (TUInt32)i;
             memberInfo.accessModifier = ZR_ACCESS_PRIVATE;
             memberInfo.name = ZR_NULL;
             memberInfo.fieldType = ZR_NULL;
@@ -3984,19 +4072,32 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.accessModifier = field->access;
                     memberInfo.isStatic = field->isStatic; // class字段也有isStatic
                     memberInfo.isConst = field->isConst;
+                    memberInfo.isUsingManaged = field->isUsingManaged;
                     if (field->name != ZR_NULL) {
                         memberInfo.name = field->name->name;
+                    }
+
+                    if (field->isStatic && field->isUsingManaged) {
+                        ZrCompileTimeError(cs,
+                                           ZR_COMPILE_TIME_ERROR_ERROR,
+                                           "static using fields are not supported",
+                                           member->location);
+                        cs->currentTypeName = oldTypeName;
+                        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                        return;
                     }
                     // 处理字段类型信息
                     if (field->typeInfo != ZR_NULL) {
                         memberInfo.fieldType = field->typeInfo;
                         memberInfo.fieldTypeName = extract_type_name_string(cs, field->typeInfo);
+                        memberInfo.ownershipQualifier = field->typeInfo->ownershipQualifier;
                         memberInfo.fieldSize = calculate_type_size(cs, field->typeInfo);
                     } else if (field->init != ZR_NULL) {
                         // 没有类型注解，从初始值推断类型
                         SZrInferredType inferredType;
                         if (infer_expression_type(cs, field->init, &inferredType)) {
                             memberInfo.fieldTypeName = get_type_name_from_inferred_type(cs, &inferredType);
+                            memberInfo.ownershipQualifier = inferredType.ownershipQualifier;
                             // 根据推断类型计算字段大小
                             switch (inferredType.baseType) {
                                 case ZR_VALUE_TYPE_INT8: memberInfo.fieldSize = sizeof(TInt8); break;
@@ -4027,6 +4128,12 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         memberInfo.fieldTypeName = ZrStringCreateFromNative(cs->state, "object");
                         memberInfo.fieldSize = sizeof(TZrPtr);
                     }
+
+                    if (memberInfo.isUsingManaged &&
+                        memberInfo.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_WEAK) {
+                        memberInfo.callsClose = ZR_TRUE;
+                        memberInfo.callsDestructor = ZR_TRUE;
+                    }
                     break;
                 }
                 case ZR_AST_CLASS_METHOD: {
@@ -4048,6 +4155,8 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                 compile_class_member_function(cs, member, primarySuperTypeName,
                                                               !method->isStatic, &compiledParameterCount);
                         if (compiledMethod == ZR_NULL) {
+                            cs->currentTypeName = oldTypeName;
+                            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                             return;
                         }
 
@@ -4090,6 +4199,8 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                 compile_class_member_function(cs, member, primarySuperTypeName, !property->isStatic,
                                                               &compiledParameterCount);
                         if (compiledProperty == ZR_NULL) {
+                            cs->currentTypeName = oldTypeName;
+                            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                             return;
                         }
 
@@ -4138,6 +4249,8 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                 compile_class_member_function(cs, member, primarySuperTypeName,
                                                               !metaFunc->isStatic, &compiledParameterCount);
                         if (compiledMeta == ZR_NULL) {
+                            cs->currentTypeName = oldTypeName;
+                            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                             return;
                         }
 
@@ -4241,6 +4354,11 @@ typedef struct SZrCompiledMemberInfo {
     TUInt32 functionConstantIndex;
     TUInt32 parameterCount;
     TUInt32 returnTypeNameStringIndex;
+    TUInt32 isUsingManaged;
+    TUInt32 ownershipQualifier;
+    TUInt32 callsClose;
+    TUInt32 callsDestructor;
+    TUInt32 declarationOrder;
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 
@@ -4333,6 +4451,11 @@ static TBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePro
         compiledMember->accessModifier = (TUInt32)memberInfo->accessModifier;
         compiledMember->isStatic = memberInfo->isStatic ? ZR_TRUE : ZR_FALSE;
         compiledMember->isConst = memberInfo->isConst ? ZR_TRUE : ZR_FALSE;
+        compiledMember->isUsingManaged = memberInfo->isUsingManaged ? ZR_TRUE : ZR_FALSE;
+        compiledMember->ownershipQualifier = (TUInt32)memberInfo->ownershipQualifier;
+        compiledMember->callsClose = memberInfo->callsClose ? ZR_TRUE : ZR_FALSE;
+        compiledMember->callsDestructor = memberInfo->callsDestructor ? ZR_TRUE : ZR_FALSE;
+        compiledMember->declarationOrder = memberInfo->declarationOrder;
         
         // 添加成员名称字符串到常量池（临时方案）
         if (memberInfo->name != ZR_NULL) {
@@ -4419,6 +4542,15 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
 
     SZrScript *script = &node->data.script;
 
+    if (cs->semanticContext != ZR_NULL) {
+        ZrSemanticContextReset(cs->semanticContext);
+        if (cs->hirModule != ZR_NULL) {
+            ZrHirModuleFree(cs->state, cs->hirModule);
+            cs->hirModule = ZR_NULL;
+        }
+        cs->hirModule = ZrHirModuleNew(cs->state, cs->semanticContext, node);
+    }
+
     // 设置脚本级别标志（用于区分脚本级变量和函数内变量）
     cs->isScriptLevel = ZR_TRUE;
     
@@ -4436,6 +4568,8 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 2. 首先收集并执行所有编译期声明
     if (script->statements != ZR_NULL) {
+        enter_scope(cs);
+
         // 第一遍：收集并执行编译期声明
         for (TZrSize i = 0; i < script->statements->count; i++) {
             SZrAstNode *stmt = script->statements->nodes[i];
@@ -4472,6 +4606,7 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                         break;
                     case ZR_AST_VARIABLE_DECLARATION:
                     case ZR_AST_EXPRESSION_STATEMENT:
+                    case ZR_AST_USING_STATEMENT:
                     case ZR_AST_BLOCK:
                     case ZR_AST_RETURN_STATEMENT:
                     case ZR_AST_IF_EXPRESSION:
@@ -4526,6 +4661,7 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             }
         }
         printf("  Finished compiling statements, total instructions: %zu\n", cs->instructionCount);
+        exit_scope(cs);
     }
 
     // 3. 在返回前添加导出收集代码（如果有导出的变量）
@@ -4846,7 +4982,7 @@ SZrFunction *ZrCompilerCompile(SZrState *state, SZrAstNode *ast) {
     // 注意：脚本入口函数没有参数（它是脚本的包装函数）
     // 脚本中的函数声明会被编译为子函数，它们的参数信息已通过 compile_function_declaration 正确设置
     // 但是，如果返回的是顶层函数声明，参数信息已经在 compile_function_declaration 中设置了，不应该覆盖
-    func->stackSize = (TUInt32) cs.stackSlotCount;
+    func->stackSize = (TUInt32) cs.maxStackSlotCount;
     if (cs.topLevelFunction == ZR_NULL) {
         // 只有当返回的是脚本函数时，才设置参数数量为0
         func->parameterCount = 0;  // 脚本入口函数没有参数
@@ -5033,7 +5169,7 @@ TBool ZrCompilerCompileWithTests(SZrState *state, SZrAstNode *ast, SZrCompileRes
     }
 
     // 7. 设置函数元数据
-    func->stackSize = (TUInt32) cs.stackSlotCount;
+    func->stackSize = (TUInt32) cs.maxStackSlotCount;
     func->parameterCount = 0;
     func->hasVariableArguments = ZR_FALSE;
     func->lineInSourceStart = (ast->location.start.line > 0) ? (TUInt32) ast->location.start.line : 0;

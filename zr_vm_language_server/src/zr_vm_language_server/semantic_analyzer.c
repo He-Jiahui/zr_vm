@@ -36,8 +36,15 @@ static void perform_type_checking(SZrState *state, SZrSemanticAnalyzer *analyzer
             SZrBinaryExpression *binExpr = &node->data.binaryExpression;
             if (binExpr->left != ZR_NULL && binExpr->right != ZR_NULL) {
                 SZrInferredType leftType, rightType;
-                if (infer_expression_type(analyzer->compilerState, binExpr->left, &leftType) &&
-                    infer_expression_type(analyzer->compilerState, binExpr->right, &rightType)) {
+                TBool hasLeftType;
+                TBool hasRightType;
+                ZrInferredTypeInit(state, &leftType, ZR_VALUE_TYPE_OBJECT);
+                ZrInferredTypeInit(state, &rightType, ZR_VALUE_TYPE_OBJECT);
+                hasLeftType = infer_expression_type(analyzer->compilerState, binExpr->left, &leftType);
+                hasRightType = hasLeftType
+                               ? infer_expression_type(analyzer->compilerState, binExpr->right, &rightType)
+                               : ZR_FALSE;
+                if (hasLeftType && hasRightType) {
                     // 检查类型兼容性（使用类型检查函数）
                     if (!check_type_compatibility(analyzer->compilerState, &rightType, &leftType, node->location)) {
                         const TChar *op = binExpr->op.op;
@@ -52,6 +59,12 @@ static void perform_type_checking(SZrState *state, SZrSemanticAnalyzer *analyzer
                                                         "type_mismatch");
                     }
                 }
+                if (hasRightType) {
+                    ZrInferredTypeFree(state, &rightType);
+                }
+                if (hasLeftType) {
+                    ZrInferredTypeFree(state, &leftType);
+                }
             }
             break;
         }
@@ -60,8 +73,15 @@ static void perform_type_checking(SZrState *state, SZrSemanticAnalyzer *analyzer
             SZrAssignmentExpression *assignExpr = &node->data.assignmentExpression;
             if (assignExpr->left != ZR_NULL && assignExpr->right != ZR_NULL) {
                 SZrInferredType leftType, rightType;
-                if (infer_expression_type(analyzer->compilerState, assignExpr->left, &leftType) &&
-                    infer_expression_type(analyzer->compilerState, assignExpr->right, &rightType)) {
+                TBool hasLeftType;
+                TBool hasRightType;
+                ZrInferredTypeInit(state, &leftType, ZR_VALUE_TYPE_OBJECT);
+                ZrInferredTypeInit(state, &rightType, ZR_VALUE_TYPE_OBJECT);
+                hasLeftType = infer_expression_type(analyzer->compilerState, assignExpr->left, &leftType);
+                hasRightType = hasLeftType
+                               ? infer_expression_type(analyzer->compilerState, assignExpr->right, &rightType)
+                               : ZR_FALSE;
+                if (hasLeftType && hasRightType) {
                     // 检查赋值类型兼容性
                     if (!check_assignment_compatibility(analyzer->compilerState, &leftType, &rightType, node->location)) {
                         ZrSemanticAnalyzerAddDiagnostic(state, analyzer,
@@ -70,6 +90,12 @@ static void perform_type_checking(SZrState *state, SZrSemanticAnalyzer *analyzer
                                                         "Type mismatch in assignment: incompatible types",
                                                         "type_mismatch");
                     }
+                }
+                if (hasRightType) {
+                    ZrInferredTypeFree(state, &rightType);
+                }
+                if (hasLeftType) {
+                    ZrInferredTypeFree(state, &leftType);
                 }
                 
                 // 检查 const 变量赋值限制
@@ -126,10 +152,14 @@ static void perform_type_checking(SZrState *state, SZrSemanticAnalyzer *analyzer
             if (varDecl->typeInfo != ZR_NULL && varDecl->value != ZR_NULL) {
                 // 检查变量初始值的类型是否与声明类型匹配
                 SZrInferredType valueType;
+                ZrInferredTypeInit(state, &valueType, ZR_VALUE_TYPE_OBJECT);
                 if (infer_expression_type(analyzer->compilerState, varDecl->value, &valueType)) {
                     // 这里需要将 AST 类型转换为推断类型进行比较
                     // TODO: 简化实现：暂时跳过详细检查
                     // 完整实现需要使用 convert_ast_type_to_inferred_type 和 check_assignment_compatibility
+                    ZrInferredTypeFree(state, &valueType);
+                } else {
+                    ZrInferredTypeFree(state, &valueType);
                 }
             }
             break;
@@ -226,6 +256,30 @@ static void perform_type_checking(SZrState *state, SZrSemanticAnalyzer *analyzer
             perform_type_checking(state, analyzer, varDecl->value);
             break;
         }
+
+        case ZR_AST_USING_STATEMENT: {
+            SZrUsingStatement *usingStmt = &node->data.usingStatement;
+            perform_type_checking(state, analyzer, usingStmt->resource);
+            perform_type_checking(state, analyzer, usingStmt->body);
+            break;
+        }
+
+        case ZR_AST_TEMPLATE_STRING_LITERAL: {
+            SZrTemplateStringLiteral *templateLiteral = &node->data.templateStringLiteral;
+            if (templateLiteral->segments != ZR_NULL && templateLiteral->segments->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < templateLiteral->segments->count; i++) {
+                    if (templateLiteral->segments->nodes[i] != ZR_NULL) {
+                        perform_type_checking(state, analyzer, templateLiteral->segments->nodes[i]);
+                    }
+                }
+            }
+            break;
+        }
+
+        case ZR_AST_INTERPOLATED_SEGMENT: {
+            perform_type_checking(state, analyzer, node->data.interpolatedSegment.expression);
+            break;
+        }
         
         case ZR_AST_FUNCTION_DECLARATION: {
             SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
@@ -287,6 +341,8 @@ SZrSemanticAnalyzer *ZrSemanticAnalyzerNew(SZrState *state) {
     analyzer->cache = ZR_NULL;
     analyzer->enableCache = ZR_TRUE; // 默认启用缓存
     analyzer->compilerState = ZR_NULL; // 延迟创建
+    analyzer->semanticContext = ZR_NULL;
+    analyzer->hirModule = ZR_NULL;
     
     if (analyzer->symbolTable == ZR_NULL) {
         ZrMemoryRawFree(state->global, analyzer, sizeof(SZrSemanticAnalyzer));
@@ -357,6 +413,9 @@ void ZrSemanticAnalyzerFree(SZrState *state, SZrSemanticAnalyzer *analyzer) {
         ZrCompilerStateFree(analyzer->compilerState);
         ZrMemoryRawFree(state->global, analyzer->compilerState, sizeof(SZrCompilerState));
     }
+
+    analyzer->semanticContext = ZR_NULL;
+    analyzer->hirModule = ZR_NULL;
     
     ZrMemoryRawFree(state->global, analyzer, sizeof(SZrSemanticAnalyzer));
 }
@@ -560,6 +619,337 @@ static TZrSize compute_ast_hash(SZrAstNode *ast) {
     return (TZrSize)compute_node_hash_recursive(ast, 0);
 }
 
+static TBool reset_symbol_tracking(SZrState *state, SZrSemanticAnalyzer *analyzer) {
+    if (state == ZR_NULL || analyzer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (analyzer->referenceTracker != ZR_NULL) {
+        ZrReferenceTrackerFree(state, analyzer->referenceTracker);
+        analyzer->referenceTracker = ZR_NULL;
+    }
+    if (analyzer->symbolTable != ZR_NULL) {
+        ZrSymbolTableFree(state, analyzer->symbolTable);
+        analyzer->symbolTable = ZR_NULL;
+    }
+
+    analyzer->symbolTable = ZrSymbolTableNew(state);
+    if (analyzer->symbolTable == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    analyzer->referenceTracker = ZrReferenceTrackerNew(state, analyzer->symbolTable);
+    if (analyzer->referenceTracker == ZR_NULL) {
+        ZrSymbolTableFree(state, analyzer->symbolTable);
+        analyzer->symbolTable = ZR_NULL;
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TBool prepare_semantic_state(SZrState *state,
+                                    SZrSemanticAnalyzer *analyzer,
+                                    SZrAstNode *ast) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!reset_symbol_tracking(state, analyzer)) {
+        return ZR_FALSE;
+    }
+
+    if (analyzer->compilerState == ZR_NULL) {
+        analyzer->compilerState =
+            (SZrCompilerState *)ZrMemoryRawMalloc(state->global, sizeof(SZrCompilerState));
+        if (analyzer->compilerState == ZR_NULL) {
+            return ZR_FALSE;
+        }
+    } else {
+        ZrCompilerStateFree(analyzer->compilerState);
+    }
+
+    ZrCompilerStateInit(analyzer->compilerState, state);
+    analyzer->compilerState->scriptAst = ast;
+    if (analyzer->compilerState->typeEnv != ZR_NULL) {
+        analyzer->compilerState->typeEnv->semanticContext =
+            analyzer->compilerState->semanticContext;
+    }
+    if (analyzer->compilerState->compileTimeTypeEnv != ZR_NULL) {
+        analyzer->compilerState->compileTimeTypeEnv->semanticContext =
+            analyzer->compilerState->semanticContext;
+    }
+
+    if (analyzer->compilerState->hirModule != ZR_NULL) {
+        ZrHirModuleFree(state, analyzer->compilerState->hirModule);
+        analyzer->compilerState->hirModule = ZR_NULL;
+    }
+    analyzer->compilerState->hirModule =
+        ZrHirModuleNew(state, analyzer->compilerState->semanticContext, ast);
+    analyzer->semanticContext = analyzer->compilerState->semanticContext;
+    analyzer->hirModule = analyzer->compilerState->hirModule;
+
+    return analyzer->semanticContext != ZR_NULL;
+}
+
+static TBool register_symbol_semantics(SZrSemanticAnalyzer *analyzer,
+                                       SZrSymbol *symbol,
+                                       EZrSemanticSymbolKind semanticKind,
+                                       const SZrInferredType *typeInfo,
+                                       EZrSemanticTypeKind typeKind) {
+    TZrTypeId typeId = 0;
+    TZrOverloadSetId overloadSetId = 0;
+    TZrSymbolId symbolId;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || symbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (semanticKind == ZR_SEMANTIC_SYMBOL_KIND_TYPE && typeInfo == ZR_NULL) {
+        typeId = ZrSemanticRegisterNamedType(analyzer->semanticContext,
+                                             symbol->name,
+                                             typeKind,
+                                             symbol->astNode);
+    } else if (typeInfo != ZR_NULL) {
+        typeId = ZrSemanticRegisterInferredType(analyzer->semanticContext,
+                                                typeInfo,
+                                                typeKind,
+                                                typeInfo->typeName,
+                                                symbol->astNode);
+    }
+
+    if (semanticKind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION) {
+        overloadSetId = ZrSemanticGetOrCreateOverloadSet(analyzer->semanticContext, symbol->name);
+    }
+
+    symbolId = ZrSemanticRegisterSymbol(analyzer->semanticContext,
+                                        symbol->name,
+                                        semanticKind,
+                                        typeId,
+                                        overloadSetId,
+                                        symbol->astNode,
+                                        symbol->location);
+    if (overloadSetId != 0) {
+        ZrSemanticAddOverloadMember(analyzer->semanticContext, overloadSetId, symbolId);
+    }
+
+    symbol->semanticId = symbolId;
+    symbol->semanticTypeId = typeId;
+    symbol->overloadSetId = overloadSetId;
+    return symbolId != 0;
+}
+
+static TZrSymbolId resolve_semantic_symbol_id_for_node(SZrSemanticAnalyzer *analyzer,
+                                                       SZrAstNode *node) {
+    SZrString *name;
+    SZrSymbol *symbol;
+
+    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL || node == ZR_NULL) {
+        return 0;
+    }
+
+    name = extract_identifier_name(analyzer->state, node);
+    if (name == ZR_NULL) {
+        return 0;
+    }
+
+    symbol = ZrSymbolTableLookup(analyzer->symbolTable, name, ZR_NULL);
+    if (symbol == ZR_NULL) {
+        return 0;
+    }
+
+    return symbol->semanticId;
+}
+
+static void record_template_string_segments(SZrSemanticAnalyzer *analyzer,
+                                            SZrAstNode *node) {
+    SZrTemplateStringLiteral *templateLiteral;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || node == ZR_NULL ||
+        node->type != ZR_AST_TEMPLATE_STRING_LITERAL) {
+        return;
+    }
+
+    templateLiteral = &node->data.templateStringLiteral;
+    if (templateLiteral->segments == ZR_NULL || templateLiteral->segments->nodes == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize i = 0; i < templateLiteral->segments->count; i++) {
+        SZrAstNode *segmentNode = templateLiteral->segments->nodes[i];
+        SZrTemplateSegment segment;
+
+        if (segmentNode == ZR_NULL) {
+            continue;
+        }
+
+        segment.isInterpolation = ZR_FALSE;
+        segment.staticText = ZR_NULL;
+        segment.expression = ZR_NULL;
+
+        if (segmentNode->type == ZR_AST_STRING_LITERAL) {
+            segment.staticText = segmentNode->data.stringLiteral.value;
+        } else if (segmentNode->type == ZR_AST_INTERPOLATED_SEGMENT) {
+            segment.isInterpolation = ZR_TRUE;
+            segment.expression = segmentNode->data.interpolatedSegment.expression;
+        } else {
+            continue;
+        }
+
+        ZrSemanticAppendTemplateSegment(analyzer->semanticContext, &segment);
+    }
+}
+
+static void record_using_cleanup_step(SZrSemanticAnalyzer *analyzer,
+                                      SZrAstNode *resource) {
+    SZrDeterministicCleanupStep step;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || resource == ZR_NULL) {
+        return;
+    }
+
+    step.kind = ZR_DETERMINISTIC_CLEANUP_KIND_BLOCK_SCOPE;
+    step.regionId = ZrSemanticReserveLifetimeRegionId(analyzer->semanticContext);
+    step.ownerRegionId = step.regionId;
+    step.symbolId = resolve_semantic_symbol_id_for_node(analyzer, resource);
+    step.declarationOrder = (TInt32)analyzer->semanticContext->cleanupPlan.length;
+    step.callsClose = ZR_TRUE;
+    step.callsDestructor = ZR_TRUE;
+    ZrSemanticAppendCleanupStep(analyzer->semanticContext, &step);
+}
+
+static SZrInferredType *create_field_symbol_type(SZrState *state,
+                                                 SZrSemanticAnalyzer *analyzer,
+                                                 const SZrType *fieldType) {
+    SZrInferredType *typeInfo;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    typeInfo = (SZrInferredType *)ZrMemoryRawMalloc(state->global, sizeof(SZrInferredType));
+    if (typeInfo == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrInferredTypeInit(state, typeInfo, ZR_VALUE_TYPE_OBJECT);
+    if (fieldType == ZR_NULL) {
+        return typeInfo;
+    }
+
+    if (analyzer != ZR_NULL && analyzer->compilerState != ZR_NULL &&
+        convert_ast_type_to_inferred_type(analyzer->compilerState, fieldType, typeInfo)) {
+        return typeInfo;
+    }
+
+    ZrInferredTypeFree(state, typeInfo);
+    ZrInferredTypeInit(state, typeInfo, ZR_VALUE_TYPE_OBJECT);
+    typeInfo->ownershipQualifier = fieldType->ownershipQualifier;
+    return typeInfo;
+}
+
+static void record_field_cleanup_step(SZrSemanticAnalyzer *analyzer,
+                                      SZrSymbol *symbol,
+                                      EZrDeterministicCleanupKind kind,
+                                      TZrLifetimeRegionId ownerRegionId,
+                                      TInt32 declarationOrder) {
+    SZrDeterministicCleanupStep step;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || symbol == ZR_NULL ||
+        symbol->semanticId == 0) {
+        return;
+    }
+
+    step.kind = kind;
+    step.regionId = ZrSemanticReserveLifetimeRegionId(analyzer->semanticContext);
+    step.ownerRegionId = ownerRegionId;
+    step.symbolId = symbol->semanticId;
+    step.declarationOrder = declarationOrder;
+    step.callsClose = ZR_TRUE;
+    step.callsDestructor = ZR_TRUE;
+    ZrSemanticAppendCleanupStep(analyzer->semanticContext, &step);
+}
+
+static void register_field_symbol_from_ast(SZrState *state,
+                                           SZrSemanticAnalyzer *analyzer,
+                                           SZrAstNode *fieldNode,
+                                           TZrLifetimeRegionId ownerRegionId,
+                                           EZrDeterministicCleanupKind cleanupKind,
+                                           TInt32 declarationOrder) {
+    SZrSymbol *symbol = ZR_NULL;
+    SZrString *name = ZR_NULL;
+    SZrInferredType *typeInfo = ZR_NULL;
+    EZrAccessModifier accessModifier = ZR_ACCESS_PRIVATE;
+    TBool isUsingManaged = ZR_FALSE;
+    TBool isStatic = ZR_FALSE;
+    const SZrType *fieldType = ZR_NULL;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || fieldNode == ZR_NULL) {
+        return;
+    }
+
+    if (fieldNode->type == ZR_AST_STRUCT_FIELD) {
+        SZrStructField *field = &fieldNode->data.structField;
+        name = field->name != ZR_NULL ? field->name->name : ZR_NULL;
+        accessModifier = field->access;
+        isUsingManaged = field->isUsingManaged;
+        isStatic = field->isStatic;
+        fieldType = field->typeInfo;
+    } else if (fieldNode->type == ZR_AST_CLASS_FIELD) {
+        SZrClassField *field = &fieldNode->data.classField;
+        name = field->name != ZR_NULL ? field->name->name : ZR_NULL;
+        accessModifier = field->access;
+        isUsingManaged = field->isUsingManaged;
+        isStatic = field->isStatic;
+        fieldType = field->typeInfo;
+    } else {
+        return;
+    }
+
+    if (name == ZR_NULL) {
+        return;
+    }
+
+    typeInfo = create_field_symbol_type(state, analyzer, fieldType);
+    ZrSymbolTableAddSymbolEx(state,
+                             analyzer->symbolTable,
+                             ZR_SYMBOL_FIELD,
+                             name,
+                             fieldNode->location,
+                             typeInfo,
+                             accessModifier,
+                             fieldNode,
+                             &symbol);
+
+    if (symbol != ZR_NULL) {
+        register_symbol_semantics(analyzer,
+                                  symbol,
+                                  ZR_SEMANTIC_SYMBOL_KIND_FIELD,
+                                  typeInfo,
+                                  ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+    }
+
+    if (!isUsingManaged) {
+        return;
+    }
+
+    if (isStatic) {
+        ZrSemanticAnalyzerAddDiagnostic(state,
+                                        analyzer,
+                                        ZR_DIAGNOSTIC_ERROR,
+                                        fieldNode->location,
+                                        "Field-scoped `using` only supports instance fields",
+                                        "static_using_field");
+        return;
+    }
+
+    record_field_cleanup_step(analyzer,
+                              symbol,
+                              cleanupKind,
+                              ownerRegionId,
+                              declarationOrder);
+}
+
 // 辅助函数：遍历 AST 收集符号定义
 static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analyzer, SZrAstNode *node) {
     if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL) {
@@ -599,20 +989,13 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
         
         case ZR_AST_VARIABLE_DECLARATION: {
             SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;
+            SZrSymbol *symbol = ZR_NULL;
             // pattern 可能是 Identifier, DestructuringPattern, 或 DestructuringArrayPattern
             SZrString *name = extract_identifier_name(state, varDecl->pattern);
             if (name != ZR_NULL) {
                 // 推断类型（集成类型推断系统）
                 SZrInferredType *typeInfo = (SZrInferredType *)ZrMemoryRawMalloc(state->global, sizeof(SZrInferredType));
                 if (typeInfo != ZR_NULL) {
-                    // 创建或获取编译器状态（用于类型推断）
-                    if (analyzer->compilerState == ZR_NULL) {
-                        analyzer->compilerState = (SZrCompilerState *)ZrMemoryRawMalloc(state->global, sizeof(SZrCompilerState));
-                        if (analyzer->compilerState != ZR_NULL) {
-                            ZrCompilerStateInit(analyzer->compilerState, state);
-                        }
-                    }
-                    
                     if (varDecl->typeInfo != ZR_NULL) {
                         // 转换 AST 类型到推断类型
                         // TODO: 简化实现：根据类型名称推断基础类型
@@ -623,10 +1006,12 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
                         // 使用类型推断系统
                         if (analyzer->compilerState != ZR_NULL) {
                             SZrInferredType inferredType;
+                            ZrInferredTypeInit(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
                             if (infer_expression_type(analyzer->compilerState, varDecl->value, &inferredType)) {
                                 // 复制推断类型
                                 *typeInfo = inferredType;
                             } else {
+                                ZrInferredTypeFree(state, &inferredType);
                                 // TODO: 回退到简化实现
                                 if (varDecl->value->type == ZR_AST_INTEGER_LITERAL) {
                                     ZrInferredTypeInit(state, typeInfo, ZR_VALUE_TYPE_INT64);
@@ -660,29 +1045,45 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
                     }
                 }
                 
-                ZrSymbolTableAddSymbol(state, analyzer->symbolTable,
-                                       ZR_SYMBOL_VARIABLE, name,
-                                       node->location, typeInfo,
-                                       varDecl->accessModifier, node);
+                ZrSymbolTableAddSymbolEx(state, analyzer->symbolTable,
+                                         ZR_SYMBOL_VARIABLE, name,
+                                         node->location, typeInfo,
+                                         varDecl->accessModifier, node,
+                                         &symbol);
+                if (analyzer->compilerState != ZR_NULL &&
+                    analyzer->compilerState->typeEnv != ZR_NULL &&
+                    typeInfo != ZR_NULL) {
+                    ZrTypeEnvironmentRegisterVariable(state,
+                                                     analyzer->compilerState->typeEnv,
+                                                     name,
+                                                     typeInfo);
+                }
+                register_symbol_semantics(analyzer,
+                                          symbol,
+                                          ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+                                          typeInfo,
+                                          ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+            }
+            break;
+        }
+
+        case ZR_AST_USING_STATEMENT: {
+            SZrUsingStatement *usingStmt = &node->data.usingStatement;
+            if (usingStmt->body != ZR_NULL) {
+                collect_symbols_from_ast(state, analyzer, usingStmt->body);
             }
             break;
         }
         
         case ZR_AST_FUNCTION_DECLARATION: {
             SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
+            SZrSymbol *symbol = ZR_NULL;
+            SZrArray paramTypes;
             SZrString *name = funcDecl->name != ZR_NULL ? funcDecl->name->name : ZR_NULL;
             if (name != ZR_NULL) {
                 // 推断返回类型（集成类型推断系统）
                 SZrInferredType *returnType = (SZrInferredType *)ZrMemoryRawMalloc(state->global, sizeof(SZrInferredType));
                 if (returnType != ZR_NULL) {
-                    // 创建或获取编译器状态（用于类型推断）
-                    if (analyzer->compilerState == ZR_NULL) {
-                        analyzer->compilerState = (SZrCompilerState *)ZrMemoryRawMalloc(state->global, sizeof(SZrCompilerState));
-                        if (analyzer->compilerState != ZR_NULL) {
-                            ZrCompilerStateInit(analyzer->compilerState, state);
-                        }
-                    }
-                    
                     if (funcDecl->returnType != ZR_NULL) {
                         // 转换 AST 类型到推断类型
                         // TODO: 简化实现：根据类型名称推断基础类型
@@ -695,22 +1096,50 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
                 }
                 
                 // SZrFunctionDeclaration 没有 accessModifier 成员，使用默认值
-                ZrSymbolTableAddSymbol(state, analyzer->symbolTable,
-                                       ZR_SYMBOL_FUNCTION, name,
-                                       node->location, returnType,
-                                       ZR_ACCESS_PUBLIC, node);
+                ZrSymbolTableAddSymbolEx(state, analyzer->symbolTable,
+                                         ZR_SYMBOL_FUNCTION, name,
+                                         node->location, returnType,
+                                         ZR_ACCESS_PUBLIC, node,
+                                         &symbol);
+                ZrArrayConstruct(&paramTypes);
+                if (analyzer->compilerState != ZR_NULL &&
+                    analyzer->compilerState->typeEnv != ZR_NULL &&
+                    returnType != ZR_NULL) {
+                    ZrTypeEnvironmentRegisterFunction(state,
+                                                     analyzer->compilerState->typeEnv,
+                                                     name,
+                                                     returnType,
+                                                     &paramTypes);
+                }
+                register_symbol_semantics(analyzer,
+                                          symbol,
+                                          ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                                          returnType,
+                                          ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
             }
             break;
         }
         
         case ZR_AST_CLASS_DECLARATION: {
             SZrClassDeclaration *classDecl = &node->data.classDeclaration;
+            SZrSymbol *symbol = ZR_NULL;
             SZrString *name = classDecl->name != ZR_NULL ? classDecl->name->name : ZR_NULL;
+            TZrLifetimeRegionId ownerRegionId = 0;
             if (name != ZR_NULL) {
-                ZrSymbolTableAddSymbol(state, analyzer->symbolTable,
-                                       ZR_SYMBOL_CLASS, name,
-                                       node->location, ZR_NULL,
-                                       classDecl->accessModifier, node);
+                ZrSymbolTableAddSymbolEx(state, analyzer->symbolTable,
+                                         ZR_SYMBOL_CLASS, name,
+                                         node->location, ZR_NULL,
+                                         classDecl->accessModifier, node,
+                                         &symbol);
+                if (analyzer->compilerState != ZR_NULL &&
+                    analyzer->compilerState->typeEnv != ZR_NULL) {
+                    ZrTypeEnvironmentRegisterType(state, analyzer->compilerState->typeEnv, name);
+                }
+                register_symbol_semantics(analyzer,
+                                          symbol,
+                                          ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                                          ZR_NULL,
+                                          ZR_SEMANTIC_TYPE_KIND_REFERENCE);
                 
                 // 检查类实现的接口，验证 const 字段匹配
                 if (classDecl->inherits != ZR_NULL && classDecl->inherits->count > 0) {
@@ -765,7 +1194,7 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
                                                                                                             ZR_DIAGNOSTIC_ERROR,
                                                                                                             classMember->location,
                                                                                                             errorMsg,
-                                                                                                            "const_interface_mismatch");
+                                            "const_interface_mismatch");
                                                                         }
                                                                         break;
                                                                     }
@@ -784,17 +1213,63 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
                     }
                 }
             }
+
+            if (classDecl->members != ZR_NULL) {
+                ownerRegionId = analyzer->semanticContext != ZR_NULL
+                                    ? ZrSemanticReserveLifetimeRegionId(analyzer->semanticContext)
+                                    : 0;
+                for (TZrSize memberIndex = 0; memberIndex < classDecl->members->count; memberIndex++) {
+                    SZrAstNode *classMember = classDecl->members->nodes[memberIndex];
+                    if (classMember != ZR_NULL && classMember->type == ZR_AST_CLASS_FIELD) {
+                        register_field_symbol_from_ast(state,
+                                                       analyzer,
+                                                       classMember,
+                                                       ownerRegionId,
+                                                       ZR_DETERMINISTIC_CLEANUP_KIND_INSTANCE_FIELD,
+                                                       (TInt32)memberIndex);
+                    }
+                }
+            }
             break;
         }
         
         case ZR_AST_STRUCT_DECLARATION: {
             SZrStructDeclaration *structDecl = &node->data.structDeclaration;
+            SZrSymbol *symbol = ZR_NULL;
             SZrString *name = structDecl->name != ZR_NULL ? structDecl->name->name : ZR_NULL;
+            TZrLifetimeRegionId ownerRegionId = 0;
             if (name != ZR_NULL) {
-                ZrSymbolTableAddSymbol(state, analyzer->symbolTable,
-                                       ZR_SYMBOL_STRUCT, name,
-                                       node->location, ZR_NULL,
-                                       structDecl->accessModifier, node);
+                ZrSymbolTableAddSymbolEx(state, analyzer->symbolTable,
+                                         ZR_SYMBOL_STRUCT, name,
+                                         node->location, ZR_NULL,
+                                         structDecl->accessModifier, node,
+                                         &symbol);
+                if (analyzer->compilerState != ZR_NULL &&
+                    analyzer->compilerState->typeEnv != ZR_NULL) {
+                    ZrTypeEnvironmentRegisterType(state, analyzer->compilerState->typeEnv, name);
+                }
+                register_symbol_semantics(analyzer,
+                                          symbol,
+                                          ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                                          ZR_NULL,
+                                          ZR_SEMANTIC_TYPE_KIND_VALUE);
+            }
+
+            if (structDecl->members != ZR_NULL) {
+                ownerRegionId = analyzer->semanticContext != ZR_NULL
+                                    ? ZrSemanticReserveLifetimeRegionId(analyzer->semanticContext)
+                                    : 0;
+                for (TZrSize memberIndex = 0; memberIndex < structDecl->members->count; memberIndex++) {
+                    SZrAstNode *structMember = structDecl->members->nodes[memberIndex];
+                    if (structMember != ZR_NULL && structMember->type == ZR_AST_STRUCT_FIELD) {
+                        register_field_symbol_from_ast(state,
+                                                       analyzer,
+                                                       structMember,
+                                                       ownerRegionId,
+                                                       ZR_DETERMINISTIC_CLEANUP_KIND_STRUCT_VALUE_FIELD,
+                                                       (TInt32)memberIndex);
+                    }
+                }
             }
             break;
         }
@@ -892,6 +1367,18 @@ static void collect_references_from_ast(SZrState *state, SZrSemanticAnalyzer *an
             }
             break;
         }
+
+        case ZR_AST_USING_STATEMENT: {
+            SZrUsingStatement *usingStmt = &node->data.usingStatement;
+            record_using_cleanup_step(analyzer, usingStmt->resource);
+            if (usingStmt->resource != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, usingStmt->resource);
+            }
+            if (usingStmt->body != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, usingStmt->body);
+            }
+            break;
+        }
         
         case ZR_AST_EXPRESSION_STATEMENT: {
             // 表达式语句：递归处理表达式
@@ -956,6 +1443,28 @@ static void collect_references_from_ast(SZrState *state, SZrSemanticAnalyzer *an
             SZrMemberExpression *memberExpr = &node->data.memberExpression;
             if (memberExpr->property != ZR_NULL) {
                 collect_references_from_ast(state, analyzer, memberExpr->property);
+            }
+            break;
+        }
+
+        case ZR_AST_TEMPLATE_STRING_LITERAL: {
+            SZrTemplateStringLiteral *templateLiteral = &node->data.templateStringLiteral;
+            record_template_string_segments(analyzer, node);
+            if (templateLiteral->segments != ZR_NULL && templateLiteral->segments->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < templateLiteral->segments->count; i++) {
+                    if (templateLiteral->segments->nodes[i] != ZR_NULL) {
+                        collect_references_from_ast(state, analyzer, templateLiteral->segments->nodes[i]);
+                    }
+                }
+            }
+            break;
+        }
+
+        case ZR_AST_INTERPOLATED_SEGMENT: {
+            if (node->data.interpolatedSegment.expression != ZR_NULL) {
+                collect_references_from_ast(state,
+                                            analyzer,
+                                            node->data.interpolatedSegment.expression);
             }
             break;
         }
@@ -1048,16 +1557,8 @@ TBool ZrSemanticAnalyzerAnalyze(SZrState *state,
     }
     analyzer->diagnostics.length = 0;
     
-    // 创建或获取编译器状态（用于类型推断）
-    if (analyzer->compilerState == ZR_NULL) {
-        analyzer->compilerState = (SZrCompilerState *)ZrMemoryRawMalloc(state->global, sizeof(SZrCompilerState));
-        if (analyzer->compilerState != ZR_NULL) {
-            ZrCompilerStateInit(analyzer->compilerState, state);
-            analyzer->compilerState->scriptAst = ast; // 设置脚本AST引用
-        }
-    } else {
-        // 更新脚本AST引用
-        analyzer->compilerState->scriptAst = ast;
+    if (!prepare_semantic_state(state, analyzer, ast)) {
+        return ZR_FALSE;
     }
     
     // 第一阶段：收集符号定义

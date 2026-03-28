@@ -26,6 +26,7 @@ enum EZrToken {
     ZR_TK_TEST,
     ZR_TK_INTERMEDIATE,
     ZR_TK_VAR,
+    ZR_TK_USING,
     ZR_TK_PUB,
     ZR_TK_PRI,
     ZR_TK_PRO,
@@ -101,6 +102,7 @@ enum EZrToken {
     ZR_TK_INTEGER,
     ZR_TK_FLOAT,
     ZR_TK_STRING,
+    ZR_TK_TEMPLATE_STRING,
     ZR_TK_CHAR,
     ZR_TK_NULL,
     ZR_TK_IDENTIFIER,
@@ -111,7 +113,7 @@ enum EZrToken {
 typedef enum EZrToken EZrToken;
 
 // Token 语义信息
-typedef union TZrSemInfo {
+typedef struct TZrSemInfo {
     TBool booleanValue;
     TInt64 intValue;
     TDouble floatValue;
@@ -164,4 +166,3 @@ ZR_PARSER_API void ZrLexerSyntaxError(SZrLexState *ls, const TChar *msg);
 ZR_PARSER_API const TChar *ZrLexerTokenToString(SZrLexState *ls, EZrToken token);
 
 #endif //ZR_VM_PARSER_LEXER_H
-

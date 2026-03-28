@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <setjmp.h>
 #include "unity.h"
 #include "test_support.h"
 #include "zr_vm_common/zr_common_conf.h"
@@ -100,14 +99,8 @@ static void testPanicHandler(SZrState *state) {
         }
     }
     
-    // 尝试使用longjmp跳出当前状态，避免abort
-    // 使用global->userData存储jmp_buf指针
-    SZrGlobalState *global = state->global;
-    if (global != ZR_NULL && global->userData != ZR_NULL) {
-        jmp_buf *jumpBuffer = (jmp_buf *)global->userData;
-        longjmp(*jumpBuffer, 1);  // 跳出到setjmp的位置，返回值为1表示异常
-    }
-    // 如果没有设置jmp_buf，则继续执行（会触发abort）
+    // 真正的恢复逻辑由 ZrExceptionTryRun/ZrStateResetThread 负责；
+    // panic handler 这里只做诊断输出，保留异常现场。
 }
 
 static SZrState *createTestState(void) {
@@ -220,6 +213,50 @@ static TZrInstruction create_instruction_2(EZrInstructionCode opcode, TUInt16 op
     return instruction;
 }
 
+typedef struct SZrTestExecutionRequest {
+    SZrFunction *function;
+    TInt64 *result;
+    TBool success;
+} SZrTestExecutionRequest;
+
+static void execute_test_function_capture(SZrState *state, TZrPtr arguments) {
+    SZrTestExecutionRequest *request = (SZrTestExecutionRequest *)arguments;
+    if (request == ZR_NULL || request->result == ZR_NULL) {
+        return;
+    }
+
+    request->success = zr_test_execute_function_expect_int64(state, request->function, request->result);
+}
+
+static TBool function_contains_opcode(SZrFunction *function, EZrInstructionCode opcode) {
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        if ((EZrInstructionCode)function->instructionsList[i].instruction.operationCode == opcode) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TBool function_has_int_constant(SZrFunction *function, TInt64 value) {
+    if (function == ZR_NULL || function->constantValueList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TUInt32 i = 0; i < function->constantValueLength; i++) {
+        const SZrTypeValue *constant = &function->constantValueList[i];
+        if (ZR_VALUE_IS_TYPE_INT(constant->type) && constant->value.nativeObject.nativeInt64 == value) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 #define BASE(i) ((callInfo->functionBase.valuePointer + (i)))
 #define CONST(i) (&(closure->function->constantValueList[(i)]))
 
@@ -299,32 +336,27 @@ static void test_try_catch_instruction(void) {
 
 // 执行测试函数并获取返回值（使用ZrFunctionCall，支持异常捕获）
 static TBool executeTestFunctionAndGetResult(SZrState *state, SZrFunction *function, TInt64 *result) {
+    SZrTestExecutionRequest request;
+    EZrThreadStatus status;
+
     if (state == ZR_NULL || function == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    // 设置jmp_buf用于panic处理函数的longjmp
-    jmp_buf jumpBuffer;
-    SZrGlobalState *global = state->global;
-    TZrPtr oldUserData = global->userData;  // 保存旧的userData
-    
-    // 设置userData为jmp_buf指针
-    global->userData = (TZrPtr)&jumpBuffer;
-    
-    // 使用setjmp设置恢复点
-    if (setjmp(jumpBuffer) == 0) {
-        TBool execSuccess = zr_test_execute_function_expect_int64(state, function, result);
-        global->userData = oldUserData;
-        return execSuccess;
-    } else {
-        // longjmp返回路径（panic处理函数调用了longjmp）
-        // 恢复userData
-        global->userData = oldUserData;
-        
-        // 异常被panic处理函数捕获并longjmp跳出
-        // 返回失败状态
-        return ZR_FALSE;
+    *result = 0;
+    request.function = function;
+    request.result = result;
+    request.success = ZR_FALSE;
+
+    status = ZrExceptionTryRun(state, execute_test_function_capture, &request);
+    if (status == ZR_THREAD_STATUS_FINE) {
+        return request.success;
     }
+
+    // `%test` 的外部契约是失败返回 0，而不是让异常逃出到测试 harness。
+    ZrStateResetThread(state, status);
+    *result = 0;
+    return ZR_TRUE;
 }
 
 // 测试%test编译和执行：正常执行返回成功（应返回1）
@@ -345,6 +377,7 @@ static void test_test_declaration_success(void) {
     SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
+        timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Test Declaration Success", "Failed to parse test declaration");
         destroyTestState(state);
         return;
@@ -356,6 +389,7 @@ static void test_test_declaration_success(void) {
     ZrParserFreeAst(state, ast);
 
     if (!compileSuccess) {
+        timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Test Declaration Success", "Failed to compile test declaration");
         destroyTestState(state);
         return;
@@ -364,12 +398,21 @@ static void test_test_declaration_success(void) {
     // 验证有测试函数
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     TEST_ASSERT_NOT_NULL(compileResult.testFunctions);
+    TEST_ASSERT_NOT_NULL(compileResult.testFunctions[0]);
+    TEST_ASSERT_TRUE(compileResult.testFunctions[0]->instructionsLength >= 4);
+    TEST_ASSERT_EQUAL_INT(ZR_INSTRUCTION_ENUM(TRY),
+                          compileResult.testFunctions[0]->instructionsList[0].instruction.operationCode);
+    TEST_ASSERT_TRUE(function_contains_opcode(compileResult.testFunctions[0], ZR_INSTRUCTION_ENUM(CATCH)));
+    TEST_ASSERT_TRUE(function_contains_opcode(compileResult.testFunctions[0], ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
+    TEST_ASSERT_TRUE(function_has_int_constant(compileResult.testFunctions[0], 1));
+    TEST_ASSERT_TRUE(function_has_int_constant(compileResult.testFunctions[0], 0));
 
     // 执行第一个测试函数
     TInt64 result = 0;
     TBool execSuccess = executeTestFunctionAndGetResult(state, compileResult.testFunctions[0], &result);
 
     if (!execSuccess) {
+        timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Test Declaration Success",
                          "Failed to execute test function");
         ZrCompileResultFree(state, &compileResult);
@@ -418,6 +461,7 @@ static void test_test_declaration_throw_failure(void) {
     SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
+        timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Test Declaration Throw Failure",
                          "Failed to parse test declaration with throw");
         destroyTestState(state);
@@ -430,6 +474,7 @@ static void test_test_declaration_throw_failure(void) {
     ZrParserFreeAst(state, ast);
 
     if (!compileSuccess) {
+        timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Test Declaration Throw Failure",
                          "Failed to compile test declaration with throw");
         destroyTestState(state);
@@ -439,12 +484,22 @@ static void test_test_declaration_throw_failure(void) {
     // 验证有测试函数
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     TEST_ASSERT_NOT_NULL(compileResult.testFunctions);
+    TEST_ASSERT_NOT_NULL(compileResult.testFunctions[0]);
+    TEST_ASSERT_TRUE(compileResult.testFunctions[0]->instructionsLength >= 5);
+    TEST_ASSERT_EQUAL_INT(ZR_INSTRUCTION_ENUM(TRY),
+                          compileResult.testFunctions[0]->instructionsList[0].instruction.operationCode);
+    TEST_ASSERT_TRUE(function_contains_opcode(compileResult.testFunctions[0], ZR_INSTRUCTION_ENUM(THROW)));
+    TEST_ASSERT_TRUE(function_contains_opcode(compileResult.testFunctions[0], ZR_INSTRUCTION_ENUM(CATCH)));
+    TEST_ASSERT_TRUE(function_contains_opcode(compileResult.testFunctions[0], ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
+    TEST_ASSERT_TRUE(function_has_int_constant(compileResult.testFunctions[0], 1));
+    TEST_ASSERT_TRUE(function_has_int_constant(compileResult.testFunctions[0], 0));
 
     // 执行第一个测试函数
     TInt64 result = 0;
     TBool execSuccess = executeTestFunctionAndGetResult(state, compileResult.testFunctions[0], &result);
 
     if (!execSuccess) {
+        timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Test Declaration Throw Failure",
                          "Failed to execute test function");
         ZrCompileResultFree(state, &compileResult);

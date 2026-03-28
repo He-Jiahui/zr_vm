@@ -8,6 +8,7 @@
 #include <time.h>
 #include "unity.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_core/call_info.h"
@@ -15,6 +16,7 @@
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"
@@ -116,6 +118,48 @@ static void destroyTestState(SZrState *state) {
     if (global) {
         ZrGlobalStateFree(global);
     }
+}
+
+static TInt64 g_usingCloseInvocationCount = 0;
+
+static TInt64 testCloseMetaNative(struct SZrState *state) {
+    ZR_UNUSED_PARAMETER(state);
+    g_usingCloseInvocationCount++;
+    return 0;
+}
+
+static void attachCloseMetaToStringPrototype(SZrState *state) {
+    SZrObjectPrototype *prototype;
+    SZrClosureNative *closure;
+    SZrMeta *meta;
+
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return;
+    }
+
+    prototype = state->global->basicTypeObjectPrototype[ZR_VALUE_TYPE_STRING];
+    if (prototype == ZR_NULL) {
+        return;
+    }
+
+    if (prototype->metaTable.metas[ZR_META_CLOSE] != ZR_NULL) {
+        return;
+    }
+
+    closure = ZrClosureNativeNew(state, 0);
+    TEST_ASSERT_NOT_NULL(closure);
+    closure->nativeFunction = testCloseMetaNative;
+    ZrRawObjectMarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+
+    meta = (SZrMeta *)state->global->allocator(state->global->userAllocationArguments,
+                                               ZR_NULL,
+                                               0,
+                                               sizeof(SZrMeta),
+                                               ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    TEST_ASSERT_NOT_NULL(meta);
+    meta->metaType = ZR_META_CLOSE;
+    meta->function = ZR_CAST(SZrFunction *, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    prototype->metaTable.metas[ZR_META_CLOSE] = meta;
 }
 
 // 打印编译后的指令列表
@@ -1633,6 +1677,334 @@ void test_execute_logical_not_instruction(void) {
     TEST_DIVIDER();
 }
 
+void test_execute_template_string_instruction(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Template String Execution";
+    TBool hasAddString = ZR_FALSE;
+    TBool hasToString = ZR_FALSE;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Template string execution",
+              "Testing template-string lowering and runtime result for `hello ${1} ${name}`");
+
+    {
+        const char *source = "var name = \"zr\"; return `hello ${1} ${name}`;";
+        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrFunction *function;
+        SZrTypeValue result;
+
+        if (ast == ZR_NULL) {
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse template string expression");
+            destroyTestState(state);
+            return;
+        }
+
+        function = ZrCompilerCompile(state, ast);
+        if (function == ZR_NULL) {
+            ZrParserFreeAst(state, ast);
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile template string expression");
+            destroyTestState(state);
+            return;
+        }
+
+        if (function->instructionsList != ZR_NULL) {
+            for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+                EZrInstructionCode opcode =
+                    (EZrInstructionCode)function->instructionsList[i].instruction.operationCode;
+                if (opcode == ZR_INSTRUCTION_ENUM(ADD_STRING)) {
+                    hasAddString = ZR_TRUE;
+                } else if (opcode == ZR_INSTRUCTION_ENUM(TO_STRING)) {
+                    hasToString = ZR_TRUE;
+                }
+            }
+        }
+
+        TEST_ASSERT_TRUE(hasAddString);
+        TEST_ASSERT_TRUE(hasToString);
+
+        ZrParserFreeAst(state, ast);
+
+        if (!executeFunctionAndGetResult(state, function, &result)) {
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute template string function");
+            destroyTestState(state);
+            return;
+        }
+
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.type);
+        TEST_ASSERT_NOT_NULL(result.value.object);
+        TEST_ASSERT_EQUAL_STRING("hello 1 zr",
+                                 ZrStringGetNativeString(
+                                     ZR_CAST_STRING(state, result.value.object)));
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+void test_execute_using_statement_passthrough(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Using Statement Execution Passthrough";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Using statement execution",
+              "Testing that using syntax passes through the frontend and preserves normal control flow");
+
+    {
+        const char *source = "var resource = \"x\"; using (resource) { var inner = 1; } return 7;";
+        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrFunction *function;
+        SZrTypeValue result;
+
+        if (ast == ZR_NULL) {
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse using statement");
+            destroyTestState(state);
+            return;
+        }
+
+        function = ZrCompilerCompile(state, ast);
+        if (function == ZR_NULL) {
+            ZrParserFreeAst(state, ast);
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile using statement");
+            destroyTestState(state);
+            return;
+        }
+
+        ZrParserFreeAst(state, ast);
+
+        if (!executeFunctionAndGetResult(state, function, &result)) {
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute using statement function");
+            destroyTestState(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(7, result.value.nativeObject.nativeInt64);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+void test_execute_using_statement_invokes_close_meta(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Using Statement Invokes Close Meta";
+    TBool hasMarkToBeClosed = ZR_FALSE;
+    TBool hasCloseScope = ZR_FALSE;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    g_usingCloseInvocationCount = 0;
+
+    {
+        SZrState *state = createTestState();
+        TEST_ASSERT_NOT_NULL(state);
+
+        TEST_INFO("Using deterministic cleanup",
+                  "Testing that using registers a close step and invokes @close on scope exit");
+
+        attachCloseMetaToStringPrototype(state);
+
+        {
+            const char *source = "using (\"x\") { var inner = 1; } return 7;";
+            SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
+            SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+            SZrFunction *function;
+            SZrTypeValue result;
+
+            if (ast == ZR_NULL) {
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse using close-meta source");
+                destroyTestState(state);
+                return;
+            }
+
+            function = ZrCompilerCompile(state, ast);
+            if (function == ZR_NULL) {
+                ZrParserFreeAst(state, ast);
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile using close-meta source");
+                destroyTestState(state);
+                return;
+            }
+
+            if (function->instructionsList != ZR_NULL) {
+                for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+                    EZrInstructionCode opcode =
+                        (EZrInstructionCode)function->instructionsList[i].instruction.operationCode;
+                    if (opcode == ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)) {
+                        hasMarkToBeClosed = ZR_TRUE;
+                    } else if (opcode == ZR_INSTRUCTION_ENUM(CLOSE_SCOPE)) {
+                        hasCloseScope = ZR_TRUE;
+                    }
+                }
+            }
+
+            TEST_ASSERT_TRUE(hasMarkToBeClosed);
+            TEST_ASSERT_TRUE(hasCloseScope);
+
+            ZrParserFreeAst(state, ast);
+
+            if (!executeFunctionAndGetResult(state, function, &result)) {
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute using close-meta function");
+                destroyTestState(state);
+                return;
+            }
+
+            TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+            TEST_ASSERT_EQUAL_INT64(7, result.value.nativeObject.nativeInt64);
+            TEST_ASSERT_EQUAL_INT64(1, g_usingCloseInvocationCount);
+        }
+
+        destroyTestState(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_execute_using_declaration_invokes_close_meta(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Using Declaration Invokes Close Meta";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    g_usingCloseInvocationCount = 0;
+
+    {
+        SZrState *state = createTestState();
+        TEST_ASSERT_NOT_NULL(state);
+
+        TEST_INFO("Using declaration deterministic cleanup",
+                  "Testing that `using resource;` registers an existing owner and invokes @close before return");
+
+        attachCloseMetaToStringPrototype(state);
+
+        {
+            const char *source = "var resource = \"x\"; using resource; return 7;";
+            SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
+            SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+            SZrFunction *function;
+            SZrTypeValue result;
+
+            if (ast == ZR_NULL) {
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse using declaration source");
+                destroyTestState(state);
+                return;
+            }
+
+            function = ZrCompilerCompile(state, ast);
+            if (function == ZR_NULL) {
+                ZrParserFreeAst(state, ast);
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile using declaration source");
+                destroyTestState(state);
+                return;
+            }
+
+            ZrParserFreeAst(state, ast);
+
+            if (!executeFunctionAndGetResult(state, function, &result)) {
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute using declaration function");
+                destroyTestState(state);
+                return;
+            }
+
+            TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+            TEST_ASSERT_EQUAL_INT64(7, result.value.nativeObject.nativeInt64);
+            TEST_ASSERT_EQUAL_INT64(1, g_usingCloseInvocationCount);
+        }
+
+        destroyTestState(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_execute_nested_using_return_invokes_all_close_meta(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Nested Using Return Invokes All Close Meta";
+    TUInt32 markToBeClosedCount = 0;
+    TUInt32 closeScopeCount = 0;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    g_usingCloseInvocationCount = 0;
+
+    TEST_INFO("Nested using early return cleanup",
+              "Testing that nested using scopes register both resources and still invoke @close in LIFO order when returning from the inner scope");
+
+    attachCloseMetaToStringPrototype(state);
+
+    {
+        const char *source = "using (\"outer\") { using (\"inner\") { return 9; } } return 0;";
+        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrFunction *function = ZR_NULL;
+        SZrTypeValue result;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse nested using early-return source");
+            destroyTestState(state);
+            return;
+        }
+
+        function = ZrCompilerCompile(state, ast);
+        ZrParserFreeAst(state, ast);
+
+        if (function == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile nested using early-return source");
+            destroyTestState(state);
+            return;
+        }
+
+        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+            EZrInstructionCode opcode = (EZrInstructionCode)function->instructionsList[i].instruction.operationCode;
+            if (opcode == ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)) {
+                markToBeClosedCount++;
+            } else if (opcode == ZR_INSTRUCTION_ENUM(CLOSE_SCOPE)) {
+                closeScopeCount++;
+            }
+        }
+
+        TEST_ASSERT_EQUAL_UINT32(2, markToBeClosedCount);
+        TEST_ASSERT_TRUE(closeScopeCount >= 1);
+        TEST_ASSERT_TRUE(executeFunctionAndGetResult(state, function, &result));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(9, result.value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(2, g_usingCloseInvocationCount);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // ==================== 主函数 ====================
 
 int main(void) {
@@ -1679,6 +2051,11 @@ int main(void) {
     RUN_TEST(test_execute_logical_and_instruction);
     RUN_TEST(test_execute_logical_equal_instruction);
     RUN_TEST(test_execute_logical_not_instruction);
+    RUN_TEST(test_execute_template_string_instruction);
+    RUN_TEST(test_execute_using_statement_passthrough);
+    RUN_TEST(test_execute_using_statement_invokes_close_meta);
+    RUN_TEST(test_execute_using_declaration_invokes_close_meta);
+    RUN_TEST(test_execute_nested_using_return_invokes_all_close_meta);
 
     // GETTABLE/SETTABLE 指令测试
     printf("==========\n");

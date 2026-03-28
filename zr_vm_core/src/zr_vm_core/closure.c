@@ -4,6 +4,7 @@
 #include "zr_vm_core/closure.h"
 
 #include "zr_vm_core/conversion.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/meta.h"
@@ -97,11 +98,19 @@ static TBool ZrClosureValueCheckCloseMeta(struct SZrState *state, TZrStackValueP
 
 static void ZrClosureValueCallCloseMeta(SZrState *state, SZrTypeValue *value, SZrTypeValue *error, TBool isYield) {
     TZrStackPointer top = state->stackTop;
+    SZrCallInfo *callInfo = state->callInfoList;
     const SZrMeta *meta = ZrValueGetMeta(state, value, ZR_META_CLOSE);
+    if (meta == ZR_NULL || meta->function == ZR_NULL) {
+        return;
+    }
+    top.valuePointer = ZrFunctionCheckStackAndGc(state, 3, top.valuePointer);
     ZrStackSetRawObjectValue(state, top.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
     ZrStackCopyValue(state, top.valuePointer + 1, value);
     ZrStackCopyValue(state, top.valuePointer + 2, error);
     state->stackTop.valuePointer = top.valuePointer + 3;
+    if (callInfo != ZR_NULL && callInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+        callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
     if (isYield) {
         ZrFunctionCall(state, top.valuePointer, 0);
     } else {
@@ -131,8 +140,7 @@ void ZrClosureToBeClosedValueClosureNew(struct SZrState *state, TZrStackValuePoi
     }
     TBool hasCloseMeta = ZrClosureValueCheckCloseMeta(state, stackPointer);
     if (!hasCloseMeta) {
-        // todo : log error
-        ZrLogError(state, "");
+        return;
     }
 
 
@@ -199,6 +207,27 @@ TZrStackValuePointer ZrClosureCloseClosure(struct SZrState *state, TZrStackValue
         stackPointer = pointer;
     }
     return stackPointer;
+}
+
+TZrSize ZrClosureCloseRegisteredValues(struct SZrState *state,
+                                       TZrSize count,
+                                       EZrThreadStatus errorStatus,
+                                       TBool isYield) {
+    TZrSize closedCount = 0;
+
+    if (state == ZR_NULL || count == 0) {
+        return 0;
+    }
+
+    while (closedCount < count &&
+           state->toBeClosedValueList.valuePointer > state->stackBase.valuePointer) {
+        TZrStackPointer toBeClosed = state->toBeClosedValueList;
+        ZrClosurePopToBeClosedList(state);
+        ZrClosureValuePreCallCloseMeta(state, toBeClosed, errorStatus, isYield);
+        closedCount++;
+    }
+
+    return closedCount;
 }
 
 void ZrClosurePushToStack(struct SZrState *state, struct SZrFunction *function, SZrClosureValue **closureValueList,

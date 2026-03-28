@@ -1252,6 +1252,30 @@ TZrSize ZrModuleCreatePrototypesFromData(struct SZrState *state,
                     continue;
                 }
 
+                if (member->memberType == ZR_AST_CONSTANT_STRUCT_FIELD ||
+                    member->memberType == ZR_AST_CONSTANT_CLASS_FIELD) {
+                    if (protoInfo->prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+                        member->memberType == ZR_AST_CONSTANT_STRUCT_FIELD) {
+                        ZrStructPrototypeAddField(state,
+                                                  (SZrStructPrototype *)protoInfo->prototype,
+                                                  memberName,
+                                                  member->fieldOffset);
+                    }
+
+                    if (member->isUsingManaged) {
+                        ZrObjectPrototypeAddManagedField(state,
+                                                         protoInfo->prototype,
+                                                         memberName,
+                                                         member->fieldOffset,
+                                                         member->fieldSize,
+                                                         member->ownershipQualifier,
+                                                         member->callsClose ? ZR_TRUE : ZR_FALSE,
+                                                         member->callsDestructor ? ZR_TRUE : ZR_FALSE,
+                                                         member->declarationOrder);
+                    }
+                    continue;
+                }
+
                 if ((member->memberType == ZR_AST_CONSTANT_CLASS_METHOD ||
                      member->memberType == ZR_AST_CONSTANT_STRUCT_METHOD ||
                      member->memberType == ZR_AST_CONSTANT_CLASS_META_FUNCTION ||

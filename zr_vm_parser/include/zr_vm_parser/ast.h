@@ -69,9 +69,11 @@ enum EZrAstNodeType {
     ZR_AST_INTEGER_LITERAL,
     ZR_AST_FLOAT_LITERAL,
     ZR_AST_STRING_LITERAL,
+    ZR_AST_TEMPLATE_STRING_LITERAL,
     ZR_AST_CHAR_LITERAL,
     ZR_AST_NULL_LITERAL,
     ZR_AST_IDENTIFIER_LITERAL,
+    ZR_AST_INTERPOLATED_SEGMENT,
 
     // 复合字面量
     ZR_AST_ARRAY_LITERAL,
@@ -83,6 +85,7 @@ enum EZrAstNodeType {
     // 语句类型
     ZR_AST_BLOCK,
     ZR_AST_EXPRESSION_STATEMENT,
+    ZR_AST_USING_STATEMENT,
     ZR_AST_RETURN_STATEMENT,
     ZR_AST_BREAK_CONTINUE_STATEMENT,
     ZR_AST_THROW_STATEMENT,
@@ -153,6 +156,15 @@ enum EZrAccessModifier {
 
 typedef enum EZrAccessModifier EZrAccessModifier;
 
+enum EZrOwnershipQualifier {
+    ZR_OWNERSHIP_QUALIFIER_NONE = 0,
+    ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+    ZR_OWNERSHIP_QUALIFIER_SHARED,
+    ZR_OWNERSHIP_QUALIFIER_WEAK,
+};
+
+typedef enum EZrOwnershipQualifier EZrOwnershipQualifier;
+
 // 赋值操作符
 typedef struct SZrAssignmentOperator {
     const TChar *op; // "=", "+=", "-=", "*=", "/=", "%="
@@ -178,6 +190,7 @@ typedef struct SZrType {
     SZrAstNode *name; // Identifier 或 GenericType 或 TupleType
     struct SZrType *subType; // 子类型（可选）
     TInt32 dimensions; // 数组维度
+    EZrOwnershipQualifier ownershipQualifier; // 特殊所有权限定
     
     // 数组大小约束
     TZrSize arrayFixedSize;          // 数组固定大小（0表示未固定）
@@ -232,6 +245,14 @@ typedef struct SZrStringLiteral {
     TBool hasError;
     SZrString *literal;
 } SZrStringLiteral;
+
+typedef struct SZrInterpolatedSegment {
+    SZrAstNode *expression;
+} SZrInterpolatedSegment;
+
+typedef struct SZrTemplateStringLiteral {
+    SZrAstNodeArray *segments; // StringLiteral / InterpolatedSegment
+} SZrTemplateStringLiteral;
 
 typedef struct SZrCharLiteral {
     TChar value;
@@ -427,6 +448,7 @@ typedef struct SZrStructDeclaration {
 typedef struct SZrStructField {
     EZrAccessModifier access;
     TBool isStatic;
+    TBool isUsingManaged; // 是否使用 field-scoped using 生命周期管理
     TBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
@@ -482,6 +504,7 @@ typedef struct SZrClassField {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TBool isStatic;
+    TBool isUsingManaged; // 是否使用 field-scoped using 生命周期管理
     TBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
@@ -592,6 +615,12 @@ typedef struct SZrBlock {
 typedef struct SZrExpressionStatement {
     SZrAstNode *expr;
 } SZrExpressionStatement;
+
+typedef struct SZrUsingStatement {
+    SZrAstNode *resource;
+    SZrAstNode *body; // Block（可选，仅 using (expr) { ... }）
+    TBool isBlockScoped;
+} SZrUsingStatement;
 
 typedef struct SZrReturnStatement {
     SZrAstNode *expr; // 可选表达式
@@ -740,7 +769,9 @@ typedef struct SZrAstNode {
         SZrIntegerLiteral integerLiteral;
         SZrFloatLiteral floatLiteral;
         SZrStringLiteral stringLiteral;
+        SZrTemplateStringLiteral templateStringLiteral;
         SZrCharLiteral charLiteral;
+        SZrInterpolatedSegment interpolatedSegment;
 
         // 复合字面量
         SZrArrayLiteral arrayLiteral;
@@ -761,6 +792,7 @@ typedef struct SZrAstNode {
         // 语句
         SZrBlock block;
         SZrExpressionStatement expressionStatement;
+        SZrUsingStatement usingStatement;
         SZrReturnStatement returnStatement;
         SZrBreakContinueStatement breakContinueStatement;
         SZrThrowStatement throwStatement;

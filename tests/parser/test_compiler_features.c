@@ -60,6 +60,41 @@ typedef struct {
         fflush(stdout);                                                                                                \
     } while (0)
 
+#pragma pack(push, 1)
+typedef struct SZrCompiledPrototypeInfoView {
+    TUInt32 nameStringIndex;
+    TUInt32 type;
+    TUInt32 accessModifier;
+    TUInt32 inheritsCount;
+    TUInt32 membersCount;
+} SZrCompiledPrototypeInfoView;
+
+typedef struct SZrCompiledMemberInfoView {
+    TUInt32 memberType;
+    TUInt32 nameStringIndex;
+    TUInt32 accessModifier;
+    TUInt32 isStatic;
+    TUInt32 isConst;
+    TUInt32 fieldTypeNameStringIndex;
+    TUInt32 fieldOffset;
+    TUInt32 fieldSize;
+    TUInt32 isMetaMethod;
+    TUInt32 metaType;
+    TUInt32 functionConstantIndex;
+    TUInt32 parameterCount;
+    TUInt32 returnTypeNameStringIndex;
+    TUInt32 isUsingManaged;
+    TUInt32 ownershipQualifier;
+    TUInt32 callsClose;
+    TUInt32 callsDestructor;
+    TUInt32 declarationOrder;
+} SZrCompiledMemberInfoView;
+#pragma pack(pop)
+
+void setUp(void) {}
+
+void tearDown(void) {}
+
 // 简单的测试分配器
 static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
@@ -105,6 +140,114 @@ static void destroyTestState(SZrState *state) {
     }
 }
 
+static SZrFunction *get_single_compiled_child_function(SZrFunction *wrapper) {
+    TEST_ASSERT_NOT_NULL(wrapper);
+    TEST_ASSERT_EQUAL_UINT32(1, wrapper->childFunctionLength);
+    TEST_ASSERT_NOT_NULL(wrapper->childFunctionList);
+    return &wrapper->childFunctionList[0];
+}
+
+static TBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        if ((EZrInstructionCode) function->instructionsList[i].instruction.operationCode == opcode) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrString *get_string_constant_at(SZrState *state, const SZrFunction *function, TUInt32 index) {
+    const SZrTypeValue *constant;
+
+    if (state == ZR_NULL || function == ZR_NULL || function->constantValueList == ZR_NULL ||
+        index >= function->constantValueLength) {
+        return ZR_NULL;
+    }
+
+    constant = &function->constantValueList[index];
+    if (constant->type != ZR_VALUE_TYPE_STRING || constant->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_STRING(state, constant->value.object);
+}
+
+static const SZrCompiledPrototypeInfoView *find_compiled_prototype_by_name(SZrState *state,
+                                                                           const SZrFunction *function,
+                                                                           const TChar *prototypeName) {
+    const TByte *currentPos;
+    TZrSize remainingSize;
+    SZrString *expectedName;
+
+    if (state == ZR_NULL || function == ZR_NULL || prototypeName == ZR_NULL || function->prototypeData == ZR_NULL ||
+        function->prototypeDataLength <= sizeof(TUInt32) || function->prototypeCount == 0) {
+        return ZR_NULL;
+    }
+
+    expectedName = ZrStringCreate(state, (TNativeString)prototypeName, strlen(prototypeName));
+    if (expectedName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    currentPos = function->prototypeData + sizeof(TUInt32);
+    remainingSize = function->prototypeDataLength - sizeof(TUInt32);
+    while (remainingSize >= sizeof(SZrCompiledPrototypeInfoView)) {
+        const SZrCompiledPrototypeInfoView *prototypeInfo = (const SZrCompiledPrototypeInfoView *)currentPos;
+        TZrSize prototypeSize = sizeof(SZrCompiledPrototypeInfoView) +
+                                prototypeInfo->inheritsCount * sizeof(TUInt32) +
+                                prototypeInfo->membersCount * sizeof(SZrCompiledMemberInfoView);
+        SZrString *actualName;
+
+        if (remainingSize < prototypeSize) {
+            break;
+        }
+
+        actualName = get_string_constant_at(state, function, prototypeInfo->nameStringIndex);
+        if (actualName != ZR_NULL && ZrStringEqual(actualName, expectedName)) {
+            return prototypeInfo;
+        }
+
+        currentPos += prototypeSize;
+        remainingSize -= prototypeSize;
+    }
+
+    return ZR_NULL;
+}
+
+static const SZrCompiledMemberInfoView *find_compiled_member_by_name(SZrState *state,
+                                                                     const SZrFunction *function,
+                                                                     const SZrCompiledPrototypeInfoView *prototypeInfo,
+                                                                     const TChar *memberName) {
+    const SZrCompiledMemberInfoView *members;
+    SZrString *expectedName;
+
+    if (state == ZR_NULL || function == ZR_NULL || prototypeInfo == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    expectedName = ZrStringCreate(state, (TNativeString)memberName, strlen(memberName));
+    if (expectedName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    members = (const SZrCompiledMemberInfoView *)((const TByte *)prototypeInfo +
+                                                  sizeof(SZrCompiledPrototypeInfoView) +
+                                              prototypeInfo->inheritsCount * sizeof(TUInt32));
+    for (TUInt32 i = 0; i < prototypeInfo->membersCount; i++) {
+        SZrString *actualName = get_string_constant_at(state, function, members[i].nameStringIndex);
+        if (actualName != ZR_NULL && ZrStringEqual(actualName, expectedName)) {
+            return &members[i];
+        }
+    }
+
+    return ZR_NULL;
+}
+
 // 测试1: 函数声明参数处理
 void test_function_parameter_handling(void) {
     SZrTestTimer timer;
@@ -144,12 +287,15 @@ void test_function_parameter_handling(void) {
         return;
     }
 
-    // 验证参数数量
-    TEST_ASSERT_EQUAL_UINT32(3, func->parameterCount);
-    TEST_ASSERT_EQUAL_INT(ZR_FALSE, func->hasVariableArguments);
+    {
+        SZrFunction *declaredFunction = get_single_compiled_child_function(func);
 
-    // 验证函数有指令（函数体应该被编译）
-    TEST_ASSERT_GREATER_THAN_UINT32(0, func->instructionsLength);
+        TEST_ASSERT_EQUAL_UINT32(3, declaredFunction->parameterCount);
+        TEST_ASSERT_EQUAL_INT(ZR_FALSE, declaredFunction->hasVariableArguments);
+        TEST_ASSERT_GREATER_THAN_UINT32(0, declaredFunction->instructionsLength);
+        TEST_ASSERT_TRUE(function_contains_opcode(declaredFunction, ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT32(3, declaredFunction->localVariableLength);
+    }
 
     // 输出完整的指令数量和指令内容
     printf("  Total Instructions: %u\n", func->instructionsLength);
@@ -1261,10 +1407,251 @@ void test_variable_arguments_function(void) {
         return;
     }
 
-    // 验证函数编译成功，并且标记为可变参数
-    TEST_ASSERT_NOT_NULL(func);
-    // 注意：可变参数标志的验证需要检查函数对象
-    // 这里先验证编译成功
+    {
+        SZrFunction *declaredFunction = get_single_compiled_child_function(func);
+
+        TEST_ASSERT_EQUAL_UINT32(0, declaredFunction->parameterCount);
+        TEST_ASSERT_EQUAL_INT(ZR_TRUE, declaredFunction->hasVariableArguments);
+        TEST_ASSERT_GREATER_THAN_UINT32(0, declaredFunction->instructionsLength);
+        TEST_ASSERT_TRUE(function_contains_opcode(declaredFunction, ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+void test_template_string_compilation_emits_string_pipeline(void) {
+    SZrTestTimer timer;
+    timer.startTime = clock();
+    const char *testSummary = "Template String Compilation Pipeline";
+    TBool hasToString = ZR_FALSE;
+    TBool hasAddString = ZR_FALSE;
+
+    TEST_START(testSummary);
+    TEST_INFO("Template string compilation",
+              "Testing that template strings lower to TO_STRING + ADD_STRING instructions");
+
+    SZrState *state = createTestState();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source = "var name = \"zr\"; return `hello ${1} ${name}`;";
+        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse template string source");
+            destroyTestState(state);
+            return;
+        }
+
+        func = ZrCompilerCompile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile template string source");
+            destroyTestState(state);
+            return;
+        }
+
+        TEST_ASSERT_NOT_NULL(func->instructionsList);
+        TEST_ASSERT_GREATER_THAN_UINT32(0, func->instructionsLength);
+
+        for (TUInt32 i = 0; i < func->instructionsLength; i++) {
+            EZrInstructionCode opcode =
+                (EZrInstructionCode)func->instructionsList[i].instruction.operationCode;
+            if (opcode == ZR_INSTRUCTION_ENUM(TO_STRING)) {
+                hasToString = ZR_TRUE;
+            } else if (opcode == ZR_INSTRUCTION_ENUM(ADD_STRING)) {
+                hasAddString = ZR_TRUE;
+            }
+        }
+
+        TEST_ASSERT_TRUE(hasToString);
+        TEST_ASSERT_TRUE(hasAddString);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+void test_using_statement_compiles_through_frontend(void) {
+    SZrTestTimer timer;
+    timer.startTime = clock();
+    const char *testSummary = "Using Statement Frontend Compilation";
+
+    TEST_START(testSummary);
+    TEST_INFO("Using statement compilation",
+              "Testing that using syntax is accepted by the compiler frontend and preserves control flow");
+
+    SZrState *state = createTestState();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source = "var resource = \"x\"; using (resource) { var inner = 1; } return 7;";
+        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse using statement source");
+            destroyTestState(state);
+            return;
+        }
+
+        func = ZrCompilerCompile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile using statement source");
+            destroyTestState(state);
+            return;
+        }
+
+        TEST_ASSERT_NOT_NULL(func);
+        TEST_ASSERT_GREATER_THAN_UINT32(0, func->instructionsLength);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+void test_field_scoped_using_metadata_serializes_into_prototype_data(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Field-Scoped Using Prototype Metadata";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Field-scoped using prototype metadata",
+              "Testing that compiler prototypeData preserves managed-field metadata for explicit `using var` fields");
+
+    SZrState *state = createTestState();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "pub struct HandleBox { using var handle: unique<Resource>; var count: int; }\n"
+            "pub class Holder { using var resource: shared<Resource>; var version: int; }";
+        SZrString *sourceName = ZrStringCreate(state, "field_using_meta.zr", 19);
+        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        const SZrCompiledPrototypeInfoView *structProto;
+        const SZrCompiledPrototypeInfoView *classProto;
+        const SZrCompiledMemberInfoView *handleMember;
+        const SZrCompiledMemberInfoView *countMember;
+        const SZrCompiledMemberInfoView *resourceMember;
+        const SZrCompiledMemberInfoView *versionMember;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse field-scoped using source");
+            destroyTestState(state);
+            return;
+        }
+
+        func = ZrCompilerCompile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile field-scoped using source");
+            destroyTestState(state);
+            return;
+        }
+
+        TEST_ASSERT_NOT_NULL(func->prototypeData);
+        TEST_ASSERT_EQUAL_UINT32(2, func->prototypeCount);
+
+        structProto = find_compiled_prototype_by_name(state, func, "HandleBox");
+        classProto = find_compiled_prototype_by_name(state, func, "Holder");
+        TEST_ASSERT_NOT_NULL(structProto);
+        TEST_ASSERT_NOT_NULL(classProto);
+
+        handleMember = find_compiled_member_by_name(state, func, structProto, "handle");
+        countMember = find_compiled_member_by_name(state, func, structProto, "count");
+        resourceMember = find_compiled_member_by_name(state, func, classProto, "resource");
+        versionMember = find_compiled_member_by_name(state, func, classProto, "version");
+        TEST_ASSERT_NOT_NULL(handleMember);
+        TEST_ASSERT_NOT_NULL(countMember);
+        TEST_ASSERT_NOT_NULL(resourceMember);
+        TEST_ASSERT_NOT_NULL(versionMember);
+
+        TEST_ASSERT_TRUE(handleMember->isUsingManaged);
+        TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_UNIQUE, handleMember->ownershipQualifier);
+        TEST_ASSERT_TRUE(handleMember->callsClose);
+        TEST_ASSERT_TRUE(handleMember->callsDestructor);
+        TEST_ASSERT_EQUAL_UINT32(0, handleMember->declarationOrder);
+
+        TEST_ASSERT_FALSE(countMember->isUsingManaged);
+        TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_NONE, countMember->ownershipQualifier);
+
+        TEST_ASSERT_TRUE(resourceMember->isUsingManaged);
+        TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_SHARED, resourceMember->ownershipQualifier);
+        TEST_ASSERT_TRUE(resourceMember->callsClose);
+        TEST_ASSERT_TRUE(resourceMember->callsDestructor);
+        TEST_ASSERT_EQUAL_UINT32(0, resourceMember->declarationOrder);
+
+        TEST_ASSERT_FALSE(versionMember->isUsingManaged);
+        TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_NONE, versionMember->ownershipQualifier);
+
+        ZrFunctionFree(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroyTestState(state);
+    TEST_DIVIDER();
+}
+
+void test_static_using_field_is_rejected_by_compiler(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Static Using Field Compile-Time Rejection";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Static using rejection",
+              "Testing that `static using var` is rejected as a compile-time error by the compiler frontend");
+
+    SZrState *state = createTestState();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source = "class Holder { static using var resource: unique<Resource>; }";
+        SZrString *sourceName = ZrStringCreate(state, "static_using_compile_error.zr", 29);
+        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse static using field source");
+            destroyTestState(state);
+            return;
+        }
+
+        func = ZrCompilerCompile(state, ast);
+        TEST_ASSERT_NULL(func);
+    }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -1322,6 +1709,10 @@ int main(void) {
     printf("==========\n");
     RUN_TEST(test_compound_assignment_operators);
     RUN_TEST(test_variable_arguments_function);
+    RUN_TEST(test_template_string_compilation_emits_string_pipeline);
+    RUN_TEST(test_using_statement_compiles_through_frontend);
+    RUN_TEST(test_field_scoped_using_metadata_serializes_into_prototype_data);
+    RUN_TEST(test_static_using_field_is_rejected_by_compiler);
 
     printf("\n");
     TEST_MODULE_DIVIDER();

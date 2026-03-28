@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_parser/type_system.h"
+#include "zr_vm_parser/semantic.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/memory.h"
@@ -20,6 +21,7 @@ void ZrInferredTypeInit(SZrState *state, SZrInferredType *type, EZrValueType bas
     
     type->baseType = baseType;
     type->isNullable = ZR_FALSE;
+    type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     type->typeName = ZR_NULL;
     ZrArrayConstruct(&type->elementTypes);
     
@@ -43,6 +45,7 @@ void ZrInferredTypeInitFull(SZrState *state, SZrInferredType *type, EZrValueType
     
     type->baseType = baseType;
     type->isNullable = isNullable;
+    type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     type->typeName = typeName;
     ZrArrayConstruct(&type->elementTypes);
     
@@ -88,6 +91,7 @@ void ZrInferredTypeCopy(SZrState *state, SZrInferredType *dest, const SZrInferre
     
     dest->baseType = src->baseType;
     dest->isNullable = src->isNullable;
+    dest->ownershipQualifier = src->ownershipQualifier;
     dest->typeName = src->typeName; // 字符串由GC管理，直接复制引用
     
     // Deep-copy nested inline element types.
@@ -130,6 +134,10 @@ TBool ZrInferredTypeEqual(const SZrInferredType *type1, const SZrInferredType *t
     }
     
     if (type1->isNullable != type2->isNullable) {
+        return ZR_FALSE;
+    }
+
+    if (type1->ownershipQualifier != type2->ownershipQualifier) {
         return ZR_FALSE;
     }
     
@@ -177,6 +185,49 @@ TBool ZrInferredTypeEqual(const SZrInferredType *type1, const SZrInferredType *t
     return ZR_TRUE;
 }
 
+static TBool ownership_qualifier_is_compatible(EZrOwnershipQualifier fromQualifier,
+                                               EZrOwnershipQualifier toQualifier) {
+    if (fromQualifier == toQualifier) {
+        return ZR_TRUE;
+    }
+
+    if (toQualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
+        return fromQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+               fromQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
+    }
+
+    if (fromQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE &&
+        toQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static EZrOwnershipQualifier ownership_qualifier_get_common(EZrOwnershipQualifier leftQualifier,
+                                                            EZrOwnershipQualifier rightQualifier) {
+    if (leftQualifier == rightQualifier) {
+        return leftQualifier;
+    }
+
+    if (leftQualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
+        return rightQualifier;
+    }
+
+    if (rightQualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
+        return leftQualifier;
+    }
+
+    if ((leftQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE &&
+         rightQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) ||
+        (leftQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED &&
+         rightQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE)) {
+        return ZR_OWNERSHIP_QUALIFIER_SHARED;
+    }
+
+    return ZR_OWNERSHIP_QUALIFIER_NONE;
+}
+
 // 检查类型是否为整数类型
 static TBool is_integer_type(EZrValueType type) {
     return ZR_VALUE_IS_TYPE_SIGNED_INT(type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(type);
@@ -185,6 +236,43 @@ static TBool is_integer_type(EZrValueType type) {
 // 检查类型是否为浮点类型
 static TBool is_float_type(EZrValueType type) {
     return ZR_VALUE_IS_TYPE_FLOAT(type);
+}
+
+static TBool function_type_info_matches_signature(const SZrFunctionTypeInfo *funcInfo,
+                                                  const SZrInferredType *returnType,
+                                                  const SZrArray *paramTypes) {
+    if (funcInfo == ZR_NULL || returnType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrInferredTypeEqual(&funcInfo->returnType, returnType)) {
+        return ZR_FALSE;
+    }
+
+    if (paramTypes == ZR_NULL) {
+        return funcInfo->paramTypes.length == 0;
+    }
+
+    if (funcInfo->paramTypes.length != paramTypes->length) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = 0; i < paramTypes->length; i++) {
+        SZrInferredType *existingParam = (SZrInferredType *)ZrArrayGet((SZrArray *)&funcInfo->paramTypes, i);
+        SZrInferredType *candidateParam = (SZrInferredType *)ZrArrayGet((SZrArray *)paramTypes, i);
+        if (existingParam == ZR_NULL || candidateParam == ZR_NULL) {
+            if (existingParam != candidateParam) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+
+        if (!ZrInferredTypeEqual(existingParam, candidateParam)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
 }
 
 // 检查类型是否为数字类型（保留用于未来扩展）
@@ -201,6 +289,11 @@ TBool ZrInferredTypeIsCompatible(const SZrInferredType *fromType, const SZrInfer
     // 完全相同类型
     if (ZrInferredTypeEqual(fromType, toType)) {
         return ZR_TRUE;
+    }
+
+    if (!ownership_qualifier_is_compatible(fromType->ownershipQualifier,
+                                           toType->ownershipQualifier)) {
+        return ZR_FALSE;
     }
     
     // null可以转换为任何可空类型
@@ -248,6 +341,8 @@ TBool ZrInferredTypeGetCommonType(SZrState *state, SZrInferredType *result, cons
     if (type1->baseType == ZR_VALUE_TYPE_NULL) {
         if (type2->isNullable) {
             ZrInferredTypeCopy(state, result, type2);
+            result->ownershipQualifier = ownership_qualifier_get_common(type1->ownershipQualifier,
+                                                                        type2->ownershipQualifier);
             return ZR_TRUE;
         }
         return ZR_FALSE;
@@ -255,6 +350,8 @@ TBool ZrInferredTypeGetCommonType(SZrState *state, SZrInferredType *result, cons
     if (type2->baseType == ZR_VALUE_TYPE_NULL) {
         if (type1->isNullable) {
             ZrInferredTypeCopy(state, result, type1);
+            result->ownershipQualifier = ownership_qualifier_get_common(type1->ownershipQualifier,
+                                                                        type2->ownershipQualifier);
             return ZR_TRUE;
         }
         return ZR_FALSE;
@@ -271,6 +368,8 @@ TBool ZrInferredTypeGetCommonType(SZrState *state, SZrInferredType *result, cons
         }
         ZrInferredTypeInit(state, result, floatType);
         result->isNullable = type1->isNullable || type2->isNullable;
+        result->ownershipQualifier = ownership_qualifier_get_common(type1->ownershipQualifier,
+                                                                    type2->ownershipQualifier);
         return ZR_TRUE;
     }
     
@@ -279,6 +378,8 @@ TBool ZrInferredTypeGetCommonType(SZrState *state, SZrInferredType *result, cons
     if (is_integer_type(type1->baseType) && is_integer_type(type2->baseType)) {
         ZrInferredTypeInit(state, result, ZR_VALUE_TYPE_INT64);
         result->isNullable = type1->isNullable || type2->isNullable;
+        result->ownershipQualifier = ownership_qualifier_get_common(type1->ownershipQualifier,
+                                                                    type2->ownershipQualifier);
         return ZR_TRUE;
     }
     
@@ -294,6 +395,13 @@ EZrInstructionCode ZrInferredTypeGetConversionOpcode(const SZrInferredType *from
     
     // 如果类型相同，不需要转换
     if (ZrInferredTypeEqual(fromType, toType)) {
+        return ZR_INSTRUCTION_ENUM(ENUM_MAX);
+    }
+
+    if (fromType->baseType == toType->baseType &&
+        fromType->isNullable == toType->isNullable &&
+        ownership_qualifier_is_compatible(fromType->ownershipQualifier,
+                                          toType->ownershipQualifier)) {
         return ZR_INSTRUCTION_ENUM(ENUM_MAX);
     }
     
@@ -348,6 +456,7 @@ SZrTypeEnvironment *ZrTypeEnvironmentNew(SZrState *state) {
     ZrArrayInit(state, &env->functionReturnTypes, sizeof(SZrFunctionTypeInfo *), 8);
     ZrArrayInit(state, &env->typeNames, sizeof(SZrString *), 8);
     env->parent = ZR_NULL;
+    env->semanticContext = ZR_NULL;
     
     return env;
 }
@@ -408,6 +517,9 @@ void ZrTypeEnvironmentFree(SZrState *state, SZrTypeEnvironment *env) {
 
 // 注册变量类型
 TBool ZrTypeEnvironmentRegisterVariable(SZrState *state, SZrTypeEnvironment *env, SZrString *name, const SZrInferredType *type) {
+    TZrTypeId typeId;
+    SZrFileRange location = {0};
+
     if (state == ZR_NULL || env == ZR_NULL || name == ZR_NULL || type == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -429,6 +541,21 @@ TBool ZrTypeEnvironmentRegisterVariable(SZrState *state, SZrTypeEnvironment *env
     ZrInferredTypeCopy(state, &binding.type, type);
     
     ZrArrayPush(state, &env->variableTypes, &binding);
+
+    if (env->semanticContext != ZR_NULL) {
+        typeId = ZrSemanticRegisterInferredType(env->semanticContext,
+                                                type,
+                                                ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
+                                                type->typeName,
+                                                ZR_NULL);
+        ZrSemanticRegisterSymbol(env->semanticContext,
+                                 name,
+                                 ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+                                 typeId,
+                                 0,
+                                 ZR_NULL,
+                                 location);
+    }
     return ZR_TRUE;
 }
 
@@ -457,17 +584,22 @@ TBool ZrTypeEnvironmentLookupVariable(SZrState *state, SZrTypeEnvironment *env, 
 
 // 注册函数类型
 TBool ZrTypeEnvironmentRegisterFunction(SZrState *state, SZrTypeEnvironment *env, SZrString *name, const SZrInferredType *returnType, SZrArray *paramTypes) {
+    TZrTypeId typeId;
+    TZrSymbolId symbolId;
+    TZrOverloadSetId overloadSetId;
+    SZrFileRange location = {0};
+
     if (state == ZR_NULL || env == ZR_NULL || name == ZR_NULL || returnType == ZR_NULL) {
         return ZR_FALSE;
     }
     
-    // 检查是否已存在
+    // 允许同名重载，但拒绝完全相同的签名重复注册。
     for (TZrSize i = 0; i < env->functionReturnTypes.length; i++) {
         SZrFunctionTypeInfo **funcInfo = (SZrFunctionTypeInfo **)ZrArrayGet(&env->functionReturnTypes, i);
         if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL && 
-            (*funcInfo)->name != ZR_NULL && ZrStringEqual((*funcInfo)->name, name)) {
-            // TODO: 已存在，更新类型（简化处理，暂时不支持重载）
-            return ZR_FALSE; // 函数已存在，不允许重复注册
+            (*funcInfo)->name != ZR_NULL && ZrStringEqual((*funcInfo)->name, name) &&
+            function_type_info_matches_signature(*funcInfo, returnType, paramTypes)) {
+            return ZR_FALSE;
         }
     }
     
@@ -497,6 +629,23 @@ TBool ZrTypeEnvironmentRegisterFunction(SZrState *state, SZrTypeEnvironment *env
     }
     
     ZrArrayPush(state, &env->functionReturnTypes, &funcInfo);
+
+    if (env->semanticContext != ZR_NULL) {
+        typeId = ZrSemanticRegisterInferredType(env->semanticContext,
+                                                returnType,
+                                                ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
+                                                returnType->typeName,
+                                                ZR_NULL);
+        overloadSetId = ZrSemanticGetOrCreateOverloadSet(env->semanticContext, name);
+        symbolId = ZrSemanticRegisterSymbol(env->semanticContext,
+                                            name,
+                                            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                                            typeId,
+                                            overloadSetId,
+                                            ZR_NULL,
+                                            location);
+        ZrSemanticAddOverloadMember(env->semanticContext, overloadSetId, symbolId);
+    }
     return ZR_TRUE;
 }
 
@@ -524,8 +673,42 @@ TBool ZrTypeEnvironmentLookupFunction(SZrTypeEnvironment *env, SZrString *name, 
     return ZR_FALSE;
 }
 
+TBool ZrTypeEnvironmentLookupFunctions(SZrState *state, SZrTypeEnvironment *env, SZrString *name, SZrArray *results) {
+    SZrTypeEnvironment *currentEnv;
+
+    if (state == ZR_NULL || env == ZR_NULL || name == ZR_NULL || results == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrArrayInit(state, results, sizeof(SZrFunctionTypeInfo *), 4);
+
+    currentEnv = env;
+    while (currentEnv != ZR_NULL) {
+        for (TZrSize i = 0; i < currentEnv->functionReturnTypes.length; i++) {
+            SZrFunctionTypeInfo **funcInfo =
+                (SZrFunctionTypeInfo **)ZrArrayGet(&currentEnv->functionReturnTypes, i);
+            if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL &&
+                (*funcInfo)->name != ZR_NULL && ZrStringEqual((*funcInfo)->name, name)) {
+                SZrFunctionTypeInfo *resolvedInfo = *funcInfo;
+                ZrArrayPush(state, results, &resolvedInfo);
+            }
+        }
+        currentEnv = currentEnv->parent;
+    }
+
+    if (results->length == 0) {
+        ZrArrayFree(state, results);
+        ZrArrayConstruct(results);
+    }
+
+    return results->length > 0;
+}
+
 // 注册类型名称
 TBool ZrTypeEnvironmentRegisterType(SZrState *state, SZrTypeEnvironment *env, SZrString *typeName) {
+    TZrTypeId typeId;
+    SZrFileRange location = {0};
+
     if (state == ZR_NULL || env == ZR_NULL || typeName == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -541,6 +724,20 @@ TBool ZrTypeEnvironmentRegisterType(SZrState *state, SZrTypeEnvironment *env, SZ
     
     // 添加类型名称（字符串本身由GC管理，只存储引用）
     ZrArrayPush(state, &env->typeNames, &typeName);
+
+    if (env->semanticContext != ZR_NULL) {
+        typeId = ZrSemanticRegisterNamedType(env->semanticContext,
+                                             typeName,
+                                             ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
+                                             ZR_NULL);
+        ZrSemanticRegisterSymbol(env->semanticContext,
+                                 typeName,
+                                 ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                                 typeId,
+                                 0,
+                                 ZR_NULL,
+                                 location);
+    }
     return ZR_TRUE;
 }
 

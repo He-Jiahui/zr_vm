@@ -10,8 +10,8 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_parser/writer.h"
 
 #endif //ZR_VM_PARSER_H
-

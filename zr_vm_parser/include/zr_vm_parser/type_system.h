@@ -6,6 +6,7 @@
 #define ZR_VM_PARSER_TYPE_SYSTEM_H
 
 #include "zr_vm_parser/conf.h"
+#include "zr_vm_parser/ast.h"
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/array.h"
@@ -13,11 +14,13 @@
 
 // 前向声明
 struct SZrCompilerState;
+struct SZrSemanticContext;
 
 // 推断的类型结构体
 typedef struct SZrInferredType {
     EZrValueType baseType;           // 基础类型（对应EZrValueType枚举）
     TBool isNullable;                // 是否可空
+    EZrOwnershipQualifier ownershipQualifier; // 特殊所有权限定
     SZrArray elementTypes;           // 泛型/数组元素类型（SZrInferredType*），可选
     SZrString *typeName;             // 用户定义类型名（struct/class等），可选
     
@@ -52,6 +55,7 @@ typedef struct SZrTypeEnvironment {
     SZrArray functionReturnTypes;    // 函数类型信息数组（SZrFunctionTypeInfo*）
     SZrArray typeNames;              // 类型名称数组（SZrString*），用于存储已定义的struct/class类型名称
     struct SZrTypeEnvironment *parent; // 父类型环境（用于作用域）
+    struct SZrSemanticContext *semanticContext; // 共享语义记录上下文（可选）
 } SZrTypeEnvironment;
 
 // 类型操作函数
@@ -101,6 +105,9 @@ ZR_PARSER_API TBool ZrTypeEnvironmentRegisterFunction(SZrState *state, SZrTypeEn
 // 查找函数类型
 ZR_PARSER_API TBool ZrTypeEnvironmentLookupFunction(SZrTypeEnvironment *env, SZrString *name, SZrFunctionTypeInfo **result);
 
+// 查找同名函数候选集，results 为输出数组（元素类型为 SZrFunctionTypeInfo*）
+ZR_PARSER_API TBool ZrTypeEnvironmentLookupFunctions(SZrState *state, SZrTypeEnvironment *env, SZrString *name, SZrArray *results);
+
 // 注册类型名称
 ZR_PARSER_API TBool ZrTypeEnvironmentRegisterType(SZrState *state, SZrTypeEnvironment *env, SZrString *typeName);
 
@@ -108,4 +115,3 @@ ZR_PARSER_API TBool ZrTypeEnvironmentRegisterType(SZrState *state, SZrTypeEnviro
 ZR_PARSER_API TBool ZrTypeEnvironmentLookupType(SZrTypeEnvironment *env, SZrString *typeName);
 
 #endif //ZR_VM_PARSER_TYPE_SYSTEM_H
-

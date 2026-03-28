@@ -9,18 +9,18 @@ FUNCTION: <anonymous>
   STACK_SIZE: 5
 
 CONSTANTS (2):
-  [0] string: "greet"
+  [0] unknown type: 17
   [1] unknown type: 17
 
 LOCAL_VARIABLES (2):
-  [0] greet: offset_activate=0, offset_dead=0
-  [1] buildMessage: offset_activate=2, offset_dead=0
+  [0] greet: offset_activate=0, offset_dead=7
+  [1] buildMessage: offset_activate=2, offset_dead=7
 
 CLOSURE_VARIABLES (0):
 
 INSTRUCTIONS (7):
-  [0] OPCODE_71 (extra=0)
-  [1] GET_CONSTANT (extra=1, operand=0)
+  [0] CREATE_CLOSURE (extra=1)
+  [1] SET_STACK (extra=0, operand=1)
   [2] CREATE_CLOSURE (extra=3)
   [3] SET_STACK (extra=1, operand=3)
   [4] GET_STACK (extra=4, operand=1)

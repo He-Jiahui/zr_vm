@@ -7,6 +7,7 @@
 
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
@@ -23,6 +24,8 @@ typedef struct SZrCompilerState {
     SZrState *state;                    // VM 状态
     SZrFunction *currentFunction;       // 当前编译的函数
     SZrAstNode *currentAst;             // 当前编译的 AST 节点
+    SZrSemanticContext *semanticContext; // 统一语义记录上下文
+    SZrHirModule *hirModule;            // 当前脚本的 HIR 模块句柄
     
     // 常量池管理
     SZrArray constants;                 // 常量值数组（SZrTypeValue）
@@ -32,6 +35,7 @@ typedef struct SZrCompilerState {
     SZrArray localVars;                 // 局部变量数组（SZrFunctionLocalVariable）
     TZrSize localVarCount;              // 局部变量数量
     TZrSize stackSlotCount;             // 当前栈槽数量
+    TZrSize maxStackSlotCount;          // 当前函数编译过程中的栈槽峰值
     
     // 闭包管理
     SZrArray closureVars;               // 闭包变量数组（SZrFunctionClosureVariable）
@@ -134,6 +138,7 @@ typedef struct SZrCompileTimeFunction {
 typedef struct SZrScope {
     TZrSize startVarIndex;              // 作用域开始的变量索引
     TZrSize varCount;                   // 作用域内的变量数量
+    TZrSize cleanupRegistrationCount;   // 作用域内 using 注册的清理数量
     SZrCompilerState *parentCompiler;   // 父编译器（用于闭包）
 } SZrScope;
 
@@ -184,6 +189,11 @@ typedef struct SZrTypeMemberInfo {
     EZrAccessModifier accessModifier;   // 访问修饰符
     TBool isStatic;                     // 是否为静态成员
     TBool isConst;                      // 是否为 const 字段
+    TBool isUsingManaged;               // 是否显式使用 field-scoped using
+    EZrOwnershipQualifier ownershipQualifier; // 字段所有权限定符
+    TBool callsClose;                   // 生命周期结束时是否需要先调用 @close
+    TBool callsDestructor;              // 生命周期结束时是否可能触发 @destructor
+    TUInt32 declarationOrder;           // 在当前类型中的声明顺序
     
     // 字段特定信息
     SZrType *fieldType;                 // 字段类型（用于偏移量计算，可能为ZR_NULL）
@@ -257,6 +267,10 @@ ZR_PARSER_API void ZrCompilerStateFree(SZrCompilerState *cs);
 
 // 编译 AST 为函数
 ZR_PARSER_API SZrFunction *ZrCompilerCompile(SZrState *state, SZrAstNode *ast);
+
+// 公开的低层编译入口，用于语义/HIR 相关测试和分阶段编译接线
+ZR_PARSER_API void compile_expression(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API void compile_statement(SZrCompilerState *cs, SZrAstNode *node);
 
 // 编译 AST 为函数和测试函数列表（新接口）
 // 返回编译结果结构体，调用者需要调用 ZrCompileResultFree 来释放资源

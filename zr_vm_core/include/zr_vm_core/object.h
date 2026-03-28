@@ -40,12 +40,25 @@ struct ZR_STRUCT_ALIGN SZrObject {
 
 typedef struct SZrObject SZrObject;
 
+typedef struct SZrManagedFieldInfo {
+    struct SZrString *name;
+    TUInt32 fieldOffset;
+    TUInt32 fieldSize;
+    TUInt32 ownershipQualifier;
+    TBool callsClose;
+    TBool callsDestructor;
+    TUInt32 declarationOrder;
+} SZrManagedFieldInfo;
+
 struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     SZrObject super;
     struct SZrString *name;
     EZrObjectPrototypeType type;
     struct SZrMetaTable metaTable;
     struct SZrObjectPrototype *superPrototype;
+    SZrManagedFieldInfo *managedFields;
+    TUInt32 managedFieldCount;
+    TUInt32 managedFieldCapacity;
 };
 
 typedef struct SZrObjectPrototype SZrObjectPrototype;
@@ -104,5 +117,15 @@ ZR_CORE_API void ZrObjectPrototypeInitMetaTable(struct SZrState *state, SZrObjec
 ZR_CORE_API void ZrStructPrototypeAddField(struct SZrState *state, SZrStructPrototype *prototype, SZrString *fieldName, TZrSize offset);
 
 ZR_CORE_API void ZrObjectPrototypeAddMeta(struct SZrState *state, SZrObjectPrototype *prototype, EZrMetaType metaType, struct SZrFunction *function);
+
+ZR_CORE_API void ZrObjectPrototypeAddManagedField(struct SZrState *state,
+                                                  SZrObjectPrototype *prototype,
+                                                  SZrString *fieldName,
+                                                  TUInt32 fieldOffset,
+                                                  TUInt32 fieldSize,
+                                                  TUInt32 ownershipQualifier,
+                                                  TBool callsClose,
+                                                  TBool callsDestructor,
+                                                  TUInt32 declarationOrder);
 
 #endif // ZR_VM_CORE_OBJECT_H
