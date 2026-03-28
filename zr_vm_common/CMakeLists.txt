@@ -8,5 +8,6 @@ set(zr_vm_common_src
     CACHE
     STRING
     "common source library"
+    FORCE
 )
 

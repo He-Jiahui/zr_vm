@@ -60,13 +60,13 @@ typedef enum EZrDebugScope EZrDebugScope;
 struct ZR_STRUCT_ALIGN SZrDebugInfo {
     EZrDebugHookEvent event;
 
-    TNativeString name;
+    TZrNativeString name;
     // todo
     EZrDebugScope scope;
 
-    TBool isNative;
+    TZrBool isNative;
 
-    TNativeString source;
+    TZrNativeString source;
 
     TZrSize sourceLength;
 
@@ -76,11 +76,11 @@ struct ZR_STRUCT_ALIGN SZrDebugInfo {
     TZrSize closureValuesCount;
     TZrSize parametersCount;
 
-    TBool hasVariableParameters;
-    TBool isTailCall;
+    TZrBool hasVariableParameters;
+    TZrBool isTailCall;
 
-    TUInt32 transferStart;
-    TUInt32 transferCount;
+    TZrUInt32 transferStart;
+    TZrUInt32 transferCount;
     struct SZrCallInfo *callInfo;
 };
 
@@ -89,32 +89,32 @@ typedef struct SZrDebugInfo SZrDebugInfo;
 typedef void (*FZrDebugHook)(struct SZrState *state, SZrDebugInfo *debugInfo);
 
 
-ZR_CORE_API TBool ZrDebugInfoGet(struct SZrState *state, EZrDebugInfoType type, SZrDebugInfo *debugInfo);
+ZR_CORE_API TZrBool ZrCore_DebugInfo_Get(struct SZrState *state, EZrDebugInfoType type, SZrDebugInfo *debugInfo);
 
-ZR_CORE_API ZR_NO_RETURN void ZrDebugCallError(struct SZrState *state, struct SZrTypeValue *value);
+ZR_CORE_API ZR_NO_RETURN void ZrCore_Debug_CallError(struct SZrState *state, struct SZrTypeValue *value);
 
-ZR_CORE_API TZrDebugSignal ZrDebugTraceExecution(struct SZrState *state, const TZrInstruction *programCounter);
+ZR_CORE_API TZrDebugSignal ZrCore_Debug_TraceExecution(struct SZrState *state, const TZrInstruction *programCounter);
 
-ZR_CORE_API ZR_NO_RETURN void ZrDebugRunError(struct SZrState *state, TNativeString format, ...);
+ZR_CORE_API ZR_NO_RETURN void ZrCore_Debug_RunError(struct SZrState *state, TZrNativeString format, ...);
 
-ZR_CORE_API ZR_NO_RETURN void ZrDebugErrorWhenHandlingError(struct SZrState *state);
+ZR_CORE_API ZR_NO_RETURN void ZrCore_Debug_ErrorWhenHandlingError(struct SZrState *state);
 
-ZR_CORE_API void ZrDebugHook(struct SZrState *state, EZrDebugHookEvent event, TUInt32 line, TUInt32 transferStart,
-                             TUInt32 transferCount);
+ZR_CORE_API void ZrCore_Debug_Hook(struct SZrState *state, EZrDebugHookEvent event, TZrUInt32 line, TZrUInt32 transferStart,
+                             TZrUInt32 transferCount);
 
-ZR_CORE_API void ZrDebugHookReturn(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount);
+ZR_CORE_API void ZrCore_Debug_HookReturn(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount);
 
 // Debug工具：输出Prototype信息（类、结构体等）
 // 输出prototype的名称、类型、继承关系、字段、Meta方法等信息
-ZR_CORE_API void ZrDebugPrintPrototype(struct SZrState *state, struct SZrObjectPrototype *prototype, FILE *output);
+ZR_CORE_API void ZrCore_Debug_PrintPrototype(struct SZrState *state, struct SZrObjectPrototype *prototype, FILE *output);
 
 // Debug工具：输出Object信息
 // 输出object的prototype、字段值等信息
-ZR_CORE_API void ZrDebugPrintObject(struct SZrState *state, struct SZrObject *object, FILE *output);
+ZR_CORE_API void ZrCore_Debug_PrintObject(struct SZrState *state, struct SZrObject *object, FILE *output);
 
 // Debug工具：从prototypeData中解析并字符串化prototype信息
 // 输出类似zri中间表示的格式，用于调试编译后的.zri文件
-ZR_CORE_API void ZrDebugPrintPrototypesFromData(struct SZrState *state, struct SZrFunction *entryFunction,
+ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, struct SZrFunction *entryFunction,
                                                 FILE *output);
 
 #endif // ZR_VM_CORE_DEBUG_H

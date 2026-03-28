@@ -10,7 +10,7 @@
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/project.h"
 
-static int ZrCliRun(const int argc, char **argv) {
+static int cli_run(const int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: zr_vm_cli <project.zrp>\n");
         return 1;
@@ -22,10 +22,10 @@ static int ZrCliRun(const int argc, char **argv) {
         return 1;
     }
 
-    ZrParserRegisterToGlobalState(global->mainThreadState);
+    ZrParser_ToGlobalState_Register(global->mainThreadState);
 
     SZrTypeValue result;
-    ZrValueResetAsNull(&result);
+    ZrCore_Value_ResetAsNull(&result);
     EZrThreadStatus status = ZrLibrary_Project_Run(global->mainThreadState, &result);
 
     if (status != ZR_THREAD_STATUS_FINE) {
@@ -34,22 +34,22 @@ static int ZrCliRun(const int argc, char **argv) {
         return 1;
     }
 
-    SZrString *resultString = ZrValueConvertToString(global->mainThreadState, &result);
+    SZrString *resultString = ZrCore_Value_ConvertToString(global->mainThreadState, &result);
     if (resultString == ZR_NULL) {
         fprintf(stderr, "failed to stringify project result\n");
         ZrLibrary_CommonState_CommonGlobalState_Free(global);
         return 1;
     }
 
-    printf("%s\n", ZrStringGetNativeString(resultString));
+    printf("%s\n", ZrCore_String_GetNativeString(resultString));
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     return 0;
 }
 
-void ZrCliMain(const int argc, char **argv) {
-    (void) ZrCliRun(argc, argv);
+void ZrCli_Main(const int argc, char **argv) {
+    (void) cli_run(argc, argv);
 }
 
 int main(const int argc, char **argv) {
-    return ZrCliRun(argc, argv);
+    return cli_run(argc, argv);
 }

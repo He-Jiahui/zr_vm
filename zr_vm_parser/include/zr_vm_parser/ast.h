@@ -167,17 +167,17 @@ typedef enum EZrOwnershipQualifier EZrOwnershipQualifier;
 
 // 赋值操作符
 typedef struct SZrAssignmentOperator {
-    const TChar *op; // "=", "+=", "-=", "*=", "/=", "%="
+    const TZrChar *op; // "=", "+=", "-=", "*=", "/=", "%="
 } SZrAssignmentOperator;
 
 // 二元操作符
 typedef struct SZrBinaryOperator {
-    const TChar *op; // "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "<<", ">>", "|", "^", "&"
+    const TZrChar *op; // "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "<<", ">>", "|", "^", "&"
 } SZrBinaryOperator;
 
 // 一元操作符
 typedef struct SZrUnaryOperator {
-    const TChar *op; // "!", "~", "+", "-", "$", "new"
+    const TZrChar *op; // "!", "~", "+", "-", "$", "new"
 } SZrUnaryOperator;
 
 // 标识符
@@ -189,14 +189,14 @@ typedef struct SZrIdentifier {
 typedef struct SZrType {
     SZrAstNode *name; // Identifier 或 GenericType 或 TupleType
     struct SZrType *subType; // 子类型（可选）
-    TInt32 dimensions; // 数组维度
+    TZrInt32 dimensions; // 数组维度
     EZrOwnershipQualifier ownershipQualifier; // 特殊所有权限定
     
     // 数组大小约束
     TZrSize arrayFixedSize;          // 数组固定大小（0表示未固定）
     TZrSize arrayMinSize;            // 数组最小大小
     TZrSize arrayMaxSize;            // 数组最大大小
-    TBool hasArraySizeConstraint;    // 是否有数组大小约束
+    TZrBool hasArraySizeConstraint;    // 是否有数组大小约束
     SZrAstNode *arraySizeExpression; // 编译期数组长度表达式（可选）
 } SZrType;
 
@@ -221,28 +221,28 @@ typedef struct SZrParameter {
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
     SZrAstNode *defaultValue; // 可选表达式
-    TBool isConst; // 是否为 const 参数
+    TZrBool isConst; // 是否为 const 参数
 } SZrParameter;
 
 // 字面量节点结构
 typedef struct SZrBooleanLiteral {
-    TBool value;
+    TZrBool value;
 } SZrBooleanLiteral;
 
 typedef struct SZrIntegerLiteral {
-    TInt64 value;
+    TZrInt64 value;
     SZrString *literal; // 原始字符串
 } SZrIntegerLiteral;
 
 typedef struct SZrFloatLiteral {
-    TDouble value;
+    TZrDouble value;
     SZrString *literal;
-    TBool isSingle; // 是否为单精度
+    TZrBool isSingle; // 是否为单精度
 } SZrFloatLiteral;
 
 typedef struct SZrStringLiteral {
     SZrString *value;
-    TBool hasError;
+    TZrBool hasError;
     SZrString *literal;
 } SZrStringLiteral;
 
@@ -255,8 +255,8 @@ typedef struct SZrTemplateStringLiteral {
 } SZrTemplateStringLiteral;
 
 typedef struct SZrCharLiteral {
-    TChar value;
-    TBool hasError;
+    TZrChar value;
+    TZrBool hasError;
     SZrString *literal;
 } SZrCharLiteral;
 
@@ -292,7 +292,7 @@ typedef struct SZrConditionalExpression {
 typedef struct SZrLogicalExpression {
     SZrAstNode *left;
     SZrAstNode *right;
-    const TChar *op; // "&&" 或 "||"
+    const TZrChar *op; // "&&" 或 "||"
 } SZrLogicalExpression;
 
 typedef struct SZrLambdaExpression {
@@ -305,14 +305,14 @@ typedef struct SZrIfExpression {
     SZrAstNode *condition;
     SZrAstNode *thenExpr;
     SZrAstNode *elseExpr; // 可选
-    TBool isStatement;
+    TZrBool isStatement;
 } SZrIfExpression;
 
 typedef struct SZrSwitchExpression {
     SZrAstNode *expr;
     SZrAstNodeArray *cases; // SwitchCase 数组
     SZrAstNode *defaultCase; // SwitchDefault（可选）
-    TBool isStatement;
+    TZrBool isStatement;
 } SZrSwitchExpression;
 
 typedef struct SZrSwitchCase {
@@ -333,12 +333,12 @@ typedef struct SZrNamedArgument {
 typedef struct SZrFunctionCall {
     SZrAstNodeArray *args;              // Expression 数组（现有）
     SZrArray *argNames;                 // 参数名数组（SZrString*），可选，与args对应，ZR_NULL表示位置参数
-    TBool hasNamedArgs;                 // 是否有命名参数
+    TZrBool hasNamedArgs;                 // 是否有命名参数
 } SZrFunctionCall;
 
 typedef struct SZrMemberExpression {
     SZrAstNode *property;
-    TBool computed; // true 表示使用 []，false 表示使用 .
+    TZrBool computed; // true 表示使用 []，false 表示使用 .
 } SZrMemberExpression;
 
 typedef struct SZrPrimaryExpression {
@@ -373,7 +373,7 @@ typedef struct SZrGeneratorExpression {
 typedef struct SZrWhileLoop {
     SZrAstNode *cond;
     SZrAstNode *block;
-    TBool isStatement;
+    TZrBool isStatement;
 } SZrWhileLoop;
 
 typedef struct SZrForLoop {
@@ -381,7 +381,7 @@ typedef struct SZrForLoop {
     SZrAstNode *cond; // ExpressionStatement 或 null
     SZrAstNode *step; // Expression（可选）
     SZrAstNode *block;
-    TBool isStatement;
+    TZrBool isStatement;
 } SZrForLoop;
 
 typedef struct SZrForeachLoop {
@@ -389,7 +389,7 @@ typedef struct SZrForeachLoop {
     SZrType *typeInfo; // 可选
     SZrAstNode *expr;
     SZrAstNode *block;
-    TBool isStatement;
+    TZrBool isStatement;
 } SZrForeachLoop;
 
 // 声明节点结构
@@ -402,7 +402,7 @@ typedef struct SZrVariableDeclaration {
     SZrAstNode *value; // Expression
     SZrType *typeInfo; // 可选
     EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
-    TBool isConst; // 是否为 const 变量
+    TZrBool isConst; // 是否为 const 变量
 } SZrVariableDeclaration;
 
 typedef struct SZrFunctionDeclaration {
@@ -447,9 +447,9 @@ typedef struct SZrStructDeclaration {
 
 typedef struct SZrStructField {
     EZrAccessModifier access;
-    TBool isStatic;
-    TBool isUsingManaged; // 是否使用 field-scoped using 生命周期管理
-    TBool isConst; // 是否为 const 字段
+    TZrBool isStatic;
+    TZrBool isUsingManaged; // 是否使用 field-scoped using 生命周期管理
+    TZrBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
     SZrAstNode *init; // 可选表达式
@@ -458,7 +458,7 @@ typedef struct SZrStructField {
 typedef struct SZrStructMethod {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
-    TBool isStatic;
+    TZrBool isStatic;
     SZrIdentifier *name;
     SZrGenericDeclaration *generic; // 可选
     SZrAstNodeArray *params; // Parameter 数组
@@ -469,7 +469,7 @@ typedef struct SZrStructMethod {
 
 typedef struct SZrStructMetaFunction {
     EZrAccessModifier access;
-    TBool isStatic;
+    TZrBool isStatic;
     SZrIdentifier *meta; // MetaIdentifier
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
@@ -503,9 +503,9 @@ typedef struct SZrClassDeclaration {
 typedef struct SZrClassField {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
-    TBool isStatic;
-    TBool isUsingManaged; // 是否使用 field-scoped using 生命周期管理
-    TBool isConst; // 是否为 const 字段
+    TZrBool isStatic;
+    TZrBool isUsingManaged; // 是否使用 field-scoped using 生命周期管理
+    TZrBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
     SZrAstNode *init; // 可选表达式
@@ -515,7 +515,7 @@ typedef struct SZrClassField {
 typedef struct SZrClassMethod {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
-    TBool isStatic;
+    TZrBool isStatic;
     SZrIdentifier *name;
     SZrGenericDeclaration *generic; // 可选
     SZrAstNodeArray *params; // Parameter 数组
@@ -528,18 +528,18 @@ typedef struct SZrClassMethod {
 typedef struct SZrClassProperty {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
-    TBool isStatic;
+    TZrBool isStatic;
     SZrAstNode *modifier; // PropertyGet 或 PropertySet 节点
 } SZrClassProperty;
 
 // 类元函数
 typedef struct SZrClassMetaFunction {
     EZrAccessModifier access;
-    TBool isStatic;
+    TZrBool isStatic;
     SZrIdentifier *meta; // MetaIdentifier
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
-    TBool hasSuperCall; // 是否显式声明了 super(...)
+    TZrBool hasSuperCall; // 是否显式声明了 super(...)
     SZrAstNodeArray *superArgs; // Expression 数组（可选）
     SZrType *returnType; // 可选
     SZrAstNode *body; // Block
@@ -573,7 +573,7 @@ typedef struct SZrInterfaceDeclaration {
 // 接口字段声明
 typedef struct SZrInterfaceFieldDeclaration {
     EZrAccessModifier access;
-    TBool isConst; // 是否为 const 字段
+    TZrBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
 } SZrInterfaceFieldDeclaration;
@@ -591,8 +591,8 @@ typedef struct SZrInterfaceMethodSignature {
 // 接口属性签名
 typedef struct SZrInterfacePropertySignature {
     EZrAccessModifier access;
-    TBool hasGet;
-    TBool hasSet;
+    TZrBool hasGet;
+    TZrBool hasSet;
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
 } SZrInterfacePropertySignature;
@@ -609,7 +609,7 @@ typedef struct SZrInterfaceMetaSignature {
 // 语句节点结构
 typedef struct SZrBlock {
     SZrAstNodeArray *body; // Statement 数组
-    TBool isStatement;
+    TZrBool isStatement;
 } SZrBlock;
 
 typedef struct SZrExpressionStatement {
@@ -619,7 +619,7 @@ typedef struct SZrExpressionStatement {
 typedef struct SZrUsingStatement {
     SZrAstNode *resource;
     SZrAstNode *body; // Block（可选，仅 using (expr) { ... }）
-    TBool isBlockScoped;
+    TZrBool isBlockScoped;
 } SZrUsingStatement;
 
 typedef struct SZrReturnStatement {
@@ -627,7 +627,7 @@ typedef struct SZrReturnStatement {
 } SZrReturnStatement;
 
 typedef struct SZrBreakContinueStatement {
-    TBool isBreak;
+    TZrBool isBreak;
     SZrAstNode *expr; // 可选表达式
 } SZrBreakContinueStatement;
 
@@ -825,9 +825,9 @@ typedef struct SZrAstNode {
 } SZrAstNode;
 
 // AST 节点数组操作
-ZR_PARSER_API SZrAstNodeArray *ZrAstNodeArrayNew(SZrState *state, TZrSize initialCapacity);
-ZR_PARSER_API void ZrAstNodeArrayAdd(SZrState *state, SZrAstNodeArray *array, SZrAstNode *node);
-ZR_PARSER_API void ZrAstNodeArrayFree(SZrState *state, SZrAstNodeArray *array);
+ZR_PARSER_API SZrAstNodeArray *ZrParser_AstNodeArray_New(SZrState *state, TZrSize initialCapacity);
+ZR_PARSER_API void ZrParser_AstNodeArray_Add(SZrState *state, SZrAstNodeArray *array, SZrAstNode *node);
+ZR_PARSER_API void ZrParser_AstNodeArray_Free(SZrState *state, SZrAstNodeArray *array);
 
 // AST 节点创建辅助函数（将在 parser.c 中实现）
 // 这些函数用于创建各种类型的 AST 节点

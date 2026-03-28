@@ -53,7 +53,7 @@ typedef struct {
 } while(0)
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -77,26 +77,26 @@ static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSiz
 }
 
 // 创建测试用的SZrState
-static SZrState* createTestState(void) {
+static SZrState* create_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState* global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
+    SZrGlobalState* global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
     if (!global) return ZR_NULL;
     
     SZrState* mainState = global->mainThreadState;
     if (mainState) {
-        ZrGlobalStateInitRegistry(mainState, global);
+        ZrCore_GlobalState_InitRegistry(mainState, global);
     }
     
     return mainState;
 }
 
 // 销毁测试用的SZrState
-static void destroyTestState(SZrState* state) {
+static void destroy_test_state(SZrState* state) {
     if (!state) return;
     
     SZrGlobalState* global = state->global;
     if (global) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
     }
 }
 
@@ -117,14 +117,14 @@ void test_integer_literal(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Integer literal parsing", 
               "Testing parsing of decimal integer: 123");
     const char* source = "123;";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -139,16 +139,16 @@ void test_integer_literal(void) {
                 }
             }
         }
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse integer literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_ASSERT_FAIL();
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -160,27 +160,27 @@ void test_float_literal(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Float literal parsing", 
               "Testing parsing of float: 1.0f");
     const char* source = "1.0f;";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse float literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_ASSERT_FAIL();
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -192,27 +192,27 @@ void test_string_literal(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("String literal parsing", 
               "Testing parsing of string: \"hello\"");
     const char* source = "\"hello\";";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse string literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_ASSERT_FAIL();
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -224,22 +224,22 @@ void test_boolean_literal(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Boolean literal parsing", 
               "Testing parsing of boolean: true");
     const char* source = "true;";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -251,30 +251,30 @@ void test_module_declaration(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Module declaration parsing", 
               "Testing parsing of module declaration: module \"test\";");
     const char* source = "module \"test\";";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         if (ast->data.script.moduleName != ZR_NULL) {
             TEST_ASSERT_EQUAL_INT(ZR_AST_MODULE_DECLARATION, ast->data.script.moduleName->type);
         }
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse module declaration");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_ASSERT_FAIL();
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -286,14 +286,14 @@ void test_variable_declaration(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Variable declaration parsing", 
               "Testing parsing of variable declaration: var x = 5;");
     const char* source = "var x = 5;";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -301,16 +301,16 @@ void test_variable_declaration(void) {
             SZrAstNode* stmt = ast->data.script.statements->nodes[0];
             TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, stmt->type);
         }
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse variable declaration");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_ASSERT_FAIL();
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -324,22 +324,22 @@ void test_binary_expression(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Binary expression parsing", 
               "Testing parsing of binary expression: 1 + 2");
     const char* source = "1 + 2;";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -351,14 +351,14 @@ void test_unary_expression(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Unary expression parsing", 
               "Testing parsing of unary expression: !true");
     const char* source = "!true;";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -370,16 +370,16 @@ void test_unary_expression(void) {
                 TEST_ASSERT_EQUAL_INT(ZR_AST_UNARY_EXPRESSION, expr->type);
             }
         }
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse unary expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_ASSERT_FAIL();
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -391,14 +391,14 @@ void test_conditional_expression(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Conditional expression parsing", 
               "Testing parsing of conditional expression: true ? 1 : 2");
     const char* source = "true ? 1 : 2;";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -410,16 +410,16 @@ void test_conditional_expression(void) {
                 TEST_ASSERT_EQUAL_INT(ZR_AST_CONDITIONAL_EXPRESSION, expr->type);
             }
         }
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse conditional expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_ASSERT_FAIL();
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -431,14 +431,14 @@ void test_array_literal(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Array literal parsing", 
               "Testing parsing of array literal: [1, 2, 3]");
     const char* source = "[1, 2, 3];";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -452,16 +452,16 @@ void test_array_literal(void) {
                                 expr->type == ZR_AST_PRIMARY_EXPRESSION);
             }
         }
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse array literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_ASSERT_FAIL();
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -473,14 +473,14 @@ void test_object_literal(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Object literal parsing", 
               "Testing parsing of object literal: {a: 1, b: 2}");
     const char* source = "{a: 1, b: 2};";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -494,16 +494,16 @@ void test_object_literal(void) {
                                 expr->type == ZR_AST_PRIMARY_EXPRESSION);
             }
         }
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse object literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_ASSERT_FAIL();
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -517,22 +517,22 @@ void test_function_declaration(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Function declaration parsing", 
               "Testing parsing of function declaration: test(){}");
     const char* source = "test(){}";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -544,22 +544,22 @@ void test_struct_declaration(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Struct declaration parsing", 
               "Testing parsing of struct declaration: struct Vector3{}");
     const char* source = "struct Vector3{}";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -573,22 +573,22 @@ void test_if_statement(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("If statement parsing", 
               "Testing parsing of if statement: if(true){}");
     const char* source = "if(true){}";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -600,22 +600,22 @@ void test_return_statement(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Return statement parsing", 
               "Testing parsing of return statement: return 0;");
     const char* source = "return 0;";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -629,30 +629,30 @@ void test_simple_script(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Simple script parsing", 
               "Testing parsing of simple script with module and variable declarations");
     const char* source = "module \"test\";\nvar x = 1;\nvar y = 2;";
-    SZrString* sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode* ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         if (ast->data.script.statements != ZR_NULL) {
             TEST_ASSERT_TRUE(ast->data.script.statements->count >= 2);
         }
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse simple script");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_ASSERT_FAIL();
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -664,7 +664,7 @@ void test_simple_zr_file(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Simple.zr file parsing", 
@@ -681,7 +681,7 @@ void test_simple_zr_file(void) {
         timer.endTime = clock();
         printf("Skip - Cost Time:%.3fms - %s:\n Cannot find test_simple.zr file\n", 
                0.0, testSummary);
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
@@ -696,7 +696,7 @@ void test_simple_zr_file(void) {
     if (source == ZR_NULL) {
         fclose(file);
         TEST_FAIL(timer, testSummary, "Failed to allocate memory for file content");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
     
@@ -704,8 +704,8 @@ void test_simple_zr_file(void) {
     fclose(file);
     source[readSize] = '\0';
     
-    SZrString* sourceName = ZrStringCreate(state, "test_simple.zr", 15);
-    SZrAstNode* ast = ZrParserParse(state, source, readSize, sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test_simple.zr", 15);
+    SZrAstNode* ast = ZrParser_Parse(state, source, readSize, sourceName);
     
     free(source);
     
@@ -713,16 +713,16 @@ void test_simple_zr_file(void) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         // 验证解析成功
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     } else {
         TEST_FAIL(timer, testSummary, "Failed to parse simple.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
     
     timer.endTime = clock();
     TEST_PASS(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 

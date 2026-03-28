@@ -60,41 +60,41 @@ union TZrClosure {
 
 typedef union TZrClosure TZrClosure;
 
-ZR_CORE_API SZrClosureNative *ZrClosureNativeNew(struct SZrState *state, TZrSize closureValueCount);
+ZR_CORE_API SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closureValueCount);
 
-ZR_CORE_API SZrClosure *ZrClosureNew(struct SZrState *state, TZrSize closureValueCount);
+ZR_CORE_API SZrClosure *ZrCore_Closure_New(struct SZrState *state, TZrSize closureValueCount);
 
-ZR_CORE_API void ZrClosureInitValue(struct SZrState *state, SZrClosure *closure);
+ZR_CORE_API void ZrCore_Closure_InitValue(struct SZrState *state, SZrClosure *closure);
 
-ZR_CORE_API SZrClosureValue *ZrClosureFindOrCreateValue(struct SZrState *state, TZrStackValuePointer stackPointer);
+ZR_CORE_API SZrClosureValue *ZrCore_Closure_FindOrCreateValue(struct SZrState *state, TZrStackValuePointer stackPointer);
 
-ZR_CORE_API void ZrClosureToBeClosedValueClosureNew(struct SZrState *state, TZrStackValuePointer stackPointer);
+ZR_CORE_API void ZrCore_Closure_ToBeClosedValueClosureNew(struct SZrState *state, TZrStackValuePointer stackPointer);
 
-ZR_CORE_API void ZrClosureUnlinkValue(SZrClosureValue *closureValue);
+ZR_CORE_API void ZrCore_Closure_UnlinkValue(SZrClosureValue *closureValue);
 
-ZR_CORE_API void ZrClosureCloseStackValue(struct SZrState *state, TZrStackValuePointer stackPointer);
+ZR_CORE_API void ZrCore_Closure_CloseStackValue(struct SZrState *state, TZrStackValuePointer stackPointer);
 
-ZR_CORE_API TZrStackValuePointer ZrClosureCloseClosure(struct SZrState *state, TZrStackValuePointer stackPointer,
-                                                       EZrThreadStatus errorStatus, TBool isYield);
+ZR_CORE_API TZrStackValuePointer ZrCore_Closure_CloseClosure(struct SZrState *state, TZrStackValuePointer stackPointer,
+                                                       EZrThreadStatus errorStatus, TZrBool isYield);
 
-ZR_CORE_API TZrSize ZrClosureCloseRegisteredValues(struct SZrState *state,
+ZR_CORE_API TZrSize ZrCore_Closure_CloseRegisteredValues(struct SZrState *state,
                                                    TZrSize count,
                                                    EZrThreadStatus errorStatus,
-                                                   TBool isYield);
+                                                   TZrBool isYield);
 
-ZR_CORE_API void ZrClosurePushToStack(struct SZrState *state, struct SZrFunction *function,
+ZR_CORE_API void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *function,
                                       SZrClosureValue **closureValueList, TZrStackValuePointer base,
                                       TZrStackValuePointer closurePointer);
 
-ZR_FORCE_INLINE TBool ZrClosureValueIsClosed(SZrClosureValue *closureValue) {
+ZR_FORCE_INLINE TZrBool ZrCore_ClosureValue_IsClosed(SZrClosureValue *closureValue) {
     return closureValue->value.valuePointer == ZR_CAST_STACK_VALUE(&closureValue->link.closedValue);
 }
 
-ZR_FORCE_INLINE SZrTypeValue *ZrClosureValueGetValue(SZrClosureValue *closureValue) {
-    if (ZrClosureValueIsClosed(closureValue)) {
+ZR_FORCE_INLINE SZrTypeValue *ZrCore_ClosureValue_GetValue(SZrClosureValue *closureValue) {
+    if (ZrCore_ClosureValue_IsClosed(closureValue)) {
         return &closureValue->link.closedValue;
     }
-    return ZrStackGetValue(closureValue->value.valuePointer);
+    return ZrCore_Stack_GetValue(closureValue->value.valuePointer);
 }
 
 

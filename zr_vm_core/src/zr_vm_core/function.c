@@ -14,18 +14,18 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
-TZrStackValuePointer ZrFunctionCheckStack(struct SZrState *state, TZrSize size, TZrStackValuePointer stackPointer) {
+TZrStackValuePointer ZrCore_Function_CheckStack(struct SZrState *state, TZrSize size, TZrStackValuePointer stackPointer) {
     if (ZR_UNLIKELY(state->stackTail.valuePointer - state->stackTop.valuePointer < (TZrMemoryOffset) size)) {
-        TZrMemoryOffset relative = ZrStackSavePointerAsOffset(state, stackPointer);
-        ZrStackGrow(state, size, ZR_TRUE);
-        TZrStackValuePointer restoredStackPointer = ZrStackLoadOffsetToPointer(state, relative);
+        TZrMemoryOffset relative = ZrCore_Stack_SavePointerAsOffset(state, stackPointer);
+        ZrCore_Stack_Grow(state, size, ZR_TRUE);
+        TZrStackValuePointer restoredStackPointer = ZrCore_Stack_LoadOffsetToPointer(state, relative);
         return restoredStackPointer;
     }
     return stackPointer;
 }
 
-SZrFunction *ZrFunctionNew(struct SZrState *state) {
-    SZrRawObject *newObject = ZrRawObjectNew(state, ZR_RAW_OBJECT_TYPE_FUNCTION, sizeof(SZrFunction), ZR_FALSE);
+SZrFunction *ZrCore_Function_New(struct SZrState *state) {
+    SZrRawObject *newObject = ZrCore_RawObject_New(state, ZR_RAW_OBJECT_TYPE_FUNCTION, sizeof(SZrFunction), ZR_FALSE);
     SZrFunction *function = ZR_CAST_FUNCTION(state, newObject);
     function->constantValueList = ZR_NULL;
     function->constantValueLength = 0;
@@ -56,7 +56,7 @@ SZrFunction *ZrFunctionNew(struct SZrState *state) {
     return function;
 }
 
-void ZrFunctionFree(struct SZrState *state, SZrFunction *function) {
+void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(function != ZR_NULL);
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
@@ -81,16 +81,16 @@ void ZrFunctionFree(struct SZrState *state, SZrFunction *function) {
         ZR_MEMORY_RAW_FREE_LIST(global, function->exportedVariables, function->exportedVariableLength);
     }
     if (function->prototypeData != ZR_NULL && function->prototypeDataLength > 0) {
-        ZrMemoryRawFreeWithType(global, function->prototypeData, function->prototypeDataLength, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        ZrCore_Memory_RawFreeWithType(global, function->prototypeData, function->prototypeDataLength, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     // prototypeInstances 不需要手动释放，它们由GC管理（作为对象引用）
 
-    // ZrMemoryRawFreeWithType(global, function, sizeof(SZrFunction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    // ZrCore_Memory_RawFreeWithType(global, function, sizeof(SZrFunction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     // function is object, gc free it automatically.
 }
 
-SZrString *ZrFunctionGetLocalVariableName(SZrFunction *function, TUInt32 index, TUInt32 programCounter) {
-    for (TUInt32 i = 0;
+SZrString *ZrCore_Function_GetLocalVariableName(SZrFunction *function, TZrUInt32 index, TZrUInt32 programCounter) {
+    for (TZrUInt32 i = 0;
          i < function->localVariableLength && function->localVariableList[i].offsetActivate <= programCounter; i++) {
         if (programCounter < function->localVariableList[i].offsetDead) {
             index--;
@@ -102,57 +102,57 @@ SZrString *ZrFunctionGetLocalVariableName(SZrFunction *function, TUInt32 index, 
     return ZR_NULL;
 }
 
-void ZrFunctionCheckNativeStack(struct SZrState *state) {
+void ZrCore_Function_CheckNativeStack(struct SZrState *state) {
     if (state->nestedNativeCalls == ZR_VM_MAX_NATIVE_CALL_STACK) {
-        ZrDebugRunError(state, "C stack overflow");
+        ZrCore_Debug_RunError(state, "C stack overflow");
     } else if (state->nestedNativeCalls >= (ZR_VM_MAX_NATIVE_CALL_STACK) / 10 * 11) {
-        ZrDebugErrorWhenHandlingError(state);
+        ZrCore_Debug_ErrorWhenHandlingError(state);
     }
 }
 
-TZrStackValuePointer ZrFunctionCheckStackAndGc(struct SZrState *state, TZrSize size,
+TZrStackValuePointer ZrCore_Function_CheckStackAndGc(struct SZrState *state, TZrSize size,
                                                TZrStackValuePointer stackPointer) {
     if (ZR_UNLIKELY(state->stackTail.valuePointer - state->stackTop.valuePointer < size)) {
-        TZrMemoryOffset relative = ZrStackSavePointerAsOffset(state, stackPointer);
+        TZrMemoryOffset relative = ZrCore_Stack_SavePointerAsOffset(state, stackPointer);
         // todo: check gc
-        ZrStackGrow(state, size, ZR_TRUE);
-        TZrStackValuePointer restoredStackPointer = ZrStackLoadOffsetToPointer(state, relative);
+        ZrCore_Stack_Grow(state, size, ZR_TRUE);
+        TZrStackValuePointer restoredStackPointer = ZrCore_Stack_LoadOffsetToPointer(state, relative);
         return restoredStackPointer;
     }
     return stackPointer;
 }
 
-static ZR_FORCE_INLINE void ZrFunctionCallInternal(struct SZrState *state, TZrStackValuePointer stackPointer,
-                                                   TZrSize resultCount, TUInt32 callIncremental, TBool isYield) {
+static ZR_FORCE_INLINE void function_call_internal(struct SZrState *state, TZrStackValuePointer stackPointer,
+                                                   TZrSize resultCount, TZrUInt32 callIncremental, TZrBool isYield) {
     state->nestedNativeCalls += callIncremental;
     state->nestedNativeCallYieldFlag += isYield ? 1 : 0;
     if (ZR_UNLIKELY(state->nestedNativeCalls > ZR_VM_MAX_NATIVE_CALL_STACK)) {
-        ZrFunctionCheckStack(state, 0, stackPointer);
-        ZrFunctionCheckNativeStack(state);
+        ZrCore_Function_CheckStack(state, 0, stackPointer);
+        ZrCore_Function_CheckNativeStack(state);
     }
     // todo:
-    SZrCallInfo *callInfo = ZrFunctionPreCall(state, stackPointer, resultCount, ZR_NULL);
+    SZrCallInfo *callInfo = ZrCore_Function_PreCall(state, stackPointer, resultCount, ZR_NULL);
     if (callInfo != ZR_NULL) {
         callInfo->callStatus = ZR_CALL_STATUS_CREATE_FRAME;
-        ZrExecute(state, callInfo);
+        ZrCore_Execute(state, callInfo);
     }
     state->nestedNativeCallYieldFlag -= isYield ? 1 : 0;
     state->nestedNativeCalls -= callIncremental;
 }
 
-void ZrFunctionCall(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount) {
-    ZrFunctionCallInternal(state, stackPointer, resultCount, 1, ZR_FALSE);
+void ZrCore_Function_Call(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount) {
+    function_call_internal(state, stackPointer, resultCount, 1, ZR_FALSE);
 }
 
-void ZrFunctionCallWithoutYield(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount) {
-    ZrFunctionCallInternal(state, stackPointer, resultCount, 1, ZR_TRUE);
+void ZrCore_Function_CallWithoutYield(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount) {
+    function_call_internal(state, stackPointer, resultCount, 1, ZR_TRUE);
 }
 
-static ZR_FORCE_INLINE SZrCallInfo *ZrFunctionPreCallNativeCallInfo(struct SZrState *state,
+static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_native_call_info(struct SZrState *state,
                                                                     TZrStackValuePointer basePointer,
                                                                     TZrSize resultCount, EZrCallStatus mask,
                                                                     TZrStackValuePointer topPointer) {
-    SZrCallInfo *callInfo = state->callInfoList->next ? state->callInfoList->next : ZrCallInfoExtend(state);
+    SZrCallInfo *callInfo = state->callInfoList->next ? state->callInfoList->next : ZrCore_CallInfo_Extend(state);
     callInfo->functionBase.valuePointer = basePointer;
     callInfo->expectedReturnCount = resultCount;
     callInfo->callStatus = mask;
@@ -162,55 +162,55 @@ static ZR_FORCE_INLINE SZrCallInfo *ZrFunctionPreCallNativeCallInfo(struct SZrSt
 }
 
 
-static ZR_FORCE_INLINE TZrSize ZrFunctionPreCallNative(struct SZrState *state, TZrStackValuePointer stackPointer,
+static ZR_FORCE_INLINE TZrSize function_pre_call_native(struct SZrState *state, TZrStackValuePointer stackPointer,
                                                        TZrSize resultCount, FZrNativeFunction function) {
     TZrSize returnCount = 0;
     SZrCallInfo *callInfo = ZR_NULL;
-    ZrFunctionCheckStackAndGc(state, ZR_STACK_NATIVE_CALL_MIN, stackPointer);
-    callInfo = ZrFunctionPreCallNativeCallInfo(state, stackPointer, resultCount, ZR_CALL_STATUS_NATIVE_CALL,
+    ZrCore_Function_CheckStackAndGc(state, ZR_STACK_NATIVE_CALL_MIN, stackPointer);
+    callInfo = function_pre_call_native_call_info(state, stackPointer, resultCount, ZR_CALL_STATUS_NATIVE_CALL,
                                                state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_MIN);
     callInfo->previous = state->callInfoList;
     state->callInfoList = callInfo;
     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
     if (ZR_UNLIKELY(state->debugHookSignal & ZR_DEBUG_HOOK_MASK_CALL)) {
-        TInt32 argumentsCount = ZR_CAST_INT(state->stackTop.valuePointer - stackPointer);
-        ZrDebugHook(state, ZR_DEBUG_HOOK_EVENT_CALL, -1, 1, argumentsCount);
+        TZrInt32 argumentsCount = ZR_CAST_INT(state->stackTop.valuePointer - stackPointer);
+        ZrCore_Debug_Hook(state, ZR_DEBUG_HOOK_EVENT_CALL, -1, 1, argumentsCount);
     }
     ZR_THREAD_UNLOCK(state);
     returnCount = function(state);
     ZR_THREAD_LOCK(state);
     ZR_STACK_CHECK_CALL_INFO_STACK_COUNT(state, returnCount);
-    ZrFunctionPostCall(state, callInfo, returnCount);
+    ZrCore_Function_PostCall(state, callInfo, returnCount);
     return returnCount;
 }
 
-static TZrStackValuePointer ZrFunctionGetMetaCall(SZrState *state, TZrStackValuePointer stackPointer) {
-    ZrFunctionCheckStackAndGc(state, 1, stackPointer);
-    SZrTypeValue *value = ZrStackGetValue(stackPointer);
-    SZrMeta *metaValue = ZrValueGetMeta(state, value, ZR_META_CALL);
+static TZrStackValuePointer function_get_meta_call(SZrState *state, TZrStackValuePointer stackPointer) {
+    ZrCore_Function_CheckStackAndGc(state, 1, stackPointer);
+    SZrTypeValue *value = ZrCore_Stack_GetValue(stackPointer);
+    SZrMeta *metaValue = ZrCore_Value_GetMeta(state, value, ZR_META_CALL);
     if (ZR_UNLIKELY(metaValue == ZR_NULL)) {
         // todo: throw error: no call meta found
-        ZrDebugCallError(state, value);
+        ZrCore_Debug_CallError(state, value);
     }
     for (TZrStackValuePointer p = state->stackTop.valuePointer; p > stackPointer; p--) {
-        ZrStackCopyValue(state, p, ZrStackGetValue(p - 1));
+        ZrCore_Stack_CopyValue(state, p, ZrCore_Stack_GetValue(p - 1));
     }
     state->stackTop.valuePointer++;
-    ZrValueInitAsRawObject(state, value, ZR_CAST_RAW_OBJECT_AS_SUPER(metaValue->function));
+    ZrCore_Value_InitAsRawObject(state, value, ZR_CAST_RAW_OBJECT_AS_SUPER(metaValue->function));
     return stackPointer;
 }
 
-SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount,
+SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount,
                                TZrStackValuePointer returnDestination) {
     do {
-        SZrTypeValue *value = ZrStackGetValue(stackPointer);
+        SZrTypeValue *value = ZrCore_Stack_GetValue(stackPointer);
         EZrValueType type = value->type;
-        TBool isNative = value->isNative;
+        TZrBool isNative = value->isNative;
         switch (type) {
             case ZR_VALUE_TYPE_FUNCTION: {
                 if (isNative) {
                     SZrClosureNative *native = ZR_CAST_NATIVE_CLOSURE(state, value->value.object);
-                    ZrFunctionPreCallNative(state, stackPointer, resultCount, native->nativeFunction);
+                    function_pre_call_native(state, stackPointer, resultCount, native->nativeFunction);
                     // todo:
                     return ZR_NULL;
                 } else {
@@ -219,28 +219,28 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
                     if (function == ZR_NULL) {
                         return ZR_NULL;
                     }
-                    SZrClosure *closure = ZrClosureNew(state, 0);
+                    SZrClosure *closure = ZrCore_Closure_New(state, 0);
                     if (closure == ZR_NULL) {
                         return ZR_NULL;
                     }
                     closure->function = function;
-                    ZrValueInitAsRawObject(state, value, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+                    ZrCore_Value_InitAsRawObject(state, value, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
                     value->type = ZR_VALUE_TYPE_CLOSURE;
                     value->isGarbageCollectable = ZR_TRUE;
                     value->isNative = ZR_FALSE;
                     TZrSize argumentsCount = ZR_CAST_INT64(state->stackTop.valuePointer - stackPointer) - 1;
                     TZrSize parametersCount = function->parameterCount;
                     TZrSize stackSize = function->stackSize;
-                    ZrFunctionCheckStackAndGc(state, stackSize, stackPointer);
-                    callInfo = ZrFunctionPreCallNativeCallInfo(state, stackPointer, resultCount, ZR_CALL_STATUS_NONE,
+                    ZrCore_Function_CheckStackAndGc(state, stackSize, stackPointer);
+                    callInfo = function_pre_call_native_call_info(state, stackPointer, resultCount, ZR_CALL_STATUS_NONE,
                                                                stackPointer + 1 + stackSize);
                     callInfo->returnDestination = returnDestination;
                     callInfo->previous = state->callInfoList;
                     state->callInfoList = callInfo;
                     callInfo->context.context.programCounter = function->instructionsList;
                     for (; argumentsCount < parametersCount; argumentsCount++) {
-                        SZrTypeValue *stackValue = ZrStackGetValue(state->stackTop.valuePointer++);
-                        ZrValueResetAsNull(stackValue);
+                        SZrTypeValue *stackValue = ZrCore_Stack_GetValue(state->stackTop.valuePointer++);
+                        ZrCore_Value_ResetAsNull(stackValue);
                     }
                     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
                     return callInfo;
@@ -253,7 +253,7 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
                     // Native 闭包应该使用 ZR_VALUE_TYPE_FUNCTION
                     // 这里不应该到达，但为了安全起见，我们处理它
                     SZrClosureNative *native = ZR_CAST_NATIVE_CLOSURE(state, value->value.object);
-                    ZrFunctionPreCallNative(state, stackPointer, resultCount, native->nativeFunction);
+                    function_pre_call_native(state, stackPointer, resultCount, native->nativeFunction);
                     return ZR_NULL;
                 } else {
                     // VM 闭包：提取其中的函数并调用
@@ -268,14 +268,14 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
                     TZrSize argumentsCount = ZR_CAST_INT64(state->stackTop.valuePointer - stackPointer) - 1;
                     TZrSize parametersCount = function->parameterCount;
                     TZrSize stackSize = function->stackSize;
-                    ZrFunctionCheckStackAndGc(state, stackSize, stackPointer);
-                    callInfo = ZrFunctionPreCallNativeCallInfo(state, stackPointer, resultCount, ZR_CALL_STATUS_NONE,
+                    ZrCore_Function_CheckStackAndGc(state, stackSize, stackPointer);
+                    callInfo = function_pre_call_native_call_info(state, stackPointer, resultCount, ZR_CALL_STATUS_NONE,
                                                                stackPointer + 1 + stackSize);
                     callInfo->returnDestination = returnDestination;
                     callInfo->previous = state->callInfoList;
                     state->callInfoList = callInfo;
                     // 验证闭包的 function 字段是否仍然有效
-                    SZrTypeValue *callInfoBaseValue = ZrStackGetValue(callInfo->functionBase.valuePointer);
+                    SZrTypeValue *callInfoBaseValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
                     SZrClosure *callInfoClosure = ZR_CAST_VM_CLOSURE(state, callInfoBaseValue->value.object);
                     if (ZR_UNLIKELY(callInfoClosure->function == ZR_NULL)) {
                         // 闭包的 function 字段在创建 callInfo 后变成了 NULL，这不应该发生
@@ -284,8 +284,8 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
                     }
                     callInfo->context.context.programCounter = function->instructionsList;
                     for (; argumentsCount < parametersCount; argumentsCount++) {
-                        SZrTypeValue *stackValue = ZrStackGetValue(state->stackTop.valuePointer++);
-                        ZrValueResetAsNull(stackValue);
+                        SZrTypeValue *stackValue = ZrCore_Stack_GetValue(state->stackTop.valuePointer++);
+                        ZrCore_Value_ResetAsNull(stackValue);
                     }
                     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
                     return callInfo;
@@ -293,7 +293,7 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
             } break;
             case ZR_VALUE_TYPE_NATIVE_POINTER: {
                 FZrNativeFunction native = ZR_CAST_FUNCTION_POINTER(value);
-                ZrFunctionPreCallNative(state, stackPointer, resultCount, native);
+                function_pre_call_native(state, stackPointer, resultCount, native);
                 return ZR_NULL;
             } break;
             case ZR_VALUE_TYPE_NATIVE_DATA: {
@@ -301,14 +301,14 @@ SZrCallInfo *ZrFunctionPreCall(struct SZrState *state, TZrStackValuePointer stac
             } break;
             default: {
                 // todo: use CALL meta
-                stackPointer = ZrFunctionGetMetaCall(state, stackPointer);
+                stackPointer = function_get_meta_call(state, stackPointer);
                 // return ZR_NULL;
             } break;
         }
     } while (ZR_TRUE);
 }
 
-static ZR_FORCE_INLINE void ZrFunctionMoveReturns(SZrState *state, TZrStackValuePointer stackPointer,
+static ZR_FORCE_INLINE void function_move_returns(SZrState *state, TZrStackValuePointer stackPointer,
                                                   TZrSize returnCount, TZrSize expectedReturnCount) {
     switch (expectedReturnCount) {
         case 0: {
@@ -317,9 +317,9 @@ static ZR_FORCE_INLINE void ZrFunctionMoveReturns(SZrState *state, TZrStackValue
         } break;
         case 1: {
             if (returnCount == 0) {
-                ZrValueResetAsNull(ZrStackGetValue(stackPointer));
+                ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(stackPointer));
             } else {
-                ZrStackCopyValue(state, stackPointer, ZrStackGetValue(state->stackTop.valuePointer - returnCount));
+                ZrCore_Stack_CopyValue(state, stackPointer, ZrCore_Stack_GetValue(state->stackTop.valuePointer - returnCount));
             }
             state->stackTop.valuePointer = stackPointer + 1;
             return;
@@ -333,24 +333,24 @@ static ZR_FORCE_INLINE void ZrFunctionMoveReturns(SZrState *state, TZrStackValue
         returnCount = expectedReturnCount;
     }
     for (TZrSize i = 0; i < returnCount; i++) {
-        ZrStackCopyValue(state, stackPointer + i, ZrStackGetValue(first + i));
+        ZrCore_Stack_CopyValue(state, stackPointer + i, ZrCore_Stack_GetValue(first + i));
     }
     for (TZrSize i = returnCount; i < expectedReturnCount; i++) {
-        ZrValueResetAsNull(ZrStackGetValue(stackPointer + i));
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(stackPointer + i));
     }
     state->stackTop.valuePointer = stackPointer + expectedReturnCount;
 }
 
-void ZrFunctionPostCall(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount) {
+void ZrCore_Function_PostCall(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount) {
     TZrSize expectedReturnCount = callInfo->expectedReturnCount;
     if (ZR_UNLIKELY(state->debugHookSignal)) {
-        ZrDebugHookReturn(state, callInfo, resultCount);
+        ZrCore_Debug_HookReturn(state, callInfo, resultCount);
     }
     // move result
     TZrStackValuePointer dest = (callInfo->returnDestination != ZR_NULL)
                                     ? callInfo->returnDestination
                                     : callInfo->functionBase.valuePointer;
-    ZrFunctionMoveReturns(state, dest, resultCount, expectedReturnCount);
+    function_move_returns(state, dest, resultCount, expectedReturnCount);
 
     ZR_ASSERT(!(callInfo->callStatus &
                 (ZR_CALL_STATUS_DEBUG_HOOK | ZR_CALL_STATUS_HOOK_YIELD | ZR_CALL_STATUS_DECONSTRUCTOR_CALL |

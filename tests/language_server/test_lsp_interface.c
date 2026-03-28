@@ -57,7 +57,7 @@ typedef struct {
 } while(0)
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
     
@@ -96,19 +96,19 @@ static void test_lsp_context_create_and_free(SZrState *state) {
     
     TEST_INFO("LSP Context Creation", "Creating and freeing LSP context");
     
-    SZrLspContext *context = ZrLspContextNew(state);
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
     if (context == ZR_NULL) {
         TEST_FAIL(timer, "LSP Context Creation and Free", "Failed to create LSP context");
         return;
     }
     
     if (context->parser == ZR_NULL) {
-        ZrLspContextFree(state, context);
+        ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, "LSP Context Creation and Free", "Parser is NULL");
         return;
     }
     
-    ZrLspContextFree(state, context);
+    ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Context Creation and Free");
 }
 
@@ -119,24 +119,24 @@ static void test_lsp_update_document(SZrState *state) {
     
     TEST_INFO("Update Document", "Updating document in LSP context");
     
-    SZrLspContext *context = ZrLspContextNew(state);
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
     if (context == ZR_NULL) {
         TEST_FAIL(timer, "LSP Update Document", "Failed to create LSP context");
         return;
     }
     
-    SZrString *uri = ZrStringCreate(state, "file:///test.zr", 15);
-    const TChar *content = "var x = 10;";
+    SZrString *uri = ZrCore_String_Create(state, "file:///test.zr", 15);
+    const TZrChar *content = "var x = 10;";
     TZrSize contentLength = strlen(content);
     
-    TBool success = ZrLspUpdateDocument(state, context, uri, content, contentLength, 1);
+    TZrBool success = ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, contentLength, 1);
     if (!success) {
-        ZrLspContextFree(state, context);
+        ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, "LSP Update Document", "Failed to update document");
         return;
     }
     
-    ZrLspContextFree(state, context);
+    ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Update Document");
 }
 
@@ -147,27 +147,27 @@ static void test_lsp_get_diagnostics(SZrState *state) {
     
     TEST_INFO("Get Diagnostics", "Getting diagnostics from LSP context");
     
-    SZrLspContext *context = ZrLspContextNew(state);
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
     if (context == ZR_NULL) {
         TEST_FAIL(timer, "LSP Get Diagnostics", "Failed to create LSP context");
         return;
     }
     
-    SZrString *uri = ZrStringCreate(state, "file:///test.zr", 15);
-    const TChar *content = "var x = 10;";
+    SZrString *uri = ZrCore_String_Create(state, "file:///test.zr", 15);
+    const TZrChar *content = "var x = 10;";
     TZrSize contentLength = strlen(content);
     
     // 更新文档
-    ZrLspUpdateDocument(state, context, uri, content, contentLength, 1);
+    ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, contentLength, 1);
     
     // 获取诊断
     SZrArray diagnostics;
-    ZrArrayInit(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
-    TBool success = ZrLspGetDiagnostics(state, context, uri, &diagnostics);
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    TZrBool success = ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics);
     
     // 诊断可能为空（取决于代码是否有错误），只要不崩溃就算成功
-    ZrArrayFree(state, &diagnostics);
-    ZrLspContextFree(state, context);
+    ZrCore_Array_Free(state, &diagnostics);
+    ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Get Diagnostics");
 }
 
@@ -178,18 +178,18 @@ static void test_lsp_get_completion(SZrState *state) {
     
     TEST_INFO("Get Completion", "Getting code completion from LSP context");
     
-    SZrLspContext *context = ZrLspContextNew(state);
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
     if (context == ZR_NULL) {
         TEST_FAIL(timer, "LSP Get Completion", "Failed to create LSP context");
         return;
     }
     
-    SZrString *uri = ZrStringCreate(state, "file:///test.zr", 15);
-    const TChar *content = "var x = 10; var y = 20;";
+    SZrString *uri = ZrCore_String_Create(state, "file:///test.zr", 15);
+    const TZrChar *content = "var x = 10; var y = 20;";
     TZrSize contentLength = strlen(content);
     
     // 更新文档
-    ZrLspUpdateDocument(state, context, uri, content, contentLength, 1);
+    ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, contentLength, 1);
     
     // 获取补全
     SZrLspPosition position;
@@ -197,12 +197,12 @@ static void test_lsp_get_completion(SZrState *state) {
     position.character = 0;
     
     SZrArray completions;
-    ZrArrayInit(state, &completions, sizeof(SZrLspCompletionItem *), 4);
-    TBool success = ZrLspGetCompletion(state, context, uri, position, &completions);
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 4);
+    TZrBool success = ZrLanguageServer_Lsp_GetCompletion(state, context, uri, position, &completions);
     
     // 补全可能为空，只要不崩溃就算成功
-    ZrArrayFree(state, &completions);
-    ZrLspContextFree(state, context);
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Get Completion");
 }
 
@@ -213,18 +213,18 @@ static void test_lsp_get_definition(SZrState *state) {
     
     TEST_INFO("Get Definition", "Getting definition location from LSP context");
     
-    SZrLspContext *context = ZrLspContextNew(state);
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
     if (context == ZR_NULL) {
         TEST_FAIL(timer, "LSP Get Definition", "Failed to create LSP context");
         return;
     }
     
-    SZrString *uri = ZrStringCreate(state, "file:///test.zr", 15);
-    const TChar *content = "var x = 10;";
+    SZrString *uri = ZrCore_String_Create(state, "file:///test.zr", 15);
+    const TZrChar *content = "var x = 10;";
     TZrSize contentLength = strlen(content);
     
     // 更新文档
-    ZrLspUpdateDocument(state, context, uri, content, contentLength, 1);
+    ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, contentLength, 1);
     
     // 获取定义（在变量名位置）
     SZrLspPosition position;
@@ -232,12 +232,12 @@ static void test_lsp_get_definition(SZrState *state) {
     position.character = 4; // 'x' 的位置
     
     SZrArray definitions;
-    ZrArrayInit(state, &definitions, sizeof(SZrLspLocation *), 1);
-    TBool success = ZrLspGetDefinition(state, context, uri, position, &definitions);
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 1);
+    TZrBool success = ZrLanguageServer_Lsp_GetDefinition(state, context, uri, position, &definitions);
     
     // 定义可能找不到，只要不崩溃就算成功
-    ZrArrayFree(state, &definitions);
-    ZrLspContextFree(state, context);
+    ZrCore_Array_Free(state, &definitions);
+    ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Get Definition");
 }
 
@@ -248,18 +248,18 @@ static void test_lsp_find_references(SZrState *state) {
     
     TEST_INFO("Find References", "Finding all references to a symbol");
     
-    SZrLspContext *context = ZrLspContextNew(state);
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
     if (context == ZR_NULL) {
         TEST_FAIL(timer, "LSP Find References", "Failed to create LSP context");
         return;
     }
     
-    SZrString *uri = ZrStringCreate(state, "file:///test.zr", 15);
-    const TChar *content = "var x = 10; var y = x;";
+    SZrString *uri = ZrCore_String_Create(state, "file:///test.zr", 15);
+    const TZrChar *content = "var x = 10; var y = x;";
     TZrSize contentLength = strlen(content);
     
     // 更新文档
-    ZrLspUpdateDocument(state, context, uri, content, contentLength, 1);
+    ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, contentLength, 1);
     
     // 查找引用
     SZrLspPosition position;
@@ -267,12 +267,12 @@ static void test_lsp_find_references(SZrState *state) {
     position.character = 4; // 'x' 的位置
     
     SZrArray references;
-    ZrArrayInit(state, &references, sizeof(SZrLspLocation *), 4);
-    TBool success = ZrLspFindReferences(state, context, uri, position, ZR_TRUE, &references);
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 4);
+    TZrBool success = ZrLanguageServer_Lsp_FindReferences(state, context, uri, position, ZR_TRUE, &references);
     
     // 引用可能找不到，只要不崩溃就算成功
-    ZrArrayFree(state, &references);
-    ZrLspContextFree(state, context);
+    ZrCore_Array_Free(state, &references);
+    ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Find References");
 }
 
@@ -283,32 +283,32 @@ static void test_lsp_rename(SZrState *state) {
     
     TEST_INFO("Rename Symbol", "Renaming a symbol and getting all locations");
     
-    SZrLspContext *context = ZrLspContextNew(state);
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
     if (context == ZR_NULL) {
         TEST_FAIL(timer, "LSP Rename", "Failed to create LSP context");
         return;
     }
     
-    SZrString *uri = ZrStringCreate(state, "file:///test.zr", 15);
-    const TChar *content = "var x = 10; var y = x;";
+    SZrString *uri = ZrCore_String_Create(state, "file:///test.zr", 15);
+    const TZrChar *content = "var x = 10; var y = x;";
     TZrSize contentLength = strlen(content);
     
     // 更新文档
-    ZrLspUpdateDocument(state, context, uri, content, contentLength, 1);
+    ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, contentLength, 1);
     
     // 重命名
     SZrLspPosition position;
     position.line = 0;
     position.character = 4; // 'x' 的位置
     
-    SZrString *newName = ZrStringCreate(state, "newX", 4);
+    SZrString *newName = ZrCore_String_Create(state, "newX", 4);
     SZrArray locations;
-    ZrArrayInit(state, &locations, sizeof(SZrLspLocation *), 4);
-    TBool success = ZrLspRename(state, context, uri, position, newName, &locations);
+    ZrCore_Array_Init(state, &locations, sizeof(SZrLspLocation *), 4);
+    TZrBool success = ZrLanguageServer_Lsp_Rename(state, context, uri, position, newName, &locations);
     
     // 重命名可能失败，只要不崩溃就算成功
-    ZrArrayFree(state, &locations);
-    ZrLspContextFree(state, context);
+    ZrCore_Array_Free(state, &locations);
+    ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Rename");
 }
 
@@ -320,7 +320,7 @@ int main() {
     
     // 创建全局状态
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
     if (global == ZR_NULL) {
         printf("Fail - Failed to create global state\n");
         return 1;
@@ -329,13 +329,13 @@ int main() {
     // 获取主线程状态
     SZrState *state = global->mainThreadState;
     if (state == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         printf("Fail - Failed to get main thread state\n");
         return 1;
     }
     
     // 初始化注册表
-    ZrGlobalStateInitRegistry(state, global);
+    ZrCore_GlobalState_InitRegistry(state, global);
     
     // 运行测试
     test_lsp_context_create_and_free(state);
@@ -360,7 +360,7 @@ int main() {
     TEST_DIVIDER();
     
     // 清理
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     printf("\n==========\n");
     printf("All LSP Interface Tests Completed\n");

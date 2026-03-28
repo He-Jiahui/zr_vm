@@ -18,62 +18,62 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
-void ZrValueBarrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value) {
+void ZrCore_Value_Barrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value) {
     if (!value->isGarbageCollectable) {
         return;
     }
-    ZrRawObjectBarrier(state, object, value->value.object);
+    ZrCore_RawObject_Barrier(state, object, value->value.object);
 }
 
-void ZrValueResetAsNull(SZrTypeValue *value) {
+void ZrCore_Value_ResetAsNull(SZrTypeValue *value) {
     value->type = ZR_VALUE_TYPE_NULL;
     value->isGarbageCollectable = ZR_FALSE;
 }
 
-void ZrValueInitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawObject *object) {
+void ZrCore_Value_InitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawObject *object) {
     EZrValueType type = object->type;
     value->type = type;
     value->value.object = object;
     value->isGarbageCollectable = ZR_TRUE;
     value->isNative = object->isNative;
     // check liveness
-    ZrGcValueStaticAssertIsAlive(state, value);
+    ZrCore_Gc_ValueStaticAssertIsAlive(state, value);
 }
 
 
-void ZrValueInitAsUInt(struct SZrState *state, SZrTypeValue *value, TUInt64 intValue) {
+void ZrCore_Value_InitAsUInt(struct SZrState *state, SZrTypeValue *value, TZrUInt64 intValue) {
     value->type = ZR_VALUE_TYPE_UINT64;
     value->value.nativeObject.nativeUInt64 = intValue;
     value->isGarbageCollectable = ZR_FALSE;
     value->isNative = ZR_TRUE;
 }
 
-void ZrValueInitAsInt(struct SZrState *state, SZrTypeValue *value, TInt64 intValue) {
+void ZrCore_Value_InitAsInt(struct SZrState *state, SZrTypeValue *value, TZrInt64 intValue) {
     value->type = ZR_VALUE_TYPE_INT64;
     value->value.nativeObject.nativeInt64 = intValue;
     value->isGarbageCollectable = ZR_FALSE;
     value->isNative = ZR_TRUE;
 }
 
-void ZrValueInitAsFloat(struct SZrState *state, SZrTypeValue *value, TFloat64 floatValue) {
+void ZrCore_Value_InitAsFloat(struct SZrState *state, SZrTypeValue *value, TZrFloat64 floatValue) {
     value->type = ZR_VALUE_TYPE_DOUBLE;
     value->value.nativeObject.nativeDouble = floatValue;
     value->isGarbageCollectable = ZR_FALSE;
     value->isNative = ZR_TRUE;
 }
 
-void ZrValueInitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZrPtr pointerValue) {
+void ZrCore_Value_InitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZrPtr pointerValue) {
     value->type = ZR_VALUE_TYPE_NATIVE_POINTER;
     value->value.nativeObject.nativePointer = pointerValue;
     value->isGarbageCollectable = ZR_FALSE;
     value->isNative = ZR_TRUE;
 }
 
-TBool ZrValueEqual(struct SZrState *state, SZrTypeValue *value1, SZrTypeValue *value2) {
+TZrBool ZrCore_Value_Equal(struct SZrState *state, SZrTypeValue *value1, SZrTypeValue *value2) {
     EZrValueType type1 = value1->type;
     EZrValueType type2 = value2->type;
-    TBool typeEqual = type1 == type2;
-    TBool result = ZR_FALSE;
+    TZrBool typeEqual = type1 == type2;
+    TZrBool result = ZR_FALSE;
     if (typeEqual) {
         if (ZR_VALUE_IS_TYPE_NULL(type1)) {
             // type null
@@ -81,7 +81,7 @@ TBool ZrValueEqual(struct SZrState *state, SZrTypeValue *value1, SZrTypeValue *v
         } else if (ZR_VALUE_IS_TYPE_STRING(type1)) {
             SZrString *str1 = ZR_CAST_STRING(state, value1->value.object);
             SZrString *str2 = ZR_CAST_STRING(state, value2->value.object);
-            result = ZrStringEqual(str1, str2);
+            result = ZrCore_String_Equal(str1, str2);
         } else if (ZR_VALUE_IS_TYPE_BOOL(type1)) {
             result = (value1->value.nativeObject.nativeBool != 0) == (value2->value.nativeObject.nativeBool != 0);
         } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(type1)) {
@@ -102,7 +102,7 @@ TBool ZrValueEqual(struct SZrState *state, SZrTypeValue *value1, SZrTypeValue *v
     return result;
 }
 
-SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset) {
+SZrTypeValue *ZrCore_Value_GetStackOffsetValue(SZrState *state, TZrMemoryOffset offset) {
     // ==max STACK_MAX
     // ==ft function top
     // ==t stack current top()
@@ -126,14 +126,14 @@ SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset
         if (valuePointer >= state->stackTop.valuePointer) {
             return &global->nullValue;
         }
-        return ZrStackGetValue(valuePointer);
+        return ZrCore_Stack_GetValue(valuePointer);
     }
     // access invalid stack space
     if (offset > ZR_VM_STACK_GLOBAL_MODULE_REGISTRY) {
         ZR_CHECK(state,
                  offset != 0 && -offset <= state->stackTop.valuePointer - (callInfoTop->functionBase.valuePointer + 1),
                  "call info offset is out of range from stack top to function base");
-        return ZrStackGetValue(state->stackTop.valuePointer + offset);
+        return ZrCore_Stack_GetValue(state->stackTop.valuePointer + offset);
     }
     // access global module registry
     if (offset == ZR_VM_STACK_GLOBAL_MODULE_REGISTRY) {
@@ -143,8 +143,8 @@ SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset
     // convert to closure offset
     TZrMemoryOffset closureIndex = ZR_VM_STACK_GLOBAL_MODULE_REGISTRY - offset;
     ZR_CHECK(state, offset <= ZR_VM_STACK_CLOSURE_MAX, "closure offset is out of range");
-    SZrTypeValue *functionBaseValue = ZrStackGetValue(callInfoTop->functionBase.valuePointer);
-    if (ZrValueIsNative(functionBaseValue) && ZrValueGetType(functionBaseValue) == ZR_VALUE_TYPE_FUNCTION) {
+    SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValue(callInfoTop->functionBase.valuePointer);
+    if (ZrCore_Value_IsNative(functionBaseValue) && ZrCore_Value_GetType(functionBaseValue) == ZR_VALUE_TYPE_FUNCTION) {
         // is native function closure
         SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, functionBaseValue);
         return (closureIndex <= (TZrMemoryOffset) closure->closureValueCount)
@@ -153,24 +153,24 @@ SZrTypeValue *ZrValueGetStackOffsetValue(SZrState *state, TZrMemoryOffset offset
     }
     // no such closure or closure is lightweight function
     ZR_CHECK(state,
-             ZrValueIsNative(functionBaseValue) && ZrValueGetType(functionBaseValue) == ZR_VALUE_TYPE_NATIVE_POINTER,
+             ZrCore_Value_IsNative(functionBaseValue) && ZrCore_Value_GetType(functionBaseValue) == ZR_VALUE_TYPE_NATIVE_POINTER,
              "function base is not a native function");
     // is zr closure
     return &global->nullValue;
 }
 
 
-void ZrValueCopy(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source) {
+void ZrCore_Value_Copy(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source) {
     destination->value = source->value;
     destination->type = source->type;
-    destination->isGarbageCollectable = ZrValueIsGarbageCollectable(source);
-    destination->isNative = ZrValueIsNative(source);
-    ZrGcValueStaticAssertIsAlive(state, destination);
+    destination->isGarbageCollectable = ZrCore_Value_IsGarbageCollectable(source);
+    destination->isNative = ZrCore_Value_IsNative(source);
+    ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
 }
 
-TUInt64 ZrValueGetHash(struct SZrState *state, const SZrTypeValue *value) {
+TZrUInt64 ZrCore_Value_GetHash(struct SZrState *state, const SZrTypeValue *value) {
     EZrValueType type = value->type;
-    TUInt64 hash = 0;
+    TZrUInt64 hash = 0;
     switch (type) {
         case ZR_VALUE_TYPE_NULL: {
             hash = 0;
@@ -187,7 +187,7 @@ TUInt64 ZrValueGetHash(struct SZrState *state, const SZrTypeValue *value) {
             hash = string->super.hash;
         } break;
         case ZR_VALUE_TYPE_NATIVE_DATA: {
-            hash = (TUInt64) value->value.nativeObject.nativePointer;
+            hash = (TZrUInt64) value->value.nativeObject.nativePointer;
         } break;
         case ZR_VALUE_TYPE_OBJECT: {
             SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
@@ -201,11 +201,11 @@ TUInt64 ZrValueGetHash(struct SZrState *state, const SZrTypeValue *value) {
     return hash;
 }
 
-TBool ZrValueCompareDirectly(struct SZrState *state, const SZrTypeValue *value1, const SZrTypeValue *value2) {
+TZrBool ZrCore_Value_CompareDirectly(struct SZrState *state, const SZrTypeValue *value1, const SZrTypeValue *value2) {
     EZrValueType type1 = value1->type;
     EZrValueType type2 = value2->type;
-    TBool typeEqual = type1 == type2;
-    TBool result = ZR_FALSE;
+    TZrBool typeEqual = type1 == type2;
+    TZrBool result = ZR_FALSE;
     if (typeEqual) {
         switch (type1) {
             case ZR_VALUE_TYPE_NULL: {
@@ -225,7 +225,7 @@ TBool ZrValueCompareDirectly(struct SZrState *state, const SZrTypeValue *value1,
             case ZR_VALUE_TYPE_STRING: {
                 SZrString *str1 = ZR_CAST_STRING(state, value1->value.object);
                 SZrString *str2 = ZR_CAST_STRING(state, value2->value.object);
-                result = ZrStringEqual(str1, str2);
+                result = ZrCore_String_Equal(str1, str2);
             } break;
             case ZR_VALUE_TYPE_NATIVE_DATA: {
                 result = value1->value.nativeObject.nativePointer == value2->value.nativeObject.nativePointer;
@@ -233,7 +233,7 @@ TBool ZrValueCompareDirectly(struct SZrState *state, const SZrTypeValue *value1,
             case ZR_VALUE_TYPE_OBJECT: {
                 SZrObject *object1 = ZR_CAST_OBJECT(state, value1->value.object);
                 SZrObject *object2 = ZR_CAST_OBJECT(state, value2->value.object);
-                result = ZrObjectCompareWithAddress(state, object1, object2);
+                result = ZrCore_Object_CompareWithAddress(state, object1, object2);
             } break;
                 // todo: compare more types
             default: {
@@ -246,13 +246,13 @@ TBool ZrValueCompareDirectly(struct SZrState *state, const SZrTypeValue *value1,
     return result;
 }
 
-SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
-    if (!ZrValueCanValueToString(state, value)) {
+SZrString *ZrCore_Value_ConvertToString(struct SZrState *state, SZrTypeValue *value) {
+    if (!ZrCore_Value_CanValueToString(state, value)) {
         return ZR_NULL;
     }
 
     // 优先查找并调用 TO_STRING 元方法
-    SZrMeta *meta = ZrValueGetMeta(state, value, ZR_META_TO_STRING);
+    SZrMeta *meta = ZrCore_Value_GetMeta(state, value, ZR_META_TO_STRING);
     if (meta != ZR_NULL && meta->function != ZR_NULL) {
         // 保存当前栈状态
         TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
@@ -261,12 +261,12 @@ SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
                 savedCallInfo != ZR_NULL ? savedCallInfo->functionTop.valuePointer : savedStackTop;
 
         // 准备调用元方法：将 meta->function 和 self 放到栈上
-        scratchBase = ZrFunctionCheckStackAndGc(state, 2, scratchBase);
+        scratchBase = ZrCore_Function_CheckStackAndGc(state, 2, scratchBase);
         if (savedCallInfo != ZR_NULL) {
             scratchBase = savedCallInfo->functionTop.valuePointer;
         }
-        ZrStackSetRawObjectValue(state, scratchBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-        ZrStackCopyValue(state, scratchBase + 1, value);
+        ZrCore_Stack_SetRawObjectValue(state, scratchBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+        ZrCore_Stack_CopyValue(state, scratchBase + 1, value);
         state->stackTop.valuePointer = scratchBase + 2;
         if (savedCallInfo != ZR_NULL &&
             savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
@@ -274,12 +274,12 @@ SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
         }
 
         // 调用元方法
-        ZrFunctionCallWithoutYield(state, scratchBase, 1);
+        ZrCore_Function_CallWithoutYield(state, scratchBase, 1);
 
         // 检查执行状态
         if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
             // 获取返回值
-            SZrTypeValue *returnValue = ZrStackGetValue(scratchBase);
+            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(scratchBase);
             if (returnValue->type == ZR_VALUE_TYPE_STRING) {
                 SZrString *result = ZR_CAST_STRING(state, returnValue->value.object);
                 // 恢复栈状态
@@ -298,20 +298,20 @@ SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
     EZrValueType type = value->type;
     switch (type) {
         case ZR_VALUE_TYPE_NULL: {
-            return ZrStringCreateFromNative(state, ZR_STRING_NULL_STRING);
+            return ZrCore_String_CreateFromNative(state, ZR_STRING_NULL_STRING);
         } break;
         case ZR_VALUE_TYPE_STRING: {
             return ZR_CAST_STRING(state, value->value.object);
         } break;
             ZR_VALUE_CASES_NUMBER
-            ZR_VALUE_CASES_NATIVE { return ZrStringFromNumber(state, value); }
+            ZR_VALUE_CASES_NATIVE { return ZrCore_String_FromNumber(state, value); }
             break;
         case ZR_VALUE_TYPE_OBJECT: {
             // 如果元方法调用失败，返回默认字符串
             SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
             char buffer[64];
             snprintf(buffer, sizeof(buffer), "[object type=%d]", (int) object->internalType);
-            return ZrStringCreateFromNative(state, buffer);
+            return ZrCore_String_CreateFromNative(state, buffer);
         } break;
 
         default: {
@@ -323,12 +323,12 @@ SZrString *ZrValueConvertToString(struct SZrState *state, SZrTypeValue *value) {
 }
 
 
-struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType) {
+struct SZrMeta *ZrCore_Value_GetMeta(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType) {
     EZrValueType type = value->type;
     switch (type) {
         case ZR_VALUE_TYPE_OBJECT: {
             SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
-            SZrMeta *meta = ZrObjectGetMetaRecursively(state->global, object, metaType);
+            SZrMeta *meta = ZrCore_Object_GetMetaRecursively(state->global, object, metaType);
             // 如果对象没有自己的元方法，回退到基本类型的元方法
             if (meta == ZR_NULL && state->global->basicTypeObjectPrototype[ZR_VALUE_TYPE_OBJECT] != ZR_NULL) {
                 meta = state->global->basicTypeObjectPrototype[ZR_VALUE_TYPE_OBJECT]->metaTable.metas[metaType];
@@ -349,13 +349,13 @@ struct SZrMeta *ZrValueGetMeta(struct SZrState *state, SZrTypeValue *value, EZrM
 }
 
 // 调用指定值的元方法并返回结果
-TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType, SZrTypeValue *result,
+TZrBool ZrCore_Value_CallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType, SZrTypeValue *result,
                             TZrSize argumentCount, ...) {
     if (state == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    SZrMeta *meta = ZrValueGetMeta(state, value, metaType);
+    SZrMeta *meta = ZrCore_Value_GetMeta(state, value, metaType);
     if (meta == ZR_NULL || meta->function == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -369,16 +369,16 @@ TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMeta
     TZrSize scratchSlots = 1 + totalArgs; // function + self + 其他参数
     TZrStackValuePointer base =
             savedCallInfo != ZR_NULL ? savedCallInfo->functionTop.valuePointer : savedStackTop;
-    base = ZrFunctionCheckStackAndGc(state, scratchSlots, base);
+    base = ZrCore_Function_CheckStackAndGc(state, scratchSlots, base);
     if (savedCallInfo != ZR_NULL) {
         base = savedCallInfo->functionTop.valuePointer;
     }
 
     // 将 meta->function 放到栈上
-    ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
 
     // 将 self 放到栈上
-    ZrStackCopyValue(state, base + 1, value);
+    ZrCore_Stack_CopyValue(state, base + 1, value);
 
     // 处理可变参数
     if (argumentCount > 0) {
@@ -386,7 +386,7 @@ TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMeta
         va_start(args, argumentCount);
         for (TZrSize i = 0; i < argumentCount; i++) {
             SZrTypeValue *arg = va_arg(args, SZrTypeValue *);
-            ZrStackCopyValue(state, base + 2 + i, arg);
+            ZrCore_Stack_CopyValue(state, base + 2 + i, arg);
         }
         va_end(args);
     }
@@ -398,15 +398,15 @@ TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMeta
     }
 
     // 调用元方法
-    ZrFunctionCallWithoutYield(state, base, 1);
+    ZrCore_Function_CallWithoutYield(state, base, 1);
 
     // 检查执行状态
-    TBool success = ZR_FALSE;
+    TZrBool success = ZR_FALSE;
     if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
         // 获取返回值
-        SZrTypeValue *returnValue = ZrStackGetValue(base);
+        SZrTypeValue *returnValue = ZrCore_Stack_GetValue(base);
         if (result != ZR_NULL) {
-            ZrValueCopy(state, result, returnValue);
+            ZrCore_Value_Copy(state, result, returnValue);
         }
         success = ZR_TRUE;
     }
@@ -419,13 +419,13 @@ TBool ZrValueCallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMeta
 }
 
 // 专门用于调用 TO_STRING 元方法的便捷函数
-SZrString *ZrValueCallMetaToString(struct SZrState *state, SZrTypeValue *value) {
+SZrString *ZrCore_Value_CallMetaToString(struct SZrState *state, SZrTypeValue *value) {
     if (state == ZR_NULL || value == ZR_NULL) {
         return ZR_NULL;
     }
 
     SZrTypeValue result;
-    TBool success = ZrValueCallMetaMethod(state, value, ZR_META_TO_STRING, &result, 0);
+    TZrBool success = ZrCore_Value_CallMetaMethod(state, value, ZR_META_TO_STRING, &result, 0);
     if (success && result.type == ZR_VALUE_TYPE_STRING) {
         return ZR_CAST_STRING(state, result.value.object);
     }
@@ -434,9 +434,9 @@ SZrString *ZrValueCallMetaToString(struct SZrState *state, SZrTypeValue *value) 
 }
 #define MAX_DEBUG_BUFFER_SIZE 2048
 // 将值转换为调试字符串，包含详细信息（用于测试和调试）
-SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
+SZrString *ZrCore_Value_ToDebugString(struct SZrState *state, SZrTypeValue *value) {
     if (state == ZR_NULL || value == ZR_NULL) {
-        return ZrStringCreateFromNative(state, "<null>");
+        return ZrCore_String_CreateFromNative(state, "<null>");
     }
 
 
@@ -448,13 +448,13 @@ SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
         case ZR_VALUE_TYPE_OBJECT: {
             SZrObject *obj = ZR_CAST_OBJECT(state, value->value.object);
             if (obj == ZR_NULL) {
-                return ZrStringCreateFromNative(state, "<null object>");
+                return ZrCore_String_CreateFromNative(state, "<null object>");
             }
 
             // 获取类型名称
             const char *typeName = "object";
             if (obj->prototype != ZR_NULL && obj->prototype->name != ZR_NULL) {
-                TNativeString nameStr = ZrStringGetNativeString(obj->prototype->name);
+                TZrNativeString nameStr = ZrCore_String_GetNativeString(obj->prototype->name);
                 if (nameStr != ZR_NULL) {
                     typeName = nameStr;
                 }
@@ -473,7 +473,7 @@ SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
                         // 获取键名（假设是字符串）
                         if (pair->key.type == ZR_VALUE_TYPE_STRING) {
                             SZrString *keyStr = ZR_CAST_STRING(state, pair->key.value.object);
-                            TNativeString keyNative = ZrStringGetNativeString(keyStr);
+                            TZrNativeString keyNative = ZrCore_String_GetNativeString(keyStr);
                             if (keyNative != ZR_NULL) {
                                 if (fieldCount > 0) {
                                     offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, ", ");
@@ -481,9 +481,9 @@ SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
                                 offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "%s : ", keyNative);
 
                                 // 获取值的字符串表示
-                                SZrString *valueStr = ZrValueConvertToString(state, &pair->value);
+                                SZrString *valueStr = ZrCore_Value_ConvertToString(state, &pair->value);
                                 if (valueStr != ZR_NULL) {
-                                    TNativeString valueNative = ZrStringGetNativeString(valueStr);
+                                    TZrNativeString valueNative = ZrCore_String_GetNativeString(valueStr);
                                     if (valueNative != ZR_NULL) {
                                         offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "%s",
                                                            valueNative);
@@ -516,7 +516,7 @@ SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
         case ZR_VALUE_TYPE_ARRAY: {
             SZrObject *obj = ZR_CAST_OBJECT(state, value->value.object);
             if (obj == ZR_NULL || obj->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
-                return ZrStringCreateFromNative(state, "<invalid array>");
+                return ZrCore_String_CreateFromNative(state, "<invalid array>");
             }
 
             // 尝试从 nodeMap 中获取数组元素（假设数组元素通过 nodeMap 存储）
@@ -534,9 +534,9 @@ SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
                             offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, ", ");
                         }
                         // 获取值的字符串表示
-                        SZrString *valueStr = ZrValueConvertToString(state, &pair->value);
+                        SZrString *valueStr = ZrCore_Value_ConvertToString(state, &pair->value);
                         if (valueStr != ZR_NULL) {
-                            TNativeString valueNative = ZrStringGetNativeString(valueStr);
+                            TZrNativeString valueNative = ZrCore_String_GetNativeString(valueStr);
                             if (valueNative != ZR_NULL) {
                                 offset += snprintf(buffer + offset, MAX_DEBUG_BUFFER_SIZE - offset, "%s", valueNative);
                             }
@@ -565,14 +565,14 @@ SZrString *ZrValueToDebugString(struct SZrState *state, SZrTypeValue *value) {
         }
         default: {
             // 对于其他类型，使用普通的字符串转换
-            SZrString *str = ZrValueConvertToString(state, value);
+            SZrString *str = ZrCore_Value_ConvertToString(state, value);
             if (str != ZR_NULL) {
                 return str;
             }
-            return ZrStringCreateFromNative(state, "<unknown>");
+            return ZrCore_String_CreateFromNative(state, "<unknown>");
         }
     }
 
     buffer[offset] = '\0';
-    return ZrStringCreateFromNative(state, buffer);
+    return ZrCore_String_CreateFromNative(state, buffer);
 }

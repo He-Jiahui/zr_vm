@@ -7,7 +7,7 @@
 #include "zr_vm_core/conf.h"
 struct SZrState;
 struct SZrCallInfo;
-ZR_CORE_API void ZrExecute(struct SZrState *state, struct SZrCallInfo *callInfo);
+ZR_CORE_API void ZrCore_Execute(struct SZrState *state, struct SZrCallInfo *callInfo);
 
 
 #endif //ZR_VM_CORE_EXECUTION_H

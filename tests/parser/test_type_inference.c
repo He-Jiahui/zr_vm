@@ -19,8 +19,8 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/type_inference.h"
 
-extern void compile_expression(SZrCompilerState *cs, SZrAstNode *node);
-extern void compile_statement(SZrCompilerState *cs, SZrAstNode *node);
+extern void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
+extern void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
 
 // 测试时间测量结构
 typedef struct {
@@ -68,7 +68,7 @@ typedef struct {
     } while (0)
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -92,33 +92,33 @@ static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSiz
 }
 
 // 创建测试用的SZrState
-static SZrState *createTestState(void) {
+static SZrState *create_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
     if (!global)
         return ZR_NULL;
 
     SZrState *mainState = global->mainThreadState;
     if (mainState) {
-        ZrGlobalStateInitRegistry(mainState, global);
+        ZrCore_GlobalState_InitRegistry(mainState, global);
     }
 
     return mainState;
 }
 
 // 销毁测试用的SZrState
-static void destroyTestState(SZrState *state) {
+static void destroy_test_state(SZrState *state) {
     if (!state)
         return;
 
     SZrGlobalState *global = state->global;
     if (global) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
     }
 }
 
 // 创建测试用的编译器状态
-static SZrCompilerState *createTestCompilerState(SZrState *state) {
+static SZrCompilerState *create_test_compiler_state(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
     }
@@ -128,21 +128,21 @@ static SZrCompilerState *createTestCompilerState(SZrState *state) {
         return ZR_NULL;
     }
 
-    ZrCompilerStateInit(cs, state);
+    ZrParser_CompilerState_Init(cs, state);
     return cs;
 }
 
 // 销毁测试用的编译器状态
-static void destroyTestCompilerState(SZrCompilerState *cs) {
+static void destroy_test_compiler_state(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
         return;
     }
 
-    ZrCompilerStateFree(cs);
+    ZrParser_CompilerState_Free(cs);
     free(cs);
 }
 
-static const SZrSemanticSymbolRecord *findSemanticSymbolRecord(SZrSemanticContext *context,
+static const SZrSemanticSymbolRecord *find_semantic_symbol_record(SZrSemanticContext *context,
                                                                const char *name,
                                                                EZrSemanticSymbolKind kind) {
     TZrSize i;
@@ -153,11 +153,11 @@ static const SZrSemanticSymbolRecord *findSemanticSymbolRecord(SZrSemanticContex
 
     for (i = 0; i < context->symbols.length; i++) {
         SZrSemanticSymbolRecord *record =
-            (SZrSemanticSymbolRecord *)ZrArrayGet(&context->symbols, i);
-        TNativeString nativeName;
+            (SZrSemanticSymbolRecord *)ZrCore_Array_Get(&context->symbols, i);
+        TZrNativeString nativeName;
         if (record != ZR_NULL && record->name != ZR_NULL &&
             record->kind == kind) {
-            nativeName = ZrStringGetNativeStringShort(record->name);
+            nativeName = ZrCore_String_GetNativeStringShort(record->name);
             if (nativeName != ZR_NULL && strcmp(nativeName, name) == 0) {
             return record;
             }
@@ -167,7 +167,7 @@ static const SZrSemanticSymbolRecord *findSemanticSymbolRecord(SZrSemanticContex
     return ZR_NULL;
 }
 
-static const SZrSemanticOverloadSetRecord *findSemanticOverloadSetRecord(SZrSemanticContext *context,
+static const SZrSemanticOverloadSetRecord *find_semantic_overload_set_record(SZrSemanticContext *context,
                                                                          const char *name) {
     TZrSize i;
 
@@ -177,9 +177,9 @@ static const SZrSemanticOverloadSetRecord *findSemanticOverloadSetRecord(SZrSema
 
     for (i = 0; i < context->overloadSets.length; i++) {
         SZrSemanticOverloadSetRecord *record =
-            (SZrSemanticOverloadSetRecord *)ZrArrayGet(&context->overloadSets, i);
+            (SZrSemanticOverloadSetRecord *)ZrCore_Array_Get(&context->overloadSets, i);
         if (record != ZR_NULL && record->name != ZR_NULL) {
-            TNativeString nativeName = ZrStringGetNativeString(record->name);
+            TZrNativeString nativeName = ZrCore_String_GetNativeString(record->name);
             if (nativeName != ZR_NULL && strcmp(nativeName, name) == 0) {
                 return record;
             }
@@ -189,7 +189,7 @@ static const SZrSemanticOverloadSetRecord *findSemanticOverloadSetRecord(SZrSema
     return ZR_NULL;
 }
 
-static const SZrSemanticTypeRecord *findSemanticTypeRecord(SZrSemanticContext *context,
+static const SZrSemanticTypeRecord *find_semantic_type_record(SZrSemanticContext *context,
                                                            const char *name,
                                                            EZrSemanticTypeKind kind) {
     TZrSize i;
@@ -200,9 +200,9 @@ static const SZrSemanticTypeRecord *findSemanticTypeRecord(SZrSemanticContext *c
 
     for (i = 0; i < context->types.length; i++) {
         SZrSemanticTypeRecord *record =
-            (SZrSemanticTypeRecord *)ZrArrayGet(&context->types, i);
+            (SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, i);
         if (record != ZR_NULL && record->name != ZR_NULL && record->kind == kind) {
-            TNativeString nativeName = ZrStringGetNativeString(record->name);
+            TZrNativeString nativeName = ZrCore_String_GetNativeString(record->name);
             if (nativeName != ZR_NULL && strcmp(nativeName, name) == 0) {
                 return record;
             }
@@ -227,23 +227,23 @@ void test_type_inference_integer_literal(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
 
     TEST_INFO("Integer literal type inference", "Testing type inference for integer literal: 123");
 
     // 解析整数表达式
     const char *source = "123;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse integer literal");
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
@@ -258,23 +258,23 @@ void test_type_inference_integer_literal(void) {
 
     if (expr == ZR_NULL || expr->type != ZR_AST_INTEGER_LITERAL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to get integer literal node");
-        ZrParserFreeAst(state, ast);
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
     // 推断类型
     SZrInferredType result;
-    TBool success = infer_literal_type(cs, expr, &result);
+    TZrBool success = ZrParser_LiteralType_Infer(cs, expr, &result);
 
     TEST_ASSERT_TRUE(success);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
 
-    ZrInferredTypeFree(state, &result);
-    ZrParserFreeAst(state, ast);
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    ZrParser_InferredType_Free(state, &result);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -289,22 +289,22 @@ void test_type_inference_small_integer_literal_defaults_to_int64(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
 
     TEST_INFO("Small integer literal default inference", "Testing type inference for small integer literal: 1");
 
     const char *source = "1;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse small integer literal");
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
@@ -318,23 +318,23 @@ void test_type_inference_small_integer_literal_defaults_to_int64(void) {
 
     if (expr == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to get small integer literal node");
-        ZrParserFreeAst(state, ast);
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
     SZrInferredType result;
-    ZrInferredTypeInit(state, &result, ZR_VALUE_TYPE_OBJECT);
-    TBool success = infer_expression_type(cs, expr, &result);
+    ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+    TZrBool success = ZrParser_ExpressionType_Infer(cs, expr, &result);
 
     TEST_ASSERT_TRUE(success);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
 
-    ZrInferredTypeFree(state, &result);
-    ZrParserFreeAst(state, ast);
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    ZrParser_InferredType_Free(state, &result);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -348,10 +348,10 @@ void test_compiler_state_initializes_semantic_context(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
 
     TEST_INFO("Compiler state semantic bootstrap",
@@ -362,8 +362,8 @@ void test_compiler_state_initializes_semantic_context(void) {
     TEST_ASSERT_TRUE(cs->semanticContext == cs->typeEnv->semanticContext);
     TEST_ASSERT_TRUE(cs->hirModule == ZR_NULL);
 
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -383,34 +383,34 @@ void test_type_environment_registers_semantic_records(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
     TEST_ASSERT_NOT_NULL(cs->semanticContext);
 
     TEST_INFO("Type environment semantic emission",
               "Testing variable/function/type registration writes semantic type, symbol and overload records");
 
-    ZrInferredTypeInit(state, &intType, ZR_VALUE_TYPE_INT64);
-    ZrInferredTypeInit(state, &returnType, ZR_VALUE_TYPE_INT64);
-    ZrArrayConstruct(&paramTypes);
+    ZrParser_InferredType_Init(state, &intType, ZR_VALUE_TYPE_INT64);
+    ZrParser_InferredType_Init(state, &returnType, ZR_VALUE_TYPE_INT64);
+    ZrCore_Array_Construct(&paramTypes);
 
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterVariable(
-        state, cs->typeEnv, ZrStringCreate(state, "value", 5), &intType));
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterFunction(
-        state, cs->typeEnv, ZrStringCreate(state, "add", 3), &returnType, &paramTypes));
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterType(
-        state, cs->typeEnv, ZrStringCreate(state, "Point", 5)));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(
+        state, cs->typeEnv, ZrCore_String_Create(state, "value", 5), &intType));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterFunction(
+        state, cs->typeEnv, ZrCore_String_Create(state, "add", 3), &returnType, &paramTypes));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+        state, cs->typeEnv, ZrCore_String_Create(state, "Point", 5)));
 
     TEST_ASSERT_TRUE(cs->semanticContext->types.length > 0);
     TEST_ASSERT_TRUE(cs->semanticContext->symbols.length > 0);
     TEST_ASSERT_TRUE(cs->semanticContext->overloadSets.length > 0);
 
-    varRecord = findSemanticSymbolRecord(cs->semanticContext, "value", ZR_SEMANTIC_SYMBOL_KIND_VARIABLE);
-    funcRecord = findSemanticSymbolRecord(cs->semanticContext, "add", ZR_SEMANTIC_SYMBOL_KIND_FUNCTION);
-    typeRecord = findSemanticSymbolRecord(cs->semanticContext, "Point", ZR_SEMANTIC_SYMBOL_KIND_TYPE);
+    varRecord = find_semantic_symbol_record(cs->semanticContext, "value", ZR_SEMANTIC_SYMBOL_KIND_VARIABLE);
+    funcRecord = find_semantic_symbol_record(cs->semanticContext, "add", ZR_SEMANTIC_SYMBOL_KIND_FUNCTION);
+    typeRecord = find_semantic_symbol_record(cs->semanticContext, "Point", ZR_SEMANTIC_SYMBOL_KIND_TYPE);
 
     TEST_ASSERT_NOT_NULL(varRecord);
     TEST_ASSERT_NOT_NULL(funcRecord);
@@ -420,10 +420,10 @@ void test_type_environment_registers_semantic_records(void) {
     TEST_ASSERT_NOT_EQUAL(0, funcRecord->typeId);
     TEST_ASSERT_NOT_EQUAL(0, typeRecord->typeId);
 
-    ZrInferredTypeFree(state, &returnType);
-    ZrInferredTypeFree(state, &intType);
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    ZrParser_InferredType_Free(state, &returnType);
+    ZrParser_InferredType_Free(state, &intType);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -443,41 +443,41 @@ void test_type_environment_registers_function_overloads(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
     TEST_ASSERT_NOT_NULL(cs->semanticContext);
 
     TEST_INFO("Function overload registration",
               "Testing that same-name functions with different signatures are retained in the type environment");
 
-    ZrInferredTypeInit(state, &intType, ZR_VALUE_TYPE_INT64);
-    ZrInferredTypeInit(state, &boolType, ZR_VALUE_TYPE_BOOL);
-    ZrInferredTypeInit(state, &doubleType, ZR_VALUE_TYPE_DOUBLE);
-    ZrArrayInit(state, &intParams, sizeof(SZrInferredType), 1);
-    ZrArrayInit(state, &doubleParams, sizeof(SZrInferredType), 1);
-    ZrArrayPush(state, &intParams, &intType);
-    ZrArrayPush(state, &doubleParams, &doubleType);
+    ZrParser_InferredType_Init(state, &intType, ZR_VALUE_TYPE_INT64);
+    ZrParser_InferredType_Init(state, &boolType, ZR_VALUE_TYPE_BOOL);
+    ZrParser_InferredType_Init(state, &doubleType, ZR_VALUE_TYPE_DOUBLE);
+    ZrCore_Array_Init(state, &intParams, sizeof(SZrInferredType), 1);
+    ZrCore_Array_Init(state, &doubleParams, sizeof(SZrInferredType), 1);
+    ZrCore_Array_Push(state, &intParams, &intType);
+    ZrCore_Array_Push(state, &doubleParams, &doubleType);
 
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterFunction(
-        state, cs->typeEnv, ZrStringCreate(state, "pick", 4), &intType, &intParams));
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterFunction(
-        state, cs->typeEnv, ZrStringCreate(state, "pick", 4), &boolType, &doubleParams));
-    TEST_ASSERT_EQUAL_UINT32(2, (TUInt32)cs->typeEnv->functionReturnTypes.length);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterFunction(
+        state, cs->typeEnv, ZrCore_String_Create(state, "pick", 4), &intType, &intParams));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterFunction(
+        state, cs->typeEnv, ZrCore_String_Create(state, "pick", 4), &boolType, &doubleParams));
+    TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)cs->typeEnv->functionReturnTypes.length);
 
-    overloadRecord = findSemanticOverloadSetRecord(cs->semanticContext, "pick");
+    overloadRecord = find_semantic_overload_set_record(cs->semanticContext, "pick");
     TEST_ASSERT_NOT_NULL(overloadRecord);
-    TEST_ASSERT_EQUAL_UINT32(2, (TUInt32)overloadRecord->members.length);
+    TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)overloadRecord->members.length);
 
-    ZrArrayFree(state, &doubleParams);
-    ZrArrayFree(state, &intParams);
-    ZrInferredTypeFree(state, &doubleType);
-    ZrInferredTypeFree(state, &boolType);
-    ZrInferredTypeFree(state, &intType);
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    ZrCore_Array_Free(state, &doubleParams);
+    ZrCore_Array_Free(state, &intParams);
+    ZrParser_InferredType_Free(state, &doubleType);
+    ZrParser_InferredType_Free(state, &boolType);
+    ZrParser_InferredType_Free(state, &intType);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -497,34 +497,34 @@ void test_type_inference_resolves_best_function_overload(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
 
     TEST_INFO("Function overload resolution",
               "Testing that function-call inference resolves to the uniquely best overload instead of first-name lookup");
 
-    ZrInferredTypeInit(state, &intType, ZR_VALUE_TYPE_INT64);
-    ZrInferredTypeInit(state, &boolType, ZR_VALUE_TYPE_BOOL);
-    ZrInferredTypeInit(state, &doubleType, ZR_VALUE_TYPE_DOUBLE);
-    ZrArrayInit(state, &intParams, sizeof(SZrInferredType), 1);
-    ZrArrayInit(state, &doubleParams, sizeof(SZrInferredType), 1);
-    ZrArrayPush(state, &intParams, &intType);
-    ZrArrayPush(state, &doubleParams, &doubleType);
+    ZrParser_InferredType_Init(state, &intType, ZR_VALUE_TYPE_INT64);
+    ZrParser_InferredType_Init(state, &boolType, ZR_VALUE_TYPE_BOOL);
+    ZrParser_InferredType_Init(state, &doubleType, ZR_VALUE_TYPE_DOUBLE);
+    ZrCore_Array_Init(state, &intParams, sizeof(SZrInferredType), 1);
+    ZrCore_Array_Init(state, &doubleParams, sizeof(SZrInferredType), 1);
+    ZrCore_Array_Push(state, &intParams, &intType);
+    ZrCore_Array_Push(state, &doubleParams, &doubleType);
 
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterVariable(
-        state, cs->typeEnv, ZrStringCreate(state, "value", 5), &doubleType));
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterFunction(
-        state, cs->typeEnv, ZrStringCreate(state, "pick", 4), &intType, &intParams));
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterFunction(
-        state, cs->typeEnv, ZrStringCreate(state, "pick", 4), &boolType, &doubleParams));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(
+        state, cs->typeEnv, ZrCore_String_Create(state, "value", 5), &doubleType));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterFunction(
+        state, cs->typeEnv, ZrCore_String_Create(state, "pick", 4), &intType, &intParams));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterFunction(
+        state, cs->typeEnv, ZrCore_String_Create(state, "pick", 4), &boolType, &doubleParams));
 
     {
         const char *source = "var result = pick(value);";
-        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
 
         TEST_ASSERT_NOT_NULL(ast);
@@ -540,20 +540,20 @@ void test_type_inference_resolves_best_function_overload(void) {
         }
 
         TEST_ASSERT_NOT_NULL(expr);
-        ZrInferredTypeInit(state, &result, ZR_VALUE_TYPE_OBJECT);
-        TEST_ASSERT_TRUE(infer_expression_type(cs, expr, &result));
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, result.baseType);
-        ZrInferredTypeFree(state, &result);
-        ZrParserFreeAst(state, ast);
+        ZrParser_InferredType_Free(state, &result);
+        ZrParser_Ast_Free(state, ast);
     }
 
-    ZrArrayFree(state, &doubleParams);
-    ZrArrayFree(state, &intParams);
-    ZrInferredTypeFree(state, &doubleType);
-    ZrInferredTypeFree(state, &boolType);
-    ZrInferredTypeFree(state, &intType);
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    ZrCore_Array_Free(state, &doubleParams);
+    ZrCore_Array_Free(state, &intParams);
+    ZrParser_InferredType_Free(state, &doubleType);
+    ZrParser_InferredType_Free(state, &boolType);
+    ZrParser_InferredType_Free(state, &intType);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -569,23 +569,23 @@ void test_convert_ast_type_registers_generic_instance_semantics(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
     TEST_ASSERT_NOT_NULL(cs->semanticContext);
 
     TEST_INFO("Generic type conversion",
               "Testing that generic AST types produce canonical inferred types and semantic generic-instance records");
 
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterType(
-        state, cs->typeEnv, ZrStringCreate(state, "Box", 3)));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+        state, cs->typeEnv, ZrCore_String_Create(state, "Box", 3)));
 
     {
         const char *source = "makeBox(value: int): Box<int> { return value; }";
-        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunctionDeclaration *funcDecl;
         SZrInferredType *genericArg;
 
@@ -599,29 +599,29 @@ void test_convert_ast_type_registers_generic_instance_semantics(void) {
         funcDecl = &ast->data.script.statements->nodes[0]->data.functionDeclaration;
         TEST_ASSERT_NOT_NULL(funcDecl->returnType);
 
-        ZrInferredTypeInit(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
-        TEST_ASSERT_TRUE(convert_ast_type_to_inferred_type(cs, funcDecl->returnType, &convertedType));
+        ZrParser_InferredType_Init(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(cs, funcDecl->returnType, &convertedType));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, convertedType.baseType);
         TEST_ASSERT_NOT_NULL(convertedType.typeName);
-        TEST_ASSERT_EQUAL_STRING("Box<int>", ZrStringGetNativeString(convertedType.typeName));
-        TEST_ASSERT_EQUAL_UINT32(1, (TUInt32)convertedType.elementTypes.length);
+        TEST_ASSERT_EQUAL_STRING("Box<int>", ZrCore_String_GetNativeString(convertedType.typeName));
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)convertedType.elementTypes.length);
 
-        genericArg = (SZrInferredType *)ZrArrayGet(&convertedType.elementTypes, 0);
+        genericArg = (SZrInferredType *)ZrCore_Array_Get(&convertedType.elementTypes, 0);
         TEST_ASSERT_NOT_NULL(genericArg);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, genericArg->baseType);
 
-        genericRecord = findSemanticTypeRecord(cs->semanticContext,
+        genericRecord = find_semantic_type_record(cs->semanticContext,
                                                "Box<int>",
                                                ZR_SEMANTIC_TYPE_KIND_GENERIC_INSTANCE);
         TEST_ASSERT_NOT_NULL(genericRecord);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, genericRecord->baseType);
 
-        ZrInferredTypeFree(state, &convertedType);
-        ZrParserFreeAst(state, ast);
+        ZrParser_InferredType_Free(state, &convertedType);
+        ZrParser_Ast_Free(state, ast);
     }
 
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -637,28 +637,28 @@ void test_convert_ast_type_preserves_ownership_qualifier(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
     TEST_ASSERT_NOT_NULL(cs->semanticContext);
 
     TEST_INFO("Ownership-qualified type conversion",
               "Testing that unique/shared/weak wrappers survive AST->inferred-type conversion and semantic registration");
 
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterType(
-        state, cs->typeEnv, ZrStringCreate(state, "Resource", 8)));
-    TEST_ASSERT_TRUE(ZrTypeEnvironmentRegisterType(
-        state, cs->typeEnv, ZrStringCreate(state, "Box", 3)));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+        state, cs->typeEnv, ZrCore_String_Create(state, "Resource", 8)));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+        state, cs->typeEnv, ZrCore_String_Create(state, "Box", 3)));
 
     {
         const char *source =
             "var owned: unique<Resource>;"
             "var borrowed: shared<Box<int>>;"
             "var weakRef: weak<Resource>;";
-        SZrString *sourceName = ZrStringCreate(state, "ownership_types_test.zr", 23);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_types_test.zr", 23);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *ownedDecl;
         SZrAstNode *borrowedDecl;
 
@@ -676,38 +676,38 @@ void test_convert_ast_type_preserves_ownership_qualifier(void) {
         TEST_ASSERT_NOT_NULL(ownedDecl->data.variableDeclaration.typeInfo);
         TEST_ASSERT_NOT_NULL(borrowedDecl->data.variableDeclaration.typeInfo);
 
-        ZrInferredTypeInit(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
-        TEST_ASSERT_TRUE(convert_ast_type_to_inferred_type(
+        ZrParser_InferredType_Init(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
             cs, ownedDecl->data.variableDeclaration.typeInfo, &convertedType));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, convertedType.baseType);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
                               convertedType.ownershipQualifier);
         TEST_ASSERT_NOT_NULL(convertedType.typeName);
-        TEST_ASSERT_EQUAL_STRING("Resource", ZrStringGetNativeString(convertedType.typeName));
-        ZrInferredTypeFree(state, &convertedType);
+        TEST_ASSERT_EQUAL_STRING("Resource", ZrCore_String_GetNativeString(convertedType.typeName));
+        ZrParser_InferredType_Free(state, &convertedType);
 
-        ZrInferredTypeInit(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
-        TEST_ASSERT_TRUE(convert_ast_type_to_inferred_type(
+        ZrParser_InferredType_Init(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
             cs, borrowedDecl->data.variableDeclaration.typeInfo, &convertedType));
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
                               convertedType.ownershipQualifier);
         TEST_ASSERT_NOT_NULL(convertedType.typeName);
-        TEST_ASSERT_EQUAL_STRING("Box<int>", ZrStringGetNativeString(convertedType.typeName));
-        TEST_ASSERT_EQUAL_UINT32(1, (TUInt32)convertedType.elementTypes.length);
+        TEST_ASSERT_EQUAL_STRING("Box<int>", ZrCore_String_GetNativeString(convertedType.typeName));
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)convertedType.elementTypes.length);
 
-        ownedRecord = findSemanticTypeRecord(cs->semanticContext,
+        ownedRecord = find_semantic_type_record(cs->semanticContext,
                                              "Resource",
                                              ZR_SEMANTIC_TYPE_KIND_REFERENCE);
         TEST_ASSERT_NOT_NULL(ownedRecord);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
                               ownedRecord->ownershipQualifier);
 
-        ZrInferredTypeFree(state, &convertedType);
-        ZrParserFreeAst(state, ast);
+        ZrParser_InferredType_Free(state, &convertedType);
+        ZrParser_Ast_Free(state, ast);
     }
 
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -722,23 +722,23 @@ void test_type_inference_float_literal(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
 
     TEST_INFO("Float literal type inference", "Testing type inference for float literal: 1.5");
 
     // 解析浮点数表达式
     const char *source = "1.5;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse float literal");
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
@@ -753,23 +753,23 @@ void test_type_inference_float_literal(void) {
 
     if (expr == ZR_NULL || expr->type != ZR_AST_FLOAT_LITERAL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to get float literal node");
-        ZrParserFreeAst(state, ast);
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
     // 推断类型
     SZrInferredType result;
-    TBool success = infer_literal_type(cs, expr, &result);
+    TZrBool success = ZrParser_LiteralType_Infer(cs, expr, &result);
 
     TEST_ASSERT_TRUE(success);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_DOUBLE, result.baseType);
 
-    ZrInferredTypeFree(state, &result);
-    ZrParserFreeAst(state, ast);
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    ZrParser_InferredType_Free(state, &result);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -784,23 +784,23 @@ void test_type_inference_string_literal(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
 
     TEST_INFO("String literal type inference", "Testing type inference for string literal: \"hello\"");
 
     // 解析字符串表达式
     const char *source = "\"hello\";";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse string literal");
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
@@ -815,23 +815,23 @@ void test_type_inference_string_literal(void) {
 
     if (expr == ZR_NULL || expr->type != ZR_AST_STRING_LITERAL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to get string literal node");
-        ZrParserFreeAst(state, ast);
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
     // 推断类型
     SZrInferredType result;
-    TBool success = infer_literal_type(cs, expr, &result);
+    TZrBool success = ZrParser_LiteralType_Infer(cs, expr, &result);
 
     TEST_ASSERT_TRUE(success);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.baseType);
 
-    ZrInferredTypeFree(state, &result);
-    ZrParserFreeAst(state, ast);
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    ZrParser_InferredType_Free(state, &result);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -846,23 +846,23 @@ void test_type_inference_boolean_literal(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
 
     TEST_INFO("Boolean literal type inference", "Testing type inference for boolean literal: true");
 
     // 解析布尔表达式
     const char *source = "true;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse boolean literal");
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
@@ -877,23 +877,23 @@ void test_type_inference_boolean_literal(void) {
 
     if (expr == ZR_NULL || expr->type != ZR_AST_BOOLEAN_LITERAL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to get boolean literal node");
-        ZrParserFreeAst(state, ast);
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
     // 推断类型
     SZrInferredType result;
-    TBool success = infer_literal_type(cs, expr, &result);
+    TZrBool success = ZrParser_LiteralType_Infer(cs, expr, &result);
 
     TEST_ASSERT_TRUE(success);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, result.baseType);
 
-    ZrInferredTypeFree(state, &result);
-    ZrParserFreeAst(state, ast);
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    ZrParser_InferredType_Free(state, &result);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -908,23 +908,23 @@ void test_type_inference_binary_expression(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
 
     TEST_INFO("Binary expression type inference", "Testing type inference for binary expression: 1 + 2");
 
     // 解析二元表达式
     const char *source = "1 + 2;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse binary expression");
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
@@ -939,24 +939,24 @@ void test_type_inference_binary_expression(void) {
 
     if (expr == ZR_NULL || expr->type != ZR_AST_BINARY_EXPRESSION) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to get binary expression node");
-        ZrParserFreeAst(state, ast);
-        destroyTestCompilerState(cs);
-        destroyTestState(state);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
         return;
     }
 
     // 推断类型
     SZrInferredType result;
-    TBool success = infer_binary_expression_type(cs, expr, &result);
+    TZrBool success = ZrParser_BinaryExpressionType_Infer(cs, expr, &result);
 
     TEST_ASSERT_TRUE(success);
     // 整数相加应该返回整数类型
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
 
-    ZrInferredTypeFree(state, &result);
-    ZrParserFreeAst(state, ast);
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    ZrParser_InferredType_Free(state, &result);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -970,7 +970,7 @@ void test_parser_supports_ownership_types_and_template_strings(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Ownership-qualified type parsing and template string parsing",
@@ -981,8 +981,8 @@ void test_parser_supports_ownership_types_and_template_strings(void) {
         "var borrowed: shared<Box<int>>;"
         "var weakRef: weak<Resource>;"
         "var message = `hello ${1}`;";
-    SZrString *sourceName = ZrStringCreate(state, "ownership_template_test.zr", 26);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "ownership_template_test.zr", 26);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -1025,8 +1025,8 @@ void test_parser_supports_ownership_types_and_template_strings(void) {
                               templateLiteral->data.templateStringLiteral.segments->nodes[1]->type);
     }
 
-    ZrParserFreeAst(state, ast);
-    destroyTestState(state);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -1040,10 +1040,10 @@ void test_using_statement_compilation_records_cleanup_plan(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
     TEST_ASSERT_NOT_NULL(cs->semanticContext);
 
@@ -1052,8 +1052,8 @@ void test_using_statement_compilation_records_cleanup_plan(void) {
 
     {
         const char *source = "using resource;";
-        SZrString *sourceName = ZrStringCreate(state, "using_cleanup_test.zr", 21);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "using_cleanup_test.zr", 21);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *usingStmt;
         const SZrDeterministicCleanupStep *step;
 
@@ -1066,28 +1066,28 @@ void test_using_statement_compilation_records_cleanup_plan(void) {
         TEST_ASSERT_NOT_NULL(usingStmt);
         TEST_ASSERT_EQUAL_INT(ZR_AST_USING_STATEMENT, usingStmt->type);
 
-        cs->currentFunction = ZrFunctionNew(state);
+        cs->currentFunction = ZrCore_Function_New(state);
         TEST_ASSERT_NOT_NULL(cs->currentFunction);
 
-        compile_statement(cs, usingStmt);
+        ZrParser_Statement_Compile(cs, usingStmt);
 
         TEST_ASSERT_FALSE(cs->hasError);
         TEST_ASSERT_EQUAL_INT(1, (int)cs->semanticContext->cleanupPlan.length);
 
-        step = (const SZrDeterministicCleanupStep *)ZrArrayGet(&cs->semanticContext->cleanupPlan, 0);
+        step = (const SZrDeterministicCleanupStep *)ZrCore_Array_Get(&cs->semanticContext->cleanupPlan, 0);
         TEST_ASSERT_NOT_NULL(step);
         TEST_ASSERT_TRUE(step->regionId > 0);
         TEST_ASSERT_TRUE(step->symbolId > 0);
         TEST_ASSERT_TRUE(step->callsClose);
         TEST_ASSERT_TRUE(step->callsDestructor);
 
-        ZrFunctionFree(state, cs->currentFunction);
+        ZrCore_Function_Free(state, cs->currentFunction);
         cs->currentFunction = ZR_NULL;
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
 
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -1101,10 +1101,10 @@ void test_template_string_compilation_records_semantic_segments(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
     TEST_ASSERT_NOT_NULL(cs->semanticContext);
 
@@ -1113,8 +1113,8 @@ void test_template_string_compilation_records_semantic_segments(void) {
 
     {
         const char *source = "`hello ${1}`;";
-        SZrString *sourceName = ZrStringCreate(state, "template_segments_test.zr", 25);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "template_segments_test.zr", 25);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *exprStmt;
         SZrAstNode *templateLiteral;
         const SZrTemplateSegment *first;
@@ -1133,17 +1133,17 @@ void test_template_string_compilation_records_semantic_segments(void) {
         TEST_ASSERT_NOT_NULL(templateLiteral);
         TEST_ASSERT_EQUAL_INT(ZR_AST_TEMPLATE_STRING_LITERAL, templateLiteral->type);
 
-        cs->currentFunction = ZrFunctionNew(state);
+        cs->currentFunction = ZrCore_Function_New(state);
         TEST_ASSERT_NOT_NULL(cs->currentFunction);
 
-        compile_expression(cs, templateLiteral);
+        ZrParser_Expression_Compile(cs, templateLiteral);
 
         TEST_ASSERT_FALSE(cs->hasError);
         TEST_ASSERT_EQUAL_INT(3, (int)cs->semanticContext->templateSegments.length);
 
-        first = (const SZrTemplateSegment *)ZrArrayGet(&cs->semanticContext->templateSegments, 0);
-        second = (const SZrTemplateSegment *)ZrArrayGet(&cs->semanticContext->templateSegments, 1);
-        third = (const SZrTemplateSegment *)ZrArrayGet(&cs->semanticContext->templateSegments, 2);
+        first = (const SZrTemplateSegment *)ZrCore_Array_Get(&cs->semanticContext->templateSegments, 0);
+        second = (const SZrTemplateSegment *)ZrCore_Array_Get(&cs->semanticContext->templateSegments, 1);
+        third = (const SZrTemplateSegment *)ZrCore_Array_Get(&cs->semanticContext->templateSegments, 2);
 
         TEST_ASSERT_NOT_NULL(first);
         TEST_ASSERT_NOT_NULL(second);
@@ -1151,7 +1151,7 @@ void test_template_string_compilation_records_semantic_segments(void) {
 
         TEST_ASSERT_FALSE(first->isInterpolation);
         TEST_ASSERT_NOT_NULL(first->staticText);
-        TEST_ASSERT_EQUAL_STRING("hello ", ZrStringGetNativeString(first->staticText));
+        TEST_ASSERT_EQUAL_STRING("hello ", ZrCore_String_GetNativeString(first->staticText));
 
         TEST_ASSERT_TRUE(second->isInterpolation);
         TEST_ASSERT_NOT_NULL(second->expression);
@@ -1159,15 +1159,15 @@ void test_template_string_compilation_records_semantic_segments(void) {
 
         TEST_ASSERT_FALSE(third->isInterpolation);
         TEST_ASSERT_NOT_NULL(third->staticText);
-        TEST_ASSERT_EQUAL_STRING("", ZrStringGetNativeString(third->staticText));
+        TEST_ASSERT_EQUAL_STRING("", ZrCore_String_GetNativeString(third->staticText));
 
-        ZrFunctionFree(state, cs->currentFunction);
+        ZrCore_Function_Free(state, cs->currentFunction);
         cs->currentFunction = ZR_NULL;
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
 
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -1181,21 +1181,21 @@ void test_type_inference_template_string_literal_is_string(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    SZrCompilerState *cs = createTestCompilerState(state);
+    SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
 
     TEST_INFO("Template string literal type inference", "Testing type inference for `hello ${1}`");
 
     {
         const char *source = "`hello ${1}`;";
-        SZrString *sourceName = ZrStringCreate(state, "template_string_test.zr", 23);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "template_string_test.zr", 23);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
         SZrInferredType result;
-        TBool success;
+        TZrBool success;
 
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -1207,18 +1207,18 @@ void test_type_inference_template_string_literal_is_string(void) {
         TEST_ASSERT_NOT_NULL(expr);
         TEST_ASSERT_EQUAL_INT(ZR_AST_TEMPLATE_STRING_LITERAL, expr->type);
 
-        ZrInferredTypeInit(state, &result, ZR_VALUE_TYPE_OBJECT);
-        success = infer_expression_type(cs, expr, &result);
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        success = ZrParser_ExpressionType_Infer(cs, expr, &result);
 
         TEST_ASSERT_TRUE(success);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.baseType);
 
-        ZrInferredTypeFree(state, &result);
-        ZrParserFreeAst(state, ast);
+        ZrParser_InferredType_Free(state, &result);
+        ZrParser_Ast_Free(state, ast);
     }
 
-    destroyTestCompilerState(cs);
-    destroyTestState(state);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);

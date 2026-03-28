@@ -16,11 +16,11 @@
 // - SZrArray 不能嵌入在 SZrObject 中，需要单独分配内存
 // - 如果需要在 Object 的 nodeMap 中存储数组，应该使用 ZR_VALUE_TYPE_NATIVE_POINTER 存储 SZrArray 指针
 struct SZrArray {
-    TBytePtr head;
+    TZrBytePtr head;
     TZrSize elementSize;
     TZrSize length;
     TZrSize capacity;
-    TBool isValid;
+    TZrBool isValid;
 };
 
 typedef struct SZrArray SZrArray;

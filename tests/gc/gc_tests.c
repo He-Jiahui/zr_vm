@@ -106,22 +106,22 @@ void test_gc_status_macros(void) {
     
     TEST_INFO("Object status macros - INITED", 
               "Testing ZR_GC_IS_INITED macro by marking object as initialized");
-    ZrRawObjectMarkAsInit(state, obj);
+    ZrCore_RawObject_MarkAsInit(state, obj);
     TEST_ASSERT_TRUE(ZR_GC_IS_INITED(obj));
     
     TEST_INFO("Object status macros - WAIT_TO_SCAN", 
               "Testing ZR_GC_IS_WAIT_TO_SCAN macro by marking object as wait to scan");
-    ZrRawObjectMarkAsWaitToScan(obj);
+    ZrCore_RawObject_MarkAsWaitToScan(obj);
     TEST_ASSERT_TRUE(ZR_GC_IS_WAIT_TO_SCAN(obj));
     
     TEST_INFO("Object status macros - REFERENCED", 
               "Testing ZR_GC_IS_REFERENCED macro by marking object as referenced");
-    ZrRawObjectMarkAsReferenced(obj);
+    ZrCore_RawObject_MarkAsReferenced(obj);
     TEST_ASSERT_TRUE(ZR_GC_IS_REFERENCED(obj));
     
     TEST_INFO("Generational marking macros - New generation", 
               "Testing ZR_GC_IS_OLD macro with NEW generational status");
-    ZrRawObjectSetGenerationalStatus(obj, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW);
+    ZrCore_RawObject_SetGenerationalStatus(obj, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW);
     TEST_ASSERT_FALSE(ZR_GC_IS_OLD(obj));
     
     TEST_INFO("Generational marking macros - Old generation", 
@@ -131,7 +131,7 @@ void test_gc_status_macros(void) {
     obj->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL;
     fflush(stdout);  // 确保输出刷新
     // 直接检查状态值，避免宏调用可能的问题
-    TBool isOldResult = (obj->garbageCollectMark.generationalStatus >= ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL);
+    TZrBool isOldResult = (obj->garbageCollectMark.generationalStatus >= ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL);
     fflush(stdout);  // 确保输出刷新
     TEST_ASSERT_TRUE(isOldResult);
     
@@ -159,10 +159,10 @@ void test_gc_functions(void) {
     SZrGlobalState* global = state->global;
     
     TEST_INFO("Debt space addition", 
-              "Testing ZrGarbageCollectorAddDebtSpace function to add memory debt");
+              "Testing ZrCore_GarbageCollector_AddDebtSpace function to add memory debt");
     TZrMemoryOffset initialDebt = global->garbageCollector->gcDebtSize;
     TZrMemoryOffset addAmount = 1000;
-    ZrGarbageCollectorAddDebtSpace(global, addAmount);
+    ZrCore_GarbageCollector_AddDebtSpace(global, addAmount);
     TZrMemoryOffset newDebt = global->garbageCollector->gcDebtSize;
     // 验证新债务等于初始债务加上添加的金额（允许溢出保护）
     TEST_ASSERT_TRUE(newDebt >= initialDebt);
@@ -174,14 +174,14 @@ void test_gc_functions(void) {
     }
     
     TEST_INFO("Object creation", 
-              "Testing ZrRawObjectNew function to create a new object");
+              "Testing ZrCore_RawObject_New function to create a new object");
     SZrRawObject* obj = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
     TEST_ASSERT_NOT_NULL(obj);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, obj->type);
     
     TEST_INFO("Object reference status", 
-              "Testing ZrRawObjectIsUnreferenced function to check object reference");
-    TBool isUnreferenced = ZrRawObjectIsUnreferenced(state, obj);
+              "Testing ZrCore_RawObject_IsUnreferenced function to check object reference");
+    TZrBool isUnreferenced = ZrCore_RawObject_IsUnreferenced(state, obj);
     TEST_ASSERT_FALSE(isUnreferenced);
     
     destroyTestState(state);
@@ -218,7 +218,7 @@ void test_boundary_conditions(void) {
     if (largeValue < 100) {
         largeValue = 100;  // 如果计算出的值太小，使用默认值
     }
-    ZrGarbageCollectorAddDebtSpace(global, largeValue);
+    ZrCore_GarbageCollector_AddDebtSpace(global, largeValue);
     TZrMemoryOffset actualDebt = global->garbageCollector->gcDebtSize;
     // 验证债务被正确添加（应该不会溢出）
     TEST_ASSERT_TRUE(actualDebt >= initialDebt);
@@ -233,7 +233,7 @@ void test_boundary_conditions(void) {
               "Testing that debt size does not exceed ZR_MAX_MEMORY_OFFSET when adding maximum value");
     TZrMemoryOffset beforeOverflow = global->garbageCollector->gcDebtSize;
     // 添加一个会导致溢出的值
-    ZrGarbageCollectorAddDebtSpace(global, ZR_MAX_MEMORY_OFFSET);
+    ZrCore_GarbageCollector_AddDebtSpace(global, ZR_MAX_MEMORY_OFFSET);
     TZrMemoryOffset afterOverflow = global->garbageCollector->gcDebtSize;
     // 验证溢出保护：债务应该被限制为最大值
     TEST_ASSERT_EQUAL_INT64(ZR_MAX_MEMORY_OFFSET, afterOverflow);
@@ -270,18 +270,18 @@ void test_gc_sweep_phase(void) {
     
     TEST_INFO("Mark objects as unreferenced", 
               "Marking test objects as initialized (unreferenced) state");
-    ZrRawObjectMarkAsInit(state, obj1);
-    ZrRawObjectMarkAsInit(state, obj2);
+    ZrCore_RawObject_MarkAsInit(state, obj1);
+    ZrCore_RawObject_MarkAsInit(state, obj2);
     
     TEST_INFO("Sweep phase status check", 
               "Verifying that GC is not in sweeping phase initially");
-    TBool isSweeping = ZrGarbageCollectorIsSweeping(global);
+    TZrBool isSweeping = ZrCore_GarbageCollector_IsSweeping(global);
     TEST_ASSERT_FALSE(isSweeping);
     
     TEST_INFO("Enter sweep phase", 
               "Setting GC running status to SWEEP_OBJECTS and verifying sweep phase detection");
     gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS;
-    isSweeping = ZrGarbageCollectorIsSweeping(global);
+    isSweeping = ZrCore_GarbageCollector_IsSweeping(global);
     TEST_ASSERT_TRUE(isSweeping);
     
     destroyTestState(state);
@@ -311,17 +311,17 @@ void test_gc_mark_traversal(void) {
     
     TEST_INFO("Mark object as INITED (initial state)", 
               "Testing INITED status by initializing object and verifying ZR_GC_IS_INITED macro");
-    ZrRawObjectMarkAsInit(state, obj);
+    ZrCore_RawObject_MarkAsInit(state, obj);
     TEST_ASSERT_TRUE(ZR_GC_IS_INITED(obj));
     
     TEST_INFO("Mark object as WAIT_TO_SCAN", 
               "Testing WAIT_TO_SCAN status by setting wait-to-scan status and verifying ZR_GC_IS_WAIT_TO_SCAN macro");
-    ZrRawObjectMarkAsWaitToScan(obj);
+    ZrCore_RawObject_MarkAsWaitToScan(obj);
     TEST_ASSERT_TRUE(ZR_GC_IS_WAIT_TO_SCAN(obj));
     
     TEST_INFO("Mark object as REFERENCED", 
               "Testing REFERENCED status by marking as referenced and verifying ZR_GC_IS_REFERENCED macro");
-    ZrRawObjectMarkAsReferenced(obj);
+    ZrCore_RawObject_MarkAsReferenced(obj);
     TEST_ASSERT_TRUE(ZR_GC_IS_REFERENCED(obj));
     
     destroyTestState(state);
@@ -356,8 +356,8 @@ void test_gc_root_marking(void) {
     
     TEST_INFO("Global metatable array", 
               "Verifying that global basic type object prototype array exists");
-    TUInt32 prototypeCount = 0;
-    for (TUInt32 i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
+    TZrUInt32 prototypeCount = 0;
+    for (TZrUInt32 i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         if (global->basicTypeObjectPrototype[i] != ZR_NULL) {
             prototypeCount++;
         }
@@ -394,13 +394,13 @@ void test_gc_state_machine(void) {
     TEST_INFO("State transition - Propagation phase", 
               "Testing state transition to FLAG_PROPAGATION and verifying not in sweep phase");
     gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION;
-    TBool isSweeping = ZrGarbageCollectorIsSweeping(global);
+    TZrBool isSweeping = ZrCore_GarbageCollector_IsSweeping(global);
     TEST_ASSERT_FALSE(isSweeping);
     
     TEST_INFO("State transition - Sweep phase", 
               "Testing state transition to SWEEP_OBJECTS and verifying sweep phase detection");
     gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS;
-    isSweeping = ZrGarbageCollectorIsSweeping(global);
+    isSweeping = ZrCore_GarbageCollector_IsSweeping(global);
     TEST_ASSERT_TRUE(isSweeping);
     
     destroyTestState(state);
@@ -433,13 +433,13 @@ void test_gc_generational(void) {
     
     TEST_INFO("New generation status", 
               "Testing NEW generational status and verifying ZR_GC_IS_OLD returns false");
-    ZrRawObjectSetGenerationalStatus(obj, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW);
-    TBool isOld = ZR_GC_IS_OLD(obj);
+    ZrCore_RawObject_SetGenerationalStatus(obj, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW);
+    TZrBool isOld = ZR_GC_IS_OLD(obj);
     TEST_ASSERT_FALSE(isOld);
     
     TEST_INFO("Promotion to old generation", 
               "Testing SURVIVAL generational status and verifying ZR_GC_IS_OLD returns true");
-    ZrRawObjectSetGenerationalStatus(obj, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL);
+    ZrCore_RawObject_SetGenerationalStatus(obj, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL);
     isOld = ZR_GC_IS_OLD(obj);
     TEST_ASSERT_TRUE(isOld);
     
@@ -470,7 +470,7 @@ void test_gc_native_data(void) {
     
     TEST_INFO("Native Data object creation", 
               "Creating a native data object with 5 value slots");
-    TUInt32 valueCount = 5;
+    TZrUInt32 valueCount = 5;
     struct SZrNativeData* nativeData = createTestNativeData(state, valueCount);
     TEST_ASSERT_NOT_NULL(nativeData);
     
@@ -484,8 +484,8 @@ void test_gc_native_data(void) {
     
     TEST_INFO("Value array initialization", 
               "Verifying that all values in native data array are initialized as NULL type");
-    TUInt32 nullCount = 0;
-    for (TUInt32 i = 0; i < nativeData->valueLength; i++) {
+    TZrUInt32 nullCount = 0;
+    for (TZrUInt32 i = 0; i < nativeData->valueLength; i++) {
         if (nativeData->valueExtend[i].type == ZR_VALUE_TYPE_NULL) {
             nullCount++;
         }
@@ -522,8 +522,8 @@ void test_gc_full_collection(void) {
     TEST_ASSERT_NOT_NULL(obj2);
     
     TEST_INFO("Execute full GC", 
-              "Executing ZrGarbageCollectorGcFull to perform complete garbage collection");
-    ZrGarbageCollectorGcFull(state, ZR_FALSE);
+              "Executing ZrCore_GarbageCollector_GcFull to perform complete garbage collection");
+    ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
     
     TEST_INFO("GC status verification", 
               "Verifying that GC returns to PAUSED state after full collection");
@@ -555,16 +555,16 @@ void test_gc_step(void) {
     TEST_INFO("Add debt space to trigger GC", 
               "Adding memory debt to trigger garbage collection step");
     TZrMemoryOffset addDebt = 10000;
-    ZrGarbageCollectorAddDebtSpace(global, addDebt);
+    ZrCore_GarbageCollector_AddDebtSpace(global, addDebt);
     
     TEST_INFO("Execute GC step", 
-              "Executing ZrGarbageCollectorGcStep to perform incremental GC");
-    ZrGarbageCollectorGcStep(state);
+              "Executing ZrCore_GarbageCollector_GcStep to perform incremental GC");
+    ZrCore_GarbageCollector_GcStep(state);
     
     TEST_INFO("GC status verification", 
               "Verifying that GC status is either RUNNING or STOP_BY_SELF after step");
     EZrGarbageCollectStatus status = global->garbageCollector->gcStatus;
-    TBool isValidStatus = (status == ZR_GARBAGE_COLLECT_STATUS_RUNNING ||
+    TZrBool isValidStatus = (status == ZR_GARBAGE_COLLECT_STATUS_RUNNING ||
                           status == ZR_GARBAGE_COLLECT_STATUS_STOP_BY_SELF);
     TEST_ASSERT_TRUE(isValidStatus);
     
@@ -597,18 +597,18 @@ void test_gc_barrier(void) {
     
     TEST_INFO("Mark parent as REFERENCED", 
               "Marking parent object as referenced");
-    ZrRawObjectMarkAsReferenced(parent);
-    TBool isReferenced = ZR_GC_IS_REFERENCED(parent);
+    ZrCore_RawObject_MarkAsReferenced(parent);
+    TZrBool isReferenced = ZR_GC_IS_REFERENCED(parent);
     TEST_ASSERT_TRUE(isReferenced);
     
     TEST_INFO("Test barrier: REFERENCED object pointing to INITED object", 
-              "Calling ZrGarbageCollectorBarrier when REFERENCED parent points to INITED child");
-    ZrGarbageCollectorBarrier(state, parent, child);
+              "Calling ZrCore_GarbageCollector_Barrier when REFERENCED parent points to INITED child");
+    ZrCore_GarbageCollector_Barrier(state, parent, child);
     
     TEST_INFO("Verify child object is marked", 
               "Verifying that child object is marked (WAIT_TO_SCAN or REFERENCED) after barrier");
-    TBool isWaitToScan = ZR_GC_IS_WAIT_TO_SCAN(child);
-    TBool isChildReferenced = ZR_GC_IS_REFERENCED(child);
+    TZrBool isWaitToScan = ZR_GC_IS_WAIT_TO_SCAN(child);
+    TZrBool isChildReferenced = ZR_GC_IS_REFERENCED(child);
     TEST_ASSERT_TRUE(isWaitToScan || isChildReferenced);
     
     destroyTestState(state);
@@ -640,8 +640,8 @@ void test_gc_pause_budget_consumes_multiple_incremental_steps(void) {
         TEST_ASSERT_NOT_NULL(first);
         TEST_ASSERT_NOT_NULL(second);
 
-        ZrRawObjectMarkAsWaitToScan(ZR_CAST_RAW_OBJECT_AS_SUPER(first));
-        ZrRawObjectMarkAsWaitToScan(ZR_CAST_RAW_OBJECT_AS_SUPER(second));
+        ZrCore_RawObject_MarkAsWaitToScan(ZR_CAST_RAW_OBJECT_AS_SUPER(first));
+        ZrCore_RawObject_MarkAsWaitToScan(ZR_CAST_RAW_OBJECT_AS_SUPER(second));
         ZR_CAST_RAW_OBJECT_AS_SUPER(first)->gcList = ZR_CAST_RAW_OBJECT_AS_SUPER(second);
         ZR_CAST_RAW_OBJECT_AS_SUPER(second)->gcList = ZR_NULL;
 
@@ -651,7 +651,7 @@ void test_gc_pause_budget_consumes_multiple_incremental_steps(void) {
         gc->gcPauseBudget = 2;
         gc->gcDebtSize = 4096;
 
-        ZrGarbageCollectorGcStep(state);
+        ZrCore_GarbageCollector_GcStep(state);
 
         TEST_ASSERT_TRUE(ZR_GC_IS_REFERENCED(ZR_CAST_RAW_OBJECT_AS_SUPER(first)));
         TEST_ASSERT_TRUE(ZR_GC_IS_REFERENCED(ZR_CAST_RAW_OBJECT_AS_SUPER(second)));
@@ -690,9 +690,9 @@ void test_gc_sweep_slice_budget_limits_single_step_sweep(void) {
         TEST_ASSERT_NOT_NULL(second);
         TEST_ASSERT_NOT_NULL(third);
 
-        ZrRawObjectMarkAsInit(state, first);
-        ZrRawObjectMarkAsInit(state, second);
-        ZrRawObjectMarkAsInit(state, third);
+        ZrCore_RawObject_MarkAsInit(state, first);
+        ZrCore_RawObject_MarkAsInit(state, second);
+        ZrCore_RawObject_MarkAsInit(state, third);
         first->garbageCollectMark.generation = ZR_GC_OTHER_GENERATION(gc);
         second->garbageCollectMark.generation = ZR_GC_OTHER_GENERATION(gc);
         third->garbageCollectMark.generation = ZR_GC_OTHER_GENERATION(gc);
@@ -703,7 +703,7 @@ void test_gc_sweep_slice_budget_limits_single_step_sweep(void) {
         gc->gcObjectListSweeper = &gc->gcObjectList;
         gc->gcDebtSize = 4096;
 
-        ZrGarbageCollectorGcStep(state);
+        ZrCore_GarbageCollector_GcStep(state);
 
         TEST_ASSERT_EQUAL_INT(1, (int)gc->gcLastStepWork);
         TEST_ASSERT_EQUAL_PTR(second, gc->gcObjectList);
@@ -748,24 +748,24 @@ void test_gc_ignore_registry_and_phase_metadata(void) {
 
         TEST_INFO("Ignore registry registration",
                   "Registering an object in the ignore registry should make it queryable and counted");
-        TEST_ASSERT_TRUE(ZrGarbageCollectorIgnoreObject(state, ignoredObject));
-        TEST_ASSERT_TRUE(ZrGarbageCollectorIsObjectIgnored(state->global, ignoredObject));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(state, ignoredObject));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, ignoredObject));
         TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
 
         TEST_INFO("Ignore registry round-trip",
                   "Removing an ignored object should drop it from the registry and restore the count");
-        TEST_ASSERT_TRUE(ZrGarbageCollectorUnignoreObject(state->global, ignoredObject));
-        TEST_ASSERT_FALSE(ZrGarbageCollectorIsObjectIgnored(state->global, ignoredObject));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_UnignoreObject(state->global, ignoredObject));
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, ignoredObject));
         TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
 
-        TEST_ASSERT_TRUE(ZrGarbageCollectorIgnoreObject(state, ignoredObject));
-        TEST_ASSERT_TRUE(ZrGarbageCollectorIsObjectIgnored(state->global, ignoredObject));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(state, ignoredObject));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, ignoredObject));
         TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
 
         TEST_INFO("Phase metadata after GC step",
                   "Executing a GC step with debt should update last-step metadata without dropping ignore registry state");
-        ZrGarbageCollectorAddDebtSpace(state->global, 4096);
-        ZrGarbageCollectorGcStep(state);
+        ZrCore_GarbageCollector_AddDebtSpace(state->global, 4096);
+        ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_TRUE(gc->gcLastStepWork > 0);
         TEST_ASSERT_TRUE(gc->gcLastCompletedRunningStatus ==
                              ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED ||
@@ -779,7 +779,7 @@ void test_gc_ignore_registry_and_phase_metadata(void) {
                              ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_WAIT_TO_RELEASE_OBJECTS ||
                          gc->gcLastCompletedRunningStatus ==
                              ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END);
-        TEST_ASSERT_TRUE(ZrGarbageCollectorIsObjectIgnored(state->global, ignoredObject));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, ignoredObject));
     }
 
     destroyTestState(state);
@@ -813,17 +813,17 @@ void test_gc_barrier_unignores_escaped_object(void) {
 
         TEST_INFO("Prepare referenced parent and ignored child",
                   "The ignored child simulates a unique-owned object before it escapes into a shared GC graph");
-        ZrRawObjectMarkAsReferenced(parent);
-        ZrRawObjectMarkAsInit(state, child);
-        TEST_ASSERT_TRUE(ZrGarbageCollectorIgnoreObject(state, child));
-        TEST_ASSERT_TRUE(ZrGarbageCollectorIsObjectIgnored(state->global, child));
+        ZrCore_RawObject_MarkAsReferenced(parent);
+        ZrCore_RawObject_MarkAsInit(state, child);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(state, child));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, child));
         TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
 
         TEST_INFO("Barrier on shared escape",
                   "Writing an ignored child through the GC barrier should restore normal tracing ownership");
-        ZrGarbageCollectorBarrier(state, parent, child);
+        ZrCore_GarbageCollector_Barrier(state, parent, child);
 
-        TEST_ASSERT_FALSE(ZrGarbageCollectorIsObjectIgnored(state->global, child));
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, child));
         TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
         TEST_ASSERT_TRUE(ZR_GC_IS_WAIT_TO_SCAN(child) || ZR_GC_IS_REFERENCED(child));
     }

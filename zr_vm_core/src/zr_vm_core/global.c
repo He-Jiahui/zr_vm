@@ -16,11 +16,7 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_common/zr_type_conf.h"
 
-static void ZrGlobalStatePanic(SZrState *state) {
-    // todo
-}
-
-SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments, TUInt64 uniqueNumber,
+SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAllocationArguments, TZrUInt64 uniqueNumber,
                                  SZrCallbackGlobal *callbacks) {
     SZrGlobalState *global =
             allocator(userAllocationArguments, ZR_NULL, 0, sizeof(SZrGlobalState), ZR_MEMORY_NATIVE_TYPE_GLOBAL);
@@ -31,33 +27,33 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     global->isValid = ZR_FALSE;
     global->allocator = allocator;
     global->userAllocationArguments = userAllocationArguments;
-    SZrState *newState = ZrStateNew(global);
+    SZrState *newState = ZrCore_State_New(global);
     global->mainThreadState = newState;
     global->threadWithStackClosures = ZR_NULL;
-    ZrStateInit(newState, global);
+    ZrCore_State_Init(newState, global);
     // todo: main thread cannot yield
 
     // todo:
     global->logFunction = ZR_NULL;
 
     // generate seed
-    global->hashSeed = ZrHashSeedCreate(global, uniqueNumber);
+    global->hashSeed = ZrCore_HashSeed_Create(global, uniqueNumber);
 
     // gc
-    ZrGarbageCollectorNew(global);
+    ZrCore_GarbageCollector_New(global);
 
     // io
     global->sourceLoader = ZR_NULL;
 
     // init string table
-    ZrStringTableNew(global);
+    ZrCore_StringTable_New(global);
 
     // init global module registry
-    ZrValueResetAsNull(&global->loadedModulesRegistry);
+    ZrCore_Value_ResetAsNull(&global->loadedModulesRegistry);
     // init global null value
-    ZrValueResetAsNull(&global->nullValue);
+    ZrCore_Value_ResetAsNull(&global->nullValue);
     // init global zr object
-    ZrValueResetAsNull(&global->zrObject);
+    ZrCore_Value_ResetAsNull(&global->zrObject);
 
     // exception
     global->panicHandlingFunction = ZR_NULL;
@@ -73,19 +69,19 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
     global->compileSource = ZR_NULL;
 
     // reset basic type object prototype
-    for (TUInt64 i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
+    for (TZrUInt64 i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         global->basicTypeObjectPrototype[i] = ZR_NULL;
     }
     // write callbacks to  global
     if (callbacks != ZR_NULL) {
         global->callbacks = *callbacks;
     } else {
-        ZrMemoryRawSet(&global->callbacks, 0, sizeof(SZrCallbackGlobal));
+        ZrCore_Memory_RawSet(&global->callbacks, 0, sizeof(SZrCallbackGlobal));
     }
     // launch new state with try-catch
-    if (ZrExceptionTryRun(newState, ZrStateMainThreadLaunch, ZR_NULL) != ZR_THREAD_STATUS_FINE) {
-        ZrStateExit(newState);
-        ZrGlobalStateFree(global);
+    if (ZrCore_Exception_TryRun(newState, ZrCore_State_MainThreadLaunch, ZR_NULL) != ZR_THREAD_STATUS_FINE) {
+        ZrCore_State_Exit(newState);
+        ZrCore_GlobalState_Free(global);
         global = ZR_NULL;
         return ZR_NULL;
     }
@@ -96,19 +92,19 @@ SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationAr
 }
 
 // 初始化基本类型对象原型
-static void ZrGlobalStateInitBasicTypeObjectPrototypes(SZrState *state, SZrGlobalState *global) {
+static void global_state_init_basic_type_object_prototypes(SZrState *state, SZrGlobalState *global) {
     // 为每个值类型创建 ObjectPrototype 对象
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
-        // 创建 ObjectPrototype 对象（ZrObjectNewCustomized 已经设置了 internalType 并调用了 ZrHashSetConstruct）
-        SZrObject *objectBase = ZrObjectNewCustomized(state, sizeof(SZrObjectPrototype), ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE);
+        // 创建 ObjectPrototype 对象（ZrCore_Object_NewCustomized 已经设置了 internalType 并调用了 ZrCore_HashSet_Construct）
+        SZrObject *objectBase = ZrCore_Object_NewCustomized(state, sizeof(SZrObjectPrototype), ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE);
         if (objectBase == ZR_NULL) {
             continue;
         }
         
         SZrObjectPrototype *prototype = (SZrObjectPrototype *)objectBase;
         
-        // 初始化哈希集（ZrObjectNewCustomized 只调用了 Construct，需要调用 Init）
-        ZrHashSetInit(state, &prototype->super.nodeMap, ZR_OBJECT_TABLE_INIT_SIZE_LOG2);
+        // 初始化哈希集（ZrCore_Object_NewCustomized 只调用了 Construct，需要调用 Init）
+        ZrCore_HashSet_Init(state, &prototype->super.nodeMap, ZR_OBJECT_TABLE_INIT_SIZE_LOG2);
         
         // 初始化 ObjectPrototype 特定字段
         prototype->name = ZR_NULL;
@@ -116,75 +112,75 @@ static void ZrGlobalStateInitBasicTypeObjectPrototypes(SZrState *state, SZrGloba
         prototype->superPrototype = ZR_NULL;
         
         // 初始化 metaTable
-        ZrMetaTableConstruct(&prototype->metaTable);
+        ZrCore_MetaTable_Construct(&prototype->metaTable);
         
         // 将原型存储到全局数组中
         global->basicTypeObjectPrototype[i] = prototype;
         
         // 标记为永久对象（避免被 GC 回收）
-        ZrRawObjectMarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
         
         // 为基本类型注册默认元方法
-        ZrMetaInitBuiltinTypeMetaMethods(state, (EZrValueType)i);
+        ZrCore_Meta_InitBuiltinTypeMetaMethods(state, (EZrValueType)i);
     }
 }
 
-void ZrGlobalStateInitRegistry(SZrState *state, SZrGlobalState *global) {
-    SZrObject *object = ZrObjectNew(state, ZR_NULL);
-    ZrObjectInit(state, object);  // 初始化对象的 nodeMap
-    ZrValueInitAsRawObject(state, &global->loadedModulesRegistry, ZR_CAST_RAW_OBJECT(object));
+void ZrCore_GlobalState_InitRegistry(SZrState *state, SZrGlobalState *global) {
+    SZrObject *object = ZrCore_Object_New(state, ZR_NULL);
+    ZrCore_Object_Init(state, object);  // 初始化对象的 nodeMap
+    ZrCore_Value_InitAsRawObject(state, &global->loadedModulesRegistry, ZR_CAST_RAW_OBJECT(object));
     
     // 初始化基本类型对象原型
-    ZrGlobalStateInitBasicTypeObjectPrototypes(state, global);
+    global_state_init_basic_type_object_prototypes(state, global);
     
     // 创建全局 zr 对象
-    SZrObject *zrObject = ZrObjectNew(state, ZR_NULL);
-    ZrObjectInit(state, zrObject);
+    SZrObject *zrObject = ZrCore_Object_New(state, ZR_NULL);
+    ZrCore_Object_Init(state, zrObject);
     
     // 创建 zr.import native 函数
-    SZrClosureNative *importClosure = ZrClosureNativeNew(state, 0);
+    SZrClosureNative *importClosure = ZrCore_ClosureNative_New(state, 0);
     if (importClosure != ZR_NULL) {
-        importClosure->nativeFunction = ZrImportNativeFunction;
+        importClosure->nativeFunction = ZrCore_ImportNativeFunction;
         
         // 标记为永久对象（避免被 GC 回收，必须在设置值之前标记）
-        ZrRawObjectMarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
         
         // 创建函数值
         // 注意：ZrClosureNative 的类型是 ZR_VALUE_TYPE_CLOSURE，不是 ZR_VALUE_TYPE_FUNCTION
-        // 不要手动覆盖类型，使用 ZrValueInitAsRawObject 设置的原始类型
+        // 不要手动覆盖类型，使用 ZrCore_Value_InitAsRawObject 设置的原始类型
         SZrTypeValue importValue;
-        ZrValueInitAsRawObject(state, &importValue, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
-        // importValue.type 已经由 ZrValueInitAsRawObject 设置为 ZR_VALUE_TYPE_CLOSURE
+        ZrCore_Value_InitAsRawObject(state, &importValue, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
+        // importValue.type 已经由 ZrCore_Value_InitAsRawObject 设置为 ZR_VALUE_TYPE_CLOSURE
         importValue.isNative = ZR_TRUE;
         
         // 创建 "import" 字符串键
-        SZrString *importName = ZrStringCreate(state, "import", 6);
+        SZrString *importName = ZrCore_String_Create(state, "import", 6);
         // 标记字符串为永久对象（避免被 GC 回收，必须在设置值之前标记）
-        // 注意：如果字符串已存在，可能已经被标记为永久对象，ZrRawObjectMarkAsPermanent 会处理这种情况
-        ZrRawObjectMarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(importName));
+        // 注意：如果字符串已存在，可能已经被标记为永久对象，ZrCore_RawObject_MarkAsPermanent 会处理这种情况
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(importName));
         
         SZrTypeValue importKey;
-        ZrValueInitAsRawObject(state, &importKey, ZR_CAST_RAW_OBJECT_AS_SUPER(importName));
-        // importKey.type 已经由 ZrValueInitAsRawObject 设置为 ZR_VALUE_TYPE_STRING
+        ZrCore_Value_InitAsRawObject(state, &importKey, ZR_CAST_RAW_OBJECT_AS_SUPER(importName));
+        // importKey.type 已经由 ZrCore_Value_InitAsRawObject 设置为 ZR_VALUE_TYPE_STRING
         
         // 将 import 函数添加到 zr 对象
-        ZrObjectSetValue(state, zrObject, &importKey, &importValue);
+        ZrCore_Object_SetValue(state, zrObject, &importKey, &importValue);
     }
     
     // 将 zr 对象存储到 global->zrObject 中，供 GET_GLOBAL 指令使用
     SZrTypeValue zrValue;
-    ZrValueInitAsRawObject(state, &zrValue, ZR_CAST_RAW_OBJECT_AS_SUPER(zrObject));
+    ZrCore_Value_InitAsRawObject(state, &zrValue, ZR_CAST_RAW_OBJECT_AS_SUPER(zrObject));
     zrValue.type = ZR_VALUE_TYPE_OBJECT;
     global->zrObject = zrValue;
     
     // 标记 zr 对象为永久对象（避免被 GC 回收）
-    ZrRawObjectMarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(zrObject));
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(zrObject));
     
     // 将 zr 对象添加到全局状态（TODO: 需要确认如何访问全局作用域）
     // 根据计划，zr 除非被局部作用域名字覆盖，否则全局只读
     // TODO: 这里暂时先创建对象，后续需要在全局作用域中注册
     
-    // 注意：compileSource 函数指针由 parser 模块通过 ZrGlobalStateSetCompileSource 设置
+    // 注意：compileSource 函数指针由 parser 模块通过 ZrCore_GlobalState_SetCompileSource 设置
     // 这里不直接调用 parser 模块的函数，以避免循环依赖
     
     // todo: load state value
@@ -193,24 +189,24 @@ void ZrGlobalStateInitRegistry(SZrState *state, SZrGlobalState *global) {
 }
 
 // 设置 compileSource 函数指针（由 parser 模块调用）
-void ZrGlobalStateSetCompileSource(SZrGlobalState *global, 
-    struct SZrFunction *(*compileSource)(struct SZrState *state, const TChar *source, TZrSize sourceLength, struct SZrString *sourceName)) {
+void ZrCore_GlobalState_SetCompileSource(SZrGlobalState *global, 
+    struct SZrFunction *(*compileSource)(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName)) {
     if (global != ZR_NULL) {
         global->compileSource = compileSource;
     }
 }
 
 
-void ZrGlobalStateFree(SZrGlobalState *global) {
+void ZrCore_GlobalState_Free(SZrGlobalState *global) {
     FZrAllocator allocator = global->allocator;
 
-    ZrStringTableFree(global, global->stringTable);
+    ZrCore_StringTable_Free(global, global->stringTable);
     global->stringTable = ZR_NULL;
 
-    ZrGarbageCollectorFree(global, global->garbageCollector);
+    ZrCore_GarbageCollector_Free(global, global->garbageCollector);
     global->garbageCollector = ZR_NULL;
 
-    ZrStateFree(global, global->mainThreadState);
+    ZrCore_State_Free(global, global->mainThreadState);
     // free global at last
     allocator(global->userAllocationArguments, global, sizeof(SZrGlobalState), 0, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
 }

@@ -11,19 +11,19 @@
 #include "zr_vm_core/string.h"
 
 // 创建引用追踪器
-SZrReferenceTracker *ZrReferenceTrackerNew(SZrState *state, SZrSymbolTable *symbolTable) {
+SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, SZrSymbolTable *symbolTable) {
     if (state == ZR_NULL || symbolTable == ZR_NULL) {
         return ZR_NULL;
     }
     
-    SZrReferenceTracker *tracker = (SZrReferenceTracker *)ZrMemoryRawMalloc(state->global, sizeof(SZrReferenceTracker));
+    SZrReferenceTracker *tracker = (SZrReferenceTracker *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrReferenceTracker));
     if (tracker == ZR_NULL) {
         return ZR_NULL;
     }
     
     tracker->state = state;
     tracker->symbolTable = symbolTable;
-    ZrArrayInit(state, &tracker->allReferences, sizeof(SZrReference *), 16);
+    ZrCore_Array_Init(state, &tracker->allReferences, sizeof(SZrReference *), 16);
     
     // 初始化哈希表（使用符号名称作为键）
     tracker->symbolToReferencesMap.buckets = ZR_NULL;
@@ -32,26 +32,26 @@ SZrReferenceTracker *ZrReferenceTrackerNew(SZrState *state, SZrSymbolTable *symb
     tracker->symbolToReferencesMap.capacity = 0;
     tracker->symbolToReferencesMap.resizeThreshold = 0;
     tracker->symbolToReferencesMap.isValid = ZR_FALSE;
-    ZrHashSetInit(state, &tracker->symbolToReferencesMap, 4); // 4 = 16 buckets
+    ZrCore_HashSet_Init(state, &tracker->symbolToReferencesMap, 4); // 4 = 16 buckets
     
     return tracker;
 }
 
 // 释放引用追踪器
-void ZrReferenceTrackerFree(SZrState *state, SZrReferenceTracker *tracker) {
+void ZrLanguageServer_ReferenceTracker_Free(SZrState *state, SZrReferenceTracker *tracker) {
     if (state == ZR_NULL || tracker == ZR_NULL) {
         return;
     }
     
     // 释放所有引用
     for (TZrSize i = 0; i < tracker->allReferences.length; i++) {
-        SZrReference **refPtr = (SZrReference **)ZrArrayGet(&tracker->allReferences, i);
+        SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(&tracker->allReferences, i);
         if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
-            ZrMemoryRawFree(state->global, *refPtr, sizeof(SZrReference));
+            ZrCore_Memory_RawFree(state->global, *refPtr, sizeof(SZrReference));
         }
     }
     
-    ZrArrayFree(state, &tracker->allReferences);
+    ZrCore_Array_Free(state, &tracker->allReferences);
     
     // 释放哈希表中的引用数组和节点
     if (tracker->symbolToReferencesMap.isValid && tracker->symbolToReferencesMap.buckets != ZR_NULL) {
@@ -64,28 +64,28 @@ void ZrReferenceTrackerFree(SZrState *state, SZrReferenceTracker *tracker) {
                         SZrArray *refArray = 
                             (SZrArray *)pair->value.value.nativeObject.nativePointer;
                         if (refArray != ZR_NULL && refArray->isValid) {
-                            ZrArrayFree(state, refArray);
-                            ZrMemoryRawFree(state->global, refArray, sizeof(SZrArray));
+                            ZrCore_Array_Free(state, refArray);
+                            ZrCore_Memory_RawFree(state->global, refArray, sizeof(SZrArray));
                         }
                     }
                 }
                 // 释放节点本身
                 SZrHashKeyValuePair *next = pair->next;
-                ZrMemoryRawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
+                ZrCore_Memory_RawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
                                        ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
                 pair = next;
             }
             tracker->symbolToReferencesMap.buckets[i] = ZR_NULL;
         }
         // 释放 buckets 数组
-        ZrHashSetDeconstruct(state, &tracker->symbolToReferencesMap);
+        ZrCore_HashSet_Deconstruct(state, &tracker->symbolToReferencesMap);
     }
     
-    ZrMemoryRawFree(state->global, tracker, sizeof(SZrReferenceTracker));
+    ZrCore_Memory_RawFree(state->global, tracker, sizeof(SZrReferenceTracker));
 }
 
 // 添加引用
-TBool ZrReferenceTrackerAddReference(SZrState *state, 
+TZrBool ZrLanguageServer_ReferenceTracker_AddReference(SZrState *state, 
                                      SZrReferenceTracker *tracker,
                                      SZrSymbol *symbol,
                                      SZrFileRange location,
@@ -95,7 +95,7 @@ TBool ZrReferenceTrackerAddReference(SZrState *state,
     }
     
     // 创建引用
-    SZrReference *reference = (SZrReference *)ZrMemoryRawMalloc(state->global, sizeof(SZrReference));
+    SZrReference *reference = (SZrReference *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrReference));
     if (reference == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -105,16 +105,16 @@ TBool ZrReferenceTrackerAddReference(SZrState *state,
     reference->type = type;
     
     // 添加到所有引用数组
-    ZrArrayPush(state, &tracker->allReferences, &reference);
+    ZrCore_Array_Push(state, &tracker->allReferences, &reference);
     
     // 实现哈希表映射用于快速查找
     if (tracker->symbolToReferencesMap.isValid) {
         // 使用符号名称作为键
         SZrTypeValue key;
-        ZrValueInitAsRawObject(state, &key, &symbol->name->super);
+        ZrCore_Value_InitAsRawObject(state, &key, &symbol->name->super);
         
         // 查找或创建引用数组
-        SZrHashKeyValuePair *pair = ZrHashSetFind(state, &tracker->symbolToReferencesMap, &key);
+        SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &tracker->symbolToReferencesMap, &key);
         SZrArray *refArray = ZR_NULL;
         
         if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
@@ -122,34 +122,34 @@ TBool ZrReferenceTrackerAddReference(SZrState *state,
             refArray = (SZrArray *)pair->value.value.nativeObject.nativePointer;
         } else {
             // 创建新数组
-            refArray = (SZrArray *)ZrMemoryRawMalloc(state->global, sizeof(SZrArray));
+            refArray = (SZrArray *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrArray));
             if (refArray != ZR_NULL) {
-                ZrArrayInit(state, refArray, sizeof(SZrReference *), 4);
+                ZrCore_Array_Init(state, refArray, sizeof(SZrReference *), 4);
                 
                 // 添加到哈希表
-                pair = ZrHashSetAdd(state, &tracker->symbolToReferencesMap, &key);
+                pair = ZrCore_HashSet_Add(state, &tracker->symbolToReferencesMap, &key);
                 if (pair != ZR_NULL) {
                     SZrTypeValue value;
-                    ZrValueInitAsNativePointer(state, &value, (TZrPtr)refArray);
-                    ZrValueCopy(state, &pair->value, &value);
+                    ZrCore_Value_InitAsNativePointer(state, &value, (TZrPtr)refArray);
+                    ZrCore_Value_Copy(state, &pair->value, &value);
                 }
             }
         }
         
         // 将引用添加到数组
         if (refArray != ZR_NULL) {
-            ZrArrayPush(state, refArray, &reference);
+            ZrCore_Array_Push(state, refArray, &reference);
         }
     }
     
     // 同时添加到符号的引用列表
-    ZrSymbolAddReference(state, symbol, location);
+    ZrLanguageServer_Symbol_AddReference(state, symbol, location);
     
     return ZR_TRUE;
 }
 
 // 查找所有引用
-TBool ZrReferenceTrackerFindReferences(SZrState *state,
+TZrBool ZrLanguageServer_ReferenceTracker_FindReferences(SZrState *state,
                                        SZrReferenceTracker *tracker,
                                        SZrSymbol *symbol,
                                        SZrArray *result) {
@@ -159,26 +159,26 @@ TBool ZrReferenceTrackerFindReferences(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrArrayInit(state, result, sizeof(SZrReference *), 4);
+        ZrCore_Array_Init(state, result, sizeof(SZrReference *), 4);
     }
     
     // 使用哈希表快速查找
     if (tracker->symbolToReferencesMap.isValid) {
         SZrTypeValue key;
-        ZrValueInitAsRawObject(state, &key, &symbol->name->super);
+        ZrCore_Value_InitAsRawObject(state, &key, &symbol->name->super);
         
-        SZrHashKeyValuePair *pair = ZrHashSetFind(state, &tracker->symbolToReferencesMap, &key);
+        SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &tracker->symbolToReferencesMap, &key);
         if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
             SZrArray *refArray = (SZrArray *)pair->value.value.nativeObject.nativePointer;
             if (refArray != ZR_NULL && refArray->isValid) {
                 // 从数组中获取所有引用
                 for (TZrSize i = 0; i < refArray->length; i++) {
-                    SZrReference **refPtr = (SZrReference **)ZrArrayGet(refArray, i);
+                    SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(refArray, i);
                     if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
                         SZrReference *ref = *refPtr;
                         // 验证符号匹配（因为可能有同名符号）
                         if (ref->symbol == symbol) {
-                            ZrArrayPush(state, result, refPtr);
+                            ZrCore_Array_Push(state, result, refPtr);
                         }
                     }
                 }
@@ -189,11 +189,11 @@ TBool ZrReferenceTrackerFindReferences(SZrState *state,
     
     // 回退到线性查找
     for (TZrSize i = 0; i < tracker->allReferences.length; i++) {
-        SZrReference **refPtr = (SZrReference **)ZrArrayGet(&tracker->allReferences, i);
+        SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(&tracker->allReferences, i);
         if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
             SZrReference *ref = *refPtr;
             if (ref->symbol == symbol) {
-                ZrArrayPush(state, result, refPtr);
+                ZrCore_Array_Push(state, result, refPtr);
             }
         }
     }
@@ -202,17 +202,17 @@ TBool ZrReferenceTrackerFindReferences(SZrState *state,
 }
 
 // 获取引用计数
-TZrSize ZrReferenceTrackerGetReferenceCount(SZrReferenceTracker *tracker,
+TZrSize ZrLanguageServer_ReferenceTracker_GetReferenceCount(SZrReferenceTracker *tracker,
                                             SZrSymbol *symbol) {
     if (tracker == ZR_NULL || symbol == ZR_NULL) {
         return 0;
     }
     
-    return ZrSymbolGetReferenceCount(symbol);
+    return ZrLanguageServer_Symbol_GetReferenceCount(symbol);
 }
 
 // 查找位置处的引用
-SZrReference *ZrReferenceTrackerFindReferenceAt(SZrReferenceTracker *tracker,
+SZrReference *ZrLanguageServer_ReferenceTracker_FindReferenceAt(SZrReferenceTracker *tracker,
                                                  SZrFileRange position) {
     if (tracker == ZR_NULL) {
         return ZR_NULL;
@@ -220,7 +220,7 @@ SZrReference *ZrReferenceTrackerFindReferenceAt(SZrReferenceTracker *tracker,
     
     // 遍历所有引用查找匹配的位置
     for (TZrSize i = 0; i < tracker->allReferences.length; i++) {
-        SZrReference **refPtr = (SZrReference **)ZrArrayGet(&tracker->allReferences, i);
+        SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(&tracker->allReferences, i);
         if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
             SZrReference *ref = *refPtr;
             // 实现精确的位置比较
@@ -235,8 +235,8 @@ SZrReference *ZrReferenceTrackerFindReferenceAt(SZrReferenceTracker *tracker,
             
             // 检查位置是否在引用范围内（包含边界）
             // 位置在引用范围内：ref.start <= pos.start && pos.end <= ref.end
-            TBool startMatch = (refRange.start.offset <= posRange.start.offset);
-            TBool endMatch = (posRange.end.offset <= refRange.end.offset);
+            TZrBool startMatch = (refRange.start.offset <= posRange.start.offset);
+            TZrBool endMatch = (posRange.end.offset <= refRange.end.offset);
             
             // 如果offset为0，使用行号和列号比较
             if (refRange.start.offset == 0 && posRange.start.offset == 0) {
@@ -258,7 +258,7 @@ SZrReference *ZrReferenceTrackerFindReferenceAt(SZrReferenceTracker *tracker,
 }
 
 // 获取符号的所有引用位置
-TBool ZrReferenceTrackerGetReferenceLocations(SZrState *state,
+TZrBool ZrLanguageServer_ReferenceTracker_GetReferenceLocations(SZrState *state,
                                               SZrReferenceTracker *tracker,
                                               SZrSymbol *symbol,
                                               SZrArray *result) {
@@ -268,27 +268,27 @@ TBool ZrReferenceTrackerGetReferenceLocations(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrArrayInit(state, result, sizeof(SZrFileRange), 4);
+        ZrCore_Array_Init(state, result, sizeof(SZrFileRange), 4);
     }
     
     // 使用哈希表快速查找
     if (tracker->symbolToReferencesMap.isValid) {
         SZrTypeValue key;
-        ZrValueInitAsRawObject(state, &key, &symbol->name->super);
+        ZrCore_Value_InitAsRawObject(state, &key, &symbol->name->super);
         
-        SZrHashKeyValuePair *pair = ZrHashSetFind(state, &tracker->symbolToReferencesMap, &key);
+        SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &tracker->symbolToReferencesMap, &key);
         if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
             SZrArray *refArray = (SZrArray *)pair->value.value.nativeObject.nativePointer;
             if (refArray != ZR_NULL && refArray->isValid) {
                 // 从数组中获取所有引用的位置
                 for (TZrSize i = 0; i < refArray->length; i++) {
-                    SZrReference **refPtr = (SZrReference **)ZrArrayGet(refArray, i);
+                    SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(refArray, i);
                     if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
                         SZrReference *ref = *refPtr;
                         // 验证符号匹配（因为可能有同名符号）
                         if (ref->symbol == symbol) {
                             SZrFileRange range = ref->location;
-                            ZrArrayPush(state, result, &range);
+                            ZrCore_Array_Push(state, result, &range);
                         }
                     }
                 }
@@ -299,12 +299,12 @@ TBool ZrReferenceTrackerGetReferenceLocations(SZrState *state,
     
     // 回退到线性查找
     for (TZrSize i = 0; i < tracker->allReferences.length; i++) {
-        SZrReference **refPtr = (SZrReference **)ZrArrayGet(&tracker->allReferences, i);
+        SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(&tracker->allReferences, i);
         if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
             SZrReference *ref = *refPtr;
             if (ref->symbol == symbol) {
                 SZrFileRange range = ref->location;
-                ZrArrayPush(state, result, &range);
+                ZrCore_Array_Push(state, result, &range);
             }
         }
     }

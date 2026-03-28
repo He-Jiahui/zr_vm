@@ -35,15 +35,15 @@ void ZrGarbageCollectorReallyMarkObject(struct SZrState *state, SZrRawObject *ob
 TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state);
 TZrSize ZrGarbageCollectorPropagateAll(struct SZrState *state);
 void ZrGarbageCollectorRestartCollection(struct SZrState *state);
-static void ZrGarbageCollectorMarkObject(struct SZrState *state, SZrRawObject *object);
-static void ZrGarbageCollectorMarkValue(struct SZrState *state, SZrTypeValue *value);
-static TZrSize ZrGarbageCollectorSingleStep(struct SZrState *state);
-static TZrSize ZrGarbageCollectorAtomic(struct SZrState *state);
-static int ZrGarbageCollectorSweepStep(struct SZrState *state, EZrGarbageCollectRunningStatus nextstate,
+static void garbage_collector_mark_object(struct SZrState *state, SZrRawObject *object);
+static void garbage_collector_mark_value(struct SZrState *state, SZrTypeValue *value);
+static TZrSize garbage_collector_single_step(struct SZrState *state);
+static TZrSize garbage_collector_atomic(struct SZrState *state);
+static int garbage_collector_sweep_step(struct SZrState *state, EZrGarbageCollectRunningStatus nextstate,
                                        SZrRawObject **nextlist);
-static void ZrGarbageCollectorCheckSizes(struct SZrState *state, SZrGlobalState *global);
+static void garbage_collector_check_sizes(struct SZrState *state, SZrGlobalState *global);
 
-static TBool ZrGarbageCollectorIgnoreRegistryContains(SZrGarbageCollector *collector,
+static TZrBool garbage_collector_ignore_registry_contains(SZrGarbageCollector *collector,
                                                       SZrRawObject *object) {
     if (collector == ZR_NULL || object == ZR_NULL || collector->ignoredObjects == ZR_NULL) {
         return ZR_FALSE;
@@ -58,7 +58,7 @@ static TBool ZrGarbageCollectorIgnoreRegistryContains(SZrGarbageCollector *colle
     return ZR_FALSE;
 }
 
-static TBool ZrGarbageCollectorEnsureIgnoreRegistryCapacity(SZrGlobalState *global,
+static TZrBool garbage_collector_ensure_ignore_registry_capacity(SZrGlobalState *global,
                                                             TZrSize minCapacity) {
     SZrGarbageCollector *collector;
     SZrRawObject **newItems;
@@ -81,7 +81,7 @@ static TBool ZrGarbageCollectorEnsureIgnoreRegistryCapacity(SZrGlobalState *glob
     }
 
     newBytes = newCapacity * sizeof(SZrRawObject *);
-    newItems = (SZrRawObject **)ZrMemoryRawMallocWithType(global,
+    newItems = (SZrRawObject **)ZrCore_Memory_RawMallocWithType(global,
                                                           newBytes,
                                                           ZR_MEMORY_NATIVE_TYPE_ARRAY);
     if (newItems == ZR_NULL) {
@@ -97,7 +97,7 @@ static TBool ZrGarbageCollectorEnsureIgnoreRegistryCapacity(SZrGlobalState *glob
 
     if (collector->ignoredObjects != ZR_NULL) {
         oldBytes = collector->ignoredObjectCapacity * sizeof(SZrRawObject *);
-        ZrMemoryRawFreeWithType(global,
+        ZrCore_Memory_RawFreeWithType(global,
                                 collector->ignoredObjects,
                                 oldBytes,
                                 ZR_MEMORY_NATIVE_TYPE_ARRAY);
@@ -109,7 +109,7 @@ static TBool ZrGarbageCollectorEnsureIgnoreRegistryCapacity(SZrGlobalState *glob
 }
 
 // 辅助函数：获取对象的基础大小（不包括动态分配的部分）
-static TZrSize ZrGarbageCollectorGetObjectBaseSize(struct SZrState *state, SZrRawObject *object) {
+static TZrSize garbage_collector_get_object_base_size(struct SZrState *state, SZrRawObject *object) {
     // 检查对象指针有效性
     if (object == ZR_NULL) {
         return 0;
@@ -193,7 +193,7 @@ static TZrSize ZrGarbageCollectorGetObjectBaseSize(struct SZrState *state, SZrRa
 }
 
 // 辅助函数：释放对象及其相关资源
-static void ZrGarbageCollectorFreeObject(struct SZrState *state, SZrRawObject *object) {
+static void garbage_collector_free_object(struct SZrState *state, SZrRawObject *object) {
     // 检查参数有效性
     if (object == ZR_NULL || state == ZR_NULL) {
         return;
@@ -227,7 +227,7 @@ static void ZrGarbageCollectorFreeObject(struct SZrState *state, SZrRawObject *o
     // 立即标记对象为已释放状态，防止重复释放
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED;
     
-    TZrSize objectSize = ZrGarbageCollectorGetObjectBaseSize(state, object);
+    TZrSize objectSize = garbage_collector_get_object_base_size(state, object);
 
     // 根据对象类型释放特定资源
     switch (object->type) {
@@ -267,7 +267,7 @@ static void ZrGarbageCollectorFreeObject(struct SZrState *state, SZrRawObject *o
             // 注意：valueExtend是可变长度数组，需要根据valueLength计算大小
             if (nativeData->valueLength > 0) {
                 TZrSize valueArraySize = nativeData->valueLength * sizeof(SZrTypeValue);
-                ZrMemoryRawFreeWithType(global, nativeData->valueExtend, valueArraySize, ZR_MEMORY_NATIVE_TYPE_OBJECT);
+                ZrCore_Memory_RawFreeWithType(global, nativeData->valueExtend, valueArraySize, ZR_MEMORY_NATIVE_TYPE_OBJECT);
             }
             break;
         }
@@ -276,11 +276,11 @@ static void ZrGarbageCollectorFreeObject(struct SZrState *state, SZrRawObject *o
     }
 
     // 释放对象本身
-    ZrMemoryRawFreeWithType(global, object, objectSize, ZR_MEMORY_NATIVE_TYPE_OBJECT);
+    ZrCore_Memory_RawFreeWithType(global, object, objectSize, ZR_MEMORY_NATIVE_TYPE_OBJECT);
 }
 
 // sweeplist函数：清除死对象列表
-static SZrRawObject **ZrGarbageCollectorSweepList(struct SZrState *state, SZrRawObject **list, int maxCount,
+static SZrRawObject **garbage_collector_sweep_list(struct SZrState *state, SZrRawObject **list, int maxCount,
                                                   int *count) {
     SZrGlobalState *global = state->global;
     SZrRawObject **current = list;
@@ -304,14 +304,14 @@ static SZrRawObject **ZrGarbageCollectorSweepList(struct SZrState *state, SZrRaw
             continue;
         }
 
-        if (ZrRawObjectIsUnreferenced(state, object)) {
+        if (ZrCore_RawObject_IsUnreferenced(state, object)) {
             // 对象已死亡，从列表中移除并释放
             // 先保存next指针（在释放前）
             SZrRawObject *next = object->next;
             // 先计算对象大小（在释放前）
-            TZrSize objectSize = ZrGarbageCollectorGetObjectBaseSize(state, object);
+            TZrSize objectSize = garbage_collector_get_object_base_size(state, object);
             *current = next;
-            ZrGarbageCollectorFreeObject(state, object);
+            garbage_collector_free_object(state, object);
             (*count)++;
 
             // 更新内存统计
@@ -330,7 +330,7 @@ static SZrRawObject **ZrGarbageCollectorSweepList(struct SZrState *state, SZrRaw
 }
 
 // entersweep函数：进入清除阶段
-static void ZrGarbageCollectorEnterSweep(struct SZrState *state) {
+static void garbage_collector_enter_sweep(struct SZrState *state) {
     SZrGlobalState *global = state->global;
 
     // 设置清除器指向的对象列表
@@ -342,7 +342,7 @@ static void ZrGarbageCollectorEnterSweep(struct SZrState *state) {
 }
 
 // runafewfinalizers函数：运行少量终结器
-static TZrSize ZrGarbageCollectorRunAFewFinalizers(struct SZrState *state, int maxCount) {
+static TZrSize garbage_collector_run_a_few_finalizers(struct SZrState *state, int maxCount) {
     SZrGlobalState *global = state->global;
     SZrRawObject **current = &global->garbageCollector->waitToReleaseObjectList;
     int count = 0;
@@ -390,7 +390,7 @@ static TZrSize ZrGarbageCollectorRunAFewFinalizers(struct SZrState *state, int m
         global->garbageCollector->releasedObjectList = object;
 
         // 标记对象为已释放
-        ZrRawObjectMarkAsReleased(object);
+        ZrCore_RawObject_MarkAsReleased(object);
 
         count++;
     }
@@ -399,7 +399,7 @@ static TZrSize ZrGarbageCollectorRunAFewFinalizers(struct SZrState *state, int m
 }
 
 // ZrGarbageCollectorRunUntilState函数：运行GC直到达到指定状态
-static void ZrGarbageCollectorRunUntilState(struct SZrState *state, EZrGarbageCollectRunningStatus targetState) {
+static void garbage_collector_run_until_state(struct SZrState *state, EZrGarbageCollectRunningStatus targetState) {
     SZrGlobalState *global = state->global;
 
     TZrSize iterationCount = 0;
@@ -416,7 +416,7 @@ static void ZrGarbageCollectorRunUntilState(struct SZrState *state, EZrGarbageCo
             break;
         }
         // 执行一个GC单步
-        ZrGarbageCollectorSingleStep(state);
+        garbage_collector_single_step(state);
 
         // 检查是否应该停止（例如用户请求停止）
         if (global->garbageCollector->stopGcFlag) {
@@ -426,14 +426,14 @@ static void ZrGarbageCollectorRunUntilState(struct SZrState *state, EZrGarbageCo
 }
 
 // checkSizes函数：检查并调整内存大小
-static void ZrGarbageCollectorCheckSizes(struct SZrState *state, SZrGlobalState *global) {
+static void garbage_collector_check_sizes(struct SZrState *state, SZrGlobalState *global) {
     // 计算实际使用的内存
     TZrMemoryOffset actualMemories = 0;
     SZrRawObject *object = global->garbageCollector->gcObjectList;
 
     while (object != ZR_NULL) {
-        if (!ZrRawObjectIsUnreferenced(state, object)) {
-            actualMemories += ZrGarbageCollectorGetObjectBaseSize(state, object);
+        if (!ZrCore_RawObject_IsUnreferenced(state, object)) {
+            actualMemories += garbage_collector_get_object_base_size(state, object);
         }
         object = object->next;
     }
@@ -455,7 +455,7 @@ static void ZrGarbageCollectorCheckSizes(struct SZrState *state, SZrGlobalState 
 }
 
 // 分代GC：完整回收
-static TZrSize ZrGarbageCollectorRunGenerationalFull(SZrState *state) {
+static TZrSize garbage_collector_run_generational_full(SZrState *state) {
     SZrGlobalState *global = state->global;
     TZrSize work = 0;
 
@@ -467,10 +467,10 @@ static TZrSize ZrGarbageCollectorRunGenerationalFull(SZrState *state) {
     work += ZrGarbageCollectorPropagateAll(state);
 
     // 3. 执行原子阶段
-    work += ZrGarbageCollectorAtomic(state);
+    work += garbage_collector_atomic(state);
 
     // 4. 进入清除阶段
-    ZrGarbageCollectorEnterSweep(state);
+    garbage_collector_enter_sweep(state);
 
     // 5. 执行清除直到完成
     TZrSize sweepIterationCount = 0;
@@ -495,21 +495,21 @@ static TZrSize ZrGarbageCollectorRunGenerationalFull(SZrState *state) {
         }
         previousSweeper = global->garbageCollector->gcObjectListSweeper;
         
-        ZrGarbageCollectorSweepStep(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END, NULL);
+        garbage_collector_sweep_step(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END, NULL);
     }
 
     // 6. 检查大小并调整
-    ZrGarbageCollectorCheckSizes(state, global);
+    garbage_collector_check_sizes(state, global);
 
     // 7. 处理终结器
     while (global->garbageCollector->waitToReleaseObjectList != ZR_NULL) {
-        ZrGarbageCollectorRunAFewFinalizers(state, ZR_GC_FIN_MAX);
+        garbage_collector_run_a_few_finalizers(state, ZR_GC_FIN_MAX);
     }
 
     // 8. 晋升策略：将所有存活的对象晋升为老生代
     SZrRawObject *object = global->garbageCollector->gcObjectList;
     while (object != ZR_NULL) {
-        if (!ZrRawObjectIsUnreferenced(state, object)) {
+        if (!ZrCore_RawObject_IsUnreferenced(state, object)) {
             // 晋升为老生代
             if (object->garbageCollectMark.generationalStatus == ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW) {
                 object->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL;
@@ -522,7 +522,7 @@ static TZrSize ZrGarbageCollectorRunGenerationalFull(SZrState *state) {
 }
 
 // 处理弱表：清理弱键表、弱值表和完全弱表
-static TZrSize ZrGarbageCollectorProcessWeakTables(struct SZrState *state) {
+static TZrSize garbage_collector_process_weak_tables(struct SZrState *state) {
     SZrGlobalState *global = state->global;
     TZrSize work = 0;
 
@@ -552,21 +552,21 @@ static TZrSize ZrGarbageCollectorProcessWeakTables(struct SZrState *state) {
                     SZrHashKeyValuePair *pair = *prev;
 
                     while (pair != ZR_NULL) {
-                        TBool shouldRemove = ZR_FALSE;
+                        TZrBool shouldRemove = ZR_FALSE;
 
                         // 检查键是否死亡（弱键表或完全弱表）
                         // 注意：需要根据实际的弱表类型来判断
-                        if (ZrValueIsGarbageCollectable(&pair->key)) {
+                        if (ZrCore_Value_IsGarbageCollectable(&pair->key)) {
                             SZrRawObject *keyObj = pair->key.value.object;
-                            if (ZrGcRawObjectIsDead(global, keyObj)) {
+                            if (ZrCore_Gc_RawObjectIsDead(global, keyObj)) {
                                 shouldRemove = ZR_TRUE; // 键死亡，移除条目
                             }
                         }
 
                         // 检查值是否死亡（弱值表或完全弱表）
-                        if (!shouldRemove && ZrValueIsGarbageCollectable(&pair->value)) {
+                        if (!shouldRemove && ZrCore_Value_IsGarbageCollectable(&pair->value)) {
                             SZrRawObject *valueObj = pair->value.value.object;
-                            if (ZrGcRawObjectIsDead(global, valueObj)) {
+                            if (ZrCore_Gc_RawObjectIsDead(global, valueObj)) {
                                 shouldRemove = ZR_TRUE; // 值死亡，移除条目
                             }
                         }
@@ -577,7 +577,7 @@ static TZrSize ZrGarbageCollectorProcessWeakTables(struct SZrState *state) {
                             obj->nodeMap.elementCount--;
 
                             // 释放键值对
-                            ZrMemoryRawFreeWithType(global, pair, sizeof(SZrHashKeyValuePair),
+                            ZrCore_Memory_RawFreeWithType(global, pair, sizeof(SZrHashKeyValuePair),
                                                     ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
 
                             work++;
@@ -599,7 +599,7 @@ static TZrSize ZrGarbageCollectorProcessWeakTables(struct SZrState *state) {
     return work;
 }
 
-static TZrSize ZrGarbageCollectorAtomic(struct SZrState *state) {
+static TZrSize garbage_collector_atomic(struct SZrState *state) {
     // 检查参数有效性
     if (state == ZR_NULL) {
         return 0;
@@ -622,28 +622,28 @@ static TZrSize ZrGarbageCollectorAtomic(struct SZrState *state) {
     }
 
     // 标记注册表
-    if (ZrValueIsGarbageCollectable(&global->loadedModulesRegistry)) {
-        ZrGarbageCollectorMarkValue(state, &global->loadedModulesRegistry);
+    if (ZrCore_Value_IsGarbageCollectable(&global->loadedModulesRegistry)) {
+        garbage_collector_mark_value(state, &global->loadedModulesRegistry);
     }
 
     // 标记全局元表（basicTypeObjectPrototype）
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         if (global->basicTypeObjectPrototype[i] != ZR_NULL) {
-            ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->basicTypeObjectPrototype[i]));
+            garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->basicTypeObjectPrototype[i]));
         }
     }
 
     work += ZrGarbageCollectorPropagateAll(state); // 清空待扫描列表
 
     // 处理弱表
-    work += ZrGarbageCollectorProcessWeakTables(state);
+    work += garbage_collector_process_weak_tables(state);
 
     global->garbageCollector->gcGeneration = ZR_GC_OTHER_GENERATION(global->garbageCollector); // 翻转当前白色
 
     return work;
 }
 
-static int ZrGarbageCollectorSweepStep(struct SZrState *state, EZrGarbageCollectRunningStatus nextstate,
+static int garbage_collector_sweep_step(struct SZrState *state, EZrGarbageCollectRunningStatus nextstate,
                                        SZrRawObject **nextlist) {
     SZrGlobalState *global = state->global;
     SZrGarbageCollector *collector = global->garbageCollector;
@@ -657,7 +657,7 @@ static int ZrGarbageCollectorSweepStep(struct SZrState *state, EZrGarbageCollect
                           : (collector->gcSweepSliceBudget > ZR_GC_SWEEP_MAX
                                  ? ZR_GC_SWEEP_MAX
                                  : (int)collector->gcSweepSliceBudget);
-        collector->gcObjectListSweeper = ZrGarbageCollectorSweepList(
+        collector->gcObjectListSweeper = garbage_collector_sweep_list(
                 state, collector->gcObjectListSweeper, sweepBudget, &count);
         collector->managedMemories += global->garbageCollector->gcDebtSize - olddebt; // 更新估计值
         if (collector->gcObjectListSweeper != ZR_NULL && *collector->gcObjectListSweeper == ZR_NULL) {
@@ -672,7 +672,7 @@ static int ZrGarbageCollectorSweepStep(struct SZrState *state, EZrGarbageCollect
     }
 }
 
-static TZrSize ZrGarbageCollectorSingleStep(struct SZrState *state) {
+static TZrSize garbage_collector_single_step(struct SZrState *state) {
     SZrGlobalState *global = state->global;
     TZrSize work;
 
@@ -694,27 +694,27 @@ static TZrSize ZrGarbageCollectorSingleStep(struct SZrState *state) {
             break;
         }
         case ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC: {
-            work = ZrGarbageCollectorAtomic(state); // 工作是'atomic'遍历的槽位数
-            ZrGarbageCollectorEnterSweep(state);
+            work = garbage_collector_atomic(state); // 工作是'atomic'遍历的槽位数
+            garbage_collector_enter_sweep(state);
             global->garbageCollector->managedMemories = global->garbageCollector->managedMemories; // 第一次估计
             break;
         }
         case ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS: { // 清除"常规"对象
-            work = ZrGarbageCollectorSweepStep(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_WAIT_TO_RELEASE_OBJECTS,
+            work = garbage_collector_sweep_step(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_WAIT_TO_RELEASE_OBJECTS,
                                                &global->garbageCollector->waitToReleaseObjectList);
             break;
         }
         case ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_WAIT_TO_RELEASE_OBJECTS: { // 清除有终结器的对象
-            work = ZrGarbageCollectorSweepStep(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_RELEASED_OBJECTS,
+            work = garbage_collector_sweep_step(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_RELEASED_OBJECTS,
                                                &global->garbageCollector->waitToReleaseObjectList);
             break;
         }
         case ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_RELEASED_OBJECTS: { // 清除待终结的对象
-            work = ZrGarbageCollectorSweepStep(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END, NULL);
+            work = garbage_collector_sweep_step(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END, NULL);
             break;
         }
         case ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END: { // 完成清除
-            ZrGarbageCollectorCheckSizes(state, global);
+            garbage_collector_check_sizes(state, global);
             global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_END;
             work = 0;
             break;
@@ -722,7 +722,7 @@ static TZrSize ZrGarbageCollectorSingleStep(struct SZrState *state) {
         case ZR_GARBAGE_COLLECT_RUNNING_STATUS_END: { // 调用剩余的终结器
             if (global->garbageCollector->waitToReleaseObjectList && !global->garbageCollector->isImmediateGcFlag) {
                 global->garbageCollector->stopImmediateGcFlag = 0; // 在终结器期间允许收集
-                work = ZrGarbageCollectorRunAFewFinalizers(state, ZR_GC_FIN_MAX);
+                work = garbage_collector_run_a_few_finalizers(state, ZR_GC_FIN_MAX);
             } else { // 紧急模式或没有更多终结器
                 global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED; // 完成收集
                 work = 0;
@@ -739,14 +739,14 @@ static TZrSize ZrGarbageCollectorSingleStep(struct SZrState *state) {
     return work;
 }
 
-static ZR_FORCE_INLINE TBool ZrGarbageCollectorIsGenerationalMode(SZrGlobalState *global) {
+static ZR_FORCE_INLINE TZrBool garbage_collector_is_generational_mode(SZrGlobalState *global) {
     return global->garbageCollector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL ||
            global->garbageCollector->atomicMemories != 0;
 }
 
-void ZrGarbageCollectorNew(SZrGlobalState *global) {
+void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     SZrGarbageCollector *gc =
-            ZrMemoryRawMallocWithType(global, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
+            ZrCore_Memory_RawMallocWithType(global, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
     global->garbageCollector = gc;
     SZrState *state = global->mainThreadState;
     // set size
@@ -791,7 +791,7 @@ void ZrGarbageCollectorNew(SZrGlobalState *global) {
     // todo:
 }
 
-void ZrGarbageCollectorFree(struct SZrGlobalState *global, SZrGarbageCollector *collector) {
+void ZrCore_GarbageCollector_Free(struct SZrGlobalState *global, SZrGarbageCollector *collector) {
     TZrSize ignoredBytes;
 
     // 检查参数有效性
@@ -814,7 +814,7 @@ void ZrGarbageCollectorFree(struct SZrGlobalState *global, SZrGarbageCollector *
             global->garbageCollector->waitToScanAgainObjectList = ZR_NULL;
             global->garbageCollector->waitToReleaseObjectList = ZR_NULL;
             // 执行完整的GC循环
-            ZrGarbageCollectorGcFull(state, ZR_TRUE); // 立即执行完整GC
+            ZrCore_GarbageCollector_GcFull(state, ZR_TRUE); // 立即执行完整GC
             // 运行GC直到暂停状态，确保所有对象都被处理
             // 添加最大迭代次数限制，避免无限循环
             TZrSize maxIterations = 1000;
@@ -825,7 +825,7 @@ void ZrGarbageCollectorFree(struct SZrGlobalState *global, SZrGarbageCollector *
                     global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
                     break;
                 }
-                ZrGarbageCollectorSingleStep(state);
+                garbage_collector_single_step(state);
                 if (global->garbageCollector->stopGcFlag) {
                     break;
                 }
@@ -851,7 +851,7 @@ void ZrGarbageCollectorFree(struct SZrGlobalState *global, SZrGarbageCollector *
 
     if (collector->ignoredObjects != ZR_NULL) {
         ignoredBytes = collector->ignoredObjectCapacity * sizeof(SZrRawObject *);
-        ZrMemoryRawFreeWithType(global,
+        ZrCore_Memory_RawFreeWithType(global,
                                 collector->ignoredObjects,
                                 ignoredBytes,
                                 ZR_MEMORY_NATIVE_TYPE_ARRAY);
@@ -860,10 +860,10 @@ void ZrGarbageCollectorFree(struct SZrGlobalState *global, SZrGarbageCollector *
     collector->ignoredObjectCapacity = 0;
 
     // 释放GC结构本身
-    ZrMemoryRawFreeWithType(global, collector, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
+    ZrCore_Memory_RawFreeWithType(global, collector, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
 }
 
-void ZrGarbageCollectorAddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffset size) {
+void ZrCore_GarbageCollector_AddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffset size) {
     TZrMemoryOffset currentDebt = global->garbageCollector->gcDebtSize;
     
     // 检查溢出：如果size是正数且会导致溢出，则限制为最大值
@@ -888,7 +888,7 @@ void ZrGarbageCollectorAddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffs
     // 如果size == 0，不做任何操作
 }
 
-TBool ZrGarbageCollectorIgnoreObject(struct SZrState *state, SZrRawObject *object) {
+TZrBool ZrCore_GarbageCollector_IgnoreObject(struct SZrState *state, SZrRawObject *object) {
     SZrGarbageCollector *collector;
 
     if (state == ZR_NULL || state->global == ZR_NULL || object == ZR_NULL) {
@@ -900,11 +900,11 @@ TBool ZrGarbageCollectorIgnoreObject(struct SZrState *state, SZrRawObject *objec
         return ZR_FALSE;
     }
 
-    if (ZrGarbageCollectorIgnoreRegistryContains(collector, object)) {
+    if (garbage_collector_ignore_registry_contains(collector, object)) {
         return ZR_TRUE;
     }
 
-    if (!ZrGarbageCollectorEnsureIgnoreRegistryCapacity(state->global,
+    if (!garbage_collector_ensure_ignore_registry_capacity(state->global,
                                                         collector->ignoredObjectCount + 1)) {
         return ZR_FALSE;
     }
@@ -913,7 +913,7 @@ TBool ZrGarbageCollectorIgnoreObject(struct SZrState *state, SZrRawObject *objec
     return ZR_TRUE;
 }
 
-TBool ZrGarbageCollectorUnignoreObject(struct SZrGlobalState *global, SZrRawObject *object) {
+TZrBool ZrCore_GarbageCollector_UnignoreObject(struct SZrGlobalState *global, SZrRawObject *object) {
     SZrGarbageCollector *collector;
 
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
@@ -937,33 +937,33 @@ TBool ZrGarbageCollectorUnignoreObject(struct SZrGlobalState *global, SZrRawObje
     return ZR_FALSE;
 }
 
-TBool ZrGarbageCollectorIsObjectIgnored(struct SZrGlobalState *global, SZrRawObject *object) {
+TZrBool ZrCore_GarbageCollector_IsObjectIgnored(struct SZrGlobalState *global, SZrRawObject *object) {
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    return ZrGarbageCollectorIgnoreRegistryContains(global->garbageCollector, object);
+    return garbage_collector_ignore_registry_contains(global->garbageCollector, object);
 }
 
-static void ZrGarbageCollectorFullInc(struct SZrState *state, SZrGlobalState *global) {
-    if (ZrGarbageCollectorIsInvariant(global)) // 有REFERENCED对象？
-        ZrGarbageCollectorEnterSweep(state); // 清除所有对象以将它们重新变为白色
+static void garbage_collector_full_inc(struct SZrState *state, SZrGlobalState *global) {
+    if (ZrCore_GarbageCollector_IsInvariant(global)) // 有REFERENCED对象？
+        garbage_collector_enter_sweep(state); // 清除所有对象以将它们重新变为白色
     // 完成任何待处理的清除阶段以开始新周期
     // 运行GC直到暂停状态
-    ZrGarbageCollectorRunUntilState(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED);
+    garbage_collector_run_until_state(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED);
     // 开始新周期
-    ZrGarbageCollectorRunUntilState(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION);
+    garbage_collector_run_until_state(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION);
     global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC; // 直接进入原子阶段
     // 运行到终结器阶段
-    ZrGarbageCollectorRunUntilState(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_END); // 运行到终结器
+    garbage_collector_run_until_state(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_END); // 运行到终结器
     // 周期结束后估计值必须正确
     // ZR_ASSERT(global->garbageCollector->managedMemories == global->garbageCollector->managedMemories);
     // 完成收集
-    ZrGarbageCollectorRunUntilState(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED); // 完成收集
-    ZrGarbageCollectorAddDebtSpace(global, -2000);
+    garbage_collector_run_until_state(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED); // 完成收集
+    ZrCore_GarbageCollector_AddDebtSpace(global, -2000);
 }
 
-void ZrGarbageCollectorGcFull(SZrState *state, TBool isImmediate) {
+void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
     SZrGlobalState *global = state->global;
     SZrGarbageCollector *collector = global->garbageCollector;
 
@@ -981,9 +981,9 @@ void ZrGarbageCollectorGcFull(SZrState *state, TBool isImmediate) {
     ZR_ASSERT(!global->garbageCollector->isImmediateGcFlag);
     collector->isImmediateGcFlag = isImmediate;
     if (collector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) {
-        ZrGarbageCollectorRunGenerationalFull(state);
+        garbage_collector_run_generational_full(state);
     } else {
-        ZrGarbageCollectorFullInc(state, global);
+        garbage_collector_full_inc(state, global);
     }
     collector->isImmediateGcFlag = ZR_FALSE;
     if (collector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {
@@ -991,31 +991,12 @@ void ZrGarbageCollectorGcFull(SZrState *state, TBool isImmediate) {
     }
 }
 
-static void ZrGarbageCollectorIncStep(struct SZrState *state, SZrGlobalState *global) {
-    int stepmul = (ZR_GARBAGE_COLLECT_STEP_MULTIPLIER_PERCENT | 1); // 避免除以0
-    TZrMemoryOffset debt = (global->garbageCollector->gcDebtSize / ZR_WORK_TO_MEM) * stepmul;
-    TZrMemoryOffset stepsize =
-            (global->garbageCollector->gcStepSizeLog2 <= ZR_MAX_MEMORY_OFFSET)
-                    ? (((TZrMemoryOffset) 1 << global->garbageCollector->gcStepSizeLog2) / ZR_WORK_TO_MEM) * stepmul
-                    : ZR_MAX_MEMORY_OFFSET; // 溢出；保持最大值
-    do { // 重复直到暂停或有足够的"信用"（负债务）
-        TZrSize work = ZrGarbageCollectorSingleStep(state); // 执行一个单步
-        debt -= work;
-    } while (debt > -stepsize && global->garbageCollector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED);
-    if (global->garbageCollector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED)
-        ZrGarbageCollectorAddDebtSpace(global, -2000); // 暂停直到下一个周期
-    else {
-        debt = (debt / stepmul) * ZR_WORK_TO_MEM; // 将'工作单位'转换为字节
-        global->garbageCollector->gcDebtSize = debt;
-    }
-}
-
-static TBool gcrunning(SZrGlobalState *global) {
+static TZrBool gcrunning(SZrGlobalState *global) {
     return global->garbageCollector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING;
 }
 
 // 分代GC：单步执行
-static void ZrGarbageCollectorRunGenerationalStep(struct SZrState *state) {
+static void garbage_collector_run_generational_step(struct SZrState *state) {
     SZrGlobalState *global = state->global;
 
     // 分代GC策略：
@@ -1028,7 +1009,7 @@ static void ZrGarbageCollectorRunGenerationalStep(struct SZrState *state) {
 
     // 如果内存使用超过阈值，执行完整回收
     if (managedMemories > threshold) {
-        ZrGarbageCollectorRunGenerationalFull(state);
+        garbage_collector_run_generational_full(state);
         return;
     }
 
@@ -1038,7 +1019,7 @@ static void ZrGarbageCollectorRunGenerationalStep(struct SZrState *state) {
     while (object != ZR_NULL) {
         // 只标记新生代对象
         if (object->garbageCollectMark.generationalStatus == ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW) {
-            if (ZrRawObjectIsMarkInited(object)) {
+            if (ZrCore_RawObject_IsMarkInited(object)) {
                 ZrGarbageCollectorReallyMarkObject(state, object);
             }
         }
@@ -1055,10 +1036,10 @@ static void ZrGarbageCollectorRunGenerationalStep(struct SZrState *state) {
 
         // 只处理新生代对象
         if (object->garbageCollectMark.generationalStatus == ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW) {
-            if (ZrRawObjectIsUnreferenced(state, object)) {
+            if (ZrCore_RawObject_IsUnreferenced(state, object)) {
                 // 从列表中移除并释放
                 *current = object->next;
-                ZrGarbageCollectorFreeObject(state, object);
+                garbage_collector_free_object(state, object);
             } else {
                 // 存活的对象晋升为老生代
                 object->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL;
@@ -1071,7 +1052,7 @@ static void ZrGarbageCollectorRunGenerationalStep(struct SZrState *state) {
     }
 }
 
-void ZrGarbageCollectorGcStep(struct SZrState *state) {
+void ZrCore_GarbageCollector_GcStep(struct SZrState *state) {
     SZrGlobalState *global = state->global;
     SZrGarbageCollector *collector;
     TZrMemoryOffset debtBefore;
@@ -1092,23 +1073,23 @@ void ZrGarbageCollectorGcStep(struct SZrState *state) {
         if (collector->gcDebtSize > 0) {
             collector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_RUNNING;
         } else {
-            ZrGarbageCollectorAddDebtSpace(global, -2000);
+            ZrCore_GarbageCollector_AddDebtSpace(global, -2000);
             collector->gcLastCompletedRunningStatus = collector->gcRunningStatus;
             return;
         }
     }
 
-    if (ZrGarbageCollectorIsGenerationalMode(global)) {
-        ZrGarbageCollectorRunGenerationalStep(state);
+    if (garbage_collector_is_generational_mode(global)) {
+        garbage_collector_run_generational_step(state);
         collector->gcLastStepWork = 1;
     } else {
         pauseBudget = collector->gcPauseBudget > 0 ? (TZrSize)collector->gcPauseBudget : 1;
         for (TZrSize step = 0; step < pauseBudget; step++) {
             EZrGarbageCollectRunningStatus stepStatusBefore = collector->gcRunningStatus;
-            TBool stepWasSweepPhase =
+            TZrBool stepWasSweepPhase =
                     stepStatusBefore >= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS &&
                     stepStatusBefore <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END;
-            TZrSize stepWork = ZrGarbageCollectorSingleStep(state);
+            TZrSize stepWork = garbage_collector_single_step(state);
             totalWork += stepWork;
 
             if (collector->stopGcFlag ||
@@ -1116,7 +1097,7 @@ void ZrGarbageCollectorGcStep(struct SZrState *state) {
                 break;
             }
 
-            if (stepWasSweepPhase || ZrGarbageCollectorIsSweeping(global)) {
+            if (stepWasSweepPhase || ZrCore_GarbageCollector_IsSweeping(global)) {
                 break;
             }
 
@@ -1128,7 +1109,7 @@ void ZrGarbageCollectorGcStep(struct SZrState *state) {
         collector->gcLastStepWork = totalWork;
         if (collector->gcLastStepWork > 0 && collector->gcDebtSize > 0) {
             TZrMemoryOffset workBytes = (TZrMemoryOffset)collector->gcLastStepWork * ZR_WORK_TO_MEM;
-            ZrGarbageCollectorAddDebtSpace(global, -workBytes);
+            ZrCore_GarbageCollector_AddDebtSpace(global, -workBytes);
         }
     }
 
@@ -1143,54 +1124,54 @@ void ZrGarbageCollectorGcStep(struct SZrState *state) {
     collector->gcLastCompletedRunningStatus = collector->gcRunningStatus;
 }
 
-TBool ZrGarbageCollectorIsInvariant(struct SZrGlobalState *global) {
+TZrBool ZrCore_GarbageCollector_IsInvariant(struct SZrGlobalState *global) {
     return global->garbageCollector->gcRunningStatus <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_ATOMIC;
 }
 
-TBool ZrGarbageCollectorIsSweeping(struct SZrGlobalState *global) {
+TZrBool ZrCore_GarbageCollector_IsSweeping(struct SZrGlobalState *global) {
     EZrGarbageCollectRunningStatus status = global->garbageCollector->gcRunningStatus;
     return status >= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS &&
            status <= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END;
 }
 
-void ZrGarbageCollectorCheckGc(struct SZrState *state) {
+void ZrCore_GarbageCollector_CheckGc(struct SZrState *state) {
     SZrGlobalState *global = state->global;
     if (global->garbageCollector->gcDebtSize > 0) {
-        ZrGarbageCollectorGcStep(state);
+        ZrCore_GarbageCollector_GcStep(state);
     }
 #if defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
     if (global->garbageCollector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
-        ZrGarbageCollectorGcFull(state, ZR_FALSE);
+        ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
     }
 #endif
 }
 
 
-static ZR_FORCE_INLINE void ZrGarbageCollectorMarkObject(struct SZrState *state, SZrRawObject *object) {
+static ZR_FORCE_INLINE void garbage_collector_mark_object(struct SZrState *state, SZrRawObject *object) {
     // 如果对象已经是REFERENCED或WAIT_TO_SCAN状态，不需要再次标记
     if (ZR_GC_IS_REFERENCED(object) || ZR_GC_IS_WAIT_TO_SCAN(object)) {
         return;
     }
-    if (ZrRawObjectIsMarkInited(object)) {
+    if (ZrCore_RawObject_IsMarkInited(object)) {
         ZrGarbageCollectorReallyMarkObject(state, object);
     }
 }
 
-static ZR_FORCE_INLINE void ZrGarbageCollectorMarkValue(struct SZrState *state, SZrTypeValue *value) {
-    ZrGcValueStaticAssertIsAlive(state, value);
-    if (ZrValueIsGarbageCollectable(value)) {
+static ZR_FORCE_INLINE void garbage_collector_mark_value(struct SZrState *state, SZrTypeValue *value) {
+    ZrCore_Gc_ValueStaticAssertIsAlive(state, value);
+    if (ZrCore_Value_IsGarbageCollectable(value)) {
         SZrRawObject *obj = value->value.object;
         // 如果对象已经是REFERENCED或WAIT_TO_SCAN状态，不需要再次标记
         if (ZR_GC_IS_REFERENCED(obj) || ZR_GC_IS_WAIT_TO_SCAN(obj)) {
             return;
         }
-        if (ZrRawObjectIsMarkInited(obj)) {
+        if (ZrCore_RawObject_IsMarkInited(obj)) {
             ZrGarbageCollectorReallyMarkObject(state, obj);
         }
     }
 }
 
-static ZR_FORCE_INLINE void ZrGarbageCollectorLinkToGrayList(SZrRawObject *o, SZrRawObject **list) {
+static ZR_FORCE_INLINE void garbage_collector_link_to_gray_list(SZrRawObject *o, SZrRawObject **list) {
     // 检查对象是否已经是REFERENCED或WAIT_TO_SCAN状态，避免重复添加
     if (ZR_GC_IS_REFERENCED(o) || ZR_GC_IS_WAIT_TO_SCAN(o)) {
         // 对象已经标记过，不需要重复添加
@@ -1212,7 +1193,7 @@ static ZR_FORCE_INLINE void ZrGarbageCollectorLinkToGrayList(SZrRawObject *o, SZ
     SZrRawObject **pnext = &o->gcList;
     *pnext = *list;
     *list = o;
-            ZrRawObjectMarkAsWaitToScan(o);  // 标记为WAIT_TO_SCAN状态（等待扫描）
+            ZrCore_RawObject_MarkAsWaitToScan(o);  // 标记为WAIT_TO_SCAN状态（等待扫描）
 }
 
 void ZrGarbageCollectorReallyMarkObject(struct SZrState *state, SZrRawObject *object) {
@@ -1241,26 +1222,26 @@ void ZrGarbageCollectorReallyMarkObject(struct SZrState *state, SZrRawObject *ob
             SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, object);
             // 标记闭包关联的函数
             if (closure->function != ZR_NULL) {
-                ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->function));
+                garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->function));
             }
             // 标记闭包值
             for (TZrSize i = 0; i < closure->closureValueCount; i++) {
                 if (closure->closureValuesExtend[i] != ZR_NULL) {
-                    ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->closureValuesExtend[i]));
+                    garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->closureValuesExtend[i]));
                 }
             }
             // 将闭包加入待扫描列表
-            ZrGarbageCollectorLinkToGrayList(object, &global->garbageCollector->waitToScanObjectList);
+            garbage_collector_link_to_gray_list(object, &global->garbageCollector->waitToScanObjectList);
         } break;
         case ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE: {
             SZrClosureValue *closureValue = ZR_CAST_VM_CLOSURE_VALUE(state, object);
-            if (ZrClosureValueIsClosed(closureValue)) {
+            if (ZrCore_ClosureValue_IsClosed(closureValue)) {
                 ZR_GC_SET_REFERENCED(object); // 闭包值关闭时标记为REFERENCED状态
             } else {
-                ZrGarbageCollectorLinkToGrayList(
+                garbage_collector_link_to_gray_list(
                         object, &global->garbageCollector->waitToScanObjectList); // 开放闭包值加入待扫描列表
             }
-            ZrGarbageCollectorMarkValue(state, &closureValue->value.valuePointer->value);
+            garbage_collector_mark_value(state, &closureValue->value.valuePointer->value);
         } break;
         case ZR_RAW_OBJECT_TYPE_NATIVE_DATA: {
             // Native Data对象：标记对象本身和其值
@@ -1270,8 +1251,8 @@ void ZrGarbageCollectorReallyMarkObject(struct SZrState *state, SZrRawObject *ob
             ZR_GC_SET_REFERENCED(object);
 
             // 标记Native Data中的值
-            for (TUInt32 i = 0; i < nativeData->valueLength; i++) {
-                ZrGarbageCollectorMarkValue(state, &nativeData->valueExtend[i]);
+            for (TZrUInt32 i = 0; i < nativeData->valueLength; i++) {
+                garbage_collector_mark_value(state, &nativeData->valueExtend[i]);
             }
 
             // 如果Native Data有扫描函数，调用它
@@ -1284,7 +1265,7 @@ void ZrGarbageCollectorReallyMarkObject(struct SZrState *state, SZrRawObject *ob
         case ZR_RAW_OBJECT_TYPE_FUNCTION:
         case ZR_RAW_OBJECT_TYPE_OBJECT:
         case ZR_RAW_OBJECT_TYPE_THREAD: {
-            ZrGarbageCollectorLinkToGrayList(object,
+            garbage_collector_link_to_gray_list(object,
                                              &global->garbageCollector->waitToScanObjectList); // 加入待扫描列表等待扫描
         } break;
         default: {
@@ -1322,9 +1303,9 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
                     SZrHashKeyValuePair *pair = obj->nodeMap.buckets[i];
                     while (pair != ZR_NULL) {
                         // 标记键
-                        ZrGarbageCollectorMarkValue(state, &pair->key);
+                        garbage_collector_mark_value(state, &pair->key);
                         // 标记值
-                        ZrGarbageCollectorMarkValue(state, &pair->value);
+                        garbage_collector_mark_value(state, &pair->value);
                         pair = pair->next;
                         work++;
                     }
@@ -1332,7 +1313,7 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
             }
             // 标记原型
             if (obj->prototype != ZR_NULL) {
-                ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(obj->prototype));
+                garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(obj->prototype));
             }
             break;
         }
@@ -1353,7 +1334,7 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
                     if (array->elementSize == sizeof(SZrTypeValue)) {
                         SZrTypeValue *elements = (SZrTypeValue *)array->head;
                         for (TZrSize i = 0; i < array->length; i++) {
-                            ZrGarbageCollectorMarkValue(state, &elements[i]);
+                            garbage_collector_mark_value(state, &elements[i]);
                             work++;
                         }
                     } else {
@@ -1373,12 +1354,12 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
             SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, o);
             // 标记闭包关联的函数
             if (closure->function != ZR_NULL) {
-                ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->function));
+                garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->function));
             }
             // 标记闭包值
             for (TZrSize i = 0; i < closure->closureValueCount; i++) {
                 if (closure->closureValuesExtend[i] != ZR_NULL) {
-                    ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->closureValuesExtend[i]));
+                    garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->closureValuesExtend[i]));
                 }
             }
             work = closure->closureValueCount + (closure->function != ZR_NULL ? 1 : 0);
@@ -1387,24 +1368,24 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
         case ZR_RAW_OBJECT_TYPE_FUNCTION: {
             SZrFunction *func = ZR_CAST_FUNCTION(state, o);
             // 遍历函数的闭包值
-            for (TUInt32 i = 0; i < func->closureValueLength; i++) {
+            for (TZrUInt32 i = 0; i < func->closureValueLength; i++) {
                 if (func->closureValueList[i].name != ZR_NULL) {
-                    ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(func->closureValueList[i].name));
+                    garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(func->closureValueList[i].name));
                 }
             }
             // 遍历函数的常量值
-            for (TUInt32 i = 0; i < func->constantValueLength; i++) {
-                ZrGarbageCollectorMarkValue(state, &func->constantValueList[i]);
+            for (TZrUInt32 i = 0; i < func->constantValueLength; i++) {
+                garbage_collector_mark_value(state, &func->constantValueList[i]);
             }
             // 遍历子函数
-            for (TUInt32 i = 0; i < func->childFunctionLength; i++) {
+            for (TZrUInt32 i = 0; i < func->childFunctionLength; i++) {
                 if (func->childFunctionList[i].super.type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
-                    ZrGarbageCollectorMarkObject(state, &func->childFunctionList[i].super);
+                    garbage_collector_mark_object(state, &func->childFunctionList[i].super);
                 }
             }
             // 标记源代码字符串（如果存在）
             if (func->sourceCodeList != ZR_NULL) {
-                ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(func->sourceCodeList));
+                garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(func->sourceCodeList));
             }
             work = func->closureValueLength + func->constantValueLength + func->childFunctionLength;
             break;
@@ -1415,18 +1396,18 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
             TZrStackValuePointer stackPtr = threadState->stackBase.valuePointer;
             TZrStackValuePointer stackTop = threadState->stackTop.valuePointer;
             while (stackPtr < stackTop) {
-                ZrGarbageCollectorMarkValue(state, &stackPtr->value);
+                garbage_collector_mark_value(state, &stackPtr->value);
                 stackPtr++;
                 work++;
             }
             // 遍历开放闭包值列表
             SZrClosureValue *closureValue = threadState->stackClosureValueList;
             while (closureValue != ZR_NULL) {
-                ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue));
+                garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue));
                 // 标记闭包值中的值
-                SZrTypeValue *closureVal = ZrClosureValueGetValue(closureValue);
+                SZrTypeValue *closureVal = ZrCore_ClosureValue_GetValue(closureValue);
                 if (closureVal != ZR_NULL) {
-                    ZrGarbageCollectorMarkValue(state, closureVal);
+                    garbage_collector_mark_value(state, closureVal);
                 }
                 // 移动到下一个闭包值（通过 link.next）
                 closureValue = closureValue->link.next;
@@ -1441,7 +1422,7 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
                                                            ? callInfo->next->functionBase.valuePointer
                                                            : threadState->stackTop.valuePointer;
                     while (funcBase < funcTop) {
-                        ZrGarbageCollectorMarkValue(state, &funcBase->value);
+                        garbage_collector_mark_value(state, &funcBase->value);
                         funcBase++;
                     }
                 }
@@ -1454,8 +1435,8 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
             struct SZrNativeData *nativeData = ZR_CAST(struct SZrNativeData *, o);
 
             // 标记Native Data中的值
-            for (TUInt32 i = 0; i < nativeData->valueLength; i++) {
-                ZrGarbageCollectorMarkValue(state, &nativeData->valueExtend[i]);
+            for (TZrUInt32 i = 0; i < nativeData->valueLength; i++) {
+                garbage_collector_mark_value(state, &nativeData->valueExtend[i]);
                 work++;
             }
             break;
@@ -1519,14 +1500,14 @@ void ZrGarbageCollectorRestartCollection(struct SZrState *state) {
     }
 
     // 标记注册表
-    if (ZrValueIsGarbageCollectable(&global->loadedModulesRegistry)) {
-        ZrGarbageCollectorMarkValue(state, &global->loadedModulesRegistry);
+    if (ZrCore_Value_IsGarbageCollectable(&global->loadedModulesRegistry)) {
+        garbage_collector_mark_value(state, &global->loadedModulesRegistry);
     }
 
     // 标记全局元表（basicTypeObjectPrototype）
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         if (global->basicTypeObjectPrototype[i] != ZR_NULL) {
-            ZrGarbageCollectorMarkObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->basicTypeObjectPrototype[i]));
+            garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->basicTypeObjectPrototype[i]));
         }
     }
 
@@ -1554,7 +1535,7 @@ void ZrGarbageCollectorRestartCollection(struct SZrState *state) {
     global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION;
 }
 
-void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject) {
+void ZrCore_GarbageCollector_Barrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject) {
     // 检查参数有效性
     if (state == ZR_NULL || object == ZR_NULL || valueObject == ZR_NULL) {
         return;
@@ -1565,23 +1546,23 @@ void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZr
         return;
     }
 
-    if (ZrGarbageCollectorIsObjectIgnored(global, valueObject)) {
-        ZrGarbageCollectorUnignoreObject(global, valueObject);
+    if (ZrCore_GarbageCollector_IsObjectIgnored(global, valueObject)) {
+        ZrCore_GarbageCollector_UnignoreObject(global, valueObject);
     }
     
     // 检查对象是否满足屏障条件（在测试环境中可能不满足，所以不强制断言）
-    if (!ZrRawObjectIsMarkReferenced(object) || !ZrRawObjectIsMarkInited(valueObject) ||
-        ZrRawObjectIsUnreferenced(state, object) || ZrRawObjectIsUnreferenced(state, valueObject)) {
+    if (!ZrCore_RawObject_IsMarkReferenced(object) || !ZrCore_RawObject_IsMarkInited(valueObject) ||
+        ZrCore_RawObject_IsUnreferenced(state, object) || ZrCore_RawObject_IsUnreferenced(state, valueObject)) {
         // 如果对象不满足屏障条件，直接返回
         return;
     }
     
-    if (ZrGarbageCollectorIsInvariant(global)) {
+    if (ZrCore_GarbageCollector_IsInvariant(global)) {
         // GC处于不变状态（标记阶段），直接标记子对象
-        ZrGarbageCollectorMarkObject(state, valueObject);
-        if (ZrRawObjectIsGenerationalThroughBarrier(object)) {
-            if (!ZrRawObjectIsGenerationalThroughBarrier(valueObject)) {
-                ZrRawObjectSetGenerationalStatus(valueObject, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_BARRIER);
+        garbage_collector_mark_object(state, valueObject);
+        if (ZrCore_RawObject_IsGenerationalThroughBarrier(object)) {
+            if (!ZrCore_RawObject_IsGenerationalThroughBarrier(valueObject)) {
+                ZrCore_RawObject_SetGenerationalStatus(valueObject, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_BARRIER);
             }
         }
     } else {
@@ -1589,49 +1570,49 @@ void ZrGarbageCollectorBarrier(struct SZrState *state, SZrRawObject *object, SZr
         // 如果父对象是REFERENCED状态且子对象是INITED状态，需要标记子对象
         if (ZR_GC_IS_REFERENCED(object) && ZR_GC_IS_INITED(valueObject)) {
             // 标记子对象为WAIT_TO_SCAN状态，等待扫描
-            ZrGarbageCollectorMarkObject(state, valueObject);
-        } else if (ZrGarbageCollectorIsSweeping(global)) {
+            garbage_collector_mark_object(state, valueObject);
+        } else if (ZrCore_GarbageCollector_IsSweeping(global)) {
             // 在清除阶段，如果使用增量模式，标记子对象为初始状态
             if (global->garbageCollector->gcMode == ZR_GARBAGE_COLLECT_MODE_INCREMENTAL) {
-                ZrRawObjectMarkAsInit(state, valueObject);
+                ZrCore_RawObject_MarkAsInit(state, valueObject);
             }
         }
     }
 }
 
-static void ZrGarbageCollectorToGcListAndMarkWaitToScan(SZrRawObject *object, SZrRawObject **list) {
-    ZrGarbageCollectorLinkToGrayList(object, list);
+static void garbage_collector_to_gc_list_and_mark_wait_to_scan(SZrRawObject *object, SZrRawObject **list) {
+    garbage_collector_link_to_gray_list(object, list);
 }
 
-void ZrGarbageCollectorBarrierBack(struct SZrState *state, SZrRawObject *object) {
+void ZrCore_GarbageCollector_BarrierBack(struct SZrState *state, SZrRawObject *object) {
     SZrGlobalState *global = state->global;
-    ZR_ASSERT(ZrRawObjectIsMarkReferenced(object) && !ZrRawObjectIsUnreferenced(state, object));
+    ZR_ASSERT(ZrCore_RawObject_IsMarkReferenced(object) && !ZrCore_RawObject_IsUnreferenced(state, object));
     ZR_ASSERT((global->garbageCollector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) ==
-              (ZrRawObjectIsGenerationalThroughBarrier(object) &&
+              (ZrCore_RawObject_IsGenerationalThroughBarrier(object) &&
                object->garbageCollectMark.generationalStatus != ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED));
     if (object->garbageCollectMark.generationalStatus ==
         ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED_PREVIOUS) {
-        ZrRawObjectMarkAsWaitToScan(object);
-        ZrRawObjectSetGenerationalStatus(object, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED);
+        ZrCore_RawObject_MarkAsWaitToScan(object);
+        ZrCore_RawObject_SetGenerationalStatus(object, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED);
     } else {
-        ZrGarbageCollectorToGcListAndMarkWaitToScan(object, &global->garbageCollector->waitToScanAgainObjectList);
+        garbage_collector_to_gc_list_and_mark_wait_to_scan(object, &global->garbageCollector->waitToScanAgainObjectList);
     }
-    if (ZrRawObjectIsGenerationalThroughBarrier(object)) {
-        ZrRawObjectSetGenerationalStatus(object, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED);
-    }
-}
-
-void ZrRawObjectBarrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject) {
-    if (ZrRawObjectIsMarkReferenced(object) && ZrRawObjectIsMarkInited(valueObject)) {
-        ZrGarbageCollectorBarrier(state, object, valueObject);
+    if (ZrCore_RawObject_IsGenerationalThroughBarrier(object)) {
+        ZrCore_RawObject_SetGenerationalStatus(object, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SCANNED);
     }
 }
 
-SZrRawObject *ZrRawObjectNew(SZrState *state, EZrValueType type, TZrSize size, TBool isNative) {
+void ZrCore_RawObject_Barrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject) {
+    if (ZrCore_RawObject_IsMarkReferenced(object) && ZrCore_RawObject_IsMarkInited(valueObject)) {
+        ZrCore_GarbageCollector_Barrier(state, object, valueObject);
+    }
+}
+
+SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize size, TZrBool isNative) {
     SZrGlobalState *global = state->global;
-    TZrPtr memory = ZrMemoryGcMalloc(state, ZR_MEMORY_NATIVE_TYPE_OBJECT, size);
+    TZrPtr memory = ZrCore_Memory_GcMalloc(state, ZR_MEMORY_NATIVE_TYPE_OBJECT, size);
     SZrRawObject *object = ZR_CAST_RAW_OBJECT(memory);
-    ZrRawObjectConstruct(object, type);
+    ZrCore_RawObject_Construct(object, type);
     object->isNative = isNative;
     object->garbageCollectMark.status = global->garbageCollector->gcInitializeObjectStatus;
     object->garbageCollectMark.generation = global->garbageCollector->gcGeneration;
@@ -1640,7 +1621,7 @@ SZrRawObject *ZrRawObjectNew(SZrState *state, EZrValueType type, TZrSize size, T
     return object;
 }
 
-TBool ZrRawObjectIsUnreferenced(struct SZrState *state, SZrRawObject *object) {
+TZrBool ZrCore_RawObject_IsUnreferenced(struct SZrState *state, SZrRawObject *object) {
     // 检查参数有效性
     if (object == ZR_NULL || state == ZR_NULL) {
         return ZR_TRUE;  // 空指针视为未引用
@@ -1657,7 +1638,7 @@ TBool ZrRawObjectIsUnreferenced(struct SZrState *state, SZrRawObject *object) {
         return ZR_TRUE;  // 全局状态无效，视为未引用
     }
 
-    if (ZrGarbageCollectorIgnoreRegistryContains(global->garbageCollector, object)) {
+    if (garbage_collector_ignore_registry_contains(global->garbageCollector, object)) {
         return ZR_FALSE;
     }
     
@@ -1676,14 +1657,14 @@ TBool ZrRawObjectIsUnreferenced(struct SZrState *state, SZrRawObject *object) {
 }
 
 
-void ZrRawObjectMarkAsInit(struct SZrState *state, SZrRawObject *object) {
+void ZrCore_RawObject_MarkAsInit(struct SZrState *state, SZrRawObject *object) {
     SZrGlobalState *global = state->global;
     EZrGarbageCollectGeneration generation = global->garbageCollector->gcGeneration;
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
     object->garbageCollectMark.generation = generation;
 }
 
-void ZrRawObjectMarkAsPermanent(SZrState *state, SZrRawObject *object) {
+void ZrCore_RawObject_MarkAsPermanent(SZrState *state, SZrRawObject *object) {
     SZrGlobalState *global = state->global;
     
     // 如果对象已经是永久对象，直接返回
@@ -1704,8 +1685,8 @@ void ZrRawObjectMarkAsPermanent(SZrState *state, SZrRawObject *object) {
     global->garbageCollector->permanentObjectList = object;
 }
 
-void ZrGcValueStaticAssertIsAlive(struct SZrState *state, SZrTypeValue *value) {
+void ZrCore_Gc_ValueStaticAssertIsAlive(struct SZrState *state, SZrTypeValue *value) {
     ZR_ASSERT(!value->isGarbageCollectable ||
               ((value->type == value->value.object->type) &&
-               ((state == ZR_NULL) || !ZrGcRawObjectIsDead(state->global, value->value.object))));
+               ((state == ZR_NULL) || !ZrCore_Gc_RawObjectIsDead(state->global, value->value.object))));
 }

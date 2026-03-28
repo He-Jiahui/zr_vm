@@ -4,7 +4,7 @@
 
 #include "zr_vm_parser/location.h"
 
-SZrFilePosition ZrFilePositionCreate(TZrSize offset, TInt32 line, TInt32 column) {
+SZrFilePosition ZrParser_FilePosition_Create(TZrSize offset, TZrInt32 line, TZrInt32 column) {
     SZrFilePosition pos;
     pos.offset = offset;
     pos.line = line;
@@ -12,7 +12,7 @@ SZrFilePosition ZrFilePositionCreate(TZrSize offset, TInt32 line, TInt32 column)
     return pos;
 }
 
-SZrFileRange ZrFileRangeCreate(SZrFilePosition start, SZrFilePosition end, SZrString *source) {
+SZrFileRange ZrParser_FileRange_Create(SZrFilePosition start, SZrFilePosition end, SZrString *source) {
     SZrFileRange range;
     range.start = start;
     range.end = end;
@@ -20,7 +20,7 @@ SZrFileRange ZrFileRangeCreate(SZrFilePosition start, SZrFilePosition end, SZrSt
     return range;
 }
 
-SZrFileRange ZrFileRangeMerge(SZrFileRange range1, SZrFileRange range2) {
+SZrFileRange ZrParser_FileRange_Merge(SZrFileRange range1, SZrFileRange range2) {
     SZrFileRange merged;
     // 选择更早的起始位置
     if (range1.start.offset < range2.start.offset) {

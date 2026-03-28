@@ -43,8 +43,8 @@ static SZrGlobalState *g_wasm_global = ZR_NULL;
 static SZrState *g_wasm_state = ZR_NULL;
 
 // WASM 内存分配器（使用标准 malloc/free）
-// 注意：FZrAllocator 的最后一个参数是 TInt64，不是 EZrMemoryNativeType
-static TZrPtr wasm_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+// 注意：FZrAllocator 的最后一个参数是 TZrInt64，不是 EZrMemoryNativeType
+static TZrPtr wasm_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -71,12 +71,12 @@ static void init_wasm_state(void) {
     if (g_wasm_global == ZR_NULL) {
         // 使用 WASM 分配器和回调创建全局状态
         SZrCallbackGlobal callbacks = {0};
-        g_wasm_global = ZrGlobalStateNew(wasm_allocator, ZR_NULL, 0, &callbacks);
+        g_wasm_global = ZrCore_GlobalState_New(wasm_allocator, ZR_NULL, 0, &callbacks);
         if (g_wasm_global != ZR_NULL) {
             g_wasm_state = g_wasm_global->mainThreadState;
             // 初始化注册表
             if (g_wasm_state != ZR_NULL) {
-                ZrGlobalStateInitRegistry(g_wasm_state, g_wasm_global);
+                ZrCore_GlobalState_InitRegistry(g_wasm_state, g_wasm_global);
             }
         }
     }
@@ -112,20 +112,20 @@ static const char* string_to_cstr(SZrState *state, SZrString *str) {
         return ZR_NULL;
     }
     
-    TNativeString nativeStr;
+    TZrNativeString nativeStr;
     TZrSize len;
     if (str->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-        nativeStr = ZrStringGetNativeStringShort(str);
+        nativeStr = ZrCore_String_GetNativeStringShort(str);
         len = str->shortStringLength;
     } else {
-        nativeStr = ZrStringGetNativeString(str);
+        nativeStr = ZrCore_String_GetNativeString(str);
         len = str->longStringLength;
     }
     
     // 分配内存并复制字符串
-    TChar *cstr = (TChar *)ZrMemoryRawMalloc(state->global, (len + 1) * sizeof(TChar));
+    TZrChar *cstr = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, (len + 1) * sizeof(TZrChar));
     if (cstr != ZR_NULL) {
-        memcpy(cstr, nativeStr, len * sizeof(TChar));
+        memcpy(cstr, nativeStr, len * sizeof(TZrChar));
         cstr[len] = '\0';
     }
     return cstr;
@@ -136,7 +136,7 @@ static SZrString* cstr_to_string(SZrState *state, const char *cstr, int len) {
     if (state == ZR_NULL || cstr == ZR_NULL) {
         return ZR_NULL;
     }
-    return ZrStringCreate(state, (TNativeString)cstr, (TZrSize)len);
+    return ZrCore_String_Create(state, (TZrNativeString)cstr, (TZrSize)len);
 }
 
 // 序列化诊断数组
@@ -147,7 +147,7 @@ static cJSON* serialize_diagnostics(SZrState *state, SZrArray *diagnostics) {
     }
     
     for (TZrSize i = 0; i < diagnostics->length; i++) {
-        SZrLspDiagnostic **diagPtr = (SZrLspDiagnostic **)ZrArrayGet(diagnostics, i);
+        SZrLspDiagnostic **diagPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, i);
         if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
             SZrLspDiagnostic *diag = *diagPtr;
             cJSON *diagJson = cJSON_CreateObject();
@@ -160,7 +160,7 @@ static cJSON* serialize_diagnostics(SZrState *state, SZrArray *diagnostics) {
                     const char *codeStr = string_to_cstr(state, diag->code);
                     if (codeStr != ZR_NULL) {
                         cJSON_AddStringToObject(diagJson, "code", codeStr);
-                        ZrMemoryRawFree(state->global, (void*)codeStr, 0);
+                        ZrCore_Memory_RawFree(state->global, (void*)codeStr, 0);
                     }
                 }
                 
@@ -168,7 +168,7 @@ static cJSON* serialize_diagnostics(SZrState *state, SZrArray *diagnostics) {
                     const char *msgStr = string_to_cstr(state, diag->message);
                     if (msgStr != ZR_NULL) {
                         cJSON_AddStringToObject(diagJson, "message", msgStr);
-                        ZrMemoryRawFree(state->global, (void*)msgStr, 0);
+                        ZrCore_Memory_RawFree(state->global, (void*)msgStr, 0);
                     }
                 }
                 
@@ -188,7 +188,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
     }
     
     for (TZrSize i = 0; i < completions->length; i++) {
-        SZrLspCompletionItem **itemPtr = (SZrLspCompletionItem **)ZrArrayGet(completions, i);
+        SZrLspCompletionItem **itemPtr = (SZrLspCompletionItem **)ZrCore_Array_Get(completions, i);
         if (itemPtr != ZR_NULL && *itemPtr != ZR_NULL) {
             SZrLspCompletionItem *item = *itemPtr;
             cJSON *itemJson = cJSON_CreateObject();
@@ -197,7 +197,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
                     const char *labelStr = string_to_cstr(state, item->label);
                     if (labelStr != ZR_NULL) {
                         cJSON_AddStringToObject(itemJson, "label", labelStr);
-                        ZrMemoryRawFree(state->global, (void*)labelStr, 0);
+                        ZrCore_Memory_RawFree(state->global, (void*)labelStr, 0);
                     }
                 }
                 
@@ -207,7 +207,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
                     const char *detailStr = string_to_cstr(state, item->detail);
                     if (detailStr != ZR_NULL) {
                         cJSON_AddStringToObject(itemJson, "detail", detailStr);
-                        ZrMemoryRawFree(state->global, (void*)detailStr, 0);
+                        ZrCore_Memory_RawFree(state->global, (void*)detailStr, 0);
                     }
                 }
                 
@@ -218,7 +218,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
                         cJSON_AddStringToObject(docJson, "kind", "markdown");
                         cJSON_AddStringToObject(docJson, "value", docStr);
                         cJSON_AddItemToObject(itemJson, "documentation", docJson);
-                        ZrMemoryRawFree(state->global, (void*)docStr, 0);
+                        ZrCore_Memory_RawFree(state->global, (void*)docStr, 0);
                     }
                 }
                 
@@ -226,7 +226,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
                     const char *insertStr = string_to_cstr(state, item->insertText);
                     if (insertStr != ZR_NULL) {
                         cJSON_AddStringToObject(itemJson, "insertText", insertStr);
-                        ZrMemoryRawFree(state->global, (void*)insertStr, 0);
+                        ZrCore_Memory_RawFree(state->global, (void*)insertStr, 0);
                     }
                 }
                 
@@ -234,7 +234,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
                     const char *formatStr = string_to_cstr(state, item->insertTextFormat);
                     if (formatStr != ZR_NULL) {
                         cJSON_AddStringToObject(itemJson, "insertTextFormat", formatStr);
-                        ZrMemoryRawFree(state->global, (void*)formatStr, 0);
+                        ZrCore_Memory_RawFree(state->global, (void*)formatStr, 0);
                     }
                 }
                 
@@ -254,7 +254,7 @@ static cJSON* serialize_locations(SZrState *state, SZrArray *locations) {
     }
     
     for (TZrSize i = 0; i < locations->length; i++) {
-        SZrLspLocation **locPtr = (SZrLspLocation **)ZrArrayGet(locations, i);
+        SZrLspLocation **locPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, i);
         if (locPtr != ZR_NULL && *locPtr != ZR_NULL) {
             SZrLspLocation *loc = *locPtr;
             cJSON *locJson = cJSON_CreateObject();
@@ -263,7 +263,7 @@ static cJSON* serialize_locations(SZrState *state, SZrArray *locations) {
                     const char *uriStr = string_to_cstr(state, loc->uri);
                     if (uriStr != ZR_NULL) {
                         cJSON_AddStringToObject(locJson, "uri", uriStr);
-                        ZrMemoryRawFree(state->global, (void*)uriStr, 0);
+                        ZrCore_Memory_RawFree(state->global, (void*)uriStr, 0);
                     }
                 }
                 
@@ -288,7 +288,7 @@ static cJSON* serialize_hover(SZrState *state, SZrLspHover *hover) {
     cJSON *contents = cJSON_CreateArray();
     if (contents != ZR_NULL) {
         for (TZrSize i = 0; i < hover->contents.length; i++) {
-            SZrString **strPtr = (SZrString **)ZrArrayGet(&hover->contents, i);
+            SZrString **strPtr = (SZrString **)ZrCore_Array_Get(&hover->contents, i);
             if (strPtr != ZR_NULL && *strPtr != ZR_NULL) {
                 const char *contentStr = string_to_cstr(state, *strPtr);
                 if (contentStr != ZR_NULL) {
@@ -296,7 +296,7 @@ static cJSON* serialize_hover(SZrState *state, SZrLspHover *hover) {
                     cJSON_AddStringToObject(contentJson, "kind", "markdown");
                     cJSON_AddStringToObject(contentJson, "value", contentStr);
                     cJSON_AddItemToArray(contents, contentJson);
-                    ZrMemoryRawFree(state->global, (void*)contentStr, 0);
+                    ZrCore_Memory_RawFree(state->global, (void*)contentStr, 0);
                 }
             }
         }
@@ -352,7 +352,7 @@ void* wasm_malloc(size_t size) {
         init_wasm_state();
     }
     if (g_wasm_global != ZR_NULL) {
-        return ZrMemoryRawMalloc(g_wasm_global, (TZrSize)size);
+        return ZrCore_Memory_RawMalloc(g_wasm_global, (TZrSize)size);
     }
     return ZR_NULL;
 }
@@ -377,7 +377,7 @@ void* wasm_ZrLspContextNew(void) {
     if (g_wasm_state == ZR_NULL) {
         return ZR_NULL;
     }
-    SZrLspContext *context = ZrLspContextNew(g_wasm_state);
+    SZrLspContext *context = ZrLanguageServer_LspContext_New(g_wasm_state);
     return (void*)context;
 }
 
@@ -386,7 +386,7 @@ EMSCRIPTEN_KEEPALIVE
 #endif
 void wasm_ZrLspContextFree(void* context) {
     if (g_wasm_state != ZR_NULL && context != ZR_NULL) {
-        ZrLspContextFree(g_wasm_state, (SZrLspContext*)context);
+        ZrLanguageServer_LspContext_Free(g_wasm_state, (SZrLspContext*)context);
     }
 }
 
@@ -404,7 +404,7 @@ const char* wasm_ZrLspUpdateDocument(void* context, const char* uri, int uriLen,
         return create_error_response("Failed to create URI string");
     }
     
-    TBool result = ZrLspUpdateDocument(g_wasm_state, (SZrLspContext*)context, 
+    TZrBool result = ZrLanguageServer_Lsp_UpdateDocument(g_wasm_state, (SZrLspContext*)context, 
                                        uriStr, content, (TZrSize)contentLen, (TZrSize)version);
     
     if (result) {
@@ -430,9 +430,9 @@ const char* wasm_ZrLspGetDiagnostics(void* context, const char* uri, int uriLen)
     }
     
     SZrArray diagnostics;
-    ZrArrayInit(g_wasm_state, &diagnostics, sizeof(SZrLspDiagnostic*), 8);
+    ZrCore_Array_Init(g_wasm_state, &diagnostics, sizeof(SZrLspDiagnostic*), 8);
     
-    TBool result = ZrLspGetDiagnostics(g_wasm_state, (SZrLspContext*)context, uriStr, &diagnostics);
+    TZrBool result = ZrLanguageServer_Lsp_GetDiagnostics(g_wasm_state, (SZrLspContext*)context, uriStr, &diagnostics);
     
     if (result) {
         cJSON *data = serialize_diagnostics(g_wasm_state, &diagnostics);
@@ -440,16 +440,16 @@ const char* wasm_ZrLspGetDiagnostics(void* context, const char* uri, int uriLen)
         
         // 清理
         for (TZrSize i = 0; i < diagnostics.length; i++) {
-            SZrLspDiagnostic **diagPtr = (SZrLspDiagnostic **)ZrArrayGet(&diagnostics, i);
+            SZrLspDiagnostic **diagPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, i);
             if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
-                ZrMemoryRawFree(g_wasm_state->global, *diagPtr, sizeof(SZrLspDiagnostic));
+                ZrCore_Memory_RawFree(g_wasm_state->global, *diagPtr, sizeof(SZrLspDiagnostic));
             }
         }
-        ZrArrayFree(g_wasm_state, &diagnostics);
+        ZrCore_Array_Free(g_wasm_state, &diagnostics);
         
         return jsonStr;
     } else {
-        ZrArrayFree(g_wasm_state, &diagnostics);
+        ZrCore_Array_Free(g_wasm_state, &diagnostics);
         return create_error_response("Failed to get diagnostics");
     }
 }
@@ -473,9 +473,9 @@ const char* wasm_ZrLspGetCompletion(void* context, const char* uri, int uriLen,
     position.character = character;
     
     SZrArray completions;
-    ZrArrayInit(g_wasm_state, &completions, sizeof(SZrLspCompletionItem*), 8);
+    ZrCore_Array_Init(g_wasm_state, &completions, sizeof(SZrLspCompletionItem*), 8);
     
-    TBool result = ZrLspGetCompletion(g_wasm_state, (SZrLspContext*)context, 
+    TZrBool result = ZrLanguageServer_Lsp_GetCompletion(g_wasm_state, (SZrLspContext*)context, 
                                       uriStr, position, &completions);
     
     if (result) {
@@ -484,16 +484,16 @@ const char* wasm_ZrLspGetCompletion(void* context, const char* uri, int uriLen,
         
         // 清理
         for (TZrSize i = 0; i < completions.length; i++) {
-            SZrLspCompletionItem **itemPtr = (SZrLspCompletionItem **)ZrArrayGet(&completions, i);
+            SZrLspCompletionItem **itemPtr = (SZrLspCompletionItem **)ZrCore_Array_Get(&completions, i);
             if (itemPtr != ZR_NULL && *itemPtr != ZR_NULL) {
-                ZrMemoryRawFree(g_wasm_state->global, *itemPtr, sizeof(SZrLspCompletionItem));
+                ZrCore_Memory_RawFree(g_wasm_state->global, *itemPtr, sizeof(SZrLspCompletionItem));
             }
         }
-        ZrArrayFree(g_wasm_state, &completions);
+        ZrCore_Array_Free(g_wasm_state, &completions);
         
         return jsonStr;
     } else {
-        ZrArrayFree(g_wasm_state, &completions);
+        ZrCore_Array_Free(g_wasm_state, &completions);
         return create_error_response("Failed to get completion");
     }
 }
@@ -517,7 +517,7 @@ const char* wasm_ZrLspGetHover(void* context, const char* uri, int uriLen,
     position.character = character;
     
     SZrLspHover *hover = ZR_NULL;
-    TBool result = ZrLspGetHover(g_wasm_state, (SZrLspContext*)context, 
+    TZrBool result = ZrLanguageServer_Lsp_GetHover(g_wasm_state, (SZrLspContext*)context, 
                                  uriStr, position, &hover);
     
     if (result && hover != ZR_NULL) {
@@ -525,8 +525,8 @@ const char* wasm_ZrLspGetHover(void* context, const char* uri, int uriLen,
         const char *jsonStr = create_success_response(data);
         
         // 清理
-        ZrArrayFree(g_wasm_state, &hover->contents);
-        ZrMemoryRawFree(g_wasm_state->global, hover, sizeof(SZrLspHover));
+        ZrCore_Array_Free(g_wasm_state, &hover->contents);
+        ZrCore_Memory_RawFree(g_wasm_state->global, hover, sizeof(SZrLspHover));
         
         return jsonStr;
     } else {
@@ -553,9 +553,9 @@ const char* wasm_ZrLspGetDefinition(void* context, const char* uri, int uriLen,
     position.character = character;
     
     SZrArray locations;
-    ZrArrayInit(g_wasm_state, &locations, sizeof(SZrLspLocation*), 1);
+    ZrCore_Array_Init(g_wasm_state, &locations, sizeof(SZrLspLocation*), 1);
     
-    TBool result = ZrLspGetDefinition(g_wasm_state, (SZrLspContext*)context, 
+    TZrBool result = ZrLanguageServer_Lsp_GetDefinition(g_wasm_state, (SZrLspContext*)context, 
                                       uriStr, position, &locations);
     
     if (result) {
@@ -564,16 +564,16 @@ const char* wasm_ZrLspGetDefinition(void* context, const char* uri, int uriLen,
         
         // 清理
         for (TZrSize i = 0; i < locations.length; i++) {
-            SZrLspLocation **locPtr = (SZrLspLocation **)ZrArrayGet(&locations, i);
+            SZrLspLocation **locPtr = (SZrLspLocation **)ZrCore_Array_Get(&locations, i);
             if (locPtr != ZR_NULL && *locPtr != ZR_NULL) {
-                ZrMemoryRawFree(g_wasm_state->global, *locPtr, sizeof(SZrLspLocation));
+                ZrCore_Memory_RawFree(g_wasm_state->global, *locPtr, sizeof(SZrLspLocation));
             }
         }
-        ZrArrayFree(g_wasm_state, &locations);
+        ZrCore_Array_Free(g_wasm_state, &locations);
         
         return jsonStr;
     } else {
-        ZrArrayFree(g_wasm_state, &locations);
+        ZrCore_Array_Free(g_wasm_state, &locations);
         return create_error_response("Failed to get definition");
     }
 }
@@ -597,9 +597,9 @@ const char* wasm_ZrLspFindReferences(void* context, const char* uri, int uriLen,
     position.character = character;
     
     SZrArray locations;
-    ZrArrayInit(g_wasm_state, &locations, sizeof(SZrLspLocation*), 8);
+    ZrCore_Array_Init(g_wasm_state, &locations, sizeof(SZrLspLocation*), 8);
     
-    TBool result = ZrLspFindReferences(g_wasm_state, (SZrLspContext*)context, 
+    TZrBool result = ZrLanguageServer_Lsp_FindReferences(g_wasm_state, (SZrLspContext*)context, 
                                       uriStr, position, includeDeclaration != 0, &locations);
     
     if (result) {
@@ -608,16 +608,16 @@ const char* wasm_ZrLspFindReferences(void* context, const char* uri, int uriLen,
         
         // 清理
         for (TZrSize i = 0; i < locations.length; i++) {
-            SZrLspLocation **locPtr = (SZrLspLocation **)ZrArrayGet(&locations, i);
+            SZrLspLocation **locPtr = (SZrLspLocation **)ZrCore_Array_Get(&locations, i);
             if (locPtr != ZR_NULL && *locPtr != ZR_NULL) {
-                ZrMemoryRawFree(g_wasm_state->global, *locPtr, sizeof(SZrLspLocation));
+                ZrCore_Memory_RawFree(g_wasm_state->global, *locPtr, sizeof(SZrLspLocation));
             }
         }
-        ZrArrayFree(g_wasm_state, &locations);
+        ZrCore_Array_Free(g_wasm_state, &locations);
         
         return jsonStr;
     } else {
-        ZrArrayFree(g_wasm_state, &locations);
+        ZrCore_Array_Free(g_wasm_state, &locations);
         return create_error_response("Failed to find references");
     }
 }
@@ -643,9 +643,9 @@ const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
     position.character = character;
     
     SZrArray locations;
-    ZrArrayInit(g_wasm_state, &locations, sizeof(SZrLspLocation*), 8);
+    ZrCore_Array_Init(g_wasm_state, &locations, sizeof(SZrLspLocation*), 8);
     
-    TBool result = ZrLspRename(g_wasm_state, (SZrLspContext*)context, 
+    TZrBool result = ZrLanguageServer_Lsp_Rename(g_wasm_state, (SZrLspContext*)context, 
                               uriStr, position, newNameStr, &locations);
     
     if (result) {
@@ -654,16 +654,16 @@ const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
         
         // 清理
         for (TZrSize i = 0; i < locations.length; i++) {
-            SZrLspLocation **locPtr = (SZrLspLocation **)ZrArrayGet(&locations, i);
+            SZrLspLocation **locPtr = (SZrLspLocation **)ZrCore_Array_Get(&locations, i);
             if (locPtr != ZR_NULL && *locPtr != ZR_NULL) {
-                ZrMemoryRawFree(g_wasm_state->global, *locPtr, sizeof(SZrLspLocation));
+                ZrCore_Memory_RawFree(g_wasm_state->global, *locPtr, sizeof(SZrLspLocation));
             }
         }
-        ZrArrayFree(g_wasm_state, &locations);
+        ZrCore_Array_Free(g_wasm_state, &locations);
         
         return jsonStr;
     } else {
-        ZrArrayFree(g_wasm_state, &locations);
+        ZrCore_Array_Free(g_wasm_state, &locations);
         return create_error_response("Failed to rename");
     }
 }

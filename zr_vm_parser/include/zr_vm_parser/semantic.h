@@ -11,10 +11,10 @@
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/state.h"
 
-typedef TUInt32 TZrTypeId;
-typedef TUInt32 TZrSymbolId;
-typedef TUInt32 TZrOverloadSetId;
-typedef TUInt32 TZrLifetimeRegionId;
+typedef TZrUInt32 TZrTypeId;
+typedef TZrUInt32 TZrSymbolId;
+typedef TZrUInt32 TZrOverloadSetId;
+typedef TZrUInt32 TZrLifetimeRegionId;
 
 enum EZrSemanticTypeKind {
     ZR_SEMANTIC_TYPE_KIND_UNKNOWN = 0,
@@ -71,7 +71,7 @@ typedef struct SZrSemanticOverloadSetRecord {
 } SZrSemanticOverloadSetRecord;
 
 typedef struct SZrTemplateSegment {
-    TBool isInterpolation;
+    TZrBool isInterpolation;
     SZrString *staticText;
     SZrAstNode *expression;
 } SZrTemplateSegment;
@@ -81,9 +81,9 @@ typedef struct SZrDeterministicCleanupStep {
     TZrLifetimeRegionId regionId;
     TZrLifetimeRegionId ownerRegionId;
     TZrSymbolId symbolId;
-    TInt32 declarationOrder;
-    TBool callsClose;
-    TBool callsDestructor;
+    TZrInt32 declarationOrder;
+    TZrBool callsClose;
+    TZrBool callsDestructor;
 } SZrDeterministicCleanupStep;
 
 typedef struct SZrSemanticContext {
@@ -104,45 +104,45 @@ typedef struct SZrHirModule {
     SZrSemanticContext *semantic;
 } SZrHirModule;
 
-ZR_PARSER_API SZrSemanticContext *ZrSemanticContextNew(SZrState *state);
-ZR_PARSER_API void ZrSemanticContextFree(SZrSemanticContext *context);
-ZR_PARSER_API void ZrSemanticContextReset(SZrSemanticContext *context);
+ZR_PARSER_API SZrSemanticContext *ZrParser_SemanticContext_New(SZrState *state);
+ZR_PARSER_API void ZrParser_SemanticContext_Free(SZrSemanticContext *context);
+ZR_PARSER_API void ZrParser_SemanticContext_Reset(SZrSemanticContext *context);
 
-ZR_PARSER_API TZrTypeId ZrSemanticReserveTypeId(SZrSemanticContext *context);
-ZR_PARSER_API TZrSymbolId ZrSemanticReserveSymbolId(SZrSemanticContext *context);
-ZR_PARSER_API TZrOverloadSetId ZrSemanticReserveOverloadSetId(SZrSemanticContext *context);
-ZR_PARSER_API TZrLifetimeRegionId ZrSemanticReserveLifetimeRegionId(SZrSemanticContext *context);
+ZR_PARSER_API TZrTypeId ZrParser_Semantic_ReserveTypeId(SZrSemanticContext *context);
+ZR_PARSER_API TZrSymbolId ZrParser_Semantic_ReserveSymbolId(SZrSemanticContext *context);
+ZR_PARSER_API TZrOverloadSetId ZrParser_Semantic_ReserveOverloadSetId(SZrSemanticContext *context);
+ZR_PARSER_API TZrLifetimeRegionId ZrParser_Semantic_ReserveLifetimeRegionId(SZrSemanticContext *context);
 
-ZR_PARSER_API TZrTypeId ZrSemanticRegisterInferredType(SZrSemanticContext *context,
+ZR_PARSER_API TZrTypeId ZrParser_Semantic_RegisterInferredType(SZrSemanticContext *context,
                                                        const SZrInferredType *type,
                                                        EZrSemanticTypeKind kind,
                                                        SZrString *name,
                                                        SZrAstNode *astNode);
-ZR_PARSER_API TZrTypeId ZrSemanticRegisterNamedType(SZrSemanticContext *context,
+ZR_PARSER_API TZrTypeId ZrParser_Semantic_RegisterNamedType(SZrSemanticContext *context,
                                                     SZrString *name,
                                                     EZrSemanticTypeKind kind,
                                                     SZrAstNode *astNode);
-ZR_PARSER_API TZrSymbolId ZrSemanticRegisterSymbol(SZrSemanticContext *context,
+ZR_PARSER_API TZrSymbolId ZrParser_Semantic_RegisterSymbol(SZrSemanticContext *context,
                                                    SZrString *name,
                                                    EZrSemanticSymbolKind kind,
                                                    TZrTypeId typeId,
                                                    TZrOverloadSetId overloadSetId,
                                                    SZrAstNode *astNode,
                                                    SZrFileRange location);
-ZR_PARSER_API TZrOverloadSetId ZrSemanticGetOrCreateOverloadSet(SZrSemanticContext *context,
+ZR_PARSER_API TZrOverloadSetId ZrParser_Semantic_GetOrCreateOverloadSet(SZrSemanticContext *context,
                                                                 SZrString *name);
-ZR_PARSER_API TBool ZrSemanticAddOverloadMember(SZrSemanticContext *context,
+ZR_PARSER_API TZrBool ZrParser_Semantic_AddOverloadMember(SZrSemanticContext *context,
                                                 TZrOverloadSetId overloadSetId,
                                                 TZrSymbolId symbolId);
 
-ZR_PARSER_API TBool ZrSemanticAppendCleanupStep(SZrSemanticContext *context,
+ZR_PARSER_API TZrBool ZrParser_Semantic_AppendCleanupStep(SZrSemanticContext *context,
                                                 const SZrDeterministicCleanupStep *step);
-ZR_PARSER_API TBool ZrSemanticAppendTemplateSegment(SZrSemanticContext *context,
+ZR_PARSER_API TZrBool ZrParser_Semantic_AppendTemplateSegment(SZrSemanticContext *context,
                                                     const SZrTemplateSegment *segment);
 
-ZR_PARSER_API SZrHirModule *ZrHirModuleNew(SZrState *state,
+ZR_PARSER_API SZrHirModule *ZrParser_HirModule_New(SZrState *state,
                                            SZrSemanticContext *context,
                                            SZrAstNode *rootAst);
-ZR_PARSER_API void ZrHirModuleFree(SZrState *state, SZrHirModule *module);
+ZR_PARSER_API void ZrParser_HirModule_Free(SZrState *state, SZrHirModule *module);
 
 #endif // ZR_VM_PARSER_SEMANTIC_H

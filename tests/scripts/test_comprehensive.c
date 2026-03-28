@@ -45,8 +45,8 @@
 } while (0)
 
 typedef struct {
-    const TChar *summary;
-    const TChar *fileName;
+    const TZrChar *summary;
+    const TZrChar *fileName;
 } SZrScriptRegressionCase;
 
 static const SZrScriptRegressionCase ZR_SCRIPT_REGRESSION_CASES[] = {
@@ -59,7 +59,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
-static TBool run_test_case(const TChar *testName, const TChar *fileName) {
+static TZrBool run_test_case(const TZrChar *testName, const TZrChar *fileName) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
@@ -71,8 +71,8 @@ static TBool run_test_case(const TChar *testName, const TChar *fileName) {
         return ZR_FALSE;
     }
 
-    TChar filePath[1024];
-    const TChar *possiblePaths[] = {
+    TZrChar filePath[1024];
+    const TZrChar *possiblePaths[] = {
         "test_cases",
         "tests/scripts/test_cases",
         ".",
@@ -109,7 +109,7 @@ static TBool run_test_case(const TChar *testName, const TChar *fileName) {
         return ZR_FALSE;
     }
 
-    TChar *source = (TChar *)malloc((TZrSize)fileSize + 1);
+    TZrChar *source = (TZrChar *)malloc((TZrSize)fileSize + 1);
     if (source == ZR_NULL) {
         fclose(testFile);
         destroy_test_state(state);
@@ -137,10 +137,10 @@ static TBool run_test_case(const TChar *testName, const TChar *fileName) {
         return ZR_FALSE;
     }
 
-    TChar baseName[256];
+    TZrChar baseName[256];
     strncpy(baseName, fileName, sizeof(baseName) - 1);
     baseName[sizeof(baseName) - 1] = '\0';
-    TChar *dot = strrchr(baseName, '.');
+    TZrChar *dot = strrchr(baseName, '.');
     if (dot != ZR_NULL) {
         *dot = '\0';
     }
@@ -153,8 +153,8 @@ static TBool run_test_case(const TChar *testName, const TChar *fileName) {
 
     TEST_INFO("Executing", "Running compiled function");
     SZrTypeValue execResult;
-    ZrValueResetAsNull(&execResult);
-    TBool execSuccess = execute_function(state, result->function, &execResult);
+    ZrCore_Value_ResetAsNull(&execResult);
+    TZrBool execSuccess = execute_function(state, result->function, &execResult);
 
     if (execSuccess) {
         TEST_INFO("Dumping Runtime State", "Outputting runtime state to files");

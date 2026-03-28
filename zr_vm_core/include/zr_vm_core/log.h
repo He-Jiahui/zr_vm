@@ -8,9 +8,9 @@
 
 struct SZrState;
 
-typedef void (*FZrLog)(struct SZrState *state, EZrLogLevel level, TNativeString message);
+typedef void (*FZrLog)(struct SZrState *state, EZrLogLevel level, TZrNativeString message);
 
 
-ZR_CORE_API void ZrLogError(struct SZrState *state, TNativeString format, ...);
+ZR_CORE_API void ZrCore_Log_Error(struct SZrState *state, TZrNativeString format, ...);
 
 #endif //ZR_VM_CORE_LOG_H

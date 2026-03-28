@@ -8,8 +8,8 @@
 #include "zr_vm_common/zr_common_conf.h"
 
 // Debug相关常量
-#define kZrDebugMaxFields 50
-#define kZrDebugSearchThreshold 100
+#define ZR_DEBUG_MAX_FIELDS 50
+#define ZR_DEBUG_SEARCH_THRESHOLD 100
 
 // 运行时检查默认配置
 #ifndef ZR_ENABLE_RUNTIME_BOUNDS_CHECK

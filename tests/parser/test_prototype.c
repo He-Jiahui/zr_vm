@@ -96,7 +96,7 @@ static char *test_realpath(const char *path, char *resolved_path) { return _full
 #endif
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -253,7 +253,7 @@ static void test_struct_prototype_compilation(void) {
 
     TEST_INFO("Struct prototype compilation", "Testing that struct declarations are collected during compilation");
 
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Struct Prototype Compilation", "Failed to create global state");
@@ -265,7 +265,7 @@ static void test_struct_prototype_compilation(void) {
     // 读取测试文件
     char *testFile = find_test_file("test_prototype_struct.zr");
     if (testFile == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Struct Prototype Compilation", "Test file not found");
         return;
@@ -275,22 +275,22 @@ static void test_struct_prototype_compilation(void) {
     char *source = read_file_content(testFile, &fileSize);
     if (source == ZR_NULL) {
         free(testFile);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Struct Prototype Compilation", "Failed to read test file");
         return;
     }
 
     // 创建源文件名
-    SZrString *sourceName = ZrStringCreateFromNative(state, testFile);
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, testFile);
 
     // 编译源代码
-    SZrFunction *func = ZrParserCompileSource(state, source, fileSize, sourceName);
+    SZrFunction *func = ZrParser_Source_Compile(state, source, fileSize, sourceName);
 
     if (func == ZR_NULL) {
         free(source);
         free(testFile);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Struct Prototype Compilation", "Compilation failed");
         return;
@@ -300,7 +300,7 @@ static void test_struct_prototype_compilation(void) {
     // 测试prototypeData存储
     if (func != ZR_NULL) {
         // 验证prototypeData字段
-        TBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
+        TZrBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
                                   func->prototypeDataLength > 0 && 
                                   func->prototypeCount > 0);
         if (hasPrototypeData) {
@@ -309,7 +309,7 @@ static void test_struct_prototype_compilation(void) {
             printf("    prototypeDataLength: %u bytes\n", func->prototypeDataLength);
             
             // 验证数据格式（头部应该是prototypeCount）
-            TUInt32 *countPtr = (TUInt32 *)func->prototypeData;
+            TZrUInt32 *countPtr = (TZrUInt32 *)func->prototypeData;
             if (*countPtr == func->prototypeCount) {
                 printf("    Data format verification: PASS (header count matches)\n");
             } else {
@@ -322,30 +322,30 @@ static void test_struct_prototype_compilation(void) {
         
         // 输出prototype信息（使用新函数）
         printf("\n  Prototype information from prototypeData (new format):\n");
-        ZrDebugPrintPrototypesFromData(state, func, stdout);
+        ZrCore_Debug_PrintPrototypesFromData(state, func, stdout);
         
         // 也测试旧的函数（向后兼容性）
-        // 注意：ZrDebugPrintPrototypeFromConstants 已被移除，使用 ZrDebugPrintPrototypesFromData 替代
+        // 注意：ZrDebugPrintPrototypeFromConstants 已被移除，使用 ZrCore_Debug_PrintPrototypesFromData 替代
 
         // 创建模块对象
-        struct SZrObjectModule *module = ZrModuleCreate(state);
+        struct SZrObjectModule *module = ZrCore_Module_Create(state);
         if (module != ZR_NULL) {
             // 优先使用新的函数从prototypeData创建
             TZrSize createdCount = 0;
             if (hasPrototypeData) {
-                createdCount = ZrModuleCreatePrototypesFromData(state, module, func);
+                createdCount = ZrCore_Module_CreatePrototypesFromData(state, module, func);
                 if (createdCount > 0) {
                     printf("\n  Created %zu prototype(s) from prototypeData:\n", createdCount);
                 } else {
                     // 如果新函数失败，尝试旧函数（向后兼容）
-                    createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+                    createdCount = ZrCore_Module_CreatePrototypesFromConstants(state, module, func);
                     if (createdCount > 0) {
                         printf("\n  Created %zu prototype(s) from constants (legacy fallback):\n", createdCount);
                     }
                 }
             } else {
                 // 如果没有新格式数据，尝试旧函数
-                createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+                createdCount = ZrCore_Module_CreatePrototypesFromConstants(state, module, func);
                 if (createdCount > 0) {
                     printf("\n  Created %zu prototype(s) from constants (legacy format):\n", createdCount);
                 }
@@ -354,28 +354,28 @@ static void test_struct_prototype_compilation(void) {
             if (createdCount > 0) {
 
                 // 查找并输出Vector3 prototype信息
-                SZrString *vector3Name = ZrStringCreateFromNative(state, "Vector3");
+                SZrString *vector3Name = ZrCore_String_CreateFromNative(state, "Vector3");
                 if (vector3Name != ZR_NULL) {
-                    const SZrTypeValue *prototypeValue = ZrModuleGetPubExport(state, module, vector3Name);
+                    const SZrTypeValue *prototypeValue = ZrCore_Module_GetPubExport(state, module, vector3Name);
                     if (prototypeValue != ZR_NULL && prototypeValue->type == ZR_VALUE_TYPE_OBJECT) {
                         SZrObjectPrototype *prototype =
                                 (SZrObjectPrototype *) ZR_CAST_OBJECT(state, prototypeValue->value.object);
                         if (prototype != ZR_NULL) {
-                            ZrDebugPrintPrototype(state, prototype, stdout);
+                            ZrCore_Debug_PrintPrototype(state, prototype, stdout);
                         }
                     }
                 }
 
                 // 输出Point3D prototype（测试继承关系）
-                SZrString *point3DName = ZrStringCreateFromNative(state, "Point3D");
+                SZrString *point3DName = ZrCore_String_CreateFromNative(state, "Point3D");
                 if (point3DName != ZR_NULL) {
-                    const SZrTypeValue *prototypeValue = ZrModuleGetPubExport(state, module, point3DName);
+                    const SZrTypeValue *prototypeValue = ZrCore_Module_GetPubExport(state, module, point3DName);
                     if (prototypeValue != ZR_NULL && prototypeValue->type == ZR_VALUE_TYPE_OBJECT) {
                         SZrObjectPrototype *prototype =
                                 (SZrObjectPrototype *) ZR_CAST_OBJECT(state, prototypeValue->value.object);
                         if (prototype != ZR_NULL) {
                             printf("\n  Point3D prototype (with inheritance):\n");
-                            ZrDebugPrintPrototype(state, prototype, stdout);
+                            ZrCore_Debug_PrintPrototype(state, prototype, stdout);
                         }
                     }
                 }
@@ -388,7 +388,7 @@ static void test_struct_prototype_compilation(void) {
         // 生成 .zri 文件名
         char *zriFile = generate_output_filename(testFile, ".zri");
         if (zriFile != ZR_NULL) {
-            TBool zriResult = ZrWriterWriteIntermediateFile(state, func, zriFile);
+            TZrBool zriResult = ZrParser_Writer_WriteIntermediateFile(state, func, zriFile);
             if (zriResult) {
                 printf("\n  Generated ZRI file: %s\n", zriFile);
             }
@@ -398,7 +398,7 @@ static void test_struct_prototype_compilation(void) {
         // 生成 .zro 文件名
         char *zroFile = generate_output_filename(testFile, ".zro");
         if (zroFile != ZR_NULL) {
-            TBool zroResult = ZrWriterWriteBinaryFile(state, func, zroFile);
+            TZrBool zroResult = ZrParser_Writer_WriteBinaryFile(state, func, zroFile);
             if (zroResult) {
                 printf("  Generated ZRO file: %s\n", zroFile);
             }
@@ -408,7 +408,7 @@ static void test_struct_prototype_compilation(void) {
 
     free(source);
     free(testFile);
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
 
     timer.endTime = clock();
 
@@ -425,7 +425,7 @@ static void test_class_prototype_compilation(void) {
 
     TEST_INFO("Class prototype compilation", "Testing that class declarations are collected during compilation");
 
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12346, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12346, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Failed to create global state");
@@ -437,7 +437,7 @@ static void test_class_prototype_compilation(void) {
     // 读取测试文件
     char *testFile = find_test_file("test_prototype_class.zr");
     if (testFile == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Test file not found");
         return;
@@ -447,29 +447,29 @@ static void test_class_prototype_compilation(void) {
     char *source = read_file_content(testFile, &fileSize);
     if (source == ZR_NULL) {
         free(testFile);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Failed to read test file");
         return;
     }
 
     // 创建源文件名
-    SZrString *sourceName = ZrStringCreateFromNative(state, testFile);
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, testFile);
 
     // 编译源代码
-    SZrFunction *func = ZrParserCompileSource(state, source, fileSize, sourceName);
+    SZrFunction *func = ZrParser_Source_Compile(state, source, fileSize, sourceName);
 
     if (func == ZR_NULL) {
         free(source);
         free(testFile);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Compilation failed");
         return;
     }
 
     // 验证prototypeData存储
-    TBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
+    TZrBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
                               func->prototypeDataLength > 0 && 
                               func->prototypeCount > 0);
     if (hasPrototypeData) {
@@ -479,15 +479,15 @@ static void test_class_prototype_compilation(void) {
     }
     
     // 检查常量池中是否有 prototype 相关信息（类型名称字符串等）
-    TBool hasPrototypeInfo = ZR_FALSE;
+    TZrBool hasPrototypeInfo = ZR_FALSE;
     if (func->constantValueList != ZR_NULL && func->constantValueLength > 0) {
         // 查找字符串常量（类型名称）
-        for (TUInt32 i = 0; i < func->constantValueLength; i++) {
+        for (TZrUInt32 i = 0; i < func->constantValueLength; i++) {
             SZrTypeValue *constant = &func->constantValueList[i];
             if (constant->type == ZR_VALUE_TYPE_STRING) {
                 SZrString *str = ZR_CAST_STRING(state, constant->value.object);
                 if (str != ZR_NULL) {
-                    TNativeString nativeStr = ZrStringGetNativeStringShort(str);
+                    TZrNativeString nativeStr = ZrCore_String_GetNativeStringShort(str);
                     if (nativeStr != ZR_NULL && strcmp(nativeStr, "Animal") == 0) {
                         hasPrototypeInfo = ZR_TRUE;
                         break;
@@ -500,47 +500,47 @@ static void test_class_prototype_compilation(void) {
     // 输出prototype信息
     if ((hasPrototypeInfo || hasPrototypeData) && func != ZR_NULL) {
         printf("\n  Prototype information from prototypeData (new format):\n");
-        ZrDebugPrintPrototypesFromData(state, func, stdout);
+        ZrCore_Debug_PrintPrototypesFromData(state, func, stdout);
         
-        // 注意：ZrDebugPrintPrototypeFromConstants 已被移除，使用 ZrDebugPrintPrototypesFromData 替代
+        // 注意：ZrDebugPrintPrototypeFromConstants 已被移除，使用 ZrCore_Debug_PrintPrototypesFromData 替代
 
         // 创建模块并加载prototype
-        struct SZrObjectModule *module = ZrModuleCreate(state);
+        struct SZrObjectModule *module = ZrCore_Module_Create(state);
         if (module != ZR_NULL) {
             TZrSize createdCount = 0;
             if (hasPrototypeData) {
-                createdCount = ZrModuleCreatePrototypesFromData(state, module, func);
+                createdCount = ZrCore_Module_CreatePrototypesFromData(state, module, func);
             }
             if (createdCount == 0) {
-                createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+                createdCount = ZrCore_Module_CreatePrototypesFromConstants(state, module, func);
             }
 
             if (createdCount > 0) {
                 printf("\n  Created %zu prototype(s), runtime debug output:\n", createdCount);
 
                 // 输出Animal prototype
-                SZrString *animalName = ZrStringCreateFromNative(state, "Animal");
+                SZrString *animalName = ZrCore_String_CreateFromNative(state, "Animal");
                 if (animalName != ZR_NULL) {
-                    const SZrTypeValue *prototypeValue = ZrModuleGetPubExport(state, module, animalName);
+                    const SZrTypeValue *prototypeValue = ZrCore_Module_GetPubExport(state, module, animalName);
                     if (prototypeValue != ZR_NULL && prototypeValue->type == ZR_VALUE_TYPE_OBJECT) {
                         SZrObjectPrototype *prototype =
                                 (SZrObjectPrototype *) ZR_CAST_OBJECT(state, prototypeValue->value.object);
                         if (prototype != ZR_NULL) {
-                            ZrDebugPrintPrototype(state, prototype, stdout);
+                            ZrCore_Debug_PrintPrototype(state, prototype, stdout);
                         }
                     }
                 }
 
                 // 输出Dog prototype（测试继承关系）
-                SZrString *dogName = ZrStringCreateFromNative(state, "Dog");
+                SZrString *dogName = ZrCore_String_CreateFromNative(state, "Dog");
                 if (dogName != ZR_NULL) {
-                    const SZrTypeValue *prototypeValue = ZrModuleGetPubExport(state, module, dogName);
+                    const SZrTypeValue *prototypeValue = ZrCore_Module_GetPubExport(state, module, dogName);
                     if (prototypeValue != ZR_NULL && prototypeValue->type == ZR_VALUE_TYPE_OBJECT) {
                         SZrObjectPrototype *prototype =
                                 (SZrObjectPrototype *) ZR_CAST_OBJECT(state, prototypeValue->value.object);
                         if (prototype != ZR_NULL) {
                             printf("\n  Dog prototype (with inheritance):\n");
-                            ZrDebugPrintPrototype(state, prototype, stdout);
+                            ZrCore_Debug_PrintPrototype(state, prototype, stdout);
                         }
                     }
                 }
@@ -550,7 +550,7 @@ static void test_class_prototype_compilation(void) {
 
     free(source);
     free(testFile);
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
 
     timer.endTime = clock();
 
@@ -568,9 +568,9 @@ static void test_prototype_creation_functions(void) {
     timer.startTime = clock();
     timer.endTime = timer.startTime; // 初始化 endTime 以避免未初始化警告
 
-    TEST_INFO("Prototype creation functions", "Testing ZrObjectPrototypeNew and ZrStructPrototypeNew functions");
+    TEST_INFO("Prototype creation functions", "Testing ZrCore_ObjectPrototype_New and ZrCore_StructPrototype_New functions");
 
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12347, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12347, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "Failed to create global state");
@@ -580,18 +580,18 @@ static void test_prototype_creation_functions(void) {
     SZrState *state = global->mainThreadState;
 
     // 创建类型名称
-    SZrString *typeName = ZrStringCreateFromNative(state, "TestStruct");
+    SZrString *typeName = ZrCore_String_CreateFromNative(state, "TestStruct");
     if (typeName == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "Failed to create type name string");
         return;
     }
 
     // 测试创建 StructPrototype
-    SZrStructPrototype *structPrototype = ZrStructPrototypeNew(state, typeName);
+    SZrStructPrototype *structPrototype = ZrCore_StructPrototype_New(state, typeName);
     if (structPrototype == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "Failed to create StructPrototype");
         return;
@@ -599,14 +599,14 @@ static void test_prototype_creation_functions(void) {
 
     // 验证 prototype 属性
     if (structPrototype->super.name != typeName) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "StructPrototype name mismatch");
         return;
     }
 
     if (structPrototype->super.type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "StructPrototype type mismatch");
         return;
@@ -614,20 +614,20 @@ static void test_prototype_creation_functions(void) {
 
     // 使用debug工具输出prototype信息
     printf("\n  Debug output for created StructPrototype:\n");
-    ZrDebugPrintPrototype(state, (SZrObjectPrototype *) structPrototype, stdout);
+    ZrCore_Debug_PrintPrototype(state, (SZrObjectPrototype *) structPrototype, stdout);
 
     // 测试创建 ObjectPrototype (Class)
-    SZrString *className = ZrStringCreateFromNative(state, "TestClass");
+    SZrString *className = ZrCore_String_CreateFromNative(state, "TestClass");
     if (className == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "Failed to create class name string");
         return;
     }
 
-    SZrObjectPrototype *classPrototype = ZrObjectPrototypeNew(state, className, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    SZrObjectPrototype *classPrototype = ZrCore_ObjectPrototype_New(state, className, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
     if (classPrototype == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "Failed to create ObjectPrototype");
         return;
@@ -635,14 +635,14 @@ static void test_prototype_creation_functions(void) {
 
     // 验证 prototype 属性
     if (classPrototype->name != className) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "ObjectPrototype name mismatch");
         return;
     }
 
     if (classPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "ObjectPrototype type mismatch");
         return;
@@ -650,16 +650,16 @@ static void test_prototype_creation_functions(void) {
 
     // 使用debug工具输出prototype信息
     printf("\n  Debug output for created ClassPrototype:\n");
-    ZrDebugPrintPrototype(state, classPrototype, stdout);
+    ZrCore_Debug_PrintPrototype(state, classPrototype, stdout);
 
     // 测试创建并输出object信息
-    SZrObject *testObject = ZrObjectNew(state, classPrototype);
+    SZrObject *testObject = ZrCore_Object_New(state, classPrototype);
     if (testObject != ZR_NULL) {
         printf("\n  Debug output for created Object:\n");
-        ZrDebugPrintObject(state, testObject, stdout);
+        ZrCore_Debug_PrintObject(state, testObject, stdout);
     }
 
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "Prototype Creation Functions");
 }
@@ -671,9 +671,9 @@ static void test_prototype_inheritance(void) {
     timer.startTime = clock();
     timer.endTime = timer.startTime; // 初始化 endTime 以避免未初始化警告
 
-    TEST_INFO("Prototype inheritance", "Testing ZrObjectPrototypeSetSuper function");
+    TEST_INFO("Prototype inheritance", "Testing ZrCore_ObjectPrototype_SetSuper function");
 
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12348, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12348, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Inheritance", "Failed to create global state");
@@ -683,37 +683,37 @@ static void test_prototype_inheritance(void) {
     SZrState *state = global->mainThreadState;
 
     // 创建父类 prototype
-    SZrString *parentName = ZrStringCreateFromNative(state, "Parent");
-    SZrObjectPrototype *parentPrototype = ZrObjectPrototypeNew(state, parentName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    SZrString *parentName = ZrCore_String_CreateFromNative(state, "Parent");
+    SZrObjectPrototype *parentPrototype = ZrCore_ObjectPrototype_New(state, parentName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
     if (parentPrototype == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Inheritance", "Failed to create parent prototype");
         return;
     }
 
     // 创建子类 prototype
-    SZrString *childName = ZrStringCreateFromNative(state, "Child");
-    SZrObjectPrototype *childPrototype = ZrObjectPrototypeNew(state, childName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    SZrString *childName = ZrCore_String_CreateFromNative(state, "Child");
+    SZrObjectPrototype *childPrototype = ZrCore_ObjectPrototype_New(state, childName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
     if (childPrototype == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Inheritance", "Failed to create child prototype");
         return;
     }
 
     // 设置继承关系
-    ZrObjectPrototypeSetSuper(state, childPrototype, parentPrototype);
+    ZrCore_ObjectPrototype_SetSuper(state, childPrototype, parentPrototype);
 
     // 验证继承关系
     if (childPrototype->superPrototype != parentPrototype) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Inheritance", "Inheritance relationship not set correctly");
         return;
     }
 
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "Prototype Inheritance");
 }
@@ -727,7 +727,7 @@ static void test_prototype_module_export(void) {
 
     TEST_INFO("Prototype module export", "Testing that prototypes are exported to module correctly");
 
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12349, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12349, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Failed to create global state");
@@ -737,23 +737,23 @@ static void test_prototype_module_export(void) {
     SZrState *state = global->mainThreadState;
 
     // 创建模块
-    struct SZrObjectModule *module = ZrModuleCreate(state);
+    struct SZrObjectModule *module = ZrCore_Module_Create(state);
     if (module == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Failed to create module");
         return;
     }
 
-    SZrString *moduleName = ZrStringCreateFromNative(state, "test_module");
-    TUInt64 pathHash = ZrModuleCalculatePathHash(state, moduleName);
-    ZrModuleSetInfo(state, module, moduleName, pathHash, moduleName);
+    SZrString *moduleName = ZrCore_String_CreateFromNative(state, "test_module");
+    TZrUInt64 pathHash = ZrCore_Module_CalculatePathHash(state, moduleName);
+    ZrCore_Module_SetInfo(state, module, moduleName, pathHash, moduleName);
 
     // 创建 prototype
-    SZrString *typeName = ZrStringCreateFromNative(state, "TestType");
-    SZrObjectPrototype *prototype = ZrObjectPrototypeNew(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    SZrString *typeName = ZrCore_String_CreateFromNative(state, "TestType");
+    SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
     if (prototype == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Failed to create prototype");
         return;
@@ -761,22 +761,22 @@ static void test_prototype_module_export(void) {
 
     // 导出 prototype
     SZrTypeValue prototypeValue;
-    ZrValueInitAsRawObject(state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+    ZrCore_Value_InitAsRawObject(state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
     prototypeValue.type = ZR_VALUE_TYPE_OBJECT;
 
-    ZrModuleAddPubExport(state, module, typeName, &prototypeValue);
+    ZrCore_Module_AddPubExport(state, module, typeName, &prototypeValue);
 
     // 验证导出
-    const SZrTypeValue *exportedValue = ZrModuleGetPubExport(state, module, typeName);
+    const SZrTypeValue *exportedValue = ZrCore_Module_GetPubExport(state, module, typeName);
     if (exportedValue == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Prototype not found in module exports");
         return;
     }
 
     if (exportedValue->type != ZR_VALUE_TYPE_OBJECT) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Exported value type mismatch");
         return;
@@ -784,13 +784,13 @@ static void test_prototype_module_export(void) {
 
     SZrObjectPrototype *exportedPrototype = (SZrObjectPrototype *) ZR_CAST_OBJECT(state, exportedValue->value.object);
     if (exportedPrototype != prototype) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Exported prototype mismatch");
         return;
     }
 
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "Prototype Module Export");
 }
@@ -804,7 +804,7 @@ static void test_struct_field_offsets(void) {
 
     TEST_INFO("Struct field offsets", "Testing that struct fields have correct offsets in keyOffsetMap");
 
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12350, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12350, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Struct Field Offsets", "Failed to create global state");
@@ -816,7 +816,7 @@ static void test_struct_field_offsets(void) {
     // 读取测试文件
     char *testFile = find_test_file("test_prototype_struct.zr");
     if (testFile == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Struct Field Offsets", "Test file not found");
         return;
@@ -826,27 +826,27 @@ static void test_struct_field_offsets(void) {
     char *source = read_file_content(testFile, &fileSize);
     if (source == ZR_NULL) {
         free(testFile);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Struct Field Offsets", "Failed to read test file");
         return;
     }
 
     // 编译源代码
-    SZrString *sourceName = ZrStringCreateFromNative(state, testFile);
-    SZrFunction *func = ZrParserCompileSource(state, source, fileSize, sourceName);
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, testFile);
+    SZrFunction *func = ZrParser_Source_Compile(state, source, fileSize, sourceName);
 
     if (func == ZR_NULL) {
         free(source);
         free(testFile);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Struct Field Offsets", "Compilation failed");
         return;
     }
 
     // 验证prototypeData存储
-    TBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
+    TZrBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
                               func->prototypeDataLength > 0 && 
                               func->prototypeCount > 0);
     if (hasPrototypeData) {
@@ -856,21 +856,21 @@ static void test_struct_field_offsets(void) {
     }
     
     // 创建模块并加载prototype
-    struct SZrObjectModule *module = ZrModuleCreate(state);
+    struct SZrObjectModule *module = ZrCore_Module_Create(state);
     if (module != ZR_NULL) {
         TZrSize createdCount = 0;
         if (hasPrototypeData) {
-            createdCount = ZrModuleCreatePrototypesFromData(state, module, func);
+            createdCount = ZrCore_Module_CreatePrototypesFromData(state, module, func);
         }
         if (createdCount == 0) {
-            createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+            createdCount = ZrCore_Module_CreatePrototypesFromConstants(state, module, func);
         }
 
         if (createdCount > 0) {
             // 检查Vector3的字段偏移量
-            SZrString *vector3Name = ZrStringCreateFromNative(state, "Vector3");
+            SZrString *vector3Name = ZrCore_String_CreateFromNative(state, "Vector3");
             if (vector3Name != ZR_NULL) {
-                const SZrTypeValue *prototypeValue = ZrModuleGetPubExport(state, module, vector3Name);
+                const SZrTypeValue *prototypeValue = ZrCore_Module_GetPubExport(state, module, vector3Name);
                 if (prototypeValue != ZR_NULL && prototypeValue->type == ZR_VALUE_TYPE_OBJECT) {
                     SZrStructPrototype *structProto =
                             (SZrStructPrototype *) ZR_CAST_OBJECT(state, prototypeValue->value.object);
@@ -878,7 +878,7 @@ static void test_struct_field_offsets(void) {
                         // 检查keyOffsetMap中是否有字段
                         if (structProto->keyOffsetMap.elementCount > 0) {
                             printf("\n  Vector3 field offsets:\n");
-                            ZrDebugPrintPrototype(state, (SZrObjectPrototype *) structProto, stdout);
+                            ZrCore_Debug_PrintPrototype(state, (SZrObjectPrototype *) structProto, stdout);
                         }
                     }
                 }
@@ -888,7 +888,7 @@ static void test_struct_field_offsets(void) {
 
     free(source);
     free(testFile);
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "Struct Field Offsets");
@@ -904,7 +904,7 @@ static void test_prototype_inheritance_loading(void) {
     TEST_INFO("Prototype inheritance loading",
               "Testing that inheritance relationships are correctly loaded from constants");
 
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12351, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12351, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Inheritance Loading", "Failed to create global state");
@@ -916,7 +916,7 @@ static void test_prototype_inheritance_loading(void) {
     // 读取测试文件
     char *testFile = find_test_file("test_prototype_struct.zr");
     if (testFile == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Inheritance Loading", "Test file not found");
         return;
@@ -926,27 +926,27 @@ static void test_prototype_inheritance_loading(void) {
     char *source = read_file_content(testFile, &fileSize);
     if (source == ZR_NULL) {
         free(testFile);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Inheritance Loading", "Failed to read test file");
         return;
     }
 
     // 编译源代码
-    SZrString *sourceName = ZrStringCreateFromNative(state, testFile);
-    SZrFunction *func = ZrParserCompileSource(state, source, fileSize, sourceName);
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, testFile);
+    SZrFunction *func = ZrParser_Source_Compile(state, source, fileSize, sourceName);
 
     if (func == ZR_NULL) {
         free(source);
         free(testFile);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, "Prototype Inheritance Loading", "Compilation failed");
         return;
     }
 
     // 验证prototypeData存储
-    TBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
+    TZrBool hasPrototypeData = (func->prototypeData != ZR_NULL && 
                               func->prototypeDataLength > 0 && 
                               func->prototypeCount > 0);
     if (hasPrototypeData) {
@@ -956,33 +956,33 @@ static void test_prototype_inheritance_loading(void) {
     }
     
     // 创建模块并加载prototype
-    struct SZrObjectModule *module = ZrModuleCreate(state);
+    struct SZrObjectModule *module = ZrCore_Module_Create(state);
     if (module != ZR_NULL) {
         TZrSize createdCount = 0;
         if (hasPrototypeData) {
-            createdCount = ZrModuleCreatePrototypesFromData(state, module, func);
+            createdCount = ZrCore_Module_CreatePrototypesFromData(state, module, func);
         }
         if (createdCount == 0) {
-            createdCount = ZrModuleCreatePrototypesFromConstants(state, module, func);
+            createdCount = ZrCore_Module_CreatePrototypesFromConstants(state, module, func);
         }
 
         if (createdCount > 0) {
             // 检查Point3D的继承关系（应该继承自Point2D）
-            SZrString *point3DName = ZrStringCreateFromNative(state, "Point3D");
+            SZrString *point3DName = ZrCore_String_CreateFromNative(state, "Point3D");
             if (point3DName != ZR_NULL) {
-                const SZrTypeValue *prototypeValue = ZrModuleGetPubExport(state, module, point3DName);
+                const SZrTypeValue *prototypeValue = ZrCore_Module_GetPubExport(state, module, point3DName);
                 if (prototypeValue != ZR_NULL && prototypeValue->type == ZR_VALUE_TYPE_OBJECT) {
                     SZrObjectPrototype *prototype =
                             (SZrObjectPrototype *) ZR_CAST_OBJECT(state, prototypeValue->value.object);
                     if (prototype != ZR_NULL && prototype->superPrototype != ZR_NULL) {
-                        SZrString *point2DName = ZrStringCreateFromNative(state, "Point2D");
-                        const SZrTypeValue *point2DValue = ZrModuleGetPubExport(state, module, point2DName);
+                        SZrString *point2DName = ZrCore_String_CreateFromNative(state, "Point2D");
+                        const SZrTypeValue *point2DValue = ZrCore_Module_GetPubExport(state, module, point2DName);
                         if (point2DValue != ZR_NULL && point2DValue->type == ZR_VALUE_TYPE_OBJECT) {
                             SZrObjectPrototype *point2D =
                                     (SZrObjectPrototype *) ZR_CAST_OBJECT(state, point2DValue->value.object);
                             if (prototype->superPrototype == point2D) {
                                 printf("\n  Point3D correctly inherits from Point2D:\n");
-                                ZrDebugPrintPrototype(state, prototype, stdout);
+                                ZrCore_Debug_PrintPrototype(state, prototype, stdout);
                             }
                         }
                     }
@@ -993,7 +993,7 @@ static void test_prototype_inheritance_loading(void) {
 
     free(source);
     free(testFile);
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "Prototype Inheritance Loading");

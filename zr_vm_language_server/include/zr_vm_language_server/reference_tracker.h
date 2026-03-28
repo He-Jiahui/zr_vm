@@ -40,35 +40,35 @@ typedef struct SZrReferenceTracker {
 // 引用追踪器管理函数
 
 // 创建引用追踪器
-ZR_LANGUAGE_SERVER_API SZrReferenceTracker *ZrReferenceTrackerNew(SZrState *state, 
+ZR_LANGUAGE_SERVER_API SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, 
                                                                      SZrSymbolTable *symbolTable);
 
 // 释放引用追踪器
-ZR_LANGUAGE_SERVER_API void ZrReferenceTrackerFree(SZrState *state, SZrReferenceTracker *tracker);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_ReferenceTracker_Free(SZrState *state, SZrReferenceTracker *tracker);
 
 // 添加引用
-ZR_LANGUAGE_SERVER_API TBool ZrReferenceTrackerAddReference(SZrState *state, 
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_ReferenceTracker_AddReference(SZrState *state, 
                                                               SZrReferenceTracker *tracker,
                                                               SZrSymbol *symbol,
                                                               SZrFileRange location,
                                                               EZrReferenceType type);
 
 // 查找所有引用
-ZR_LANGUAGE_SERVER_API TBool ZrReferenceTrackerFindReferences(SZrState *state,
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_ReferenceTracker_FindReferences(SZrState *state,
                                                                SZrReferenceTracker *tracker,
                                                                SZrSymbol *symbol,
                                                                SZrArray *result);
 
 // 获取引用计数
-ZR_LANGUAGE_SERVER_API TZrSize ZrReferenceTrackerGetReferenceCount(SZrReferenceTracker *tracker,
+ZR_LANGUAGE_SERVER_API TZrSize ZrLanguageServer_ReferenceTracker_GetReferenceCount(SZrReferenceTracker *tracker,
                                                                     SZrSymbol *symbol);
 
 // 查找位置处的引用
-ZR_LANGUAGE_SERVER_API SZrReference *ZrReferenceTrackerFindReferenceAt(SZrReferenceTracker *tracker,
+ZR_LANGUAGE_SERVER_API SZrReference *ZrLanguageServer_ReferenceTracker_FindReferenceAt(SZrReferenceTracker *tracker,
                                                                         SZrFileRange position);
 
 // 获取符号的所有引用位置
-ZR_LANGUAGE_SERVER_API TBool ZrReferenceTrackerGetReferenceLocations(SZrState *state,
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_ReferenceTracker_GetReferenceLocations(SZrState *state,
                                                                      SZrReferenceTracker *tracker,
                                                                      SZrSymbol *symbol,
                                                                      SZrArray *result);

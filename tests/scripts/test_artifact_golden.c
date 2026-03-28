@@ -14,7 +14,7 @@ void tearDown(void) {}
 
 void test_basic_operations_artifacts_match_golden(void);
 
-static TBool is_text_artifact_extension(const TChar* extension) {
+static TZrBool is_text_artifact_extension(const TZrChar* extension) {
     if (extension == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -22,19 +22,19 @@ static TBool is_text_artifact_extension(const TChar* extension) {
     return strcmp(extension, ".zrs") == 0 || strcmp(extension, ".zri") == 0;
 }
 
-static TBool normalize_text_newlines(const TBytePtr buffer,
+static TZrBool normalize_text_newlines(const TZrBytePtr buffer,
                                      TZrSize length,
-                                     TBytePtr* outBuffer,
+                                     TZrBytePtr* outBuffer,
                                      TZrSize* outLength) {
     TZrSize sourceIndex = 0;
     TZrSize targetIndex = 0;
-    TBytePtr normalized;
+    TZrBytePtr normalized;
 
     if (buffer == ZR_NULL || outBuffer == ZR_NULL || outLength == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    normalized = (TBytePtr)malloc(length + 1);
+    normalized = (TZrBytePtr)malloc(length + 1);
     if (normalized == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -54,7 +54,7 @@ static TBool normalize_text_newlines(const TBytePtr buffer,
     return ZR_TRUE;
 }
 
-static TBool read_file_bytes(const TChar* path, TBytePtr* outBuffer, TZrSize* outLength) {
+static TZrBool read_file_bytes(const TZrChar* path, TZrBytePtr* outBuffer, TZrSize* outLength) {
     if (path == ZR_NULL || outBuffer == ZR_NULL || outLength == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -75,7 +75,7 @@ static TBool read_file_bytes(const TChar* path, TBytePtr* outBuffer, TZrSize* ou
         return ZR_FALSE;
     }
 
-    TBytePtr buffer = (TBytePtr)malloc((TZrSize)fileSize + 1);
+    TZrBytePtr buffer = (TZrBytePtr)malloc((TZrSize)fileSize + 1);
     if (buffer == ZR_NULL) {
         fclose(file);
         return ZR_FALSE;
@@ -94,11 +94,11 @@ static TBool read_file_bytes(const TChar* path, TBytePtr* outBuffer, TZrSize* ou
     return ZR_TRUE;
 }
 
-static void assert_file_matches_golden(const TChar* baseName, const TChar* subDir, const TChar* extension) {
-    TChar generatedPath[1024];
-    TChar goldenPath[1024];
-    TBytePtr generatedBuffer = ZR_NULL;
-    TBytePtr goldenBuffer = ZR_NULL;
+static void assert_file_matches_golden(const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension) {
+    TZrChar generatedPath[1024];
+    TZrChar goldenPath[1024];
+    TZrBytePtr generatedBuffer = ZR_NULL;
+    TZrBytePtr goldenBuffer = ZR_NULL;
     TZrSize generatedLength = 0;
     TZrSize goldenLength = 0;
 
@@ -109,8 +109,8 @@ static void assert_file_matches_golden(const TChar* baseName, const TChar* subDi
     TEST_ASSERT_TRUE_MESSAGE(read_file_bytes(goldenPath, &goldenBuffer, &goldenLength), goldenPath);
 
     if (is_text_artifact_extension(extension)) {
-        TBytePtr normalizedGenerated = ZR_NULL;
-        TBytePtr normalizedGolden = ZR_NULL;
+        TZrBytePtr normalizedGenerated = ZR_NULL;
+        TZrBytePtr normalizedGolden = ZR_NULL;
         TZrSize normalizedGeneratedLength = 0;
         TZrSize normalizedGoldenLength = 0;
 
@@ -137,11 +137,11 @@ static void assert_file_matches_golden(const TChar* baseName, const TChar* subDi
 }
 
 void test_basic_operations_artifacts_match_golden(void) {
-    const TChar* caseFileName = "artifact_baseline.zr";
-    const TChar* baseName = "artifact_baseline";
-    TChar sourcePath[1024];
+    const TZrChar* caseFileName = "artifact_baseline.zr";
+    const TZrChar* baseName = "artifact_baseline";
+    TZrChar sourcePath[1024];
     TZrSize sourceLength = 0;
-    TChar* source = ZR_NULL;
+    TZrChar* source = ZR_NULL;
     SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 

@@ -42,7 +42,7 @@ struct SZrGlobalState;
     {                                                                                                                  \
         struct SZrCallbackImpl_##TYPE argumentStruct;                                                                  \
         argumentStruct.TYPE = FUNCTION;                                                                                \
-        OUT_STATUS = ZrExceptionTryRun(STATE, ZrCallbackImpl_##TYPE, &argumentStruct);                                 \
+        OUT_STATUS = ZrCore_Exception_TryRun(STATE, ZrCallbackImpl_##TYPE, &argumentStruct);                                 \
     }
 
 #define ZR_CALLBACK_DECLARE_ONE_PARAM(TYPE, PARAM1_TYPE, PARAM1_NAME)                                                  \
@@ -64,7 +64,7 @@ struct SZrGlobalState;
         struct SZrCallbackImpl_##TYPE argumentStruct;                                                                  \
         argumentStruct.TYPE = FUNCTION;                                                                                \
         argumentStruct.PARAM1_NAME = PARAM1_VALUE;                                                                     \
-        OUT_STATUS = ZrExceptionTryRun(STATE, ZrCallbackImpl_##TYPE, &argumentStruct);                                 \
+        OUT_STATUS = ZrCore_Exception_TryRun(STATE, ZrCallbackImpl_##TYPE, &argumentStruct);                                 \
     }
 
 #define ZR_CALLBACK_DECLARE_TWO_PARAMS(TYPE, PARAM1_TYPE, PARAM1_NAME, PARAM2_TYPE, PARAM2_NAME)                       \
@@ -89,7 +89,7 @@ struct SZrGlobalState;
         argumentStruct.TYPE = FUNCTION;                                                                                \
         argumentStruct.PARAM1_NAME = PARAM1_VALUE;                                                                     \
         argumentStruct.PARAM2_NAME = PARAM2_VALUE;                                                                     \
-        OUT_STATUS = ZrExceptionTryRun(STATE, ZrCallbackImpl_##TYPE, &argumentStruct);                                 \
+        OUT_STATUS = ZrCore_Exception_TryRun(STATE, ZrCallbackImpl_##TYPE, &argumentStruct);                                 \
     }
 
 #define ZR_CALLBACK_DECLARE_N_TYPE_CREATOR_S(T, N) T N,
@@ -103,9 +103,9 @@ struct SZrGlobalState;
 /**
  * e.g.
  * #define TEST_PROVIDER(S,E)\
- * S(TInt32, param1)\
- * S(TInt32, param2)\
- * E(TInt32, param3)
+ * S(TZrInt32, param1)\
+ * S(TZrInt32, param2)\
+ * E(TZrInt32, param3)
  * you must make the last parameter be wrapped with macro `E`
  * other parameters must be wrapped with macro `S`
  * @param TYPE Callback function name, e.g. FOnTest
@@ -136,7 +136,7 @@ struct SZrGlobalState;
         struct SZrCallbackImpl_##TYPE argumentStruct;                                                                  \
         argumentStruct.TYPE = function;                                                                                \
         PARAM_PROVIDER(ZR_CALLBACK_CALL_N_IMPL_CREATOR_SE, ZR_CALLBACK_CALL_N_IMPL_CREATOR_SE)                         \
-        return ZrExceptionTryRun(state, ZrCallbackImpl_##TYPE, &argumentStruct);                                       \
+        return ZrCore_Exception_TryRun(state, ZrCallbackImpl_##TYPE, &argumentStruct);                                       \
     }
 
 

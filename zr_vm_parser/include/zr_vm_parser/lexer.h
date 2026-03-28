@@ -114,11 +114,11 @@ typedef enum EZrToken EZrToken;
 
 // Token 语义信息
 typedef struct TZrSemInfo {
-    TBool booleanValue;
-    TInt64 intValue;
-    TDouble floatValue;
+    TZrBool booleanValue;
+    TZrInt64 intValue;
+    TZrDouble floatValue;
     SZrString *stringValue;
-    TChar charValue;
+    TZrChar charValue;
 } TZrSemInfo;
 
 // Token 结构
@@ -130,39 +130,39 @@ typedef struct SZrToken {
 // 词法分析器状态
 typedef struct SZrLexState {
     SZrState *state;           // VM 状态
-    const TChar *source;        // 源代码
+    const TZrChar *source;        // 源代码
     TZrSize sourceLength;      // 源代码长度
     TZrSize currentPos;         // 当前位置
-    TInt32 currentChar;         // 当前字符
-    TInt32 lineNumber;          // 当前行号
-    TInt32 lastLine;            // 上一个 token 的行号
+    TZrInt32 currentChar;         // 当前字符
+    TZrInt32 lineNumber;          // 当前行号
+    TZrInt32 lastLine;            // 上一个 token 的行号
     SZrToken t;                 // 当前 token
     SZrToken lookahead;         // 前瞻 token
     // 保存下一个 token 的位置（当使用缓存的 lookahead 时，需要恢复到这个位置）
     TZrSize lookaheadPos;       // 下一个 token 的位置
-    TInt32 lookaheadChar;       // 下一个 token 的字符
-    TInt32 lookaheadLine;       // 下一个 token 的行号
-    TInt32 lookaheadLastLine;   // 下一个 token 的上一个 token 的行号
+    TZrInt32 lookaheadChar;       // 下一个 token 的字符
+    TZrInt32 lookaheadLine;       // 下一个 token 的行号
+    TZrInt32 lookaheadLastLine;   // 下一个 token 的上一个 token 的行号
     SZrString *sourceName;      // 源文件名
     // 缓冲区用于存储 token 文本
-    TChar *buffer;
+    TZrChar *buffer;
     TZrSize bufferSize;
     TZrSize bufferLength;
 } SZrLexState;
 
 // 初始化词法分析器
-ZR_PARSER_API void ZrLexerInit(SZrLexState *ls, SZrState *state, const TChar *source, TZrSize sourceLength, SZrString *sourceName);
+ZR_PARSER_API void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName);
 
 // 获取下一个 token
-ZR_PARSER_API void ZrLexerNext(SZrLexState *ls);
+ZR_PARSER_API void ZrParser_Lexer_Next(SZrLexState *ls);
 
 // 查看下一个 token（不消费）
-ZR_PARSER_API EZrToken ZrLexerLookahead(SZrLexState *ls);
+ZR_PARSER_API EZrToken ZrParser_Lexer_Lookahead(SZrLexState *ls);
 
 // 报告语法错误
-ZR_PARSER_API void ZrLexerSyntaxError(SZrLexState *ls, const TChar *msg);
+ZR_PARSER_API void ZrParser_Lexer_SyntaxError(SZrLexState *ls, const TZrChar *msg);
 
 // Token 转字符串（用于错误消息）
-ZR_PARSER_API const TChar *ZrLexerTokenToString(SZrLexState *ls, EZrToken token);
+ZR_PARSER_API const TZrChar *ZrParser_Lexer_TokenToString(SZrLexState *ls, EZrToken token);
 
 #endif //ZR_VM_PARSER_LEXER_H

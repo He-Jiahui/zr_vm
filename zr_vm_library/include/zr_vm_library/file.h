@@ -37,29 +37,29 @@ typedef enum EZrLibrary_File_Mode EZrLibrary_File_Mode;
 struct ZR_STRUCT_ALIGN SZrLibrary_File_Reader {
     TZrSize size;
     TZrLibrary_File_Ptr file;
-    TChar buffer[ZR_LIBRARY_FILE_BUFFER_SIZE];
+    TZrChar buffer[ZR_LIBRARY_FILE_BUFFER_SIZE];
 };
 
 typedef struct SZrLibrary_File_Reader SZrLibrary_File_Reader;
 
-ZR_LIBRARY_API EZrLibrary_File_Exist ZrLibrary_File_Exist(TNativeString path);
+ZR_LIBRARY_API EZrLibrary_File_Exist ZrLibrary_File_Exist(TZrNativeString path);
 
-ZR_LIBRARY_API TBool ZrLibrary_File_GetDirectory(TNativeString path, ZR_OUT TNativeString directory);
+ZR_LIBRARY_API TZrBool ZrLibrary_File_GetDirectory(TZrNativeString path, ZR_OUT TZrNativeString directory);
 
-ZR_LIBRARY_API void ZrLibrary_File_PathJoin(TNativeString path1, TNativeString path2, ZR_OUT TNativeString result);
+ZR_LIBRARY_API void ZrLibrary_File_PathJoin(TZrNativeString path1, TZrNativeString path2, ZR_OUT TZrNativeString result);
 
 
-ZR_LIBRARY_API TNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TNativeString path);
+ZR_LIBRARY_API TZrNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TZrNativeString path);
 
-ZR_LIBRARY_API SZrLibrary_File_Reader *ZrLibrary_File_OpenRead(SZrGlobalState *global, TNativeString path,
-                                                               TBool isBinary);
+ZR_LIBRARY_API SZrLibrary_File_Reader *ZrLibrary_File_OpenRead(SZrGlobalState *global, TZrNativeString path,
+                                                               TZrBool isBinary);
 
 ZR_LIBRARY_API void ZrLibrary_File_CloseRead(SZrGlobalState *global, SZrLibrary_File_Reader *reader);
 
-ZR_LIBRARY_API TBool ZrLibrary_File_SourceLoadImplementation(SZrState *state, TNativeString path, TNativeString md5,
+ZR_LIBRARY_API TZrBool ZrLibrary_File_SourceLoadImplementation(SZrState *state, TZrNativeString path, TZrNativeString md5,
                                                              SZrIo *io);
 
-ZR_LIBRARY_API TBytePtr ZrLibrary_File_SourceReadImplementation(SZrState *state, TZrPtr reader, ZR_OUT TZrSize *size);
+ZR_LIBRARY_API TZrBytePtr ZrLibrary_File_SourceReadImplementation(SZrState *state, TZrPtr reader, ZR_OUT TZrSize *size);
 
 ZR_LIBRARY_API void ZrLibrary_File_SourceCloseImplementation(SZrState *state, TZrPtr reader);
 #endif // ZR_VM_LIBRARY_FILE_H

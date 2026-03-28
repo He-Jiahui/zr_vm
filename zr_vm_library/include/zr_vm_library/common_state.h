@@ -19,9 +19,9 @@ struct ZR_STRUCT_ALIGN SZrLibrary_CommonState {
 typedef struct SZrLibrary_CommonState SZrLibrary_CommonState;
 
 ZR_LIBRARY_API TZrPtr ZrLibrary_CommonState_BuiltinAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize,
-                                                             TZrSize newSize, TInt64 flag);
+                                                             TZrSize newSize, TZrInt64 flag);
 
-ZR_LIBRARY_API SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TNativeString configFilePath);
+ZR_LIBRARY_API SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TZrNativeString configFilePath);
 
 ZR_LIBRARY_API void ZrLibrary_CommonState_CommonGlobalState_Free(SZrGlobalState *globalState);
 

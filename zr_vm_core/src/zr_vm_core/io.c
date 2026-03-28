@@ -9,14 +9,14 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/exception.h"
 
-#define ZR_IO_MALLOC_NATIVE_DATA(GLOBAL, SIZE) ZrMemoryRawMallocWithType(GLOBAL, (SIZE), ZR_MEMORY_NATIVE_TYPE_IO);
+#define ZR_IO_MALLOC_NATIVE_DATA(GLOBAL, SIZE) ZrCore_Memory_RawMallocWithType(GLOBAL, (SIZE), ZR_MEMORY_NATIVE_TYPE_IO);
 #define ZR_IO_FREE_NATIVE_DATA(GLOBAL, DATA, SIZE)                                                                     \
-    ZrMemoryRawFreeWithType(GLOBAL, (DATA), (SIZE), ZR_MEMORY_NATIVE_TYPE_IO);
-static TBool ZrIoRefill(SZrIo *io) {
+    ZrCore_Memory_RawFreeWithType(GLOBAL, (DATA), (SIZE), ZR_MEMORY_NATIVE_TYPE_IO);
+static TZrBool io_refill(SZrIo *io) {
     SZrState *state = io->state;
     TZrSize readSize = 0;
     ZR_THREAD_UNLOCK(state);
-    TBytePtr buffer = io->read(state, io->customData, &readSize);
+    TZrBytePtr buffer = io->read(state, io->customData, &readSize);
     ZR_THREAD_LOCK(state);
     if (buffer == ZR_NULL || readSize == 0) {
         return ZR_FALSE;
@@ -26,99 +26,99 @@ static TBool ZrIoRefill(SZrIo *io) {
     return ZR_TRUE;
 }
 
-static TInt32 ZrIoReadChar(SZrIo *io) {
+static TZrInt32 io_read_char(SZrIo *io) {
     if (io->remained == 0) {
-        if (!ZrIoRefill(io)) {
+        if (!io_refill(io)) {
             // EOF = -1
             return ZR_IO_EOF;
         }
     }
     // BYTE > 0 && BYTE < 256
-    TInt32 c = *io->pointer;
+    TZrInt32 c = *io->pointer;
     io->remained--;
     io->pointer++;
     return c;
 }
 
-static ZR_FORCE_INLINE TZrSize ZrIoReadSize(SZrIo *io) {
+static ZR_FORCE_INLINE TZrSize io_read_size(SZrIo *io) {
     TZrSize size;
-    ZrIoRead(io, (TBytePtr) &size, sizeof(size));
+    ZrCore_Io_Read(io, (TZrBytePtr) &size, sizeof(size));
     return size;
 }
 
-static ZR_FORCE_INLINE TFloat64 ZrIoReadFloat(SZrIo *io) {
-    TFloat64 value;
-    ZrIoRead(io, (TBytePtr) &value, sizeof(value));
+static ZR_FORCE_INLINE TZrFloat64 io_read_float(SZrIo *io) {
+    TZrFloat64 value;
+    ZrCore_Io_Read(io, (TZrBytePtr) &value, sizeof(value));
     return value;
 }
 
-static ZR_FORCE_INLINE TInt64 ZrIoReadInt(SZrIo *io) {
-    TInt64 value;
-    ZrIoRead(io, (TBytePtr) &value, sizeof(value));
+static ZR_FORCE_INLINE TZrInt64 io_read_int(SZrIo *io) {
+    TZrInt64 value;
+    ZrCore_Io_Read(io, (TZrBytePtr) &value, sizeof(value));
     return value;
 }
 
-static ZR_FORCE_INLINE TUInt64 ZrIoReadUInt(SZrIo *io) {
-    TUInt64 value;
-    ZrIoRead(io, (TBytePtr) &value, sizeof(value));
+static ZR_FORCE_INLINE TZrUInt64 io_read_u_int(SZrIo *io) {
+    TZrUInt64 value;
+    ZrCore_Io_Read(io, (TZrBytePtr) &value, sizeof(value));
     return value;
 }
 
-#define ZR_IO_READ_RAW(IO, VALUE, SIZE) ZrIoRead(IO, &(VALUE), SIZE);
+#define ZR_IO_READ_RAW(IO, VALUE, SIZE) ZrCore_Io_Read(IO, &(VALUE), SIZE);
 
-#define ZR_IO_READ_NATIVE_TYPE(IO, DATA, TYPE) ZrIoRead(IO, (TBytePtr) & (DATA), sizeof(TYPE))
+#define ZR_IO_READ_NATIVE_TYPE(IO, DATA, TYPE) ZrCore_Io_Read(IO, (TZrBytePtr) & (DATA), sizeof(TYPE))
 
 
-static SZrString *ZrIoReadStringWithLength(SZrIo *io) {
+static SZrString *io_read_string_with_length(SZrIo *io) {
     SZrGlobalState *global = io->state->global;
-    TZrSize length = ZrIoReadSize(io);
+    TZrSize length = io_read_size(io);
     if (length == 0) {
         return ZR_NULL;
     }
-    TNativeString nativeString = ZrMemoryRawMallocWithType(global, length + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
-    ZrIoRead(io, (TBytePtr) nativeString, length);
+    TZrNativeString nativeString = ZrCore_Memory_RawMallocWithType(global, length + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    ZrCore_Io_Read(io, (TZrBytePtr) nativeString, length);
     nativeString[length] = '\0';
-    SZrString *string = ZrStringCreate(io->state, nativeString, length);
-    ZrMemoryRawFreeWithType(global, nativeString, length + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    SZrString *string = ZrCore_String_Create(io->state, nativeString, length);
+    ZrCore_Memory_RawFreeWithType(global, nativeString, length + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
     return string;
 }
 
-static void ZrIoReadImports(SZrIo *io, SZrIoImport *imports, TZrSize count) {
+static void io_read_imports(SZrIo *io, SZrIoImport *imports, TZrSize count) {
     // SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoImport *import = &imports[i];
-        import->name = ZrIoReadStringWithLength(io);
-        import->md5 = ZrIoReadStringWithLength(io);
+        import->name = io_read_string_with_length(io);
+        import->md5 = io_read_string_with_length(io);
     }
 }
 
-static void ZrIoReadValue(SZrIo *io, EZrValueType type, TZrPureValue *value) {
+static void io_read_value(SZrIo *io, EZrValueType type, TZrPureValue *value) {
     ZR_UNUSED_PARAMETER(io);
     switch (type) {
         case ZR_VALUE_TYPE_NULL: {
             value->nativeObject.nativeBool = ZR_FALSE;
         } break;
         case ZR_VALUE_TYPE_BOOL: {
-            value->nativeObject.nativeBool = ZrIoReadChar(io);
+            value->nativeObject.nativeBool = io_read_char(io);
         } break;
         case ZR_VALUE_TYPE_FLOAT:
         case ZR_VALUE_TYPE_DOUBLE: {
-            value->nativeObject.nativeDouble = ZrIoReadFloat(io);
+            value->nativeObject.nativeDouble = io_read_float(io);
         } break;
         case ZR_VALUE_TYPE_INT8:
         case ZR_VALUE_TYPE_INT16:
         case ZR_VALUE_TYPE_INT32:
         case ZR_VALUE_TYPE_INT64: {
-            value->nativeObject.nativeInt64 = ZrIoReadInt(io);
+            value->nativeObject.nativeInt64 = io_read_int(io);
         } break;
         case ZR_VALUE_TYPE_UINT8:
         case ZR_VALUE_TYPE_UINT16:
         case ZR_VALUE_TYPE_UINT32:
         case ZR_VALUE_TYPE_UINT64: {
-            value->nativeObject.nativeUInt64 = ZrIoReadUInt(io);
+            value->nativeObject.nativeUInt64 = io_read_u_int(io);
         } break;
         case ZR_VALUE_TYPE_STRING: {
-            value->object = ZR_CAST_RAW_OBJECT_AS_SUPER(ZrIoReadStringWithLength(io));
+            value->object = ZR_CAST_RAW_OBJECT_AS_SUPER(io_read_string_with_length(io));
         } break;
         default: {
             // todo:
@@ -126,101 +126,101 @@ static void ZrIoReadValue(SZrIo *io, EZrValueType type, TZrPureValue *value) {
     }
 }
 
-static void ZrIoReadField(SZrIo *io, SZrIoField *field) { field->name = ZrIoReadStringWithLength(io); }
+static void io_read_field(SZrIo *io, SZrIoField *field) { field->name = io_read_string_with_length(io); }
 
-static void ZrIoReadReferences(SZrIo *io, SZrIoReference *references, TZrSize count) {
+static void io_read_references(SZrIo *io, SZrIoReference *references, TZrSize count) {
     // SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoReference *reference = &references[i];
-        reference->referenceModuleName = ZrIoReadStringWithLength(io);
-        reference->referenceModuleMd5 = ZrIoReadStringWithLength(io);
+        reference->referenceModuleName = io_read_string_with_length(io);
+        reference->referenceModuleMd5 = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, reference->referenceIndex, TZrSize);
     }
 }
 
-static void ZrIoReadFunctionLocalVariables(SZrIo *io, SZrIoFunctionLocalVariable *variables, TZrSize count) {
+static void io_read_function_local_variables(SZrIo *io, SZrIoFunctionLocalVariable *variables, TZrSize count) {
     // SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionLocalVariable *variable = &variables[i];
-        ZR_IO_READ_NATIVE_TYPE(io, variable->instructionStartIndex, TUInt64);
-        ZR_IO_READ_NATIVE_TYPE(io, variable->instructionEndIndex, TUInt64);
-        ZR_IO_READ_NATIVE_TYPE(io, variable->startLine, TUInt64);
-        ZR_IO_READ_NATIVE_TYPE(io, variable->endLine, TUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->instructionStartIndex, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->instructionEndIndex, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->startLine, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->endLine, TZrUInt64);
     }
 }
 
-static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count);
-static void ZrIoReadFunctionConstantVariables(SZrIo *io, SZrIoFunctionConstantVariable *variables, TZrSize count) {
+static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count);
+static void io_read_function_constant_variables(SZrIo *io, SZrIoFunctionConstantVariable *variables, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionConstantVariable *variable = &variables[i];
-        ZR_IO_READ_NATIVE_TYPE(io, variable->type, TUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->type, TZrUInt32);
         variable->hasFunctionValue = ZR_FALSE;
         variable->functionValue = ZR_NULL;
         if (variable->type == ZR_VALUE_TYPE_FUNCTION || variable->type == ZR_VALUE_TYPE_CLOSURE) {
-            ZR_IO_READ_NATIVE_TYPE(io, variable->hasFunctionValue, TBool);
+            ZR_IO_READ_NATIVE_TYPE(io, variable->hasFunctionValue, TZrBool);
             if (variable->hasFunctionValue) {
                 variable->functionValue = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction));
-                ZrIoReadFunctions(io, variable->functionValue, 1);
+                io_read_functions(io, variable->functionValue, 1);
             }
         } else {
-            ZrIoReadValue(io, variable->type, &variable->value);
+            io_read_value(io, variable->type, &variable->value);
         }
-        ZR_IO_READ_NATIVE_TYPE(io, variable->startLine, TUInt64);
-        ZR_IO_READ_NATIVE_TYPE(io, variable->endLine, TUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->startLine, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->endLine, TZrUInt64);
     }
 }
 
-static void ZrIoReadFunctionExportedVariables(SZrIo *io, SZrIoFunctionExportedVariable *variables, TZrSize count) {
+static void io_read_function_exported_variables(SZrIo *io, SZrIoFunctionExportedVariable *variables, TZrSize count) {
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionExportedVariable *variable = &variables[i];
-        variable->name = ZrIoReadStringWithLength(io);
-        ZR_IO_READ_NATIVE_TYPE(io, variable->stackSlot, TUInt32);
-        ZR_IO_READ_NATIVE_TYPE(io, variable->accessModifier, TUInt8);
+        variable->name = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->stackSlot, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->accessModifier, TZrUInt8);
     }
 }
 
-static void ZrIoReadClasses(SZrIo *io, SZrIoClass *classes, TZrSize count);
-static void ZrIoReadStructs(SZrIo *io, SZrIoStruct *structs, TZrSize count);
+static void io_read_classes(SZrIo *io, SZrIoClass *classes, TZrSize count);
+static void io_read_structs(SZrIo *io, SZrIoStruct *structs, TZrSize count);
 
-static void ZrIoReadFunctionClosures(SZrIo *io, SZrIoFunctionClosure *closures, TZrSize count) {
+static void io_read_function_closures(SZrIo *io, SZrIoFunctionClosure *closures, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionClosure *closure = &closures[i];
         closure->subFunction = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction));
-        ZrIoReadFunctions(io, closure->subFunction, 1);
+        io_read_functions(io, closure->subFunction, 1);
         // todo:
     }
 }
 
-static void ZrIoReadFunctionDebugInfos(SZrIo *io, SZrIoFunctionDebugInfo *debugInfos, TZrSize count) {
+static void io_read_function_debug_infos(SZrIo *io, SZrIoFunctionDebugInfo *debugInfos, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionDebugInfo *debugInfo = &debugInfos[i];
         ZR_IO_READ_NATIVE_TYPE(io, debugInfo->instructionsLength, TZrSize);
-        debugInfo->instructionsLine = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(TUInt64) * debugInfo->instructionsLength);
-        ZrIoRead(io, (TBytePtr) debugInfo->instructionsLine, sizeof(TUInt64) * debugInfo->instructionsLength);
+        debugInfo->instructionsLine = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(TZrUInt64) * debugInfo->instructionsLength);
+        ZrCore_Io_Read(io, (TZrBytePtr) debugInfo->instructionsLine, sizeof(TZrUInt64) * debugInfo->instructionsLength);
         // todo:
     }
 }
 
 
-static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count) {
+static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunction *function = &functions[i];
-        function->name = ZrIoReadStringWithLength(io);
-        ZR_IO_READ_NATIVE_TYPE(io, function->startLine, TUInt64);
-        ZR_IO_READ_NATIVE_TYPE(io, function->endLine, TUInt64);
+        function->name = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, function->startLine, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, function->endLine, TZrUInt64);
         ZR_IO_READ_NATIVE_TYPE(io, function->parametersLength, TZrSize);
-        ZR_IO_READ_NATIVE_TYPE(io, function->hasVarArgs, TUInt64);
-        ZR_IO_READ_NATIVE_TYPE(io, function->stackSize, TUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, function->hasVarArgs, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, function->stackSize, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, function->instructionsLength, TZrSize);
         // read instructions ...
         if (function->instructionsLength > 0) {
             function->instructions =
                     ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(TZrInstruction) * function->instructionsLength);
-            ZrIoRead(io, (TBytePtr) function->instructions, sizeof(TZrInstruction) * function->instructionsLength);
+            ZrCore_Io_Read(io, (TZrBytePtr) function->instructions, sizeof(TZrInstruction) * function->instructionsLength);
         } else {
             function->instructions = ZR_NULL;
         }
@@ -228,7 +228,7 @@ static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         if (function->localVariablesLength > 0) {
             function->localVariables = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionLocalVariable) *
                                                                                 function->localVariablesLength);
-            ZrIoReadFunctionLocalVariables(io, function->localVariables, function->localVariablesLength);
+            io_read_function_local_variables(io, function->localVariables, function->localVariablesLength);
         } else {
             function->localVariables = ZR_NULL;
         }
@@ -236,7 +236,7 @@ static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         if (function->constantVariablesLength > 0) {
             function->constantVariables = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionConstantVariable) *
                                                                                    function->constantVariablesLength);
-            ZrIoReadFunctionConstantVariables(io, function->constantVariables, function->constantVariablesLength);
+            io_read_function_constant_variables(io, function->constantVariables, function->constantVariablesLength);
         } else {
             function->constantVariables = ZR_NULL;
         }
@@ -244,7 +244,7 @@ static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         if (function->exportedVariablesLength > 0) {
             function->exportedVariables = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionExportedVariable) *
                                                                                    function->exportedVariablesLength);
-            ZrIoReadFunctionExportedVariables(io, function->exportedVariables, function->exportedVariablesLength);
+            io_read_function_exported_variables(io, function->exportedVariables, function->exportedVariablesLength);
         } else {
             function->exportedVariables = ZR_NULL;
         }
@@ -262,7 +262,7 @@ static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         if (classCount > 0) {
             function->classes = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoClass) * classCount);
             if (function->classes != ZR_NULL) {
-                ZrIoReadClasses(io, function->classes, classCount);
+                io_read_classes(io, function->classes, classCount);
             }
         }
 
@@ -270,14 +270,14 @@ static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         if (structCount > 0) {
             function->structs = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoStruct) * structCount);
             if (function->structs != ZR_NULL) {
-                ZrIoReadStructs(io, function->structs, structCount);
+                io_read_structs(io, function->structs, structCount);
             }
         }
         ZR_IO_READ_NATIVE_TYPE(io, function->closuresLength, TZrSize);
         if (function->closuresLength > 0) {
             function->closures = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionClosure) *
                                                                           function->closuresLength);
-            ZrIoReadFunctionClosures(io, function->closures, function->closuresLength);
+            io_read_function_closures(io, function->closures, function->closuresLength);
         } else {
             function->closures = ZR_NULL;
         }
@@ -285,52 +285,52 @@ static void ZrIoReadFunctions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         if (function->debugInfosLength > 0) {
             function->debugInfos =
                     ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionDebugInfo) * function->debugInfosLength);
-            ZrIoReadFunctionDebugInfos(io, function->debugInfos, function->debugInfosLength);
+            io_read_function_debug_infos(io, function->debugInfos, function->debugInfosLength);
         } else {
             function->debugInfos = ZR_NULL;
         }
     }
 }
 
-static void ZrIoReadMethod(SZrIo *io, SZrIoMethod *method) {
+static void io_read_method(SZrIo *io, SZrIoMethod *method) {
     SZrGlobalState *global = io->state->global;
-    method->name = ZrIoReadStringWithLength(io);
+    method->name = io_read_string_with_length(io);
     ZR_IO_READ_NATIVE_TYPE(io, method->functionsLength, TZrSize);
     method->functions = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction) * method->functionsLength);
-    ZrIoReadFunctions(io, method->functions, method->functionsLength);
+    io_read_functions(io, method->functions, method->functionsLength);
 }
 
 
-static void ZrIoReadProperty(SZrIo *io, SZrIoProperty *property) {
+static void io_read_property(SZrIo *io, SZrIoProperty *property) {
     SZrGlobalState *global = io->state->global;
-    property->name = ZrIoReadStringWithLength(io);
+    property->name = io_read_string_with_length(io);
     // todo: use enum
-    ZR_IO_READ_NATIVE_TYPE(io, property->propertyType, TUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, property->propertyType, TZrUInt32);
     property->getter = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction));
-    ZrIoReadFunctions(io, property->getter, 1);
+    io_read_functions(io, property->getter, 1);
     property->setter = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction));
-    ZrIoReadFunctions(io, property->setter, 1);
+    io_read_functions(io, property->setter, 1);
 }
 
-static void ZrIoReadMeta(SZrIo *io, SZrIoMeta *meta) {
+static void io_read_meta(SZrIo *io, SZrIoMeta *meta) {
     SZrGlobalState *global = io->state->global;
     // todo: use enum
-    ZR_IO_READ_NATIVE_TYPE(io, meta->metaType, TUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, meta->metaType, TZrUInt32);
     ZR_IO_READ_NATIVE_TYPE(io, meta->functionsLength, TZrSize);
     meta->functions = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction) * meta->functionsLength);
-    ZrIoReadFunctions(io, meta->functions, meta->functionsLength);
+    io_read_functions(io, meta->functions, meta->functionsLength);
 }
 
-static void ZrIoReadEnumFields(SZrIo *io, SZrIoEnumField *fields, TZrSize count, EZrValueType valueType) {
+static void io_read_enum_fields(SZrIo *io, SZrIoEnumField *fields, TZrSize count, EZrValueType valueType) {
     // SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoEnumField *field = &fields[i];
-        field->name = ZrIoReadStringWithLength(io);
-        ZrIoReadValue(io, valueType, &field->value);
+        field->name = io_read_string_with_length(io);
+        io_read_value(io, valueType, &field->value);
     }
 }
 
-static void ZrIoReadMemberDeclares(SZrIo *io, SZrIoMemberDeclare *declares, TZrSize count) {
+static void io_read_member_declares(SZrIo *io, SZrIoMemberDeclare *declares, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoMemberDeclare *declare = &declares[i];
@@ -338,25 +338,25 @@ static void ZrIoReadMemberDeclares(SZrIo *io, SZrIoMemberDeclare *declares, TZrS
         ZR_IO_READ_NATIVE_TYPE(io, declare->type, EZrIoMemberDeclareType);
         switch (declare->type) {
             case ZR_IO_MEMBER_DECLARE_TYPE_METHOD: {
-                // ZrIoReadFunctions(io, declare->function, 1);
+                // io_read_functions(io, declare->function, 1);
                 declare->method = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoMethod));
-                ZrIoReadMethod(io, declare->method);
+                io_read_method(io, declare->method);
             } break;
             case ZR_IO_MEMBER_DECLARE_TYPE_META: {
                 declare->meta = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoMeta));
-                ZrIoReadMeta(io, declare->meta);
+                io_read_meta(io, declare->meta);
             } break;
             case ZR_IO_MEMBER_DECLARE_TYPE_PROPERTY: {
                 declare->property = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoProperty));
-                ZrIoReadProperty(io, declare->property);
+                io_read_property(io, declare->property);
             } break;
             case ZR_IO_MEMBER_DECLARE_TYPE_ENUM: {
                 declare->enumField = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoEnumField));
-                ZrIoReadEnumFields(io, declare->enumField, 1, ZR_VALUE_TYPE_UINT64);
+                io_read_enum_fields(io, declare->enumField, 1, ZR_VALUE_TYPE_UINT64);
             } break;
             case ZR_IO_MEMBER_DECLARE_TYPE_FIELD: {
                 declare->field = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoField));
-                ZrIoReadField(io, declare->field);
+                io_read_field(io, declare->field);
             } break;
             default:
                 break;
@@ -365,64 +365,64 @@ static void ZrIoReadMemberDeclares(SZrIo *io, SZrIoMemberDeclare *declares, TZrS
     }
 }
 
-static void ZrIoReadClasses(SZrIo *io, SZrIoClass *classes, TZrSize count) {
+static void io_read_classes(SZrIo *io, SZrIoClass *classes, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoClass *class = &classes[i];
-        class->name = ZrIoReadStringWithLength(io);
+        class->name = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, class->superClassLength, TZrSize);
         class->superClasses = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoReference) * class->superClassLength);
-        ZrIoReadReferences(io, class->superClasses, class->superClassLength);
+        io_read_references(io, class->superClasses, class->superClassLength);
         ZR_IO_READ_NATIVE_TYPE(io, class->genericParametersLength, TZrSize);
         ZR_IO_READ_NATIVE_TYPE(io, class->declaresLength, TZrSize);
         class->declares = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoMemberDeclare) * class->declaresLength);
-        ZrIoReadMemberDeclares(io, class->declares, class->declaresLength);
+        io_read_member_declares(io, class->declares, class->declaresLength);
     }
 }
 
-static void ZrIoReadStructs(SZrIo *io, SZrIoStruct *structs, TZrSize count) {
+static void io_read_structs(SZrIo *io, SZrIoStruct *structs, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoStruct *struct_ = &structs[i];
-        struct_->name = ZrIoReadStringWithLength(io);
+        struct_->name = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, struct_->superStructLength, TZrSize);
         struct_->superStructs = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoReference) * struct_->superStructLength);
-        ZrIoReadReferences(io, struct_->superStructs, struct_->superStructLength);
+        io_read_references(io, struct_->superStructs, struct_->superStructLength);
         ZR_IO_READ_NATIVE_TYPE(io, struct_->genericParametersLength, TZrSize);
         ZR_IO_READ_NATIVE_TYPE(io, struct_->declaresLength, TZrSize);
         struct_->declares = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoMemberDeclare) * struct_->declaresLength);
-        ZrIoReadMemberDeclares(io, struct_->declares, struct_->declaresLength);
+        io_read_member_declares(io, struct_->declares, struct_->declaresLength);
     }
 }
 
-static void ZrIoReadInterfaces(SZrIo *io, SZrIoInterface *interfaces, TZrSize count) {
+static void io_read_interfaces(SZrIo *io, SZrIoInterface *interfaces, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoInterface *interface = &interfaces[i];
-        interface->name = ZrIoReadStringWithLength(io);
+        interface->name = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, interface->superInterfaceLength, TZrSize);
         interface->superInterfaces =
                 ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoReference) * interface->superInterfaceLength);
-        ZrIoReadReferences(io, interface->superInterfaces, interface->superInterfaceLength);
+        io_read_references(io, interface->superInterfaces, interface->superInterfaceLength);
         ZR_IO_READ_NATIVE_TYPE(io, interface->genericParametersLength, TZrSize);
         ZR_IO_READ_NATIVE_TYPE(io, interface->declaresLength, TZrSize);
         interface->declares = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoMemberDeclare) * interface->declaresLength);
-        ZrIoReadMemberDeclares(io, interface->declares, interface->declaresLength);
+        io_read_member_declares(io, interface->declares, interface->declaresLength);
     }
 }
 
-static void ZrIoReadEnums(SZrIo *io, SZrIoEnum *enums, TZrSize count) {
+static void io_read_enums(SZrIo *io, SZrIoEnum *enums, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoEnum *enum_ = &enums[i];
-        enum_->name = ZrIoReadStringWithLength(io);
+        enum_->name = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, enum_->valueType, EZrValueType);
         ZR_IO_READ_NATIVE_TYPE(io, enum_->fieldsLength, TZrSize);
         enum_->fields = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoField) * enum_->fieldsLength);
-        ZrIoReadEnumFields(io, enum_->fields, enum_->fieldsLength, enum_->valueType);
+        io_read_enum_fields(io, enum_->fields, enum_->fieldsLength, enum_->valueType);
     }
 }
-static void ZrIoReadModuleDeclares(SZrIo *io, SZrIoModuleDeclare *declares, TZrSize count) {
+static void io_read_module_declares(SZrIo *io, SZrIoModuleDeclare *declares, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoModuleDeclare *declare = &declares[i];
@@ -431,27 +431,27 @@ static void ZrIoReadModuleDeclares(SZrIo *io, SZrIoModuleDeclare *declares, TZrS
         switch (declare->type) {
             case ZR_IO_MODULE_DECLARE_TYPE_CLASS: {
                 declare->class = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoClass));
-                ZrIoReadClasses(io, declare->class, 1);
+                io_read_classes(io, declare->class, 1);
             } break;
             case ZR_IO_MODULE_DECLARE_TYPE_FUNCTION: {
                 declare->function = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction));
-                ZrIoReadFunctions(io, declare->function, 1);
+                io_read_functions(io, declare->function, 1);
             } break;
             case ZR_IO_MODULE_DECLARE_TYPE_STRUCT: {
                 declare->struct_ = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoStruct));
-                ZrIoReadStructs(io, declare->struct_, 1);
+                io_read_structs(io, declare->struct_, 1);
             } break;
             case ZR_IO_MODULE_DECLARE_TYPE_INTERFACE: {
                 declare->interface = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoInterface));
-                ZrIoReadInterfaces(io, declare->interface, 1);
+                io_read_interfaces(io, declare->interface, 1);
             } break;
             case ZR_IO_MODULE_DECLARE_TYPE_ENUM: {
                 declare->enum_ = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoEnum));
-                ZrIoReadEnums(io, declare->enum_, 1);
+                io_read_enums(io, declare->enum_, 1);
             } break;
             case ZR_IO_MODULE_DECLARE_TYPE_FIELD: {
                 declare->field = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoField));
-                ZrIoReadField(io, declare->field);
+                io_read_field(io, declare->field);
             } break;
             default:
                 break;
@@ -459,24 +459,24 @@ static void ZrIoReadModuleDeclares(SZrIo *io, SZrIoModuleDeclare *declares, TZrS
     }
 }
 
-static void ZrIoReadModules(SZrIo *io, SZrIoModule *modules, TZrSize count) {
+static void io_read_modules(SZrIo *io, SZrIoModule *modules, TZrSize count) {
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoModule *module = &modules[i];
-        module->name = ZrIoReadStringWithLength(io);
-        module->md5 = ZrIoReadStringWithLength(io);
+        module->name = io_read_string_with_length(io);
+        module->md5 = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, module->importsLength, TZrSize);
         module->imports = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoImport) * module->importsLength);
-        ZrIoReadImports(io, module->imports, module->importsLength);
+        io_read_imports(io, module->imports, module->importsLength);
         ZR_IO_READ_NATIVE_TYPE(io, module->declaresLength, TZrSize);
         module->declares = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoModuleDeclare) * module->declaresLength);
-        ZrIoReadModuleDeclares(io, module->declares, module->declaresLength);
+        io_read_module_declares(io, module->declares, module->declaresLength);
         module->entryFunction = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction));
-        ZrIoReadFunctions(io, module->entryFunction, 1);
+        io_read_functions(io, module->entryFunction, 1);
     }
 }
 
-SZrIo *ZrIoNew(struct SZrGlobalState *global) {
+SZrIo *ZrCore_Io_New(struct SZrGlobalState *global) {
     SZrIo *io = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIo));
     io->state = ZR_NULL;
     io->read = ZR_NULL;
@@ -488,13 +488,13 @@ SZrIo *ZrIoNew(struct SZrGlobalState *global) {
     return io;
 }
 
-void ZrIoFree(struct SZrGlobalState *global, SZrIo *io) {
+void ZrCore_Io_Free(struct SZrGlobalState *global, SZrIo *io) {
     if (io != ZR_NULL) {
         ZR_IO_FREE_NATIVE_DATA(global, io, sizeof(SZrIo));
     }
 }
 
-void ZrIoInit(SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close, TZrPtr customData) {
+void ZrCore_Io_Init(SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close, TZrPtr customData) {
     io->state = state;
     io->read = read;
     io->close = close;
@@ -504,21 +504,21 @@ void ZrIoInit(SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close, TZrP
     io->isBinary = ZR_FALSE;
 }
 
-TZrSize ZrIoRead(SZrIo *io, TBytePtr buffer, TZrSize size) {
+TZrSize ZrCore_Io_Read(SZrIo *io, TZrBytePtr buffer, TZrSize size) {
     TZrSize requestedSize = size;
 
     while (size > 0) {
         if (io->remained == 0) {
-            if (!ZrIoRefill(io)) {
+            if (!io_refill(io)) {
                 if (io->state != ZR_NULL) {
-                    ZrExceptionThrow(io->state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                    ZrCore_Exception_Throw(io->state, ZR_THREAD_STATUS_RUNTIME_ERROR);
                 }
                 return requestedSize - size;
             }
         }
         // todo: different endianness
         TZrSize read = (size <= io->remained) ? size : io->remained;
-        ZrMemoryRawCopy(buffer, io->pointer, read);
+        ZrCore_Memory_RawCopy(buffer, io->pointer, read);
         io->remained -= read;
         io->pointer += read;
         buffer += read;
@@ -529,45 +529,45 @@ TZrSize ZrIoRead(SZrIo *io, TBytePtr buffer, TZrSize size) {
 }
 
 
-SZrIoSource *ZrIoReadSourceNew(SZrIo *io) {
+SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
     SZrGlobalState *global = io->state->global;
     SZrIoSource *source = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoSource));
-    ZrIoRead(io, (TBytePtr) source->signature, sizeof(source->signature));
+    ZrCore_Io_Read(io, (TZrBytePtr) source->signature, sizeof(source->signature));
     // todo: check signature
-    ZR_IO_READ_NATIVE_TYPE(io, source->versionMajor, TUInt32);
-    ZR_IO_READ_NATIVE_TYPE(io, source->versionMinor, TUInt32);
-    ZR_IO_READ_NATIVE_TYPE(io, source->versionPatch, TUInt32);
-    ZR_IO_READ_NATIVE_TYPE(io, source->format, TUInt64);
-    ZR_IO_READ_NATIVE_TYPE(io, source->nativeIntSize, TUInt8);
-    ZR_IO_READ_NATIVE_TYPE(io, source->typeSizeSize, TUInt8);
-    ZR_IO_READ_NATIVE_TYPE(io, source->typeInstructionSize, TUInt8);
-    ZR_IO_READ_NATIVE_TYPE(io, source->isBigEndian, TBool);
-    ZR_IO_READ_NATIVE_TYPE(io, source->isDebug, TBool);
-    ZrIoRead(io, (TBytePtr) source->optional, sizeof(source->optional));
+    ZR_IO_READ_NATIVE_TYPE(io, source->versionMajor, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, source->versionMinor, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, source->versionPatch, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, source->format, TZrUInt64);
+    ZR_IO_READ_NATIVE_TYPE(io, source->nativeIntSize, TZrUInt8);
+    ZR_IO_READ_NATIVE_TYPE(io, source->typeSizeSize, TZrUInt8);
+    ZR_IO_READ_NATIVE_TYPE(io, source->typeInstructionSize, TZrUInt8);
+    ZR_IO_READ_NATIVE_TYPE(io, source->isBigEndian, TZrBool);
+    ZR_IO_READ_NATIVE_TYPE(io, source->isDebug, TZrBool);
+    ZrCore_Io_Read(io, (TZrBytePtr) source->optional, sizeof(source->optional));
     ZR_IO_READ_NATIVE_TYPE(io, source->modulesLength, TZrSize);
     source->modules = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoModule) * source->modulesLength);
-    ZrIoReadModules(io, source->modules, source->modulesLength);
+    io_read_modules(io, source->modules, source->modulesLength);
     return source;
 }
 
-void ZrIoReadSourceFree(struct SZrGlobalState *global, SZrIoSource *source) {
+void ZrCore_Io_ReadSourceFree(struct SZrGlobalState *global, SZrIoSource *source) {
     ZR_UNUSED_PARAMETER(global);
     ZR_UNUSED_PARAMETER(source);
     // todo: after convert it to vm object, release it.
 }
 
-SZrIoSource *ZrIoLoadSource(struct SZrState *state, TNativeString sourceName, TNativeString md5) {
+SZrIoSource *ZrCore_Io_LoadSource(struct SZrState *state, TZrNativeString sourceName, TZrNativeString md5) {
     SZrGlobalState *global = state->global;
-    SZrIo *io = ZrIoNew(global);
-    TBool success = global->sourceLoader(state, sourceName, md5, io);
+    SZrIo *io = ZrCore_Io_New(global);
+    TZrBool success = global->sourceLoader(state, sourceName, md5, io);
     if (!success) {
-        ZrIoFree(global, io);
+        ZrCore_Io_Free(global, io);
         return ZR_NULL;
     }
-    SZrIoSource *source = ZrIoReadSourceNew(io);
+    SZrIoSource *source = ZrCore_Io_ReadSourceNew(io);
     if (io->close != ZR_NULL) {
         io->close(state, io->customData);
     }
-    ZrIoFree(global, io);
+    ZrCore_Io_Free(global, io);
     return source;
 }

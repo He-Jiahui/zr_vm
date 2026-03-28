@@ -21,16 +21,16 @@
     {                                                                                                                  \
         cJSON *JSON_##NAME = cJSON_GetObjectItemCaseSensitive(OBJECT, #NAME);                                          \
         if (cJSON_IsString(JSON_##NAME) && JSON_##NAME->valuestring != ZR_NULL) {                                      \
-            NAME = ZrStringCreateTryHitCache(STATE, JSON_##NAME->valuestring);                                         \
+            NAME = ZrCore_String_CreateTryHitCache(STATE, JSON_##NAME->valuestring);                                         \
         } else {                                                                                                       \
             NAME = ZR_NULL;                                                                                            \
         }                                                                                                              \
     }
 
-SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TNativeString raw, TNativeString file) {
+SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, TZrNativeString file) {
     SZrGlobalState *global = state->global;
     SZrLibrary_Project *project =
-            ZrMemoryRawMallocWithType(global, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
+            ZrCore_Memory_RawMallocWithType(global, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
     if (project == ZR_NULL) {
         return ZR_NULL;
     }
@@ -38,23 +38,23 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TNativeString raw, TN
 
     cJSON *projectJson = cJSON_Parse(raw);
     if (projectJson == ZR_NULL) {
-        ZrMemoryRawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
+        ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
         return ZR_NULL;
     }
 
-    project->file = ZrStringCreateTryHitCache(state, file);
+    project->file = ZrCore_String_CreateTryHitCache(state, file);
 
-    TChar path[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TBool success = ZrLibrary_File_GetDirectory(file, path);
+    TZrChar path[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrBool success = ZrLibrary_File_GetDirectory(file, path);
     if (!success) {
         cJSON_Delete(projectJson);
-        ZrMemoryRawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
+        ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
         return ZR_NULL;
     }
-    project->directory = ZrStringCreateTryHitCache(state, path);
+    project->directory = ZrCore_String_CreateTryHitCache(state, path);
     // cJSON *name = cJSON_GetObjectItemCaseSensitive(projectJson, "name");
     // if (cJSON_IsString(name) && name->valuestring != ZR_NULL) {
-    //     project->name = ZrStringCreateTryHitCache(state, name->valuestring);
+    //     project->name = ZrCore_String_CreateTryHitCache(state, name->valuestring);
     // } else {
     //     project->name = ZR_NULL;
     // }
@@ -100,7 +100,7 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TNativeString raw, TN
     cJSON_Delete(projectJson);
 
     if (project->source == ZR_NULL || project->binary == ZR_NULL || project->entry == ZR_NULL) {
-        ZrMemoryRawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
+        ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
         return ZR_NULL;
     }
 
@@ -112,15 +112,15 @@ void ZrLibrary_Project_Free(SZrState *state, SZrLibrary_Project *project) {
         return;
     }
     SZrGlobalState *global = state->global;
-    ZrMemoryRawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
+    ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
 }
 
-static TBool ZrLibrary_Project_NormalizeModulePath(TNativeString modulePath, TChar *normalizedPath) {
+static TZrBool library_project_normalize_module_path(TZrNativeString modulePath, TZrChar *normalizedPath) {
     if (modulePath == ZR_NULL || normalizedPath == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    TZrSize length = ZrNativeStringLength(modulePath);
+    TZrSize length = ZrCore_NativeString_Length(modulePath);
     if (length == 0 || length >= ZR_LIBRARY_MAX_PATH_LENGTH) {
         return ZR_FALSE;
     }
@@ -136,27 +136,27 @@ static TBool ZrLibrary_Project_NormalizeModulePath(TNativeString modulePath, TCh
     }
 
     for (TZrSize index = 0; index < length; index++) {
-        TChar current = modulePath[index];
+        TZrChar current = modulePath[index];
         normalizedPath[index] = (current == '/' || current == '\\') ? ZR_SEPARATOR : current;
     }
     normalizedPath[length] = '\0';
     return ZR_TRUE;
 }
 
-static TBool ZrLibrary_Project_ResolveModuleFile(const SZrLibrary_Project *project, TNativeString rootDirectory,
-                                                 TNativeString modulePath, TNativeString extension,
-                                                 TChar *resolvedPath) {
+static TZrBool library_project_resolve_module_file(const SZrLibrary_Project *project, TZrNativeString rootDirectory,
+                                                 TZrNativeString modulePath, TZrNativeString extension,
+                                                 TZrChar *resolvedPath) {
     if (project == ZR_NULL || rootDirectory == ZR_NULL || modulePath == ZR_NULL || extension == ZR_NULL ||
         resolvedPath == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    TChar normalizedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TChar fullRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TChar moduleFile[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TNativeString projectDirectory = ZrStringGetNativeString(project->directory);
+    TZrChar normalizedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar fullRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar moduleFile[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrNativeString projectDirectory = ZrCore_String_GetNativeString(project->directory);
 
-    if (!ZrLibrary_Project_NormalizeModulePath(modulePath, normalizedPath)) {
+    if (!library_project_normalize_module_path(modulePath, normalizedPath)) {
         return ZR_FALSE;
     }
 
@@ -170,25 +170,25 @@ static TBool ZrLibrary_Project_ResolveModuleFile(const SZrLibrary_Project *proje
     return resolvedPath[0] != '\0';
 }
 
-static TBool ZrLibrary_Project_ResolveSourcePath(const SZrLibrary_Project *project, TNativeString modulePath,
-                                                 TChar *resolvedPath) {
-    return ZrLibrary_Project_ResolveModuleFile(project, ZrStringGetNativeString(project->source), modulePath, ".zr",
+static TZrBool library_project_resolve_source_path(const SZrLibrary_Project *project, TZrNativeString modulePath,
+                                                 TZrChar *resolvedPath) {
+    return library_project_resolve_module_file(project, ZrCore_String_GetNativeString(project->source), modulePath, ".zr",
                                                resolvedPath);
 }
 
-static TBool ZrLibrary_Project_ResolveBinaryPath(const SZrLibrary_Project *project, TNativeString modulePath,
-                                                 TChar *resolvedPath) {
-    return ZrLibrary_Project_ResolveModuleFile(project, ZrStringGetNativeString(project->binary), modulePath,
+static TZrBool library_project_resolve_binary_path(const SZrLibrary_Project *project, TZrNativeString modulePath,
+                                                 TZrChar *resolvedPath) {
+    return library_project_resolve_module_file(project, ZrCore_String_GetNativeString(project->binary), modulePath,
                                                ZR_LIBRARY_BINARY_FILE_EXT, resolvedPath);
 }
 
-static TBool ZrLibrary_Project_LoadResolvedFile(SZrState *state, TNativeString filePath, TBool isBinary, SZrIo *io) {
+static TZrBool library_project_load_resolved_file(SZrState *state, TZrNativeString filePath, TZrBool isBinary, SZrIo *io) {
     SZrLibrary_File_Reader *reader = ZrLibrary_File_OpenRead(state->global, filePath, isBinary);
     if (reader == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    ZrIoInit(state, io, ZrLibrary_File_SourceReadImplementation, ZrLibrary_File_SourceCloseImplementation, reader);
+    ZrCore_Io_Init(state, io, ZrLibrary_File_SourceReadImplementation, ZrLibrary_File_SourceCloseImplementation, reader);
     io->isBinary = isBinary;
     return ZR_TRUE;
 }
@@ -200,29 +200,29 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
 
     SZrGlobalState *global = state->global;
     SZrLibrary_Project *project = global->userData;
-    ZrValueResetAsNull(result);
+    ZrCore_Value_ResetAsNull(result);
 
     if (project == ZR_NULL || project->entry == ZR_NULL || global->compileSource == ZR_NULL) {
         state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
         return state->threadStatus;
     }
 
-    TChar entrySourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    if (!ZrLibrary_Project_ResolveSourcePath(project, ZrStringGetNativeString(project->entry), entrySourcePath)) {
+    TZrChar entrySourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    if (!library_project_resolve_source_path(project, ZrCore_String_GetNativeString(project->entry), entrySourcePath)) {
         state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
         return state->threadStatus;
     }
 
-    TNativeString sourceCode = ZrLibrary_File_ReadAll(global, entrySourcePath);
+    TZrNativeString sourceCode = ZrLibrary_File_ReadAll(global, entrySourcePath);
     if (sourceCode == ZR_NULL) {
         state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
         return state->threadStatus;
     }
 
-    TZrSize sourceLength = ZrNativeStringLength(sourceCode);
-    SZrString *sourceName = ZrStringCreate(state, entrySourcePath, ZrNativeStringLength(entrySourcePath));
+    TZrSize sourceLength = ZrCore_NativeString_Length(sourceCode);
+    SZrString *sourceName = ZrCore_String_Create(state, entrySourcePath, ZrCore_NativeString_Length(entrySourcePath));
     SZrFunction *function = global->compileSource(state, sourceCode, sourceLength, sourceName);
-    ZrMemoryRawFreeWithType(global, sourceCode, sourceLength + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    ZrCore_Memory_RawFreeWithType(global, sourceCode, sourceLength + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
 
     if (function == ZR_NULL) {
         if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
@@ -231,14 +231,14 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
         return state->threadStatus;
     }
 
-    SZrObjectModule *projectModule = ZrModuleCreate(state);
+    SZrObjectModule *projectModule = ZrCore_Module_Create(state);
     if (projectModule != ZR_NULL) {
-        TUInt64 pathHash = ZrModuleCalculatePathHash(state, sourceName);
-        ZrModuleSetInfo(state, projectModule, ZR_NULL, pathHash, sourceName);
-        ZrModuleCreatePrototypesFromConstants(state, projectModule, function);
+        TZrUInt64 pathHash = ZrCore_Module_CalculatePathHash(state, sourceName);
+        ZrCore_Module_SetInfo(state, projectModule, ZR_NULL, pathHash, sourceName);
+        ZrCore_Module_CreatePrototypesFromConstants(state, projectModule, function);
     }
 
-    SZrClosure *closure = ZrClosureNew(state, 0);
+    SZrClosure *closure = ZrCore_Closure_New(state, 0);
     if (closure == ZR_NULL) {
         if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
             state->threadStatus = ZR_THREAD_STATUS_MEMORY_ERROR;
@@ -247,23 +247,23 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
     }
 
     closure->function = function;
-    ZrClosureInitValue(state, closure);
+    ZrCore_Closure_InitValue(state, closure);
 
     TZrStackValuePointer callBase = state->stackTop.valuePointer;
-    callBase = ZrFunctionCheckStackAndGc(state, function->stackSize + 1, callBase);
+    callBase = ZrCore_Function_CheckStackAndGc(state, function->stackSize + 1, callBase);
 
-    SZrTypeValue *closureValue = ZrStackGetValue(callBase);
-    ZrValueInitAsRawObject(state, closureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    SZrTypeValue *closureValue = ZrCore_Stack_GetValue(callBase);
+    ZrCore_Value_InitAsRawObject(state, closureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closureValue->type = ZR_VALUE_TYPE_CLOSURE;
     closureValue->isGarbageCollectable = ZR_TRUE;
     closureValue->isNative = ZR_FALSE;
 
     state->stackTop.valuePointer = callBase + 1;
     state->threadStatus = ZR_THREAD_STATUS_FINE;
-    ZrFunctionCall(state, callBase, 1);
+    ZrCore_Function_Call(state, callBase, 1);
 
     if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
-        ZrValueCopy(state, result, ZrStackGetValue(callBase));
+        ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(callBase));
     }
 
     return state->threadStatus;
@@ -271,11 +271,11 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
 
 void ZrLibrary_Project_Do(SZrState *state) {
     SZrTypeValue ignoredResult;
-    ZrValueResetAsNull(&ignoredResult);
+    ZrCore_Value_ResetAsNull(&ignoredResult);
     ZrLibrary_Project_Run(state, &ignoredResult);
 }
 
-TBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TNativeString path, TNativeString md5, SZrIo *io) {
+TZrBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TZrNativeString path, TZrNativeString md5, SZrIo *io) {
     ZR_UNUSED_PARAMETER(md5);
 
     if (state == ZR_NULL || state->global == ZR_NULL || io == ZR_NULL) {
@@ -287,15 +287,15 @@ TBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TNativeString 
         return ZR_FALSE;
     }
 
-    TChar fullPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    if (ZrLibrary_Project_ResolveSourcePath(project, path, fullPath) &&
+    TZrChar fullPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    if (library_project_resolve_source_path(project, path, fullPath) &&
         ZrLibrary_File_Exist(fullPath) == ZR_LIBRARY_FILE_IS_FILE) {
-        return ZrLibrary_Project_LoadResolvedFile(state, fullPath, ZR_FALSE, io);
+        return library_project_load_resolved_file(state, fullPath, ZR_FALSE, io);
     }
 
-    if (ZrLibrary_Project_ResolveBinaryPath(project, path, fullPath) &&
+    if (library_project_resolve_binary_path(project, path, fullPath) &&
         ZrLibrary_File_Exist(fullPath) == ZR_LIBRARY_FILE_IS_FILE) {
-        return ZrLibrary_Project_LoadResolvedFile(state, fullPath, ZR_TRUE, io);
+        return library_project_load_resolved_file(state, fullPath, ZR_TRUE, io);
     }
 
     return ZR_FALSE;

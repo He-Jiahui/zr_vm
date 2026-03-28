@@ -21,17 +21,17 @@ struct SZrExceptionLongJump {
 
 typedef struct SZrExceptionLongJump SZrExceptionLongJump;
 
-ZR_CORE_API EZrThreadStatus ZrExceptionTryRun(struct SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments);
+ZR_CORE_API EZrThreadStatus ZrCore_Exception_TryRun(struct SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments);
 
-ZR_CORE_API void ZrExceptionThrow(struct SZrState *state, EZrThreadStatus errorCode);
+ZR_CORE_API void ZrCore_Exception_Throw(struct SZrState *state, EZrThreadStatus errorCode);
 
-ZR_CORE_API EZrThreadStatus ZrExceptionTryStop(struct SZrState *state, TZrMemoryOffset level, EZrThreadStatus status);
+ZR_CORE_API EZrThreadStatus ZrCore_Exception_TryStop(struct SZrState *state, TZrMemoryOffset level, EZrThreadStatus status);
 
-ZR_CORE_API void ZrExceptionMarkError(struct SZrState *state, EZrThreadStatus errorCode,
+ZR_CORE_API void ZrCore_Exception_MarkError(struct SZrState *state, EZrThreadStatus errorCode,
                                       TZrStackValuePointer previousTop);
 
 
-ZR_FORCE_INLINE TBool ZrExceptionIsStausError(EZrThreadStatus status) {
+ZR_FORCE_INLINE TZrBool ZrCore_Exception_IsStausError(EZrThreadStatus status) {
     return status >= ZR_THREAD_STATUS_RUNTIME_ERROR;
 }
 #endif // ZR_VM_CORE_EXCEPTION_H

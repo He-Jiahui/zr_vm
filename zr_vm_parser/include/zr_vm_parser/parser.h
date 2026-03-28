@@ -17,23 +17,23 @@ typedef struct SZrParserState {
     SZrLexState *lexer;           // 词法分析器
     SZrState *state;              // VM 状态
     SZrFileRange currentLocation; // 当前位置
-    TBool hasError;               // 是否有错误
-    const TChar *errorMessage;    // 错误消息
+    TZrBool hasError;               // 是否有错误
+    const TZrChar *errorMessage;    // 错误消息
 } SZrParserState;
 
 // 初始化解析器状态
-ZR_PARSER_API void ZrParserStateInit(SZrParserState *ps, SZrState *state, const TChar *source, TZrSize sourceLength, SZrString *sourceName);
+ZR_PARSER_API void ZrParser_State_Init(SZrParserState *ps, SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName);
 
 // 清理解析器状态
-ZR_PARSER_API void ZrParserStateFree(SZrParserState *ps);
+ZR_PARSER_API void ZrParser_State_Free(SZrParserState *ps);
 
 // 公共 API
 
 // 解析源代码，返回 AST 根节点
-ZR_PARSER_API SZrAstNode *ZrParserParse(SZrState *state, const TChar *source, TZrSize sourceLength, SZrString *sourceName);
+ZR_PARSER_API SZrAstNode *ZrParser_Parse(SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName);
 
 // 释放 AST 节点
-ZR_PARSER_API void ZrParserFreeAst(SZrState *state, SZrAstNode *node);
+ZR_PARSER_API void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node);
 
 #endif //ZR_VM_PARSER_PARSER_H
 

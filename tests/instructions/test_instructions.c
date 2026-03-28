@@ -71,7 +71,7 @@ typedef struct {
     } while (0)
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -95,54 +95,54 @@ static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSiz
 }
 
 // 创建测试用的SZrState
-static SZrState *createTestState(void) {
+static SZrState *create_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
     if (!global)
         return ZR_NULL;
 
     SZrState *mainState = global->mainThreadState;
     if (mainState) {
-        ZrGlobalStateInitRegistry(mainState, global);
-        ZrStringTableInit(mainState);
-        ZrMetaGlobalStaticsInit(mainState);
+        ZrCore_GlobalState_InitRegistry(mainState, global);
+        ZrCore_StringTable_Init(mainState);
+        ZrCore_Meta_GlobalStaticsInit(mainState);
     }
 
     return mainState;
 }
 
 // 销毁测试用的SZrState
-static void destroyTestState(SZrState *state) {
+static void destroy_test_state(SZrState *state) {
     if (!state)
         return;
 
     SZrGlobalState *global = state->global;
     if (global) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
     }
 }
 
 // 创建指令的辅助函数（内联定义，不依赖parser模块）
-static TZrInstruction create_instruction_0(EZrInstructionCode opcode, TUInt16 operandExtra) {
+static TZrInstruction create_instruction_0(EZrInstructionCode opcode, TZrUInt16 operandExtra) {
     TZrInstruction instruction;
-    instruction.instruction.operationCode = (TUInt16) opcode;
+    instruction.instruction.operationCode = (TZrUInt16) opcode;
     instruction.instruction.operandExtra = operandExtra;
     instruction.instruction.operand.operand2[0] = 0;
     return instruction;
 }
 
-static TZrInstruction create_instruction_1(EZrInstructionCode opcode, TUInt16 operandExtra, TInt32 operand) {
+static TZrInstruction create_instruction_1(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrInt32 operand) {
     TZrInstruction instruction;
-    instruction.instruction.operationCode = (TUInt16) opcode;
+    instruction.instruction.operationCode = (TZrUInt16) opcode;
     instruction.instruction.operandExtra = operandExtra;
     instruction.instruction.operand.operand2[0] = operand;
     return instruction;
 }
 
-static TZrInstruction create_instruction_2(EZrInstructionCode opcode, TUInt16 operandExtra, TUInt16 operand1,
-                                           TUInt16 operand2) {
+static TZrInstruction create_instruction_2(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrUInt16 operand1,
+                                           TZrUInt16 operand2) {
     TZrInstruction instruction;
-    instruction.instruction.operationCode = (TUInt16) opcode;
+    instruction.instruction.operationCode = (TZrUInt16) opcode;
     instruction.instruction.operandExtra = operandExtra;
     instruction.instruction.operand.operand1[0] = operand1;
     instruction.instruction.operand.operand1[1] = operand2;
@@ -314,7 +314,7 @@ static const char *get_instruction_name(EZrInstructionCode opcode) {
 // 打印指令的辅助函数（用于调试）
 static void print_instruction(const char *label, TZrInstruction *inst, TZrSize index) {
     EZrInstructionCode opcode = (EZrInstructionCode) inst->instruction.operationCode;
-    TUInt16 operandExtra = inst->instruction.operandExtra;
+    TZrUInt16 operandExtra = inst->instruction.operandExtra;
 
     printf("  [%zu] ", index);
 
@@ -395,9 +395,9 @@ static void print_instructions(const char *label, TZrInstruction *instructions, 
 }
 
 // 创建测试函数并执行的辅助函数
-static SZrFunction *createTestFunction(SZrState *state, TZrInstruction *instructions, TZrSize instructionCount,
+static SZrFunction *create_test_function(SZrState *state, TZrInstruction *instructions, TZrSize instructionCount,
                                        SZrTypeValue *constants, TZrSize constantCount, TZrSize stackSize) {
-    SZrFunction *function = ZrFunctionNew(state);
+    SZrFunction *function = ZrCore_Function_New(state);
     if (!function)
         return ZR_NULL;
 
@@ -407,29 +407,29 @@ static SZrFunction *createTestFunction(SZrState *state, TZrInstruction *instruct
     if (instructionCount > 0) {
         TZrSize instSize = instructionCount * sizeof(TZrInstruction);
         function->instructionsList =
-                (TZrInstruction *) ZrMemoryRawMallocWithType(global, instSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+                (TZrInstruction *) ZrCore_Memory_RawMallocWithType(global, instSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
         if (!function->instructionsList) {
-            ZrFunctionFree(state, function);
+            ZrCore_Function_Free(state, function);
             return ZR_NULL;
         }
         memcpy(function->instructionsList, instructions, instSize);
-        function->instructionsLength = (TUInt32) instructionCount;
+        function->instructionsLength = (TZrUInt32) instructionCount;
     }
 
     // 设置常量列表
     if (constantCount > 0) {
         TZrSize constSize = constantCount * sizeof(SZrTypeValue);
         function->constantValueList =
-                (SZrTypeValue *) ZrMemoryRawMallocWithType(global, constSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+                (SZrTypeValue *) ZrCore_Memory_RawMallocWithType(global, constSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
         if (!function->constantValueList) {
-            ZrFunctionFree(state, function);
+            ZrCore_Function_Free(state, function);
             return ZR_NULL;
         }
         memcpy(function->constantValueList, constants, constSize);
-        function->constantValueLength = (TUInt32) constantCount;
+        function->constantValueLength = (TZrUInt32) constantCount;
     }
 
-    function->stackSize = (TUInt32) stackSize;
+    function->stackSize = (TZrUInt32) stackSize;
     function->parameterCount = 0;
     function->hasVariableArguments = ZR_FALSE;
 
@@ -437,24 +437,24 @@ static SZrFunction *createTestFunction(SZrState *state, TZrInstruction *instruct
 }
 
 // 执行测试函数的辅助函数
-static TBool executeTestFunction(SZrState *state, SZrFunction *function) {
+static TZrBool execute_test_function(SZrState *state, SZrFunction *function) {
     // 创建闭包
-    SZrClosure *closure = ZrClosureNew(state, 0);
+    SZrClosure *closure = ZrCore_Closure_New(state, 0);
     if (!closure)
         return ZR_FALSE;
     closure->function = function;
 
     // 准备栈
     TZrStackValuePointer base = state->stackTop.valuePointer;
-    ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     state->stackTop.valuePointer = base + 1 + function->stackSize;
 
     // 创建CallInfo
-    SZrCallInfo *callInfo = ZrCallInfoExtend(state);
+    SZrCallInfo *callInfo = ZrCore_CallInfo_Extend(state);
     if (!callInfo)
         return ZR_FALSE;
 
-    ZrCallInfoEntryNativeInit(state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
+    ZrCore_CallInfo_EntryNativeInit(state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
     callInfo->functionBase.valuePointer = base;
     callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
     callInfo->context.context.programCounter = function->instructionsList;
@@ -466,7 +466,7 @@ static TBool executeTestFunction(SZrState *state, SZrFunction *function) {
     state->threadStatus = ZR_THREAD_STATUS_FINE;
 
     // 执行函数
-    ZrExecute(state, callInfo);
+    ZrCore_Execute(state, callInfo);
 
     // 检查状态
     return state->threadStatus == ZR_THREAD_STATUS_FINE;
@@ -484,7 +484,7 @@ static void test_get_stack(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 创建测试函数：将栈槽0的值复制到栈槽1
@@ -492,7 +492,7 @@ static void test_get_stack(void) {
     // GET_STACK 1, 0 (将stack[0]复制到stack[1])
     // FUNCTION_RETURN 1, 1, 0 (返回1个值，从stack[1]返回)
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 42);
+    ZrCore_Value_InitAsInt(state, &constant, 42);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
@@ -502,20 +502,20 @@ static void test_get_stack(void) {
 
     print_instructions("test_get_stack", instructions, 3);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, &constant, 1, 3);
+    SZrFunction *function = create_test_function(state, instructions, 3, &constant, 1, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果（返回值在 resultSlot=1 位置，即 base + 2）
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(42, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "GET_STACK Instruction");
@@ -527,37 +527,37 @@ static void test_set_stack(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 创建测试函数：设置栈槽1的值为100
     // GET_CONSTANT 0 -> stack[0] (值为100)
     // SET_STACK 1, 0 (将stack[0]的值复制到stack[1])
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 100);
+    ZrCore_Value_InitAsInt(state, &constant, 100);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] =
             create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), 1, 0); // E=1, A2=0 (将stack[0]的值复制到stack[1])
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 3);
+    SZrFunction *function = create_test_function(state, instructions, 2, &constant, 1, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *source = ZrStackGetValue(base + 1);
-    SZrTypeValue *destination = ZrStackGetValue(base + 2);
+    SZrTypeValue *source = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *destination = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(source->type));
     TEST_ASSERT_EQUAL_INT64(100, source->value.nativeObject.nativeInt64);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(destination->type));
     TEST_ASSERT_EQUAL_INT64(100, destination->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "SET_STACK Instruction");
@@ -571,35 +571,35 @@ static void test_get_constant(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 创建测试函数：从常量池获取常量
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 123);
-    ZrValueInitAsInt(state, &constants[1], 456);
+    ZrCore_Value_InitAsInt(state, &constants[0], 123);
+    ZrCore_Value_InitAsInt(state, &constants[1], 456);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, constants, 2, 3);
+    SZrFunction *function = create_test_function(state, instructions, 2, constants, 2, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果（dest=0 在 base+1, dest=1 在 base+2）
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result0 = ZrStackGetValue(base + 1);
-    SZrTypeValue *result1 = ZrStackGetValue(base + 2);
+    SZrTypeValue *result0 = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *result1 = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result0->type));
     TEST_ASSERT_EQUAL_INT64(123, result0->value.nativeObject.nativeInt64);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result1->type));
     TEST_ASSERT_EQUAL_INT64(456, result1->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "GET_CONSTANT Instruction");
@@ -613,31 +613,31 @@ static void test_to_bool(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：将整数1转换为布尔值
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 1);
+    ZrCore_Value_InitAsInt(state, &constant, 1);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_BOOL), 1, 0, 0); // dest=1, src=0
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 3);
+    SZrFunction *function = create_test_function(state, instructions, 2, &constant, 1, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果（dest=1 在 base+2）
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_TRUE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "TO_BOOL Instruction");
@@ -649,31 +649,31 @@ static void test_to_int(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：将浮点数3.14转换为整数
     SZrTypeValue constant;
-    ZrValueInitAsFloat(state, &constant, 3.14);
+    ZrCore_Value_InitAsFloat(state, &constant, 3.14);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_INT), 1, 0, 0); // dest=1, src=0
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 3);
+    SZrFunction *function = create_test_function(state, instructions, 2, &constant, 1, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(3, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "TO_INT Instruction");
@@ -685,30 +685,30 @@ static void test_to_string(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：将整数42转换为字符串
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 42);
+    ZrCore_Value_InitAsInt(state, &constant, 42);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_STRING), 1, 0, 0); // dest=1, src=0
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 3);
+    SZrFunction *function = create_test_function(state, instructions, 2, &constant, 1, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_STRING(result->type));
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "TO_STRING Instruction");
@@ -722,33 +722,33 @@ static void test_add_int(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：10 + 20 = 30
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 10);
-    ZrValueInitAsInt(state, &constants[1], 20);
+    ZrCore_Value_InitAsInt(state, &constants[0], 10);
+    ZrCore_Value_InitAsInt(state, &constants[1], 20);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (10)
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1 (20)
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(ADD_INT), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(30, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "ADD_INT Instruction");
@@ -760,33 +760,33 @@ static void test_sub_int(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：20 - 10 = 10
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 20);
-    ZrValueInitAsInt(state, &constants[1], 10);
+    ZrCore_Value_InitAsInt(state, &constants[0], 20);
+    ZrCore_Value_InitAsInt(state, &constants[1], 10);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (20)
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1 (10)
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUB_INT), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(10, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "SUB_INT Instruction");
@@ -798,33 +798,33 @@ static void test_mul_signed(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：6 * 7 = 42
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 6);
-    ZrValueInitAsInt(state, &constants[1], 7);
+    ZrCore_Value_InitAsInt(state, &constants[0], 6);
+    ZrCore_Value_InitAsInt(state, &constants[1], 7);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (6)
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1 (7)
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(MUL_SIGNED), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(42, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "MUL_SIGNED Instruction");
@@ -837,7 +837,7 @@ static void test_logical_not(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：!true = false
@@ -848,20 +848,20 @@ static void test_logical_not(void) {
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_NOT), 1, 0, 0); // dest=1, src=0
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 3);
+    SZrFunction *function = create_test_function(state, instructions, 2, &constant, 1, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_FALSE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "LOGICAL_NOT Instruction");
@@ -873,31 +873,31 @@ static void test_to_uint(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：将整数42转换为无符号整数
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 42);
+    ZrCore_Value_InitAsInt(state, &constant, 42);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_UINT), 1, 0, 0); // dest=1, src=0
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 3);
+    SZrFunction *function = create_test_function(state, instructions, 2, &constant, 1, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_UNSIGNED_INT(result->type));
     TEST_ASSERT_EQUAL_UINT64(42, result->value.nativeObject.nativeUInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "TO_UINT Instruction");
@@ -909,31 +909,31 @@ static void test_to_float(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：将整数42转换为浮点数
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 42);
+    ZrCore_Value_InitAsInt(state, &constant, 42);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(TO_FLOAT), 1, 0, 0); // dest=1, src=0
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 3);
+    SZrFunction *function = create_test_function(state, instructions, 2, &constant, 1, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FLOAT(result->type));
     TEST_ASSERT_DOUBLE_WITHIN(0.001, 42.0, result->value.nativeObject.nativeDouble);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "TO_FLOAT Instruction");
@@ -945,33 +945,33 @@ static void test_add_float(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：1.5 + 2.5 = 4.0
     SZrTypeValue constants[2];
-    ZrValueInitAsFloat(state, &constants[0], 1.5);
-    ZrValueInitAsFloat(state, &constants[1], 2.5);
+    ZrCore_Value_InitAsFloat(state, &constants[0], 1.5);
+    ZrCore_Value_InitAsFloat(state, &constants[1], 2.5);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (1.5)
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1 (2.5)
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(ADD_FLOAT), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FLOAT(result->type));
     TEST_ASSERT_DOUBLE_WITHIN(0.001, 4.0, result->value.nativeObject.nativeDouble);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "ADD_FLOAT Instruction");
@@ -983,37 +983,37 @@ static void test_add_string(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：字符串连接 "hello" + "world" = "helloworld"
     SZrTypeValue constants[2];
-    SZrString *str1 = ZrStringCreateFromNative(state, "hello");
-    SZrString *str2 = ZrStringCreateFromNative(state, "world");
-    ZrValueInitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(str1));
-    ZrValueInitAsRawObject(state, &constants[1], ZR_CAST_RAW_OBJECT_AS_SUPER(str2));
+    SZrString *str1 = ZrCore_String_CreateFromNative(state, "hello");
+    SZrString *str2 = ZrCore_String_CreateFromNative(state, "world");
+    ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(str1));
+    ZrCore_Value_InitAsRawObject(state, &constants[1], ZR_CAST_RAW_OBJECT_AS_SUPER(str2));
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(ADD_STRING), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_STRING(result->type));
     SZrString *resultStr = ZR_CAST_STRING(state, result->value.object);
-    TNativeString resultNative = ZrStringGetNativeString(resultStr);
+    TZrNativeString resultNative = ZrCore_String_GetNativeString(resultStr);
     TEST_ASSERT_EQUAL_STRING("helloworld", resultNative);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "ADD_STRING Instruction");
@@ -1025,33 +1025,33 @@ static void test_div_signed(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：20 / 4 = 5
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 20);
-    ZrValueInitAsInt(state, &constants[1], 4);
+    ZrCore_Value_InitAsInt(state, &constants[0], 20);
+    ZrCore_Value_InitAsInt(state, &constants[1], 4);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (20)
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1 (4)
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(DIV_SIGNED), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(5, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "DIV_SIGNED Instruction");
@@ -1063,33 +1063,33 @@ static void test_mod_signed(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：17 % 5 = 2
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 17);
-    ZrValueInitAsInt(state, &constants[1], 5);
+    ZrCore_Value_InitAsInt(state, &constants[0], 17);
+    ZrCore_Value_InitAsInt(state, &constants[1], 5);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (17)
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1 (5)
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(MOD_SIGNED), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(2, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "MOD_SIGNED Instruction");
@@ -1101,7 +1101,7 @@ static void test_logical_and(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：true && false = false
@@ -1114,20 +1114,20 @@ static void test_logical_and(void) {
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_AND), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_FALSE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "LOGICAL_AND Instruction");
@@ -1139,7 +1139,7 @@ static void test_logical_or(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：true || false = true
@@ -1152,20 +1152,20 @@ static void test_logical_or(void) {
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_OR), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_TRUE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "LOGICAL_OR Instruction");
@@ -1177,33 +1177,33 @@ static void test_logical_equal(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：5 == 5 = true
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 5);
-    ZrValueInitAsInt(state, &constants[1], 5);
+    ZrCore_Value_InitAsInt(state, &constants[0], 5);
+    ZrCore_Value_InitAsInt(state, &constants[1], 5);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_TRUE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "LOGICAL_EQUAL Instruction");
@@ -1215,13 +1215,13 @@ static void test_logical_greater_signed(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：10 > 5 = true
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 10);
-    ZrValueInitAsInt(state, &constants[1], 5);
+    ZrCore_Value_InitAsInt(state, &constants[0], 10);
+    ZrCore_Value_InitAsInt(state, &constants[1], 5);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
@@ -1229,20 +1229,20 @@ static void test_logical_greater_signed(void) {
     instructions[2] =
             create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_TRUE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "LOGICAL_GREATER_SIGNED Instruction");
@@ -1254,33 +1254,33 @@ static void test_bitwise_and(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：5 & 3 = 1 (二进制: 101 & 011 = 001)
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 5);
-    ZrValueInitAsInt(state, &constants[1], 3);
+    ZrCore_Value_InitAsInt(state, &constants[0], 5);
+    ZrCore_Value_InitAsInt(state, &constants[1], 3);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(BITWISE_AND), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(1, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "BITWISE_AND Instruction");
@@ -1292,33 +1292,33 @@ static void test_bitwise_or(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：5 | 3 = 7 (二进制: 101 | 011 = 111)
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 5);
-    ZrValueInitAsInt(state, &constants[1], 3);
+    ZrCore_Value_InitAsInt(state, &constants[0], 5);
+    ZrCore_Value_InitAsInt(state, &constants[1], 3);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(BITWISE_OR), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(7, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "BITWISE_OR Instruction");
@@ -1330,33 +1330,33 @@ static void test_bitwise_xor(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：5 ^ 3 = 6 (二进制: 101 ^ 011 = 110)
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 5);
-    ZrValueInitAsInt(state, &constants[1], 3);
+    ZrCore_Value_InitAsInt(state, &constants[0], 5);
+    ZrCore_Value_InitAsInt(state, &constants[1], 3);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(BITWISE_XOR), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(6, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "BITWISE_XOR Instruction");
@@ -1368,31 +1368,31 @@ static void test_bitwise_not(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：~5 (假设是8位，~00000101 = 11111010 = -6 in two's complement)
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 5);
+    ZrCore_Value_InitAsInt(state, &constant, 5);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(BITWISE_NOT), 1, 0, 0); // dest=1, src=0
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 3);
+    SZrFunction *function = create_test_function(state, instructions, 2, &constant, 1, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果 (~5 = -6 in two's complement)
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(-6, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "BITWISE_NOT Instruction");
@@ -1404,33 +1404,33 @@ static void test_bitwise_shift_left(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：5 << 2 = 20
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 5);
-    ZrValueInitAsInt(state, &constants[1], 2);
+    ZrCore_Value_InitAsInt(state, &constants[0], 5);
+    ZrCore_Value_InitAsInt(state, &constants[1], 2);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(20, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "BITWISE_SHIFT_LEFT Instruction");
@@ -1442,33 +1442,33 @@ static void test_bitwise_shift_right(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：20 >> 2 = 5
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 20);
-    ZrValueInitAsInt(state, &constants[1], 2);
+    ZrCore_Value_InitAsInt(state, &constants[0], 20);
+    ZrCore_Value_InitAsInt(state, &constants[1], 2);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT), 2, 0, 1); // dest=2, opA=0, opB=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(5, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "BITWISE_SHIFT_RIGHT Instruction");
@@ -1480,28 +1480,28 @@ static void test_create_object(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：创建空对象
     TZrInstruction instructions[1];
     instructions[0] = create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), 0); // dest=0
 
-    SZrFunction *function = createTestFunction(state, instructions, 1, ZR_NULL, 0, 2);
+    SZrFunction *function = create_test_function(state, instructions, 1, ZR_NULL, 0, 2);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 1);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 1);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_OBJECT(result->type));
     SZrObject *object = ZR_CAST_OBJECT(state, result->value.object);
     TEST_ASSERT_NOT_NULL(object);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "CREATE_OBJECT Instruction");
@@ -1513,28 +1513,28 @@ static void test_create_array(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：创建空数组
     TZrInstruction instructions[1];
     instructions[0] = create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_ARRAY), 0); // dest=0
 
-    SZrFunction *function = createTestFunction(state, instructions, 1, ZR_NULL, 0, 2);
+    SZrFunction *function = create_test_function(state, instructions, 1, ZR_NULL, 0, 2);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 1);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 1);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_ARRAY(result->type));
     SZrObject *array = ZR_CAST_OBJECT(state, result->value.object);
     TEST_ASSERT_NOT_NULL(array);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "CREATE_ARRAY Instruction");
@@ -1548,7 +1548,7 @@ static void test_gettable(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：创建对象，设置键值对，然后获取值
@@ -1557,10 +1557,10 @@ static void test_gettable(void) {
     // GET_CONSTANT 42 -> stack[2]
     // SETTABLE stack[0], stack[1], stack[2]
     // GETTABLE stack[3], stack[0], stack[1]
-    SZrString *keyStr = ZrStringCreateFromNative(state, "key");
+    SZrString *keyStr = ZrCore_String_CreateFromNative(state, "key");
     SZrTypeValue constants[2];
-    ZrValueInitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(keyStr));
-    ZrValueInitAsInt(state, &constants[1], 42);
+    ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(keyStr));
+    ZrCore_Value_InitAsInt(state, &constants[1], 42);
 
     TZrInstruction instructions[5];
     instructions[0] = create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), 0); // dest=0
@@ -1569,20 +1569,20 @@ static void test_gettable(void) {
     instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), 2, 0, 1); // value=2, table=0, key=1
     instructions[4] = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), 3, 0, 1); // dest=3, table=0, key=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 5, constants, 2, 5);
+    SZrFunction *function = create_test_function(state, instructions, 5, constants, 2, 5);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果（dest=3 在 base+4）
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 4);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 4);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(42, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "GETTABLE Instruction");
@@ -1594,14 +1594,14 @@ static void test_settable(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：创建对象，设置键值对
-    SZrString *keyStr = ZrStringCreateFromNative(state, "value");
+    SZrString *keyStr = ZrCore_String_CreateFromNative(state, "value");
     SZrTypeValue constants[2];
-    ZrValueInitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(keyStr));
-    ZrValueInitAsInt(state, &constants[1], 100);
+    ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(keyStr));
+    ZrCore_Value_InitAsInt(state, &constants[1], 100);
 
     TZrInstruction instructions[4];
     instructions[0] = create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), 0); // dest=0
@@ -1609,24 +1609,24 @@ static void test_settable(void) {
     instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 1); // dest=2, const=1 (100)
     instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), 2, 0, 1); // value=2, table=0, key=1
 
-    SZrFunction *function = createTestFunction(state, instructions, 4, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 4, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证：通过GETTABLE获取值
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *tableValue = ZrStackGetValue(base + 1);
-    SZrTypeValue *keyValue = ZrStackGetValue(base + 2);
+    SZrTypeValue *tableValue = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *keyValue = ZrCore_Stack_GetValue(base + 2);
     SZrObject *table = ZR_CAST_OBJECT(state, tableValue->value.object);
-    const SZrTypeValue *result = ZrObjectGetValue(state, table, keyValue);
+    const SZrTypeValue *result = ZrCore_Object_GetValue(state, table, keyValue);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(100, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "SETTABLE Instruction");
@@ -1640,50 +1640,50 @@ static void test_get_closure(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：创建闭包，设置闭包值，然后获取
     // 创建函数
-    SZrFunction *function = ZrFunctionNew(state);
+    SZrFunction *function = ZrCore_Function_New(state);
     TEST_ASSERT_NOT_NULL(function);
     function->stackSize = 1;
     function->parameterCount = 0;
 
     // 创建闭包（带1个闭包值）
-    SZrClosure *closure = ZrClosureNew(state, 1);
+    SZrClosure *closure = ZrCore_Closure_New(state, 1);
     TEST_ASSERT_NOT_NULL(closure);
     closure->function = function;
-    ZrClosureInitValue(state, closure);
+    ZrCore_Closure_InitValue(state, closure);
 
     // 设置闭包值
     SZrClosureValue *closureValue = closure->closureValuesExtend[0];
-    ZrValueInitAsInt(state, ZrClosureValueGetValue(closureValue), 99);
+    ZrCore_Value_InitAsInt(state, ZrCore_ClosureValue_GetValue(closureValue), 99);
 
     // 将闭包放入常量池
     SZrTypeValue constant;
-    ZrValueInitAsRawObject(state, &constant, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    ZrCore_Value_InitAsRawObject(state, &constant, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
 
     // 创建测试函数：GET_CLOSURE 0 -> stack[0]
     TZrInstruction instructions[1];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CLOSURE), 0, 0); // dest=0, closureIndex=0
 
-    SZrFunction *testFunction = createTestFunction(state, instructions, 1, &constant, 1, 2);
+    SZrFunction *testFunction = create_test_function(state, instructions, 1, &constant, 1, 2);
     TEST_ASSERT_NOT_NULL(testFunction);
 
     // 创建带闭包值的闭包，使用 testFunction
-    SZrClosure *closureWithValue = ZrClosureNew(state, 1);
+    SZrClosure *closureWithValue = ZrCore_Closure_New(state, 1);
     closureWithValue->function = testFunction;
-    ZrClosureInitValue(state, closureWithValue);
-    ZrValueInitAsInt(state, ZrClosureValueGetValue(closureWithValue->closureValuesExtend[0]), 99);
+    ZrCore_Closure_InitValue(state, closureWithValue);
+    ZrCore_Value_InitAsInt(state, ZrCore_ClosureValue_GetValue(closureWithValue->closureValuesExtend[0]), 99);
 
     // 准备栈
     TZrStackValuePointer base = state->stackTop.valuePointer;
-    ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closureWithValue));
+    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closureWithValue));
     state->stackTop.valuePointer = base + 1 + testFunction->stackSize;
 
-    SZrCallInfo *callInfo = ZrCallInfoExtend(state);
-    ZrCallInfoEntryNativeInit(state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
+    SZrCallInfo *callInfo = ZrCore_CallInfo_Extend(state);
+    ZrCore_CallInfo_EntryNativeInit(state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
     callInfo->functionBase.valuePointer = base;
     callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
     callInfo->context.context.programCounter = testFunction->instructionsList;
@@ -1691,15 +1691,15 @@ static void test_get_closure(void) {
     callInfo->expectedReturnCount = 1;
 
     state->callInfoList = callInfo;
-    ZrExecute(state, callInfo);
+    ZrCore_Execute(state, callInfo);
 
     // 验证结果
-    SZrTypeValue *result = ZrStackGetValue(base + 1);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 1);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(99, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, testFunction);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, testFunction);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "GET_CLOSURE Instruction");
@@ -1711,30 +1711,30 @@ static void test_set_closure(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 创建测试函数：SET_CONSTANT 0 -> stack[0], SET_CLOSURE 0, stack[0]
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 88);
+    ZrCore_Value_InitAsInt(state, &constant, 88);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (88)
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_CLOSURE), 0, 0); // closureIndex=0, src=0
 
-    SZrFunction *testFunction = createTestFunction(state, instructions, 2, &constant, 1, 2);
+    SZrFunction *testFunction = create_test_function(state, instructions, 2, &constant, 1, 2);
 
     // 创建带闭包值的闭包，使用 testFunction
-    SZrClosure *closure = ZrClosureNew(state, 1);
+    SZrClosure *closure = ZrCore_Closure_New(state, 1);
     closure->function = testFunction;
-    ZrClosureInitValue(state, closure);
+    ZrCore_Closure_InitValue(state, closure);
 
     TZrStackValuePointer base = state->stackTop.valuePointer;
-    ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     state->stackTop.valuePointer = base + 1 + testFunction->stackSize;
 
-    SZrCallInfo *callInfo = ZrCallInfoExtend(state);
-    ZrCallInfoEntryNativeInit(state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
+    SZrCallInfo *callInfo = ZrCore_CallInfo_Extend(state);
+    ZrCore_CallInfo_EntryNativeInit(state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
     callInfo->functionBase.valuePointer = base;
     callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
     callInfo->context.context.programCounter = testFunction->instructionsList;
@@ -1742,16 +1742,16 @@ static void test_set_closure(void) {
     callInfo->expectedReturnCount = 1;
     state->callInfoList = callInfo;
 
-    ZrExecute(state, callInfo);
+    ZrCore_Execute(state, callInfo);
 
     // 验证闭包值被设置
     SZrClosureValue *closureValue = closure->closureValuesExtend[0];
-    SZrTypeValue *value = ZrClosureValueGetValue(closureValue);
+    SZrTypeValue *value = ZrCore_ClosureValue_GetValue(closureValue);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(value->type));
     TEST_ASSERT_EQUAL_INT64(88, value->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, testFunction);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, testFunction);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "SET_CLOSURE Instruction");
@@ -1763,28 +1763,28 @@ static void test_getupval(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 创建测试函数：GETUPVAL 0 -> stack[0]
     TZrInstruction instructions[1];
     instructions[0] = create_instruction_2(ZR_INSTRUCTION_ENUM(GETUPVAL), 0, 0, 0); // dest=0, upvalIndex=0
 
-    SZrFunction *testFunction = createTestFunction(state, instructions, 1, ZR_NULL, 0, 2);
+    SZrFunction *testFunction = create_test_function(state, instructions, 1, ZR_NULL, 0, 2);
     
     // 创建带upvalue的闭包，使用 testFunction
-    SZrClosure *closure = ZrClosureNew(state, 1);
+    SZrClosure *closure = ZrCore_Closure_New(state, 1);
     TEST_ASSERT_NOT_NULL(closure);
     closure->function = testFunction;
-    ZrClosureInitValue(state, closure);
+    ZrCore_Closure_InitValue(state, closure);
     TEST_ASSERT_NOT_NULL(closure->closureValuesExtend[0]);
-    ZrValueInitAsInt(state, ZrClosureValueGetValue(closure->closureValuesExtend[0]), 77);
+    ZrCore_Value_InitAsInt(state, ZrCore_ClosureValue_GetValue(closure->closureValuesExtend[0]), 77);
 
     TZrStackValuePointer base = state->stackTop.valuePointer;
-    ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     
     // 验证栈上的闭包对象是否正确设置
-    SZrTypeValue *stackValue = ZrStackGetValue(base);
+    SZrTypeValue *stackValue = ZrCore_Stack_GetValue(base);
     SZrClosure *stackClosure = ZR_CAST_VM_CLOSURE(state, stackValue->value.object);
     TEST_ASSERT_EQUAL_PTR(closure, stackClosure);
     TEST_ASSERT_EQUAL_PTR(testFunction, stackClosure->function);
@@ -1793,8 +1793,8 @@ static void test_getupval(void) {
     
     state->stackTop.valuePointer = base + 1 + testFunction->stackSize;
 
-    SZrCallInfo *callInfo = ZrCallInfoExtend(state);
-    ZrCallInfoEntryNativeInit(state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
+    SZrCallInfo *callInfo = ZrCore_CallInfo_Extend(state);
+    ZrCore_CallInfo_EntryNativeInit(state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
     callInfo->functionBase.valuePointer = base;
     callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
     callInfo->context.context.programCounter = testFunction->instructionsList;
@@ -1803,21 +1803,21 @@ static void test_getupval(void) {
     state->callInfoList = callInfo;
 
     // 验证执行前闭包值仍然有效
-    SZrTypeValue *functionBaseValue = ZrStackGetValue(callInfo->functionBase.valuePointer);
+    SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
     SZrClosure *closureBeforeExecute = ZR_CAST_VM_CLOSURE(state, functionBaseValue->value.object);
     TEST_ASSERT_NOT_NULL(closureBeforeExecute);
     TEST_ASSERT_EQUAL_PTR(closure, closureBeforeExecute);
     TEST_ASSERT_NOT_NULL(closureBeforeExecute->closureValuesExtend[0]);
 
-    ZrExecute(state, callInfo);
+    ZrCore_Execute(state, callInfo);
 
     // 验证结果
-    SZrTypeValue *result = ZrStackGetValue(base + 1);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 1);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(77, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, testFunction);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, testFunction);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "GETUPVAL Instruction");
@@ -1829,30 +1829,30 @@ static void test_setupval(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 创建测试函数：GET_CONSTANT 0 -> stack[0], SETUPVAL 0, stack[0]
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 66);
+    ZrCore_Value_InitAsInt(state, &constant, 66);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (66)
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(SETUPVAL), 0, 0, 0); // upvalIndex=0, src=0
 
-    SZrFunction *testFunction = createTestFunction(state, instructions, 2, &constant, 1, 3);
+    SZrFunction *testFunction = create_test_function(state, instructions, 2, &constant, 1, 3);
     
     // 创建带upvalue的闭包，使用 testFunction
-    SZrClosure *closure = ZrClosureNew(state, 1);
+    SZrClosure *closure = ZrCore_Closure_New(state, 1);
     closure->function = testFunction;
-    ZrClosureInitValue(state, closure);
+    ZrCore_Closure_InitValue(state, closure);
 
     TZrStackValuePointer base = state->stackTop.valuePointer;
-    ZrStackSetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     state->stackTop.valuePointer = base + 1 + testFunction->stackSize;
 
-    SZrCallInfo *callInfo = ZrCallInfoExtend(state);
-    ZrCallInfoEntryNativeInit(state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
+    SZrCallInfo *callInfo = ZrCore_CallInfo_Extend(state);
+    ZrCore_CallInfo_EntryNativeInit(state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
     callInfo->functionBase.valuePointer = base;
     callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
     callInfo->context.context.programCounter = testFunction->instructionsList;
@@ -1860,16 +1860,16 @@ static void test_setupval(void) {
     callInfo->expectedReturnCount = 1;
     state->callInfoList = callInfo;
 
-    ZrExecute(state, callInfo);
+    ZrCore_Execute(state, callInfo);
 
     // 验证upvalue被设置
     SZrClosureValue *closureValue = closure->closureValuesExtend[0];
-    SZrTypeValue *value = ZrClosureValueGetValue(closureValue);
+    SZrTypeValue *value = ZrCore_ClosureValue_GetValue(closureValue);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(value->type));
     TEST_ASSERT_EQUAL_INT64(66, value->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, testFunction);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, testFunction);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "SETUPVAL Instruction");
@@ -1881,17 +1881,17 @@ static void test_create_closure(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 创建函数对象
-    SZrFunction *function = ZrFunctionNew(state);
+    SZrFunction *function = ZrCore_Function_New(state);
     function->stackSize = 1;
     function->parameterCount = 0;
 
     // 将函数放入常量池
     SZrTypeValue constant;
-    ZrValueInitAsRawObject(state, &constant, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    ZrCore_Value_InitAsRawObject(state, &constant, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
     constant.type = ZR_VALUE_TYPE_FUNCTION;
 
     // 创建测试函数：CREATE_CLOSURE 0, 1 -> stack[0] (从常量0创建闭包，带1个闭包值)
@@ -1899,23 +1899,23 @@ static void test_create_closure(void) {
     instructions[0] = create_instruction_2(ZR_INSTRUCTION_ENUM(CREATE_CLOSURE), 0, 0,
                                            1); // dest=0, funcConst=0, closureVarCount=1
 
-    SZrFunction *testFunction = createTestFunction(state, instructions, 1, &constant, 1, 2);
+    SZrFunction *testFunction = create_test_function(state, instructions, 1, &constant, 1, 2);
     TEST_ASSERT_NOT_NULL(testFunction);
 
-    TBool success = executeTestFunction(state, testFunction);
+    TZrBool success = execute_test_function(state, testFunction);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 1);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 1);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_CLOSURE(result->type));
     SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, result->value.object);
     TEST_ASSERT_NOT_NULL(closure);
     TEST_ASSERT_EQUAL_PTR(function, closure->function);
     TEST_ASSERT_EQUAL_UINT(1, closure->closureValueCount);
 
-    ZrFunctionFree(state, testFunction);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, testFunction);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "CREATE_CLOSURE Instruction");
@@ -1929,33 +1929,33 @@ static void test_add_generic(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：整数相加（int类型有默认ADD元方法，应该返回int结果）
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 10);
-    ZrValueInitAsInt(state, &constants[1], 20);
+    ZrCore_Value_InitAsInt(state, &constants[0], 10);
+    ZrCore_Value_InitAsInt(state, &constants[1], 20);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(ADD), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果（int类型有默认ADD元方法，返回int结果）
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(30, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "ADD Generic Instruction");
@@ -1967,30 +1967,30 @@ static void test_sub_generic(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 20);
-    ZrValueInitAsInt(state, &constants[1], 10);
+    ZrCore_Value_InitAsInt(state, &constants[0], 20);
+    ZrCore_Value_InitAsInt(state, &constants[1], 10);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUB), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果（int类型有默认SUB元方法，返回int结果）
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(10, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "SUB Generic Instruction");
@@ -2002,30 +2002,30 @@ static void test_mul_generic(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 6);
-    ZrValueInitAsInt(state, &constants[1], 7);
+    ZrCore_Value_InitAsInt(state, &constants[0], 6);
+    ZrCore_Value_InitAsInt(state, &constants[1], 7);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(MUL), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果（int类型有默认MUL元方法，返回int结果）
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(42, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "MUL Generic Instruction");
@@ -2037,30 +2037,30 @@ static void test_div_generic(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 20);
-    ZrValueInitAsInt(state, &constants[1], 4);
+    ZrCore_Value_InitAsInt(state, &constants[0], 20);
+    ZrCore_Value_InitAsInt(state, &constants[1], 4);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(DIV), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果（int类型有默认DIV元方法，返回int结果）
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(5, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "DIV Generic Instruction");
@@ -2072,28 +2072,28 @@ static void test_mod_generic(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 17);
-    ZrValueInitAsInt(state, &constants[1], 5);
+    ZrCore_Value_InitAsInt(state, &constants[0], 17);
+    ZrCore_Value_InitAsInt(state, &constants[1], 5);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(MOD), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(result->type));
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "MOD Generic Instruction");
@@ -2105,28 +2105,28 @@ static void test_pow_generic(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 2);
-    ZrValueInitAsInt(state, &constants[1], 3);
+    ZrCore_Value_InitAsInt(state, &constants[0], 2);
+    ZrCore_Value_InitAsInt(state, &constants[1], 3);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(POW), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(result->type));
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "POW Generic Instruction");
@@ -2138,26 +2138,26 @@ static void test_neg_generic(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 5);
+    ZrCore_Value_InitAsInt(state, &constant, 5);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(NEG), 1, 0, 0);
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 3);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 2, &constant, 1, 3);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 2);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(result->type));
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "NEG Generic Instruction");
@@ -2169,28 +2169,28 @@ static void test_shift_left_generic(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 5);
-    ZrValueInitAsInt(state, &constants[1], 2);
+    ZrCore_Value_InitAsInt(state, &constants[0], 5);
+    ZrCore_Value_InitAsInt(state, &constants[1], 2);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SHIFT_LEFT), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(result->type));
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "SHIFT_LEFT Generic Instruction");
@@ -2202,28 +2202,28 @@ static void test_shift_right_generic(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 20);
-    ZrValueInitAsInt(state, &constants[1], 2);
+    ZrCore_Value_InitAsInt(state, &constants[0], 20);
+    ZrCore_Value_InitAsInt(state, &constants[1], 2);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SHIFT_RIGHT), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(result->type));
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "SHIFT_RIGHT Generic Instruction");
@@ -2237,29 +2237,29 @@ static void test_logical_less_signed(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 5);
-    ZrValueInitAsInt(state, &constants[1], 10);
+    ZrCore_Value_InitAsInt(state, &constants[0], 5);
+    ZrCore_Value_InitAsInt(state, &constants[1], 10);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_TRUE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "LOGICAL_LESS_SIGNED Instruction");
@@ -2271,29 +2271,29 @@ static void test_logical_greater_equal_signed(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 10);
-    ZrValueInitAsInt(state, &constants[1], 10);
+    ZrCore_Value_InitAsInt(state, &constants[0], 10);
+    ZrCore_Value_InitAsInt(state, &constants[1], 10);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_TRUE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "LOGICAL_GREATER_EQUAL_SIGNED Instruction");
@@ -2305,29 +2305,29 @@ static void test_logical_less_equal_signed(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 5);
-    ZrValueInitAsInt(state, &constants[1], 5);
+    ZrCore_Value_InitAsInt(state, &constants[0], 5);
+    ZrCore_Value_InitAsInt(state, &constants[1], 5);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_TRUE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "LOGICAL_LESS_EQUAL_SIGNED Instruction");
@@ -2339,29 +2339,29 @@ static void test_logical_not_equal(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 5);
-    ZrValueInitAsInt(state, &constants[1], 10);
+    ZrCore_Value_InitAsInt(state, &constants[0], 5);
+    ZrCore_Value_InitAsInt(state, &constants[1], 10);
 
     TZrInstruction instructions[3];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
     instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL), 2, 0, 1);
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, constants, 2, 4);
-    TBool success = executeTestFunction(state, function);
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 3);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_TRUE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "LOGICAL_NOT_EQUAL Instruction");
@@ -2375,7 +2375,7 @@ static void test_jump(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：JUMP跳过一条指令
@@ -2384,8 +2384,8 @@ static void test_jump(void) {
     // GET_CONSTANT 1 -> stack[1] (这条指令被跳过)
     // GET_CONSTANT 0 -> stack[1] (最终值)
     SZrTypeValue constants[2];
-    ZrValueInitAsInt(state, &constants[0], 42);
-    ZrValueInitAsInt(state, &constants[1], 100);
+    ZrCore_Value_InitAsInt(state, &constants[0], 42);
+    ZrCore_Value_InitAsInt(state, &constants[1], 100);
 
     TZrInstruction instructions[4];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (42)
@@ -2393,20 +2393,20 @@ static void test_jump(void) {
     instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1); // dest=1, const=1 (100) - 被跳过
     instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 0); // dest=1, const=0 (42)
 
-    SZrFunction *function = createTestFunction(state, instructions, 4, constants, 2, 3);
+    SZrFunction *function = create_test_function(state, instructions, 4, constants, 2, 3);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证结果：stack[1]应该是42，而不是100
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 1);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 1);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
     TEST_ASSERT_EQUAL_INT64(42, result->value.nativeObject.nativeInt64);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "JUMP Instruction");
@@ -2418,14 +2418,14 @@ static void test_jump_if(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：JUMP_IF true跳过，JUMP_IF false不跳过
     SZrTypeValue constants[3];
     ZR_VALUE_FAST_SET(&constants[0], nativeBool, ZR_TRUE, ZR_VALUE_TYPE_BOOL);
     ZR_VALUE_FAST_SET(&constants[1], nativeBool, ZR_FALSE, ZR_VALUE_TYPE_BOOL);
-    ZrValueInitAsInt(state, &constants[2], 42);
+    ZrCore_Value_InitAsInt(state, &constants[2], 42);
 
     TZrInstruction instructions[5];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (true)
@@ -2434,20 +2434,20 @@ static void test_jump_if(void) {
     instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 0); // dest=1, const=0 (true)
     instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2); // dest=2, const=2 (42)
 
-    SZrFunction *function = createTestFunction(state, instructions, 5, constants, 3, 4);
+    SZrFunction *function = create_test_function(state, instructions, 5, constants, 3, 4);
     TEST_ASSERT_NOT_NULL(function);
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
     // 验证：stack[1]应该是true（因为JUMP_IF跳过了false）
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
-    SZrTypeValue *result = ZrStackGetValue(base + 1);
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 1);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result->type));
     TEST_ASSERT_TRUE(result->value.nativeObject.nativeBool);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "JUMP_IF Instruction");
@@ -2461,29 +2461,29 @@ static void test_function_call(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 创建一个简单的被调用函数：返回常量42
     SZrTypeValue calleeConstant;
-    ZrValueInitAsInt(state, &calleeConstant, 42);
+    ZrCore_Value_InitAsInt(state, &calleeConstant, 42);
 
     TZrInstruction calleeInstructions[2];
     calleeInstructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (42)
     calleeInstructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, 0,
                                                  0); // returnCount=1, resultSlot=0, variableArgs=0
 
-    SZrFunction *calleeFunction = createTestFunction(state, calleeInstructions, 2, &calleeConstant, 1, 1);
+    SZrFunction *calleeFunction = create_test_function(state, calleeInstructions, 2, &calleeConstant, 1, 1);
     TEST_ASSERT_NOT_NULL(calleeFunction);
     calleeFunction->parameterCount = 0;
 
     // 创建调用者函数
     SZrTypeValue callerConstants[3];
-    SZrClosure *calleeClosure = ZrClosureNew(state, 0);
+    SZrClosure *calleeClosure = ZrCore_Closure_New(state, 0);
     calleeClosure->function = calleeFunction;
-    ZrValueInitAsRawObject(state, &callerConstants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(calleeClosure));
-    ZrValueInitAsUInt(state, &callerConstants[1], 0); // parameterCount = 0
-    ZrValueInitAsUInt(state, &callerConstants[2], 1); // returnCount = 1
+    ZrCore_Value_InitAsRawObject(state, &callerConstants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(calleeClosure));
+    ZrCore_Value_InitAsUInt(state, &callerConstants[1], 0); // parameterCount = 0
+    ZrCore_Value_InitAsUInt(state, &callerConstants[2], 1); // returnCount = 1
 
     TZrInstruction callerInstructions[2];
     callerInstructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (closure)
@@ -2495,8 +2495,8 @@ static void test_function_call(void) {
     // 这里简化测试，实际指令格式可能需要调整
     // 由于FUNCTION_CALL指令的复杂性，这里只做基本测试框架
 
-    ZrFunctionFree(state, calleeFunction);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, calleeFunction);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "FUNCTION_CALL Instruction");
@@ -2510,9 +2510,9 @@ static void test_function_tail_call(void) {
 
     // FUNCTION_TAIL_CALL测试与FUNCTION_CALL类似，但使用TAIL_CALL指令
     // 由于实现复杂性，这里只做占位测试
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
-    destroyTestState(state);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "FUNCTION_TAIL_CALL Instruction");
@@ -2524,28 +2524,28 @@ static void test_function_return(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 创建函数：返回常量42
     SZrTypeValue constant;
-    ZrValueInitAsInt(state, &constant, 42);
+    ZrCore_Value_InitAsInt(state, &constant, 42);
 
     TZrInstruction instructions[2];
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (42)
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, 0,
                                            0); // returnCount=1, resultSlot=0, variableArgs=0
 
-    SZrFunction *function = createTestFunction(state, instructions, 2, &constant, 1, 2);
+    SZrFunction *function = create_test_function(state, instructions, 2, &constant, 1, 2);
     TEST_ASSERT_NOT_NULL(function);
     function->parameterCount = 0;
 
-    TBool success = executeTestFunction(state, function);
+    TZrBool success = execute_test_function(state, function);
     // FUNCTION_RETURN会导致函数返回，所以executeTestFunction会返回true
     TEST_ASSERT_TRUE(success);
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "FUNCTION_RETURN Instruction");
@@ -2559,14 +2559,14 @@ static void test_try_throw_catch(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     // 测试：TRY块中THROW异常，然后CATCH捕获
     // 由于异常处理机制复杂，这里只做基本框架
     SZrTypeValue constant;
-    SZrString *errorMsg = ZrStringCreateFromNative(state, "test error");
-    ZrValueInitAsRawObject(state, &constant, ZR_CAST_RAW_OBJECT_AS_SUPER(errorMsg));
+    SZrString *errorMsg = ZrCore_String_CreateFromNative(state, "test error");
+    ZrCore_Value_InitAsRawObject(state, &constant, ZR_CAST_RAW_OBJECT_AS_SUPER(errorMsg));
 
     // TRY指令主要是标记，实际异常处理由底层机制处理
     // THROW指令抛出异常
@@ -2576,14 +2576,14 @@ static void test_try_throw_catch(void) {
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0); // dest=0, const=0 (error message)
     instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(THROW), 0, 0); // THROW from slot 0
 
-    SZrFunction *function = createTestFunction(state, instructions, 3, &constant, 1, 2);
+    SZrFunction *function = create_test_function(state, instructions, 3, &constant, 1, 2);
     TEST_ASSERT_NOT_NULL(function);
 
     // 由于异常处理使用setjmp/longjmp，测试可能会比较复杂
     // 这里只做基本框架，实际测试需要更完善的异常处理设置
 
-    ZrFunctionFree(state, function);
-    destroyTestState(state);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "TRY THROW CATCH Instructions");

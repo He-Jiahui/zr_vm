@@ -189,16 +189,16 @@ ZR_INSTRUCTION_ENUM_WRAP(ZR_INSTRUCTION_DECLARE(ZR_INSTRUCTION_ENUM_DECLARE));
 typedef enum EZrInstructionCode EZrInstructionCode;
 
 union TZrInstructionType {
-    TUInt8 operand0[4];
-    TUInt16 operand1[2];
-    TInt32 operand2[1];
+    TZrUInt8 operand0[4];
+    TZrUInt16 operand1[2];
+    TZrInt32 operand2[1];
 };
 
 typedef union TZrInstructionType TZrInstructionType;
-#define ZR_INSTRUCTION_USE_RET_FLAG ((TUInt16) (-1))
+#define ZR_INSTRUCTION_USE_RET_FLAG ((TZrUInt16) (-1))
 struct SZrInstruction {
-    TUInt16 operationCode;
-    TUInt16 operandExtra;
+    TZrUInt16 operationCode;
+    TZrUInt16 operandExtra;
     TZrInstructionType operand;
 };
 
@@ -206,7 +206,7 @@ typedef struct SZrInstruction SZrInstruction;
 
 union TZrInstruction {
     SZrInstruction instruction;
-    TUInt64 value;
+    TZrUInt64 value;
 };
 
 typedef union TZrInstruction TZrInstruction;

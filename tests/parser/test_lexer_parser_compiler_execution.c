@@ -100,7 +100,7 @@ void setUp(void) {}
 void tearDown(void) {}
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -219,7 +219,7 @@ void test_lexer_char_literal_token(void) {
     TEST_INFO("Lexer char literal token", 
               "Testing that lexer correctly identifies single quotes as ZR_TK_CHAR token");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12350, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12350, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Lexer Char Literal Token Recognition", "Failed to create global state");
         return;
@@ -229,16 +229,16 @@ void test_lexer_char_literal_token(void) {
     
     // 创建 lexer
     const char* source = "'a'";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", strlen("test.zr"));
     SZrLexState lexer;
-    ZrLexerInit(&lexer, state, source, strlen(source), sourceName);
+    ZrParser_Lexer_Init(&lexer, state, source, strlen(source), sourceName);
     
     // 直接读取初始化后的第一个 token
     EZrToken token = lexer.t.token;
     
     // 验证 token 类型
-    TBool isCharToken = (token == ZR_TK_CHAR);
-    ZrGlobalStateFree(global);
+    TZrBool isCharToken = (token == ZR_TK_CHAR);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -258,7 +258,7 @@ void test_lexer_string_literal_token(void) {
     TEST_INFO("Lexer string literal token", 
               "Testing that lexer correctly identifies double quotes as ZR_TK_STRING token");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12351, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12351, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Lexer String Literal Token Recognition", "Failed to create global state");
         return;
@@ -268,16 +268,16 @@ void test_lexer_string_literal_token(void) {
     
     // 创建 lexer
     const char* source = "\"hello\"";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", strlen("test.zr"));
     SZrLexState lexer;
-    ZrLexerInit(&lexer, state, source, strlen(source), sourceName);
+    ZrParser_Lexer_Init(&lexer, state, source, strlen(source), sourceName);
     
     // 直接读取初始化后的第一个 token
     EZrToken token = lexer.t.token;
     
     // 验证 token 类型
-    TBool isStringToken = (token == ZR_TK_STRING);
-    ZrGlobalStateFree(global);
+    TZrBool isStringToken = (token == ZR_TK_STRING);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -296,7 +296,7 @@ void test_lexer_integer_literal_preserves_numeric_and_raw_literal(void) {
     TEST_INFO("Lexer integer literal semantic payload",
               "Testing that integer tokens retain both parsed numeric value and original literal text");
 
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 123519, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 123519, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer,
                          "Lexer Integer Literal Preserves Numeric And Raw Literal",
@@ -307,22 +307,22 @@ void test_lexer_integer_literal_preserves_numeric_and_raw_literal(void) {
     {
         const char *source = "12345";
         SZrState *state = global->mainThreadState;
-        SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", strlen("test.zr"));
         SZrLexState lexer;
-        TNativeString literalString = ZR_NULL;
+        TZrNativeString literalString = ZR_NULL;
 
-        ZrLexerInit(&lexer, state, source, strlen(source), sourceName);
+        ZrParser_Lexer_Init(&lexer, state, source, strlen(source), sourceName);
 
         TEST_ASSERT_EQUAL_INT(ZR_TK_INTEGER, lexer.t.token);
         TEST_ASSERT_EQUAL_INT64(12345, lexer.t.seminfo.intValue);
         TEST_ASSERT_NOT_NULL(lexer.t.seminfo.stringValue);
 
-        literalString = ZrStringGetNativeString(lexer.t.seminfo.stringValue);
+        literalString = ZrCore_String_GetNativeString(lexer.t.seminfo.stringValue);
         TEST_ASSERT_NOT_NULL(literalString);
         TEST_ASSERT_EQUAL_STRING("12345", literalString);
     }
 
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "Lexer Integer Literal Preserves Numeric And Raw Literal");
@@ -337,7 +337,7 @@ void test_lexer_char_escape_sequences(void) {
     TEST_INFO("Lexer char escape sequences", 
               "Testing that lexer correctly parses escape sequences in char literals");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12352, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12352, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Lexer Char Escape Sequences", "Failed to create global state");
         return;
@@ -354,12 +354,12 @@ void test_lexer_char_escape_sequences(void) {
         ZR_NULL
     };
     
-    TBool allPassed = ZR_TRUE;
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
+    TZrBool allPassed = ZR_TRUE;
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", strlen("test.zr"));
     
     for (int i = 0; testCases[i] != ZR_NULL; i++) {
         SZrLexState lexer;
-        ZrLexerInit(&lexer, state, testCases[i], strlen(testCases[i]), sourceName);
+        ZrParser_Lexer_Init(&lexer, state, testCases[i], strlen(testCases[i]), sourceName);
         EZrToken token = lexer.t.token;
         if (token != ZR_TK_CHAR) {
             allPassed = ZR_FALSE;
@@ -367,7 +367,7 @@ void test_lexer_char_escape_sequences(void) {
         }
     }
     
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -389,7 +389,7 @@ void test_parser_char_literal_ast(void) {
     TEST_INFO("Parser char literal AST", 
               "Testing that parser creates correct AST node for char literals");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12353, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12353, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Parser Char Literal AST Creation", "Failed to create global state");
         return;
@@ -398,10 +398,10 @@ void test_parser_char_literal_ast(void) {
     SZrState *state = global->mainThreadState;
     
     const char* source = "var c = 'a';";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", strlen("test.zr"));
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
-    TBool hasCharLiteral = ZR_FALSE;
+    TZrBool hasCharLiteral = ZR_FALSE;
     
     if (ast != ZR_NULL && ast->type == ZR_AST_SCRIPT) {
         SZrScript *script = &ast->data.script;
@@ -414,10 +414,10 @@ void test_parser_char_literal_ast(void) {
                 }
             }
         }
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
     
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -437,7 +437,7 @@ void test_parser_type_cast_ast(void) {
     TEST_INFO("Parser type cast AST", 
               "Testing that parser creates correct AST node for type cast expressions");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12354, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12354, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Parser Type Cast AST Creation", "Failed to create global state");
         return;
@@ -446,10 +446,10 @@ void test_parser_type_cast_ast(void) {
     SZrState *state = global->mainThreadState;
     
     const char* source = "var i = <int> 3.14;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", strlen("test.zr"));
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
-    TBool hasTypeCast = ZR_FALSE;
+    TZrBool hasTypeCast = ZR_FALSE;
     
     if (ast != ZR_NULL && ast->type == ZR_AST_SCRIPT) {
         SZrScript *script = &ast->data.script;
@@ -462,10 +462,10 @@ void test_parser_type_cast_ast(void) {
                 }
             }
         }
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
     
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -485,7 +485,7 @@ void test_parser_basic_type_cast(void) {
     TEST_INFO("Parser basic type cast", 
               "Testing parsing of basic type casts: <int>, <float>, <string>, <bool>");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12355, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12355, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Parser Basic Type Cast Parsing", "Failed to create global state");
         return;
@@ -501,11 +501,11 @@ void test_parser_basic_type_cast(void) {
         ZR_NULL
     };
     
-    TBool allPassed = ZR_TRUE;
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
+    TZrBool allPassed = ZR_TRUE;
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", strlen("test.zr"));
     
     for (int i = 0; testCases[i] != ZR_NULL; i++) {
-        SZrAstNode *ast = ZrParserParse(state, testCases[i], strlen(testCases[i]), sourceName);
+        SZrAstNode *ast = ZrParser_Parse(state, testCases[i], strlen(testCases[i]), sourceName);
         if (ast == ZR_NULL) {
             allPassed = ZR_FALSE;
             break;
@@ -516,29 +516,29 @@ void test_parser_basic_type_cast(void) {
             SZrScript *script = &ast->data.script;
             if (script->statements == ZR_NULL || script->statements->count == 0) {
                 allPassed = ZR_FALSE;
-                ZrParserFreeAst(state, ast);
+                ZrParser_Ast_Free(state, ast);
                 break;
             }
             
             SZrAstNode *stmt = script->statements->nodes[0];
             if (stmt == ZR_NULL || stmt->type != ZR_AST_VARIABLE_DECLARATION) {
                 allPassed = ZR_FALSE;
-                ZrParserFreeAst(state, ast);
+                ZrParser_Ast_Free(state, ast);
                 break;
             }
             
             SZrVariableDeclaration *varDecl = &stmt->data.variableDeclaration;
             if (varDecl->value == ZR_NULL || varDecl->value->type != ZR_AST_TYPE_CAST_EXPRESSION) {
                 allPassed = ZR_FALSE;
-                ZrParserFreeAst(state, ast);
+                ZrParser_Ast_Free(state, ast);
                 break;
             }
         }
         
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
     }
     
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -560,7 +560,7 @@ void test_compiler_char_literal(void) {
     TEST_INFO("Compiler char literal", 
               "Testing that compiler generates correct instructions for char literals");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12356, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12356, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Compiler Char Literal Compilation", "Failed to create global state");
         return;
@@ -569,19 +569,19 @@ void test_compiler_char_literal(void) {
     SZrState *state = global->mainThreadState;
     
     const char* source = "var c = 'a';";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", strlen("test.zr"));
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Compiler Char Literal Compilation", "Failed to parse source");
         return;
     }
     
-    SZrFunction *func = ZrCompilerCompile(state, ast);
-    ZrParserFreeAst(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
+    ZrParser_Ast_Free(state, ast);
     
-    TBool hasInstructions = ZR_FALSE;
+    TZrBool hasInstructions = ZR_FALSE;
     
     if (func != ZR_NULL) {
         // 检查是否有指令生成
@@ -590,7 +590,7 @@ void test_compiler_char_literal(void) {
         }
     }
     
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -610,7 +610,7 @@ void test_compiler_basic_type_cast(void) {
     TEST_INFO("Compiler basic type cast", 
               "Testing that compiler generates correct conversion instructions");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12357, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12357, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Compiler Basic Type Cast Compilation", "Failed to create global state");
         return;
@@ -619,23 +619,23 @@ void test_compiler_basic_type_cast(void) {
     SZrState *state = global->mainThreadState;
     
     const char* source = "var i = <int> 3.14;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", strlen("test.zr"));
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Compiler Basic Type Cast Compilation", "Failed to parse source");
         return;
     }
     
-    SZrFunction *func = ZrCompilerCompile(state, ast);
-    ZrParserFreeAst(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
+    ZrParser_Ast_Free(state, ast);
     
-    TBool hasConversionInstruction = ZR_FALSE;
+    TZrBool hasConversionInstruction = ZR_FALSE;
     
     if (func != ZR_NULL && func->instructionsList != ZR_NULL && func->instructionsLength > 0) {
         // 查找 TO_INT 指令
-        for (TUInt32 i = 0; i < func->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
             TZrInstruction *inst = &func->instructionsList[i];
             EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(TO_INT)) {
@@ -645,7 +645,7 @@ void test_compiler_basic_type_cast(void) {
         }
     }
     
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -672,7 +672,7 @@ void test_compiler_struct_type_cast(void) {
         return;
     }
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12358, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12358, ZR_NULL);
     if (global == ZR_NULL) {
         free(testFile);
         TEST_FAIL_CUSTOM(timer, "Compiler Struct Type Cast Compilation", "Failed to create global state");
@@ -685,30 +685,30 @@ void test_compiler_struct_type_cast(void) {
     char* source = read_file_content(testFile, &fileSize);
     if (source == ZR_NULL) {
         free(testFile);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Compiler Struct Type Cast Compilation", "Failed to read test file");
         return;
     }
     
-    SZrString *sourceName = ZrStringCreate(state, testFile, strlen(testFile));
-    SZrAstNode *ast = ZrParserParse(state, source, fileSize, sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, testFile, strlen(testFile));
+    SZrAstNode *ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     if (ast == ZR_NULL) {
         free(source);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Compiler Struct Type Cast Compilation", "Failed to parse source");
         return;
     }
     
-    SZrFunction *func = ZrCompilerCompile(state, ast);
-    ZrParserFreeAst(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
+    ZrParser_Ast_Free(state, ast);
     free(source);
     
-    TBool hasToStructInstruction = ZR_FALSE;
+    TZrBool hasToStructInstruction = ZR_FALSE;
     
     if (func != ZR_NULL && func->instructionsList != ZR_NULL && func->instructionsLength > 0) {
         // 查找 TO_STRUCT 指令
-        for (TUInt32 i = 0; i < func->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
             TZrInstruction *inst = &func->instructionsList[i];
             EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(TO_STRUCT)) {
@@ -718,7 +718,7 @@ void test_compiler_struct_type_cast(void) {
         }
     }
     
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -745,7 +745,7 @@ void test_compiler_class_type_cast(void) {
         return;
     }
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12359, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12359, ZR_NULL);
     if (global == ZR_NULL) {
         free(testFile);
         TEST_FAIL_CUSTOM(timer, "Compiler Class Type Cast Compilation", "Failed to create global state");
@@ -758,30 +758,30 @@ void test_compiler_class_type_cast(void) {
     char* source = read_file_content(testFile, &fileSize);
     if (source == ZR_NULL) {
         free(testFile);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Compiler Class Type Cast Compilation", "Failed to read test file");
         return;
     }
     
-    SZrString *sourceName = ZrStringCreate(state, testFile, strlen(testFile));
-    SZrAstNode *ast = ZrParserParse(state, source, fileSize, sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, testFile, strlen(testFile));
+    SZrAstNode *ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     if (ast == ZR_NULL) {
         free(source);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Compiler Class Type Cast Compilation", "Failed to parse source");
         return;
     }
     
-    SZrFunction *func = ZrCompilerCompile(state, ast);
-    ZrParserFreeAst(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
+    ZrParser_Ast_Free(state, ast);
     free(source);
     
-    TBool hasToObjectInstruction = ZR_FALSE;
+    TZrBool hasToObjectInstruction = ZR_FALSE;
     
     if (func != ZR_NULL && func->instructionsList != ZR_NULL && func->instructionsLength > 0) {
         // 查找 TO_OBJECT 指令
-        for (TUInt32 i = 0; i < func->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
             TZrInstruction *inst = &func->instructionsList[i];
             EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(TO_OBJECT)) {
@@ -791,7 +791,7 @@ void test_compiler_class_type_cast(void) {
         }
     }
     
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -813,7 +813,7 @@ void test_execution_basic_type_cast(void) {
     TEST_INFO("Execution basic type cast", 
               "Testing that TO_INT, TO_FLOAT, TO_STRING, TO_BOOL instructions execute correctly");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12360, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12360, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Execution Basic Type Cast", "Failed to create global state");
         return;
@@ -823,36 +823,36 @@ void test_execution_basic_type_cast(void) {
     
     // 测试 TO_INT
     const char* source1 = "var i = <int> 3.14;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", strlen("test.zr"));
-    SZrAstNode *ast1 = ZrParserParse(state, source1, strlen(source1), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", strlen("test.zr"));
+    SZrAstNode *ast1 = ZrParser_Parse(state, source1, strlen(source1), sourceName);
     
     if (ast1 == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Execution Basic Type Cast", "Failed to parse source");
         return;
     }
     
-    SZrFunction *func1 = ZrCompilerCompile(state, ast1);
-    ZrParserFreeAst(state, ast1);
+    SZrFunction *func1 = ZrParser_Compiler_Compile(state, ast1);
+    ZrParser_Ast_Free(state, ast1);
     
-    TBool compilationSuccess = (func1 != ZR_NULL);
+    TZrBool compilationSuccess = (func1 != ZR_NULL);
     
     // 添加实际执行测试
-    TBool executionSuccess = ZR_FALSE;
+    TZrBool executionSuccess = ZR_FALSE;
     if (compilationSuccess && func1 != ZR_NULL) {
         // 创建闭包并执行函数
-        SZrClosure *closure = ZrClosureNew(state, 0);
+        SZrClosure *closure = ZrCore_Closure_New(state, 0);
         if (closure != ZR_NULL) {
             closure->function = func1;
             
             // 创建闭包值并调用函数
             TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
             TZrStackValuePointer callBase = savedStackTop;
-            ZrStackSetRawObjectValue(state, callBase, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+            ZrCore_Stack_SetRawObjectValue(state, callBase, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
             state->stackTop.valuePointer = callBase + 1;
             
             // 调用函数
-            ZrFunctionCall(state, callBase, 0);
+            ZrCore_Function_Call(state, callBase, 0);
             
             // 检查执行是否成功
             if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
@@ -861,7 +861,7 @@ void test_execution_basic_type_cast(void) {
         }
     }
     
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -883,7 +883,7 @@ void test_type_cast_instructions_defined(void) {
     TEST_INFO("Type cast instructions definition", 
               "Testing that all type cast instructions are defined in instruction set");
     
-    TBool allDefined = ZR_TRUE;
+    TZrBool allDefined = ZR_TRUE;
     const char* missingInstructions = "";
     
     // 检查基本类型转换指令
@@ -912,7 +912,7 @@ void test_char_literal_full_pipeline(void) {
     TEST_INFO("Char literal full pipeline", 
               "Testing complete pipeline: lexer -> parser -> compiler for char literals");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12361, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12361, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Char Literal Full Pipeline", "Failed to create global state");
         return;
@@ -923,7 +923,7 @@ void test_char_literal_full_pipeline(void) {
     // 读取测试文件
     char* testFile = find_test_file("test_char_literals.zr");
     if (testFile == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Char Literal Full Pipeline", "Test file not found");
         return;
     }
@@ -931,38 +931,38 @@ void test_char_literal_full_pipeline(void) {
     TZrSize fileSize = 0;
     char* source = read_file_content(testFile, &fileSize);
     if (source == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Char Literal Full Pipeline", "Failed to read test file");
         return;
     }
     
-    SZrString *sourceName = ZrStringCreate(state, testFile, strlen(testFile));
+    SZrString *sourceName = ZrCore_String_Create(state, testFile, strlen(testFile));
     
     // 1. 解析
-    SZrAstNode *ast = ZrParserParse(state, source, fileSize, sourceName);
+    SZrAstNode *ast = ZrParser_Parse(state, source, fileSize, sourceName);
     if (ast == ZR_NULL) {
         free(source);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Char Literal Full Pipeline", "Parsing failed");
         return;
     }
     
     // 2. 编译
-    SZrFunction *func = ZrCompilerCompile(state, ast);
-    ZrParserFreeAst(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
+    ZrParser_Ast_Free(state, ast);
     
     if (func == ZR_NULL) {
         free(source);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Char Literal Full Pipeline", "Compilation failed");
         return;
     }
     
     // 验证编译结果
-    TBool hasInstructions = (func->instructionsList != ZR_NULL && func->instructionsLength > 0);
+    TZrBool hasInstructions = (func->instructionsList != ZR_NULL && func->instructionsLength > 0);
     
     free(source);
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     
@@ -982,7 +982,7 @@ void test_type_cast_full_pipeline(void) {
     TEST_INFO("Type cast full pipeline", 
               "Testing complete pipeline: parser -> compiler for type casts");
     
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12362, ZR_NULL);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12362, ZR_NULL);
     if (global == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, "Type Cast Full Pipeline", "Failed to create global state");
         return;
@@ -993,7 +993,7 @@ void test_type_cast_full_pipeline(void) {
     // 读取测试文件
     char* testFile = find_test_file("test_type_cast_basic.zr");
     if (testFile == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Type Cast Full Pipeline", "Test file not found");
         return;
     }
@@ -1001,40 +1001,40 @@ void test_type_cast_full_pipeline(void) {
     TZrSize fileSize = 0;
     char* source = read_file_content(testFile, &fileSize);
     if (source == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Type Cast Full Pipeline", "Failed to read test file");
         return;
     }
     
-    SZrString *sourceName = ZrStringCreate(state, testFile, strlen(testFile));
+    SZrString *sourceName = ZrCore_String_Create(state, testFile, strlen(testFile));
     
     // 1. 解析
-    SZrAstNode *ast = ZrParserParse(state, source, fileSize, sourceName);
+    SZrAstNode *ast = ZrParser_Parse(state, source, fileSize, sourceName);
     if (ast == ZR_NULL) {
         free(source);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Type Cast Full Pipeline", "Parsing failed");
         return;
     }
     
     // 2. 编译
-    SZrFunction *func = ZrCompilerCompile(state, ast);
-    ZrParserFreeAst(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
+    ZrParser_Ast_Free(state, ast);
     
     if (func == ZR_NULL) {
         free(source);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         TEST_FAIL_CUSTOM(timer, "Type Cast Full Pipeline", "Compilation failed");
         return;
     }
     
     // 验证编译结果
-    TBool hasInstructions = (func->instructionsList != ZR_NULL && func->instructionsLength > 0);
-    TBool hasConversionInstructions = ZR_FALSE;
+    TZrBool hasInstructions = (func->instructionsList != ZR_NULL && func->instructionsLength > 0);
+    TZrBool hasConversionInstructions = ZR_FALSE;
     
     if (hasInstructions) {
         // 检查是否有转换指令
-        for (TUInt32 i = 0; i < func->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
             TZrInstruction *inst = &func->instructionsList[i];
             EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(TO_INT) ||
@@ -1048,7 +1048,7 @@ void test_type_cast_full_pipeline(void) {
     }
     
     free(source);
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
     

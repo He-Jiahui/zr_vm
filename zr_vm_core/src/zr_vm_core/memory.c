@@ -10,27 +10,27 @@
 
 
 // todo:
-TZrPtr ZrMemoryGcAndMalloc(SZrState *state, EZrMemoryNativeType type, TZrSize size) {
+TZrPtr ZrCore_Memory_GcAndMalloc(SZrState *state, EZrMemoryNativeType type, TZrSize size) {
     ZR_UNUSED_PARAMETER(type);
     SZrGlobalState *global = state->global;
     // global state is initialized judge by null value
-    if (ZrGlobalStateIsInitialized(global) && !global->garbageCollector->isImmediateGcFlag) {
+    if (ZrCore_GlobalState_IsInitialized(global) && !global->garbageCollector->isImmediateGcFlag) {
         // todo: call full gc
-        ZrGarbageCollectorGcFull(state, ZR_TRUE);
-        return ZrMemoryRawMallocWithType(global, size, type);
+        ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+        return ZrCore_Memory_RawMallocWithType(global, size, type);
     }
     return ZR_NULL;
 }
 
-TZrPtr ZrMemoryGcMalloc(SZrState *state, EZrMemoryNativeType type, TZrSize size) {
+TZrPtr ZrCore_Memory_GcMalloc(SZrState *state, EZrMemoryNativeType type, TZrSize size) {
     ZR_ASSERT(size > 0);
     SZrGlobalState *global = state->global;
-    TZrPtr pointer = ZrMemoryRawMallocWithType(global, size, type);
+    TZrPtr pointer = ZrCore_Memory_RawMallocWithType(global, size, type);
     if (ZR_UNLIKELY(pointer == ZR_NULL)) {
         // trigger gc and try again
-        pointer = ZrMemoryGcAndMalloc(state, type, size);
+        pointer = ZrCore_Memory_GcAndMalloc(state, type, size);
         if (pointer == ZR_NULL) {
-            ZrExceptionThrow(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+            ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
         }
     }
     global->garbageCollector->gcDebtSize += (TZrMemoryOffset) size;

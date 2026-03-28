@@ -8,11 +8,11 @@
 
 #define ZR_MATH_MIN(x, y) ((x) < (y) ? (x) : (y))
 #define ZR_MATH_MAX(x, y) ((x) > (y) ? (x) : (y))
-ZR_FORCE_INLINE TUInt64 ZrMathUIntPower(TUInt64 base, TUInt64 exponent) {
+ZR_FORCE_INLINE TZrUInt64 ZrCore_Math_UIntPower(TZrUInt64 base, TZrUInt64 exponent) {
     if (ZR_UNLIKELY(exponent == 0)) {
         return 1;
     }
-    TUInt64 result = 1;
+    TZrUInt64 result = 1;
     while (exponent > 0) {
         if (exponent & 1) {
             if (ZR_UNLIKELY(base > ZR_UINT_MAX / base)) {
@@ -34,7 +34,7 @@ ZR_FORCE_INLINE TUInt64 ZrMathUIntPower(TUInt64 base, TUInt64 exponent) {
     return result;
 }
 
-ZR_FORCE_INLINE TInt64 ZrMathIntPower(TInt64 base, TInt64 exponent) {
+ZR_FORCE_INLINE TZrInt64 ZrCore_Math_IntPower(TZrInt64 base, TZrInt64 exponent) {
     if (ZR_UNLIKELY(exponent < 0)) {
         return 0;
     }
@@ -50,26 +50,26 @@ ZR_FORCE_INLINE TInt64 ZrMathIntPower(TInt64 base, TInt64 exponent) {
     if (ZR_UNLIKELY(base == -1)) {
         return (exponent & 1) ? -1 : 1;
     }
-    TBool isNegative = base < 0;
-    TUInt64 absBase = isNegative ? -base : base;
-    TUInt64 absResult = ZrMathUIntPower(absBase, exponent);
+    TZrBool isNegative = base < 0;
+    TZrUInt64 absBase = isNegative ? -base : base;
+    TZrUInt64 absResult = ZrCore_Math_UIntPower(absBase, exponent);
 
     if (ZR_UNLIKELY(absResult == 0 && absBase != 0)) {
         // overflow!
         return 0;
     }
     if (isNegative && (exponent & 1)) {
-        if (ZR_UNLIKELY(absResult>(TUInt64)ZR_INT_MAX + 1)) {
+        if (ZR_UNLIKELY(absResult>(TZrUInt64)ZR_INT_MAX + 1)) {
             // overflow!
             return 0;
         }
-        return -(TInt64) absResult;
+        return -(TZrInt64) absResult;
     } {
-        if (ZR_UNLIKELY(absResult>(TUInt64)ZR_INT_MAX)) {
+        if (ZR_UNLIKELY(absResult>(TZrUInt64)ZR_INT_MAX)) {
             // overflow!
             return 0;
         }
-        return (TInt64) absResult;
+        return (TZrInt64) absResult;
     }
 }
 

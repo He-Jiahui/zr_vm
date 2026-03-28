@@ -7,6 +7,4 @@
 
 #include "zr_vm_library/conf.h"
 
-ZR_EMPTY_MODULE(zr_vm_library)
-
 #endif //ZR_VM_LIBRARY_H

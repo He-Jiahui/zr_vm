@@ -25,10 +25,10 @@ struct ZR_STRUCT_ALIGN SZrMetaTable {
 
 typedef struct SZrMetaTable SZrMetaTable;
 
-ZR_CORE_API void ZrMetaGlobalStaticsInit(struct SZrState *state);
+ZR_CORE_API void ZrCore_Meta_GlobalStaticsInit(struct SZrState *state);
 
-ZR_CORE_API void ZrMetaTableConstruct(SZrMetaTable *table);
+ZR_CORE_API void ZrCore_MetaTable_Construct(SZrMetaTable *table);
 
-ZR_CORE_API void ZrMetaInitBuiltinTypeMetaMethods(struct SZrState *state, EZrValueType valueType);
+ZR_CORE_API void ZrCore_Meta_InitBuiltinTypeMetaMethods(struct SZrState *state, EZrValueType valueType);
 
 #endif // ZR_VM_CORE_META_H

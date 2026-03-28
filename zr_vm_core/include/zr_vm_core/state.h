@@ -25,7 +25,7 @@ struct ZR_STRUCT_ALIGN SZrState {
 
 
     SZrCallInfo *callInfoList;
-    TUInt32 callInfoListLength;
+    TZrUInt32 callInfoListLength;
     SZrCallInfo baseCallInfo;
 
     // address of current stack top
@@ -43,47 +43,47 @@ struct ZR_STRUCT_ALIGN SZrState {
 
 
     // for exceptions
-    TUInt32 nestedNativeCalls;
-    TUInt32 nestedNativeCallYieldFlag;
+    TZrUInt32 nestedNativeCalls;
+    TZrUInt32 nestedNativeCallYieldFlag;
     SZrExceptionLongJump *exceptionRecoverPoint;
     TZrMemoryOffset exceptionHandlingFunctionOffset;
 
 
     // debug
-    TBool allowDebugHook;
-    TUInt32 baseDebugHookCount;
-    TUInt32 debugHookCount;
+    TZrBool allowDebugHook;
+    TZrUInt32 baseDebugHookCount;
+    TZrUInt32 debugHookCount;
     volatile FZrDebugHook debugHook;
     volatile TZrDebugSignal debugHookSignal;
     
     // 运行时检查标志
-    TBool enableRuntimeBoundsCheck;   // 启用运行时边界检查
-    TBool enableRuntimeTypeCheck;      // 启用运行时类型检查
-    TBool enableRuntimeRangeCheck;     // 启用运行时范围检查
+    TZrBool enableRuntimeBoundsCheck;   // 启用运行时边界检查
+    TZrBool enableRuntimeTypeCheck;      // 启用运行时类型检查
+    TZrBool enableRuntimeRangeCheck;     // 启用运行时范围检查
 };
 
 typedef struct SZrState SZrState;
 
 
-ZR_CORE_API SZrState *ZrStateNew(struct SZrGlobalState *global);
+ZR_CORE_API SZrState *ZrCore_State_New(struct SZrGlobalState *global);
 
-ZR_CORE_API void ZrStateInit(SZrState *state, struct SZrGlobalState *global);
+ZR_CORE_API void ZrCore_State_Init(SZrState *state, struct SZrGlobalState *global);
 
-ZR_CORE_API void ZrStateMainThreadLaunch(SZrState *state, TZrPtr arguments);
+ZR_CORE_API void ZrCore_State_MainThreadLaunch(SZrState *state, TZrPtr arguments);
 
-ZR_CORE_API void ZrStateExit(SZrState *state);
+ZR_CORE_API void ZrCore_State_Exit(SZrState *state);
 
-ZR_CORE_API void ZrStateFree(struct SZrGlobalState *global, SZrState *state);
+ZR_CORE_API void ZrCore_State_Free(struct SZrGlobalState *global, SZrState *state);
 
-ZR_CORE_API TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status);
+ZR_CORE_API TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status);
 
-ZR_CORE_API EZrThreadStatus ZrStateDoRun(SZrState *state, TNativeString entry);
+ZR_CORE_API EZrThreadStatus ZrCore_State_DoRun(SZrState *state, TZrNativeString entry);
 
-ZR_FORCE_INLINE TZrSize ZrStateStackGetSize(SZrState *state) {
+ZR_FORCE_INLINE TZrSize ZrCore_State_StackGetSize(SZrState *state) {
     return state->stackTail.valuePointer - state->stackBase.valuePointer;
 }
 
-ZR_FORCE_INLINE TBool ZrStateIsInClosureValueThreadList(SZrState *state) {
+ZR_FORCE_INLINE TZrBool ZrCore_State_IsInClosureValueThreadList(SZrState *state) {
     // if list is not point to self, it means it is in list
     return state->threadWithStackClosures != state;
 }

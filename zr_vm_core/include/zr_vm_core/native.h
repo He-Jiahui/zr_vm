@@ -11,7 +11,7 @@
 
 struct ZR_STRUCT_ALIGN SZrNativeData {
     SZrRawObject super;
-    TUInt32 valueLength;
+    TZrUInt32 valueLength;
     // SZrRawObject *gcList;
     SZrTypeValue valueExtend[1];
 };

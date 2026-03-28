@@ -11,7 +11,7 @@
 struct SZrGlobalState;
 struct SZrState;
 // same type is basic condition for hash object
-typedef TBool (*FZrHashCompare)(struct SZrState *state, const SZrRawObject *object1, const SZrRawObject *object2);
+typedef TZrBool (*FZrHashCompare)(struct SZrState *state, const SZrRawObject *object1, const SZrRawObject *object2);
 
 struct ZR_STRUCT_ALIGN SZrHashKeyValuePair {
     SZrTypeValue key;
@@ -22,9 +22,9 @@ struct ZR_STRUCT_ALIGN SZrHashKeyValuePair {
 
 typedef struct SZrHashKeyValuePair SZrHashKeyValuePair;
 
-ZR_CORE_API TUInt64 ZrHashSeedCreate(struct SZrGlobalState *global, TUInt64 uniqueNumber);
+ZR_CORE_API TZrUInt64 ZrCore_HashSeed_Create(struct SZrGlobalState *global, TZrUInt64 uniqueNumber);
 
-ZR_CORE_API TUInt64 ZrHashCreate(struct SZrGlobalState *global, TNativeString string, TZrSize length);
+ZR_CORE_API TZrUInt64 ZrCore_Hash_Create(struct SZrGlobalState *global, TZrNativeString string, TZrSize length);
 
 
 #endif // ZR_VM_CORE_HASH_H

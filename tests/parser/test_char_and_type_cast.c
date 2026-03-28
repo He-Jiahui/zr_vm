@@ -81,7 +81,7 @@ static char* test_realpath(const char* path, char* resolved_path) {
 #endif
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -104,31 +104,31 @@ static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSiz
 }
 
 // 创建测试状态
-static SZrState* createTestState(void) {
+static SZrState* create_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState* global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
+    SZrGlobalState* global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
     if (!global) return ZR_NULL;
     
     SZrState* mainState = global->mainThreadState;
     if (mainState) {
-        ZrGlobalStateInitRegistry(mainState, global);
+        ZrCore_GlobalState_InitRegistry(mainState, global);
     }
     
     return mainState;
 }
 
 // 销毁测试状态
-static void destroyTestState(SZrState* state) {
+static void destroy_test_state(SZrState* state) {
     if (!state) return;
     
     SZrGlobalState* global = state->global;
     if (global) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
     }
 }
 
 // 读取测试文件内容
-static char* readTestFile(const char* filename, size_t* outSize) {
+static char* read_test_file(const char* filename, size_t* outSize) {
     FILE* file = fopen(filename, "r");
     if (file == ZR_NULL) {
         // 尝试其他路径
@@ -174,30 +174,30 @@ void test_char_literals_parsing(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Character literals parsing", 
               "Testing parsing of character literals with various escape sequences");
     
     size_t fileSize;
-    char* source = readTestFile("test_char_literals.zr", &fileSize);
+    char* source = read_test_file("test_char_literals.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_char_literals.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
     
-    SZrString* sourceName = ZrStringCreate(state, "test_char_literals.zr", 22);
-    SZrAstNode* ast = ZrParserParse(state, source, fileSize, sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test_char_literals.zr", 22);
+    SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
     
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_char_literals.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
@@ -206,11 +206,11 @@ void test_char_literals_parsing(void) {
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
     TEST_ASSERT_NOT_NULL(ast->data.script.statements);
     
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -222,50 +222,50 @@ void test_char_literals_compilation(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Character literals compilation", 
               "Testing compilation of character literals to VM instructions");
     
     size_t fileSize;
-    char* source = readTestFile("test_char_literals.zr", &fileSize);
+    char* source = read_test_file("test_char_literals.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_char_literals.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
     
-    SZrString* sourceName = ZrStringCreate(state, "test_char_literals.zr", 22);
-    SZrAstNode* ast = ZrParserParse(state, source, fileSize, sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test_char_literals.zr", 22);
+    SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
     
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_char_literals.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
     
     // 编译 AST 为指令码
-    SZrFunction* function = ZrCompilerCompile(state, ast);
+    SZrFunction* function = ZrParser_Compiler_Compile(state, ast);
     
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile AST to instructions");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
     
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -277,30 +277,30 @@ void test_type_cast_basic_parsing(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Basic type cast parsing", 
               "Testing parsing of basic type cast expressions: <int>, <float>, <string>, <bool>");
     
     size_t fileSize;
-    char* source = readTestFile("test_type_cast_basic.zr", &fileSize);
+    char* source = read_test_file("test_type_cast_basic.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_type_cast_basic.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
     
-    SZrString* sourceName = ZrStringCreate(state, "test_type_cast_basic.zr", 24);
-    SZrAstNode* ast = ZrParserParse(state, source, fileSize, sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test_type_cast_basic.zr", 24);
+    SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
     
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_type_cast_basic.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
@@ -309,11 +309,11 @@ void test_type_cast_basic_parsing(void) {
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
     TEST_ASSERT_NOT_NULL(ast->data.script.statements);
     
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -325,50 +325,50 @@ void test_type_cast_basic_compilation(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Basic type cast compilation", 
               "Testing compilation of basic type cast expressions to conversion instructions");
     
     size_t fileSize;
-    char* source = readTestFile("test_type_cast_basic.zr", &fileSize);
+    char* source = read_test_file("test_type_cast_basic.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_type_cast_basic.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
     
-    SZrString* sourceName = ZrStringCreate(state, "test_type_cast_basic.zr", 24);
-    SZrAstNode* ast = ZrParserParse(state, source, fileSize, sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test_type_cast_basic.zr", 24);
+    SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
     
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_type_cast_basic.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
     
     // 编译 AST 为指令码
-    SZrFunction* function = ZrCompilerCompile(state, ast);
+    SZrFunction* function = ZrParser_Compiler_Compile(state, ast);
     
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile AST to instructions");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
     
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -380,30 +380,30 @@ void test_type_cast_struct_parsing(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Struct type cast parsing", 
               "Testing parsing of struct type cast expressions: <StructType>");
     
     size_t fileSize;
-    char* source = readTestFile("test_type_cast_struct.zr", &fileSize);
+    char* source = read_test_file("test_type_cast_struct.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_type_cast_struct.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
     
-    SZrString* sourceName = ZrStringCreate(state, "test_type_cast_struct.zr", 25);
-    SZrAstNode* ast = ZrParserParse(state, source, fileSize, sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test_type_cast_struct.zr", 25);
+    SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
     
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_type_cast_struct.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
@@ -412,11 +412,11 @@ void test_type_cast_struct_parsing(void) {
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
     TEST_ASSERT_NOT_NULL(ast->data.script.statements);
     
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -428,30 +428,30 @@ void test_type_cast_class_parsing(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
     
-    SZrState* state = createTestState();
+    SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Class type cast parsing", 
               "Testing parsing of class type cast expressions: <ClassName>");
     
     size_t fileSize;
-    char* source = readTestFile("test_type_cast_class.zr", &fileSize);
+    char* source = read_test_file("test_type_cast_class.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_type_cast_class.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
     
-    SZrString* sourceName = ZrStringCreate(state, "test_type_cast_class.zr", 24);
-    SZrAstNode* ast = ZrParserParse(state, source, fileSize, sourceName);
+    SZrString* sourceName = ZrCore_String_Create(state, "test_type_cast_class.zr", 24);
+    SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
     
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_type_cast_class.zr file");
-        destroyTestState(state);
+        destroy_test_state(state);
         TEST_DIVIDER();
         return;
     }
@@ -460,11 +460,11 @@ void test_type_cast_class_parsing(void) {
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
     TEST_ASSERT_NOT_NULL(ast->data.script.statements);
     
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 

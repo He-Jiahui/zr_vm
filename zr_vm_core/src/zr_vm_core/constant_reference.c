@@ -13,32 +13,32 @@
 #include "zr_vm_common/zr_string_conf.h"
 
 // 常量引用路径步骤类型（与parser模块中的定义保持一致）
-// 注意：这些值作为TUInt32存储，但表示负数（通过类型转换）
-#define ZR_CONSTANT_REF_STEP_PARENT ((TUInt32)(TInt32)-1)        // -1: 向上引用parent function
-#define ZR_CONSTANT_REF_STEP_CONSTANT_POOL ((TUInt32)(TInt32)-2) // -2: 当前函数的常量池索引
-#define ZR_CONSTANT_REF_STEP_MODULE ((TUInt32)(TInt32)-3)        // -3: 模块引用
-#define ZR_CONSTANT_REF_STEP_PROTOTYPE_INDEX ((TUInt32)(TInt32)-4) // -4: 下一个数值读取prototype的index
-#define ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX ((TUInt32)(TInt32)-5) // -5: 下一个数值读取childFunctionList的index
+// 注意：这些值作为TZrUInt32存储，但表示负数（通过类型转换）
+#define ZR_CONSTANT_REF_STEP_PARENT ((TZrUInt32)(TZrInt32)-1)        // -1: 向上引用parent function
+#define ZR_CONSTANT_REF_STEP_CONSTANT_POOL ((TZrUInt32)(TZrInt32)-2) // -2: 当前函数的常量池索引
+#define ZR_CONSTANT_REF_STEP_MODULE ((TZrUInt32)(TZrInt32)-3)        // -3: 模块引用
+#define ZR_CONSTANT_REF_STEP_PROTOTYPE_INDEX ((TZrUInt32)(TZrInt32)-4) // -4: 下一个数值读取prototype的index
+#define ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX ((TZrUInt32)(TZrInt32)-5) // -5: 下一个数值读取childFunctionList的index
 
 // 创建常量引用路径（分配内存）
-SZrConstantReferencePath *ZrConstantReferencePathCreate(
+SZrConstantReferencePath *ZrCore_ConstantReferencePath_Create(
     struct SZrState *state,
-    TUInt32 depth) {
+    TZrUInt32 depth) {
     if (state == ZR_NULL || depth == 0) {
         return ZR_NULL;
     }
     
     SZrGlobalState *global = state->global;
-    SZrConstantReferencePath *path = (SZrConstantReferencePath *)ZrMemoryRawMalloc(
+    SZrConstantReferencePath *path = (SZrConstantReferencePath *)ZrCore_Memory_RawMalloc(
         global, sizeof(SZrConstantReferencePath));
     if (path == ZR_NULL) {
         return ZR_NULL;
     }
     
     path->depth = depth;
-    path->steps = (TUInt32 *)ZrMemoryRawMalloc(global, depth * sizeof(TUInt32));
+    path->steps = (TZrUInt32 *)ZrCore_Memory_RawMalloc(global, depth * sizeof(TZrUInt32));
     if (path->steps == ZR_NULL) {
-        ZrMemoryRawFree(global, path, sizeof(SZrConstantReferencePath));
+        ZrCore_Memory_RawFree(global, path, sizeof(SZrConstantReferencePath));
         return ZR_NULL;
     }
     
@@ -48,7 +48,7 @@ SZrConstantReferencePath *ZrConstantReferencePathCreate(
 }
 
 // 释放常量引用路径（释放内存）
-void ZrConstantReferencePathFree(
+void ZrCore_ConstantReferencePath_Free(
     struct SZrState *state,
     SZrConstantReferencePath *path) {
     if (state == ZR_NULL || path == ZR_NULL) {
@@ -57,9 +57,9 @@ void ZrConstantReferencePathFree(
     
     SZrGlobalState *global = state->global;
     if (path->steps != ZR_NULL) {
-        ZrMemoryRawFree(global, path->steps, path->depth * sizeof(TUInt32));
+        ZrCore_Memory_RawFree(global, path->steps, path->depth * sizeof(TZrUInt32));
     }
-    ZrMemoryRawFree(global, path, sizeof(SZrConstantReferencePath));
+    ZrCore_Memory_RawFree(global, path, sizeof(SZrConstantReferencePath));
 }
 
 // 辅助函数：查找函数的entry function（最顶层的函数，通常是模块入口函数）
@@ -82,7 +82,7 @@ static struct SZrFunction *find_entry_function_from_call_stack(struct SZrState *
     while (callInfo != ZR_NULL) {
         if (callInfo->functionBase.valuePointer >= state->stackBase.valuePointer &&
             callInfo->functionBase.valuePointer < state->stackTop.valuePointer) {
-            SZrTypeValue *closureValue = ZrStackGetValue(callInfo->functionBase.valuePointer);
+            SZrTypeValue *closureValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
             if (closureValue != ZR_NULL && closureValue->type == ZR_VALUE_TYPE_CLOSURE) {
                 SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, closureValue->value.object);
                 if (closure != ZR_NULL && closure->function != ZR_NULL) {
@@ -115,7 +115,7 @@ static struct SZrObjectModule *find_module_by_entry_function(struct SZrState *st
     SZrGlobalState *global = state->global;
     
     // 检查 loadedModulesRegistry 是否已初始化
-    if (!ZrValueIsGarbageCollectable(&global->loadedModulesRegistry) ||
+    if (!ZrCore_Value_IsGarbageCollectable(&global->loadedModulesRegistry) ||
         global->loadedModulesRegistry.type != ZR_VALUE_TYPE_OBJECT) {
         return ZR_NULL;
     }
@@ -145,12 +145,12 @@ static struct SZrObjectModule *find_module_by_entry_function(struct SZrState *st
                         entryFunction->prototypeInstancesLength > 0) {
                         // 检查模块的导出中是否有entry function的prototype实例
                         // 遍历entry function的prototypeInstances，检查是否在模块导出中
-                        TBool foundMatch = ZR_FALSE;
-                        for (TUInt32 j = 0; j < entryFunction->prototypeInstancesLength; j++) {
+                        TZrBool foundMatch = ZR_FALSE;
+                        for (TZrUInt32 j = 0; j < entryFunction->prototypeInstancesLength; j++) {
                             struct SZrObjectPrototype *proto = entryFunction->prototypeInstances[j];
                             if (proto != ZR_NULL && proto->name != ZR_NULL) {
                                 // 检查模块的导出中是否有该prototype
-                                const SZrTypeValue *exported = ZrModuleGetPubExport(state, module, proto->name);
+                                const SZrTypeValue *exported = ZrCore_Module_GetPubExport(state, module, proto->name);
                                 if (exported != ZR_NULL && exported->type == ZR_VALUE_TYPE_OBJECT) {
                                     SZrObjectPrototype *exportedProto = (SZrObjectPrototype *)ZR_CAST_OBJECT(state, exported->value.object);
                                     if (exportedProto == proto) {
@@ -198,7 +198,7 @@ static SZrFunction *get_parent_function_from_call_stack(struct SZrState *state, 
         // 我们需要从closure中获取function
         if (currentCallInfo->functionBase.valuePointer >= state->stackBase.valuePointer &&
             currentCallInfo->functionBase.valuePointer < state->stackTop.valuePointer) {
-            SZrTypeValue *closureValue = ZrStackGetValue(currentCallInfo->functionBase.valuePointer);
+            SZrTypeValue *closureValue = ZrCore_Stack_GetValue(currentCallInfo->functionBase.valuePointer);
             if (closureValue != ZR_NULL && closureValue->type == ZR_VALUE_TYPE_CLOSURE) {
                 SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, closureValue->value.object);
                 if (closure != ZR_NULL && closure->function == currentFunction) {
@@ -206,7 +206,7 @@ static SZrFunction *get_parent_function_from_call_stack(struct SZrState *state, 
                     if (currentCallInfo->previous != ZR_NULL && 
                         currentCallInfo->previous->functionBase.valuePointer >= state->stackBase.valuePointer &&
                         currentCallInfo->previous->functionBase.valuePointer < state->stackTop.valuePointer) {
-                        SZrTypeValue *parentClosureValue = ZrStackGetValue(currentCallInfo->previous->functionBase.valuePointer);
+                        SZrTypeValue *parentClosureValue = ZrCore_Stack_GetValue(currentCallInfo->previous->functionBase.valuePointer);
                         if (parentClosureValue != ZR_NULL && parentClosureValue->type == ZR_VALUE_TYPE_CLOSURE) {
                             SZrClosure *parentClosure = ZR_CAST_VM_CLOSURE(state, parentClosureValue->value.object);
                             if (parentClosure != ZR_NULL) {
@@ -225,7 +225,7 @@ static SZrFunction *get_parent_function_from_call_stack(struct SZrState *state, 
 }
 
 // 解析常量引用路径，返回目标对象
-TBool ZrConstantResolveReference(
+TZrBool ZrCore_Constant_ResolveReference(
     struct SZrState *state,
     struct SZrFunction *startFunction,
     const SZrConstantReferencePath *path,
@@ -249,13 +249,13 @@ TBool ZrConstantResolveReference(
     }
     
     SZrFunction *currentFunction = startFunction;
-    TUInt32 stepIndex = 0;
+    TZrUInt32 stepIndex = 0;
     
     // 按照路径步骤逐步解析
     while (stepIndex < path->depth) {
-        TUInt32 step = path->steps[stepIndex];
+        TZrUInt32 step = path->steps[stepIndex];
         
-        switch ((TInt32)step) {
+        switch ((TZrInt32)step) {
             case ZR_CONSTANT_REF_STEP_PARENT:  // -1: 向上引用parent function
                 // 从调用栈获取parent function
                 {
@@ -275,12 +275,12 @@ TBool ZrConstantResolveReference(
                     return ZR_FALSE;
                 }
                 {
-                    TUInt32 constantIndex = path->steps[stepIndex];
+                    TZrUInt32 constantIndex = path->steps[stepIndex];
                     if (constantIndex >= currentFunction->constantValueLength) {
                         return ZR_FALSE;
                     }
                     SZrTypeValue *constant = &currentFunction->constantValueList[constantIndex];
-                    ZrValueCopy(state, result, constant);
+                    ZrCore_Value_Copy(state, result, constant);
                     // 如果还有后续步骤，需要继续解析
                     // TODO: 这里暂时假设常量池引用是最终结果
                     stepIndex++;
@@ -295,8 +295,8 @@ TBool ZrConstantResolveReference(
                     return ZR_FALSE;
                 }
                 {
-                    TUInt32 moduleNameIndex = path->steps[stepIndex];
-                    TUInt32 exportNameIndex = path->steps[stepIndex + 1];
+                    TZrUInt32 moduleNameIndex = path->steps[stepIndex];
+                    TZrUInt32 exportNameIndex = path->steps[stepIndex + 1];
                     stepIndex += 2;
                     
                     // 从常量池读取模块名和导出名
@@ -325,12 +325,12 @@ TBool ZrConstantResolveReference(
                     
                     // 从全局模块注册表中查找模块
                     // 首先尝试通过路径直接查找（如果模块名就是路径）
-                    struct SZrObjectModule *targetModule = ZrModuleGetFromCache(state, moduleName);
+                    struct SZrObjectModule *targetModule = ZrCore_Module_GetFromCache(state, moduleName);
                     
                     // 如果直接查找失败，尝试遍历模块注册表查找匹配的模块名
                     if (targetModule == ZR_NULL && state->global != ZR_NULL) {
                         SZrGlobalState *global = state->global;
-                        if (ZrValueIsGarbageCollectable(&global->loadedModulesRegistry) &&
+                        if (ZrCore_Value_IsGarbageCollectable(&global->loadedModulesRegistry) &&
                             global->loadedModulesRegistry.type == ZR_VALUE_TYPE_OBJECT) {
                             SZrObject *registry = ZR_CAST_OBJECT(state, global->loadedModulesRegistry.value.object);
                             if (registry != ZR_NULL && registry->nodeMap.isValid && 
@@ -348,7 +348,7 @@ TBool ZrConstantResolveReference(
                                                 // TODO: 这里简化处理：如果路径的哈希与模块名的哈希匹配，或路径等于模块名
                                                 // 更精确的匹配需要字符串比较
                                                 if (path == moduleName || 
-                                                    ZrStringCompare(state, path, moduleName)) {
+                                                    ZrCore_String_Compare(state, path, moduleName)) {
                                                     // 检查值是否是模块对象
                                                     if (pair->value.type == ZR_VALUE_TYPE_OBJECT) {
                                                         SZrObject *cachedObject = ZR_CAST_OBJECT(state, pair->value.value.object);
@@ -358,7 +358,7 @@ TBool ZrConstantResolveReference(
                                                             // 同时检查模块的moduleName是否匹配
                                                             if (targetModule->moduleName != ZR_NULL &&
                                                                 (targetModule->moduleName == moduleName ||
-                                                                 ZrStringCompare(state, targetModule->moduleName, moduleName))) {
+                                                                 ZrCore_String_Compare(state, targetModule->moduleName, moduleName))) {
                                                                 break;
                                                             }
                                                         }
@@ -381,12 +381,12 @@ TBool ZrConstantResolveReference(
                     }
                     
                     // 从模块导出中获取值
-                    const SZrTypeValue *exportedValue = ZrModuleGetPubExport(state, targetModule, exportName);
+                    const SZrTypeValue *exportedValue = ZrCore_Module_GetPubExport(state, targetModule, exportName);
                     if (exportedValue == ZR_NULL) {
                         return ZR_FALSE;
                     }
                     
-                    ZrValueCopy(state, result, exportedValue);
+                    ZrCore_Value_Copy(state, result, exportedValue);
                     continue;
                 }
                 
@@ -396,7 +396,7 @@ TBool ZrConstantResolveReference(
                     return ZR_FALSE;
                 }
                 {
-                    TUInt32 prototypeIndex = path->steps[stepIndex];
+                    TZrUInt32 prototypeIndex = path->steps[stepIndex];
                     
                     // 延迟加载prototype实例
                     // 需要找到entryFunction（包含prototypeData的函数）
@@ -416,7 +416,7 @@ TBool ZrConstantResolveReference(
                         prototypeIndex < entryFunction->prototypeInstancesLength &&
                         entryFunction->prototypeInstances[prototypeIndex] != ZR_NULL) {
                         // 已经实例化，直接返回
-                        ZrValueInitAsRawObject(state, result, 
+                        ZrCore_Value_InitAsRawObject(state, result, 
                             ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction->prototypeInstances[prototypeIndex]));
                         result->type = ZR_VALUE_TYPE_OBJECT;
                         stepIndex++;
@@ -426,12 +426,12 @@ TBool ZrConstantResolveReference(
                     // 确保prototype实例数组已分配
                     if (entryFunction->prototypeInstances == ZR_NULL) {
                         SZrGlobalState *global = state->global;
-                        entryFunction->prototypeInstances = (struct SZrObjectPrototype **)ZrMemoryRawMalloc(
+                        entryFunction->prototypeInstances = (struct SZrObjectPrototype **)ZrCore_Memory_RawMalloc(
                             global, entryFunction->prototypeCount * sizeof(struct SZrObjectPrototype *));
                         if (entryFunction->prototypeInstances == ZR_NULL) {
                             return ZR_FALSE;
                         }
-                        ZrMemoryRawSet(entryFunction->prototypeInstances, 0, 
+                        ZrCore_Memory_RawSet(entryFunction->prototypeInstances, 0, 
                             entryFunction->prototypeCount * sizeof(struct SZrObjectPrototype *));
                         entryFunction->prototypeInstancesLength = entryFunction->prototypeCount;
                     }
@@ -447,7 +447,7 @@ TBool ZrConstantResolveReference(
                     // 实例化prototype：通过调用ZrModuleCreatePrototypesFromData来创建所有prototype
                     // 这会创建所有prototype，但只有第一次调用时会实际创建，后续调用会检查已存在的实例
                     if (targetModule != ZR_NULL) {
-                        ZrModuleCreatePrototypesFromData(state, targetModule, entryFunction);
+                        ZrCore_Module_CreatePrototypesFromData(state, targetModule, entryFunction);
                     } else {
                         // 没有module，无法正确注册prototype到模块导出
                         // TODO: 暂时返回失败
@@ -457,7 +457,7 @@ TBool ZrConstantResolveReference(
                     // 检查是否已创建
                     if (prototypeIndex < entryFunction->prototypeInstancesLength &&
                         entryFunction->prototypeInstances[prototypeIndex] != ZR_NULL) {
-                        ZrValueInitAsRawObject(state, result, 
+                        ZrCore_Value_InitAsRawObject(state, result, 
                             ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction->prototypeInstances[prototypeIndex]));
                         result->type = ZR_VALUE_TYPE_OBJECT;
                         stepIndex++;
@@ -473,7 +473,7 @@ TBool ZrConstantResolveReference(
                     return ZR_FALSE;
                 }
                 {
-                    TUInt32 childIndex = path->steps[stepIndex];
+                    TZrUInt32 childIndex = path->steps[stepIndex];
                     if (childIndex >= currentFunction->childFunctionLength) {
                         return ZR_FALSE;
                     }
@@ -496,7 +496,7 @@ TBool ZrConstantResolveReference(
     
     // 如果路径解析完成，返回当前函数作为结果
     if (currentFunction != ZR_NULL) {
-        ZrValueInitAsRawObject(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(currentFunction));
+        ZrCore_Value_InitAsRawObject(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(currentFunction));
         result->type = ZR_VALUE_TYPE_FUNCTION;
         return ZR_TRUE;
     }
@@ -505,7 +505,7 @@ TBool ZrConstantResolveReference(
 }
 
 // 从常量池中的引用常量解析路径
-SZrConstantReferencePath *ZrConstantReferencePathFromConstant(
+SZrConstantReferencePath *ZrCore_ConstantReferencePath_FromConstant(
     struct SZrState *state,
     const SZrTypeValue *constant) {
     if (state == ZR_NULL || constant == ZR_NULL) {
@@ -513,7 +513,7 @@ SZrConstantReferencePath *ZrConstantReferencePathFromConstant(
     }
     
     // 引用路径被序列化为字符串常量
-    // 格式：pathDepth (TUInt32) + pathSteps (TUInt32数组)
+    // 格式：pathDepth (TZrUInt32) + pathSteps (TZrUInt32数组)
     if (constant->type != ZR_VALUE_TYPE_STRING) {
         return ZR_NULL;
     }
@@ -529,34 +529,34 @@ SZrConstantReferencePath *ZrConstantReferencePathFromConstant(
                            serializedString->longStringLength;
     
     // 检查最小长度（至少需要pathDepth）
-    if (stringLength < sizeof(TUInt32)) {
+    if (stringLength < sizeof(TZrUInt32)) {
         return ZR_NULL;
     }
     
     // 获取序列化数据
-    TNativeString nativeStr = ZrStringGetNativeString(serializedString);
+    TZrNativeString nativeStr = ZrCore_String_GetNativeString(serializedString);
     if (nativeStr == ZR_NULL) {
         return ZR_NULL;
     }
     
     // 读取路径深度
-    TUInt32 pathDepth = *(TUInt32 *)nativeStr;
+    TZrUInt32 pathDepth = *(TZrUInt32 *)nativeStr;
     
     // 检查数据长度是否足够
-    TZrSize expectedSize = sizeof(TUInt32) + pathDepth * sizeof(TUInt32);
+    TZrSize expectedSize = sizeof(TZrUInt32) + pathDepth * sizeof(TZrUInt32);
     if (stringLength < expectedSize) {
         return ZR_NULL;
     }
     
     // 创建路径对象
-    SZrConstantReferencePath *path = ZrConstantReferencePathCreate(state, pathDepth);
+    SZrConstantReferencePath *path = ZrCore_ConstantReferencePath_Create(state, pathDepth);
     if (path == ZR_NULL) {
         return ZR_NULL;
     }
     
     // 读取路径步骤
-    TUInt32 *pathSteps = (TUInt32 *)(nativeStr + sizeof(TUInt32));
-    ZrMemoryRawCopy((TByte *)path->steps, (TByte *)pathSteps, pathDepth * sizeof(TUInt32));
+    TZrUInt32 *pathSteps = (TZrUInt32 *)(nativeStr + sizeof(TZrUInt32));
+    ZrCore_Memory_RawCopy((TZrByte *)path->steps, (TZrByte *)pathSteps, pathDepth * sizeof(TZrUInt32));
     
     // 设置类型（从常量中获取）
     path->type = constant->type;

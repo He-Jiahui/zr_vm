@@ -28,8 +28,8 @@ typedef struct {
 
 // 测试结果结构
 typedef struct {
-    TBool success;
-    const TChar *errorMessage;
+    TZrBool success;
+    const TZrChar *errorMessage;
     SZrState *state;
     SZrAstNode *ast;
     SZrFunction *function;
@@ -42,40 +42,40 @@ SZrState* create_test_state(void);
 void destroy_test_state(SZrState* state);
 
 // 加载zr文件内容
-TChar* load_zr_file(const TChar* filepath, TZrSize* outLength);
+TZrChar* load_zr_file(const TZrChar* filepath, TZrSize* outLength);
 
 // 解析并编译zr代码
-SZrTestResult* parse_and_compile(SZrState* state, const TChar* source, TZrSize sourceLength, const TChar* sourceName);
+SZrTestResult* parse_and_compile(SZrState* state, const TZrChar* source, TZrSize sourceLength, const TZrChar* sourceName);
 
 // 执行函数
-TBool execute_function(SZrState* state, SZrFunction* function, SZrTypeValue* result);
+TZrBool execute_function(SZrState* state, SZrFunction* function, SZrTypeValue* result);
 
 // 输出AST到文件（文本和JSON）
-TBool dump_ast_to_file(SZrState* state, SZrAstNode* ast, const TChar* basePath);
+TZrBool dump_ast_to_file(SZrState* state, SZrAstNode* ast, const TZrChar* basePath);
 
 // 输出中间码到文件（文本和JSON）
-TBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const TChar* basePath);
+TZrBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath);
 
 // 输出二进制文件（.zro）
-TBool dump_binary_to_file(SZrState* state, SZrFunction* function, const TChar* basePath);
+TZrBool dump_binary_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath);
 
 // 输出运行状态到文件（文本和JSON）
-TBool dump_runtime_state(SZrState* state, const TChar* basePath);
+TZrBool dump_runtime_state(SZrState* state, const TZrChar* basePath);
 
 // 比较两个值是否相等
-TBool compare_values(SZrState* state, SZrTypeValue* a, SZrTypeValue* b);
+TZrBool compare_values(SZrState* state, SZrTypeValue* a, SZrTypeValue* b);
 
 // 释放测试结果
 void free_test_result(SZrTestResult* result);
 
 // 获取输出目录路径
-void get_output_path(const TChar* baseName, const TChar* subDir, const TChar* extension, TChar* outPath, TZrSize maxLen);
+void get_output_path(const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension, TZrChar* outPath, TZrSize maxLen);
 
 // 获取源码仓库中的 golden 文件路径
-void get_golden_output_path(const TChar* baseName, const TChar* subDir, const TChar* extension, TChar* outPath, TZrSize maxLen);
+void get_golden_output_path(const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension, TZrChar* outPath, TZrSize maxLen);
 
 // 获取脚本测试用例路径
-void get_test_case_path(const TChar* fileName, TChar* outPath, TZrSize maxLen);
+void get_test_case_path(const TZrChar* fileName, TZrChar* outPath, TZrSize maxLen);
 
 #endif //ZR_VM_SCRIPTS_TEST_UTILS_H
 

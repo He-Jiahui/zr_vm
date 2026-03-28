@@ -71,7 +71,7 @@ typedef struct {
     } while (0)
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -95,40 +95,40 @@ static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSiz
 }
 
 // 创建测试用的SZrState
-static SZrState *createTestState(void) {
+static SZrState *create_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
     if (!global)
         return ZR_NULL;
 
     SZrState *mainState = global->mainThreadState;
     if (mainState) {
-        ZrGlobalStateInitRegistry(mainState, global);
+        ZrCore_GlobalState_InitRegistry(mainState, global);
     }
 
     return mainState;
 }
 
 // 销毁测试用的SZrState
-static void destroyTestState(SZrState *state) {
+static void destroy_test_state(SZrState *state) {
     if (!state)
         return;
 
     SZrGlobalState *global = state->global;
     if (global) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
     }
 }
 
-static TInt64 g_usingCloseInvocationCount = 0;
+static TZrInt64 g_usingCloseInvocationCount = 0;
 
-static TInt64 testCloseMetaNative(struct SZrState *state) {
+static TZrInt64 test_close_meta_native(struct SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
     g_usingCloseInvocationCount++;
     return 0;
 }
 
-static void attachCloseMetaToStringPrototype(SZrState *state) {
+static void attach_close_meta_to_string_prototype(SZrState *state) {
     SZrObjectPrototype *prototype;
     SZrClosureNative *closure;
     SZrMeta *meta;
@@ -146,10 +146,10 @@ static void attachCloseMetaToStringPrototype(SZrState *state) {
         return;
     }
 
-    closure = ZrClosureNativeNew(state, 0);
+    closure = ZrCore_ClosureNative_New(state, 0);
     TEST_ASSERT_NOT_NULL(closure);
-    closure->nativeFunction = testCloseMetaNative;
-    ZrRawObjectMarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    closure->nativeFunction = test_close_meta_native;
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
 
     meta = (SZrMeta *)state->global->allocator(state->global->userAllocationArguments,
                                                ZR_NULL,
@@ -163,7 +163,7 @@ static void attachCloseMetaToStringPrototype(SZrState *state) {
 }
 
 // 打印编译后的指令列表
-static void printInstructions(SZrFunction *function) {
+static void print_instructions(SZrFunction *function) {
     if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
         printf("  No instructions available\n");
         return;
@@ -171,10 +171,10 @@ static void printInstructions(SZrFunction *function) {
 
     printf("  Total Instructions: %u\n", function->instructionsLength);
     printf("  Instructions:\n");
-    for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+    for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
         TZrInstruction *inst = &function->instructionsList[i];
         EZrInstructionCode opcode = (EZrInstructionCode) inst->instruction.operationCode;
-        TUInt16 operandExtra = inst->instruction.operandExtra;
+        TZrUInt16 operandExtra = inst->instruction.operandExtra;
 
         printf("    [%u] ", i);
 
@@ -342,7 +342,7 @@ static void printInstructions(SZrFunction *function) {
                 break;
             default: {
                 char buf[32];
-                snprintf(buf, sizeof(buf), "OPCODE_%u", (TUInt32) opcode);
+                snprintf(buf, sizeof(buf), "OPCODE_%u", (TZrUInt32) opcode);
                 opcodeName = buf;
                 break;
             }
@@ -351,9 +351,9 @@ static void printInstructions(SZrFunction *function) {
         printf("%s", opcodeName);
 
         // 提取操作数
-        TUInt16 op1_0 = inst->instruction.operand.operand1[0];
-        TUInt16 op1_1 = inst->instruction.operand.operand1[1];
-        TInt32 op2_0 = (TInt32) inst->instruction.operand.operand2[0];
+        TZrUInt16 op1_0 = inst->instruction.operand.operand1[0];
+        TZrUInt16 op1_1 = inst->instruction.operand.operand1[1];
+        TZrInt32 op2_0 = (TZrInt32) inst->instruction.operand.operand2[0];
 
         // 根据指令类型输出操作数
         if (opcode == ZR_INSTRUCTION_ENUM(GET_STACK) || opcode == ZR_INSTRUCTION_ENUM(SET_STACK) ||
@@ -415,7 +415,7 @@ static void printInstructions(SZrFunction *function) {
 }
 
 // 打印测试结果值
-static void printTestResult(SZrState *state, const SZrTypeValue *value) {
+static void print_test_result(SZrState *state, const SZrTypeValue *value) {
     if (value == ZR_NULL) {
         printf("Result: <null>\n");
         return;
@@ -449,16 +449,16 @@ static void printTestResult(SZrState *state, const SZrTypeValue *value) {
                 printf("Result: \"\"\n");
             } else {
                 SZrString *str = ZR_CAST_STRING(state, value->value.object);
-                TNativeString strStr = ZrStringGetNativeString(str);
+                TZrNativeString strStr = ZrCore_String_GetNativeString(str);
                 printf("Result: \"%s\"\n", strStr ? strStr : "");
             }
             break;
         }
         case ZR_VALUE_TYPE_OBJECT:
         case ZR_VALUE_TYPE_ARRAY: {
-            SZrString *debugStr = ZrValueToDebugString(state, (SZrTypeValue *) value);
+            SZrString *debugStr = ZrCore_Value_ToDebugString(state, (SZrTypeValue *) value);
             if (debugStr != ZR_NULL) {
-                TNativeString str = ZrStringGetNativeString(debugStr);
+                TZrNativeString str = ZrCore_String_GetNativeString(debugStr);
                 printf("Result: %s\n", str ? str : "<null string>");
             } else {
                 printf("Result: <failed to convert to debug string>\n");
@@ -477,7 +477,7 @@ static void printTestResult(SZrState *state, const SZrTypeValue *value) {
 
 // 执行编译后的函数并获取返回值
 // 注意：这个函数要求编译后的函数有返回值（使用 return 语句或表达式语句）
-static TBool executeFunctionAndGetResult(SZrState *state, SZrFunction *function, SZrTypeValue *result) {
+static TZrBool execute_function_and_get_result(SZrState *state, SZrFunction *function, SZrTypeValue *result) {
     if (state == ZR_NULL || function == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -488,7 +488,7 @@ static TBool executeFunctionAndGetResult(SZrState *state, SZrFunction *function,
     }
 
     // 创建闭包
-    SZrClosure *closure = ZrClosureNew(state, function->closureValueLength);
+    SZrClosure *closure = ZrCore_Closure_New(state, function->closureValueLength);
     if (closure == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -505,20 +505,20 @@ static TBool executeFunctionAndGetResult(SZrState *state, SZrFunction *function,
     // 但 SZrFunction 通常不是 GC 对象，所以这里不需要 barrier
 
     // 初始化闭包值（需要在设置 function 之后调用）
-    ZrClosureInitValue(state, closure);
+    ZrCore_Closure_InitValue(state, closure);
 
-    // 再次检查 closure->function 是否仍然有效（在 ZrClosureInitValue 之后）
+    // 再次检查 closure->function 是否仍然有效（在 ZrCore_Closure_InitValue 之后）
     if (closure->function != function) {
         return ZR_FALSE;
     }
 
     // 将闭包推送到栈上（作为函数对象）
     TZrStackValuePointer closurePointer = state->stackTop.valuePointer;
-    ZrStackSetRawObjectValue(state, closurePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    ZrCore_Stack_SetRawObjectValue(state, closurePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     state->stackTop.valuePointer++;
 
     // 从栈上读取闭包，验证 function 字段
-    SZrTypeValue *stackValue = ZrStackGetValue(closurePointer);
+    SZrTypeValue *stackValue = ZrCore_Stack_GetValue(closurePointer);
     if (stackValue->type != ZR_VALUE_TYPE_CLOSURE) {
         return ZR_FALSE;
     }
@@ -527,8 +527,8 @@ static TBool executeFunctionAndGetResult(SZrState *state, SZrFunction *function,
         return ZR_FALSE;
     }
 
-    // 使用 ZrFunctionCallWithoutYield 来执行函数（期望 1 个返回值）
-    ZrFunctionCallWithoutYield(state, closurePointer, 1);
+    // 使用 ZrCore_Function_CallWithoutYield 来执行函数（期望 1 个返回值）
+    ZrCore_Function_CallWithoutYield(state, closurePointer, 1);
 
     // 检查执行状态
     if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
@@ -542,16 +542,16 @@ static TBool executeFunctionAndGetResult(SZrState *state, SZrFunction *function,
     if (result != ZR_NULL) {
         // 检查栈顶是否在 closurePointer 之后（说明有返回值）
         if (state->stackTop.valuePointer > closurePointer) {
-            SZrTypeValue *returnValue = ZrStackGetValue(closurePointer);
+            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(closurePointer);
             if (returnValue != ZR_NULL) {
-                ZrValueCopy(state, result, returnValue);
+                ZrCore_Value_Copy(state, result, returnValue);
                 return ZR_TRUE;
             }
         } else if (state->stackTop.valuePointer == closurePointer + 1) {
             // 返回值正好在 closurePointer + 1 位置
-            SZrTypeValue *returnValue = ZrStackGetValue(closurePointer);
+            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(closurePointer);
             if (returnValue != ZR_NULL) {
-                ZrValueCopy(state, result, returnValue);
+                ZrCore_Value_Copy(state, result, returnValue);
                 return ZR_TRUE;
             }
         }
@@ -575,33 +575,33 @@ void test_execute_create_object(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("CREATE_OBJECT execution", "Testing CREATE_OBJECT instruction: {}");
 
     const char *source = "return {};";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse empty object literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile empty object literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 CREATE_OBJECT 指令）
-    TBool hasCreateObject = ZR_FALSE;
+    TZrBool hasCreateObject = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(CREATE_OBJECT)) {
                 hasCreateObject = ZR_TRUE;
@@ -610,11 +610,11 @@ void test_execute_create_object(void) {
         }
     }
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasCreateObject) {
         TEST_FAIL_CUSTOM(timer, testSummary, "CREATE_OBJECT instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -623,17 +623,17 @@ void test_execute_create_object(void) {
 
     // 执行函数并输出结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
     if (execSuccess) {
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     } else {
         printf("Test Result: <execution failed or no return value>\n");
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -645,33 +645,33 @@ void test_execute_create_object_with_properties(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("CREATE_OBJECT with properties execution", "Testing CREATE_OBJECT instruction: {a: 1, b: 2}");
 
     const char *source = "return {a: 1, b: 2};";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse object literal with properties");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile object literal with properties");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 CREATE_OBJECT 指令）
-    TBool hasCreateObject = ZR_FALSE;
+    TZrBool hasCreateObject = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(CREATE_OBJECT)) {
                 hasCreateObject = ZR_TRUE;
@@ -680,11 +680,11 @@ void test_execute_create_object_with_properties(void) {
         }
     }
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasCreateObject) {
         TEST_FAIL_CUSTOM(timer, testSummary, "CREATE_OBJECT instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -693,21 +693,21 @@ void test_execute_create_object_with_properties(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
     // 执行函数并输出结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
     if (execSuccess) {
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     } else {
         printf("Test Result: <execution failed or no return value>\n");
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -721,33 +721,33 @@ void test_execute_create_array(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("CREATE_ARRAY execution", "Testing CREATE_ARRAY instruction: []");
 
     const char *source = "return [];";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse empty array literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile empty array literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 CREATE_ARRAY 指令）
-    TBool hasCreateArray = ZR_FALSE;
+    TZrBool hasCreateArray = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(CREATE_ARRAY)) {
                 hasCreateArray = ZR_TRUE;
@@ -756,11 +756,11 @@ void test_execute_create_array(void) {
         }
     }
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasCreateArray) {
         TEST_FAIL_CUSTOM(timer, testSummary, "CREATE_ARRAY instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -769,17 +769,17 @@ void test_execute_create_array(void) {
 
     // 执行函数并输出结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
     if (execSuccess) {
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     } else {
         printf("Test Result: <execution failed or no return value>\n");
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -791,33 +791,33 @@ void test_execute_create_array_with_elements(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("CREATE_ARRAY with elements execution", "Testing CREATE_ARRAY instruction: [1, 2, 3]");
 
     const char *source = "return [1, 2, 3];";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse array literal with elements");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile array literal with elements");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 CREATE_ARRAY 指令）
-    TBool hasCreateArray = ZR_FALSE;
+    TZrBool hasCreateArray = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(CREATE_ARRAY)) {
                 hasCreateArray = ZR_TRUE;
@@ -826,11 +826,11 @@ void test_execute_create_array_with_elements(void) {
         }
     }
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasCreateArray) {
         TEST_FAIL_CUSTOM(timer, testSummary, "CREATE_ARRAY instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -839,21 +839,21 @@ void test_execute_create_array_with_elements(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
     // 执行函数并输出结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
     if (execSuccess) {
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     } else {
         printf("Test Result: <execution failed or no return value>\n");
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -867,33 +867,33 @@ void test_execute_jump_if_instruction(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("JUMP_IF instruction via if statement", "Testing JUMP_IF instruction: if (true) { return 42; }");
 
     const char *source = "if (true) { return 42; }";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse if statement");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile if statement");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 JUMP_IF 指令）
-    TBool hasJumpIf = ZR_FALSE;
+    TZrBool hasJumpIf = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF)) {
                 hasJumpIf = ZR_TRUE;
@@ -902,11 +902,11 @@ void test_execute_jump_if_instruction(void) {
         }
     }
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasJumpIf) {
         TEST_FAIL_CUSTOM(timer, testSummary, "JUMP_IF instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -914,21 +914,21 @@ void test_execute_jump_if_instruction(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
     // 执行函数并输出结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
     if (execSuccess) {
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     } else {
         printf("Test Result: <execution failed or no return value>\n");
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -940,34 +940,34 @@ void test_execute_jump_instruction(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("JUMP instruction via while loop",
               "Testing JUMP instruction: var i = 0;while (true) { i = i + 1; if(i>5){break;} } while(false){return i;} return i+1;");
 
     const char *source = "var i = 0;while (true) { i = i + 1; if(i>5){break;} } while(false){return i;} return i+1;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse while loop");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile while loop");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 JUMP 指令）
-    TBool hasJump = ZR_FALSE;
+    TZrBool hasJump = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(JUMP)) {
                 hasJump = ZR_TRUE;
@@ -976,11 +976,11 @@ void test_execute_jump_instruction(void) {
         }
     }
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasJump) {
         TEST_FAIL_CUSTOM(timer, testSummary, "JUMP instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -988,21 +988,21 @@ void test_execute_jump_instruction(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
     // 执行函数并输出结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
     if (execSuccess) {
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     } else {
         printf("Test Result: <execution failed or no return value>\n");
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1016,34 +1016,34 @@ void test_execute_add_int_instruction(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("ADD_INT instruction", "Testing ADD_INT instruction: 1 + 2");
 
     // 使用 return 语句来返回表达式结果
     const char *source = "return 1 + 2;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse addition expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile addition expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 ADD_INT 指令）
-    TBool hasAddInt = ZR_FALSE;
+    TZrBool hasAddInt = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(ADD_INT)) {
                 hasAddInt = ZR_TRUE;
@@ -1054,24 +1054,24 @@ void test_execute_add_int_instruction(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
     if (!hasAddInt) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "ADD_INT instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 执行函数并验证结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!execSuccess) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1080,15 +1080,15 @@ void test_execute_add_int_instruction(void) {
 
     // 验证结果值为 3 (1 + 2)
     if (ZR_VALUE_IS_TYPE_INT(result.type)) {
-        TInt64 value = result.value.nativeObject.nativeInt64;
+        TZrInt64 value = result.value.nativeObject.nativeInt64;
         TEST_ASSERT_TRUE(value == 3);
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1100,33 +1100,33 @@ void test_execute_sub_int_instruction(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("SUB_INT instruction", "Testing SUB_INT instruction: 5 - 3");
 
     const char *source = "return 5 - 3;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse subtraction expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile subtraction expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 SUB_INT 指令）
-    TBool hasSubInt = ZR_FALSE;
+    TZrBool hasSubInt = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(SUB_INT)) {
                 hasSubInt = ZR_TRUE;
@@ -1137,13 +1137,13 @@ void test_execute_sub_int_instruction(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasSubInt) {
         TEST_FAIL_CUSTOM(timer, testSummary, "SUB_INT instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1151,11 +1151,11 @@ void test_execute_sub_int_instruction(void) {
 
     // 执行函数并验证结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
 
     if (!execSuccess) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1164,15 +1164,15 @@ void test_execute_sub_int_instruction(void) {
 
     // 验证结果值为 2 (5 - 3)
     if (ZR_VALUE_IS_TYPE_INT(result.type)) {
-        TInt64 value = result.value.nativeObject.nativeInt64;
+        TZrInt64 value = result.value.nativeObject.nativeInt64;
         TEST_ASSERT_TRUE(value == 2);
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1184,33 +1184,33 @@ void test_execute_mul_signed_instruction(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("MUL_SIGNED instruction", "Testing MUL_SIGNED instruction: 3 * 4");
 
     const char *source = "return 3 * 4;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse multiplication expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile multiplication expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 MUL_SIGNED 指令）
-    TBool hasMulSigned = ZR_FALSE;
+    TZrBool hasMulSigned = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(MUL_SIGNED)) {
                 hasMulSigned = ZR_TRUE;
@@ -1221,13 +1221,13 @@ void test_execute_mul_signed_instruction(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasMulSigned) {
         TEST_FAIL_CUSTOM(timer, testSummary, "MUL_SIGNED instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1235,11 +1235,11 @@ void test_execute_mul_signed_instruction(void) {
 
     // 执行函数并验证结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
 
     if (!execSuccess) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1248,15 +1248,15 @@ void test_execute_mul_signed_instruction(void) {
 
     // 验证结果值为 12 (3 * 4)
     if (ZR_VALUE_IS_TYPE_INT(result.type)) {
-        TInt64 value = result.value.nativeObject.nativeInt64;
+        TZrInt64 value = result.value.nativeObject.nativeInt64;
         TEST_ASSERT_TRUE(value == 12);
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1270,7 +1270,7 @@ void test_execute_logical_and_instruction(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("LOGICAL_AND instruction (using binary expression)",
@@ -1279,27 +1279,27 @@ void test_execute_logical_and_instruction(void) {
     // 注意：LOGICAL_EXPRESSION 类型可能未被编译器处理，改用二进制表达式测试
     // 使用 & 操作符（BITWISE_AND）代替，因为它是二进制表达式
     const char *source = "return 1 & 2;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse logical AND expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile logical AND expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 BITWISE_AND 指令，作为二进制表达式的替代）
-    TBool hasBitwiseAnd = ZR_FALSE;
+    TZrBool hasBitwiseAnd = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(BITWISE_AND)) {
                 hasBitwiseAnd = ZR_TRUE;
@@ -1310,14 +1310,14 @@ void test_execute_logical_and_instruction(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasBitwiseAnd) {
         TEST_FAIL_CUSTOM(timer, testSummary,
                          "BITWISE_AND instruction not found in compiled function (testing binary expression)");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1325,11 +1325,11 @@ void test_execute_logical_and_instruction(void) {
 
     // 执行函数并验证结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
 
     if (!execSuccess) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1338,15 +1338,15 @@ void test_execute_logical_and_instruction(void) {
 
     // 验证结果值为 0 (1 & 2 = 0)
     if (ZR_VALUE_IS_TYPE_INT(result.type)) {
-        TInt64 value = result.value.nativeObject.nativeInt64;
+        TZrInt64 value = result.value.nativeObject.nativeInt64;
         TEST_ASSERT_TRUE(value == 0);
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1358,33 +1358,33 @@ void test_execute_logical_equal_instruction(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("LOGICAL_EQUAL instruction", "Testing LOGICAL_EQUAL instruction: 1 == 1");
 
     const char *source = "return 1 == 1;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse equality expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile equality expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 LOGICAL_EQUAL 指令）
-    TBool hasLogicalEqual = ZR_FALSE;
+    TZrBool hasLogicalEqual = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL)) {
                 hasLogicalEqual = ZR_TRUE;
@@ -1395,24 +1395,24 @@ void test_execute_logical_equal_instruction(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasLogicalEqual) {
         TEST_FAIL_CUSTOM(timer, testSummary, "LOGICAL_EQUAL instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
     // 执行函数并验证结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
 
     if (!execSuccess) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1421,15 +1421,15 @@ void test_execute_logical_equal_instruction(void) {
 
     // 验证结果值为 true (1 == 1)
     if (result.type == ZR_VALUE_TYPE_BOOL) {
-        TBool value = result.value.nativeObject.nativeBool;
+        TZrBool value = result.value.nativeObject.nativeBool;
         TEST_ASSERT_TRUE(value == ZR_TRUE);
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1443,34 +1443,34 @@ void test_execute_settable_instruction(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("SETTABLE instruction", "Testing SETTABLE instruction in object literal: {a: 1, b: 2}");
 
     // 对象字面量在编译时会使用 SETTABLE 来设置属性
     const char *source = "return {a: 1, b: 2};";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse object literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile object literal");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 SETTABLE 指令）
-    TBool hasSetTable = ZR_FALSE;
+    TZrBool hasSetTable = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(SETTABLE)) {
                 hasSetTable = ZR_TRUE;
@@ -1481,13 +1481,13 @@ void test_execute_settable_instruction(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasSetTable) {
         TEST_FAIL_CUSTOM(timer, testSummary, "SETTABLE instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1495,17 +1495,17 @@ void test_execute_settable_instruction(void) {
 
     // 执行函数并输出结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
     if (execSuccess) {
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     } else {
         printf("Test Result: <execution failed or no return value>\n");
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1517,33 +1517,33 @@ void test_execute_div_signed_instruction(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("DIV_SIGNED instruction", "Testing DIV_SIGNED instruction: 10 / 2");
 
     const char *source = "return 10 / 2;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse division expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile division expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 DIV_SIGNED 指令）
-    TBool hasDivSigned = ZR_FALSE;
+    TZrBool hasDivSigned = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(DIV_SIGNED)) {
                 hasDivSigned = ZR_TRUE;
@@ -1554,13 +1554,13 @@ void test_execute_div_signed_instruction(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasDivSigned) {
         TEST_FAIL_CUSTOM(timer, testSummary, "DIV_SIGNED instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1568,11 +1568,11 @@ void test_execute_div_signed_instruction(void) {
 
     // 执行函数并验证结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
 
     if (!execSuccess) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1581,15 +1581,15 @@ void test_execute_div_signed_instruction(void) {
 
     // 验证结果值为 5 (10 / 2)
     if (ZR_VALUE_IS_TYPE_INT(result.type)) {
-        TInt64 value = result.value.nativeObject.nativeInt64;
+        TZrInt64 value = result.value.nativeObject.nativeInt64;
         TEST_ASSERT_TRUE(value == 5);
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1601,33 +1601,33 @@ void test_execute_logical_not_instruction(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("LOGICAL_NOT instruction", "Testing LOGICAL_NOT instruction: !true");
 
     const char *source = "return !true;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse logical NOT expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
-    SZrFunction *function = ZrCompilerCompile(state, ast);
+    SZrFunction *function = ZrParser_Compiler_Compile(state, ast);
     if (function == ZR_NULL) {
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile logical NOT expression");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 验证函数指令（检查是否包含 LOGICAL_NOT 指令）
-    TBool hasLogicalNot = ZR_FALSE;
+    TZrBool hasLogicalNot = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(LOGICAL_NOT)) {
                 hasLogicalNot = ZR_TRUE;
@@ -1638,13 +1638,13 @@ void test_execute_logical_not_instruction(void) {
 
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
-    printInstructions(function);
+    print_instructions(function);
 
-    ZrParserFreeAst(state, ast);
+    ZrParser_Ast_Free(state, ast);
 
     if (!hasLogicalNot) {
         TEST_FAIL_CUSTOM(timer, testSummary, "LOGICAL_NOT instruction not found in compiled function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1652,11 +1652,11 @@ void test_execute_logical_not_instruction(void) {
 
     // 执行函数并验证结果
     SZrTypeValue result;
-    TBool execSuccess = executeFunctionAndGetResult(state, function, &result);
+    TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
 
     if (!execSuccess) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1665,28 +1665,28 @@ void test_execute_logical_not_instruction(void) {
 
     // 验证结果值为 false (!true)
     if (result.type == ZR_VALUE_TYPE_BOOL) {
-        TBool value = result.value.nativeObject.nativeBool;
+        TZrBool value = result.value.nativeObject.nativeBool;
         TEST_ASSERT_TRUE(value == ZR_FALSE);
         printf("Test Result: ");
-        printTestResult(state, &result);
+        print_test_result(state, &result);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
 void test_execute_template_string_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "Template String Execution";
-    TBool hasAddString = ZR_FALSE;
-    TBool hasToString = ZR_FALSE;
+    TZrBool hasAddString = ZR_FALSE;
+    TZrBool hasToString = ZR_FALSE;
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Template string execution",
@@ -1694,27 +1694,27 @@ void test_execute_template_string_instruction(void) {
 
     {
         const char *source = "var name = \"zr\"; return `hello ${1} ${name}`;";
-        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *function;
         SZrTypeValue result;
 
         if (ast == ZR_NULL) {
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse template string expression");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
-        function = ZrCompilerCompile(state, ast);
+        function = ZrParser_Compiler_Compile(state, ast);
         if (function == ZR_NULL) {
-            ZrParserFreeAst(state, ast);
+            ZrParser_Ast_Free(state, ast);
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile template string expression");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
         if (function->instructionsList != ZR_NULL) {
-            for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+            for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
                 EZrInstructionCode opcode =
                     (EZrInstructionCode)function->instructionsList[i].instruction.operationCode;
                 if (opcode == ZR_INSTRUCTION_ENUM(ADD_STRING)) {
@@ -1728,24 +1728,24 @@ void test_execute_template_string_instruction(void) {
         TEST_ASSERT_TRUE(hasAddString);
         TEST_ASSERT_TRUE(hasToString);
 
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
 
-        if (!executeFunctionAndGetResult(state, function, &result)) {
+        if (!execute_function_and_get_result(state, function, &result)) {
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute template string function");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.type);
         TEST_ASSERT_NOT_NULL(result.value.object);
         TEST_ASSERT_EQUAL_STRING("hello 1 zr",
-                                 ZrStringGetNativeString(
+                                 ZrCore_String_GetNativeString(
                                      ZR_CAST_STRING(state, result.value.object)));
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1756,7 +1756,7 @@ void test_execute_using_statement_passthrough(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Using statement execution",
@@ -1764,30 +1764,30 @@ void test_execute_using_statement_passthrough(void) {
 
     {
         const char *source = "var resource = \"x\"; using (resource) { var inner = 1; } return 7;";
-        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *function;
         SZrTypeValue result;
 
         if (ast == ZR_NULL) {
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse using statement");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
-        function = ZrCompilerCompile(state, ast);
+        function = ZrParser_Compiler_Compile(state, ast);
         if (function == ZR_NULL) {
-            ZrParserFreeAst(state, ast);
+            ZrParser_Ast_Free(state, ast);
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile using statement");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
-        ZrParserFreeAst(state, ast);
+        ZrParser_Ast_Free(state, ast);
 
-        if (!executeFunctionAndGetResult(state, function, &result)) {
+        if (!execute_function_and_get_result(state, function, &result)) {
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute using statement function");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
@@ -1797,15 +1797,15 @@ void test_execute_using_statement_passthrough(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
 void test_execute_using_statement_invokes_close_meta(void) {
     SZrTestTimer timer;
     const char *testSummary = "Using Statement Invokes Close Meta";
-    TBool hasMarkToBeClosed = ZR_FALSE;
-    TBool hasCloseScope = ZR_FALSE;
+    TZrBool hasMarkToBeClosed = ZR_FALSE;
+    TZrBool hasCloseScope = ZR_FALSE;
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -1813,37 +1813,37 @@ void test_execute_using_statement_invokes_close_meta(void) {
     g_usingCloseInvocationCount = 0;
 
     {
-        SZrState *state = createTestState();
+        SZrState *state = create_test_state();
         TEST_ASSERT_NOT_NULL(state);
 
         TEST_INFO("Using deterministic cleanup",
                   "Testing that using registers a close step and invokes @close on scope exit");
 
-        attachCloseMetaToStringPrototype(state);
+        attach_close_meta_to_string_prototype(state);
 
         {
             const char *source = "using (\"x\") { var inner = 1; } return 7;";
-            SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-            SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+            SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+            SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
             SZrFunction *function;
             SZrTypeValue result;
 
             if (ast == ZR_NULL) {
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse using close-meta source");
-                destroyTestState(state);
+                destroy_test_state(state);
                 return;
             }
 
-            function = ZrCompilerCompile(state, ast);
+            function = ZrParser_Compiler_Compile(state, ast);
             if (function == ZR_NULL) {
-                ZrParserFreeAst(state, ast);
+                ZrParser_Ast_Free(state, ast);
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile using close-meta source");
-                destroyTestState(state);
+                destroy_test_state(state);
                 return;
             }
 
             if (function->instructionsList != ZR_NULL) {
-                for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+                for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
                     EZrInstructionCode opcode =
                         (EZrInstructionCode)function->instructionsList[i].instruction.operationCode;
                     if (opcode == ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)) {
@@ -1857,11 +1857,11 @@ void test_execute_using_statement_invokes_close_meta(void) {
             TEST_ASSERT_TRUE(hasMarkToBeClosed);
             TEST_ASSERT_TRUE(hasCloseScope);
 
-            ZrParserFreeAst(state, ast);
+            ZrParser_Ast_Free(state, ast);
 
-            if (!executeFunctionAndGetResult(state, function, &result)) {
+            if (!execute_function_and_get_result(state, function, &result)) {
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute using close-meta function");
-                destroyTestState(state);
+                destroy_test_state(state);
                 return;
             }
 
@@ -1870,7 +1870,7 @@ void test_execute_using_statement_invokes_close_meta(void) {
             TEST_ASSERT_EQUAL_INT64(1, g_usingCloseInvocationCount);
         }
 
-        destroyTestState(state);
+        destroy_test_state(state);
     }
 
     timer.endTime = clock();
@@ -1888,40 +1888,40 @@ void test_execute_using_declaration_invokes_close_meta(void) {
     g_usingCloseInvocationCount = 0;
 
     {
-        SZrState *state = createTestState();
+        SZrState *state = create_test_state();
         TEST_ASSERT_NOT_NULL(state);
 
         TEST_INFO("Using declaration deterministic cleanup",
                   "Testing that `using resource;` registers an existing owner and invokes @close before return");
 
-        attachCloseMetaToStringPrototype(state);
+        attach_close_meta_to_string_prototype(state);
 
         {
             const char *source = "var resource = \"x\"; using resource; return 7;";
-            SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-            SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+            SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+            SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
             SZrFunction *function;
             SZrTypeValue result;
 
             if (ast == ZR_NULL) {
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse using declaration source");
-                destroyTestState(state);
+                destroy_test_state(state);
                 return;
             }
 
-            function = ZrCompilerCompile(state, ast);
+            function = ZrParser_Compiler_Compile(state, ast);
             if (function == ZR_NULL) {
-                ZrParserFreeAst(state, ast);
+                ZrParser_Ast_Free(state, ast);
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile using declaration source");
-                destroyTestState(state);
+                destroy_test_state(state);
                 return;
             }
 
-            ZrParserFreeAst(state, ast);
+            ZrParser_Ast_Free(state, ast);
 
-            if (!executeFunctionAndGetResult(state, function, &result)) {
+            if (!execute_function_and_get_result(state, function, &result)) {
                 TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute using declaration function");
-                destroyTestState(state);
+                destroy_test_state(state);
                 return;
             }
 
@@ -1930,7 +1930,7 @@ void test_execute_using_declaration_invokes_close_meta(void) {
             TEST_ASSERT_EQUAL_INT64(1, g_usingCloseInvocationCount);
         }
 
-        destroyTestState(state);
+        destroy_test_state(state);
     }
 
     timer.endTime = clock();
@@ -1941,13 +1941,13 @@ void test_execute_using_declaration_invokes_close_meta(void) {
 void test_execute_nested_using_return_invokes_all_close_meta(void) {
     SZrTestTimer timer;
     const char *testSummary = "Nested Using Return Invokes All Close Meta";
-    TUInt32 markToBeClosedCount = 0;
-    TUInt32 closeScopeCount = 0;
+    TZrUInt32 markToBeClosedCount = 0;
+    TZrUInt32 closeScopeCount = 0;
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
     g_usingCloseInvocationCount = 0;
@@ -1955,33 +1955,33 @@ void test_execute_nested_using_return_invokes_all_close_meta(void) {
     TEST_INFO("Nested using early return cleanup",
               "Testing that nested using scopes register both resources and still invoke @close in LIFO order when returning from the inner scope");
 
-    attachCloseMetaToStringPrototype(state);
+    attach_close_meta_to_string_prototype(state);
 
     {
         const char *source = "using (\"outer\") { using (\"inner\") { return 9; } } return 0;";
-        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *function = ZR_NULL;
         SZrTypeValue result;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse nested using early-return source");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
-        function = ZrCompilerCompile(state, ast);
-        ZrParserFreeAst(state, ast);
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
 
         if (function == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile nested using early-return source");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode)function->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)) {
                 markToBeClosedCount++;
@@ -1992,13 +1992,13 @@ void test_execute_nested_using_return_invokes_all_close_meta(void) {
 
         TEST_ASSERT_EQUAL_UINT32(2, markToBeClosedCount);
         TEST_ASSERT_TRUE(closeScopeCount >= 1);
-        TEST_ASSERT_TRUE(executeFunctionAndGetResult(state, function, &result));
+        TEST_ASSERT_TRUE(execute_function_and_get_result(state, function, &result));
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
         TEST_ASSERT_EQUAL_INT64(9, result.value.nativeObject.nativeInt64);
         TEST_ASSERT_EQUAL_INT64(2, g_usingCloseInvocationCount);
     }
 
-    destroyTestState(state);
+    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);

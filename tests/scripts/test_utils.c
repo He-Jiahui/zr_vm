@@ -37,22 +37,22 @@ extern "C" {
     #include <unistd.h>
 #endif
 
-static void ensure_directory(const TChar* path) {
+static void ensure_directory(const TZrChar* path) {
     if (path == ZR_NULL || path[0] == '\0') {
         return;
     }
     mkdir(path, 0755);
 }
 
-static void build_output_path(const TChar* rootDir, const TChar* baseName, const TChar* subDir, const TChar* extension,
-                              TChar* outPath, TZrSize maxLen) {
+static void build_output_path(const TZrChar* rootDir, const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension,
+                              TZrChar* outPath, TZrSize maxLen) {
     if (rootDir == ZR_NULL || baseName == ZR_NULL || subDir == ZR_NULL || extension == ZR_NULL || outPath == ZR_NULL ||
         maxLen == 0) {
         return;
     }
 
-    TChar outputDir[1024];
-    TChar targetDir[1024];
+    TZrChar outputDir[1024];
+    TZrChar targetDir[1024];
     snprintf(outputDir, sizeof(outputDir), "%s/output", rootDir);
     snprintf(targetDir, sizeof(targetDir), "%s/%s", outputDir, subDir);
     ensure_directory(outputDir);
@@ -63,16 +63,16 @@ static void build_output_path(const TChar* rootDir, const TChar* baseName, const
 
 // 创建测试用的VM状态
 SZrState* create_test_state(void) {
-    return zr_test_create_state(ZR_NULL);
+    return ZrTests_State_Create(ZR_NULL);
 }
 
 // 销毁测试状态
 void destroy_test_state(SZrState* state) {
-    zr_test_destroy_state(state);
+    ZrTests_State_Destroy(state);
 }
 
 // 加载zr文件内容
-TChar* load_zr_file(const TChar* filepath, TZrSize* outLength) {
+TZrChar* load_zr_file(const TZrChar* filepath, TZrSize* outLength) {
     if (filepath == ZR_NULL || outLength == ZR_NULL) {
         return ZR_NULL;
     }
@@ -93,7 +93,7 @@ TChar* load_zr_file(const TChar* filepath, TZrSize* outLength) {
     }
     
     // 分配内存
-    TChar* buffer = (TChar*)malloc((TZrSize)fileSize + 1);
+    TZrChar* buffer = (TZrChar*)malloc((TZrSize)fileSize + 1);
     if (buffer == ZR_NULL) {
         fclose(file);
         return ZR_NULL;
@@ -114,7 +114,7 @@ TChar* load_zr_file(const TChar* filepath, TZrSize* outLength) {
 }
 
 // 解析并编译zr代码
-SZrTestResult* parse_and_compile(SZrState* state, const TChar* source, TZrSize sourceLength, const TChar* sourceName) {
+SZrTestResult* parse_and_compile(SZrState* state, const TZrChar* source, TZrSize sourceLength, const TZrChar* sourceName) {
     if (state == ZR_NULL || source == ZR_NULL) {
         return ZR_NULL;
     }
@@ -133,20 +133,20 @@ SZrTestResult* parse_and_compile(SZrState* state, const TChar* source, TZrSize s
     // 创建源文件名
     SZrString* sourceNameStr = ZR_NULL;
     if (sourceName != ZR_NULL) {
-        sourceNameStr = ZrStringCreate(state, sourceName, strlen(sourceName));
+        sourceNameStr = ZrCore_String_Create(state, sourceName, strlen(sourceName));
     } else {
-        sourceNameStr = ZrStringCreate(state, "test.zr", 7);
+        sourceNameStr = ZrCore_String_Create(state, "test.zr", 7);
     }
     
     // 解析AST
-    result->ast = ZrParserParse(state, source, sourceLength, sourceNameStr);
+    result->ast = ZrParser_Parse(state, source, sourceLength, sourceNameStr);
     if (result->ast == ZR_NULL) {
         result->errorMessage = "Failed to parse source code";
         return result;
     }
     
     // 编译为函数
-    result->function = ZrCompilerCompile(state, result->ast);
+    result->function = ZrParser_Compiler_Compile(state, result->ast);
     if (result->function == ZR_NULL) {
         result->errorMessage = "Failed to compile AST to function";
         return result;
@@ -157,20 +157,20 @@ SZrTestResult* parse_and_compile(SZrState* state, const TChar* source, TZrSize s
 }
 
 // 执行函数
-TBool execute_function(SZrState* state, SZrFunction* function, SZrTypeValue* result) {
-    return zr_test_execute_function(state, function, result);
+TZrBool execute_function(SZrState* state, SZrFunction* function, SZrTypeValue* result) {
+    return ZrTests_Function_Execute(state, function, result);
 }
 
 // 获取输出目录路径
-void get_output_path(const TChar* baseName, const TChar* subDir, const TChar* extension, TChar* outPath, TZrSize maxLen) {
+void get_output_path(const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension, TZrChar* outPath, TZrSize maxLen) {
     build_output_path(ZR_VM_SCRIPTS_BINARY_DIR, baseName, subDir, extension, outPath, maxLen);
 }
 
-void get_golden_output_path(const TChar* baseName, const TChar* subDir, const TChar* extension, TChar* outPath, TZrSize maxLen) {
+void get_golden_output_path(const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension, TZrChar* outPath, TZrSize maxLen) {
     build_output_path(ZR_VM_SCRIPTS_SOURCE_DIR, baseName, subDir, extension, outPath, maxLen);
 }
 
-void get_test_case_path(const TChar* fileName, TChar* outPath, TZrSize maxLen) {
+void get_test_case_path(const TZrChar* fileName, TZrChar* outPath, TZrSize maxLen) {
     if (fileName == ZR_NULL || outPath == ZR_NULL || maxLen == 0) {
         return;
     }
@@ -190,7 +190,7 @@ static cJSON* ast_node_to_json(SZrState* state, SZrAstNode* node) {
     }
     
     // 添加节点类型
-    const TChar* typeName = "UNKNOWN";
+    const TZrChar* typeName = "UNKNOWN";
     switch (node->type) {
         case ZR_AST_SCRIPT: typeName = "SCRIPT"; break;
         case ZR_AST_MODULE_DECLARATION: typeName = "MODULE_DECLARATION"; break;
@@ -248,23 +248,23 @@ static cJSON* ast_node_to_json(SZrState* state, SZrAstNode* node) {
 }
 
 // 输出AST到文件（文本和JSON）
-TBool dump_ast_to_file(SZrState* state, SZrAstNode* ast, const TChar* basePath) {
+TZrBool dump_ast_to_file(SZrState* state, SZrAstNode* ast, const TZrChar* basePath) {
     if (state == ZR_NULL || ast == ZR_NULL || basePath == ZR_NULL) {
         return ZR_FALSE;
     }
     
     // 输出文本格式
-    TChar textPath[1024];
+    TZrChar textPath[1024];
     get_output_path(basePath, "ast", ".zrs", textPath, sizeof(textPath));
-    TBool textResult = ZrWriterWriteSyntaxTreeFile(state, ast, textPath);
+    TZrBool textResult = ZrParser_Writer_WriteSyntaxTreeFile(state, ast, textPath);
     
     // 输出JSON格式
-    TChar jsonPath[1024];
+    TZrChar jsonPath[1024];
     get_output_path(basePath, "ast", ".zrs.json", jsonPath, sizeof(jsonPath));
     
     cJSON* json = ast_node_to_json(state, ast);
     if (json != ZR_NULL) {
-        TChar* jsonString = cJSON_Print(json);
+        TZrChar* jsonString = cJSON_Print(json);
         if (jsonString != ZR_NULL) {
             FILE* jsonFile = fopen(jsonPath, "w");
             if (jsonFile != ZR_NULL) {
@@ -280,18 +280,18 @@ TBool dump_ast_to_file(SZrState* state, SZrAstNode* ast, const TChar* basePath) 
 }
 
 // 输出中间码到文件（文本和JSON）
-TBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const TChar* basePath) {
+TZrBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath) {
     if (state == ZR_NULL || function == ZR_NULL || basePath == ZR_NULL) {
         return ZR_FALSE;
     }
     
     // 输出文本格式
-    TChar textPath[1024];
+    TZrChar textPath[1024];
     get_output_path(basePath, "intermediate", ".zri", textPath, sizeof(textPath));
-    TBool textResult = ZrWriterWriteIntermediateFile(state, function, textPath);
+    TZrBool textResult = ZrParser_Writer_WriteIntermediateFile(state, function, textPath);
     
     // 输出JSON格式
-    TChar jsonPath[1024];
+    TZrChar jsonPath[1024];
     get_output_path(basePath, "intermediate", ".zri.json", jsonPath, sizeof(jsonPath));
     
     cJSON* json = cJSON_CreateObject();
@@ -307,7 +307,7 @@ TBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const TC
         
         // 常量列表
         cJSON* constants = cJSON_CreateArray();
-        for (TUInt32 i = 0; i < function->constantValueLength; i++) {
+        for (TZrUInt32 i = 0; i < function->constantValueLength; i++) {
             SZrTypeValue* constant = &function->constantValueList[i];
             cJSON* constItem = cJSON_CreateObject();
             cJSON_AddNumberToObject(constItem, "index", i);
@@ -318,7 +318,7 @@ TBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const TC
         
         // 指令列表
         cJSON* instructions = cJSON_CreateArray();
-        for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             TZrInstruction* inst = &function->instructionsList[i];
             cJSON* instItem = cJSON_CreateObject();
             cJSON_AddNumberToObject(instItem, "index", i);
@@ -328,7 +328,7 @@ TBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const TC
         }
         cJSON_AddItemToObject(json, "instructions", instructions);
         
-        TChar* jsonString = cJSON_Print(json);
+        TZrChar* jsonString = cJSON_Print(json);
         if (jsonString != ZR_NULL) {
             FILE* jsonFile = fopen(jsonPath, "w");
             if (jsonFile != ZR_NULL) {
@@ -343,24 +343,24 @@ TBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const TC
     return textResult;
 }
 
-TBool dump_binary_to_file(SZrState* state, SZrFunction* function, const TChar* basePath) {
+TZrBool dump_binary_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath) {
     if (state == ZR_NULL || function == ZR_NULL || basePath == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    TChar binaryPath[1024];
+    TZrChar binaryPath[1024];
     get_output_path(basePath, "binary", ".zro", binaryPath, sizeof(binaryPath));
-    return ZrWriterWriteBinaryFile(state, function, binaryPath);
+    return ZrParser_Writer_WriteBinaryFile(state, function, binaryPath);
 }
 
 // 输出运行状态到文件（文本和JSON）
-TBool dump_runtime_state(SZrState* state, const TChar* basePath) {
+TZrBool dump_runtime_state(SZrState* state, const TZrChar* basePath) {
     if (state == ZR_NULL || basePath == ZR_NULL) {
         return ZR_FALSE;
     }
     
     // 输出文本格式
-    TChar textPath[1024];
+    TZrChar textPath[1024];
     get_output_path(basePath, "runtime", ".runtime.txt", textPath, sizeof(textPath));
     
     FILE* file = fopen(textPath, "w");
@@ -384,7 +384,7 @@ TBool dump_runtime_state(SZrState* state, const TChar* basePath) {
     fclose(file);
     
     // 输出JSON格式
-    TChar jsonPath[1024];
+    TZrChar jsonPath[1024];
     get_output_path(basePath, "runtime", ".runtime.json", jsonPath, sizeof(jsonPath));
     
     cJSON* json = cJSON_CreateObject();
@@ -398,7 +398,7 @@ TBool dump_runtime_state(SZrState* state, const TChar* basePath) {
             cJSON_AddStringToObject(json, "callInfoList", "pointer");
         }
         
-        TChar* jsonString = cJSON_Print(json);
+        TZrChar* jsonString = cJSON_Print(json);
         if (jsonString != ZR_NULL) {
             FILE* jsonFile = fopen(jsonPath, "w");
             if (jsonFile != ZR_NULL) {
@@ -414,12 +414,12 @@ TBool dump_runtime_state(SZrState* state, const TChar* basePath) {
 }
 
 // 比较两个值是否相等
-TBool compare_values(SZrState* state, SZrTypeValue* a, SZrTypeValue* b) {
+TZrBool compare_values(SZrState* state, SZrTypeValue* a, SZrTypeValue* b) {
     if (state == ZR_NULL || a == ZR_NULL || b == ZR_NULL) {
         return ZR_FALSE;
     }
     
-    return ZrValueEqual(state, a, b);
+    return ZrCore_Value_Equal(state, a, b);
 }
 
 // 释放测试结果
@@ -429,7 +429,7 @@ void free_test_result(SZrTestResult* result) {
     }
     
     if (result->ast != ZR_NULL && result->state != ZR_NULL) {
-        ZrParserFreeAst(result->state, result->ast);
+        ZrParser_Ast_Free(result->state, result->ast);
     }
     
     free(result);

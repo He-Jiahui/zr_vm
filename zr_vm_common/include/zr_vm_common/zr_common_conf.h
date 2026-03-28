@@ -33,54 +33,54 @@ typedef ptrdiff_t TZrMemoryOffset;
 #define ZR_MAX_MEMORY_OFFSET ((TZrMemoryOffset) (ZR_MAX_SIZE >> 1))
 
 typedef void *TZrPtr; // 指针兼容类型
-typedef uint8_t *TBytePtr;
+typedef uint8_t *TZrBytePtr;
 
 typedef intptr_t TZrNativePtr;
 
 // c internal types
-typedef char TChar;
-typedef unsigned char TByte;
-typedef uint8_t TUInt8; // 1 byte
-typedef int8_t TInt8; // 1 byte
-typedef uint16_t TUInt16; // 2 bytes
-typedef int16_t TInt16; // 2 bytes
-typedef uint32_t TUInt32; // 4 bytes
-typedef int32_t TInt32; // 4 bytes
-typedef uint64_t TUInt64; // 8 bytes
-typedef int64_t TInt64; // 8 bytes
+typedef char TZrChar;
+typedef unsigned char TZrByte;
+typedef uint8_t TZrUInt8; // 1 byte
+typedef int8_t TZrInt8; // 1 byte
+typedef uint16_t TZrUInt16; // 2 bytes
+typedef int16_t TZrInt16; // 2 bytes
+typedef uint32_t TZrUInt32; // 4 bytes
+typedef int32_t TZrInt32; // 4 bytes
+typedef uint64_t TZrUInt64; // 8 bytes
+typedef int64_t TZrInt64; // 8 bytes
 
 #define ZR_INT_MAX LLONG_MAX
 #define ZR_INT_MIN LLONG_MIN
 #define ZR_UINT_MAX ULLONG_MAX
 
-typedef float TFloat32;
-typedef float TFloat;
-typedef double TFloat64;
-typedef double TDouble;
+typedef float TZrFloat32;
+typedef float TZrFloat;
+typedef double TZrFloat64;
+typedef double TZrDouble;
 
-typedef unsigned char TBool;
+typedef unsigned char TZrBool;
 
-typedef TUInt32 TEnum;
+typedef TZrUInt32 TZrEnum;
 
-typedef char *TNativeString;
+typedef char *TZrNativeString;
 
 union TZrNativeObject {
     // to fulfill the union
-    TUInt64 nativeBool;
+    TZrUInt64 nativeBool;
     // all char saved as 64 bits
-    TInt64 nativeChar;
+    TZrInt64 nativeChar;
     // all integer saved as 64 bits
-    // TUInt8 nativeUInt8;
-    // TInt8 nativeInt8;
-    // TUInt16 nativeUInt16;
-    // TInt16 nativeInt16;
-    // TUInt32 nativeUInt32;
-    // TInt32 nativeInt32;
-    TUInt64 nativeUInt64;
-    TInt64 nativeInt64;
+    // TZrUInt8 nativeUInt8;
+    // TZrInt8 nativeInt8;
+    // TZrUInt16 nativeUInt16;
+    // TZrInt16 nativeInt16;
+    // TZrUInt32 nativeUInt32;
+    // TZrInt32 nativeInt32;
+    TZrUInt64 nativeUInt64;
+    TZrInt64 nativeInt64;
     // all float saved as 64 bits
-    // TFloat nativeFloat;
-    TDouble nativeDouble;
+    // TZrFloat nativeFloat;
+    TZrDouble nativeDouble;
     TZrPtr nativePointer;
 };
 
@@ -140,7 +140,7 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_INOUT
 
 // allocator function
-typedef TZrPtr (*FZrAllocator)(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag);
+typedef TZrPtr (*FZrAllocator)(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag);
 
 // TryCatch types
 typedef jmp_buf TZrExceptionLongJump;

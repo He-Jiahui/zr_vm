@@ -77,3 +77,8 @@ dkms.conf
 
 .cache/
 
+# Local parser artifact outputs
+/test_simple.zri
+/test_simple.zro
+/test_simple.zrs
+

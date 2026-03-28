@@ -36,15 +36,15 @@ static void write_string_with_length(SZrState *state, FILE *file, SZrString *str
                          str->longStringLength;
     fwrite(&strLength, sizeof(TZrSize), 1, file);
     if (strLength > 0) {
-        TNativeString strStr = ZrStringGetNativeString(str);
+        TZrNativeString strStr = ZrCore_String_GetNativeString(str);
         if (strStr != ZR_NULL) {
-            fwrite(strStr, sizeof(TChar), strLength, file);
+            fwrite(strStr, sizeof(TZrChar), strLength, file);
         }
     }
 }
 
 // 辅助函数：从常量池索引获取字符串
-static SZrString *get_string_from_constant(SZrState *state, SZrFunction *function, TUInt32 index) {
+static SZrString *get_string_from_constant(SZrState *state, SZrFunction *function, TZrUInt32 index) {
     if (function == ZR_NULL || index >= function->constantValueLength) {
         return ZR_NULL;
     }
@@ -61,7 +61,7 @@ static SZrString *get_string_from_constant(SZrState *state, SZrFunction *functio
 }
 
 // 辅助函数：写入继承类型引用（.REFERENCE）
-static void write_io_reference(SZrState *state, FILE *file, TUInt32 stringIndex, SZrFunction *function) {
+static void write_io_reference(SZrState *state, FILE *file, TZrUInt32 stringIndex, SZrFunction *function) {
     ZR_UNUSED_PARAMETER(state);
     ZR_UNUSED_PARAMETER(function);
     // referenceModuleName [string] (空字符串，当前模块内引用)
@@ -79,11 +79,11 @@ static void write_io_reference(SZrState *state, FILE *file, TUInt32 stringIndex,
 
 // 辅助函数：写入成员声明（FIELD/METHOD/PROPERTY/META）
 static void write_member_declare(SZrState *state, FILE *file, const SZrCompiledMemberInfo *memberInfo, SZrFunction *function) {
-    TUInt32 memberType = memberInfo->memberType;
-    TUInt32 nameStringIndex = memberInfo->nameStringIndex;
+    TZrUInt32 memberType = memberInfo->memberType;
+    TZrUInt32 nameStringIndex = memberInfo->nameStringIndex;
     
     // 确定EZrIoMemberDeclareType
-    TUInt32 ioMemberType;
+    TZrUInt32 ioMemberType;
     if (memberType == ZR_AST_CONSTANT_STRUCT_FIELD || memberType == ZR_AST_CONSTANT_CLASS_FIELD) {
         ioMemberType = ZR_IO_MEMBER_DECLARE_TYPE_FIELD;
     } else if (memberType == ZR_AST_CONSTANT_STRUCT_METHOD || memberType == ZR_AST_CONSTANT_CLASS_METHOD) {
@@ -118,7 +118,7 @@ static void write_member_declare(SZrState *state, FILE *file, const SZrCompiledM
             // functionConstantIndex可能指向：
             // 1. 常量池中的函数对象（ZR_VALUE_TYPE_FUNCTION）
             // 2. 常量池中的引用路径（需要解析）
-            TUInt32 functionConstantIndex = memberInfo->functionConstantIndex;
+            TZrUInt32 functionConstantIndex = memberInfo->functionConstantIndex;
             TZrSize functionsLength = 0;
             
             if (functionConstantIndex > 0 && functionConstantIndex < function->constantValueLength) {
@@ -136,9 +136,9 @@ static void write_member_declare(SZrState *state, FILE *file, const SZrCompiledM
             
             // 如果functionConstantIndex为0或无效，尝试通过方法名在childFunctionList中查找
             if (functionsLength == 0 && methodName != ZR_NULL && function->childFunctionLength > 0) {
-                for (TUInt32 i = 0; i < function->childFunctionLength; i++) {
+                for (TZrUInt32 i = 0; i < function->childFunctionLength; i++) {
                     SZrFunction *childFunc = &function->childFunctionList[i];
-                    if (childFunc->functionName != ZR_NULL && ZrStringEqual(childFunc->functionName, methodName)) {
+                    if (childFunc->functionName != ZR_NULL && ZrCore_String_Equal(childFunc->functionName, methodName)) {
                         functionsLength = 1;
                         break;
                     }
@@ -165,8 +165,8 @@ static void write_member_declare(SZrState *state, FILE *file, const SZrCompiledM
             write_string_with_length(state, file, propertyName);
             
             // PROPERTY_TYPE [4] (目前设为0)
-            TUInt32 propertyType = 0;
-            fwrite(&propertyType, sizeof(TUInt32), 1, file);
+            TZrUInt32 propertyType = 0;
+            fwrite(&propertyType, sizeof(TZrUInt32), 1, file);
             
             // GETTER和SETTER函数引用需要从childFunctionList获取
             // 注意：property的getter/setter可能通过不同的机制存储
@@ -182,8 +182,8 @@ static void write_member_declare(SZrState *state, FILE *file, const SZrCompiledM
         }
         case ZR_IO_MEMBER_DECLARE_TYPE_META: {
             // .META: META_TYPE [4], FUNCTIONS_LENGTH [8], FUNCTIONS [.FUNCTION]
-            TUInt32 metaType = memberInfo->metaType;
-            fwrite(&metaType, sizeof(TUInt32), 1, file);
+            TZrUInt32 metaType = memberInfo->metaType;
+            fwrite(&metaType, sizeof(TZrUInt32), 1, file);
             
             // FUNCTIONS_LENGTH [8] (目前设为0，函数引用暂不支持)
             TZrSize functionsLength = 0;
@@ -196,7 +196,7 @@ static void write_member_declare(SZrState *state, FILE *file, const SZrCompiledM
 }
 
 // 辅助函数：写入CLASS prototype的结构化数据
-static void write_prototype_class(SZrState *state, FILE *file, const SZrCompiledPrototypeInfo *protoInfo, const TByte *data, SZrFunction *function) {
+static void write_prototype_class(SZrState *state, FILE *file, const SZrCompiledPrototypeInfo *protoInfo, const TZrByte *data, SZrFunction *function) {
     // .CLASS: NAME [string]
     SZrString *className = get_string_from_constant(state, function, protoInfo->nameStringIndex);
     write_string_with_length(state, file, className);
@@ -207,8 +207,8 @@ static void write_prototype_class(SZrState *state, FILE *file, const SZrCompiled
     
     // SUPER_CLASSES [.REFERENCE]
     if (superClassLength > 0) {
-        const TUInt32 *inheritIndices = (const TUInt32 *)(data + sizeof(SZrCompiledPrototypeInfo));
-        for (TUInt32 i = 0; i < superClassLength; i++) {
+        const TZrUInt32 *inheritIndices = (const TZrUInt32 *)(data + sizeof(SZrCompiledPrototypeInfo));
+        for (TZrUInt32 i = 0; i < superClassLength; i++) {
             write_io_reference(state, file, inheritIndices[i], function);
         }
     }
@@ -223,16 +223,16 @@ static void write_prototype_class(SZrState *state, FILE *file, const SZrCompiled
     
     // DECLARES [.CLASS_DECLARE] [.FIELD|.PROPERTY|.METHOD|.META]
     if (declaresLength > 0) {
-        TZrSize inheritArraySize = superClassLength * sizeof(TUInt32);
+        TZrSize inheritArraySize = superClassLength * sizeof(TZrUInt32);
         const SZrCompiledMemberInfo *members = (const SZrCompiledMemberInfo *)(data + sizeof(SZrCompiledPrototypeInfo) + inheritArraySize);
-        for (TUInt32 i = 0; i < declaresLength; i++) {
+        for (TZrUInt32 i = 0; i < declaresLength; i++) {
             write_member_declare(state, file, &members[i], function);
         }
     }
 }
 
 // 辅助函数：写入STRUCT prototype的结构化数据
-static void write_prototype_struct(SZrState *state, FILE *file, const SZrCompiledPrototypeInfo *protoInfo, const TByte *data, SZrFunction *function) {
+static void write_prototype_struct(SZrState *state, FILE *file, const SZrCompiledPrototypeInfo *protoInfo, const TZrByte *data, SZrFunction *function) {
     // .STRUCT: NAME [string]
     SZrString *structName = get_string_from_constant(state, function, protoInfo->nameStringIndex);
     write_string_with_length(state, file, structName);
@@ -243,8 +243,8 @@ static void write_prototype_struct(SZrState *state, FILE *file, const SZrCompile
     
     // SUPER_STRUCTS [.REFERENCE]
     if (superStructLength > 0) {
-        const TUInt32 *inheritIndices = (const TUInt32 *)(data + sizeof(SZrCompiledPrototypeInfo));
-        for (TUInt32 i = 0; i < superStructLength; i++) {
+        const TZrUInt32 *inheritIndices = (const TZrUInt32 *)(data + sizeof(SZrCompiledPrototypeInfo));
+        for (TZrUInt32 i = 0; i < superStructLength; i++) {
             write_io_reference(state, file, inheritIndices[i], function);
         }
     }
@@ -259,24 +259,24 @@ static void write_prototype_struct(SZrState *state, FILE *file, const SZrCompile
     
     // DECLARES [.STRUCT_DECLARE] [.FIELD|.METHOD|.META]
     if (declaresLength > 0) {
-        TZrSize inheritArraySize = superStructLength * sizeof(TUInt32);
+        TZrSize inheritArraySize = superStructLength * sizeof(TZrUInt32);
         const SZrCompiledMemberInfo *members = (const SZrCompiledMemberInfo *)(data + sizeof(SZrCompiledPrototypeInfo) + inheritArraySize);
-        for (TUInt32 i = 0; i < declaresLength; i++) {
+        for (TZrUInt32 i = 0; i < declaresLength; i++) {
             write_member_declare(state, file, &members[i], function);
         }
     }
 }
 
-static TBool write_io_function(SZrState *state, FILE *file, SZrFunction *function, const TChar *defaultName);
+static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *function, const TZrChar *defaultName);
 
-static void write_function_name(SZrState *state, FILE *file, SZrFunction *function, const TChar *defaultName) {
+static void write_function_name(SZrState *state, FILE *file, SZrFunction *function, const TZrChar *defaultName) {
     if (function != ZR_NULL && function->functionName != ZR_NULL) {
         write_string_with_length(state, file, function->functionName);
         return;
     }
 
     if (defaultName != ZR_NULL) {
-        SZrString *fallbackName = ZrStringCreate(state, defaultName, strlen(defaultName));
+        SZrString *fallbackName = ZrCore_String_Create(state, defaultName, strlen(defaultName));
         write_string_with_length(state, file, fallbackName);
         return;
     }
@@ -285,24 +285,24 @@ static void write_function_name(SZrState *state, FILE *file, SZrFunction *functi
 }
 
 static void write_function_local_variables(FILE *file, SZrFunction *function) {
-    TUInt64 localLength = function->localVariableLength;
-    fwrite(&localLength, sizeof(TUInt64), 1, file);
+    TZrUInt64 localLength = function->localVariableLength;
+    fwrite(&localLength, sizeof(TZrUInt64), 1, file);
 
-    for (TUInt64 i = 0; i < localLength; i++) {
+    for (TZrUInt64 i = 0; i < localLength; i++) {
         SZrFunctionLocalVariable *local = &function->localVariableList[i];
-        TUInt64 instructionStart = local->offsetActivate;
-        TUInt64 instructionEnd = local->offsetDead;
-        TUInt64 startLineLocal = 0;
-        TUInt64 endLineLocal = 0;
+        TZrUInt64 instructionStart = local->offsetActivate;
+        TZrUInt64 instructionEnd = local->offsetDead;
+        TZrUInt64 startLineLocal = 0;
+        TZrUInt64 endLineLocal = 0;
         if (function->executionLocationInfoList != ZR_NULL && function->executionLocationInfoLength > 0) {
-            for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+            for (TZrUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
                 SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
                 if (locInfo->currentInstructionOffset == instructionStart) {
                     startLineLocal = locInfo->lineInSource;
                     break;
                 }
             }
-            for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+            for (TZrUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
                 SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
                 if (locInfo->currentInstructionOffset == instructionEnd) {
                     endLineLocal = locInfo->lineInSource;
@@ -310,7 +310,7 @@ static void write_function_local_variables(FILE *file, SZrFunction *function) {
                 }
             }
             if (startLineLocal == 0) {
-                for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+                for (TZrUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
                     SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
                     if (locInfo->currentInstructionOffset <= instructionStart) {
                         startLineLocal = locInfo->lineInSource;
@@ -320,7 +320,7 @@ static void write_function_local_variables(FILE *file, SZrFunction *function) {
                 }
             }
             if (endLineLocal == 0) {
-                for (TUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
+                for (TZrUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
                     SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];
                     if (locInfo->currentInstructionOffset <= instructionEnd) {
                         endLineLocal = locInfo->lineInSource;
@@ -331,34 +331,34 @@ static void write_function_local_variables(FILE *file, SZrFunction *function) {
             }
         }
 
-        fwrite(&instructionStart, sizeof(TUInt64), 1, file);
-        fwrite(&instructionEnd, sizeof(TUInt64), 1, file);
-        fwrite(&startLineLocal, sizeof(TUInt64), 1, file);
-        fwrite(&endLineLocal, sizeof(TUInt64), 1, file);
+        fwrite(&instructionStart, sizeof(TZrUInt64), 1, file);
+        fwrite(&instructionEnd, sizeof(TZrUInt64), 1, file);
+        fwrite(&startLineLocal, sizeof(TZrUInt64), 1, file);
+        fwrite(&endLineLocal, sizeof(TZrUInt64), 1, file);
     }
 }
 
 static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *constant) {
-    TUInt32 type = (TUInt32) constant->type;
-    fwrite(&type, sizeof(TUInt32), 1, file);
+    TZrUInt32 type = (TZrUInt32) constant->type;
+    fwrite(&type, sizeof(TZrUInt32), 1, file);
 
     switch (constant->type) {
         case ZR_VALUE_TYPE_NULL:
             break;
         case ZR_VALUE_TYPE_BOOL: {
-            TUInt8 boolValue = constant->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
-            fwrite(&boolValue, sizeof(TUInt8), 1, file);
+            TZrUInt8 boolValue = constant->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
+            fwrite(&boolValue, sizeof(TZrUInt8), 1, file);
             break;
         }
         case ZR_VALUE_TYPE_INT8:
         case ZR_VALUE_TYPE_INT16:
         case ZR_VALUE_TYPE_INT32:
         case ZR_VALUE_TYPE_INT64:
-            fwrite(&constant->value, sizeof(TInt64), 1, file);
+            fwrite(&constant->value, sizeof(TZrInt64), 1, file);
             break;
         case ZR_VALUE_TYPE_FLOAT:
         case ZR_VALUE_TYPE_DOUBLE:
-            fwrite(&constant->value, sizeof(TDouble), 1, file);
+            fwrite(&constant->value, sizeof(TZrDouble), 1, file);
             break;
         case ZR_VALUE_TYPE_STRING: {
             SZrString *str = ZR_NULL;
@@ -373,7 +373,7 @@ static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *c
         }
         case ZR_VALUE_TYPE_FUNCTION:
         case ZR_VALUE_TYPE_CLOSURE: {
-            TBool hasFunctionValue = ZR_FALSE;
+            TZrBool hasFunctionValue = ZR_FALSE;
             SZrFunction *functionValue = ZR_NULL;
             if (constant->value.object != ZR_NULL) {
                 SZrRawObject *rawObj = constant->value.object;
@@ -382,7 +382,7 @@ static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *c
                     hasFunctionValue = ZR_TRUE;
                 }
             }
-            fwrite(&hasFunctionValue, sizeof(TBool), 1, file);
+            fwrite(&hasFunctionValue, sizeof(TZrBool), 1, file);
             if (hasFunctionValue) {
                 write_io_function(state, file, functionValue, ZR_NULL);
             }
@@ -393,35 +393,35 @@ static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *c
     }
 
     {
-        TUInt64 startLineConst = 0;
-        TUInt64 endLineConst = 0;
-        fwrite(&startLineConst, sizeof(TUInt64), 1, file);
-        fwrite(&endLineConst, sizeof(TUInt64), 1, file);
+        TZrUInt64 startLineConst = 0;
+        TZrUInt64 endLineConst = 0;
+        fwrite(&startLineConst, sizeof(TZrUInt64), 1, file);
+        fwrite(&endLineConst, sizeof(TZrUInt64), 1, file);
     }
 }
 
 static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *function) {
-    TUInt64 prototypesLength = 0;
-    TUInt64 classCount = 0;
-    TUInt64 structCount = 0;
+    TZrUInt64 prototypesLength = 0;
+    TZrUInt64 classCount = 0;
+    TZrUInt64 structCount = 0;
 
     if (function->prototypeData != ZR_NULL && function->prototypeCount > 0) {
         prototypesLength = function->prototypeCount;
 
-        const TByte *prototypeData = function->prototypeData + sizeof(TUInt32);
-        TZrSize remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
-        const TByte *currentPos = prototypeData;
+        const TZrByte *prototypeData = function->prototypeData + sizeof(TZrUInt32);
+        TZrSize remainingDataSize = function->prototypeDataLength - sizeof(TZrUInt32);
+        const TZrByte *currentPos = prototypeData;
 
-        for (TUInt32 i = 0; i < prototypesLength; i++) {
+        for (TZrUInt32 i = 0; i < prototypesLength; i++) {
             if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
                 break;
             }
 
             const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *) currentPos;
-            TUInt32 inheritsCount = protoInfo->inheritsCount;
-            TUInt32 membersCount = protoInfo->membersCount;
+            TZrUInt32 inheritsCount = protoInfo->inheritsCount;
+            TZrUInt32 membersCount = protoInfo->membersCount;
             TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) +
-                                           inheritsCount * sizeof(TUInt32) +
+                                           inheritsCount * sizeof(TZrUInt32) +
                                            membersCount * sizeof(SZrCompiledMemberInfo);
             if (remainingDataSize < currentPrototypeSize) {
                 break;
@@ -438,32 +438,32 @@ static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *
         }
     }
 
-    fwrite(&prototypesLength, sizeof(TUInt64), 1, file);
+    fwrite(&prototypesLength, sizeof(TZrUInt64), 1, file);
 
     if (prototypesLength == 0 || function->prototypeData == ZR_NULL || function->prototypeDataLength == 0) {
-        TUInt64 zero = 0;
-        fwrite(&zero, sizeof(TUInt64), 1, file);
-        fwrite(&zero, sizeof(TUInt64), 1, file);
+        TZrUInt64 zero = 0;
+        fwrite(&zero, sizeof(TZrUInt64), 1, file);
+        fwrite(&zero, sizeof(TZrUInt64), 1, file);
         return;
     }
 
     {
-        const TByte *prototypeData = function->prototypeData + sizeof(TUInt32);
-        TZrSize remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
-        const TByte *currentPos = prototypeData;
+        const TZrByte *prototypeData = function->prototypeData + sizeof(TZrUInt32);
+        TZrSize remainingDataSize = function->prototypeDataLength - sizeof(TZrUInt32);
+        const TZrByte *currentPos = prototypeData;
 
-        fwrite(&classCount, sizeof(TUInt64), 1, file);
+        fwrite(&classCount, sizeof(TZrUInt64), 1, file);
         if (classCount > 0) {
-            for (TUInt32 i = 0; i < prototypesLength; i++) {
+            for (TZrUInt32 i = 0; i < prototypesLength; i++) {
                 if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
                     break;
                 }
 
                 const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *) currentPos;
-                TUInt32 inheritsCount = protoInfo->inheritsCount;
-                TUInt32 membersCount = protoInfo->membersCount;
+                TZrUInt32 inheritsCount = protoInfo->inheritsCount;
+                TZrUInt32 membersCount = protoInfo->membersCount;
                 TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) +
-                                               inheritsCount * sizeof(TUInt32) +
+                                               inheritsCount * sizeof(TZrUInt32) +
                                                membersCount * sizeof(SZrCompiledMemberInfo);
                 if (remainingDataSize < currentPrototypeSize) {
                     break;
@@ -479,19 +479,19 @@ static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *
         }
 
         currentPos = prototypeData;
-        remainingDataSize = function->prototypeDataLength - sizeof(TUInt32);
-        fwrite(&structCount, sizeof(TUInt64), 1, file);
+        remainingDataSize = function->prototypeDataLength - sizeof(TZrUInt32);
+        fwrite(&structCount, sizeof(TZrUInt64), 1, file);
         if (structCount > 0) {
-            for (TUInt32 i = 0; i < prototypesLength; i++) {
+            for (TZrUInt32 i = 0; i < prototypesLength; i++) {
                 if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
                     break;
                 }
 
                 const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *) currentPos;
-                TUInt32 inheritsCount = protoInfo->inheritsCount;
-                TUInt32 membersCount = protoInfo->membersCount;
+                TZrUInt32 inheritsCount = protoInfo->inheritsCount;
+                TZrUInt32 membersCount = protoInfo->membersCount;
                 TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) +
-                                               inheritsCount * sizeof(TUInt32) +
+                                               inheritsCount * sizeof(TZrUInt32) +
                                                membersCount * sizeof(SZrCompiledMemberInfo);
                 if (remainingDataSize < currentPrototypeSize) {
                     break;
@@ -508,7 +508,7 @@ static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *
     }
 }
 
-static TBool write_io_function(SZrState *state, FILE *file, SZrFunction *function, const TChar *defaultName) {
+static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *function, const TZrChar *defaultName) {
     if (state == ZR_NULL || file == ZR_NULL || function == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -516,67 +516,67 @@ static TBool write_io_function(SZrState *state, FILE *file, SZrFunction *functio
     write_function_name(state, file, function, defaultName);
 
     {
-        TUInt64 startLine = function->lineInSourceStart;
-        TUInt64 endLine = function->lineInSourceEnd;
-        TUInt64 parametersLength = function->parameterCount;
-        TUInt64 hasVarArgs = function->hasVariableArguments ? ZR_TRUE : ZR_FALSE;
-        TUInt32 stackSize = function->stackSize;
-        TUInt64 instructionsLength = function->instructionsLength;
+        TZrUInt64 startLine = function->lineInSourceStart;
+        TZrUInt64 endLine = function->lineInSourceEnd;
+        TZrUInt64 parametersLength = function->parameterCount;
+        TZrUInt64 hasVarArgs = function->hasVariableArguments ? ZR_TRUE : ZR_FALSE;
+        TZrUInt32 stackSize = function->stackSize;
+        TZrUInt64 instructionsLength = function->instructionsLength;
 
-        fwrite(&startLine, sizeof(TUInt64), 1, file);
-        fwrite(&endLine, sizeof(TUInt64), 1, file);
-        fwrite(&parametersLength, sizeof(TUInt64), 1, file);
-        fwrite(&hasVarArgs, sizeof(TUInt64), 1, file);
-        fwrite(&stackSize, sizeof(TUInt32), 1, file);
-        fwrite(&instructionsLength, sizeof(TUInt64), 1, file);
+        fwrite(&startLine, sizeof(TZrUInt64), 1, file);
+        fwrite(&endLine, sizeof(TZrUInt64), 1, file);
+        fwrite(&parametersLength, sizeof(TZrUInt64), 1, file);
+        fwrite(&hasVarArgs, sizeof(TZrUInt64), 1, file);
+        fwrite(&stackSize, sizeof(TZrUInt32), 1, file);
+        fwrite(&instructionsLength, sizeof(TZrUInt64), 1, file);
 
-        for (TUInt64 i = 0; i < instructionsLength; i++) {
-            TUInt64 rawValue = function->instructionsList[i].value;
-            fwrite(&rawValue, sizeof(TUInt64), 1, file);
+        for (TZrUInt64 i = 0; i < instructionsLength; i++) {
+            TZrUInt64 rawValue = function->instructionsList[i].value;
+            fwrite(&rawValue, sizeof(TZrUInt64), 1, file);
         }
     }
 
     write_function_local_variables(file, function);
 
     {
-        TUInt64 constantsLength = function->constantValueLength;
-        fwrite(&constantsLength, sizeof(TUInt64), 1, file);
-        for (TUInt64 i = 0; i < constantsLength; i++) {
+        TZrUInt64 constantsLength = function->constantValueLength;
+        fwrite(&constantsLength, sizeof(TZrUInt64), 1, file);
+        for (TZrUInt64 i = 0; i < constantsLength; i++) {
             write_function_constant(file, state, &function->constantValueList[i]);
         }
     }
 
     {
-        TUInt64 exportedVariablesLength = function->exportedVariableLength;
-        fwrite(&exportedVariablesLength, sizeof(TUInt64), 1, file);
-        for (TUInt64 i = 0; i < exportedVariablesLength; i++) {
+        TZrUInt64 exportedVariablesLength = function->exportedVariableLength;
+        fwrite(&exportedVariablesLength, sizeof(TZrUInt64), 1, file);
+        for (TZrUInt64 i = 0; i < exportedVariablesLength; i++) {
             struct SZrFunctionExportedVariable *exported = &function->exportedVariables[i];
             write_string_with_length(state, file, exported->name);
-            fwrite(&exported->stackSlot, sizeof(TUInt32), 1, file);
-            fwrite(&exported->accessModifier, sizeof(TUInt8), 1, file);
+            fwrite(&exported->stackSlot, sizeof(TZrUInt32), 1, file);
+            fwrite(&exported->accessModifier, sizeof(TZrUInt8), 1, file);
         }
     }
 
     write_function_prototypes(state, file, function);
 
     {
-        TUInt64 closuresLength = function->childFunctionLength;
-        fwrite(&closuresLength, sizeof(TUInt64), 1, file);
-        for (TUInt64 i = 0; i < closuresLength; i++) {
+        TZrUInt64 closuresLength = function->childFunctionLength;
+        fwrite(&closuresLength, sizeof(TZrUInt64), 1, file);
+        for (TZrUInt64 i = 0; i < closuresLength; i++) {
             write_io_function(state, file, &function->childFunctionList[i], ZR_NULL);
         }
     }
 
     {
-        TUInt64 debugInfoLength = 0;
-        fwrite(&debugInfoLength, sizeof(TUInt64), 1, file);
+        TZrUInt64 debugInfoLength = 0;
+        fwrite(&debugInfoLength, sizeof(TZrUInt64), 1, file);
     }
 
     return ZR_TRUE;
 }
 
 // 写入二进制文件 (.zro)
-ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *function, const TChar *filename) {
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFile(SZrState *state, SZrFunction *function, const TZrChar *filename) {
     if (state == ZR_NULL || function == ZR_NULL || filename == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -591,69 +591,69 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
     fwrite(ZR_IO_SOURCE_SIGNATURE, 1, 4, file);
     
     // VERSION_MAJOR (4 bytes)
-    TUInt32 versionMajor = ZR_VM_MAJOR_VERSION;
-    fwrite(&versionMajor, sizeof(TUInt32), 1, file);
+    TZrUInt32 versionMajor = ZR_VM_MAJOR_VERSION;
+    fwrite(&versionMajor, sizeof(TZrUInt32), 1, file);
     
     // VERSION_MINOR (4 bytes)
-    TUInt32 versionMinor = ZR_VM_MINOR_VERSION;
-    fwrite(&versionMinor, sizeof(TUInt32), 1, file);
+    TZrUInt32 versionMinor = ZR_VM_MINOR_VERSION;
+    fwrite(&versionMinor, sizeof(TZrUInt32), 1, file);
     
     // VERSION_PATCH (4 bytes)
-    TUInt32 versionPatch = ZR_VM_PATCH_VERSION;
-    fwrite(&versionPatch, sizeof(TUInt32), 1, file);
+    TZrUInt32 versionPatch = ZR_VM_PATCH_VERSION;
+    fwrite(&versionPatch, sizeof(TZrUInt32), 1, file);
     
     // FORMAT (8 bytes)
-    TUInt64 format = ((TUInt64)versionMajor << ZR_IO_VERSION_FORMAT_SHIFT_BITS) | versionMinor;
-    fwrite(&format, sizeof(TUInt64), 1, file);
+    TZrUInt64 format = ((TZrUInt64)versionMajor << ZR_IO_VERSION_FORMAT_SHIFT_BITS) | versionMinor;
+    fwrite(&format, sizeof(TZrUInt64), 1, file);
     
     // NATIVE_INT_SIZE (1 byte)
-    TUInt8 nativeIntSize = ZR_IO_NATIVE_INT_SIZE;
-    fwrite(&nativeIntSize, sizeof(TUInt8), 1, file);
+    TZrUInt8 nativeIntSize = ZR_IO_NATIVE_INT_SIZE;
+    fwrite(&nativeIntSize, sizeof(TZrUInt8), 1, file);
     
     // SIZE_T_SIZE (1 byte)
-    TUInt8 sizeTypeSize = ZR_IO_SIZE_T_SIZE;
-    fwrite(&sizeTypeSize, sizeof(TUInt8), 1, file);
+    TZrUInt8 sizeTypeSize = ZR_IO_SIZE_T_SIZE;
+    fwrite(&sizeTypeSize, sizeof(TZrUInt8), 1, file);
     
     // INSTRUCTION_SIZE (1 byte)
-    TUInt8 instructionSize = ZR_IO_INSTRUCTION_SIZE;
-    fwrite(&instructionSize, sizeof(TUInt8), 1, file);
+    TZrUInt8 instructionSize = ZR_IO_INSTRUCTION_SIZE;
+    fwrite(&instructionSize, sizeof(TZrUInt8), 1, file);
     
     // ENDIAN (1 byte)
-    TUInt8 endian = ZR_IO_IS_LITTLE_ENDIAN ? ZR_TRUE : ZR_FALSE;
-    fwrite(&endian, sizeof(TUInt8), 1, file);
+    TZrUInt8 endian = ZR_IO_IS_LITTLE_ENDIAN ? ZR_TRUE : ZR_FALSE;
+    fwrite(&endian, sizeof(TZrUInt8), 1, file);
     
     // DEBUG (1 byte)
-    TUInt8 debug = ZR_FALSE;
-    fwrite(&debug, sizeof(TUInt8), 1, file);
+    TZrUInt8 debug = ZR_FALSE;
+    fwrite(&debug, sizeof(TZrUInt8), 1, file);
     
     // OPT (3 bytes)
-    TUInt8 opt[3] = {ZR_FALSE, ZR_FALSE, ZR_FALSE};
-    fwrite(opt, sizeof(TUInt8), 3, file);
+    TZrUInt8 opt[3] = {ZR_FALSE, ZR_FALSE, ZR_FALSE};
+    fwrite(opt, sizeof(TZrUInt8), 3, file);
     
     // MODULES_LENGTH (8 bytes)
-    TUInt64 modulesLength = 1;
-    fwrite(&modulesLength, sizeof(TUInt64), 1, file);
+    TZrUInt64 modulesLength = 1;
+    fwrite(&modulesLength, sizeof(TZrUInt64), 1, file);
     
     // MODULE: NAME [string]
-    SZrString *moduleName = ZrStringCreate(state, "simple", 6);
+    SZrString *moduleName = ZrCore_String_Create(state, "simple", 6);
     TZrSize nameLength = (moduleName->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? 
                          (TZrSize)moduleName->shortStringLength : 
                          moduleName->longStringLength;
     fwrite(&nameLength, sizeof(TZrSize), 1, file);
-    TNativeString nameStr = ZrStringGetNativeString(moduleName);
-    fwrite(nameStr, sizeof(TChar), nameLength, file);
+    TZrNativeString nameStr = ZrCore_String_GetNativeString(moduleName);
+    fwrite(nameStr, sizeof(TZrChar), nameLength, file);
     
     // MODULE: MD5 [string] (空字符串)
     TZrSize md5Length = 0;
     fwrite(&md5Length, sizeof(TZrSize), 1, file);
     
     // MODULE: IMPORTS_LENGTH (8 bytes)
-    TUInt64 importsLength = 0;
-    fwrite(&importsLength, sizeof(TUInt64), 1, file);
+    TZrUInt64 importsLength = 0;
+    fwrite(&importsLength, sizeof(TZrUInt64), 1, file);
     
     // MODULE: DECLARES_LENGTH (8 bytes)
-    TUInt64 declaresLength = 0;
-    fwrite(&declaresLength, sizeof(TUInt64), 1, file);
+    TZrUInt64 declaresLength = 0;
+    fwrite(&declaresLength, sizeof(TZrUInt64), 1, file);
     
     // MODULE: ENTRY [.FUNCTION]
     write_io_function(state, file, function, "__entry");
@@ -663,7 +663,7 @@ ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *functi
 }
 
 // 写入明文中间文件 (.zri)
-ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *function, const TChar *filename) {
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZrFunction *function, const TZrChar *filename) {
     if (state == ZR_NULL || function == ZR_NULL || filename == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -678,7 +678,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
     
     // 输出函数名（如果存在，否则使用 "__entry"）
     if (function->functionName != ZR_NULL) {
-        TNativeString funcNameStr = ZrStringGetNativeString(function->functionName);
+        TZrNativeString funcNameStr = ZrCore_String_GetNativeString(function->functionName);
         if (funcNameStr != ZR_NULL) {
             TZrSize nameLen;
             if (function->functionName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
@@ -702,7 +702,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
     
     // 常量列表
     fprintf(file, "CONSTANTS (%u):\n", function->constantValueLength);
-    for (TUInt32 i = 0; i < function->constantValueLength; i++) {
+    for (TZrUInt32 i = 0; i < function->constantValueLength; i++) {
         SZrTypeValue *constant = &function->constantValueList[i];
         fprintf(file, "  [%u] ", i);
         switch (constant->type) {
@@ -731,7 +731,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                     SZrRawObject *rawObj = constant->value.object;
                     if (rawObj->type == ZR_VALUE_TYPE_STRING) {
                         SZrString *str = ZR_CAST_STRING(state, rawObj);
-                        TNativeString strStr = ZrStringGetNativeString(str);
+                        TZrNativeString strStr = ZrCore_String_GetNativeString(str);
                         fprintf(file, "string: \"%s\"\n", strStr);
                     } else {
                         // 类型不匹配，输出空字符串
@@ -741,7 +741,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                 break;
             }
             default:
-                fprintf(file, "unknown type: %u\n", (TUInt32)constant->type);
+                fprintf(file, "unknown type: %u\n", (TZrUInt32)constant->type);
                 break;
         }
     }
@@ -749,22 +749,22 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
     
     // 局部变量列表
     fprintf(file, "LOCAL_VARIABLES (%u):\n", function->localVariableLength);
-    for (TUInt32 i = 0; i < function->localVariableLength; i++) {
+    for (TZrUInt32 i = 0; i < function->localVariableLength; i++) {
         SZrFunctionLocalVariable *local = &function->localVariableList[i];
-        TNativeString nameStr = local->name ? ZrStringGetNativeString(local->name) : "<unnamed>";
+        TZrNativeString nameStr = local->name ? ZrCore_String_GetNativeString(local->name) : "<unnamed>";
         fprintf(file, "  [%u] %s: offset_activate=%u, offset_dead=%u\n", 
-                i, nameStr, (TUInt32)local->offsetActivate, (TUInt32)local->offsetDead);
+                i, nameStr, (TZrUInt32)local->offsetActivate, (TZrUInt32)local->offsetDead);
     }
     fprintf(file, "\n");
     
     // 闭包变量列表
     fprintf(file, "CLOSURE_VARIABLES (%u):\n", function->closureValueLength);
-    for (TUInt32 i = 0; i < function->closureValueLength; i++) {
+    for (TZrUInt32 i = 0; i < function->closureValueLength; i++) {
         SZrFunctionClosureVariable *closure = &function->closureValueList[i];
-        TNativeString nameStr = closure->name ? ZrStringGetNativeString(closure->name) : "<unnamed>";
+        TZrNativeString nameStr = closure->name ? ZrCore_String_GetNativeString(closure->name) : "<unnamed>";
         
         // 输出类型名称
-        const TChar *typeName = "UNKNOWN";
+        const TZrChar *typeName = "UNKNOWN";
         switch (closure->valueType) {
             case ZR_VALUE_TYPE_NULL: typeName = "NULL"; break;
             case ZR_VALUE_TYPE_BOOL: typeName = "BOOL"; break;
@@ -795,16 +795,16 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
     // Prototype 数据列表
     if (function->prototypeData != ZR_NULL && function->prototypeCount > 0) {
         fprintf(file, "PROTOTYPES (%u):\n", function->prototypeCount);
-        ZrDebugPrintPrototypesFromData(state, function, file);
+        ZrCore_Debug_PrintPrototypesFromData(state, function, file);
         fprintf(file, "\n");
     }
     
     // 指令列表
     fprintf(file, "INSTRUCTIONS (%u):\n", function->instructionsLength);
-    for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+    for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
         TZrInstruction *inst = &function->instructionsList[i];
         EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
-        TUInt16 operandExtra = inst->instruction.operandExtra;
+        TZrUInt16 operandExtra = inst->instruction.operandExtra;
         
         fprintf(file, "  [%u] ", i);
         
@@ -1045,7 +1045,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                 fprintf(file, "CATCH");
                 break;
             default:
-                fprintf(file, "OPCODE_%u", (TUInt32)opcode);
+                fprintf(file, "OPCODE_%u", (TZrUInt32)opcode);
                 break;
         }
         
@@ -1057,7 +1057,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
         
         // 检查指令类型，决定使用哪种操作数格式
         switch (opcode) {
-            // 使用 operand2[0] (TInt32) 的指令
+            // 使用 operand2[0] (TZrInt32) 的指令
             case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
             case ZR_INSTRUCTION_ENUM(SET_CONSTANT):
             case ZR_INSTRUCTION_ENUM(GET_STACK):
@@ -1073,7 +1073,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                 fprintf(file, ", operand=%d", inst->instruction.operand.operand2[0]);
                 break;
                 
-            // 使用 operand1[0] (TUInt16) 的指令（单操作数）
+            // 使用 operand1[0] (TZrUInt16) 的指令（单操作数）
             case ZR_INSTRUCTION_ENUM(TO_BOOL):
             case ZR_INSTRUCTION_ENUM(TO_INT):
             case ZR_INSTRUCTION_ENUM(TO_UINT):
@@ -1085,7 +1085,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                 fprintf(file, ", operand1=%u", inst->instruction.operand.operand1[0]);
                 break;
                 
-            // 使用 operand1[0] + operand1[1] (TUInt16) 的指令（双操作数）
+            // 使用 operand1[0] + operand1[1] (TZrUInt16) 的指令（双操作数）
             case ZR_INSTRUCTION_ENUM(ADD):
             case ZR_INSTRUCTION_ENUM(ADD_INT):
             case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
@@ -1171,12 +1171,12 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
     // 子函数列表（递归输出）
     if (function->childFunctionLength > 0) {
         fprintf(file, "CHILD_FUNCTIONS (%u):\n", function->childFunctionLength);
-        for (TUInt32 i = 0; i < function->childFunctionLength; i++) {
+        for (TZrUInt32 i = 0; i < function->childFunctionLength; i++) {
             SZrFunction *childFunc = &function->childFunctionList[i];
             fprintf(file, "  [%u] FUNCTION:\n", i);
             // 输出函数名（如果存在）
             if (childFunc->functionName != ZR_NULL) {
-                TNativeString nameStr = ZrStringGetNativeString(childFunc->functionName);
+                TZrNativeString nameStr = ZrCore_String_GetNativeString(childFunc->functionName);
                 TZrSize nameLen;
                 if (childFunc->functionName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
                     nameLen = childFunc->functionName->shortStringLength;
@@ -1197,7 +1197,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
             fprintf(file, "    HAS_VAR_ARGS: %s\n", childFunc->hasVariableArguments ? "true" : "false");
             fprintf(file, "    STACK_SIZE: %u\n", childFunc->stackSize);
             fprintf(file, "    CONSTANTS (%u):\n", childFunc->constantValueLength);
-            for (TUInt32 j = 0; j < childFunc->constantValueLength; j++) {
+            for (TZrUInt32 j = 0; j < childFunc->constantValueLength; j++) {
                 SZrTypeValue *constant = &childFunc->constantValueList[j];
                 fprintf(file, "      [%u] ", j);
                 switch (constant->type) {
@@ -1224,7 +1224,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                             SZrRawObject *rawObj = constant->value.object;
                             if (rawObj->type == ZR_VALUE_TYPE_STRING) {
                                 SZrString *str = ZR_CAST_STRING(state, rawObj);
-                                TNativeString strStr = ZrStringGetNativeString(str);
+                                TZrNativeString strStr = ZrCore_String_GetNativeString(str);
                                 fprintf(file, "string: \"%s\"\n", strStr);
                             } else {
                                 fprintf(file, "string: \"\"\n");
@@ -1233,15 +1233,15 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                         break;
                     }
                     default:
-                        fprintf(file, "unknown type: %u\n", (TUInt32)constant->type);
+                        fprintf(file, "unknown type: %u\n", (TZrUInt32)constant->type);
                         break;
                 }
             }
             fprintf(file, "    INSTRUCTIONS (%u):\n", childFunc->instructionsLength);
-            for (TUInt32 j = 0; j < childFunc->instructionsLength; j++) {
+            for (TZrUInt32 j = 0; j < childFunc->instructionsLength; j++) {
                 TZrInstruction *inst = &childFunc->instructionsList[j];
                 EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
-                TUInt16 operandExtra = inst->instruction.operandExtra;
+                TZrUInt16 operandExtra = inst->instruction.operandExtra;
                 
                 fprintf(file, "      [%u] ", j);
                 
@@ -1278,7 +1278,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
                         fprintf(file, "CREATE_ARRAY");
                         break;
                     default:
-                        fprintf(file, "OPCODE_%u", (TUInt32)opcode);
+                        fprintf(file, "OPCODE_%u", (TZrUInt32)opcode);
                         break;
                 }
                 
@@ -1350,7 +1350,7 @@ ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *
 }
 
 // 获取 AST 节点类型名称
-static const TChar *get_ast_node_type_name(EZrAstNodeType type) {
+static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
     switch (type) {
         case ZR_AST_SCRIPT: return "SCRIPT";
         case ZR_AST_MODULE_DECLARATION: return "MODULE_DECLARATION";
@@ -1445,7 +1445,7 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
     for (TZrSize i = 0; i < indent; i++) fprintf(file, "  ");
     
     // 打印节点类型和位置
-    const TChar *typeName = get_ast_node_type_name(node->type);
+    const TZrChar *typeName = get_ast_node_type_name(node->type);
     fprintf(file, "%s", typeName);
     
     // 打印位置信息
@@ -1495,7 +1495,7 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
         case ZR_AST_IDENTIFIER_LITERAL: {
             SZrIdentifier *ident = &node->data.identifier;
             if (ident->name != ZR_NULL) {
-                TNativeString nameStr = ZrStringGetNativeString(ident->name);
+                TZrNativeString nameStr = ZrCore_String_GetNativeString(ident->name);
                 if (nameStr != ZR_NULL) {
                     fprintf(file, "  name: \"%s\"\n", nameStr);
                 } else {
@@ -1507,14 +1507,14 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
         case ZR_AST_STRING_LITERAL: {
             SZrStringLiteral *str = &node->data.stringLiteral;
             if (str->value != ZR_NULL) {
-                TNativeString valueStr = ZrStringGetNativeString(str->value);
+                TZrNativeString valueStr = ZrCore_String_GetNativeString(str->value);
                 if (valueStr != ZR_NULL) {
                     fprintf(file, "  value: \"%s\"\n", valueStr);
                 } else {
                     fprintf(file, "  value: <null>\n");
                 }
             } else if (str->literal != ZR_NULL) {
-                TNativeString literalStr = ZrStringGetNativeString(str->literal);
+                TZrNativeString literalStr = ZrCore_String_GetNativeString(str->literal);
                 if (literalStr != ZR_NULL) {
                     fprintf(file, "  literal: \"%s\"\n", literalStr);
                 } else {
@@ -1673,7 +1673,7 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
 }
 
 // 写入语法树文件 (.zrs)
-ZR_PARSER_API TBool ZrWriterWriteSyntaxTreeFile(SZrState *state, SZrAstNode *ast, const TChar *filename) {
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteSyntaxTreeFile(SZrState *state, SZrAstNode *ast, const TZrChar *filename) {
     if (state == ZR_NULL || ast == ZR_NULL || filename == ZR_NULL) {
         return ZR_FALSE;
     }

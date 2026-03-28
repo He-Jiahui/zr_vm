@@ -5,7 +5,7 @@
 
 #include <stdarg.h>
 
-void ZrLogError(struct SZrState *state, TNativeString format, ...) {
+void ZrCore_Log_Error(struct SZrState *state, TZrNativeString format, ...) {
     ZR_TODO_PARAMETER(state);
     ZR_TODO_PARAMETER(format);
     // va_list argp;

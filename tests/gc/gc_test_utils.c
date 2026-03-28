@@ -11,7 +11,7 @@
 #include "zr_vm_core/string.h"
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -47,13 +47,13 @@ static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSiz
 SZrState* createTestState() {
     // 创建全局状态
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState* global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
+    SZrGlobalState* global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
     if (!global) return NULL;
     
     // 初始化注册表
     SZrState* mainState = global->mainThreadState;
     if (mainState) {
-        ZrGlobalStateInitRegistry(mainState, global);
+        ZrCore_GlobalState_InitRegistry(mainState, global);
     }
     
     return mainState;
@@ -66,7 +66,7 @@ void destroyTestState(SZrState* state) {
     SZrGlobalState* global = state->global;
     if (global) {
         // 释放全局状态（会自动释放GC和所有资源）
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
     }
 }
 
@@ -74,23 +74,23 @@ void destroyTestState(SZrState* state) {
 SZrRawObject* createTestObject(SZrState* state, EZrValueType type, TZrSize size) {
     if (!state || !state->global) return NULL;
     
-    return ZrRawObjectNew(state, type, size, ZR_FALSE);
+    return ZrCore_RawObject_New(state, type, size, ZR_FALSE);
 }
 
 // 创建测试用的Native Data对象
-struct SZrNativeData* createTestNativeData(SZrState* state, TUInt32 valueCount) {
+struct SZrNativeData* createTestNativeData(SZrState* state, TZrUInt32 valueCount) {
     if (!state || !state->global) return NULL;
     
     TZrSize totalSize = sizeof(struct SZrNativeData) + (valueCount - 1) * sizeof(SZrTypeValue);
-    SZrRawObject* rawObj = ZrRawObjectNew(state, ZR_VALUE_TYPE_NATIVE_DATA, totalSize, ZR_FALSE);
+    SZrRawObject* rawObj = ZrCore_RawObject_New(state, ZR_VALUE_TYPE_NATIVE_DATA, totalSize, ZR_FALSE);
     if (!rawObj) return NULL;
     
     struct SZrNativeData* nativeData = ZR_CAST(struct SZrNativeData *, rawObj);
     nativeData->valueLength = valueCount;
     
     // 初始化值数组
-    for (TUInt32 i = 0; i < valueCount; i++) {
-        ZrValueResetAsNull(&nativeData->valueExtend[i]);
+    for (TZrUInt32 i = 0; i < valueCount; i++) {
+        ZrCore_Value_ResetAsNull(&nativeData->valueExtend[i]);
     }
     
     return nativeData;

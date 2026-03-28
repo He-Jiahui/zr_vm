@@ -57,7 +57,7 @@ typedef struct {
 } while(0)
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
     
@@ -96,21 +96,21 @@ static void test_reference_tracker_create_and_free(SZrState *state) {
     
     TEST_INFO("Reference Tracker Creation", "Creating and freeing reference tracker");
     
-    SZrSymbolTable *symbolTable = ZrSymbolTableNew(state);
+    SZrSymbolTable *symbolTable = ZrLanguageServer_SymbolTable_New(state);
     if (symbolTable == ZR_NULL) {
         TEST_FAIL(timer, "Reference Tracker Creation and Free", "Failed to create symbol table");
         return;
     }
     
-    SZrReferenceTracker *tracker = ZrReferenceTrackerNew(state, symbolTable);
+    SZrReferenceTracker *tracker = ZrLanguageServer_ReferenceTracker_New(state, symbolTable);
     if (tracker == ZR_NULL) {
-        ZrSymbolTableFree(state, symbolTable);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
         TEST_FAIL(timer, "Reference Tracker Creation and Free", "Failed to create reference tracker");
         return;
     }
     
-    ZrReferenceTrackerFree(state, tracker);
-    ZrSymbolTableFree(state, symbolTable);
+    ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+    ZrLanguageServer_SymbolTable_Free(state, symbolTable);
     TEST_PASS(timer, "Reference Tracker Creation and Free");
 }
 
@@ -121,78 +121,78 @@ static void test_reference_tracker_add_and_find(SZrState *state) {
     
     TEST_INFO("Add Reference", "Adding reference to symbol");
     
-    SZrSymbolTable *symbolTable = ZrSymbolTableNew(state);
+    SZrSymbolTable *symbolTable = ZrLanguageServer_SymbolTable_New(state);
     if (symbolTable == ZR_NULL) {
         TEST_FAIL(timer, "Reference Tracker Add and Find", "Failed to create symbol table");
         return;
     }
     
-    SZrReferenceTracker *tracker = ZrReferenceTrackerNew(state, symbolTable);
+    SZrReferenceTracker *tracker = ZrLanguageServer_ReferenceTracker_New(state, symbolTable);
     if (tracker == ZR_NULL) {
-        ZrSymbolTableFree(state, symbolTable);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
         TEST_FAIL(timer, "Reference Tracker Add and Find", "Failed to create reference tracker");
         return;
     }
     
     // 创建符号
-    SZrString *name = ZrStringCreate(state, "testVar", 7);
-    SZrFileRange defLocation = ZrFileRangeCreate(
-        ZrFilePositionCreate(0, 1, 0),
-        ZrFilePositionCreate(7, 1, 7),
+    SZrString *name = ZrCore_String_Create(state, "testVar", 7);
+    SZrFileRange defLocation = ZrParser_FileRange_Create(
+        ZrParser_FilePosition_Create(0, 1, 0),
+        ZrParser_FilePosition_Create(7, 1, 7),
         ZR_NULL
     );
     
-    ZrSymbolTableAddSymbol(state, symbolTable, ZR_SYMBOL_VARIABLE, name,
+    ZrLanguageServer_SymbolTable_AddSymbol(state, symbolTable, ZR_SYMBOL_VARIABLE, name,
                           defLocation, ZR_NULL, ZR_ACCESS_PUBLIC, ZR_NULL);
     
-    SZrSymbol *symbol = ZrSymbolTableLookup(symbolTable, name, ZR_NULL);
+    SZrSymbol *symbol = ZrLanguageServer_SymbolTable_Lookup(symbolTable, name, ZR_NULL);
     if (symbol == ZR_NULL) {
-        ZrReferenceTrackerFree(state, tracker);
-        ZrSymbolTableFree(state, symbolTable);
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
         TEST_FAIL(timer, "Reference Tracker Add and Find", "Failed to lookup symbol");
         return;
     }
     
     // 添加引用
-    SZrFileRange refLocation = ZrFileRangeCreate(
-        ZrFilePositionCreate(10, 2, 0),
-        ZrFilePositionCreate(17, 2, 7),
+    SZrFileRange refLocation = ZrParser_FileRange_Create(
+        ZrParser_FilePosition_Create(10, 2, 0),
+        ZrParser_FilePosition_Create(17, 2, 7),
         ZR_NULL
     );
     
-    TBool success = ZrReferenceTrackerAddReference(state, tracker, symbol, refLocation, ZR_REFERENCE_READ);
+    TZrBool success = ZrLanguageServer_ReferenceTracker_AddReference(state, tracker, symbol, refLocation, ZR_REFERENCE_READ);
     if (!success) {
-        ZrReferenceTrackerFree(state, tracker);
-        ZrSymbolTableFree(state, symbolTable);
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
         TEST_FAIL(timer, "Reference Tracker Add and Find", "Failed to add reference");
         return;
     }
     
     // 查找所有引用
     SZrArray references;
-    ZrArrayInit(state, &references, sizeof(SZrReference *), 4);
-    success = ZrReferenceTrackerFindReferences(state, tracker, symbol, &references);
+    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), 4);
+    success = ZrLanguageServer_ReferenceTracker_FindReferences(state, tracker, symbol, &references);
     if (!success || references.length == 0) {
-        ZrArrayFree(state, &references);
-        ZrReferenceTrackerFree(state, tracker);
-        ZrSymbolTableFree(state, symbolTable);
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
         TEST_FAIL(timer, "Reference Tracker Add and Find", "Failed to find references");
         return;
     }
     
     // 验证引用计数
-    TZrSize refCount = ZrReferenceTrackerGetReferenceCount(tracker, symbol);
+    TZrSize refCount = ZrLanguageServer_ReferenceTracker_GetReferenceCount(tracker, symbol);
     if (refCount == 0) {
-        ZrArrayFree(state, &references);
-        ZrReferenceTrackerFree(state, tracker);
-        ZrSymbolTableFree(state, symbolTable);
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
         TEST_FAIL(timer, "Reference Tracker Add and Find", "Reference count is zero");
         return;
     }
     
-    ZrArrayFree(state, &references);
-    ZrReferenceTrackerFree(state, tracker);
-    ZrSymbolTableFree(state, symbolTable);
+    ZrCore_Array_Free(state, &references);
+    ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+    ZrLanguageServer_SymbolTable_Free(state, symbolTable);
     TEST_PASS(timer, "Reference Tracker Add and Find");
 }
 
@@ -203,61 +203,61 @@ static void test_reference_tracker_get_locations(SZrState *state) {
     
     TEST_INFO("Get Reference Locations", "Getting all reference locations for a symbol");
     
-    SZrSymbolTable *symbolTable = ZrSymbolTableNew(state);
-    SZrReferenceTracker *tracker = ZrReferenceTrackerNew(state, symbolTable);
+    SZrSymbolTable *symbolTable = ZrLanguageServer_SymbolTable_New(state);
+    SZrReferenceTracker *tracker = ZrLanguageServer_ReferenceTracker_New(state, symbolTable);
     
     if (symbolTable == ZR_NULL || tracker == ZR_NULL) {
-        if (tracker != ZR_NULL) ZrReferenceTrackerFree(state, tracker);
-        if (symbolTable != ZR_NULL) ZrSymbolTableFree(state, symbolTable);
+        if (tracker != ZR_NULL) ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        if (symbolTable != ZR_NULL) ZrLanguageServer_SymbolTable_Free(state, symbolTable);
         TEST_FAIL(timer, "Reference Tracker Get Locations", "Failed to create tracker");
         return;
     }
     
     // 创建符号并添加多个引用
-    SZrString *name = ZrStringCreate(state, "testVar", 7);
-    SZrFileRange defLocation = ZrFileRangeCreate(
-        ZrFilePositionCreate(0, 1, 0),
-        ZrFilePositionCreate(7, 1, 7),
+    SZrString *name = ZrCore_String_Create(state, "testVar", 7);
+    SZrFileRange defLocation = ZrParser_FileRange_Create(
+        ZrParser_FilePosition_Create(0, 1, 0),
+        ZrParser_FilePosition_Create(7, 1, 7),
         ZR_NULL
     );
     
-    ZrSymbolTableAddSymbol(state, symbolTable, ZR_SYMBOL_VARIABLE, name,
+    ZrLanguageServer_SymbolTable_AddSymbol(state, symbolTable, ZR_SYMBOL_VARIABLE, name,
                           defLocation, ZR_NULL, ZR_ACCESS_PUBLIC, ZR_NULL);
     
-    SZrSymbol *symbol = ZrSymbolTableLookup(symbolTable, name, ZR_NULL);
+    SZrSymbol *symbol = ZrLanguageServer_SymbolTable_Lookup(symbolTable, name, ZR_NULL);
     if (symbol == ZR_NULL) {
-        ZrReferenceTrackerFree(state, tracker);
-        ZrSymbolTableFree(state, symbolTable);
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
         TEST_FAIL(timer, "Reference Tracker Get Locations", "Failed to lookup symbol");
         return;
     }
     
     // 添加多个引用
     for (int i = 0; i < 3; i++) {
-        SZrFileRange refLocation = ZrFileRangeCreate(
-            ZrFilePositionCreate(10 + i * 20, 2 + i, 0),
-            ZrFilePositionCreate(17 + i * 20, 2 + i, 7),
+        SZrFileRange refLocation = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(10 + i * 20, 2 + i, 0),
+            ZrParser_FilePosition_Create(17 + i * 20, 2 + i, 7),
             ZR_NULL
         );
-        ZrReferenceTrackerAddReference(state, tracker, symbol, refLocation, ZR_REFERENCE_READ);
+        ZrLanguageServer_ReferenceTracker_AddReference(state, tracker, symbol, refLocation, ZR_REFERENCE_READ);
     }
     
     // 获取所有引用位置
     SZrArray locations;
-    ZrArrayInit(state, &locations, sizeof(SZrFileRange), 4);
-    TBool success = ZrReferenceTrackerGetReferenceLocations(state, tracker, symbol, &locations);
+    ZrCore_Array_Init(state, &locations, sizeof(SZrFileRange), 4);
+    TZrBool success = ZrLanguageServer_ReferenceTracker_GetReferenceLocations(state, tracker, symbol, &locations);
     
     if (!success || locations.length != 3) {
-        ZrArrayFree(state, &locations);
-        ZrReferenceTrackerFree(state, tracker);
-        ZrSymbolTableFree(state, symbolTable);
+        ZrCore_Array_Free(state, &locations);
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
         TEST_FAIL(timer, "Reference Tracker Get Locations", "Failed to get all reference locations");
         return;
     }
     
-    ZrArrayFree(state, &locations);
-    ZrReferenceTrackerFree(state, tracker);
-    ZrSymbolTableFree(state, symbolTable);
+    ZrCore_Array_Free(state, &locations);
+    ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+    ZrLanguageServer_SymbolTable_Free(state, symbolTable);
     TEST_PASS(timer, "Reference Tracker Get Locations");
 }
 
@@ -269,7 +269,7 @@ int main() {
     
     // 创建全局状态
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
     if (global == ZR_NULL) {
         printf("Fail - Failed to create global state\n");
         return 1;
@@ -278,13 +278,13 @@ int main() {
     // 获取主线程状态
     SZrState *state = global->mainThreadState;
     if (state == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         printf("Fail - Failed to get main thread state\n");
         return 1;
     }
     
     // 初始化注册表
-    ZrGlobalStateInitRegistry(state, global);
+    ZrCore_GlobalState_InitRegistry(state, global);
     
     // 运行测试
     test_reference_tracker_create_and_free(state);
@@ -297,7 +297,7 @@ int main() {
     TEST_DIVIDER();
     
     // 清理
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     printf("\n==========\n");
     printf("All Reference Tracker Tests Completed\n");

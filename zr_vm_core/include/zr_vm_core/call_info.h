@@ -52,12 +52,12 @@ typedef union TZrCallInfoContext TZrCallInfoContext;
 
 union TZrCallInfoYieldContext {
     TZrSize functionIndex;
-    TUInt64 yieldValueCount;
-    TUInt64 returnValueCount;
+    TZrUInt64 yieldValueCount;
+    TZrUInt64 returnValueCount;
 
     struct {
-        TUInt32 transferStart;
-        TUInt32 transferCount;
+        TZrUInt32 transferStart;
+        TZrUInt32 transferCount;
     };
 };
 
@@ -83,14 +83,14 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
 
 typedef struct SZrCallInfo SZrCallInfo;
 
-#define ZR_CALL_INFO_IS_VM(CALL_INFO) ((TBool) (!((CALL_INFO)->callStatus & ZR_CALL_STATUS_NATIVE_CALL)))
+#define ZR_CALL_INFO_IS_VM(CALL_INFO) ((TZrBool) (!((CALL_INFO)->callStatus & ZR_CALL_STATUS_NATIVE_CALL)))
 
-ZR_FORCE_INLINE TBool ZrCallInfoIsNative(SZrCallInfo *callInfo) {
-    return (TBool) ((callInfo->callStatus & ZR_CALL_STATUS_NATIVE_CALL) > 0);
+ZR_FORCE_INLINE TZrBool ZrCore_CallInfo_IsNative(SZrCallInfo *callInfo) {
+    return (TZrBool) ((callInfo->callStatus & ZR_CALL_STATUS_NATIVE_CALL) > 0);
 }
 
-ZR_CORE_API void ZrCallInfoEntryNativeInit(struct SZrState *state, SZrCallInfo *callInfo, TZrStackPointer functionIndex,
+ZR_CORE_API void ZrCore_CallInfo_EntryNativeInit(struct SZrState *state, SZrCallInfo *callInfo, TZrStackPointer functionIndex,
                                            TZrStackPointer functionTop, SZrCallInfo *previous);
 
-ZR_CORE_API SZrCallInfo *ZrCallInfoExtend(struct SZrState *state);
+ZR_CORE_API SZrCallInfo *ZrCore_CallInfo_Extend(struct SZrState *state);
 #endif // ZR_VM_CORE_CALL_INFO_H

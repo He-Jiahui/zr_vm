@@ -9,8 +9,8 @@
 #include "zr_vm_common/zr_common_conf.h"
 
 static const union {
-    TUInt64 dummy;
-    TBool littleEndian;
+    TZrUInt64 dummy;
+    TZrBool littleEndian;
 } CZrIoEndian = {.dummy = 1};
 
 #define ZR_IO_IS_LITTLE_ENDIAN (CZrIoEndian.littleEndian)

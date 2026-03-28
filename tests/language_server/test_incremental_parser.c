@@ -57,7 +57,7 @@ typedef struct {
 } while(0)
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
     
@@ -96,13 +96,13 @@ static void test_incremental_parser_create_and_free(SZrState *state) {
     
     TEST_INFO("Incremental Parser Creation", "Creating and freeing incremental parser");
     
-    SZrIncrementalParser *parser = ZrIncrementalParserNew(state);
+    SZrIncrementalParser *parser = ZrLanguageServer_IncrementalParser_New(state);
     if (parser == ZR_NULL) {
         TEST_FAIL(timer, "Incremental Parser Creation and Free", "Failed to create incremental parser");
         return;
     }
     
-    ZrIncrementalParserFree(state, parser);
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
     TEST_PASS(timer, "Incremental Parser Creation and Free");
 }
 
@@ -113,42 +113,42 @@ static void test_incremental_parser_update_and_parse(SZrState *state) {
     
     TEST_INFO("Update File", "Updating file content and parsing");
     
-    SZrIncrementalParser *parser = ZrIncrementalParserNew(state);
+    SZrIncrementalParser *parser = ZrLanguageServer_IncrementalParser_New(state);
     if (parser == ZR_NULL) {
         TEST_FAIL(timer, "Incremental Parser Update and Parse", "Failed to create incremental parser");
         return;
     }
     
     // 创建文件 URI
-    SZrString *uri = ZrStringCreate(state, "file:///test.zr", 15);
-    const TChar *content = "var x = 10;";
+    SZrString *uri = ZrCore_String_Create(state, "file:///test.zr", 15);
+    const TZrChar *content = "var x = 10;";
     TZrSize contentLength = strlen(content);
     
     // 更新文件
-    TBool success = ZrIncrementalParserUpdateFile(state, parser, uri, content, contentLength, 1);
+    TZrBool success = ZrLanguageServer_IncrementalParser_UpdateFile(state, parser, uri, content, contentLength, 1);
     if (!success) {
-        ZrIncrementalParserFree(state, parser);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
         TEST_FAIL(timer, "Incremental Parser Update and Parse", "Failed to update file");
         return;
     }
     
     // 解析文件
-    success = ZrIncrementalParserParse(state, parser, uri);
+    success = ZrLanguageServer_IncrementalParser_Parse(state, parser, uri);
     if (!success) {
-        ZrIncrementalParserFree(state, parser);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
         TEST_FAIL(timer, "Incremental Parser Update and Parse", "Failed to parse file");
         return;
     }
     
     // 获取 AST
-    SZrAstNode *ast = ZrIncrementalParserGetAST(parser, uri);
+    SZrAstNode *ast = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
     if (ast == ZR_NULL) {
-        ZrIncrementalParserFree(state, parser);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
         TEST_FAIL(timer, "Incremental Parser Update and Parse", "AST is NULL");
         return;
     }
     
-    ZrIncrementalParserFree(state, parser);
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
     TEST_PASS(timer, "Incremental Parser Update and Parse");
 }
 
@@ -159,34 +159,34 @@ static void test_incremental_parser_same_content(SZrState *state) {
     
     TEST_INFO("Same Content", "Testing that same content doesn't trigger re-parse");
     
-    SZrIncrementalParser *parser = ZrIncrementalParserNew(state);
+    SZrIncrementalParser *parser = ZrLanguageServer_IncrementalParser_New(state);
     if (parser == ZR_NULL) {
         TEST_FAIL(timer, "Incremental Parser Same Content", "Failed to create incremental parser");
         return;
     }
     
-    SZrString *uri = ZrStringCreate(state, "file:///test.zr", 15);
-    const TChar *content = "var x = 10;";
+    SZrString *uri = ZrCore_String_Create(state, "file:///test.zr", 15);
+    const TZrChar *content = "var x = 10;";
     TZrSize contentLength = strlen(content);
     
     // 第一次更新和解析
-    ZrIncrementalParserUpdateFile(state, parser, uri, content, contentLength, 1);
-    ZrIncrementalParserParse(state, parser, uri);
-    SZrAstNode *ast1 = ZrIncrementalParserGetAST(parser, uri);
+    ZrLanguageServer_IncrementalParser_UpdateFile(state, parser, uri, content, contentLength, 1);
+    ZrLanguageServer_IncrementalParser_Parse(state, parser, uri);
+    SZrAstNode *ast1 = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
     
     // 第二次更新相同内容
-    ZrIncrementalParserUpdateFile(state, parser, uri, content, contentLength, 2);
-    ZrIncrementalParserParse(state, parser, uri);
-    SZrAstNode *ast2 = ZrIncrementalParserGetAST(parser, uri);
+    ZrLanguageServer_IncrementalParser_UpdateFile(state, parser, uri, content, contentLength, 2);
+    ZrLanguageServer_IncrementalParser_Parse(state, parser, uri);
+    SZrAstNode *ast2 = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
     
     // 如果启用内容哈希，AST 应该相同（或至少不为 NULL）
     if (ast1 == ZR_NULL || ast2 == ZR_NULL) {
-        ZrIncrementalParserFree(state, parser);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
         TEST_FAIL(timer, "Incremental Parser Same Content", "AST is NULL");
         return;
     }
     
-    ZrIncrementalParserFree(state, parser);
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
     TEST_PASS(timer, "Incremental Parser Same Content");
 }
 
@@ -197,31 +197,31 @@ static void test_incremental_parser_remove_file(SZrState *state) {
     
     TEST_INFO("Remove File", "Removing file from parser");
     
-    SZrIncrementalParser *parser = ZrIncrementalParserNew(state);
+    SZrIncrementalParser *parser = ZrLanguageServer_IncrementalParser_New(state);
     if (parser == ZR_NULL) {
         TEST_FAIL(timer, "Incremental Parser Remove File", "Failed to create incremental parser");
         return;
     }
     
-    SZrString *uri = ZrStringCreate(state, "file:///test.zr", 15);
-    const TChar *content = "var x = 10;";
+    SZrString *uri = ZrCore_String_Create(state, "file:///test.zr", 15);
+    const TZrChar *content = "var x = 10;";
     TZrSize contentLength = strlen(content);
     
     // 添加文件
-    ZrIncrementalParserUpdateFile(state, parser, uri, content, contentLength, 1);
+    ZrLanguageServer_IncrementalParser_UpdateFile(state, parser, uri, content, contentLength, 1);
     
     // 移除文件
-    ZrIncrementalParserRemoveFile(state, parser, uri);
+    ZrLanguageServer_IncrementalParser_RemoveFile(state, parser, uri);
     
     // 验证文件已移除
-    SZrFileVersion *fileVersion = ZrIncrementalParserGetFileVersion(parser, uri);
+    SZrFileVersion *fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
     if (fileVersion != ZR_NULL) {
-        ZrIncrementalParserFree(state, parser);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
         TEST_FAIL(timer, "Incremental Parser Remove File", "File still exists after removal");
         return;
     }
     
-    ZrIncrementalParserFree(state, parser);
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
     TEST_PASS(timer, "Incremental Parser Remove File");
 }
 
@@ -233,7 +233,7 @@ int main() {
     
     // 创建全局状态
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 12345, &callbacks);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
     if (global == ZR_NULL) {
         printf("Fail - Failed to create global state\n");
         return 1;
@@ -242,13 +242,13 @@ int main() {
     // 获取主线程状态
     SZrState *state = global->mainThreadState;
     if (state == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         printf("Fail - Failed to get main thread state\n");
         return 1;
     }
     
     // 初始化注册表
-    ZrGlobalStateInitRegistry(state, global);
+    ZrCore_GlobalState_InitRegistry(state, global);
     
     // 运行测试
     test_incremental_parser_create_and_free(state);
@@ -264,7 +264,7 @@ int main() {
     TEST_DIVIDER();
     
     // 清理
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     
     printf("\n==========\n");
     printf("All Incremental Parser Tests Completed\n");

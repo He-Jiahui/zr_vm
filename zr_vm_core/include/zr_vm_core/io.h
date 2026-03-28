@@ -12,9 +12,9 @@ struct SZrState;
 struct SZrGlobalState;
 struct SZrString;
 
-typedef TBytePtr (*FZrIoRead)(struct SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size);
+typedef TZrBytePtr (*FZrIoRead)(struct SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size);
 
-typedef EZrThreadStatus (*FZrIoWrite)(struct SZrState *state, TBytePtr buffer, TZrSize size, TZrPtr customData);
+typedef EZrThreadStatus (*FZrIoWrite)(struct SZrState *state, TZrBytePtr buffer, TZrSize size, TZrPtr customData);
 
 typedef void (*FZrIoClose)(struct SZrState *state, TZrPtr customData);
 
@@ -22,15 +22,15 @@ struct ZR_STRUCT_ALIGN SZrIo {
     struct SZrState *state;
     FZrIoRead read;
     TZrSize remained;
-    TBytePtr pointer;
+    TZrBytePtr pointer;
     TZrPtr customData;
     FZrIoClose close;
-    TBool isBinary;
+    TZrBool isBinary;
 };
 
 typedef struct SZrIo SZrIo;
 
-typedef TBool (*FZrIoLoadSource)(struct SZrState *state, TNativeString sourcePath, TNativeString md5, SZrIo *io);
+typedef TZrBool (*FZrIoLoadSource)(struct SZrState *state, TZrNativeString sourcePath, TZrNativeString md5, SZrIo *io);
 
 
 struct SZrIoImport {
@@ -53,10 +53,10 @@ typedef struct SZrIoReference SZrIoReference;
 struct SZrIoFunction;
 
 struct SZrIoFunctionLocalVariable {
-    TUInt64 instructionStartIndex;
-    TUInt64 instructionEndIndex;
-    TUInt64 startLine; // debug
-    TUInt64 endLine; // debug
+    TZrUInt64 instructionStartIndex;
+    TZrUInt64 instructionEndIndex;
+    TZrUInt64 startLine; // debug
+    TZrUInt64 endLine; // debug
 };
 
 typedef struct SZrIoFunctionLocalVariable SZrIoFunctionLocalVariable;
@@ -64,18 +64,18 @@ typedef struct SZrIoFunctionLocalVariable SZrIoFunctionLocalVariable;
 struct SZrIoFunctionConstantVariable {
     EZrValueType type;
     TZrPureValue value;
-    TBool hasFunctionValue;
+    TZrBool hasFunctionValue;
     struct SZrIoFunction *functionValue;
-    TUInt64 startLine; // debug
-    TUInt64 endLine; // debug
+    TZrUInt64 startLine; // debug
+    TZrUInt64 endLine; // debug
 };
 
 typedef struct SZrIoFunctionConstantVariable SZrIoFunctionConstantVariable;
 
 struct SZrIoFunctionExportedVariable {
     struct SZrString *name;
-    TUInt32 stackSlot;
-    TUInt8 accessModifier;
+    TZrUInt32 stackSlot;
+    TZrUInt8 accessModifier;
 };
 
 typedef struct SZrIoFunctionExportedVariable SZrIoFunctionExportedVariable;
@@ -91,7 +91,7 @@ typedef struct SZrIoFunctionClosure SZrIoFunctionClosure;
 
 struct SZrIoFunctionDebugInfo {
     TZrSize instructionsLength;
-    TUInt64 *instructionsLine;
+    TZrUInt64 *instructionsLine;
     // todo:
 };
 
@@ -125,11 +125,11 @@ typedef struct SZrIoStruct SZrIoStruct;
 
 struct SZrIoFunction {
     struct SZrString *name;
-    TUInt64 startLine;
-    TUInt64 endLine;
+    TZrUInt64 startLine;
+    TZrUInt64 endLine;
     TZrSize parametersLength;
-    TUInt64 hasVarArgs;
-    TUInt32 stackSize;
+    TZrUInt64 hasVarArgs;
+    TZrUInt32 stackSize;
     TZrSize instructionsLength;
     TZrInstruction *instructions;
     TZrSize localVariablesLength;
@@ -168,7 +168,7 @@ typedef struct SZrIoMethod SZrIoMethod;
 struct SZrIoProperty {
     struct SZrString *name;
     // todo:
-    TUInt32 propertyType;
+    TZrUInt32 propertyType;
     SZrIoFunction *getter;
     SZrIoFunction *setter;
 };
@@ -255,35 +255,35 @@ struct SZrIoModule {
 typedef struct SZrIoModule SZrIoModule;
 
 struct SZrIoSource {
-    TChar signature[4];
-    TUInt32 versionMajor;
-    TUInt32 versionMinor;
-    TUInt32 versionPatch;
-    TUInt64 format;
-    TUInt8 nativeIntSize;
-    TUInt8 typeSizeSize;
-    TUInt8 typeInstructionSize;
-    TBool isBigEndian;
-    TBool isDebug;
-    TChar optional[3];
+    TZrChar signature[4];
+    TZrUInt32 versionMajor;
+    TZrUInt32 versionMinor;
+    TZrUInt32 versionPatch;
+    TZrUInt64 format;
+    TZrUInt8 nativeIntSize;
+    TZrUInt8 typeSizeSize;
+    TZrUInt8 typeInstructionSize;
+    TZrBool isBigEndian;
+    TZrBool isDebug;
+    TZrChar optional[3];
     TZrSize modulesLength;
     SZrIoModule *modules;
 };
 
 typedef struct SZrIoSource SZrIoSource;
 
-ZR_CORE_API SZrIo *ZrIoNew(struct SZrGlobalState *global);
+ZR_CORE_API SZrIo *ZrCore_Io_New(struct SZrGlobalState *global);
 
-ZR_CORE_API void ZrIoFree(struct SZrGlobalState *global, SZrIo *io);
+ZR_CORE_API void ZrCore_Io_Free(struct SZrGlobalState *global, SZrIo *io);
 
-ZR_CORE_API void ZrIoInit(struct SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close, TZrPtr customData);
+ZR_CORE_API void ZrCore_Io_Init(struct SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close, TZrPtr customData);
 
-ZR_CORE_API TZrSize ZrIoRead(SZrIo *io, TBytePtr buffer, TZrSize size);
+ZR_CORE_API TZrSize ZrCore_Io_Read(SZrIo *io, TZrBytePtr buffer, TZrSize size);
 
 
-ZR_CORE_API SZrIoSource *ZrIoReadSourceNew(SZrIo *io);
+ZR_CORE_API SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io);
 
-ZR_CORE_API void ZrIoReadSourceFree(struct SZrGlobalState *global, SZrIoSource *source);
+ZR_CORE_API void ZrCore_Io_ReadSourceFree(struct SZrGlobalState *global, SZrIoSource *source);
 
-ZR_CORE_API SZrIoSource *ZrIoLoadSource(struct SZrState *state, TNativeString sourceName, TNativeString md5);
+ZR_CORE_API SZrIoSource *ZrCore_Io_LoadSource(struct SZrState *state, TZrNativeString sourceName, TZrNativeString md5);
 #endif // ZR_VM_CORE_IO_H

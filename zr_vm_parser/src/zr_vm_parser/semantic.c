@@ -3,47 +3,47 @@
 #include "zr_vm_core/memory.h"
 
 static void semantic_context_init_arrays(SZrSemanticContext *context) {
-    ZrArrayInit(context->state,
+    ZrCore_Array_Init(context->state,
                 &context->types,
                 sizeof(SZrSemanticTypeRecord),
                 8);
-    ZrArrayInit(context->state,
+    ZrCore_Array_Init(context->state,
                 &context->symbols,
                 sizeof(SZrSemanticSymbolRecord),
                 8);
-    ZrArrayInit(context->state,
+    ZrCore_Array_Init(context->state,
                 &context->overloadSets,
                 sizeof(SZrSemanticOverloadSetRecord),
                 4);
-    ZrArrayInit(context->state,
+    ZrCore_Array_Init(context->state,
                 &context->cleanupPlan,
                 sizeof(SZrDeterministicCleanupStep),
                 8);
-    ZrArrayInit(context->state,
+    ZrCore_Array_Init(context->state,
                 &context->templateSegments,
                 sizeof(SZrTemplateSegment),
                 8);
 }
 
-SZrSemanticContext *ZrSemanticContextNew(SZrState *state) {
+SZrSemanticContext *ZrParser_SemanticContext_New(SZrState *state) {
     SZrSemanticContext *context;
 
     if (state == ZR_NULL) {
         return ZR_NULL;
     }
 
-    context = (SZrSemanticContext *)ZrMemoryRawMalloc(state->global, sizeof(SZrSemanticContext));
+    context = (SZrSemanticContext *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrSemanticContext));
     if (context == ZR_NULL) {
         return ZR_NULL;
     }
 
     context->state = state;
     semantic_context_init_arrays(context);
-    ZrSemanticContextReset(context);
+    ZrParser_SemanticContext_Reset(context);
     return context;
 }
 
-void ZrSemanticContextFree(SZrSemanticContext *context) {
+void ZrParser_SemanticContext_Free(SZrSemanticContext *context) {
     TZrSize i;
 
     if (context == ZR_NULL || context->state == ZR_NULL) {
@@ -53,32 +53,32 @@ void ZrSemanticContextFree(SZrSemanticContext *context) {
     if (context->types.isValid && context->types.head != ZR_NULL) {
         for (i = 0; i < context->types.length; i++) {
             SZrSemanticTypeRecord *record =
-                (SZrSemanticTypeRecord *)ZrArrayGet(&context->types, i);
+                (SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, i);
             if (record != ZR_NULL) {
-                ZrInferredTypeFree(context->state, &record->inferredType);
+                ZrParser_InferredType_Free(context->state, &record->inferredType);
             }
         }
-        ZrArrayFree(context->state, &context->types);
+        ZrCore_Array_Free(context->state, &context->types);
     }
     if (context->symbols.isValid && context->symbols.head != ZR_NULL) {
-        ZrArrayFree(context->state, &context->symbols);
+        ZrCore_Array_Free(context->state, &context->symbols);
     }
     if (context->overloadSets.isValid && context->overloadSets.head != ZR_NULL) {
         for (i = 0; i < context->overloadSets.length; i++) {
             SZrSemanticOverloadSetRecord *record =
-                (SZrSemanticOverloadSetRecord *)ZrArrayGet(&context->overloadSets, i);
+                (SZrSemanticOverloadSetRecord *)ZrCore_Array_Get(&context->overloadSets, i);
             if (record != ZR_NULL && record->members.isValid && record->members.head != ZR_NULL) {
-                ZrArrayFree(context->state, &record->members);
+                ZrCore_Array_Free(context->state, &record->members);
             }
         }
-        ZrArrayFree(context->state, &context->overloadSets);
+        ZrCore_Array_Free(context->state, &context->overloadSets);
     }
-    ZrArrayFree(context->state, &context->cleanupPlan);
-    ZrArrayFree(context->state, &context->templateSegments);
-    ZrMemoryRawFree(context->state->global, context, sizeof(SZrSemanticContext));
+    ZrCore_Array_Free(context->state, &context->cleanupPlan);
+    ZrCore_Array_Free(context->state, &context->templateSegments);
+    ZrCore_Memory_RawFree(context->state->global, context, sizeof(SZrSemanticContext));
 }
 
-void ZrSemanticContextReset(SZrSemanticContext *context) {
+void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
     TZrSize i;
 
     if (context == ZR_NULL) {
@@ -91,16 +91,16 @@ void ZrSemanticContextReset(SZrSemanticContext *context) {
     context->nextLifetimeRegionId = 1;
     for (i = 0; i < context->types.length; i++) {
         SZrSemanticTypeRecord *record =
-            (SZrSemanticTypeRecord *)ZrArrayGet(&context->types, i);
+            (SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, i);
         if (record != ZR_NULL) {
-            ZrInferredTypeFree(context->state, &record->inferredType);
+            ZrParser_InferredType_Free(context->state, &record->inferredType);
         }
     }
     for (i = 0; i < context->overloadSets.length; i++) {
         SZrSemanticOverloadSetRecord *record =
-            (SZrSemanticOverloadSetRecord *)ZrArrayGet(&context->overloadSets, i);
+            (SZrSemanticOverloadSetRecord *)ZrCore_Array_Get(&context->overloadSets, i);
         if (record != ZR_NULL && record->members.isValid && record->members.head != ZR_NULL) {
-            ZrArrayFree(context->state, &record->members);
+            ZrCore_Array_Free(context->state, &record->members);
         }
     }
     context->types.length = 0;
@@ -110,28 +110,28 @@ void ZrSemanticContextReset(SZrSemanticContext *context) {
     context->templateSegments.length = 0;
 }
 
-TZrTypeId ZrSemanticReserveTypeId(SZrSemanticContext *context) {
+TZrTypeId ZrParser_Semantic_ReserveTypeId(SZrSemanticContext *context) {
     if (context == ZR_NULL) {
         return 0;
     }
     return context->nextTypeId++;
 }
 
-TZrSymbolId ZrSemanticReserveSymbolId(SZrSemanticContext *context) {
+TZrSymbolId ZrParser_Semantic_ReserveSymbolId(SZrSemanticContext *context) {
     if (context == ZR_NULL) {
         return 0;
     }
     return context->nextSymbolId++;
 }
 
-TZrOverloadSetId ZrSemanticReserveOverloadSetId(SZrSemanticContext *context) {
+TZrOverloadSetId ZrParser_Semantic_ReserveOverloadSetId(SZrSemanticContext *context) {
     if (context == ZR_NULL) {
         return 0;
     }
     return context->nextOverloadSetId++;
 }
 
-TZrLifetimeRegionId ZrSemanticReserveLifetimeRegionId(SZrSemanticContext *context) {
+TZrLifetimeRegionId ZrParser_Semantic_ReserveLifetimeRegionId(SZrSemanticContext *context) {
     if (context == ZR_NULL) {
         return 0;
     }
@@ -159,17 +159,17 @@ static EZrSemanticTypeKind semantic_type_kind_from_inferred_type(const SZrInferr
     }
 }
 
-static TBool semantic_names_equal(SZrString *left, SZrString *right) {
+static TZrBool semantic_names_equal(SZrString *left, SZrString *right) {
     if (left == right) {
         return ZR_TRUE;
     }
     if (left == ZR_NULL || right == ZR_NULL) {
         return ZR_FALSE;
     }
-    return ZrStringEqual(left, right);
+    return ZrCore_String_Equal(left, right);
 }
 
-TZrTypeId ZrSemanticRegisterInferredType(SZrSemanticContext *context,
+TZrTypeId ZrParser_Semantic_RegisterInferredType(SZrSemanticContext *context,
                                          const SZrInferredType *type,
                                          EZrSemanticTypeKind kind,
                                          SZrString *name,
@@ -183,28 +183,28 @@ TZrTypeId ZrSemanticRegisterInferredType(SZrSemanticContext *context,
 
     for (i = 0; i < context->types.length; i++) {
         SZrSemanticTypeRecord *existing =
-            (SZrSemanticTypeRecord *)ZrArrayGet(&context->types, i);
+            (SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, i);
         if (existing != ZR_NULL &&
             existing->kind == semantic_type_kind_from_inferred_type(type, kind) &&
             semantic_names_equal(existing->name, name != ZR_NULL ? name : type->typeName) &&
-            ZrInferredTypeEqual(&existing->inferredType, type)) {
+            ZrParser_InferredType_Equal(&existing->inferredType, type)) {
             return existing->id;
         }
     }
 
-    record.id = ZrSemanticReserveTypeId(context);
+    record.id = ZrParser_Semantic_ReserveTypeId(context);
     record.kind = semantic_type_kind_from_inferred_type(type, kind);
     record.baseType = type->baseType;
     record.ownershipQualifier = type->ownershipQualifier;
     record.name = name != ZR_NULL ? name : type->typeName;
     record.astNode = astNode;
-    ZrInferredTypeCopy(context->state, &record.inferredType, type);
+    ZrParser_InferredType_Copy(context->state, &record.inferredType, type);
 
-    ZrArrayPush(context->state, &context->types, &record);
+    ZrCore_Array_Push(context->state, &context->types, &record);
     return record.id;
 }
 
-TZrTypeId ZrSemanticRegisterNamedType(SZrSemanticContext *context,
+TZrTypeId ZrParser_Semantic_RegisterNamedType(SZrSemanticContext *context,
                                       SZrString *name,
                                       EZrSemanticTypeKind kind,
                                       SZrAstNode *astNode) {
@@ -217,25 +217,25 @@ TZrTypeId ZrSemanticRegisterNamedType(SZrSemanticContext *context,
 
     for (i = 0; i < context->types.length; i++) {
         SZrSemanticTypeRecord *existing =
-            (SZrSemanticTypeRecord *)ZrArrayGet(&context->types, i);
+            (SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, i);
         if (existing != ZR_NULL && semantic_names_equal(existing->name, name)) {
             return existing->id;
         }
     }
 
-    record.id = ZrSemanticReserveTypeId(context);
+    record.id = ZrParser_Semantic_ReserveTypeId(context);
     record.kind = kind;
     record.baseType = ZR_VALUE_TYPE_OBJECT;
     record.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     record.name = name;
     record.astNode = astNode;
-    ZrInferredTypeInitFull(context->state, &record.inferredType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, name);
+    ZrParser_InferredType_InitFull(context->state, &record.inferredType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, name);
 
-    ZrArrayPush(context->state, &context->types, &record);
+    ZrCore_Array_Push(context->state, &context->types, &record);
     return record.id;
 }
 
-TZrSymbolId ZrSemanticRegisterSymbol(SZrSemanticContext *context,
+TZrSymbolId ZrParser_Semantic_RegisterSymbol(SZrSemanticContext *context,
                                      SZrString *name,
                                      EZrSemanticSymbolKind kind,
                                      TZrTypeId typeId,
@@ -248,7 +248,7 @@ TZrSymbolId ZrSemanticRegisterSymbol(SZrSemanticContext *context,
         return 0;
     }
 
-    record.id = ZrSemanticReserveSymbolId(context);
+    record.id = ZrParser_Semantic_ReserveSymbolId(context);
     record.kind = kind;
     record.name = name;
     record.typeId = typeId;
@@ -256,11 +256,11 @@ TZrSymbolId ZrSemanticRegisterSymbol(SZrSemanticContext *context,
     record.astNode = astNode;
     record.location = location;
 
-    ZrArrayPush(context->state, &context->symbols, &record);
+    ZrCore_Array_Push(context->state, &context->symbols, &record);
     return record.id;
 }
 
-TZrOverloadSetId ZrSemanticGetOrCreateOverloadSet(SZrSemanticContext *context,
+TZrOverloadSetId ZrParser_Semantic_GetOrCreateOverloadSet(SZrSemanticContext *context,
                                                   SZrString *name) {
     TZrSize i;
     SZrSemanticOverloadSetRecord record;
@@ -271,21 +271,21 @@ TZrOverloadSetId ZrSemanticGetOrCreateOverloadSet(SZrSemanticContext *context,
 
     for (i = 0; i < context->overloadSets.length; i++) {
         SZrSemanticOverloadSetRecord *existing =
-            (SZrSemanticOverloadSetRecord *)ZrArrayGet(&context->overloadSets, i);
+            (SZrSemanticOverloadSetRecord *)ZrCore_Array_Get(&context->overloadSets, i);
         if (existing != ZR_NULL && semantic_names_equal(existing->name, name)) {
             return existing->id;
         }
     }
 
-    record.id = ZrSemanticReserveOverloadSetId(context);
+    record.id = ZrParser_Semantic_ReserveOverloadSetId(context);
     record.name = name;
-    ZrArrayInit(context->state, &record.members, sizeof(TZrSymbolId), 4);
+    ZrCore_Array_Init(context->state, &record.members, sizeof(TZrSymbolId), 4);
 
-    ZrArrayPush(context->state, &context->overloadSets, &record);
+    ZrCore_Array_Push(context->state, &context->overloadSets, &record);
     return record.id;
 }
 
-TBool ZrSemanticAddOverloadMember(SZrSemanticContext *context,
+TZrBool ZrParser_Semantic_AddOverloadMember(SZrSemanticContext *context,
                                   TZrOverloadSetId overloadSetId,
                                   TZrSymbolId symbolId) {
     TZrSize i;
@@ -296,17 +296,17 @@ TBool ZrSemanticAddOverloadMember(SZrSemanticContext *context,
 
     for (i = 0; i < context->overloadSets.length; i++) {
         SZrSemanticOverloadSetRecord *record =
-            (SZrSemanticOverloadSetRecord *)ZrArrayGet(&context->overloadSets, i);
+            (SZrSemanticOverloadSetRecord *)ZrCore_Array_Get(&context->overloadSets, i);
         if (record != ZR_NULL && record->id == overloadSetId) {
             TZrSize memberIndex;
             for (memberIndex = 0; memberIndex < record->members.length; memberIndex++) {
                 TZrSymbolId *existingSymbolId =
-                    (TZrSymbolId *)ZrArrayGet(&record->members, memberIndex);
+                    (TZrSymbolId *)ZrCore_Array_Get(&record->members, memberIndex);
                 if (existingSymbolId != ZR_NULL && *existingSymbolId == symbolId) {
                     return ZR_TRUE;
                 }
             }
-            ZrArrayPush(context->state, &record->members, &symbolId);
+            ZrCore_Array_Push(context->state, &record->members, &symbolId);
             return ZR_TRUE;
         }
     }
@@ -314,7 +314,7 @@ TBool ZrSemanticAddOverloadMember(SZrSemanticContext *context,
     return ZR_FALSE;
 }
 
-TBool ZrSemanticAppendCleanupStep(SZrSemanticContext *context,
+TZrBool ZrParser_Semantic_AppendCleanupStep(SZrSemanticContext *context,
                                   const SZrDeterministicCleanupStep *step) {
     SZrDeterministicCleanupStep copy;
 
@@ -323,11 +323,11 @@ TBool ZrSemanticAppendCleanupStep(SZrSemanticContext *context,
     }
 
     copy = *step;
-    ZrArrayPush(context->state, &context->cleanupPlan, &copy);
+    ZrCore_Array_Push(context->state, &context->cleanupPlan, &copy);
     return ZR_TRUE;
 }
 
-TBool ZrSemanticAppendTemplateSegment(SZrSemanticContext *context,
+TZrBool ZrParser_Semantic_AppendTemplateSegment(SZrSemanticContext *context,
                                       const SZrTemplateSegment *segment) {
     SZrTemplateSegment copy;
 
@@ -336,11 +336,11 @@ TBool ZrSemanticAppendTemplateSegment(SZrSemanticContext *context,
     }
 
     copy = *segment;
-    ZrArrayPush(context->state, &context->templateSegments, &copy);
+    ZrCore_Array_Push(context->state, &context->templateSegments, &copy);
     return ZR_TRUE;
 }
 
-SZrHirModule *ZrHirModuleNew(SZrState *state,
+SZrHirModule *ZrParser_HirModule_New(SZrState *state,
                              SZrSemanticContext *context,
                              SZrAstNode *rootAst) {
     SZrHirModule *module;
@@ -349,7 +349,7 @@ SZrHirModule *ZrHirModuleNew(SZrState *state,
         return ZR_NULL;
     }
 
-    module = (SZrHirModule *)ZrMemoryRawMalloc(state->global, sizeof(SZrHirModule));
+    module = (SZrHirModule *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrHirModule));
     if (module == ZR_NULL) {
         return ZR_NULL;
     }
@@ -359,10 +359,10 @@ SZrHirModule *ZrHirModuleNew(SZrState *state,
     return module;
 }
 
-void ZrHirModuleFree(SZrState *state, SZrHirModule *module) {
+void ZrParser_HirModule_Free(SZrState *state, SZrHirModule *module) {
     if (state == ZR_NULL || module == ZR_NULL) {
         return;
     }
 
-    ZrMemoryRawFree(state->global, module, sizeof(SZrHirModule));
+    ZrCore_Memory_RawFree(state->global, module, sizeof(SZrHirModule));
 }

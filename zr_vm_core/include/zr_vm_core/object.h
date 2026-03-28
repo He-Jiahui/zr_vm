@@ -42,12 +42,12 @@ typedef struct SZrObject SZrObject;
 
 typedef struct SZrManagedFieldInfo {
     struct SZrString *name;
-    TUInt32 fieldOffset;
-    TUInt32 fieldSize;
-    TUInt32 ownershipQualifier;
-    TBool callsClose;
-    TBool callsDestructor;
-    TUInt32 declarationOrder;
+    TZrUInt32 fieldOffset;
+    TZrUInt32 fieldSize;
+    TZrUInt32 ownershipQualifier;
+    TZrBool callsClose;
+    TZrBool callsDestructor;
+    TZrUInt32 declarationOrder;
 } SZrManagedFieldInfo;
 
 struct ZR_STRUCT_ALIGN SZrObjectPrototype {
@@ -57,8 +57,8 @@ struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     struct SZrMetaTable metaTable;
     struct SZrObjectPrototype *superPrototype;
     SZrManagedFieldInfo *managedFields;
-    TUInt32 managedFieldCount;
-    TUInt32 managedFieldCapacity;
+    TZrUInt32 managedFieldCount;
+    TZrUInt32 managedFieldCapacity;
 };
 
 typedef struct SZrObjectPrototype SZrObjectPrototype;
@@ -71,11 +71,11 @@ typedef struct SZrStructPrototype SZrStructPrototype;
 
 
 // pure object should be created by this function
-ZR_CORE_API SZrObject *ZrObjectNew(struct SZrState *state, SZrObjectPrototype *prototype);
+ZR_CORE_API SZrObject *ZrCore_Object_New(struct SZrState *state, SZrObjectPrototype *prototype);
 
-ZR_CORE_API SZrObject *ZrObjectNewCustomized(struct SZrState *state, TZrSize size, EZrObjectInternalType internalType);
+ZR_CORE_API SZrObject *ZrCore_Object_NewCustomized(struct SZrState *state, TZrSize size, EZrObjectInternalType internalType);
 
-ZR_FORCE_INLINE SZrMeta *ZrPrototypeGetMetaRecursively(struct SZrGlobalState *global, SZrObjectPrototype *prototype,
+ZR_FORCE_INLINE SZrMeta *ZrCore_Prototype_GetMetaRecursively(struct SZrGlobalState *global, SZrObjectPrototype *prototype,
                                                        EZrMetaType metaType) {
     ZR_UNUSED_PARAMETER(global);
     while (prototype != ZR_NULL) {
@@ -88,44 +88,44 @@ ZR_FORCE_INLINE SZrMeta *ZrPrototypeGetMetaRecursively(struct SZrGlobalState *gl
     return ZR_NULL;
 }
 
-ZR_FORCE_INLINE SZrMeta *ZrObjectGetMetaRecursively(struct SZrGlobalState *global, SZrObject *object,
+ZR_FORCE_INLINE SZrMeta *ZrCore_Object_GetMetaRecursively(struct SZrGlobalState *global, SZrObject *object,
                                                     EZrMetaType metaType) {
     SZrObjectPrototype *prototype = object->prototype;
-    return ZrPrototypeGetMetaRecursively(global, prototype, metaType);
+    return ZrCore_Prototype_GetMetaRecursively(global, prototype, metaType);
 }
 
-ZR_CORE_API void ZrObjectInit(struct SZrState *state, SZrObject *object);
+ZR_CORE_API void ZrCore_Object_Init(struct SZrState *state, SZrObject *object);
 
 // this function do not call Meta function to compare, only compare address, we use this for hash set to make key
 // different
-ZR_CORE_API TBool ZrObjectCompareWithAddress(struct SZrState *state, SZrObject *object1, SZrObject *object2);
+ZR_CORE_API TZrBool ZrCore_Object_CompareWithAddress(struct SZrState *state, SZrObject *object1, SZrObject *object2);
 
-ZR_CORE_API void ZrObjectSetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key,
+ZR_CORE_API void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key,
                                   const SZrTypeValue *value);
 
-ZR_CORE_API const SZrTypeValue *ZrObjectGetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key);
+ZR_CORE_API const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key);
 
 // Prototype 创建和管理函数
-ZR_CORE_API SZrObjectPrototype *ZrObjectPrototypeNew(struct SZrState *state, SZrString *name, EZrObjectPrototypeType type);
+ZR_CORE_API SZrObjectPrototype *ZrCore_ObjectPrototype_New(struct SZrState *state, SZrString *name, EZrObjectPrototypeType type);
 
-ZR_CORE_API SZrStructPrototype *ZrStructPrototypeNew(struct SZrState *state, SZrString *name);
+ZR_CORE_API SZrStructPrototype *ZrCore_StructPrototype_New(struct SZrState *state, SZrString *name);
 
-ZR_CORE_API void ZrObjectPrototypeSetSuper(struct SZrState *state, SZrObjectPrototype *prototype, SZrObjectPrototype *superPrototype);
+ZR_CORE_API void ZrCore_ObjectPrototype_SetSuper(struct SZrState *state, SZrObjectPrototype *prototype, SZrObjectPrototype *superPrototype);
 
-ZR_CORE_API void ZrObjectPrototypeInitMetaTable(struct SZrState *state, SZrObjectPrototype *prototype);
+ZR_CORE_API void ZrCore_ObjectPrototype_InitMetaTable(struct SZrState *state, SZrObjectPrototype *prototype);
 
-ZR_CORE_API void ZrStructPrototypeAddField(struct SZrState *state, SZrStructPrototype *prototype, SZrString *fieldName, TZrSize offset);
+ZR_CORE_API void ZrCore_StructPrototype_AddField(struct SZrState *state, SZrStructPrototype *prototype, SZrString *fieldName, TZrSize offset);
 
-ZR_CORE_API void ZrObjectPrototypeAddMeta(struct SZrState *state, SZrObjectPrototype *prototype, EZrMetaType metaType, struct SZrFunction *function);
+ZR_CORE_API void ZrCore_ObjectPrototype_AddMeta(struct SZrState *state, SZrObjectPrototype *prototype, EZrMetaType metaType, struct SZrFunction *function);
 
-ZR_CORE_API void ZrObjectPrototypeAddManagedField(struct SZrState *state,
+ZR_CORE_API void ZrCore_ObjectPrototype_AddManagedField(struct SZrState *state,
                                                   SZrObjectPrototype *prototype,
                                                   SZrString *fieldName,
-                                                  TUInt32 fieldOffset,
-                                                  TUInt32 fieldSize,
-                                                  TUInt32 ownershipQualifier,
-                                                  TBool callsClose,
-                                                  TBool callsDestructor,
-                                                  TUInt32 declarationOrder);
+                                                  TZrUInt32 fieldOffset,
+                                                  TZrUInt32 fieldSize,
+                                                  TZrUInt32 ownershipQualifier,
+                                                  TZrBool callsClose,
+                                                  TZrBool callsDestructor,
+                                                  TZrUInt32 declarationOrder);
 
 #endif // ZR_VM_CORE_OBJECT_H

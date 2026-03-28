@@ -16,16 +16,16 @@
 /*
  * ===== State Stack Functions =====
  */
-static void ZrStateStackInit(SZrState *state, SZrState *mainThreadState) {
+static void state_stack_init(SZrState *state, SZrState *mainThreadState) {
     /*TZrPtr stackEndExtra = */
-    ZrStackConstruct(mainThreadState, &state->stackBase, ZR_THREAD_STACK_SIZE_BASIC + ZR_THREAD_STACK_SIZE_EXTRA);
+    ZrCore_Stack_Construct(mainThreadState, &state->stackBase, ZR_THREAD_STACK_SIZE_BASIC + ZR_THREAD_STACK_SIZE_EXTRA);
     state->toBeClosedValueList.valuePointer = state->stackBase.valuePointer;
     state->stackTail.valuePointer = state->stackBase.valuePointer + ZR_THREAD_STACK_SIZE_BASIC;
     state->stackTop.valuePointer = state->stackBase.valuePointer;
     // reset stack
     for (TZrStackValuePointer pointer = state->stackBase.valuePointer; pointer < state->stackTail.valuePointer;
          pointer++) {
-        ZrValueResetAsNull(&pointer->value);
+        ZrCore_Value_ResetAsNull(&pointer->value);
     }
     // init call info
     SZrCallInfo *callInfo = &state->baseCallInfo;
@@ -39,7 +39,7 @@ static void ZrStateStackInit(SZrState *state, SZrState *mainThreadState) {
     nextTop.valuePointer++;
     TZrStackPointer nativeCallInfoTop = nextTop;
     nativeCallInfoTop.valuePointer += ZR_THREAD_STACK_SIZE_MIN;
-    ZrCallInfoEntryNativeInit(state, callInfo, state->stackTop, nativeCallInfoTop, ZR_NULL);
+    ZrCore_CallInfo_EntryNativeInit(state, callInfo, state->stackTop, nativeCallInfoTop, ZR_NULL);
     state->callInfoList = callInfo;
     // when native call is finished
     state->stackTop = nextTop;
@@ -52,15 +52,15 @@ static void ZrStateStackInit(SZrState *state, SZrState *mainThreadState) {
 
 ZR_FORCE_INLINE void ZrStateResetDebugHookCount(SZrState *state) { state->debugHookCount = state->baseDebugHookCount; }
 
-SZrState *ZrStateNew(SZrGlobalState *global) {
+SZrState *ZrCore_State_New(SZrGlobalState *global) {
     // FZrAllocator allocator = global->allocator;
-    SZrState *newState = ZrMemoryAllocate(global, NULL, 0, sizeof(SZrState), ZR_MEMORY_NATIVE_TYPE_STATE);
-    ZrRawObjectConstruct(&newState->super, ZR_VALUE_TYPE_THREAD);
-    ZrStateInit(newState, global);
+    SZrState *newState = ZrCore_Memory_Allocate(global, NULL, 0, sizeof(SZrState), ZR_MEMORY_NATIVE_TYPE_STATE);
+    ZrCore_RawObject_Construct(&newState->super, ZR_VALUE_TYPE_THREAD);
+    ZrCore_State_Init(newState, global);
     return newState;
 }
 
-void ZrStateInit(SZrState *state, SZrGlobalState *global) {
+void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
     // global
     state->global = global;
     // stack
@@ -94,16 +94,16 @@ void ZrStateInit(SZrState *state, SZrGlobalState *global) {
     state->previousProgramCounter = 0;
 }
 
-void ZrStateMainThreadLaunch(SZrState *state, TZrPtr arguments) {
+void ZrCore_State_MainThreadLaunch(SZrState *state, TZrPtr arguments) {
     ZR_UNUSED_PARAMETER(arguments);
     SZrGlobalState *global = state->global;
-    ZrStateStackInit(state, global->mainThreadState);
-    // string table init (必须在 ZrGlobalStateInitRegistry 之前，因为后者会创建字符串)
-    ZrStringTableInit(state);
+    state_stack_init(state, global->mainThreadState);
+    // string table init (必须在 ZrCore_GlobalState_InitRegistry 之前，因为后者会创建字符串)
+    ZrCore_StringTable_Init(state);
     // global registry module init
-    ZrGlobalStateInitRegistry(state, global);
+    ZrCore_GlobalState_InitRegistry(state, global);
     // meta name init
-    ZrMetaGlobalStaticsInit(state);
+    ZrCore_Meta_GlobalStaticsInit(state);
     // maybe we can create a lexer
 
     // allow gc to run
@@ -117,18 +117,18 @@ void ZrStateMainThreadLaunch(SZrState *state, TZrPtr arguments) {
         EZrThreadStatus result;
         ZR_CALLBACK_CALL_NO_PARAM(state, FZrAfterStateInitialized, global->callbacks.afterStateInitialized, result)
         if (result != ZR_THREAD_STATUS_FINE) {
-            ZrExceptionThrow(state, result);
+            ZrCore_Exception_Throw(state, result);
         }
     }
 }
 
-void ZrStateExit(SZrState *state) {
+void ZrCore_State_Exit(SZrState *state) {
     // SZrGlobalState *global = state->global;
     // todo
 }
 
 
-void ZrStateFree(SZrGlobalState *global, SZrState *state) {
+void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
     // 检查参数有效性
     if (state == ZR_NULL || global == ZR_NULL) {
         return;
@@ -141,15 +141,15 @@ void ZrStateFree(SZrGlobalState *global, SZrState *state) {
     
     // 检查stackBase是否有效（在访问之前）
     if ((TZrPtr)&state->stackBase >= (TZrPtr)0x1000) {
-        ZrStackDeconstruct(state, &state->stackBase, ZrStateStackGetSize(state) + ZR_THREAD_STACK_SIZE_EXTRA);
+        ZrCore_Stack_Deconstruct(state, &state->stackBase, ZrCore_State_StackGetSize(state) + ZR_THREAD_STACK_SIZE_EXTRA);
         state->stackBase.valuePointer = ZR_NULL;
     }
     
     // 释放state本身
-    ZrMemoryAllocate(global, state, sizeof(SZrState), 0, ZR_MEMORY_NATIVE_TYPE_STATE);
+    ZrCore_Memory_Allocate(global, state, sizeof(SZrState), 0, ZR_MEMORY_NATIVE_TYPE_STATE);
 }
 
-TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status) {
+TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     // 重置线程状态
     // 调用栈回到创建时基础调用栈
     SZrCallInfo *callInfo = state->callInfoList = &state->baseCallInfo;
@@ -162,9 +162,9 @@ TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status) {
     }
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     state->exceptionRecoverPoint = ZR_NULL;
-    status = ZrExceptionTryStop(state, 1, status);
+    status = ZrCore_Exception_TryStop(state, 1, status);
     if (status != ZR_THREAD_STATUS_FINE) {
-        ZrExceptionMarkError(state, status, state->stackTop.valuePointer + 1);
+        ZrCore_Exception_MarkError(state, status, state->stackTop.valuePointer + 1);
     } else {
         state->stackTop.valuePointer = state->stackBase.valuePointer + 1;
     }
@@ -175,12 +175,12 @@ TInt32 ZrStateResetThread(SZrState *state, EZrThreadStatus status) {
     return status;
 }
 
-EZrThreadStatus ZrStateDoRun(SZrState *state, TNativeString entry) {
+EZrThreadStatus ZrCore_State_DoRun(SZrState *state, TZrNativeString entry) {
     SZrGlobalState *global = state->global;
 
     // todo: use loaded module is currently not supported
 
-    SZrIoSource *source = ZrIoLoadSource(state, entry, ZR_NULL);
+    SZrIoSource *source = ZrCore_Io_LoadSource(state, entry, ZR_NULL);
     if (source == ZR_NULL) {
         return ZR_THREAD_STATUS_RUNTIME_ERROR;
     }

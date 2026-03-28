@@ -12,15 +12,15 @@
 
 // 写入二进制文件 (.zro)
 // 将编译后的函数写入二进制格式文件，符合 zr_io_conf.h 中定义的 .SOURCE 格式
-ZR_PARSER_API TBool ZrWriterWriteBinaryFile(SZrState *state, SZrFunction *function, const TChar *filename);
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFile(SZrState *state, SZrFunction *function, const TZrChar *filename);
 
 // 写入明文中间文件 (.zri)
 // 将编译后的函数写入可读的明文格式文件
-ZR_PARSER_API TBool ZrWriterWriteIntermediateFile(SZrState *state, SZrFunction *function, const TChar *filename);
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZrFunction *function, const TZrChar *filename);
 
 // 写入语法树文件 (.zrs)
 // 将解析后的 AST 写入可读的明文格式文件
-ZR_PARSER_API TBool ZrWriterWriteSyntaxTreeFile(SZrState *state, SZrAstNode *ast, const TChar *filename);
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteSyntaxTreeFile(SZrState *state, SZrAstNode *ast, const TZrChar *filename);
 
 #endif //ZR_VM_PARSER_WRITER_H
 

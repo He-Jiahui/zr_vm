@@ -16,9 +16,9 @@
 // #endif
 //
 
-EZrLibrary_File_Exist ZrLibrary_File_Exist(TNativeString path) {
+EZrLibrary_File_Exist ZrLibrary_File_Exist(TZrNativeString path) {
     tinydir_file file;
-    TInt64 result = tinydir_file_open(&file, path);
+    TZrInt64 result = tinydir_file_open(&file, path);
     if (result == 0) {
         if (file.is_reg) {
             return ZR_LIBRARY_FILE_IS_FILE;
@@ -30,19 +30,19 @@ EZrLibrary_File_Exist ZrLibrary_File_Exist(TNativeString path) {
     }
     return ZR_LIBRARY_FILE_NOT_EXIST;
 }
-TBool ZrLibrary_File_GetDirectory(TNativeString path, ZR_OUT TNativeString directory) {
+TZrBool ZrLibrary_File_GetDirectory(TZrNativeString path, ZR_OUT TZrNativeString directory) {
     tinydir_file file;
-    TInt64 result = tinydir_file_open(&file, path);
+    TZrInt64 result = tinydir_file_open(&file, path);
     if (result == 0) {
-        TZrSize pathLength = ZrNativeStringLength(file.path) - ZrNativeStringLength(file.name);
-        ZrMemoryRawCopy(directory, file.path, pathLength);
+        TZrSize pathLength = ZrCore_NativeString_Length(file.path) - ZrCore_NativeString_Length(file.name);
+        ZrCore_Memory_RawCopy(directory, file.path, pathLength);
         directory[pathLength] = '\0';
         return ZR_TRUE;
     }
     return ZR_FALSE;
 }
 
-void ZrLibrary_File_PathJoin(TNativeString path1, TNativeString path2, ZR_OUT TNativeString result) {
+void ZrLibrary_File_PathJoin(TZrNativeString path1, TZrNativeString path2, ZR_OUT TZrNativeString result) {
     if (result == ZR_NULL) {
         return;
     }
@@ -50,8 +50,8 @@ void ZrLibrary_File_PathJoin(TNativeString path1, TNativeString path2, ZR_OUT TN
         result[0] = '\0';
         return;
     }
-    TZrSize length1 = ZrNativeStringLength(path1);
-    TZrSize length2 = ZrNativeStringLength(path2);
+    TZrSize length1 = ZrCore_NativeString_Length(path1);
+    TZrSize length2 = ZrCore_NativeString_Length(path2);
 
     if (length1 == 0) {
         snprintf(result, ZR_LIBRARY_MAX_PATH_LENGTH, "%s", path2);
@@ -62,8 +62,8 @@ void ZrLibrary_File_PathJoin(TNativeString path1, TNativeString path2, ZR_OUT TN
         return;
     }
 
-    TBool path1HasSeparator = path1[length1 - 1] == '/' || path1[length1 - 1] == '\\';
-    TBool path2HasSeparator = path2[0] == '/' || path2[0] == '\\';
+    TZrBool path1HasSeparator = path1[length1 - 1] == '/' || path1[length1 - 1] == '\\';
+    TZrBool path2HasSeparator = path2[0] == '/' || path2[0] == '\\';
 
     if (path1HasSeparator && path2HasSeparator) {
         snprintf(result, ZR_LIBRARY_MAX_PATH_LENGTH, "%s%s", path1, path2 + 1);
@@ -77,12 +77,12 @@ void ZrLibrary_File_PathJoin(TNativeString path1, TNativeString path2, ZR_OUT TN
     snprintf(result, ZR_LIBRARY_MAX_PATH_LENGTH, "%s%c%s", path1, ZR_SEPARATOR, path2);
 }
 
-TNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TNativeString path) {
+TZrNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TZrNativeString path) {
     SZrLibrary_File_Reader *reader = ZrLibrary_File_OpenRead(global, path, ZR_FALSE);
     if (reader == ZR_NULL) {
         return ZR_NULL;
     }
-    TNativeString buffer = ZrMemoryRawMallocWithType(global, reader->size + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    TZrNativeString buffer = ZrCore_Memory_RawMallocWithType(global, reader->size + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
     if (buffer == ZR_NULL) {
         ZrLibrary_File_CloseRead(global, reader);
         return ZR_NULL;
@@ -92,7 +92,7 @@ TNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TNativeString path)
     buffer[readSize] = '\0';
     if (readSize != reader->size && ferror(reader->file)) {
         ZrLibrary_File_CloseRead(global, reader);
-        ZrMemoryRawFreeWithType(global, buffer, reader->size + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+        ZrCore_Memory_RawFreeWithType(global, buffer, reader->size + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
         return ZR_NULL;
     }
 
@@ -100,18 +100,18 @@ TNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TNativeString path)
     return buffer;
 }
 
-SZrLibrary_File_Reader *ZrLibrary_File_OpenRead(SZrGlobalState *global, TNativeString path, TBool isBinary) {
+SZrLibrary_File_Reader *ZrLibrary_File_OpenRead(SZrGlobalState *global, TZrNativeString path, TZrBool isBinary) {
     if (ZrLibrary_File_Exist(path) == ZR_LIBRARY_FILE_NOT_EXIST) {
         return ZR_NULL;
     }
     SZrLibrary_File_Reader *reader =
-            ZrMemoryRawMallocWithType(global, sizeof(SZrLibrary_File_Reader), ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
+            ZrCore_Memory_RawMallocWithType(global, sizeof(SZrLibrary_File_Reader), ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
     if (reader == ZR_NULL) {
         return ZR_NULL;
     }
     reader->file = fopen(path, isBinary ? "rb" : "r");
     if (reader->file == ZR_NULL) {
-        ZrMemoryRawFreeWithType(global, reader, sizeof(SZrLibrary_File_Reader), ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
+        ZrCore_Memory_RawFreeWithType(global, reader, sizeof(SZrLibrary_File_Reader), ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
         return ZR_NULL;
     }
     // get file size
@@ -127,21 +127,21 @@ void ZrLibrary_File_CloseRead(SZrGlobalState *global, SZrLibrary_File_Reader *re
     }
     fclose(reader->file);
     reader->file = ZR_NULL;
-    ZrMemoryRawFreeWithType(global, reader, sizeof(SZrLibrary_File_Reader), ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
+    ZrCore_Memory_RawFreeWithType(global, reader, sizeof(SZrLibrary_File_Reader), ZR_MEMORY_NATIVE_TYPE_FILE_BUFFER);
 }
 
-TBool ZrLibrary_File_SourceLoadImplementation(SZrState *state, TNativeString path, TNativeString md5, SZrIo *io) {
+TZrBool ZrLibrary_File_SourceLoadImplementation(SZrState *state, TZrNativeString path, TZrNativeString md5, SZrIo *io) {
     ZR_UNUSED_PARAMETER(md5);
     SZrLibrary_File_Reader *reader = ZrLibrary_File_OpenRead(state->global, path, ZR_FALSE);
     if (reader == ZR_NULL) {
         return ZR_FALSE;
     }
-    ZrIoInit(state, io, ZrLibrary_File_SourceReadImplementation, ZrLibrary_File_SourceCloseImplementation, reader);
+    ZrCore_Io_Init(state, io, ZrLibrary_File_SourceReadImplementation, ZrLibrary_File_SourceCloseImplementation, reader);
     return ZR_TRUE;
 }
 
 
-TBytePtr ZrLibrary_File_SourceReadImplementation(SZrState *state, TZrPtr reader, ZR_OUT TZrSize *size) {
+TZrBytePtr ZrLibrary_File_SourceReadImplementation(SZrState *state, TZrPtr reader, ZR_OUT TZrSize *size) {
     SZrLibrary_File_Reader *fileReader = (SZrLibrary_File_Reader *) reader;
     TZrSize readSize = fread(fileReader->buffer, 1, ZR_LIBRARY_FILE_BUFFER_SIZE, fileReader->file);
     if (readSize == 0) {

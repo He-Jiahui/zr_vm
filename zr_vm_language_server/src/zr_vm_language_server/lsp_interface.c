@@ -13,7 +13,7 @@
 #include <string.h>
 
 // 转换 FileRange 到 LspRange
-SZrLspRange ZrLspRangeFromFileRange(SZrFileRange fileRange) {
+SZrLspRange ZrLanguageServer_LspRange_FromFileRange(SZrFileRange fileRange) {
     SZrLspRange lspRange;
     lspRange.start.line = fileRange.start.line;
     lspRange.start.character = fileRange.start.column;
@@ -23,15 +23,15 @@ SZrLspRange ZrLspRangeFromFileRange(SZrFileRange fileRange) {
 }
 
 // 辅助函数：从行号和列号计算偏移量
-static TZrSize calculate_offset_from_line_column(const TChar *content, TZrSize contentLength, 
-                                                   TInt32 line, TInt32 column) {
+static TZrSize calculate_offset_from_line_column(const TZrChar *content, TZrSize contentLength, 
+                                                   TZrInt32 line, TZrInt32 column) {
     if (content == ZR_NULL) {
         return 0;
     }
     
     TZrSize offset = 0;
-    TInt32 currentLine = 0;
-    TInt32 currentColumn = 0;
+    TZrInt32 currentLine = 0;
+    TZrInt32 currentColumn = 0;
     
     // 遍历内容直到到达目标行和列
     for (TZrSize i = 0; i < contentLength && currentLine < line; i++) {
@@ -61,7 +61,7 @@ static TZrSize calculate_offset_from_line_column(const TChar *content, TZrSize c
 }
 
 // 转换 LspRange 到 FileRange
-SZrFileRange ZrLspRangeToFileRange(SZrLspRange lspRange, SZrString *uri) {
+SZrFileRange ZrLanguageServer_LspRange_ToFileRange(SZrLspRange lspRange, SZrString *uri) {
     SZrFileRange fileRange;
     fileRange.start.line = lspRange.start.line;
     fileRange.start.column = lspRange.start.character;
@@ -74,8 +74,8 @@ SZrFileRange ZrLspRangeToFileRange(SZrLspRange lspRange, SZrString *uri) {
 }
 
 // 转换 LspRange 到 FileRange（带文件内容）
-SZrFileRange ZrLspRangeToFileRangeWithContent(SZrLspRange lspRange, SZrString *uri, 
-                                                const TChar *content, TZrSize contentLength) {
+SZrFileRange ZrLanguageServer_LspRange_ToFileRangeWithContent(SZrLspRange lspRange, SZrString *uri, 
+                                                const TZrChar *content, TZrSize contentLength) {
     SZrFileRange fileRange;
     fileRange.start.line = lspRange.start.line;
     fileRange.start.column = lspRange.start.character;
@@ -92,7 +92,7 @@ SZrFileRange ZrLspRangeToFileRangeWithContent(SZrLspRange lspRange, SZrString *u
 }
 
 // 转换 FilePosition 到 LspPosition
-SZrLspPosition ZrLspPositionFromFilePosition(SZrFilePosition filePosition) {
+SZrLspPosition ZrLanguageServer_LspPosition_FromFilePosition(SZrFilePosition filePosition) {
     SZrLspPosition lspPosition;
     lspPosition.line = filePosition.line;
     lspPosition.character = filePosition.column;
@@ -100,7 +100,7 @@ SZrLspPosition ZrLspPositionFromFilePosition(SZrFilePosition filePosition) {
 }
 
 // 转换 LspPosition 到 FilePosition
-SZrFilePosition ZrLspPositionToFilePosition(SZrLspPosition lspPosition) {
+SZrFilePosition ZrLanguageServer_LspPosition_ToFilePosition(SZrLspPosition lspPosition) {
     SZrFilePosition filePosition;
     filePosition.line = lspPosition.line;
     filePosition.column = lspPosition.character;
@@ -109,8 +109,8 @@ SZrFilePosition ZrLspPositionToFilePosition(SZrLspPosition lspPosition) {
 }
 
 // 转换 LspPosition 到 FilePosition（带文件内容）
-SZrFilePosition ZrLspPositionToFilePositionWithContent(SZrLspPosition lspPosition,
-                                                        const TChar *content, TZrSize contentLength) {
+SZrFilePosition ZrLanguageServer_LspPosition_ToFilePositionWithContent(SZrLspPosition lspPosition,
+                                                        const TZrChar *content, TZrSize contentLength) {
     SZrFilePosition filePosition;
     filePosition.line = lspPosition.line;
     filePosition.column = lspPosition.character;
@@ -121,18 +121,18 @@ SZrFilePosition ZrLspPositionToFilePositionWithContent(SZrLspPosition lspPositio
 }
 
 // 创建 LSP 上下文
-SZrLspContext *ZrLspContextNew(SZrState *state) {
+SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
     }
     
-    SZrLspContext *context = (SZrLspContext *)ZrMemoryRawMalloc(state->global, sizeof(SZrLspContext));
+    SZrLspContext *context = (SZrLspContext *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspContext));
     if (context == ZR_NULL) {
         return ZR_NULL;
     }
     
     context->state = state;
-    context->parser = ZrIncrementalParserNew(state);
+    context->parser = ZrLanguageServer_IncrementalParser_New(state);
     context->analyzer = ZR_NULL; // 延迟创建，每个文件一个分析器
     context->uriToAnalyzerMap.buckets = ZR_NULL;
     context->uriToAnalyzerMap.bucketSize = 0;
@@ -140,10 +140,10 @@ SZrLspContext *ZrLspContextNew(SZrState *state) {
     context->uriToAnalyzerMap.capacity = 0;
     context->uriToAnalyzerMap.resizeThreshold = 0;
     context->uriToAnalyzerMap.isValid = ZR_FALSE;
-    ZrHashSetInit(state, &context->uriToAnalyzerMap, 4); // capacityLog2 = 4
+    ZrCore_HashSet_Init(state, &context->uriToAnalyzerMap, 4); // capacityLog2 = 4
     
     if (context->parser == ZR_NULL) {
-        ZrMemoryRawFree(state->global, context, sizeof(SZrLspContext));
+        ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));
         return ZR_NULL;
     }
     
@@ -151,7 +151,7 @@ SZrLspContext *ZrLspContextNew(SZrState *state) {
 }
 
 // 释放 LSP 上下文
-void ZrLspContextFree(SZrState *state, SZrLspContext *context) {
+void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context) {
     if (state == ZR_NULL || context == ZR_NULL) {
         return;
     }
@@ -168,31 +168,31 @@ void ZrLspContextFree(SZrState *state, SZrLspContext *context) {
                         SZrSemanticAnalyzer *analyzer = 
                             (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
                         if (analyzer != ZR_NULL) {
-                            ZrSemanticAnalyzerFree(state, analyzer);
+                            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
                         }
                     }
                 }
                 // 释放节点本身
                 SZrHashKeyValuePair *next = pair->next;
-                ZrMemoryRawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
+                ZrCore_Memory_RawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
                                        ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
                 pair = next;
             }
             context->uriToAnalyzerMap.buckets[i] = ZR_NULL;
         }
         // 释放 buckets 数组
-        ZrHashSetDeconstruct(state, &context->uriToAnalyzerMap);
+        ZrCore_HashSet_Deconstruct(state, &context->uriToAnalyzerMap);
     }
     
     if (context->parser != ZR_NULL) {
-        ZrIncrementalParserFree(state, context->parser);
+        ZrLanguageServer_IncrementalParser_Free(state, context->parser);
     }
     
     if (context->analyzer != ZR_NULL) {
-        ZrSemanticAnalyzerFree(state, context->analyzer);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, context->analyzer);
     }
     
-    ZrMemoryRawFree(state->global, context, sizeof(SZrLspContext));
+    ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));
 }
 
 // 获取或创建分析器
@@ -203,24 +203,24 @@ static SZrSemanticAnalyzer *get_or_create_analyzer(SZrState *state, SZrLspContex
     
     // 从哈希表中查找
     SZrTypeValue key;
-    ZrValueInitAsRawObject(state, &key, &uri->super);
+    ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
     
-    SZrHashKeyValuePair *pair = ZrHashSetFind(state, &context->uriToAnalyzerMap, &key);
+    SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &context->uriToAnalyzerMap, &key);
     if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
         // 从原生指针中获取 SZrSemanticAnalyzer
         return (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
     }
     
     // 创建新分析器
-    SZrSemanticAnalyzer *analyzer = ZrSemanticAnalyzerNew(state);
+    SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
     if (analyzer != ZR_NULL) {
         // 添加到哈希表
-        SZrHashKeyValuePair *newPair = ZrHashSetAdd(state, &context->uriToAnalyzerMap, &key);
+        SZrHashKeyValuePair *newPair = ZrCore_HashSet_Add(state, &context->uriToAnalyzerMap, &key);
         if (newPair != ZR_NULL) {
             // 将 SZrSemanticAnalyzer 指针存储为原生指针
             SZrTypeValue value;
-            ZrValueInitAsNativePointer(state, &value, (TZrPtr)analyzer);
-            ZrValueCopy(state, &newPair->value, &value);
+            ZrCore_Value_InitAsNativePointer(state, &value, (TZrPtr)analyzer);
+            ZrCore_Value_Copy(state, &newPair->value, &value);
         }
     }
     
@@ -228,10 +228,10 @@ static SZrSemanticAnalyzer *get_or_create_analyzer(SZrState *state, SZrLspContex
 }
 
 // 更新文档
-TBool ZrLspUpdateDocument(SZrState *state,
+TZrBool ZrLanguageServer_Lsp_UpdateDocument(SZrState *state,
                           SZrLspContext *context,
                           SZrString *uri,
-                          const TChar *content,
+                          const TZrChar *content,
                           TZrSize contentLength,
                           TZrSize version) {
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
@@ -239,12 +239,12 @@ TBool ZrLspUpdateDocument(SZrState *state,
     }
     
     // 更新文件
-    if (!ZrIncrementalParserUpdateFile(state, context->parser, uri, content, contentLength, version)) {
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(state, context->parser, uri, content, contentLength, version)) {
         return ZR_FALSE;
     }
     
     // 重新解析
-    if (!ZrIncrementalParserParse(state, context->parser, uri)) {
+    if (!ZrLanguageServer_IncrementalParser_Parse(state, context->parser, uri)) {
         return ZR_FALSE;
     }
     
@@ -255,16 +255,16 @@ TBool ZrLspUpdateDocument(SZrState *state,
     }
     
     // 获取 AST 并分析
-    SZrAstNode *ast = ZrIncrementalParserGetAST(context->parser, uri);
+    SZrAstNode *ast = ZrLanguageServer_IncrementalParser_GetAST(context->parser, uri);
     if (ast == ZR_NULL) {
         return ZR_FALSE;
     }
     
-    return ZrSemanticAnalyzerAnalyze(state, analyzer, ast);
+    return ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
 }
 
 // 获取诊断
-TBool ZrLspGetDiagnostics(SZrState *state,
+TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
                           SZrLspContext *context,
                           SZrString *uri,
                           SZrArray *result) {
@@ -274,7 +274,7 @@ TBool ZrLspGetDiagnostics(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrArrayInit(state, result, sizeof(SZrLspDiagnostic *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspDiagnostic *), 8);
     }
     
     // 获取分析器
@@ -285,37 +285,37 @@ TBool ZrLspGetDiagnostics(SZrState *state,
     
     // 获取诊断
     SZrArray diagnostics;
-    ZrArrayInit(state, &diagnostics, sizeof(SZrDiagnostic *), 8);
-    if (!ZrSemanticAnalyzerGetDiagnostics(state, analyzer, &diagnostics)) {
-        ZrArrayFree(state, &diagnostics);
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrDiagnostic *), 8);
+    if (!ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(state, analyzer, &diagnostics)) {
+        ZrCore_Array_Free(state, &diagnostics);
         return ZR_FALSE;
     }
     
     // 转换为 LSP 诊断
     for (TZrSize i = 0; i < diagnostics.length; i++) {
-        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrArrayGet(&diagnostics, i);
+        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&diagnostics, i);
         if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
             SZrDiagnostic *diag = *diagPtr;
             
-                SZrLspDiagnostic *lspDiag = (SZrLspDiagnostic *)ZrMemoryRawMalloc(state->global, sizeof(SZrLspDiagnostic));
+                SZrLspDiagnostic *lspDiag = (SZrLspDiagnostic *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspDiagnostic));
             if (lspDiag != ZR_NULL) {
-                lspDiag->range = ZrLspRangeFromFileRange(diag->location);
-                lspDiag->severity = (TInt32)diag->severity + 1; // LSP: 1=Error, 2=Warning, etc.
+                lspDiag->range = ZrLanguageServer_LspRange_FromFileRange(diag->location);
+                lspDiag->severity = (TZrInt32)diag->severity + 1; // LSP: 1=Error, 2=Warning, etc.
                 lspDiag->code = diag->code;
                 lspDiag->message = diag->message;
-                ZrArrayInit(state, &lspDiag->relatedInformation, sizeof(SZrLspLocation), 0);
+                ZrCore_Array_Init(state, &lspDiag->relatedInformation, sizeof(SZrLspLocation), 0);
                 
-                ZrArrayPush(state, result, &lspDiag);
+                ZrCore_Array_Push(state, result, &lspDiag);
             }
         }
     }
     
-    ZrArrayFree(state, &diagnostics);
+    ZrCore_Array_Free(state, &diagnostics);
     return ZR_TRUE;
 }
 
 // 获取补全
-TBool ZrLspGetCompletion(SZrState *state,
+TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
                          SZrLspContext *context,
                          SZrString *uri,
                          SZrLspPosition position,
@@ -326,7 +326,7 @@ TBool ZrLspGetCompletion(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrArrayInit(state, result, sizeof(SZrLspCompletionItem *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspCompletionItem *), 8);
     }
     
     // 获取分析器
@@ -336,37 +336,37 @@ TBool ZrLspGetCompletion(SZrState *state,
     }
     
     // 转换位置
-    SZrFilePosition filePos = ZrLspPositionToFilePosition(position);
-    SZrFileRange fileRange = ZrFileRangeCreate(filePos, filePos, uri);
+    SZrFilePosition filePos = ZrLanguageServer_LspPosition_ToFilePosition(position);
+    SZrFileRange fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
     
     // 获取补全
     SZrArray completions;
-    ZrArrayInit(state, &completions, sizeof(SZrCompletionItem *), 8);
-    if (!ZrSemanticAnalyzerGetCompletions(state, analyzer, fileRange, &completions)) {
-        ZrArrayFree(state, &completions);
+    ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+    if (!ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, fileRange, &completions)) {
+        ZrCore_Array_Free(state, &completions);
         return ZR_FALSE;
     }
     
     // 转换为 LSP 补全项
     for (TZrSize i = 0; i < completions.length; i++) {
-        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrArrayGet(&completions, i);
+        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(&completions, i);
         if (itemPtr != ZR_NULL && *itemPtr != ZR_NULL) {
             SZrCompletionItem *item = *itemPtr;
             
-            SZrLspCompletionItem *lspItem = (SZrLspCompletionItem *)ZrMemoryRawMalloc(state->global, sizeof(SZrLspCompletionItem));
+            SZrLspCompletionItem *lspItem = (SZrLspCompletionItem *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspCompletionItem));
             if (lspItem != ZR_NULL) {
                 lspItem->label = item->label;
                 
                 // 转换 kind 字符串到整数
-                TInt32 kindValue = 1; // 默认 Text
+                TZrInt32 kindValue = 1; // 默认 Text
                 if (item->kind != ZR_NULL) {
-                    TNativeString kindStr;
+                    TZrNativeString kindStr;
                     TZrSize kindLen;
                     if (item->kind->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-                        kindStr = ZrStringGetNativeStringShort(item->kind);
+                        kindStr = ZrCore_String_GetNativeStringShort(item->kind);
                         kindLen = item->kind->shortStringLength;
                     } else {
-                        kindStr = ZrStringGetNativeString(item->kind);
+                        kindStr = ZrCore_String_GetNativeString(item->kind);
                         kindLen = item->kind->longStringLength;
                     }
                     
@@ -401,19 +401,19 @@ TBool ZrLspGetCompletion(SZrState *state,
                 lspItem->detail = item->detail;
                 lspItem->documentation = item->documentation;
                 lspItem->insertText = item->label;
-                lspItem->insertTextFormat = ZrStringCreate(state, "plaintext", 9);
+                lspItem->insertTextFormat = ZrCore_String_Create(state, "plaintext", 9);
                 
-                ZrArrayPush(state, result, &lspItem);
+                ZrCore_Array_Push(state, result, &lspItem);
             }
         }
     }
     
-    ZrArrayFree(state, &completions);
+    ZrCore_Array_Free(state, &completions);
     return ZR_TRUE;
 }
 
 // 获取悬停信息
-TBool ZrLspGetHover(SZrState *state,
+TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                     SZrLspContext *context,
                     SZrString *uri,
                     SZrLspPosition position,
@@ -429,12 +429,12 @@ TBool ZrLspGetHover(SZrState *state,
     }
     
     // 转换位置
-    SZrFilePosition filePos = ZrLspPositionToFilePosition(position);
-    SZrFileRange fileRange = ZrFileRangeCreate(filePos, filePos, uri);
+    SZrFilePosition filePos = ZrLanguageServer_LspPosition_ToFilePosition(position);
+    SZrFileRange fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
     
     // 获取悬停信息
     SZrHoverInfo *hoverInfo = ZR_NULL;
-    if (!ZrSemanticAnalyzerGetHoverInfo(state, analyzer, fileRange, &hoverInfo)) {
+    if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, fileRange, &hoverInfo)) {
         return ZR_FALSE;
     }
     
@@ -443,23 +443,23 @@ TBool ZrLspGetHover(SZrState *state,
     }
     
     // 转换为 LSP 悬停
-    SZrLspHover *lspHover = (SZrLspHover *)ZrMemoryRawMalloc(state->global, sizeof(SZrLspHover));
+    SZrLspHover *lspHover = (SZrLspHover *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspHover));
     if (lspHover == ZR_NULL) {
-        ZrHoverInfoFree(state, hoverInfo);
+        ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
         return ZR_FALSE;
     }
     
-    ZrArrayInit(state, &lspHover->contents, sizeof(SZrString *), 1);
+    ZrCore_Array_Init(state, &lspHover->contents, sizeof(SZrString *), 1);
     SZrString *content = hoverInfo->contents;
-    ZrArrayPush(state, &lspHover->contents, &content);
-    lspHover->range = ZrLspRangeFromFileRange(hoverInfo->range);
+    ZrCore_Array_Push(state, &lspHover->contents, &content);
+    lspHover->range = ZrLanguageServer_LspRange_FromFileRange(hoverInfo->range);
     
     *result = lspHover;
     return ZR_TRUE;
 }
 
 // 获取定义位置
-TBool ZrLspGetDefinition(SZrState *state,
+TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
                          SZrLspContext *context,
                          SZrString *uri,
                          SZrLspPosition position,
@@ -470,7 +470,7 @@ TBool ZrLspGetDefinition(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrArrayInit(state, result, sizeof(SZrLspLocation *), 1);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 1);
     }
     
     // 获取分析器
@@ -480,35 +480,35 @@ TBool ZrLspGetDefinition(SZrState *state,
     }
     
     // 转换位置
-    SZrFilePosition filePos = ZrLspPositionToFilePosition(position);
-    SZrFileRange fileRange = ZrFileRangeCreate(filePos, filePos, uri);
+    SZrFilePosition filePos = ZrLanguageServer_LspPosition_ToFilePosition(position);
+    SZrFileRange fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
     
     // 查找符号
-    SZrSymbol *symbol = ZrSemanticAnalyzerGetSymbolAt(analyzer, fileRange);
+    SZrSymbol *symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, fileRange);
     if (symbol == ZR_NULL) {
         return ZR_FALSE;
     }
     
     // 创建位置
-    SZrLspLocation *location = (SZrLspLocation *)ZrMemoryRawMalloc(state->global, sizeof(SZrLspLocation));
+    SZrLspLocation *location = (SZrLspLocation *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspLocation));
     if (location == ZR_NULL) {
         return ZR_FALSE;
     }
     
     location->uri = symbol->location.source;
-    location->range = ZrLspRangeFromFileRange(symbol->location);
+    location->range = ZrLanguageServer_LspRange_FromFileRange(symbol->location);
     
-    ZrArrayPush(state, result, &location);
+    ZrCore_Array_Push(state, result, &location);
     
     return ZR_TRUE;
 }
 
 // 查找引用
-TBool ZrLspFindReferences(SZrState *state,
+TZrBool ZrLanguageServer_Lsp_FindReferences(SZrState *state,
                           SZrLspContext *context,
                           SZrString *uri,
                           SZrLspPosition position,
-                          TBool includeDeclaration,
+                          TZrBool includeDeclaration,
                           SZrArray *result) {
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -516,7 +516,7 @@ TBool ZrLspFindReferences(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrArrayInit(state, result, sizeof(SZrLspLocation *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 8);
     }
     
     // 获取分析器
@@ -526,26 +526,26 @@ TBool ZrLspFindReferences(SZrState *state,
     }
     
     // 转换位置
-    SZrFilePosition filePos = ZrLspPositionToFilePosition(position);
-    SZrFileRange fileRange = ZrFileRangeCreate(filePos, filePos, uri);
+    SZrFilePosition filePos = ZrLanguageServer_LspPosition_ToFilePosition(position);
+    SZrFileRange fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
     
     // 查找符号
-    SZrSymbol *symbol = ZrSemanticAnalyzerGetSymbolAt(analyzer, fileRange);
+    SZrSymbol *symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, fileRange);
     if (symbol == ZR_NULL) {
         return ZR_FALSE;
     }
     
     // 获取所有引用
     SZrArray references;
-    ZrArrayInit(state, &references, sizeof(SZrReference *), 8);
-    if (!ZrReferenceTrackerFindReferences(state, analyzer->referenceTracker, symbol, &references)) {
-        ZrArrayFree(state, &references);
+    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), 8);
+    if (!ZrLanguageServer_ReferenceTracker_FindReferences(state, analyzer->referenceTracker, symbol, &references)) {
+        ZrCore_Array_Free(state, &references);
         return ZR_FALSE;
     }
     
     // 转换为 LSP 位置
     for (TZrSize i = 0; i < references.length; i++) {
-        SZrReference **refPtr = (SZrReference **)ZrArrayGet(&references, i);
+        SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(&references, i);
         if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
             SZrReference *ref = *refPtr;
             
@@ -554,22 +554,22 @@ TBool ZrLspFindReferences(SZrState *state,
                 continue;
             }
             
-            SZrLspLocation *location = (SZrLspLocation *)ZrMemoryRawMalloc(state->global, sizeof(SZrLspLocation));
+            SZrLspLocation *location = (SZrLspLocation *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspLocation));
             if (location != ZR_NULL) {
                 location->uri = ref->location.source;
-                location->range = ZrLspRangeFromFileRange(ref->location);
+                location->range = ZrLanguageServer_LspRange_FromFileRange(ref->location);
                 
-                ZrArrayPush(state, result, &location);
+                ZrCore_Array_Push(state, result, &location);
             }
         }
     }
     
-    ZrArrayFree(state, &references);
+    ZrCore_Array_Free(state, &references);
     return ZR_TRUE;
 }
 
 // 重命名符号
-TBool ZrLspRename(SZrState *state,
+TZrBool ZrLanguageServer_Lsp_Rename(SZrState *state,
                   SZrLspContext *context,
                   SZrString *uri,
                   SZrLspPosition position,
@@ -581,7 +581,7 @@ TBool ZrLspRename(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrArrayInit(state, result, sizeof(SZrLspLocation *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 8);
     }
     
     // 获取分析器
@@ -591,39 +591,39 @@ TBool ZrLspRename(SZrState *state,
     }
     
     // 转换位置
-    SZrFilePosition filePos = ZrLspPositionToFilePosition(position);
-    SZrFileRange fileRange = ZrFileRangeCreate(filePos, filePos, uri);
+    SZrFilePosition filePos = ZrLanguageServer_LspPosition_ToFilePosition(position);
+    SZrFileRange fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
     
     // 查找符号
-    SZrSymbol *symbol = ZrSemanticAnalyzerGetSymbolAt(analyzer, fileRange);
+    SZrSymbol *symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, fileRange);
     if (symbol == ZR_NULL) {
         return ZR_FALSE;
     }
     
     // 获取所有引用（包括定义）
     SZrArray references;
-    ZrArrayInit(state, &references, sizeof(SZrReference *), 8);
-    if (!ZrReferenceTrackerFindReferences(state, analyzer->referenceTracker, symbol, &references)) {
-        ZrArrayFree(state, &references);
+    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), 8);
+    if (!ZrLanguageServer_ReferenceTracker_FindReferences(state, analyzer->referenceTracker, symbol, &references)) {
+        ZrCore_Array_Free(state, &references);
         return ZR_FALSE;
     }
     
     // 转换为 LSP 位置（所有需要重命名的位置）
     for (TZrSize i = 0; i < references.length; i++) {
-        SZrReference **refPtr = (SZrReference **)ZrArrayGet(&references, i);
+        SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(&references, i);
         if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
             SZrReference *ref = *refPtr;
             
-            SZrLspLocation *location = (SZrLspLocation *)ZrMemoryRawMalloc(state->global, sizeof(SZrLspLocation));
+            SZrLspLocation *location = (SZrLspLocation *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspLocation));
             if (location != ZR_NULL) {
                 location->uri = ref->location.source;
-                location->range = ZrLspRangeFromFileRange(ref->location);
+                location->range = ZrLanguageServer_LspRange_FromFileRange(ref->location);
                 
-                ZrArrayPush(state, result, &location);
+                ZrCore_Array_Push(state, result, &location);
             }
         }
     }
     
-    ZrArrayFree(state, &references);
+    ZrCore_Array_Free(state, &references);
     return ZR_TRUE;
 }

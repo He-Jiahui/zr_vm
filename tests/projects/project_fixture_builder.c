@@ -7,7 +7,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
 
-static TZrPtr fixture_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr fixture_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
     }
 
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrGlobalStateNew(fixture_allocator, ZR_NULL, 0x5A525F4649585455ULL, &callbacks);
+    SZrGlobalState *global = ZrCore_GlobalState_New(fixture_allocator, ZR_NULL, 0x5A525F4649585455ULL, &callbacks);
     if (global == ZR_NULL) {
         free(source);
         fprintf(stderr, "failed to create global state\n");
@@ -84,29 +84,29 @@ int main(int argc, char **argv) {
     }
 
     SZrState *state = global->mainThreadState;
-    SZrString *sourceName = ZrStringCreate(state, argv[1], strlen(argv[1]));
-    SZrFunction *function = ZrParserCompileSource(state, source, sourceLength, sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, argv[1], strlen(argv[1]));
+    SZrFunction *function = ZrParser_Source_Compile(state, source, sourceLength, sourceName);
     free(source);
 
     if (function == ZR_NULL) {
         fprintf(stderr, "failed to compile source fixture: %s\n", argv[1]);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         return 1;
     }
 
-    if (!ZrWriterWriteBinaryFile(state, function, argv[2])) {
+    if (!ZrParser_Writer_WriteBinaryFile(state, function, argv[2])) {
         fprintf(stderr, "failed to write binary fixture: %s\n", argv[2]);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         return 1;
     }
 
-    if (argc == 4 && !ZrWriterWriteIntermediateFile(state, function, argv[3])) {
+    if (argc == 4 && !ZrParser_Writer_WriteIntermediateFile(state, function, argv[3])) {
         fprintf(stderr, "failed to write intermediate fixture: %s\n", argv[3]);
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         return 1;
     }
 
     printf("generated %s\n", argv[2]);
-    ZrGlobalStateFree(global);
+    ZrCore_GlobalState_Free(global);
     return 0;
 }

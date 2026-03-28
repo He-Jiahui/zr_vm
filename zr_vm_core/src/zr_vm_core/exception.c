@@ -36,8 +36,8 @@
     }
 #endif
 
-EZrThreadStatus ZrExceptionTryRun(SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments) {
-    TUInt32 prevNestedNativeCalls = state->nestedNativeCalls;
+EZrThreadStatus ZrCore_Exception_TryRun(SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments) {
+    TZrUInt32 prevNestedNativeCalls = state->nestedNativeCalls;
     SZrExceptionLongJump exceptionLongJump;
     exceptionLongJump.status = ZR_THREAD_STATUS_FINE;
     exceptionLongJump.previous = state->exceptionRecoverPoint;
@@ -48,7 +48,7 @@ EZrThreadStatus ZrExceptionTryRun(SZrState *state, FZrTryFunction tryFunction, T
     return exceptionLongJump.status;
 }
 
-void ZrExceptionThrow(SZrState *state, EZrThreadStatus errorCode) {
+void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
     if (state->exceptionRecoverPoint) {
         state->exceptionRecoverPoint->status = errorCode;
         ZR_EXCEPTION_NATIVE_THROW(state, state->exceptionRecoverPoint);
@@ -58,14 +58,14 @@ void ZrExceptionThrow(SZrState *state, EZrThreadStatus errorCode) {
     // throw in main thread
     if (state != mainThreadState) {
         // not wrapped by try catch block
-        errorCode = ZrStateResetThread(state, errorCode);
+        errorCode = ZrCore_State_ResetThread(state, errorCode);
         state->threadStatus = errorCode;
         if (mainThreadState->exceptionRecoverPoint != ZR_NULL) {
             // set error object to main thread
-            ZrStackCopyValue(mainThreadState, mainThreadState->stackTop.valuePointer,
-                             ZrStackGetValue(state->stackTop.valuePointer - 1));
+            ZrCore_Stack_CopyValue(mainThreadState, mainThreadState->stackTop.valuePointer,
+                             ZrCore_Stack_GetValue(state->stackTop.valuePointer - 1));
             mainThreadState->stackTop.valuePointer++;
-            ZrExceptionThrow(mainThreadState, errorCode);
+            ZrCore_Exception_Throw(mainThreadState, errorCode);
         }
     } else
     // if no catch block and throw in main thread
@@ -78,14 +78,14 @@ void ZrExceptionThrow(SZrState *state, EZrThreadStatus errorCode) {
     }
 }
 
-EZrThreadStatus ZrExceptionTryStop(SZrState *state, TZrMemoryOffset level, EZrThreadStatus status) {
+EZrThreadStatus ZrCore_Exception_TryStop(SZrState *state, TZrMemoryOffset level, EZrThreadStatus status) {
     ZR_TODO_PARAMETER(state);
     ZR_TODO_PARAMETER(level);
     ZR_TODO_PARAMETER(status);
 
 
     // SZrCallInfo *previousCallInfo = state->callInfoList;
-    // TUInt8 previousAllowHook = state->allowDebugHook;
+    // TZrUInt8 previousAllowHook = state->allowDebugHook;
     // // 持续关闭旧的上值直到不再有错误
     // for (;;) {
     //     ZR_ASSERT(ZR_FALSE);
@@ -94,18 +94,18 @@ EZrThreadStatus ZrExceptionTryStop(SZrState *state, TZrMemoryOffset level, EZrTh
     return ZR_THREAD_STATUS_FINE;
 }
 
-void ZrExceptionMarkError(SZrState *state, EZrThreadStatus errorCode, TZrStackValuePointer previousTop) {
+void ZrCore_Exception_MarkError(SZrState *state, EZrThreadStatus errorCode, TZrStackValuePointer previousTop) {
     switch (errorCode) {
         case ZR_THREAD_STATUS_FINE: {
-            ZrValueResetAsNull(ZrStackGetValue(previousTop));
+            ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(previousTop));
         } break;
         case ZR_THREAD_STATUS_MEMORY_ERROR: {
-            ZrStackSetRawObjectValue(state, previousTop,
+            ZrCore_Stack_SetRawObjectValue(state, previousTop,
                                      ZR_CAST_RAW_OBJECT_AS_SUPER(state->global->memoryErrorMessage));
         } break;
         default: {
-            ZR_ASSERT(ZrExceptionIsStausError(errorCode));
-            ZrStackCopyValue(state, previousTop, &(state->stackTop.valuePointer - 1)->value);
+            ZR_ASSERT(ZrCore_Exception_IsStausError(errorCode));
+            ZrCore_Stack_CopyValue(state, previousTop, &(state->stackTop.valuePointer - 1)->value);
         } break;
     }
     state->stackTop.valuePointer = previousTop - 1;

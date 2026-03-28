@@ -14,7 +14,7 @@
 struct SZrGlobalState;
 struct SZrState;
 struct SZrTypeValue;
-#define ZR_STRING_LITERAL(STATE, STR) (ZrStringCreate((STATE), "" STR, (sizeof(STR) / sizeof(char) - 1)))
+#define ZR_STRING_LITERAL(STATE, STR) (ZrCore_String_Create((STATE), "" STR, (sizeof(STR) / sizeof(char) - 1)))
 
 struct ZR_STRUCT_ALIGN SZrString {
     SZrRawObject super;
@@ -25,10 +25,10 @@ struct ZR_STRUCT_ALIGN SZrString {
         struct SZrString *nextShortString;
     };
 
-    TUInt8 shortStringLength;
+    TZrUInt8 shortStringLength;
     // short string is raw data
     // long string is a pointer
-    TUInt8 stringDataExtend[1];
+    TZrUInt8 stringDataExtend[1];
 };
 
 typedef struct SZrString SZrString;
@@ -36,7 +36,7 @@ typedef struct SZrString SZrString;
 
 struct ZR_STRUCT_ALIGN SZrStringTable {
     SZrHashSet stringHashSet;
-    TBool isValid;
+    TZrBool isValid;
 };
 
 typedef struct SZrStringTable SZrStringTable;
@@ -45,28 +45,28 @@ typedef struct SZrStringTable SZrStringTable;
 
 struct ZR_STRUCT_ALIGN SZrNativeStringFormatBuffer {
     struct SZrState *state;
-    TBool isOnStack;
+    TZrBool isOnStack;
     TZrSize length;
     char result[ZR_STRING_FORMAT_BUFFER_SIZE];
 };
 
 typedef struct SZrNativeStringFormatBuffer SZrNativeStringFormatBuffer;
 
-ZR_FORCE_INLINE TInt32 ZrNativeStringCompare(TNativeString string1, TNativeString string2) {
+ZR_FORCE_INLINE TZrInt32 ZrCore_NativeString_Compare(TZrNativeString string1, TZrNativeString string2) {
     return strcmp(string1, string2);
 }
 
 
-ZR_FORCE_INLINE TZrSize ZrNativeStringLength(TNativeString string) { return strlen(string); }
+ZR_FORCE_INLINE TZrSize ZrCore_NativeString_Length(TZrNativeString string) { return strlen(string); }
 
-ZR_FORCE_INLINE TChar *ZrNativeStringCharFind(TNativeString string, TChar ch) { return strchr(string, ch); }
+ZR_FORCE_INLINE TZrChar *ZrCore_NativeString_CharFind(TZrNativeString string, TZrChar ch) { return strchr(string, ch); }
 
-ZR_FORCE_INLINE TZrSize ZrNativeStringSpan(TNativeString string, TChar *charset) { return strspn(string, charset); }
+ZR_FORCE_INLINE TZrSize ZrCore_NativeString_Span(TZrNativeString string, TZrChar *charset) { return strspn(string, charset); }
 
-ZR_FORCE_INLINE TZrSize ZrNativeStringConcat(TNativeString string1, TNativeString string2,
-                                             ZR_OUT TNativeString result) {
-    TZrSize length1 = ZrNativeStringLength(string1);
-    TZrSize length2 = ZrNativeStringLength(string2);
+ZR_FORCE_INLINE TZrSize ZrCore_NativeString_Concat(TZrNativeString string1, TZrNativeString string2,
+                                             ZR_OUT TZrNativeString result) {
+    TZrSize length1 = ZrCore_NativeString_Length(string1);
+    TZrSize length2 = ZrCore_NativeString_Length(string2);
     TZrSize length = length1 + length2;
     strcpy(result, string1);
     strcpy(result + length1, string2);
@@ -75,14 +75,14 @@ ZR_FORCE_INLINE TZrSize ZrNativeStringConcat(TNativeString string1, TNativeStrin
 }
 
 
-ZR_FORCE_INLINE TZrSize ZrNativeStringUtf8CharLength(TChar *buffer, TUInt64 uChar) {
+ZR_FORCE_INLINE TZrSize ZrCore_NativeString_Utf8CharLength(TZrChar *buffer, TZrUInt64 uChar) {
     ZR_ASSERT(uChar <= 0x7fffffffu);
     TZrSize length = 1;
     if (uChar <= 0x7fu) {
         // 0xxxxxxx
         buffer[ZR_STRING_UTF8_SIZE - 1] = ZR_CAST_CHAR(uChar);
     } else {
-        TUInt64 maxFirstByte = 0x3fu;
+        TZrUInt64 maxFirstByte = 0x3fu;
         // convert uChar to:
         // 110xxxxx 10xxxxxx  (11)
         // 1110xxxx 10xxxxxx 10xxxxxx  (16)
@@ -98,60 +98,60 @@ ZR_FORCE_INLINE TZrSize ZrNativeStringUtf8CharLength(TChar *buffer, TUInt64 uCha
 }
 
 
-ZR_CORE_API TNativeString ZrNativeStringVFormat(struct SZrState *state, TNativeString format, va_list args);
+ZR_CORE_API TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, TZrNativeString format, va_list args);
 
-ZR_CORE_API TNativeString ZrNativeStringFormat(struct SZrState *state, TNativeString format, ...);
+ZR_CORE_API TZrNativeString ZrCore_NativeString_Format(struct SZrState *state, TZrNativeString format, ...);
 
-ZR_CORE_API void ZrStringTableNew(struct SZrGlobalState *global);
+ZR_CORE_API void ZrCore_StringTable_New(struct SZrGlobalState *global);
 
-ZR_CORE_API void ZrStringTableFree(struct SZrGlobalState *global, SZrStringTable *stringTable);
+ZR_CORE_API void ZrCore_StringTable_Free(struct SZrGlobalState *global, SZrStringTable *stringTable);
 
-ZR_CORE_API void ZrStringTableInit(struct SZrState *state);
+ZR_CORE_API void ZrCore_StringTable_Init(struct SZrState *state);
 
 
-ZR_CORE_API SZrString *ZrStringCreate(struct SZrState *state, TNativeString string, TZrSize length);
+ZR_CORE_API SZrString *ZrCore_String_Create(struct SZrState *state, TZrNativeString string, TZrSize length);
 
-ZR_FORCE_INLINE SZrString *ZrStringCreateFromNative(struct SZrState *state, TNativeString string) {
-    return ZrStringCreate(state, string, ZrNativeStringLength(string));
+ZR_FORCE_INLINE SZrString *ZrCore_String_CreateFromNative(struct SZrState *state, TZrNativeString string) {
+    return ZrCore_String_Create(state, string, ZrCore_NativeString_Length(string));
 }
 
-ZR_CORE_API SZrString *ZrStringCreateTryHitCache(struct SZrState *state, TNativeString string);
+ZR_CORE_API SZrString *ZrCore_String_CreateTryHitCache(struct SZrState *state, TZrNativeString string);
 
 
-ZR_FORCE_INLINE TNativeString ZrStringGetNativeStringShort(const SZrString *string) {
+ZR_FORCE_INLINE TZrNativeString ZrCore_String_GetNativeStringShort(const SZrString *string) {
     ZR_ASSERT(string->shortStringLength < ZR_VM_LONG_STRING_FLAG);
-    return (TNativeString) string->stringDataExtend;
+    return (TZrNativeString) string->stringDataExtend;
 }
 
-ZR_FORCE_INLINE TNativeString *ZrStringGetNativeStringLong(const SZrString *string) {
+ZR_FORCE_INLINE TZrNativeString *ZrCore_String_GetNativeStringLong(const SZrString *string) {
     ZR_ASSERT(string->shortStringLength == ZR_VM_LONG_STRING_FLAG);
-    return (TNativeString *) string->stringDataExtend;
+    return (TZrNativeString *) string->stringDataExtend;
 }
 
-ZR_FORCE_INLINE TNativeString ZrStringGetNativeString(SZrString *string) {
+ZR_FORCE_INLINE TZrNativeString ZrCore_String_GetNativeString(SZrString *string) {
     if (string->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-        return ZrStringGetNativeStringShort(string);
+        return ZrCore_String_GetNativeStringShort(string);
     } else {
-        return *ZrStringGetNativeStringLong(string);
+        return *ZrCore_String_GetNativeStringLong(string);
     }
 }
 
-ZR_CORE_API TBool ZrStringEqual(SZrString *string1, SZrString *string2);
+ZR_CORE_API TZrBool ZrCore_String_Equal(SZrString *string1, SZrString *string2);
 
 // for hash table comparison
-ZR_FORCE_INLINE TBool ZrStringCompare(struct SZrState *state, const SZrString *string1, const SZrString *string2) {
+ZR_FORCE_INLINE TZrBool ZrCore_String_Compare(struct SZrState *state, const SZrString *string1, const SZrString *string2) {
     ZR_UNUSED_PARAMETER(state);
-    return ZrStringEqual((SZrString *) string1, (SZrString *) string2);
+    return ZrCore_String_Equal((SZrString *) string1, (SZrString *) string2);
 }
 
 // this is not thread safe and not reentrant
-ZR_CORE_API void ZrStringConcat(struct SZrState *state, TZrSize count);
+ZR_CORE_API void ZrCore_String_Concat(struct SZrState *state, TZrSize count);
 
-ZR_CORE_API void ZrStringConcatSafe(struct SZrState *state, TZrSize count);
+ZR_CORE_API void ZrCore_String_ConcatSafe(struct SZrState *state, TZrSize count);
 
 
 // todo: number to string
-ZR_CORE_API SZrString *ZrStringFromNumber(struct SZrState *state, struct SZrTypeValue *value);
+ZR_CORE_API SZrString *ZrCore_String_FromNumber(struct SZrState *state, struct SZrTypeValue *value);
 // todo: object to string
 
 // todo: utf-8 to string

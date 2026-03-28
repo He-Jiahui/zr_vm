@@ -16,6 +16,6 @@ SZrState* createTestState(void);
 void destroyTestState(SZrState* state);
 
 SZrRawObject* createTestObject(SZrState* state, EZrValueType type, TZrSize size);
-struct SZrNativeData* createTestNativeData(SZrState* state, TUInt32 valueCount);
+struct SZrNativeData* createTestNativeData(SZrState* state, TZrUInt32 valueCount);
 
 #endif // ZR_VM_GC_TEST_UTILS_H

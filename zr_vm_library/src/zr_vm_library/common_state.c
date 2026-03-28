@@ -6,9 +6,9 @@
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
 
-static TUInt64 CZrLibrary_CommonState_MemoryCounter[ZR_MEMORY_NATIVE_TYPE_ENUM_MAX] = {};
+static TZrUInt64 CZrLibrary_CommonState_MemoryCounter[ZR_MEMORY_NATIVE_TYPE_ENUM_MAX] = {};
 TZrPtr ZrLibrary_CommonState_BuiltinAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize,
-                                              TInt64 flag) {
+                                              TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -24,7 +24,7 @@ TZrPtr ZrLibrary_CommonState_BuiltinAllocator(TZrPtr userData, TZrPtr pointer, T
     return (TZrPtr) realloc(pointer, newSize);
 }
 
-SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TNativeString configFilePath) {
+SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TZrNativeString configFilePath) {
     SZrCallbackGlobal callback = {
             .afterStateInitialized = ZR_NULL,
             .afterThreadInitialized = ZR_NULL,
@@ -39,19 +39,19 @@ SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TNativeString config
 
 
     SZrGlobalState *global =
-            ZrGlobalStateNew(ZrLibrary_CommonState_BuiltinAllocator, ZR_NULL, 0x1234567890ABCDEF, &callback);
+            ZrCore_GlobalState_New(ZrLibrary_CommonState_BuiltinAllocator, ZR_NULL, 0x1234567890ABCDEF, &callback);
 
-    TNativeString configContent = ZrLibrary_File_ReadAll(global, configFilePath);
+    TZrNativeString configContent = ZrLibrary_File_ReadAll(global, configFilePath);
     if (configContent == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         return ZR_NULL;
     }
     SZrLibrary_Project *project = ZrLibrary_Project_New(global->mainThreadState, configContent, configFilePath);
-    TZrSize configLength = ZrNativeStringLength(configContent);
-    ZrMemoryRawFreeWithType(global, configContent, configLength + 1,
+    TZrSize configLength = ZrCore_NativeString_Length(configContent);
+    ZrCore_Memory_RawFreeWithType(global, configContent, configLength + 1,
                             ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
     if (project == ZR_NULL) {
-        ZrGlobalStateFree(global);
+        ZrCore_GlobalState_Free(global);
         return ZR_NULL;
     }
     global->userData = project;
@@ -66,5 +66,5 @@ void ZrLibrary_CommonState_CommonGlobalState_Free(SZrGlobalState *globalState) {
     ZrLibrary_Project_Free(globalState->mainThreadState, ZR_CAST(SZrLibrary_Project *, globalState->userData));
     globalState->userData = ZR_NULL;
 
-    ZrGlobalStateFree(globalState);
+    ZrCore_GlobalState_Free(globalState);
 }

@@ -58,7 +58,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     struct SZrState *threadWithStackClosures;
 
     // hash
-    TUInt64 hashSeed;
+    TZrUInt64 hashSeed;
 
     // String Table
     struct SZrStringTable *stringTable;
@@ -84,7 +84,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Parser and Compiler (injected, can be NULL)
     // 如果为NULL，则只支持加载.zro二进制文件
     // 封装了从源代码解析到编译的全流程
-    struct SZrFunction *(*compileSource)(struct SZrState *state, const TChar *source, TZrSize sourceLength, struct SZrString *sourceName);
+    struct SZrFunction *(*compileSource)(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);
 
 
     // exceptions
@@ -96,26 +96,26 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // callbacks
     SZrCallbackGlobal callbacks;
 
-    TBool isValid;
-    TUInt8 empty;
+    TZrBool isValid;
+    TZrUInt8 empty;
 };
 
 
 typedef struct SZrGlobalState SZrGlobalState;
 
 
-ZR_CORE_API SZrGlobalState *ZrGlobalStateNew(FZrAllocator allocator, TZrPtr userAllocationArguments,
-                                             TUInt64 uniqueNumber, SZrCallbackGlobal *callbacks);
+ZR_CORE_API SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAllocationArguments,
+                                             TZrUInt64 uniqueNumber, SZrCallbackGlobal *callbacks);
 
-ZR_CORE_API void ZrGlobalStateInitRegistry(struct SZrState *state, SZrGlobalState *global);
+ZR_CORE_API void ZrCore_GlobalState_InitRegistry(struct SZrState *state, SZrGlobalState *global);
 
 // 设置 compileSource 函数指针（由 parser 模块调用）
-ZR_CORE_API void ZrGlobalStateSetCompileSource(SZrGlobalState *global, 
-    struct SZrFunction *(*compileSource)(struct SZrState *state, const TChar *source, TZrSize sourceLength, struct SZrString *sourceName));
+ZR_CORE_API void ZrCore_GlobalState_SetCompileSource(SZrGlobalState *global, 
+    struct SZrFunction *(*compileSource)(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName));
 
-ZR_CORE_API void ZrGlobalStateFree(SZrGlobalState *global);
+ZR_CORE_API void ZrCore_GlobalState_Free(SZrGlobalState *global);
 
-ZR_FORCE_INLINE TBool ZrGlobalStateIsInitialized(SZrGlobalState *global) { return global->isValid; }
+ZR_FORCE_INLINE TZrBool ZrCore_GlobalState_IsInitialized(SZrGlobalState *global) { return global->isValid; }
 
 
 #endif // ZR_VM_CORE_GLOBAL_H

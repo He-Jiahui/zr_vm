@@ -62,32 +62,32 @@ typedef struct {
 
 #pragma pack(push, 1)
 typedef struct SZrCompiledPrototypeInfoView {
-    TUInt32 nameStringIndex;
-    TUInt32 type;
-    TUInt32 accessModifier;
-    TUInt32 inheritsCount;
-    TUInt32 membersCount;
+    TZrUInt32 nameStringIndex;
+    TZrUInt32 type;
+    TZrUInt32 accessModifier;
+    TZrUInt32 inheritsCount;
+    TZrUInt32 membersCount;
 } SZrCompiledPrototypeInfoView;
 
 typedef struct SZrCompiledMemberInfoView {
-    TUInt32 memberType;
-    TUInt32 nameStringIndex;
-    TUInt32 accessModifier;
-    TUInt32 isStatic;
-    TUInt32 isConst;
-    TUInt32 fieldTypeNameStringIndex;
-    TUInt32 fieldOffset;
-    TUInt32 fieldSize;
-    TUInt32 isMetaMethod;
-    TUInt32 metaType;
-    TUInt32 functionConstantIndex;
-    TUInt32 parameterCount;
-    TUInt32 returnTypeNameStringIndex;
-    TUInt32 isUsingManaged;
-    TUInt32 ownershipQualifier;
-    TUInt32 callsClose;
-    TUInt32 callsDestructor;
-    TUInt32 declarationOrder;
+    TZrUInt32 memberType;
+    TZrUInt32 nameStringIndex;
+    TZrUInt32 accessModifier;
+    TZrUInt32 isStatic;
+    TZrUInt32 isConst;
+    TZrUInt32 fieldTypeNameStringIndex;
+    TZrUInt32 fieldOffset;
+    TZrUInt32 fieldSize;
+    TZrUInt32 isMetaMethod;
+    TZrUInt32 metaType;
+    TZrUInt32 functionConstantIndex;
+    TZrUInt32 parameterCount;
+    TZrUInt32 returnTypeNameStringIndex;
+    TZrUInt32 isUsingManaged;
+    TZrUInt32 ownershipQualifier;
+    TZrUInt32 callsClose;
+    TZrUInt32 callsDestructor;
+    TZrUInt32 declarationOrder;
 } SZrCompiledMemberInfoView;
 #pragma pack(pop)
 
@@ -96,7 +96,7 @@ void setUp(void) {}
 void tearDown(void) {}
 
 // 简单的测试分配器
-static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag) {
+static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
@@ -120,23 +120,23 @@ static TZrPtr testAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSiz
 }
 
 // 创建测试用的SZrState
-static SZrState *createTestState(void) {
+static SZrState *create_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrGlobalStateNew(testAllocator, ZR_NULL, 0, &callbacks);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 0, &callbacks);
     if (global == ZR_NULL) {
         return ZR_NULL;
     }
 
     SZrState *state = global->mainThreadState;
-    ZrGlobalStateInitRegistry(state, global);
+    ZrCore_GlobalState_InitRegistry(state, global);
 
     return state;
 }
 
 // 销毁测试用的SZrState
-static void destroyTestState(SZrState *state) {
+static void destroy_test_state(SZrState *state) {
     if (state != ZR_NULL && state->global != ZR_NULL) {
-        ZrGlobalStateFree(state->global);
+        ZrCore_GlobalState_Free(state->global);
     }
 }
 
@@ -147,12 +147,12 @@ static SZrFunction *get_single_compiled_child_function(SZrFunction *wrapper) {
     return &wrapper->childFunctionList[0];
 }
 
-static TBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
+static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    for (TUInt32 i = 0; i < function->instructionsLength; i++) {
+    for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
         if ((EZrInstructionCode) function->instructionsList[i].instruction.operationCode == opcode) {
             return ZR_TRUE;
         }
@@ -161,7 +161,7 @@ static TBool function_contains_opcode(const SZrFunction *function, EZrInstructio
     return ZR_FALSE;
 }
 
-static SZrString *get_string_constant_at(SZrState *state, const SZrFunction *function, TUInt32 index) {
+static SZrString *get_string_constant_at(SZrState *state, const SZrFunction *function, TZrUInt32 index) {
     const SZrTypeValue *constant;
 
     if (state == ZR_NULL || function == ZR_NULL || function->constantValueList == ZR_NULL ||
@@ -179,27 +179,27 @@ static SZrString *get_string_constant_at(SZrState *state, const SZrFunction *fun
 
 static const SZrCompiledPrototypeInfoView *find_compiled_prototype_by_name(SZrState *state,
                                                                            const SZrFunction *function,
-                                                                           const TChar *prototypeName) {
-    const TByte *currentPos;
+                                                                           const TZrChar *prototypeName) {
+    const TZrByte *currentPos;
     TZrSize remainingSize;
     SZrString *expectedName;
 
     if (state == ZR_NULL || function == ZR_NULL || prototypeName == ZR_NULL || function->prototypeData == ZR_NULL ||
-        function->prototypeDataLength <= sizeof(TUInt32) || function->prototypeCount == 0) {
+        function->prototypeDataLength <= sizeof(TZrUInt32) || function->prototypeCount == 0) {
         return ZR_NULL;
     }
 
-    expectedName = ZrStringCreate(state, (TNativeString)prototypeName, strlen(prototypeName));
+    expectedName = ZrCore_String_Create(state, (TZrNativeString)prototypeName, strlen(prototypeName));
     if (expectedName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    currentPos = function->prototypeData + sizeof(TUInt32);
-    remainingSize = function->prototypeDataLength - sizeof(TUInt32);
+    currentPos = function->prototypeData + sizeof(TZrUInt32);
+    remainingSize = function->prototypeDataLength - sizeof(TZrUInt32);
     while (remainingSize >= sizeof(SZrCompiledPrototypeInfoView)) {
         const SZrCompiledPrototypeInfoView *prototypeInfo = (const SZrCompiledPrototypeInfoView *)currentPos;
         TZrSize prototypeSize = sizeof(SZrCompiledPrototypeInfoView) +
-                                prototypeInfo->inheritsCount * sizeof(TUInt32) +
+                                prototypeInfo->inheritsCount * sizeof(TZrUInt32) +
                                 prototypeInfo->membersCount * sizeof(SZrCompiledMemberInfoView);
         SZrString *actualName;
 
@@ -208,7 +208,7 @@ static const SZrCompiledPrototypeInfoView *find_compiled_prototype_by_name(SZrSt
         }
 
         actualName = get_string_constant_at(state, function, prototypeInfo->nameStringIndex);
-        if (actualName != ZR_NULL && ZrStringEqual(actualName, expectedName)) {
+        if (actualName != ZR_NULL && ZrCore_String_Equal(actualName, expectedName)) {
             return prototypeInfo;
         }
 
@@ -222,7 +222,7 @@ static const SZrCompiledPrototypeInfoView *find_compiled_prototype_by_name(SZrSt
 static const SZrCompiledMemberInfoView *find_compiled_member_by_name(SZrState *state,
                                                                      const SZrFunction *function,
                                                                      const SZrCompiledPrototypeInfoView *prototypeInfo,
-                                                                     const TChar *memberName) {
+                                                                     const TZrChar *memberName) {
     const SZrCompiledMemberInfoView *members;
     SZrString *expectedName;
 
@@ -230,17 +230,17 @@ static const SZrCompiledMemberInfoView *find_compiled_member_by_name(SZrState *s
         return ZR_NULL;
     }
 
-    expectedName = ZrStringCreate(state, (TNativeString)memberName, strlen(memberName));
+    expectedName = ZrCore_String_Create(state, (TZrNativeString)memberName, strlen(memberName));
     if (expectedName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    members = (const SZrCompiledMemberInfoView *)((const TByte *)prototypeInfo +
+    members = (const SZrCompiledMemberInfoView *)((const TZrByte *)prototypeInfo +
                                                   sizeof(SZrCompiledPrototypeInfoView) +
-                                              prototypeInfo->inheritsCount * sizeof(TUInt32));
-    for (TUInt32 i = 0; i < prototypeInfo->membersCount; i++) {
+                                              prototypeInfo->inheritsCount * sizeof(TZrUInt32));
+    for (TZrUInt32 i = 0; i < prototypeInfo->membersCount; i++) {
         SZrString *actualName = get_string_constant_at(state, function, members[i].nameStringIndex);
-        if (actualName != ZR_NULL && ZrStringEqual(actualName, expectedName)) {
+        if (actualName != ZR_NULL && ZrCore_String_Equal(actualName, expectedName)) {
             return &members[i];
         }
     }
@@ -258,7 +258,7 @@ void test_function_parameter_handling(void) {
     TEST_INFO("Function Parameter Handling",
               "Testing that function declarations correctly extract parameter count and variable arguments flag");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -267,23 +267,23 @@ void test_function_parameter_handling(void) {
 
     // 测试代码：函数声明带参数（不需要function关键字）
     const char *source = "testFunc(a, b, c) { return a + b + c; }";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -300,10 +300,10 @@ void test_function_parameter_handling(void) {
     // 输出完整的指令数量和指令内容
     printf("  Total Instructions: %u\n", func->instructionsLength);
     printf("  Instructions:\n");
-    for (TUInt32 i = 0; i < func->instructionsLength; i++) {
+    for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
         TZrInstruction *inst = &func->instructionsList[i];
         EZrInstructionCode opcode = (EZrInstructionCode) inst->instruction.operationCode;
-        TUInt16 operandExtra = inst->instruction.operandExtra;
+        TZrUInt16 operandExtra = inst->instruction.operandExtra;
 
         printf("    [%u] ", i);
 
@@ -433,7 +433,7 @@ void test_function_parameter_handling(void) {
             default: {
                 // 对于未知的指令，输出数字
                 char buf[32];
-                snprintf(buf, sizeof(buf), "OPCODE_%u", (TUInt32) opcode);
+                snprintf(buf, sizeof(buf), "OPCODE_%u", (TZrUInt32) opcode);
                 opcodeName = buf;
                 break;
             }
@@ -447,9 +447,9 @@ void test_function_parameter_handling(void) {
         // operandExtra 通常用作目标槽位或额外参数
 
         // 检查是否有操作数（根据指令类型判断）
-        TUInt16 op1_0 = inst->instruction.operand.operand1[0];
-        TUInt16 op1_1 = inst->instruction.operand.operand1[1];
-        TInt32 op2_0 = (TInt32) inst->instruction.operand.operand2[0];
+        TZrUInt16 op1_0 = inst->instruction.operand.operand1[0];
+        TZrUInt16 op1_1 = inst->instruction.operand.operand1[1];
+        TZrInt32 op2_0 = (TZrInt32) inst->instruction.operand.operand2[0];
 
         // 根据指令类型输出操作数
         if (opcode == ZR_INSTRUCTION_ENUM(GET_STACK) || opcode == ZR_INSTRUCTION_ENUM(SET_STACK) ||
@@ -498,7 +498,7 @@ void test_function_parameter_handling(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -511,7 +511,7 @@ void test_constant_deduplication(void) {
     TEST_START(testSummary);
     TEST_INFO("Constant Deduplication", "Testing that duplicate constants are deduplicated in the constant pool");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -520,23 +520,23 @@ void test_constant_deduplication(void) {
 
     // 测试代码：使用相同的常量多次
     const char *source = "var a = 42; var b = 42; var c = 42;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -547,7 +547,7 @@ void test_constant_deduplication(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -561,7 +561,7 @@ void test_global_object_access(void) {
     TEST_INFO("Global Object Access",
               "Testing that global object properties can be accessed using GET_GLOBAL + GETTABLE");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -570,23 +570,23 @@ void test_global_object_access(void) {
 
     // 测试代码：访问全局对象属性
     const char *source = "var x = zr.import;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -596,10 +596,10 @@ void test_global_object_access(void) {
     // 输出完整的指令数量和指令内容
     printf("  Total Instructions: %u\n", func->instructionsLength);
     printf("  Instructions:\n");
-    for (TUInt32 i = 0; i < func->instructionsLength; i++) {
+    for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
         TZrInstruction *inst = &func->instructionsList[i];
         EZrInstructionCode opcode = (EZrInstructionCode) inst->instruction.operationCode;
-        TUInt16 operandExtra = inst->instruction.operandExtra;
+        TZrUInt16 operandExtra = inst->instruction.operandExtra;
 
         printf("    [%u] ", i);
 
@@ -729,7 +729,7 @@ void test_global_object_access(void) {
             default: {
                 // 对于未知的指令，输出数字
                 char buf[32];
-                snprintf(buf, sizeof(buf), "OPCODE_%u", (TUInt32) opcode);
+                snprintf(buf, sizeof(buf), "OPCODE_%u", (TZrUInt32) opcode);
                 opcodeName = buf;
                 break;
             }
@@ -738,9 +738,9 @@ void test_global_object_access(void) {
         printf("%s", opcodeName);
 
         // 根据指令类型输出操作数（简化版本，只输出有意义的操作数）
-        TUInt16 op1_0 = inst->instruction.operand.operand1[0];
-        TUInt16 op1_1 = inst->instruction.operand.operand1[1];
-        TInt32 op2_0 = (TInt32) inst->instruction.operand.operand2[0];
+        TZrUInt16 op1_0 = inst->instruction.operand.operand1[0];
+        TZrUInt16 op1_1 = inst->instruction.operand.operand1[1];
+        TZrInt32 op2_0 = (TZrInt32) inst->instruction.operand.operand2[0];
 
         // 根据指令类型输出操作数
         if (opcode == ZR_INSTRUCTION_ENUM(GET_STACK) || opcode == ZR_INSTRUCTION_ENUM(SET_STACK) ||
@@ -792,7 +792,7 @@ void test_global_object_access(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -806,7 +806,7 @@ void test_binary_expression_type_inference(void) {
     TEST_INFO("Binary Expression Type Inference",
               "Testing that binary expressions correctly infer types and generate appropriate instructions");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -815,23 +815,23 @@ void test_binary_expression_type_inference(void) {
 
     // 测试代码：不同类型的二元表达式
     const char *source = "var a = 1 + 2; var b = 1.0 + 2.0; var c = \"hello\" + \"world\";";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -840,7 +840,7 @@ void test_binary_expression_type_inference(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -854,7 +854,7 @@ void test_nested_function_scope(void) {
     TEST_INFO("Nested Function Scope",
               "Testing that nested functions correctly handle scope and parent compiler references");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -863,23 +863,23 @@ void test_nested_function_scope(void) {
 
     // 测试代码：嵌套函数
     const char *source = "outer() { inner() { return 42; } return inner(); }";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -889,7 +889,7 @@ void test_nested_function_scope(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -902,7 +902,7 @@ void test_closure_capture(void) {
     TEST_START(testSummary);
     TEST_INFO("Closure Variable Capture", "Testing that lambda expressions correctly capture external variables");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -911,23 +911,23 @@ void test_closure_capture(void) {
 
     // 测试代码：lambda表达式捕获外部变量
     const char *source = "var x = 10; var f = () => { return x; };";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -936,7 +936,7 @@ void test_closure_capture(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -950,7 +950,7 @@ void test_complex_lvalue(void) {
     TEST_INFO("Complex Left Value Handling",
               "Testing that member access and array index assignments are correctly compiled");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -959,23 +959,23 @@ void test_complex_lvalue(void) {
 
     // 测试代码：成员访问赋值和数组索引赋值
     const char *source = "var obj = {}; obj.prop = 42; var arr = [1, 2, 3]; arr[0] = 10;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -984,7 +984,7 @@ void test_complex_lvalue(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -997,7 +997,7 @@ void test_external_variable_analysis(void) {
     TEST_START(testSummary);
     TEST_INFO("External Variable Analysis", "Testing that external variables are correctly identified and captured");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1006,23 +1006,23 @@ void test_external_variable_analysis(void) {
 
     // 测试代码：嵌套函数引用外部变量
     const char *source = "outer() { var x = 10; var y = 20; inner() { return x + y; } return inner(); }";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1032,7 +1032,7 @@ void test_external_variable_analysis(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1046,7 +1046,7 @@ void test_foreach_destructuring(void) {
     TEST_INFO("Foreach Destructuring Support",
               "Testing that foreach loops correctly support object and array destructuring");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1055,23 +1055,23 @@ void test_foreach_destructuring(void) {
 
     // 测试代码：foreach解构对象和数组（使用 for(var pattern in expr) 语法）
     const char *source = "var arr = [{a: 1, b: 2}, {a: 3, b: 4}]; for(var {a, b} in arr) { var sum = a + b; }";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1080,7 +1080,7 @@ void test_foreach_destructuring(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1093,7 +1093,7 @@ void test_switch_statement(void) {
     TEST_START(testSummary);
     TEST_INFO("Switch Statement", "Testing that switch statements are correctly parsed and compiled");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1102,23 +1102,23 @@ void test_switch_statement(void) {
 
     // 测试代码：switch语句（使用 switch(expr){(value){}...} 语法）
     const char *source = "var x = 1; switch(x){(1){return 10;}(2){return 20;}(/*default*/){return 0;}}";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1127,7 +1127,7 @@ void test_switch_statement(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1141,7 +1141,7 @@ void test_generator_mechanism(void) {
     TEST_INFO("Generator Mechanism",
               "Testing that generator functions and yield/out statements are correctly compiled");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1150,23 +1150,23 @@ void test_generator_mechanism(void) {
 
     // 测试代码：生成器函数（使用双大括号语法）
     const char *source = "var gen = {{ out 1; out 2; out 3; }};";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1175,7 +1175,7 @@ void test_generator_mechanism(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1188,7 +1188,7 @@ void test_function_call_type_inference(void) {
     TEST_START(testSummary);
     TEST_INFO("Function Call Type Inference", "Testing that function calls correctly infer return types");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1197,23 +1197,23 @@ void test_function_call_type_inference(void) {
 
     // 测试代码：函数调用
     const char *source = "add(a: int, b: int): int { return a + b; } var result = add(1, 2);";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1222,7 +1222,7 @@ void test_function_call_type_inference(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1235,7 +1235,7 @@ void test_member_access_type_inference(void) {
     TEST_START(testSummary);
     TEST_INFO("Member Access Type Inference", "Testing that member access chains correctly infer types");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1244,23 +1244,23 @@ void test_member_access_type_inference(void) {
 
     // 测试代码：链式成员访问
     const char *source = "var obj = {prop: {subprop: 42}}; var value = obj.prop.subprop;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1269,7 +1269,7 @@ void test_member_access_type_inference(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1283,7 +1283,7 @@ void test_type_conversion_instructions(void) {
     TEST_INFO("Type Conversion Instructions",
               "Testing that type conversion instructions are correctly generated for mixed-type operations");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1292,23 +1292,23 @@ void test_type_conversion_instructions(void) {
 
     // 测试代码：混合类型运算（需要类型转换）
     const char *source = "var a = 1 + 2.0; var b = 1.0 + 2; var c = \"num: \" + 42;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1317,7 +1317,7 @@ void test_type_conversion_instructions(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1331,7 +1331,7 @@ void test_compound_assignment_operators(void) {
     TEST_INFO("Compound Assignment Operators",
               "Testing that compound assignment operators (+=, -=, *=, etc.) are correctly compiled");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1340,23 +1340,23 @@ void test_compound_assignment_operators(void) {
 
     // 测试代码：复合赋值运算符
     const char *source = "var a = 10; a += 5; a -= 3; a *= 2; a /= 4; a %= 3;";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1365,7 +1365,7 @@ void test_compound_assignment_operators(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1378,7 +1378,7 @@ void test_variable_arguments_function(void) {
     TEST_START(testSummary);
     TEST_INFO("Variable Arguments Function", "Testing that functions with variable arguments are correctly compiled");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1387,23 +1387,23 @@ void test_variable_arguments_function(void) {
 
     // 测试代码：可变参数函数
     const char *source = "sum(...args: int[]): int { return 0; }";
-    SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-    SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+    SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse source code");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
     // 编译AST
-    SZrFunction *func = ZrCompilerCompile(state, ast);
+    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile function");
-        destroyTestState(state);
+        destroy_test_state(state);
         return;
     }
 
@@ -1418,7 +1418,7 @@ void test_variable_arguments_function(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1426,14 +1426,14 @@ void test_template_string_compilation_emits_string_pipeline(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Template String Compilation Pipeline";
-    TBool hasToString = ZR_FALSE;
-    TBool hasAddString = ZR_FALSE;
+    TZrBool hasToString = ZR_FALSE;
+    TZrBool hasAddString = ZR_FALSE;
 
     TEST_START(testSummary);
     TEST_INFO("Template string compilation",
               "Testing that template strings lower to TO_STRING + ADD_STRING instructions");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1442,29 +1442,29 @@ void test_template_string_compilation_emits_string_pipeline(void) {
 
     {
         const char *source = "var name = \"zr\"; return `hello ${1} ${name}`;";
-        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse template string source");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
-        func = ZrCompilerCompile(state, ast);
+        func = ZrParser_Compiler_Compile(state, ast);
         if (func == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile template string source");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
         TEST_ASSERT_NOT_NULL(func->instructionsList);
         TEST_ASSERT_GREATER_THAN_UINT32(0, func->instructionsLength);
 
-        for (TUInt32 i = 0; i < func->instructionsLength; i++) {
+        for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
             EZrInstructionCode opcode =
                 (EZrInstructionCode)func->instructionsList[i].instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(TO_STRING)) {
@@ -1480,7 +1480,7 @@ void test_template_string_compilation_emits_string_pipeline(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1493,7 +1493,7 @@ void test_using_statement_compiles_through_frontend(void) {
     TEST_INFO("Using statement compilation",
               "Testing that using syntax is accepted by the compiler frontend and preserves control flow");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1502,22 +1502,22 @@ void test_using_statement_compiles_through_frontend(void) {
 
     {
         const char *source = "var resource = \"x\"; using (resource) { var inner = 1; } return 7;";
-        SZrString *sourceName = ZrStringCreate(state, "test.zr", 7);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse using statement source");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
-        func = ZrCompilerCompile(state, ast);
+        func = ZrParser_Compiler_Compile(state, ast);
         if (func == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile using statement source");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
@@ -1527,7 +1527,7 @@ void test_using_statement_compiles_through_frontend(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1540,7 +1540,7 @@ void test_field_scoped_using_metadata_serializes_into_prototype_data(void) {
     TEST_INFO("Field-scoped using prototype metadata",
               "Testing that compiler prototypeData preserves managed-field metadata for explicit `using var` fields");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1551,8 +1551,8 @@ void test_field_scoped_using_metadata_serializes_into_prototype_data(void) {
         const char *source =
             "pub struct HandleBox { using var handle: unique<Resource>; var count: int; }\n"
             "pub class Holder { using var resource: shared<Resource>; var version: int; }";
-        SZrString *sourceName = ZrStringCreate(state, "field_using_meta.zr", 19);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "field_using_meta.zr", 19);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
         const SZrCompiledPrototypeInfoView *structProto;
         const SZrCompiledPrototypeInfoView *classProto;
@@ -1564,15 +1564,15 @@ void test_field_scoped_using_metadata_serializes_into_prototype_data(void) {
         if (ast == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse field-scoped using source");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
-        func = ZrCompilerCompile(state, ast);
+        func = ZrParser_Compiler_Compile(state, ast);
         if (func == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile field-scoped using source");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
@@ -1611,12 +1611,12 @@ void test_field_scoped_using_metadata_serializes_into_prototype_data(void) {
         TEST_ASSERT_FALSE(versionMember->isUsingManaged);
         TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_NONE, versionMember->ownershipQualifier);
 
-        ZrFunctionFree(state, func);
+        ZrCore_Function_Free(state, func);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 
@@ -1629,7 +1629,7 @@ void test_static_using_field_is_rejected_by_compiler(void) {
     TEST_INFO("Static using rejection",
               "Testing that `static using var` is rejected as a compile-time error by the compiler frontend");
 
-    SZrState *state = createTestState();
+    SZrState *state = create_test_state();
     if (state == ZR_NULL) {
         timer.endTime = clock();
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
@@ -1638,24 +1638,24 @@ void test_static_using_field_is_rejected_by_compiler(void) {
 
     {
         const char *source = "class Holder { static using var resource: unique<Resource>; }";
-        SZrString *sourceName = ZrStringCreate(state, "static_using_compile_error.zr", 29);
-        SZrAstNode *ast = ZrParserParse(state, source, strlen(source), sourceName);
+        SZrString *sourceName = ZrCore_String_Create(state, "static_using_compile_error.zr", 29);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse static using field source");
-            destroyTestState(state);
+            destroy_test_state(state);
             return;
         }
 
-        func = ZrCompilerCompile(state, ast);
+        func = ZrParser_Compiler_Compile(state, ast);
         TEST_ASSERT_NULL(func);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
-    destroyTestState(state);
+    destroy_test_state(state);
     TEST_DIVIDER();
 }
 

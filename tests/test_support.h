@@ -6,14 +6,14 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 
-TZrPtr zr_test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TInt64 flag);
+TZrPtr ZrTests_Allocator_Default(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag);
 
-SZrState* zr_test_create_state(FZrPanicHandlingFunction panicHandler);
+SZrState* ZrTests_State_Create(FZrPanicHandlingFunction panicHandler);
 
-void zr_test_destroy_state(SZrState* state);
+void ZrTests_State_Destroy(SZrState* state);
 
-TBool zr_test_execute_function(SZrState* state, SZrFunction* function, SZrTypeValue* result);
+TZrBool ZrTests_Function_Execute(SZrState* state, SZrFunction* function, SZrTypeValue* result);
 
-TBool zr_test_execute_function_expect_int64(SZrState* state, SZrFunction* function, TInt64* result);
+TZrBool ZrTests_Function_ExecuteExpectInt64(SZrState* state, SZrFunction* function, TZrInt64* result);
 
 #endif

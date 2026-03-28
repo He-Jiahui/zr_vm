@@ -65,18 +65,18 @@ typedef struct SZrCompilerState {
     SZrFunction *topLevelFunction;      // 顶层函数对象（如果存在）
     
     // 错误处理
-    TBool hasError;
-    const TChar *errorMessage;
+    TZrBool hasError;
+    const TZrChar *errorMessage;
     SZrFileRange errorLocation;
-    TBool hasFatalError;                  // 是否有致命错误（阻止编译完成）
-    TBool hasCompileTimeError;            // 是否发生过编译期错误（不能在后续语句中被吞掉）
+    TZrBool hasFatalError;                  // 是否有致命错误（阻止编译完成）
+    TZrBool hasCompileTimeError;            // 是否发生过编译期错误（不能在后续语句中被吞掉）
     
     // 测试模式
-    TBool isTestMode;                    // 是否处于测试模式
+    TZrBool isTestMode;                    // 是否处于测试模式
     SZrArray testFunctions;              // 测试函数数组（SZrFunction*）
     
     // 尾调用优化上下文
-    TBool isInTailCallContext;           // 是否处于尾调用上下文（return语句中的表达式）
+    TZrBool isInTailCallContext;           // 是否处于尾调用上下文（return语句中的表达式）
     
     // 外部变量分析（用于闭包捕获）
     SZrArray referencedExternalVars;     // 引用的外部变量名数组（SZrString*），用于lambda编译时
@@ -89,7 +89,7 @@ typedef struct SZrCompilerState {
     SZrArray pubVariables;               // pub 变量列表（SZrExportedVariable）
     SZrArray proVariables;                // pro 变量列表（SZrExportedVariable，包含所有 pub）
     SZrArray exportedTypes;              // TODO: 导出的类型列表（暂时作为占位）
-    TBool isScriptLevel;                  // 是否在脚本级别（用于区分脚本级变量和函数内变量）
+    TZrBool isScriptLevel;                  // 是否在脚本级别（用于区分脚本级变量和函数内变量）
     
     // 脚本 AST 引用（用于类型查找）
     SZrAstNode *scriptAst;                // 当前编译的脚本 AST 节点（用于查找类型定义）
@@ -102,10 +102,10 @@ typedef struct SZrCompilerState {
     SZrTypeEnvironment *compileTimeTypeEnv;   // 编译期类型环境
     SZrArray compileTimeVariables;            // 编译期变量表（SZrCompileTimeVariable*）
     SZrArray compileTimeFunctions;            // 编译期函数表（SZrCompileTimeFunction*）
-    TBool isInCompileTimeContext;             // 是否在编译期上下文中
+    TZrBool isInCompileTimeContext;             // 是否在编译期上下文中
     
     // 构造函数上下文
-    TBool isInConstructor;                     // 是否在构造函数中编译
+    TZrBool isInConstructor;                     // 是否在构造函数中编译
     SZrAstNode *currentFunctionNode;          // 当前编译的函数 AST 节点（用于访问参数信息）
     SZrString *currentTypeName;               // 当前编译的类型名称（用于成员字段 const 检查）
     
@@ -120,8 +120,8 @@ typedef struct SZrCompileTimeVariable {
     SZrInferredType type;                  // 变量类型
     SZrAstNode *value;                     // 变量值（AST节点，用于编译期求值）
     SZrTypeValue evaluatedValue;           // 已求值的编译期结果
-    TBool hasEvaluatedValue;               // 是否已经求值完成
-    TBool isEvaluating;                    // 是否正在求值（用于循环依赖检测）
+    TZrBool hasEvaluatedValue;               // 是否已经求值完成
+    TZrBool isEvaluating;                    // 是否正在求值（用于循环依赖检测）
     SZrFileRange location;                  // 声明位置
 } SZrCompileTimeVariable;
 
@@ -145,7 +145,7 @@ typedef struct SZrScope {
 // 跳转标签
 typedef struct SZrLabel {
     TZrSize instructionIndex;           // 指令索引
-    TBool isResolved;                   // 是否已解析
+    TZrBool isResolved;                   // 是否已解析
 } SZrLabel;
 
 // 待解析的跳转
@@ -163,14 +163,14 @@ typedef struct SZrLoopLabel {
 // 导出变量信息（用于模块导出）
 typedef struct SZrExportedVariable {
     SZrString *name;                    // 变量名
-    TUInt32 stackSlot;                  // 栈槽位
+    TZrUInt32 stackSlot;                  // 栈槽位
     EZrAccessModifier accessModifier;   // 可见性修饰符
 } SZrExportedVariable;
 
 // 函数名到子函数索引的映射（仅用于编译时查找，运行时不需要）
 typedef struct SZrChildFunctionNameMap {
     SZrString *name;                    // 函数名
-    TUInt32 childFunctionIndex;         // 子函数在 childFunctions 中的索引
+    TZrUInt32 childFunctionIndex;         // 子函数在 childFunctions 中的索引
 } SZrChildFunctionNameMap;
 
 // 编译时存储的 Prototype 信息
@@ -187,26 +187,26 @@ typedef struct SZrTypeMemberInfo {
     EZrAstNodeType memberType;          // 成员类型（STRUCT_FIELD, STRUCT_METHOD, CLASS_FIELD 等）
     SZrString *name;                    // 成员名称
     EZrAccessModifier accessModifier;   // 访问修饰符
-    TBool isStatic;                     // 是否为静态成员
-    TBool isConst;                      // 是否为 const 字段
-    TBool isUsingManaged;               // 是否显式使用 field-scoped using
+    TZrBool isStatic;                     // 是否为静态成员
+    TZrBool isConst;                      // 是否为 const 字段
+    TZrBool isUsingManaged;               // 是否显式使用 field-scoped using
     EZrOwnershipQualifier ownershipQualifier; // 字段所有权限定符
-    TBool callsClose;                   // 生命周期结束时是否需要先调用 @close
-    TBool callsDestructor;              // 生命周期结束时是否可能触发 @destructor
-    TUInt32 declarationOrder;           // 在当前类型中的声明顺序
+    TZrBool callsClose;                   // 生命周期结束时是否需要先调用 @close
+    TZrBool callsDestructor;              // 生命周期结束时是否可能触发 @destructor
+    TZrUInt32 declarationOrder;           // 在当前类型中的声明顺序
     
     // 字段特定信息
     SZrType *fieldType;                 // 字段类型（用于偏移量计算，可能为ZR_NULL）
     SZrString *fieldTypeName;           // 字段类型名称（字符串表示，用于运行时类型查找）
-    TUInt32 fieldOffset;                // 字段偏移量（编译时计算的基本偏移，运行时需要对齐）
-    TUInt32 fieldSize;                  // 字段大小（字节数）
+    TZrUInt32 fieldOffset;                // 字段偏移量（编译时计算的基本偏移，运行时需要对齐）
+    TZrUInt32 fieldSize;                  // 字段大小（字节数）
     
       // 方法特定信息
       SZrFunction *compiledFunction;       // 编译后的函数对象（用于最终序列化时重新落常量池）
-      TUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
-      TUInt32 parameterCount;             // 参数数量
+      TZrUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
+      TZrUInt32 parameterCount;             // 参数数量
       EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
-    TBool isMetaMethod;                 // 是否为元方法
+    TZrBool isMetaMethod;                 // 是否为元方法
     SZrString *returnTypeName;          // 返回类型名称（字符串表示，用于运行时类型查找）
 } SZrTypeMemberInfo;
 
@@ -218,7 +218,7 @@ typedef struct SZrCompileResult {
 } SZrCompileResult;
 
 // 常量引用路径步骤类型
-// 注意：使用负数作为特殊标记，实际使用时会转换为TUInt32（作为无符号整数存储）
+// 注意：使用负数作为特殊标记，实际使用时会转换为TZrUInt32（作为无符号整数存储）
 enum EZrConstantReferenceStepType {
     ZR_CONSTANT_REF_STEP_PARENT = -1,        // 向上引用parent function
     ZR_CONSTANT_REF_STEP_CHILD = 0,          // 0: childFunctionList[index] (需配合额外参数，实际为正数)
@@ -231,15 +231,15 @@ enum EZrConstantReferenceStepType {
 
 typedef enum EZrConstantReferenceStepType EZrConstantReferenceStepType;
 
-// 辅助宏：将步骤类型转换为TUInt32（用于存储）
-#define ZR_CONSTANT_REF_STEP_TO_UINT32(step) ((TUInt32)(TInt32)(step))
-#define ZR_CONSTANT_REF_STEP_FROM_UINT32(step) ((TInt32)(TUInt32)(step))
+// 辅助宏：将步骤类型转换为TZrUInt32（用于存储）
+#define ZR_CONSTANT_REF_STEP_TO_UINT32(step) ((TZrUInt32)(TZrInt32)(step))
+#define ZR_CONSTANT_REF_STEP_FROM_UINT32(step) ((TZrInt32)(TZrUInt32)(step))
 
 // 常量引用路径结构
 // 使用状态机编码模式，例如：5(长度), -1, -5, 0, -4, 1 表示 parent->childFunction[0]->prototypes[1]
 typedef struct SZrConstantReferencePath {
-    TUInt32 depth;              // 路径深度（总步骤数）
-    TUInt32 *steps;             // 路径步骤数组（depth个元素）
+    TZrUInt32 depth;              // 路径深度（总步骤数）
+    TZrUInt32 *steps;             // 路径步骤数组（depth个元素）
     // steps[i] 含义：
     //   - 0xFFFFFFFF (-1): parentFunction
     //   - 0xFFFFFFFE (-2): constantValueList[index] (需配合额外参数)
@@ -252,35 +252,35 @@ typedef struct SZrConstantReferencePath {
 
 // 引用常量值类型（用于常量池中存储）
 typedef struct SZrConstantReference {
-    TUInt32 pathDepth;          // 路径深度
-    TUInt32 *pathSteps;         // 路径步骤（如果depth>0）
-    TUInt32 targetIndex;        // 目标索引（用于常量池、模块等）
-    TUInt32 referenceType;      // 引用类型（用于区分不同类型的引用）
+    TZrUInt32 pathDepth;          // 路径深度
+    TZrUInt32 *pathSteps;         // 路径步骤（如果depth>0）
+    TZrUInt32 targetIndex;        // 目标索引（用于常量池、模块等）
+    TZrUInt32 referenceType;      // 引用类型（用于区分不同类型的引用）
     EZrValueType type;          // 常量类型记录
 } SZrConstantReference;
 
 // 初始化编译器状态
-ZR_PARSER_API void ZrCompilerStateInit(SZrCompilerState *cs, SZrState *state);
+ZR_PARSER_API void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state);
 
 // 清理解译器状态
-ZR_PARSER_API void ZrCompilerStateFree(SZrCompilerState *cs);
+ZR_PARSER_API void ZrParser_CompilerState_Free(SZrCompilerState *cs);
 
 // 编译 AST 为函数
-ZR_PARSER_API SZrFunction *ZrCompilerCompile(SZrState *state, SZrAstNode *ast);
+ZR_PARSER_API SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast);
 
 // 公开的低层编译入口，用于语义/HIR 相关测试和分阶段编译接线
-ZR_PARSER_API void compile_expression(SZrCompilerState *cs, SZrAstNode *node);
-ZR_PARSER_API void compile_statement(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
 
 // 编译 AST 为函数和测试函数列表（新接口）
-// 返回编译结果结构体，调用者需要调用 ZrCompileResultFree 来释放资源
-ZR_PARSER_API TBool ZrCompilerCompileWithTests(SZrState *state, SZrAstNode *ast, SZrCompileResult *result);
+// 返回编译结果结构体，调用者需要调用 ZrParser_CompileResult_Free 来释放资源
+ZR_PARSER_API TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZrCompileResult *result);
 
 // 释放编译结果（释放测试函数数组，但不释放函数对象本身，函数对象由GC管理）
-ZR_PARSER_API void ZrCompileResultFree(SZrState *state, SZrCompileResult *result);
+ZR_PARSER_API void ZrParser_CompileResult_Free(SZrState *state, SZrCompileResult *result);
 
 // 报告编译错误
-ZR_PARSER_API void ZrCompilerError(SZrCompilerState *cs, const TChar *msg, SZrFileRange location);
+ZR_PARSER_API void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRange location);
 
 // 编译期错误级别
 enum EZrCompileTimeErrorLevel {
@@ -293,34 +293,34 @@ enum EZrCompileTimeErrorLevel {
 typedef enum EZrCompileTimeErrorLevel EZrCompileTimeErrorLevel;
 
 // 编译期错误报告
-ZR_PARSER_API void ZrCompileTimeError(SZrCompilerState *cs, 
+ZR_PARSER_API void ZrParser_CompileTime_Error(SZrCompilerState *cs, 
                                      EZrCompileTimeErrorLevel level,
-                                     const TChar *message,
+                                     const TZrChar *message,
                                      SZrFileRange location);
 
-ZR_PARSER_API void analyze_external_variables(SZrCompilerState *cs, SZrAstNode *node, SZrCompilerState *parentCompiler);
+ZR_PARSER_API void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, SZrCompilerState *parentCompiler);
 
 // 执行编译期声明
-ZR_PARSER_API TBool execute_compile_time_declaration(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API TZrBool ZrParser_CompileTimeDeclaration_Execute(SZrCompilerState *cs, SZrAstNode *node);
 
 // 查询已注册的编译期变量值；如果尚未求值，会按当前编译期环境求值并缓存
-ZR_PARSER_API TBool ZrCompilerTryGetCompileTimeValue(SZrCompilerState *cs, SZrString *name, SZrTypeValue *result);
+ZR_PARSER_API TZrBool ZrParser_Compiler_TryGetCompileTimeValue(SZrCompilerState *cs, SZrString *name, SZrTypeValue *result);
 
 // 在编译期上下文中直接求值 AST 表达式
-ZR_PARSER_API TBool ZrCompilerEvaluateCompileTimeExpression(SZrCompilerState *cs, SZrAstNode *node, SZrTypeValue *result);
+ZR_PARSER_API TZrBool ZrParser_Compiler_EvaluateCompileTimeExpression(SZrCompilerState *cs, SZrAstNode *node, SZrTypeValue *result);
 
 // 校验编译期值是否可以安全投影到运行时常量池；失败时会直接写入编译错误
-ZR_PARSER_API TBool ZrCompilerValidateRuntimeProjectionValue(SZrCompilerState *cs,
+ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateRuntimeProjectionValue(SZrCompilerState *cs,
                                                              const SZrTypeValue *value,
                                                              SZrFileRange location);
 
 // 编译源代码为函数（封装了从解析到编译的全流程）
 // 这是提供给 globalState 的统一接口
-ZR_PARSER_API struct SZrFunction *ZrParserCompileSource(struct SZrState *state, const TChar *source, TZrSize sourceLength, struct SZrString *sourceName);
+ZR_PARSER_API struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);
 
 // 注册 compileSource 函数到 globalState
 // 在 global 初始化时调用此函数来注册 parser 模块
-ZR_PARSER_API void ZrParserRegisterToGlobalState(struct SZrState *state);
+ZR_PARSER_API void ZrParser_ToGlobalState_Register(struct SZrState *state);
 
 // 内部辅助函数（在 compiler.c 中实现）
 // 这些函数用于指令生成、常量管理、变量管理等

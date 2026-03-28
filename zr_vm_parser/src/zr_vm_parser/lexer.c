@@ -16,7 +16,7 @@
 
 // Token 信息结构（合并关键字表和名称表）
 typedef struct {
-    const TChar *name;
+    const TZrChar *name;
     EZrToken token;
 } SZrTokenInfo;
 
@@ -116,7 +116,7 @@ static const SZrTokenInfo zr_token_info[] = {
 
 // 关键字表（用于词法分析器查找关键字）
 static const struct {
-    const TChar *name;
+    const TZrChar *name;
     EZrToken token;
 } zr_keywords[] = {{"module", ZR_TK_MODULE},
                    {"struct", ZR_TK_STRUCT},
@@ -159,12 +159,22 @@ static const struct {
                    {ZR_NULL, ZR_TK_EOS}};
 
 // 辅助函数：获取下一个字符
-static TInt32 next_char(SZrLexState *ls) {
+static TZrInt32 next_char(SZrLexState *ls) {
     if (ls->currentPos >= ls->sourceLength) {
         ls->currentChar = ZR_LEXER_EOZ;
         return ZR_LEXER_EOZ;
     }
-    ls->currentChar = (TInt32) (TUInt8) ls->source[ls->currentPos++];
+
+    ls->currentChar = (TZrInt32) (TZrUInt8) ls->source[ls->currentPos++];
+    if (ls->currentChar == '\r') {
+        if (ls->currentPos < ls->sourceLength && ls->source[ls->currentPos] == '\n') {
+            ls->currentPos++;
+        }
+        ls->currentChar = '\n';
+        ls->lineNumber++;
+        return ls->currentChar;
+    }
+
     if (ls->currentChar == '\n') {
         ls->lineNumber++;
     }
@@ -172,13 +182,13 @@ static TInt32 next_char(SZrLexState *ls) {
 }
 
 // 辅助函数：保存字符到缓冲区
-static void save_char(SZrLexState *ls, TChar c) {
+static void save_char(SZrLexState *ls, TZrChar c) {
     if (ls->bufferLength + 1 >= ls->bufferSize) {
         TZrSize newSize = ls->bufferSize * 2;
-        TChar *newBuffer = ZrMemoryRawMallocWithType(ls->state->global, newSize, ZR_MEMORY_NATIVE_TYPE_STRING);
+        TZrChar *newBuffer = ZrCore_Memory_RawMallocWithType(ls->state->global, newSize, ZR_MEMORY_NATIVE_TYPE_STRING);
         if (ls->buffer) {
             memcpy(newBuffer, ls->buffer, ls->bufferLength);
-            ZrMemoryRawFreeWithType(ls->state->global, ls->buffer, ls->bufferSize, ZR_MEMORY_NATIVE_TYPE_STRING);
+            ZrCore_Memory_RawFreeWithType(ls->state->global, ls->buffer, ls->bufferSize, ZR_MEMORY_NATIVE_TYPE_STRING);
         }
         ls->buffer = newBuffer;
         ls->bufferSize = newSize;
@@ -196,7 +206,7 @@ static void reset_buffer(SZrLexState *ls) {
 }
 
 // 辅助函数：查找关键字
-static EZrToken find_keyword(const TChar *name, TZrSize length) {
+static EZrToken find_keyword(const TZrChar *name, TZrSize length) {
     for (TZrSize i = 0; zr_keywords[i].name != ZR_NULL; i++) {
         if (strlen(zr_keywords[i].name) == length && strncmp(zr_keywords[i].name, name, length) == 0) {
             return zr_keywords[i].token;
@@ -209,7 +219,7 @@ static EZrToken find_keyword(const TChar *name, TZrSize length) {
 static EZrToken read_identifier(SZrLexState *ls, TZrSemInfo *seminfo) {
     TZrSize start = ls->currentPos - 1;
     while (isalnum(ls->currentChar) || ls->currentChar == '_') {
-        save_char(ls, (TChar) ls->currentChar);
+        save_char(ls, (TZrChar) ls->currentChar);
         next_char(ls);
     }
     TZrSize length = ls->bufferLength;
@@ -218,7 +228,7 @@ static EZrToken read_identifier(SZrLexState *ls, TZrSemInfo *seminfo) {
     if (token == ZR_TK_BOOLEAN) {
         seminfo->booleanValue = (strncmp(&ls->source[start], "true", 4) == 0) ? ZR_TRUE : ZR_FALSE;
     } else if (token == ZR_TK_IDENTIFIER) {
-        seminfo->stringValue = ZrStringCreate(ls->state, (TNativeString)&ls->source[start], length);
+        seminfo->stringValue = ZrCore_String_Create(ls->state, (TZrNativeString)&ls->source[start], length);
     }
 
     return token;
@@ -226,47 +236,47 @@ static EZrToken read_identifier(SZrLexState *ls, TZrSemInfo *seminfo) {
 
 // 读取数字
 static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
-    TBool isFloat = ZR_FALSE;
-    TBool isHex = ZR_FALSE;
+    TZrBool isFloat = ZR_FALSE;
+    TZrBool isHex = ZR_FALSE;
     TZrSize start = ls->currentPos - 1;
 
     if (ls->currentChar == '0') {
-        save_char(ls, (TChar) ls->currentChar);
+        save_char(ls, (TZrChar) ls->currentChar);
         next_char(ls);
         if (ls->currentChar == 'x' || ls->currentChar == 'X') {
             isHex = ZR_TRUE;
-            save_char(ls, (TChar) ls->currentChar);
+            save_char(ls, (TZrChar) ls->currentChar);
             next_char(ls);
         } else if (ls->currentChar >= '0' && ls->currentChar <= '7') {
             // 八进制
             while (ls->currentChar >= '0' && ls->currentChar <= '7') {
-                save_char(ls, (TChar) ls->currentChar);
+                save_char(ls, (TZrChar) ls->currentChar);
                 next_char(ls);
             }
             // 解析八进制
-            TInt64 value = 0;
+            TZrInt64 value = 0;
             for (TZrSize i = start; i < ls->currentPos - 1; i++) {
                 value = value * 8 + (ls->source[i] - '0');
             }
             seminfo->intValue = value;
-            seminfo->stringValue = ZrStringCreate(ls->state, ls->buffer, ls->bufferLength);
+            seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
             return ZR_TK_INTEGER;
         }
     }
 
     // 读取整数部分
     while (isHex ? isxdigit(ls->currentChar) : isdigit(ls->currentChar)) {
-        save_char(ls, (TChar) ls->currentChar);
+        save_char(ls, (TZrChar) ls->currentChar);
         next_char(ls);
     }
 
     // 检查是否有小数点
     if (ls->currentChar == '.' && !isHex) {
         isFloat = ZR_TRUE;
-        save_char(ls, (TChar) ls->currentChar);
+        save_char(ls, (TZrChar) ls->currentChar);
         next_char(ls);
         while (isdigit(ls->currentChar)) {
-            save_char(ls, (TChar) ls->currentChar);
+            save_char(ls, (TZrChar) ls->currentChar);
             next_char(ls);
         }
     }
@@ -274,14 +284,14 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
     // 检查是否有指数
     if ((ls->currentChar == 'e' || ls->currentChar == 'E') && !isHex) {
         isFloat = ZR_TRUE;
-        save_char(ls, (TChar) ls->currentChar);
+        save_char(ls, (TZrChar) ls->currentChar);
         next_char(ls);
         if (ls->currentChar == '+' || ls->currentChar == '-') {
-            save_char(ls, (TChar) ls->currentChar);
+            save_char(ls, (TZrChar) ls->currentChar);
             next_char(ls);
         }
         while (isdigit(ls->currentChar)) {
-            save_char(ls, (TChar) ls->currentChar);
+            save_char(ls, (TZrChar) ls->currentChar);
             next_char(ls);
         }
     }
@@ -289,29 +299,29 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
     // 检查是否有类型后缀
     if (ls->currentChar == 'f' || ls->currentChar == 'F' || ls->currentChar == 'd' || ls->currentChar == 'D') {
         isFloat = ZR_TRUE;
-        save_char(ls, (TChar) ls->currentChar);
+        save_char(ls, (TZrChar) ls->currentChar);
         next_char(ls);
     }
 
     // 解析数字
     if (isFloat) {
         seminfo->floatValue = strtod(&ls->source[start], ZR_NULL);
-        seminfo->stringValue = ZrStringCreate(ls->state, ls->buffer, ls->bufferLength);
+        seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
         return ZR_TK_FLOAT;
     } else {
         if (isHex) {
-            seminfo->intValue = (TInt64) strtoull(&ls->source[start], ZR_NULL, 16);
+            seminfo->intValue = (TZrInt64) strtoull(&ls->source[start], ZR_NULL, 16);
         } else {
-            seminfo->intValue = (TInt64) strtoll(&ls->source[start], ZR_NULL, 10);
+            seminfo->intValue = (TZrInt64) strtoll(&ls->source[start], ZR_NULL, 10);
         }
-        seminfo->stringValue = ZrStringCreate(ls->state, ls->buffer, ls->bufferLength);
+        seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
         return ZR_TK_INTEGER;
     }
 }
 
 // 读取字符串
 static void read_string(SZrLexState *ls, TZrSemInfo *seminfo) {
-    TInt32 delimiter = ls->currentChar;
+    TZrInt32 delimiter = ls->currentChar;
     next_char(ls); // 跳过开始引号
 
     reset_buffer(ls);
@@ -354,10 +364,10 @@ static void read_string(SZrLexState *ls, TZrSemInfo *seminfo) {
                 case 'u': {
                     // Unicode 转义 \uXXXX
                     next_char(ls); // 跳过 'u'
-                    TInt32 code = 0;
+                    TZrInt32 code = 0;
                     for (int i = 0; i < 4; i++) {
                         if (!isxdigit(ls->currentChar)) {
-                            ZrLexerSyntaxError(ls, "invalid unicode escape sequence");
+                            ZrParser_Lexer_SyntaxError(ls, "invalid unicode escape sequence");
                             return;
                         }
                         code = code * 16 + (isdigit(ls->currentChar) ? (ls->currentChar - '0')
@@ -365,29 +375,29 @@ static void read_string(SZrLexState *ls, TZrSemInfo *seminfo) {
                         next_char(ls); // 跳过十六进制字符
                     }
                     // 简化处理：直接保存为字符（实际应该转换为 UTF-8）
-                    save_char(ls, (TChar) code);
+                    save_char(ls, (TZrChar) code);
                     // 注意：这里不需要再调用 next_char，因为循环中已经调用了4次
                     break;
                 }
                 case 'x': {
                     // 十六进制转义 \xXX
                     next_char(ls); // 跳过 'x'
-                    TInt32 code = 0;
+                    TZrInt32 code = 0;
                     for (int i = 0; i < 2; i++) {
                         if (!isxdigit(ls->currentChar)) {
-                            ZrLexerSyntaxError(ls, "invalid hex escape sequence");
+                            ZrParser_Lexer_SyntaxError(ls, "invalid hex escape sequence");
                             return;
                         }
                         code = code * 16 + (isdigit(ls->currentChar) ? (ls->currentChar - '0')
                                                                      : (tolower(ls->currentChar) - 'a' + 10));
                         next_char(ls); // 跳过十六进制字符
                     }
-                    save_char(ls, (TChar) code);
+                    save_char(ls, (TZrChar) code);
                     // 注意：这里不需要再调用 next_char，因为循环中已经调用了2次
                     break;
                 }
                 default:
-                    save_char(ls, (TChar) ls->currentChar);
+                    save_char(ls, (TZrChar) ls->currentChar);
                     next_char(ls); // 跳过转义后的字符
                     break;
             }
@@ -395,21 +405,21 @@ static void read_string(SZrLexState *ls, TZrSemInfo *seminfo) {
             continue;
         } else if (ls->currentChar == '\n' || ls->currentChar == '\r') {
             // 字符串中不允许未转义的换行符
-            ZrLexerSyntaxError(ls, "unfinished string");
+            ZrParser_Lexer_SyntaxError(ls, "unfinished string");
             return;
         } else {
-            save_char(ls, (TChar) ls->currentChar);
+            save_char(ls, (TZrChar) ls->currentChar);
             next_char(ls); // 跳过普通字符
         }
     }
 
     if (ls->currentChar == ZR_LEXER_EOZ) {
-        ZrLexerSyntaxError(ls, "unfinished string");
+        ZrParser_Lexer_SyntaxError(ls, "unfinished string");
         return;
     }
 
     next_char(ls); // 跳过结束引号
-    seminfo->stringValue = ZrStringCreate(ls->state, ls->buffer, ls->bufferLength);
+    seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
 }
 
 // 读取模板字符串（使用反引号包裹，允许换行，插值在 parser 中拆分）
@@ -444,7 +454,7 @@ static void read_template_string(SZrLexState *ls, TZrSemInfo *seminfo) {
                 default:
                     save_char(ls, '\\');
                     if (ls->currentChar != ZR_LEXER_EOZ) {
-                        save_char(ls, (TChar)ls->currentChar);
+                        save_char(ls, (TZrChar)ls->currentChar);
                         next_char(ls);
                     }
                     break;
@@ -452,17 +462,17 @@ static void read_template_string(SZrLexState *ls, TZrSemInfo *seminfo) {
             continue;
         }
 
-        save_char(ls, (TChar)ls->currentChar);
+        save_char(ls, (TZrChar)ls->currentChar);
         next_char(ls);
     }
 
     if (ls->currentChar == ZR_LEXER_EOZ) {
-        ZrLexerSyntaxError(ls, "unfinished template string");
+        ZrParser_Lexer_SyntaxError(ls, "unfinished template string");
         return;
     }
 
     next_char(ls); // 跳过结束反引号
-    seminfo->stringValue = ZrStringCreate(ls->state, ls->buffer, ls->bufferLength);
+    seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
 }
 
 // 读取字符
@@ -503,47 +513,47 @@ static void read_char(SZrLexState *ls, TZrSemInfo *seminfo) {
             case 'u': {
                 // Unicode 转义 \uXXXX
                 next_char(ls); // 跳过 'u'
-                TInt32 code = 0;
+                TZrInt32 code = 0;
                 for (int i = 0; i < 4; i++) {
                     if (!isxdigit(ls->currentChar)) {
-                        ZrLexerSyntaxError(ls, "invalid unicode escape sequence");
+                        ZrParser_Lexer_SyntaxError(ls, "invalid unicode escape sequence");
                         return;
                     }
                     code = code * 16 + (isdigit(ls->currentChar) ? (ls->currentChar - '0')
                                                                  : (tolower(ls->currentChar) - 'a' + 10));
                     next_char(ls); // 跳过十六进制字符
                 }
-                seminfo->charValue = (TChar) code;
+                seminfo->charValue = (TZrChar) code;
                 break;
             }
             case 'x': {
                 // 十六进制转义 \xXX
                 next_char(ls); // 跳过 'x'
-                TInt32 code = 0;
+                TZrInt32 code = 0;
                 for (int i = 0; i < 2; i++) {
                     if (!isxdigit(ls->currentChar)) {
-                        ZrLexerSyntaxError(ls, "invalid hex escape sequence");
+                        ZrParser_Lexer_SyntaxError(ls, "invalid hex escape sequence");
                         return;
                     }
                     code = code * 16 + (isdigit(ls->currentChar) ? (ls->currentChar - '0')
                                                                  : (tolower(ls->currentChar) - 'a' + 10));
                     next_char(ls); // 跳过十六进制字符
                 }
-                seminfo->charValue = (TChar) code;
+                seminfo->charValue = (TZrChar) code;
                 break;
             }
             default:
-                seminfo->charValue = (TChar) ls->currentChar;
+                seminfo->charValue = (TZrChar) ls->currentChar;
                 next_char(ls);
                 break;
         }
     } else {
-        seminfo->charValue = (TChar) ls->currentChar;
+        seminfo->charValue = (TZrChar) ls->currentChar;
         next_char(ls);
     }
 
     if (ls->currentChar != '\'') {
-        ZrLexerSyntaxError(ls, "unfinished character literal");
+        ZrParser_Lexer_SyntaxError(ls, "unfinished character literal");
         return;
     }
     next_char(ls); // 跳过结束引号
@@ -802,13 +812,13 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
     }
 
     // 未知字符，返回字符本身
-    TInt32 c = ls->currentChar;
+    TZrInt32 c = ls->currentChar;
     next_char(ls);
     return (EZrToken) c;
 }
 
 // 初始化词法分析器
-void ZrLexerInit(SZrLexState *ls, SZrState *state, const TChar *source, TZrSize sourceLength, SZrString *sourceName) {
+void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName) {
     ZR_ASSERT(ls != ZR_NULL);
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(source != ZR_NULL);
@@ -833,7 +843,7 @@ void ZrLexerInit(SZrLexState *ls, SZrState *state, const TChar *source, TZrSize 
 
     // 分配初始缓冲区
     ls->bufferSize = ZR_LEXER_BUFFER_INIT_SIZE;
-    ls->buffer = ZrMemoryRawMallocWithType(state->global, ls->bufferSize, ZR_MEMORY_NATIVE_TYPE_STRING);
+    ls->buffer = ZrCore_Memory_RawMallocWithType(state->global, ls->bufferSize, ZR_MEMORY_NATIVE_TYPE_STRING);
     ls->buffer[0] = '\0';
 
     // 初始化 token
@@ -844,11 +854,11 @@ void ZrLexerInit(SZrLexState *ls, SZrState *state, const TChar *source, TZrSize 
     next_char(ls);
 
     // 读取第一个 token
-    ZrLexerNext(ls);
+    ZrParser_Lexer_Next(ls);
 }
 
 // 获取下一个 token
-void ZrLexerNext(SZrLexState *ls) {
+void ZrParser_Lexer_Next(SZrLexState *ls) {
     // 如果 lookahead 已经被缓存，使用它而不是重新读取
     // 这样可以避免重复读取，提高性能，并且确保 lookahead 缓存被正确清除
     if (ls->lookahead.token != ZR_TK_EOS) {
@@ -868,13 +878,13 @@ void ZrLexerNext(SZrLexState *ls) {
 }
 
 // 查看下一个 token（不消费）
-EZrToken ZrLexerLookahead(SZrLexState *ls) {
+EZrToken ZrParser_Lexer_Lookahead(SZrLexState *ls) {
     if (ls->lookahead.token == ZR_TK_EOS) {
         // 保存当前状态（包括所有可能被 llex 修改的字段）
         TZrSize savedPos = ls->currentPos;
-        TInt32 savedChar = ls->currentChar;
-        TInt32 savedLine = ls->lineNumber;
-        TInt32 savedLastLine = ls->lastLine;
+        TZrInt32 savedChar = ls->currentChar;
+        TZrInt32 savedLine = ls->lineNumber;
+        TZrInt32 savedLastLine = ls->lastLine;
         SZrToken savedToken = ls->t;
 
         // 读取下一个 token
@@ -901,14 +911,14 @@ EZrToken ZrLexerLookahead(SZrLexState *ls) {
 
 // 报告语法错误
 // 计算当前列号（从当前行开始到当前位置的字符数）
-static TInt32 calculate_column(SZrLexState *ls) {
+static TZrInt32 calculate_column(SZrLexState *ls) {
     if (ls->source == ZR_NULL || ls->currentPos == 0) {
         return 1;
     }
 
     // 从当前位置向前查找，直到找到行首或换行符
     TZrSize pos = ls->currentPos - 1;
-    TInt32 column = 1;
+    TZrInt32 column = 1;
     while (pos > 0 && ls->source[pos] != '\n') {
         pos--;
         column++;
@@ -917,7 +927,7 @@ static TInt32 calculate_column(SZrLexState *ls) {
 }
 
 // 获取当前行的代码片段（前后各20个字符）
-static void get_line_snippet_lexer(SZrLexState *ls, TChar *buffer, TZrSize bufferSize, TInt32 *errorColumn) {
+static void get_line_snippet_lexer(SZrLexState *ls, TZrChar *buffer, TZrSize bufferSize, TZrInt32 *errorColumn) {
     if (ls == ZR_NULL || ls->source == ZR_NULL || bufferSize == 0) {
         buffer[0] = '\0';
         *errorColumn = 1;
@@ -926,7 +936,7 @@ static void get_line_snippet_lexer(SZrLexState *ls, TChar *buffer, TZrSize buffe
 
     // 计算列号并找到行首
     TZrSize pos = ls->currentPos;
-    TInt32 column = 1;
+    TZrInt32 column = 1;
     TZrSize lineStart = pos;
 
     // 向前查找行首
@@ -944,7 +954,7 @@ static void get_line_snippet_lexer(SZrLexState *ls, TChar *buffer, TZrSize buffe
     // 计算要显示的起始和结束位置（前后各20个字符）
     TZrSize snippetStart = lineStart;
     TZrSize snippetEnd = lineEnd;
-    TInt32 displayColumn = column;
+    TZrInt32 displayColumn = column;
 
     // 如果列号大于20，向前移动起始位置
     if (column > 20) {
@@ -980,7 +990,7 @@ static void get_line_snippet_lexer(SZrLexState *ls, TChar *buffer, TZrSize buffe
     }
 
     for (TZrSize i = 0; i < snippetLen; i++) {
-        TChar c = ls->source[snippetStart + i];
+        TZrChar c = ls->source[snippetStart + i];
         // 将制表符和换行符替换为空格以便显示
         if (c == '\t') {
             buffer[i] = ' ';
@@ -995,26 +1005,26 @@ static void get_line_snippet_lexer(SZrLexState *ls, TChar *buffer, TZrSize buffe
     *errorColumn = displayColumn;
 }
 
-void ZrLexerSyntaxError(SZrLexState *ls, const TChar *msg) {
+void ZrParser_Lexer_SyntaxError(SZrLexState *ls, const TZrChar *msg) {
     if (ls == ZR_NULL || msg == ZR_NULL) {
         return;
     }
 
     // 获取文件名
-    const TChar *fileName = "<unknown>";
+    const TZrChar *fileName = "<unknown>";
     if (ls->sourceName != ZR_NULL) {
-        TNativeString nameStr = ZrStringGetNativeString(ls->sourceName);
+        TZrNativeString nameStr = ZrCore_String_GetNativeString(ls->sourceName);
         if (nameStr != ZR_NULL) {
             fileName = nameStr;
         }
     }
 
     // 计算列号
-    TInt32 column = calculate_column(ls);
+    TZrInt32 column = calculate_column(ls);
 
     // 获取代码片段
-    TChar snippet[128];
-    TInt32 displayColumn = 1;
+    TZrChar snippet[128];
+    TZrInt32 displayColumn = 1;
     get_line_snippet_lexer(ls, snippet, sizeof(snippet), &displayColumn);
 
     // 输出错误信息
@@ -1024,7 +1034,7 @@ void ZrLexerSyntaxError(SZrLexState *ls, const TChar *msg) {
     if (snippet[0] != '\0') {
         printf("    %s\n", snippet);
         // 输出错误位置标记（^）
-        for (TInt32 i = 0; i < displayColumn - 1; i++) {
+        for (TZrInt32 i = 0; i < displayColumn - 1; i++) {
             printf(" ");
         }
         printf("^\n");
@@ -1032,13 +1042,13 @@ void ZrLexerSyntaxError(SZrLexState *ls, const TChar *msg) {
 }
 
 // Token 转字符串（用于错误消息）
-const TChar *ZrLexerTokenToString(SZrLexState *ls, EZrToken token) {
+const TZrChar *ZrParser_Lexer_TokenToString(SZrLexState *ls, EZrToken token) {
     (void) ls;
 
     if (token < ZR_FIRST_RESERVED) {
         // 单字符 token
-        static TChar charToken[2];
-        charToken[0] = (TChar) token;
+        static TZrChar charToken[2];
+        charToken[0] = (TZrChar) token;
         charToken[1] = '\0';
         return charToken;
     }
