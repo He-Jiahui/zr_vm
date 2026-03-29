@@ -28,7 +28,8 @@ static TZrBool is_text_artifact_extension(const TZrChar* extension) {
         return ZR_FALSE;
     }
 
-    return strcmp(extension, ".zrs") == 0 || strcmp(extension, ".zri") == 0;
+    return strcmp(extension, ".zrs") == 0 || strcmp(extension, ".zri") == 0 ||
+           strcmp(extension, ".zrs.json") == 0 || strcmp(extension, ".zri.json") == 0;
 }
 
 static TZrBool normalize_text_newlines(const TZrBytePtr buffer,

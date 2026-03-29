@@ -73,6 +73,18 @@ void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
     // exception
     state->exceptionRecoverPoint = ZR_NULL;
     state->exceptionHandlingFunctionOffset = 0;
+    ZrCore_Value_ResetAsNull(&state->currentException);
+    state->currentExceptionStatus = ZR_THREAD_STATUS_FINE;
+    state->hasCurrentException = ZR_FALSE;
+    state->exceptionHandlerStack = ZR_NULL;
+    state->exceptionHandlerStackLength = 0;
+    state->exceptionHandlerStackCapacity = 0;
+    state->pendingControl.kind = ZR_VM_PENDING_CONTROL_NONE;
+    state->pendingControl.callInfo = ZR_NULL;
+    state->pendingControl.targetInstructionOffset = 0;
+    state->pendingControl.valueSlot = 0;
+    ZrCore_Value_ResetAsNull(&state->pendingControl.value);
+    state->pendingControl.hasValue = ZR_FALSE;
     // debug
     state->baseDebugHookCount = 0;
     state->debugHook = ZR_NULL;
@@ -144,6 +156,16 @@ void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
         ZrCore_Stack_Deconstruct(state, &state->stackBase, ZrCore_State_StackGetSize(state) + ZR_THREAD_STACK_SIZE_EXTRA);
         state->stackBase.valuePointer = ZR_NULL;
     }
+
+    if (state->exceptionHandlerStack != ZR_NULL && state->exceptionHandlerStackCapacity > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                state->exceptionHandlerStack,
+                                state->exceptionHandlerStackCapacity * sizeof(SZrVmExceptionHandlerState),
+                                ZR_MEMORY_NATIVE_TYPE_STATE);
+        state->exceptionHandlerStack = ZR_NULL;
+        state->exceptionHandlerStackLength = 0;
+        state->exceptionHandlerStackCapacity = 0;
+    }
     
     // 释放state本身
     ZrCore_Memory_Allocate(global, state, sizeof(SZrState), 0, ZR_MEMORY_NATIVE_TYPE_STATE);
@@ -162,6 +184,16 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     }
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     state->exceptionRecoverPoint = ZR_NULL;
+    ZrCore_Value_ResetAsNull(&state->currentException);
+    state->currentExceptionStatus = ZR_THREAD_STATUS_FINE;
+    state->hasCurrentException = ZR_FALSE;
+    state->exceptionHandlerStackLength = 0;
+    state->pendingControl.kind = ZR_VM_PENDING_CONTROL_NONE;
+    state->pendingControl.callInfo = ZR_NULL;
+    state->pendingControl.targetInstructionOffset = 0;
+    state->pendingControl.valueSlot = 0;
+    ZrCore_Value_ResetAsNull(&state->pendingControl.value);
+    state->pendingControl.hasValue = ZR_FALSE;
     status = ZrCore_Exception_TryStop(state, 1, status);
     if (status != ZR_THREAD_STATUS_FINE) {
         ZrCore_Exception_MarkError(state, status, state->stackTop.valuePointer + 1);

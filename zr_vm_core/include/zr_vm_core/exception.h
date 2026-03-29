@@ -5,9 +5,14 @@
 #ifndef ZR_VM_CORE_EXCEPTION_H
 #define ZR_VM_CORE_EXCEPTION_H
 
+#include <stdio.h>
+
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/stack.h"
 struct SZrState;
+struct SZrCallInfo;
+struct SZrFunction;
+struct SZrString;
 
 typedef void (*FZrTryFunction)(struct SZrState *state, TZrPtr arguments);
 
@@ -29,6 +34,27 @@ ZR_CORE_API EZrThreadStatus ZrCore_Exception_TryStop(struct SZrState *state, TZr
 
 ZR_CORE_API void ZrCore_Exception_MarkError(struct SZrState *state, EZrThreadStatus errorCode,
                                       TZrStackValuePointer previousTop);
+
+ZR_CORE_API void ZrCore_Exception_ClearCurrent(struct SZrState *state);
+
+ZR_CORE_API TZrBool ZrCore_Exception_NormalizeThrownValue(struct SZrState *state,
+                                                    const SZrTypeValue *payload,
+                                                    struct SZrCallInfo *throwCallInfo,
+                                                    EZrThreadStatus status);
+
+ZR_CORE_API TZrBool ZrCore_Exception_NormalizeStatus(struct SZrState *state,
+                                               EZrThreadStatus status);
+
+ZR_CORE_API TZrBool ZrCore_Exception_CatchMatchesTypeName(struct SZrState *state,
+                                                    const SZrTypeValue *errorValue,
+                                                    struct SZrString *typeName);
+
+ZR_CORE_API TZrUInt32 ZrCore_Exception_FindSourceLine(struct SZrFunction *function,
+                                                TZrMemoryOffset instructionOffset);
+
+ZR_CORE_API void ZrCore_Exception_PrintUnhandled(struct SZrState *state,
+                                           const SZrTypeValue *errorValue,
+                                           FILE *stream);
 
 
 ZR_FORCE_INLINE TZrBool ZrCore_Exception_IsStausError(EZrThreadStatus status) {

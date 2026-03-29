@@ -51,9 +51,16 @@ typedef struct SZrCompilerState {
     // 跳转标签管理（用于控制流）
     SZrArray labels;                    // 标签数组
     SZrArray pendingJumps;              // 待解析的跳转
+    SZrArray pendingAbsolutePatches;    // 待解析的绝对目标偏移（SZrPendingAbsolutePatch）
     
     // 循环标签栈（用于 break/continue）
     SZrArray loopLabelStack;            // 循环标签栈（SZrLoopLabel）
+    SZrArray tryContextStack;           // try/finally 上下文栈（SZrCompilerTryContext）
+
+    // 调试与异常元数据
+    SZrArray executionLocations;        // 指令到源码行映射（SZrFunctionExecutionLocationInfo）
+    SZrArray catchClauseInfos;          // catch 元数据（SZrCompilerCatchClauseInfo）
+    SZrArray exceptionHandlerInfos;     // handler 元数据（SZrCompilerExceptionHandlerInfo）
     
     // 嵌套函数
     SZrArray childFunctions;            // 子函数数组（SZrFunction*）
@@ -97,6 +104,7 @@ typedef struct SZrCompilerState {
     // 类型 Prototype 信息（用于运行时创建）
     SZrArray typePrototypes;              // 待创建的 prototype 信息数组（SZrTypePrototypeInfo）
     struct SZrTypePrototypeInfo *currentTypePrototypeInfo; // 当前正在构建的类型原型
+    TZrBool externBindingsPredeclared;    // 是否已预注册 source-level extern 编译期绑定
     
     // 编译期环境管理
     SZrTypeEnvironment *compileTimeTypeEnv;   // 编译期类型环境
@@ -154,11 +162,35 @@ typedef struct SZrPendingJump {
     TZrSize labelId;                    // 目标标签 ID
 } SZrPendingJump;
 
+typedef struct SZrPendingAbsolutePatch {
+    TZrSize instructionIndex;           // 需要写入绝对目标偏移的指令索引
+    TZrSize labelId;                    // 目标标签 ID
+} SZrPendingAbsolutePatch;
+
 // 循环标签（用于 break/continue）
 typedef struct SZrLoopLabel {
     TZrSize breakLabelId;               // break 目标标签 ID
     TZrSize continueLabelId;            // continue 目标标签 ID
 } SZrLoopLabel;
+
+typedef struct SZrCompilerCatchClauseInfo {
+    SZrString *typeName;
+    TZrSize targetLabelId;
+} SZrCompilerCatchClauseInfo;
+
+typedef struct SZrCompilerExceptionHandlerInfo {
+    TZrMemoryOffset protectedStartInstructionOffset;
+    TZrSize finallyLabelId;
+    TZrSize afterFinallyLabelId;
+    TZrUInt32 catchClauseStartIndex;
+    TZrUInt32 catchClauseCount;
+    TZrBool hasFinally;
+} SZrCompilerExceptionHandlerInfo;
+
+typedef struct SZrCompilerTryContext {
+    TZrUInt32 handlerIndex;
+    TZrSize finallyLabelId;
+} SZrCompilerTryContext;
 
 // 导出变量信息（用于模块导出）
 typedef struct SZrExportedVariable {
@@ -180,7 +212,13 @@ typedef struct SZrTypePrototypeInfo {
     EZrAccessModifier accessModifier;   // 访问修饰符
     TZrBool isImportedNative;           // 是否为仅用于编译期解析的原生导入类型
     SZrArray inherits;                  // 继承的类型引用（SZrString* 数组，存储类型名称字符串）
+    SZrString *extendsTypeName;         // 单继承目标（如有）
+    SZrArray implements;                // 实现/扩展的接口引用（SZrString* 数组）
     SZrArray members;                   // 成员信息（字段、方法等，存储 SZrTypeMemberInfo）
+    SZrString *enumValueTypeName;       // enum 底层值类型
+    TZrBool allowValueConstruction;     // 是否允许 $Type(...)
+    TZrBool allowBoxedConstruction;     // 是否允许 new Type(...)
+    SZrString *constructorSignature;    // 构造签名提示
 } SZrTypePrototypeInfo;
 
 // 成员信息（字段、方法、元函数等）
@@ -272,6 +310,8 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode
 // 公开的低层编译入口，用于语义/HIR 相关测试和分阶段编译接线
 ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements);
+ZR_PARSER_API void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNode *node);
 
 // 编译 AST 为函数和测试函数列表（新接口）
 // 返回编译结果结构体，调用者需要调用 ZrParser_CompileResult_Free 来释放资源
@@ -282,6 +322,8 @@ ZR_PARSER_API void ZrParser_CompileResult_Free(SZrState *state, SZrCompileResult
 
 // 报告编译错误
 ZR_PARSER_API void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRange location);
+
+ZR_PARSER_API void add_pending_absolute_patch(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId);
 
 // 编译期错误级别
 enum EZrCompileTimeErrorLevel {

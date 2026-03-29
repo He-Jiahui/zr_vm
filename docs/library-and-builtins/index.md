@@ -28,6 +28,9 @@ doc_type: category-index
 
 ## 当前主题
 
+- `../parser-and-semantics/ffi-extern-declarations.md`
+  - source-level `%extern` 声明如何 lower 到 `zr.ffi.loadLibrary(...)` / `getSymbol(...)`
+  - extern signature descriptor、layout descriptor 和 callback delegate 的消费规则
 - `zr-system-submodules.md`
   - `zr.system` 从扁平模块拆成 6 个叶子模块和 1 个聚合根模块
   - native descriptor 新增 `moduleLinks`，根模块通过通用物化逻辑导出子模块对象
@@ -35,5 +38,6 @@ doc_type: category-index
 
 ## 阅读顺序
 
-1. 先看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
-2. 需要追代码时，再用 frontmatter 里的 `related_code`、`implementation_files` 和 `tests` 反查实现与验证入口。
+1. 先看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
+2. 再看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
+3. 需要追代码时，再用 frontmatter 里的 `related_code`、`implementation_files` 和 `tests` 反查实现与验证入口。

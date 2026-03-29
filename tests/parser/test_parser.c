@@ -163,6 +163,15 @@ static SZrAstNode* unwrap_statement_expression(SZrAstNode* statement) {
     return statement;
 }
 
+static const char *string_node_native(SZrState *state, SZrAstNode *node) {
+    if (state == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_STRING_LITERAL ||
+        node->data.stringLiteral.value == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_GetNativeString(node->data.stringLiteral.value);
+}
+
 // 测试初始化和清理
 void setUp(void) {
 }
@@ -770,6 +779,97 @@ void test_function_declaration(void) {
         ZrParser_Ast_Free(state, ast);
     }
     
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_extern_block_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Extern Block Parsing";
+    const char *source =
+            "%extern(\"fixture\") {\n"
+            "    #zr.ffi.entry(\"zr_ffi_add_i32\")# Add(lhs:i32, rhs:i32): i32;\n"
+            "    delegate Unary(value:f64): f64;\n"
+            "    struct Point {\n"
+            "        #zr.ffi.offset(0)# var x:i32;\n"
+            "        #zr.ffi.offset(4)# var y:i32;\n"
+            "    }\n"
+            "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *externStmt;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "extern_test.zr", 14);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+    externStmt = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(externStmt);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_BLOCK, externStmt->type);
+    TEST_ASSERT_EQUAL_STRING("fixture", string_node_native(state, externStmt->data.externBlock.libraryName));
+    TEST_ASSERT_NOT_NULL(externStmt->data.externBlock.declarations);
+    TEST_ASSERT_EQUAL_INT(3, (int)externStmt->data.externBlock.declarations->count);
+
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_FUNCTION_DECLARATION,
+                          externStmt->data.externBlock.declarations->nodes[0]->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_DELEGATE_DECLARATION,
+                          externStmt->data.externBlock.declarations->nodes[1]->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION,
+                          externStmt->data.externBlock.declarations->nodes[2]->type);
+
+    ZrParser_Ast_Free(state, ast);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_extern_single_declaration_normalizes_to_block(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Extern Single Declaration Parsing";
+    const char *source = "%extern(\"fixture\") Add(lhs:i32, rhs:i32): i32;";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *externStmt;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "extern_single_test.zr", 21);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+    externStmt = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(externStmt);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_BLOCK, externStmt->type);
+    TEST_ASSERT_EQUAL_STRING("fixture", string_node_native(state, externStmt->data.externBlock.libraryName));
+    TEST_ASSERT_NOT_NULL(externStmt->data.externBlock.declarations);
+    TEST_ASSERT_EQUAL_INT(1, (int)externStmt->data.externBlock.declarations->count);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_FUNCTION_DECLARATION,
+                          externStmt->data.externBlock.declarations->nodes[0]->type);
+
+    ZrParser_Ast_Free(state, ast);
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
     destroy_test_state(state);
@@ -1479,6 +1579,8 @@ int main(void) {
     
     // 声明测试
     RUN_TEST(test_function_declaration);
+    RUN_TEST(test_extern_block_parsing);
+    RUN_TEST(test_extern_single_declaration_normalizes_to_block);
     RUN_TEST(test_struct_declaration);
     RUN_TEST(test_field_scoped_using_field_parsing);
     RUN_TEST(test_field_scoped_using_field_requires_var_keyword);

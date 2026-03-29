@@ -23,6 +23,184 @@
 #include "zr_vm_common/zr_object_conf.h"
 #include "zr_vm_common/zr_string_conf.h"
 
+static const TZrChar *kNativeEnumValueFieldName = "__zr_enumValue";
+static const TZrChar *kNativeEnumNameFieldName = "__zr_enumName";
+static const TZrChar *kNativeEnumValueTypeFieldName = "__zr_enumValueTypeName";
+
+typedef enum EZrExecutionNumericFallbackOp {
+    ZR_EXEC_NUMERIC_FALLBACK_ADD = 0,
+    ZR_EXEC_NUMERIC_FALLBACK_SUB,
+    ZR_EXEC_NUMERIC_FALLBACK_MUL,
+    ZR_EXEC_NUMERIC_FALLBACK_DIV,
+    ZR_EXEC_NUMERIC_FALLBACK_MOD,
+    ZR_EXEC_NUMERIC_FALLBACK_POW
+} EZrExecutionNumericFallbackOp;
+
+typedef enum EZrExecutionNumericCompareOp {
+    ZR_EXEC_NUMERIC_COMPARE_GREATER = 0,
+    ZR_EXEC_NUMERIC_COMPARE_LESS,
+    ZR_EXEC_NUMERIC_COMPARE_GREATER_EQUAL,
+    ZR_EXEC_NUMERIC_COMPARE_LESS_EQUAL
+} EZrExecutionNumericCompareOp;
+
+static TZrBool prototype_type_matches(EZrObjectPrototypeType expectedType, EZrObjectPrototypeType actualType) {
+    return expectedType == ZR_OBJECT_PROTOTYPE_TYPE_INVALID || expectedType == actualType;
+}
+
+static TZrBool execution_extract_numeric_double(const SZrTypeValue *value, TZrFloat64 *outValue) {
+    if (value == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+        *outValue = (TZrFloat64) value->value.nativeObject.nativeInt64;
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+        *outValue = (TZrFloat64) value->value.nativeObject.nativeUInt64;
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_FLOAT(value->type)) {
+        *outValue = value->value.nativeObject.nativeDouble;
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_BOOL(value->type)) {
+        *outValue = value->value.nativeObject.nativeBool ? 1.0 : 0.0;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool execution_eval_binary_numeric_float(EZrExecutionNumericFallbackOp operation,
+                                                   TZrFloat64 leftValue,
+                                                   TZrFloat64 rightValue,
+                                                   TZrFloat64 *outResult) {
+    if (outResult == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (operation) {
+        case ZR_EXEC_NUMERIC_FALLBACK_ADD:
+            *outResult = leftValue + rightValue;
+            return ZR_TRUE;
+        case ZR_EXEC_NUMERIC_FALLBACK_SUB:
+            *outResult = leftValue - rightValue;
+            return ZR_TRUE;
+        case ZR_EXEC_NUMERIC_FALLBACK_MUL:
+            *outResult = leftValue * rightValue;
+            return ZR_TRUE;
+        case ZR_EXEC_NUMERIC_FALLBACK_DIV:
+            *outResult = leftValue / rightValue;
+            return ZR_TRUE;
+        case ZR_EXEC_NUMERIC_FALLBACK_MOD:
+            *outResult = fmod(leftValue, rightValue);
+            return ZR_TRUE;
+        case ZR_EXEC_NUMERIC_FALLBACK_POW:
+            *outResult = pow(leftValue, rightValue);
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool execution_try_binary_numeric_float_fallback(EZrExecutionNumericFallbackOp operation,
+                                                           SZrTypeValue *destination,
+                                                           const SZrTypeValue *opA,
+                                                           const SZrTypeValue *opB);
+
+static TZrBool execution_apply_binary_numeric_float(EZrExecutionNumericFallbackOp operation,
+                                                    SZrTypeValue *destination,
+                                                    const SZrTypeValue *opA,
+                                                    const SZrTypeValue *opB) {
+    TZrFloat64 resultValue;
+
+    if (destination == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type)) {
+        if (!execution_eval_binary_numeric_float(operation,
+                                                 opA->value.nativeObject.nativeDouble,
+                                                 opB->value.nativeObject.nativeDouble,
+                                                 &resultValue)) {
+            return ZR_FALSE;
+        }
+
+        ZR_VALUE_FAST_SET(destination, nativeDouble, resultValue, ZR_VALUE_TYPE_DOUBLE);
+        return ZR_TRUE;
+    }
+
+    return execution_try_binary_numeric_float_fallback(operation, destination, opA, opB);
+}
+
+static TZrBool execution_eval_binary_numeric_compare(EZrExecutionNumericCompareOp operation,
+                                                     TZrFloat64 leftValue,
+                                                     TZrFloat64 rightValue,
+                                                     TZrBool *outResult) {
+    if (outResult == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (operation) {
+        case ZR_EXEC_NUMERIC_COMPARE_GREATER:
+            *outResult = leftValue > rightValue;
+            return ZR_TRUE;
+        case ZR_EXEC_NUMERIC_COMPARE_LESS:
+            *outResult = leftValue < rightValue;
+            return ZR_TRUE;
+        case ZR_EXEC_NUMERIC_COMPARE_GREATER_EQUAL:
+            *outResult = leftValue >= rightValue;
+            return ZR_TRUE;
+        case ZR_EXEC_NUMERIC_COMPARE_LESS_EQUAL:
+            *outResult = leftValue <= rightValue;
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool execution_apply_binary_numeric_compare(EZrExecutionNumericCompareOp operation,
+                                                      SZrTypeValue *destination,
+                                                      const SZrTypeValue *opA,
+                                                      const SZrTypeValue *opB) {
+    TZrFloat64 leftValue;
+    TZrFloat64 rightValue;
+    TZrBool resultValue;
+
+    if (destination == ZR_NULL ||
+        !execution_extract_numeric_double(opA, &leftValue) ||
+        !execution_extract_numeric_double(opB, &rightValue) ||
+        !execution_eval_binary_numeric_compare(operation, leftValue, rightValue, &resultValue)) {
+        return ZR_FALSE;
+    }
+
+    ZR_VALUE_FAST_SET(destination, nativeBool, resultValue, ZR_VALUE_TYPE_BOOL);
+    return ZR_TRUE;
+}
+
+static TZrBool execution_try_binary_numeric_float_fallback(EZrExecutionNumericFallbackOp operation,
+                                                           SZrTypeValue *destination,
+                                                           const SZrTypeValue *opA,
+                                                           const SZrTypeValue *opB) {
+    TZrFloat64 leftValue;
+    TZrFloat64 rightValue;
+    TZrFloat64 resultValue;
+
+    if (destination == ZR_NULL ||
+        !execution_extract_numeric_double(opA, &leftValue) ||
+        !execution_extract_numeric_double(opB, &rightValue)) {
+        return ZR_FALSE;
+    }
+
+    if (!execution_eval_binary_numeric_float(operation, leftValue, rightValue, &resultValue)) {
+        return ZR_FALSE;
+    }
+
+    ZR_VALUE_FAST_SET(destination, nativeDouble, resultValue, ZR_VALUE_TYPE_DOUBLE);
+    return ZR_TRUE;
+}
+
 // 辅助函数：从模块中查找类型原型
 // 返回找到的原型对象，如果未找到返回 ZR_NULL
 static SZrObjectPrototype *find_prototype_in_module(SZrState *state, struct SZrObjectModule *module, 
@@ -55,7 +233,7 @@ static SZrObjectPrototype *find_prototype_in_module(SZrState *state, struct SZrO
     SZrObjectPrototype *prototype = (SZrObjectPrototype *)typeObject;
     
     // 检查原型类型是否匹配
-    if (prototype->type == expectedType) {
+    if (prototype_type_matches(expectedType, prototype->type)) {
         return prototype;
     }
     
@@ -404,10 +582,10 @@ static SZrObjectPrototype *find_type_prototype(SZrState *state, SZrString *typeN
             const SZrTypeValue *prototypeValue = ZrCore_Object_GetValue(state, zrObject, &key);
             if (prototypeValue != ZR_NULL && prototypeValue->type == ZR_VALUE_TYPE_OBJECT) {
                 SZrObject *candidate = ZR_CAST_OBJECT(state, prototypeValue->value.object);
-                if (candidate != ZR_NULL &&
+                    if (candidate != ZR_NULL &&
                     candidate->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
                     SZrObjectPrototype *prototype = (SZrObjectPrototype *)candidate;
-                    if (prototype->type == expectedType) {
+                    if (prototype_type_matches(expectedType, prototype->type)) {
                         return prototype;
                     }
                 }
@@ -526,6 +704,273 @@ static TZrBool convert_to_class(SZrState *state, SZrTypeValue *source, SZrObject
     return ZR_FALSE;
 }
 
+static const SZrTypeValue *execution_get_object_field_cstring(SZrState *state,
+                                                              SZrObject *object,
+                                                              const TZrChar *fieldName) {
+    SZrString *fieldNameString;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    fieldNameString = ZrCore_String_Create(state, fieldName, strlen(fieldName));
+    if (fieldNameString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldNameString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    return ZrCore_Object_GetValue(state, object, &key);
+}
+
+static void execution_set_object_field_cstring(SZrState *state,
+                                               SZrObject *object,
+                                               const TZrChar *fieldName,
+                                               const SZrTypeValue *value) {
+    SZrString *fieldNameString;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL) {
+        return;
+    }
+
+    fieldNameString = ZrCore_String_Create(state, fieldName, strlen(fieldName));
+    if (fieldNameString == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldNameString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Object_SetValue(state, object, &key, value);
+}
+
+static const TZrChar *execution_get_enum_value_type_name(SZrState *state, SZrObjectPrototype *prototype) {
+    const SZrTypeValue *typeValue;
+
+    if (state == ZR_NULL || prototype == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    typeValue = execution_get_object_field_cstring(state, &prototype->super, kNativeEnumValueTypeFieldName);
+    if (typeValue == ZR_NULL || typeValue->type != ZR_VALUE_TYPE_STRING || typeValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_GetNativeString(ZR_CAST_STRING(state, typeValue->value.object));
+}
+
+static TZrBool execution_extract_enum_underlying_value(SZrState *state,
+                                                       const SZrTypeValue *source,
+                                                       SZrObjectPrototype *targetPrototype,
+                                                       SZrTypeValue *underlyingValue) {
+    const SZrTypeValue *fieldValue;
+    SZrObject *object;
+
+    if (state == ZR_NULL || source == ZR_NULL || underlyingValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (source->type != ZR_VALUE_TYPE_OBJECT || source->value.object == ZR_NULL) {
+        ZrCore_Value_Copy(state, underlyingValue, (SZrTypeValue *)source);
+        return ZR_TRUE;
+    }
+
+    object = ZR_CAST_OBJECT(state, source->value.object);
+    if (object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (targetPrototype != ZR_NULL && object->prototype == targetPrototype) {
+        ZrCore_Value_Copy(state, underlyingValue, (SZrTypeValue *)source);
+        return ZR_TRUE;
+    }
+
+    fieldValue = execution_get_object_field_cstring(state, object, kNativeEnumValueFieldName);
+    if (fieldValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_Copy(state, underlyingValue, (SZrTypeValue *)fieldValue);
+    return ZR_TRUE;
+}
+
+static TZrBool execution_normalize_enum_underlying_value(SZrState *state,
+                                                         const SZrTypeValue *source,
+                                                         const TZrChar *expectedTypeName,
+                                                         SZrTypeValue *normalizedValue) {
+    if (state == ZR_NULL || source == ZR_NULL || normalizedValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (expectedTypeName == ZR_NULL || strcmp(expectedTypeName, "int") == 0) {
+        if (ZR_VALUE_IS_TYPE_SIGNED_INT(source->type)) {
+            ZrCore_Value_InitAsInt(state, normalizedValue, source->value.nativeObject.nativeInt64);
+            return ZR_TRUE;
+        }
+        if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(source->type)) {
+            ZrCore_Value_InitAsInt(state, normalizedValue, (TZrInt64)source->value.nativeObject.nativeUInt64);
+            return ZR_TRUE;
+        }
+        return ZR_FALSE;
+    }
+
+    if (strcmp(expectedTypeName, "float") == 0) {
+        if (ZR_VALUE_IS_TYPE_NUMBER(source->type) || ZR_VALUE_IS_TYPE_BOOL(source->type)) {
+            ZrCore_Value_InitAsFloat(state, normalizedValue, value_to_double(source));
+            return ZR_TRUE;
+        }
+        return ZR_FALSE;
+    }
+
+    if (strcmp(expectedTypeName, "bool") == 0) {
+        if (ZR_VALUE_IS_TYPE_BOOL(source->type)) {
+            normalizedValue->type = ZR_VALUE_TYPE_BOOL;
+            normalizedValue->value.nativeObject.nativeBool = source->value.nativeObject.nativeBool;
+            return ZR_TRUE;
+        }
+        return ZR_FALSE;
+    }
+
+    if (strcmp(expectedTypeName, "string") == 0) {
+        if (ZR_VALUE_IS_TYPE_STRING(source->type)) {
+            ZrCore_Value_Copy(state, normalizedValue, (SZrTypeValue *)source);
+            return ZR_TRUE;
+        }
+        return ZR_FALSE;
+    }
+
+    if (strcmp(expectedTypeName, "null") == 0) {
+        if (source->type == ZR_VALUE_TYPE_NULL) {
+            ZrCore_Value_ResetAsNull(normalizedValue);
+            return ZR_TRUE;
+        }
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_Copy(state, normalizedValue, (SZrTypeValue *)source);
+    return ZR_TRUE;
+}
+
+static TZrBool execution_enum_values_equal(SZrState *state,
+                                           const SZrTypeValue *left,
+                                           const SZrTypeValue *right) {
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (left->type == ZR_VALUE_TYPE_NULL || right->type == ZR_VALUE_TYPE_NULL) {
+        return left->type == right->type;
+    }
+
+    if (ZR_VALUE_IS_TYPE_STRING(left->type) && ZR_VALUE_IS_TYPE_STRING(right->type)) {
+        return ZrCore_String_Equal(ZR_CAST_STRING(state, left->value.object), ZR_CAST_STRING(state, right->value.object));
+    }
+
+    if (ZR_VALUE_IS_TYPE_BOOL(left->type) && ZR_VALUE_IS_TYPE_BOOL(right->type)) {
+        return left->value.nativeObject.nativeBool == right->value.nativeObject.nativeBool;
+    }
+
+    if ((ZR_VALUE_IS_TYPE_NUMBER(left->type) || ZR_VALUE_IS_TYPE_BOOL(left->type)) &&
+        (ZR_VALUE_IS_TYPE_NUMBER(right->type) || ZR_VALUE_IS_TYPE_BOOL(right->type))) {
+        if (ZR_VALUE_IS_TYPE_FLOAT(left->type) || ZR_VALUE_IS_TYPE_FLOAT(right->type)) {
+            return value_to_double(left) == value_to_double(right);
+        }
+        return value_to_int64(left) == value_to_int64(right);
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrString *execution_find_enum_member_name(SZrState *state,
+                                                  SZrObjectPrototype *prototype,
+                                                  const SZrTypeValue *underlyingValue) {
+    TZrSize bucketIndex;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || underlyingValue == ZR_NULL ||
+        !prototype->super.nodeMap.isValid || prototype->super.nodeMap.buckets == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (bucketIndex = 0; bucketIndex < prototype->super.nodeMap.capacity; bucketIndex++) {
+        SZrHashKeyValuePair *pair = prototype->super.nodeMap.buckets[bucketIndex];
+        while (pair != ZR_NULL) {
+            if (pair->key.type == ZR_VALUE_TYPE_STRING &&
+                pair->value.type == ZR_VALUE_TYPE_OBJECT &&
+                pair->value.value.object != ZR_NULL) {
+                SZrObject *candidate = ZR_CAST_OBJECT(state, pair->value.value.object);
+                const SZrTypeValue *candidateValue;
+
+                if (candidate != ZR_NULL && candidate->prototype == prototype) {
+                    candidateValue = execution_get_object_field_cstring(state, candidate, kNativeEnumValueFieldName);
+                    if (candidateValue != ZR_NULL && execution_enum_values_equal(state, candidateValue, underlyingValue)) {
+                        return ZR_CAST_STRING(state, pair->key.value.object);
+                    }
+                }
+            }
+
+            pair = pair->next;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool convert_to_enum(SZrState *state,
+                               SZrTypeValue *source,
+                               SZrObjectPrototype *targetPrototype,
+                               SZrTypeValue *destination) {
+    SZrObject *enumObject;
+    SZrString *memberName;
+    SZrTypeValue extractedValue;
+    SZrTypeValue normalizedValue;
+    const TZrChar *expectedTypeName;
+
+    if (state == ZR_NULL || source == ZR_NULL || targetPrototype == ZR_NULL || destination == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (targetPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
+        return ZR_FALSE;
+    }
+
+    if (source->type == ZR_VALUE_TYPE_OBJECT && source->value.object != ZR_NULL) {
+        SZrObject *object = ZR_CAST_OBJECT(state, source->value.object);
+        if (object != ZR_NULL && object->prototype == targetPrototype) {
+            ZrCore_Value_Copy(state, destination, source);
+            return ZR_TRUE;
+        }
+    }
+
+    if (!execution_extract_enum_underlying_value(state, source, targetPrototype, &extractedValue)) {
+        return ZR_FALSE;
+    }
+
+    expectedTypeName = execution_get_enum_value_type_name(state, targetPrototype);
+    if (!execution_normalize_enum_underlying_value(state, &extractedValue, expectedTypeName, &normalizedValue)) {
+        return ZR_FALSE;
+    }
+
+    enumObject = ZrCore_Object_New(state, targetPrototype);
+    if (enumObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Object_Init(state, enumObject);
+    execution_set_object_field_cstring(state, enumObject, kNativeEnumValueFieldName, &normalizedValue);
+    memberName = execution_find_enum_member_name(state, targetPrototype, &normalizedValue);
+    if (memberName != ZR_NULL) {
+        SZrTypeValue nameValue;
+        ZrCore_Value_InitAsRawObject(state, &nameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+        nameValue.type = ZR_VALUE_TYPE_STRING;
+        execution_set_object_field_cstring(state, enumObject, kNativeEnumNameFieldName, &nameValue);
+    }
+
+    ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(enumObject));
+    destination->type = ZR_VALUE_TYPE_OBJECT;
+    return ZR_TRUE;
+}
+
 static TZrBool execution_invoke_meta_call(SZrState *state,
                                           SZrCallInfo *savedCallInfo,
                                           TZrStackValuePointer savedStackTop,
@@ -588,6 +1033,355 @@ static TZrBool execution_invoke_meta_call(SZrState *state,
     }
 
     return state->threadStatus == ZR_THREAD_STATUS_FINE;
+}
+
+static SZrFunction *execution_call_info_function(SZrState *state, SZrCallInfo *callInfo) {
+    SZrTypeValue *baseValue;
+
+    if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    baseValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+    if (baseValue == ZR_NULL || baseValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (baseValue->type == ZR_VALUE_TYPE_CLOSURE) {
+        SZrClosure *frameClosure = ZR_CAST_VM_CLOSURE(state, baseValue->value.object);
+        return frameClosure != ZR_NULL ? frameClosure->function : ZR_NULL;
+    }
+    if (baseValue->type == ZR_VALUE_TYPE_FUNCTION) {
+        return ZR_CAST_FUNCTION(state, baseValue->value.object);
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool execution_exception_handler_stack_ensure_capacity(SZrState *state, TZrUInt32 minCapacity) {
+    SZrVmExceptionHandlerState *newHandlers;
+    TZrUInt32 newCapacity;
+    TZrSize bytes;
+
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (state->exceptionHandlerStackCapacity >= minCapacity) {
+        return ZR_TRUE;
+    }
+
+    newCapacity = state->exceptionHandlerStackCapacity > 0 ? state->exceptionHandlerStackCapacity : 8;
+    while (newCapacity < minCapacity) {
+        newCapacity *= 2;
+    }
+
+    bytes = newCapacity * sizeof(SZrVmExceptionHandlerState);
+    newHandlers = (SZrVmExceptionHandlerState *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                                bytes,
+                                                                                ZR_MEMORY_NATIVE_TYPE_STATE);
+    if (newHandlers == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(newHandlers, 0, bytes);
+    if (state->exceptionHandlerStack != ZR_NULL && state->exceptionHandlerStackLength > 0) {
+        memcpy(newHandlers,
+               state->exceptionHandlerStack,
+               state->exceptionHandlerStackLength * sizeof(SZrVmExceptionHandlerState));
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      state->exceptionHandlerStack,
+                                      state->exceptionHandlerStackCapacity * sizeof(SZrVmExceptionHandlerState),
+                                      ZR_MEMORY_NATIVE_TYPE_STATE);
+    }
+
+    state->exceptionHandlerStack = newHandlers;
+    state->exceptionHandlerStackCapacity = newCapacity;
+    return ZR_TRUE;
+}
+
+static TZrBool execution_push_exception_handler(SZrState *state, SZrCallInfo *callInfo, TZrUInt32 handlerIndex) {
+    SZrVmExceptionHandlerState *handlerState;
+
+    if (state == ZR_NULL || callInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!execution_exception_handler_stack_ensure_capacity(state, state->exceptionHandlerStackLength + 1)) {
+        return ZR_FALSE;
+    }
+
+    handlerState = &state->exceptionHandlerStack[state->exceptionHandlerStackLength++];
+    handlerState->callInfo = callInfo;
+    handlerState->handlerIndex = handlerIndex;
+    handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_TRY;
+    return ZR_TRUE;
+}
+
+static SZrVmExceptionHandlerState *execution_find_handler_state(SZrState *state,
+                                                                SZrCallInfo *callInfo,
+                                                                TZrUInt32 handlerIndex) {
+    if (state == ZR_NULL || callInfo == ZR_NULL || state->exceptionHandlerStackLength == 0) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = state->exceptionHandlerStackLength; index > 0; index--) {
+        SZrVmExceptionHandlerState *handlerState = &state->exceptionHandlerStack[index - 1];
+        if (handlerState->callInfo == callInfo && handlerState->handlerIndex == handlerIndex) {
+            return handlerState;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrVmExceptionHandlerState *execution_find_top_handler_for_callinfo(SZrState *state, SZrCallInfo *callInfo) {
+    if (state == ZR_NULL || callInfo == ZR_NULL || state->exceptionHandlerStackLength == 0) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = state->exceptionHandlerStackLength; index > 0; index--) {
+        SZrVmExceptionHandlerState *handlerState = &state->exceptionHandlerStack[index - 1];
+        if (handlerState->callInfo == callInfo) {
+            return handlerState;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void execution_pop_exception_handler(SZrState *state, SZrVmExceptionHandlerState *handlerState) {
+    TZrUInt32 index;
+
+    if (state == ZR_NULL || handlerState == ZR_NULL || state->exceptionHandlerStackLength == 0) {
+        return;
+    }
+
+    index = (TZrUInt32)(handlerState - state->exceptionHandlerStack);
+    if (index >= state->exceptionHandlerStackLength) {
+        return;
+    }
+
+    memmove(&state->exceptionHandlerStack[index],
+            &state->exceptionHandlerStack[index + 1],
+            (state->exceptionHandlerStackLength - index - 1) * sizeof(SZrVmExceptionHandlerState));
+    state->exceptionHandlerStackLength--;
+}
+
+static void execution_pop_handlers_for_callinfo(SZrState *state, SZrCallInfo *callInfo) {
+    while (state != ZR_NULL && state->exceptionHandlerStackLength > 0 &&
+           state->exceptionHandlerStack[state->exceptionHandlerStackLength - 1].callInfo == callInfo) {
+        state->exceptionHandlerStackLength--;
+    }
+}
+
+static const SZrFunctionExceptionHandlerInfo *execution_lookup_exception_handler_info(SZrState *state,
+                                                                                      const SZrVmExceptionHandlerState *handlerState,
+                                                                                      SZrFunction **outFunction) {
+    SZrFunction *function;
+
+    if (outFunction != ZR_NULL) {
+        *outFunction = ZR_NULL;
+    }
+
+    if (state == ZR_NULL || handlerState == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    function = execution_call_info_function(state, handlerState->callInfo);
+    if (outFunction != ZR_NULL) {
+        *outFunction = function;
+    }
+    if (function == ZR_NULL || function->exceptionHandlerList == ZR_NULL ||
+        handlerState->handlerIndex >= function->exceptionHandlerCount) {
+        return ZR_NULL;
+    }
+
+    return &function->exceptionHandlerList[handlerState->handlerIndex];
+}
+
+static TZrBool execution_jump_to_instruction_offset(SZrState *state,
+                                                    SZrCallInfo **ioCallInfo,
+                                                    SZrCallInfo *targetCallInfo,
+                                                    TZrMemoryOffset instructionOffset) {
+    SZrFunction *function;
+
+    if (state == ZR_NULL || ioCallInfo == ZR_NULL || targetCallInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = execution_call_info_function(state, targetCallInfo);
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL ||
+        instructionOffset > function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    targetCallInfo->context.context.programCounter = function->instructionsList + instructionOffset;
+    state->callInfoList = targetCallInfo;
+    state->stackTop.valuePointer = targetCallInfo->functionTop.valuePointer;
+    *ioCallInfo = targetCallInfo;
+    return ZR_TRUE;
+}
+
+static void execution_set_pending_exception(SZrState *state, SZrCallInfo *callInfo) {
+    if (state == ZR_NULL) {
+        return;
+    }
+
+    state->pendingControl.kind = ZR_VM_PENDING_CONTROL_EXCEPTION;
+    state->pendingControl.callInfo = callInfo;
+    state->pendingControl.targetInstructionOffset = 0;
+    state->pendingControl.valueSlot = 0;
+    ZrCore_Value_ResetAsNull(&state->pendingControl.value);
+    state->pendingControl.hasValue = ZR_FALSE;
+}
+
+static void execution_clear_pending_control(SZrState *state) {
+    if (state == ZR_NULL) {
+        return;
+    }
+
+    state->pendingControl.kind = ZR_VM_PENDING_CONTROL_NONE;
+    state->pendingControl.callInfo = ZR_NULL;
+    state->pendingControl.targetInstructionOffset = 0;
+    state->pendingControl.valueSlot = 0;
+    ZrCore_Value_ResetAsNull(&state->pendingControl.value);
+    state->pendingControl.hasValue = ZR_FALSE;
+}
+
+static void execution_set_pending_control(SZrState *state,
+                                          EZrVmPendingControlKind kind,
+                                          SZrCallInfo *callInfo,
+                                          TZrMemoryOffset targetInstructionOffset,
+                                          TZrUInt32 valueSlot,
+                                          const SZrTypeValue *value) {
+    if (state == ZR_NULL) {
+        return;
+    }
+
+    state->pendingControl.kind = kind;
+    state->pendingControl.callInfo = callInfo;
+    state->pendingControl.targetInstructionOffset = targetInstructionOffset;
+    state->pendingControl.valueSlot = valueSlot;
+    if (value != ZR_NULL) {
+        ZrCore_Value_Copy(state, &state->pendingControl.value, (SZrTypeValue *)value);
+        state->pendingControl.hasValue = ZR_TRUE;
+    } else {
+        ZrCore_Value_ResetAsNull(&state->pendingControl.value);
+        state->pendingControl.hasValue = ZR_FALSE;
+    }
+}
+
+static TZrBool execution_resume_pending_via_outer_finally(SZrState *state, SZrCallInfo **ioCallInfo) {
+    SZrCallInfo *callInfo;
+
+    if (state == ZR_NULL || ioCallInfo == ZR_NULL || *ioCallInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    callInfo = *ioCallInfo;
+    for (TZrUInt32 index = state->exceptionHandlerStackLength; index > 0; index--) {
+        SZrVmExceptionHandlerState *handlerState = &state->exceptionHandlerStack[index - 1];
+        SZrFunction *function = ZR_NULL;
+        const SZrFunctionExceptionHandlerInfo *handlerInfo;
+
+        if (handlerState->callInfo != callInfo) {
+            break;
+        }
+
+        handlerInfo = execution_lookup_exception_handler_info(state, handlerState, &function);
+        if (handlerInfo == ZR_NULL || !handlerInfo->hasFinally ||
+            handlerState->phase == ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY) {
+            continue;
+        }
+
+        handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;
+        return execution_jump_to_instruction_offset(state,
+                                                    ioCallInfo,
+                                                    callInfo,
+                                                    handlerInfo->finallyTargetInstructionOffset);
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioCallInfo) {
+    SZrCallInfo *callInfo;
+
+    if (state == ZR_NULL || ioCallInfo == ZR_NULL || *ioCallInfo == ZR_NULL || !state->hasCurrentException) {
+        return ZR_FALSE;
+    }
+
+    callInfo = *ioCallInfo;
+    while (callInfo != ZR_NULL) {
+        if (!ZR_CALL_INFO_IS_VM(callInfo)) {
+            state->callInfoList = callInfo;
+            if (callInfo->functionTop.valuePointer != ZR_NULL) {
+                state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+            }
+            break;
+        }
+
+        for (;;) {
+            SZrVmExceptionHandlerState *handlerState = execution_find_top_handler_for_callinfo(state, callInfo);
+            SZrFunction *function = ZR_NULL;
+            const SZrFunctionExceptionHandlerInfo *handlerInfo;
+
+            if (handlerState == ZR_NULL) {
+                break;
+            }
+
+            handlerInfo = execution_lookup_exception_handler_info(state, handlerState, &function);
+            if (handlerInfo == ZR_NULL) {
+                execution_pop_exception_handler(state, handlerState);
+                continue;
+            }
+
+            if (handlerState->phase == ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY) {
+                execution_pop_exception_handler(state, handlerState);
+                continue;
+            }
+
+            if (handlerState->phase == ZR_VM_EXCEPTION_HANDLER_PHASE_TRY) {
+                for (TZrUInt32 catchIndex = 0; catchIndex < handlerInfo->catchClauseCount; catchIndex++) {
+                    SZrFunctionCatchClauseInfo *catchInfo =
+                            &function->catchClauseList[handlerInfo->catchClauseStartIndex + catchIndex];
+                    if (ZrCore_Exception_CatchMatchesTypeName(state, &state->currentException, catchInfo->typeName)) {
+                        handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_CATCH;
+                        return execution_jump_to_instruction_offset(state,
+                                                                    ioCallInfo,
+                                                                    callInfo,
+                                                                    catchInfo->targetInstructionOffset);
+                    }
+                }
+            }
+
+            if (handlerInfo->hasFinally) {
+                handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;
+                execution_set_pending_exception(state, callInfo);
+                return execution_jump_to_instruction_offset(state,
+                                                            ioCallInfo,
+                                                            callInfo,
+                                                            handlerInfo->finallyTargetInstructionOffset);
+            }
+
+            execution_pop_exception_handler(state, handlerState);
+        }
+
+        execution_pop_handlers_for_callinfo(state, callInfo);
+        state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+        ZrCore_Closure_CloseClosure(state,
+                                    callInfo->functionBase.valuePointer + 1,
+                                    state->currentExceptionStatus,
+                                    ZR_FALSE);
+        state->callInfoList = callInfo->previous;
+        callInfo = callInfo->previous;
+        if (callInfo != ZR_NULL) {
+            state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+        }
+    }
+
+    return ZR_FALSE;
 }
 
 void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
@@ -1119,10 +1913,18 @@ LZrReturning: {
                             });
                         } else {
                             // 2. 无元方法，尝试查找类型原型并执行转换
-                            SZrObjectPrototype *prototype = find_type_prototype(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+                            SZrObjectPrototype *prototype = find_type_prototype(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_INVALID);
                             if (prototype != ZR_NULL) {
                                 // 找到原型，执行转换
-                                if (!convert_to_class(state, opA, prototype, destination)) {
+                                TZrBool converted = ZR_FALSE;
+
+                                if (prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+                                    converted = convert_to_class(state, opA, prototype, destination);
+                                } else if (prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
+                                    converted = convert_to_enum(state, opA, prototype, destination);
+                                }
+
+                                if (!converted) {
                                     ZrCore_Value_ResetAsNull(destination);
                                 }
                             } else {
@@ -1189,20 +1991,24 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(ADD_INT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                // 根据操作数类型选择使用有符号还是无符号整数
-                if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {
-                    ALGORITHM_2(nativeInt64, +, opA->type);
+                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                    // 根据操作数类型选择使用有符号还是无符号整数
+                    if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {
+                        ALGORITHM_2(nativeInt64, +, opA->type);
+                    } else {
+                        ALGORITHM_2(nativeUInt64, +, opA->type);
+                    }
                 } else {
-                    ALGORITHM_2(nativeUInt64, +, opA->type);
+                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
+                            ZR_EXEC_NUMERIC_FALLBACK_ADD, destination, opA, opB));
                 }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_2(nativeDouble, +, opA->type);
+                ZR_ASSERT(execution_apply_binary_numeric_float(
+                        ZR_EXEC_NUMERIC_FALLBACK_ADD, destination, opA, opB));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_STRING) {
@@ -1253,15 +2059,19 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(SUB_INT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeInt64, -, opA->type);
+                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                    ALGORITHM_2(nativeInt64, -, opA->type);
+                } else {
+                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
+                            ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB));
+                }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SUB_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_2(nativeDouble, -, opA->type);
+                ZR_ASSERT(execution_apply_binary_numeric_float(
+                        ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL) {
@@ -1303,22 +2113,30 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(MUL_SIGNED) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeInt64, *, ZR_VALUE_TYPE_INT64);
+                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                    ALGORITHM_2(nativeInt64, *, ZR_VALUE_TYPE_INT64);
+                } else {
+                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
+                            ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB));
+                }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL_UNSIGNED) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeUInt64, *, ZR_VALUE_TYPE_UINT64);
+                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                    ALGORITHM_2(nativeUInt64, *, ZR_VALUE_TYPE_UINT64);
+                } else {
+                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
+                            ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB));
+                }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_2(nativeDouble, *, ZR_VALUE_TYPE_DOUBLE);
+                ZR_ASSERT(execution_apply_binary_numeric_float(
+                        ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(NEG) {
@@ -1395,32 +2213,40 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(DIV_SIGNED) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                SAVE_STATE(state, callInfo); // error: divide by zero
-                if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
-                    // ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
-                    ZrCore_Debug_RunError(state, "divide by zero");
+                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                    SAVE_STATE(state, callInfo); // error: divide by zero
+                    if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
+                        // ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                        ZrCore_Debug_RunError(state, "divide by zero");
+                    }
+                    ALGORITHM_2(nativeInt64, /, ZR_VALUE_TYPE_INT64);
+                } else {
+                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
+                            ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB));
                 }
-                ALGORITHM_2(nativeInt64, /, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_UNSIGNED) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                SAVE_STATE(state, callInfo); // error: divide by zero
-                if (ZR_UNLIKELY(opB->value.nativeObject.nativeUInt64 == 0)) {
-                    // ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
-                    ZrCore_Debug_RunError(state, "divide by zero");
+                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                    SAVE_STATE(state, callInfo); // error: divide by zero
+                    if (ZR_UNLIKELY(opB->value.nativeObject.nativeUInt64 == 0)) {
+                        // ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                        ZrCore_Debug_RunError(state, "divide by zero");
+                    }
+                    ALGORITHM_2(nativeUInt64, /, ZR_VALUE_TYPE_UINT64);
+                } else {
+                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
+                            ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB));
                 }
-                ALGORITHM_2(nativeUInt64, /, ZR_VALUE_TYPE_UINT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_2(nativeDouble, /, ZR_VALUE_TYPE_DOUBLE);
+                ZR_ASSERT(execution_apply_binary_numeric_float(
+                        ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD) {
@@ -1462,34 +2288,42 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(MOD_SIGNED) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                SAVE_STATE(state, callInfo); // error: modulo by zero
-                if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
-                    ZrCore_Debug_RunError(state, "modulo by zero");
+                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                    SAVE_STATE(state, callInfo); // error: modulo by zero
+                    if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
+                        ZrCore_Debug_RunError(state, "modulo by zero");
+                    }
+                    TZrInt64 divisor = opB->value.nativeObject.nativeInt64;
+                    if (ZR_UNLIKELY(divisor < 0)) {
+                        divisor = -divisor;
+                    }
+                    ALGORITHM_CONST_2(nativeInt64, %, ZR_VALUE_TYPE_INT64, divisor);
+                } else {
+                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
+                            ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB));
                 }
-                TZrInt64 divisor = opB->value.nativeObject.nativeInt64;
-                if (ZR_UNLIKELY(divisor < 0)) {
-                    divisor = -divisor;
-                }
-                ALGORITHM_CONST_2(nativeInt64, %, ZR_VALUE_TYPE_INT64, divisor);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD_UNSIGNED) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                SAVE_STATE(state, callInfo); // error: modulo by zero
-                if (opB->value.nativeObject.nativeUInt64 == 0) {
-                    ZrCore_Debug_RunError(state, "modulo by zero");
+                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                    SAVE_STATE(state, callInfo); // error: modulo by zero
+                    if (opB->value.nativeObject.nativeUInt64 == 0) {
+                        ZrCore_Debug_RunError(state, "modulo by zero");
+                    }
+                    ALGORITHM_2(nativeUInt64, %, ZR_VALUE_TYPE_UINT64);
+                } else {
+                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
+                            ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB));
                 }
-                ALGORITHM_2(nativeUInt64, %, ZR_VALUE_TYPE_UINT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_FUNC_2(nativeDouble, fmod, ZR_VALUE_TYPE_DOUBLE);
+                ZR_ASSERT(execution_apply_binary_numeric_float(
+                        ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW) {
@@ -1531,37 +2365,45 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(POW_SIGNED) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                SAVE_STATE(state, callInfo); // error: power domain error
-                TZrInt64 valueA = opA->value.nativeObject.nativeInt64;
-                TZrInt64 valueB = opB->value.nativeObject.nativeInt64;
-                if (ZR_UNLIKELY(valueA == 0 && valueB <= 0)) {
-                    ZrCore_Debug_RunError(state, "power domain error");
+                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                    SAVE_STATE(state, callInfo); // error: power domain error
+                    TZrInt64 valueA = opA->value.nativeObject.nativeInt64;
+                    TZrInt64 valueB = opB->value.nativeObject.nativeInt64;
+                    if (ZR_UNLIKELY(valueA == 0 && valueB <= 0)) {
+                        ZrCore_Debug_RunError(state, "power domain error");
+                    }
+                    if (ZR_UNLIKELY(valueA < 0)) {
+                        ZrCore_Debug_RunError(state, "power domain error");
+                    }
+                    ALGORITHM_FUNC_2(nativeInt64, ZrCore_Math_IntPower, ZR_VALUE_TYPE_INT64);
+                } else {
+                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
+                            ZR_EXEC_NUMERIC_FALLBACK_POW, destination, opA, opB));
                 }
-                if (ZR_UNLIKELY(valueA < 0)) {
-                    ZrCore_Debug_RunError(state, "power domain error");
-                }
-                ALGORITHM_FUNC_2(nativeInt64, ZrCore_Math_IntPower, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW_UNSIGNED) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                SAVE_STATE(state, callInfo); // error: power domain error
-                TZrUInt64 valueA = opA->value.nativeObject.nativeUInt64;
-                TZrUInt64 valueB = opB->value.nativeObject.nativeUInt64;
-                if (ZR_UNLIKELY(valueA == 0 && valueB == 0)) {
-                    ZrCore_Debug_RunError(state, "power domain error");
+                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                    SAVE_STATE(state, callInfo); // error: power domain error
+                    TZrUInt64 valueA = opA->value.nativeObject.nativeUInt64;
+                    TZrUInt64 valueB = opB->value.nativeObject.nativeUInt64;
+                    if (ZR_UNLIKELY(valueA == 0 && valueB == 0)) {
+                        ZrCore_Debug_RunError(state, "power domain error");
+                    }
+                    ALGORITHM_FUNC_2(nativeUInt64, ZrCore_Math_UIntPower, ZR_VALUE_TYPE_UINT64);
+                } else {
+                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
+                            ZR_EXEC_NUMERIC_FALLBACK_POW, destination, opA, opB));
                 }
-                ALGORITHM_FUNC_2(nativeUInt64, ZrCore_Math_UIntPower, ZR_VALUE_TYPE_UINT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_FUNC_2(nativeDouble, pow, ZR_VALUE_TYPE_DOUBLE);
+                ZR_ASSERT(execution_apply_binary_numeric_float(
+                        ZR_EXEC_NUMERIC_FALLBACK_POW, destination, opA, opB));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_LEFT) {
@@ -1702,8 +2544,8 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_CVT_2(nativeBool, nativeDouble, >, ZR_VALUE_TYPE_BOOL);
+                ZR_ASSERT(execution_apply_binary_numeric_compare(
+                        ZR_EXEC_NUMERIC_COMPARE_GREATER, destination, opA, opB));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_SIGNED) {
@@ -1723,8 +2565,8 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_CVT_2(nativeBool, nativeDouble, <, ZR_VALUE_TYPE_BOOL);
+                ZR_ASSERT(execution_apply_binary_numeric_compare(
+                        ZR_EXEC_NUMERIC_COMPARE_LESS, destination, opA, opB));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_EQUAL) {
@@ -1758,8 +2600,8 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_CVT_2(nativeBool, nativeDouble, >=, ZR_VALUE_TYPE_BOOL);
+                ZR_ASSERT(execution_apply_binary_numeric_compare(
+                        ZR_EXEC_NUMERIC_COMPARE_GREATER_EQUAL, destination, opA, opB));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_EQUAL_SIGNED) {
@@ -1779,8 +2621,8 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_EQUAL_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));
-                ALGORITHM_CVT_2(nativeBool, nativeDouble, <=, ZR_VALUE_TYPE_BOOL);
+                ZR_ASSERT(execution_apply_binary_numeric_compare(
+                        ZR_EXEC_NUMERIC_COMPARE_LESS_EQUAL, destination, opA, opB));
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_NOT) {
@@ -1834,10 +2676,10 @@ LZrReturning: {
                 TZrSize expectedReturnCount = 1;  // 期望 1 个返回值；ZrCore_Function_PreCall 的 resultCount 表示 expectedReturnCount；E(instruction)=resultSlot 仅编译时用
                 
                 opA = &BASE(functionSlot)->value;
-                // 检查函数值是否为空
+                // 这里只保证“非空可调用目标”进入统一预调用分派。
+                // ZrCore_Function_PreCall 会继续分流 function/closure/native pointer，
+                // 并在其它值类型上解析 @call 元方法。
                 ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");
-                // 函数类型可以是 ZR_VALUE_TYPE_FUNCTION 或 ZR_VALUE_TYPE_CLOSURE
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FUNCTION(opA->type) || ZR_VALUE_IS_TYPE_CLOSURE(opA->type));
                 
                 // 设置栈顶指针（函数在 functionSlot，参数在 functionSlot+1 到 functionSlot+parametersCount）
                 if (parametersCount > 0) {
@@ -1870,10 +2712,9 @@ LZrReturning: {
                 TZrSize expectedReturnCount = 1;  // 期望 1 个返回值；E(instruction)=resultSlot 仅编译时用
                 
                 opA = &BASE(functionSlot)->value;
-                // 检查函数值是否为空
+                // 与普通调用保持一致，把实际可调用性判断交给统一预调用分派，
+                // 以便对象值通过 @call 元方法进入调用链。
                 ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");
-                // 函数类型可以是 ZR_VALUE_TYPE_FUNCTION 或 ZR_VALUE_TYPE_CLOSURE
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_FUNCTION(opA->type) || ZR_VALUE_IS_TYPE_CLOSURE(opA->type));
                 
                 // 设置栈顶指针
                 if (parametersCount > 0) {
@@ -2212,54 +3053,180 @@ LZrReturning: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TRY) {
-                // TRY 指令：设置异常恢复点
-                // 注意：VM级别的异常处理使用setjmp/longjmp机制
-                // 这个指令主要用于标记try块的开始，实际异常处理由底层机制处理
-                // operand2[0] = catch块跳转偏移（如果有异常）
-                // 对于VM级别，异常通过setjmp/longjmp处理，这个指令主要是占位
-                // 实际的异常恢复点由ZrExceptionTryRun等函数设置
-                // 这里不做任何操作，异常处理由底层机制自动处理
+                if (!execution_push_exception_handler(state, callInfo, E(instruction))) {
+                    if (!ZrCore_Exception_NormalizeStatus(state, ZR_THREAD_STATUS_MEMORY_ERROR)) {
+                        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+                    }
+                    ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+                }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(END_TRY) {
+                SZrVmExceptionHandlerState *handlerState = execution_find_handler_state(state, callInfo, E(instruction));
+                SZrFunction *handlerFunction = ZR_NULL;
+                const SZrFunctionExceptionHandlerInfo *handlerInfo =
+                        execution_lookup_exception_handler_info(state, handlerState, &handlerFunction);
+
+                if (handlerState != ZR_NULL) {
+                    if (handlerInfo != ZR_NULL && handlerInfo->hasFinally) {
+                        handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;
+                    } else {
+                        execution_pop_exception_handler(state, handlerState);
+                    }
+                }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(THROW) {
-                // THROW 指令：抛出异常
-                // operand2[0] = 异常值槽位（可选，如果为-1则使用栈顶值）
-                // 异常值应该在栈上（通常在destination或指定槽位）
-                SZrTypeValue *errorValue = destination;
-                // 将异常值复制到栈顶（如果不在栈顶）
-                if (A2(instruction) != (TZrUInt16) -1) {
-                    errorValue = &BASE(A2(instruction))->value;
-                }
-                // 确保异常值在栈顶
-                if (errorValue != &(state->stackTop.valuePointer - 1)->value) {
-                    ZrCore_Stack_CopyValue(state, state->stackTop.valuePointer, errorValue);
-                    state->stackTop.valuePointer++;
-                }
-                // 抛出异常（使用运行时错误状态）
-                ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
-            }
-            DONE(1);
-            ZR_INSTRUCTION_LABEL(CATCH) {
-                // CATCH 指令：捕获异常
-                // operand2[0] = 异常值目标槽位
-                // 检查是否有异常（通过threadStatus）
-                if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
-                    // 有异常，将异常值复制到目标槽位
-                    if (state->stackTop.valuePointer > callInfo->functionBase.valuePointer) {
-                        SZrTypeValue *errorValue = &(state->stackTop.valuePointer - 1)->value;
-                        ZrCore_Value_Copy(state, destination, errorValue);
-                        // 清除异常状态
-                        state->threadStatus = ZR_THREAD_STATUS_FINE;
-                        state->stackTop.valuePointer--;
-                    } else {
-                        // 没有异常值，设置为null
-                        ZrCore_Value_ResetAsNull(destination);
-                        state->threadStatus = ZR_THREAD_STATUS_FINE;
+                SZrTypeValue payload;
+
+                SAVE_PC(state, callInfo);
+                execution_clear_pending_control(state);
+                payload = BASE(E(instruction))->value;
+                if (!ZrCore_Exception_NormalizeThrownValue(state,
+                                                          &payload,
+                                                          callInfo,
+                                                          ZR_THREAD_STATUS_RUNTIME_ERROR)) {
+                    if (!ZrCore_Exception_NormalizeStatus(state, ZR_THREAD_STATUS_EXCEPTION_ERROR)) {
+                        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_EXCEPTION_ERROR);
                     }
+                    ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_EXCEPTION_ERROR);
+                }
+
+                if (execution_unwind_exception_to_handler(state, &callInfo)) {
+                    goto LZrReturning;
+                }
+
+                ZrCore_Exception_Throw(state, state->currentExceptionStatus);
+            }
+            ZR_INSTRUCTION_LABEL(CATCH) {
+                if (state->hasCurrentException) {
+                    ZrCore_Value_Copy(state, destination, &state->currentException);
+                    ZrCore_Exception_ClearCurrent(state);
                 } else {
-                    // 没有异常，设置为null并继续执行
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                execution_clear_pending_control(state);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(END_FINALLY) {
+                SZrVmExceptionHandlerState *handlerState = execution_find_handler_state(state, callInfo, E(instruction));
+                SZrCallInfo *resumeCallInfo;
+                TZrStackValuePointer targetSlot;
+
+                if (handlerState != ZR_NULL) {
+                    execution_pop_exception_handler(state, handlerState);
+                }
+
+                switch (state->pendingControl.kind) {
+                    case ZR_VM_PENDING_CONTROL_NONE:
+                        break;
+                    case ZR_VM_PENDING_CONTROL_EXCEPTION:
+                        resumeCallInfo = state->pendingControl.callInfo != ZR_NULL
+                                                 ? state->pendingControl.callInfo
+                                                 : callInfo;
+                        callInfo = resumeCallInfo;
+                        if (execution_unwind_exception_to_handler(state, &callInfo)) {
+                            goto LZrReturning;
+                        }
+                        ZrCore_Exception_Throw(state, state->currentExceptionStatus);
+                        break;
+                    case ZR_VM_PENDING_CONTROL_RETURN:
+                    case ZR_VM_PENDING_CONTROL_BREAK:
+                    case ZR_VM_PENDING_CONTROL_CONTINUE:
+                        resumeCallInfo = state->pendingControl.callInfo != ZR_NULL
+                                                 ? state->pendingControl.callInfo
+                                                 : callInfo;
+                        callInfo = resumeCallInfo;
+                        if (execution_resume_pending_via_outer_finally(state, &callInfo)) {
+                            goto LZrReturning;
+                        }
+
+                        if (state->pendingControl.kind == ZR_VM_PENDING_CONTROL_RETURN &&
+                            state->pendingControl.hasValue &&
+                            resumeCallInfo != ZR_NULL &&
+                            resumeCallInfo->functionBase.valuePointer != ZR_NULL) {
+                            targetSlot = resumeCallInfo->functionBase.valuePointer + 1 + state->pendingControl.valueSlot;
+                            ZrCore_Value_Copy(state, &targetSlot->value, &state->pendingControl.value);
+                        }
+
+                        if (execution_jump_to_instruction_offset(state,
+                                                                 &callInfo,
+                                                                 resumeCallInfo,
+                                                                 state->pendingControl.targetInstructionOffset)) {
+                            execution_clear_pending_control(state);
+                            goto LZrReturning;
+                        }
+
+                        execution_clear_pending_control(state);
+                        if (!ZrCore_Exception_NormalizeStatus(state, ZR_THREAD_STATUS_EXCEPTION_ERROR)) {
+                            ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_EXCEPTION_ERROR);
+                        }
+                        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_EXCEPTION_ERROR);
+                        break;
+                    default:
+                        execution_clear_pending_control(state);
+                        break;
+                }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(SET_PENDING_RETURN) {
+                execution_set_pending_control(state,
+                                              ZR_VM_PENDING_CONTROL_RETURN,
+                                              callInfo,
+                                              (TZrMemoryOffset)A2(instruction),
+                                              E(instruction),
+                                              &BASE(E(instruction))->value);
+                if (execution_resume_pending_via_outer_finally(state, &callInfo)) {
+                    goto LZrReturning;
+                }
+                if (execution_jump_to_instruction_offset(state,
+                                                         &callInfo,
+                                                         callInfo,
+                                                         state->pendingControl.targetInstructionOffset)) {
+                    execution_clear_pending_control(state);
+                    goto LZrReturning;
+                }
+                execution_clear_pending_control(state);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(SET_PENDING_BREAK) {
+                execution_set_pending_control(state,
+                                              ZR_VM_PENDING_CONTROL_BREAK,
+                                              callInfo,
+                                              (TZrMemoryOffset)A2(instruction),
+                                              0,
+                                              ZR_NULL);
+                if (execution_resume_pending_via_outer_finally(state, &callInfo)) {
+                    goto LZrReturning;
+                }
+                if (execution_jump_to_instruction_offset(state,
+                                                         &callInfo,
+                                                         callInfo,
+                                                         state->pendingControl.targetInstructionOffset)) {
+                    execution_clear_pending_control(state);
+                    goto LZrReturning;
+                }
+                execution_clear_pending_control(state);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(SET_PENDING_CONTINUE) {
+                execution_set_pending_control(state,
+                                              ZR_VM_PENDING_CONTROL_CONTINUE,
+                                              callInfo,
+                                              (TZrMemoryOffset)A2(instruction),
+                                              0,
+                                              ZR_NULL);
+                if (execution_resume_pending_via_outer_finally(state, &callInfo)) {
+                    goto LZrReturning;
+                }
+                if (execution_jump_to_instruction_offset(state,
+                                                         &callInfo,
+                                                         callInfo,
+                                                         state->pendingControl.targetInstructionOffset)) {
+                    execution_clear_pending_control(state);
+                    goto LZrReturning;
+                }
+                execution_clear_pending_control(state);
             }
             DONE(1);
             ZR_INSTRUCTION_DEFAULT() {

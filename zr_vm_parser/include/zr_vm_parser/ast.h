@@ -28,6 +28,9 @@ enum EZrAstNodeType {
     ZR_AST_VARIABLE_DECLARATION,
     ZR_AST_TEST_DECLARATION,
     ZR_AST_COMPILE_TIME_DECLARATION,
+    ZR_AST_EXTERN_BLOCK,
+    ZR_AST_EXTERN_FUNCTION_DECLARATION,
+    ZR_AST_EXTERN_DELEGATE_DECLARATION,
     ZR_AST_INTERMEDIATE_STATEMENT,
 
     // 结构体成员
@@ -92,6 +95,7 @@ enum EZrAstNodeType {
     ZR_AST_BREAK_CONTINUE_STATEMENT,
     ZR_AST_THROW_STATEMENT,
     ZR_AST_OUT_STATEMENT,
+    ZR_AST_CATCH_CLAUSE,
     ZR_AST_TRY_CATCH_FINALLY_STATEMENT,
 
     // 循环表达式
@@ -224,6 +228,7 @@ typedef struct SZrParameter {
     SZrType *typeInfo; // 可选
     SZrAstNode *defaultValue; // 可选表达式
     TZrBool isConst; // 是否为 const 参数
+    SZrAstNodeArray *decorators; // DecoratorExpression 数组
 } SZrParameter;
 
 // 字面量节点结构
@@ -451,15 +456,38 @@ typedef struct SZrCompileTimeDeclaration {
     SZrAstNode *declaration;                       // 对应的声明节点（函数、变量等）
 } SZrCompileTimeDeclaration;
 
+typedef struct SZrExternBlock {
+    SZrAstNode *libraryName; // StringLiteral
+    SZrAstNodeArray *declarations; // ExternFunctionDeclaration / ExternDelegateDeclaration / Struct / Enum
+} SZrExternBlock;
+
+typedef struct SZrExternFunctionDeclaration {
+    SZrIdentifier *name;
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrType *returnType; // 可选
+    SZrAstNodeArray *decorators; // DecoratorExpression 数组
+} SZrExternFunctionDeclaration;
+
+typedef struct SZrExternDelegateDeclaration {
+    SZrIdentifier *name;
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    SZrType *returnType; // 可选
+    SZrAstNodeArray *decorators; // DecoratorExpression 数组
+} SZrExternDelegateDeclaration;
+
 typedef struct SZrStructDeclaration {
     SZrIdentifier *name;
     SZrGenericDeclaration *generic; // 可选
     SZrAstNodeArray *inherits; // Type 数组
     SZrAstNodeArray *members; // StructField, StructMethod, StructMetaFunction 数组
+    SZrAstNodeArray *decorators; // DecoratorExpression 数组
     EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrStructDeclaration;
 
 typedef struct SZrStructField {
+    SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TZrBool isStatic;
     TZrBool isUsingManaged; // 是否使用 field-scoped using 生命周期管理
@@ -495,12 +523,14 @@ typedef struct SZrEnumDeclaration {
     SZrIdentifier *name;
     SZrType *baseType; // 可选，继承类型（int, string, float, bool）
     SZrAstNodeArray *members; // EnumMember 数组
+    SZrAstNodeArray *decorators; // DecoratorExpression 数组
     EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrEnumDeclaration;
 
 typedef struct SZrEnumMember {
     SZrIdentifier *name;
     SZrAstNode *value; // 可选表达式
+    SZrAstNodeArray *decorators; // DecoratorExpression 数组
 } SZrEnumMember;
 
 // 类声明
@@ -653,10 +683,14 @@ typedef struct SZrOutStatement {
     SZrAstNode *expr;
 } SZrOutStatement;
 
+typedef struct SZrCatchClause {
+    SZrAstNodeArray *pattern; // Parameter 数组（可选）
+    SZrAstNode *block; // Block
+} SZrCatchClause;
+
 typedef struct SZrTryCatchFinallyStatement {
     SZrAstNode *block;
-    SZrAstNodeArray *catchPattern; // Parameter 数组（可选）
-    SZrAstNode *catchBlock; // Block（可选）
+    SZrAstNodeArray *catchClauses; // CatchClause 数组（可选）
     SZrAstNode *finallyBlock; // Block（可选）
 } SZrTryCatchFinallyStatement;
 
@@ -738,6 +772,9 @@ typedef struct SZrAstNode {
         SZrFunctionDeclaration functionDeclaration;
         SZrTestDeclaration testDeclaration;
         SZrCompileTimeDeclaration compileTimeDeclaration;
+        SZrExternBlock externBlock;
+        SZrExternFunctionDeclaration externFunctionDeclaration;
+        SZrExternDelegateDeclaration externDelegateDeclaration;
         SZrVariableDeclaration variableDeclaration;
 
         // 结构体成员
@@ -813,6 +850,7 @@ typedef struct SZrAstNode {
         SZrBreakContinueStatement breakContinueStatement;
         SZrThrowStatement throwStatement;
         SZrOutStatement outStatement;
+        SZrCatchClause catchClause;
         SZrTryCatchFinallyStatement tryCatchFinallyStatement;
         SZrIntermediateStatement intermediateStatement;
         SZrIntermediateDeclaration intermediateDeclaration;

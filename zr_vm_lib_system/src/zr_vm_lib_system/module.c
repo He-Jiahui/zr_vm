@@ -6,6 +6,7 @@
 
 #include "zr_vm_lib_system/console_registry.h"
 #include "zr_vm_lib_system/env_registry.h"
+#include "zr_vm_lib_system/exception_registry.h"
 #include "zr_vm_lib_system/fs_registry.h"
 #include "zr_vm_lib_system/gc_registry.h"
 #include "zr_vm_lib_system/process_registry.h"
@@ -27,6 +28,7 @@ static const ZrLibModuleLinkDescriptor g_system_module_links[] = {
         {"env", "zr.system.env", "Environment helpers."},
         {"process", "zr.system.process", "Process helpers."},
         {"gc", "zr.system.gc", "Garbage-collection controls."},
+        {"exception", "zr.system.exception", "Exception hierarchy and global unhandled hooks."},
         {"vm", "zr.system.vm", "VM inspection and module invocation helpers."},
 };
 
@@ -58,6 +60,7 @@ TZrBool ZrVmLibSystem_Register(SZrGlobalState *global) {
             ZrSystem_EnvRegistry_GetModule(),
             ZrSystem_ProcessRegistry_GetModule(),
             ZrSystem_GcRegistry_GetModule(),
+            ZrSystem_ExceptionRegistry_GetModule(),
             ZrSystem_VmRegistry_GetModule(),
     };
     TZrSize index;

@@ -25,7 +25,16 @@ const ZrLibModuleDescriptor *ZrSystem_FsRegistry_GetModule(void) {
              0,
              ZR_NULL,
              0,
-             "Filesystem metadata snapshot."},
+             "Filesystem metadata snapshot.",
+             ZR_NULL,
+             ZR_NULL,
+             0,
+             ZR_NULL,
+             0,
+             ZR_NULL,
+             ZR_TRUE,
+             ZR_TRUE,
+             "SystemFileInfo()"},
     };
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"currentDirectory", 0, 0, ZrSystem_Fs_CurrentDirectory, "string", "Return the current working directory."},

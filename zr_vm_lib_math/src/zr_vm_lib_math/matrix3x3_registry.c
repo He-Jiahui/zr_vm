@@ -33,7 +33,16 @@ const ZrLibTypeDescriptor *ZrMath_Matrix3x3Registry_GetType(void) {
             ZR_ARRAY_COUNT(kMethods),
             kMeta,
             ZR_ARRAY_COUNT(kMeta),
-            ZR_NULL
+            "3x3 row-major matrix.",
+            ZR_NULL,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            ZR_TRUE,
+            ZR_TRUE,
+            "Matrix3x3(...values: float)"
     };
     return &kType;
 }

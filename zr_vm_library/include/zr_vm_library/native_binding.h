@@ -6,12 +6,31 @@
 #define ZR_VM_LIBRARY_NATIVE_BINDING_H
 
 #include "zr_vm_library/conf.h"
+#include "zr_vm_core/function.h"
 
 struct ZrLibModuleDescriptor;
 struct ZrLibTypeDescriptor;
 struct ZrLibFunctionDescriptor;
 struct ZrLibMethodDescriptor;
 struct ZrLibMetaMethodDescriptor;
+struct ZrLibEnumMemberDescriptor;
+struct SZrCallInfo;
+
+#define ZR_VM_NATIVE_RUNTIME_ABI_VERSION 1U
+
+typedef enum EZrLibModuleCapability {
+    ZR_LIB_MODULE_CAPABILITY_NONE = 0,
+    ZR_LIB_MODULE_CAPABILITY_TYPE_HINTS = 1u << 0,
+    ZR_LIB_MODULE_CAPABILITY_TYPE_METADATA = 1u << 1,
+    ZR_LIB_MODULE_CAPABILITY_ENUM_INTERFACE_METADATA = 1u << 2,
+    ZR_LIB_MODULE_CAPABILITY_SAFE_CALL_HELPERS = 1u << 3,
+    ZR_LIB_MODULE_CAPABILITY_FFI_RUNTIME = 1u << 4
+} EZrLibModuleCapability;
+
+#define ZR_VM_NATIVE_RUNTIME_CAPABILITIES                                                                               \
+    ((TZrUInt64)(ZR_LIB_MODULE_CAPABILITY_TYPE_HINTS | ZR_LIB_MODULE_CAPABILITY_TYPE_METADATA |                        \
+                 ZR_LIB_MODULE_CAPABILITY_ENUM_INTERFACE_METADATA | ZR_LIB_MODULE_CAPABILITY_SAFE_CALL_HELPERS |       \
+                 ZR_LIB_MODULE_CAPABILITY_FFI_RUNTIME))
 
 typedef enum EZrLibConstantKind {
     ZR_LIB_CONSTANT_KIND_NULL = 0,
@@ -35,6 +54,16 @@ typedef struct ZrLibFieldDescriptor {
     const TZrChar *documentation;
 } ZrLibFieldDescriptor;
 
+typedef struct ZrLibEnumMemberDescriptor {
+    const TZrChar *name;
+    EZrLibConstantKind kind;
+    TZrInt64 intValue;
+    TZrFloat64 floatValue;
+    const TZrChar *stringValue;
+    TZrBool boolValue;
+    const TZrChar *documentation;
+} ZrLibEnumMemberDescriptor;
+
 typedef struct ZrLibValueView {
     const SZrTypeValue *value;
     EZrValueType runtimeType;
@@ -53,6 +82,16 @@ typedef struct ZrLibCallContext {
     TZrSize argumentCount;
     SZrTypeValue *selfValue;
 } ZrLibCallContext;
+
+typedef struct ZrLibTempValueRoot {
+    SZrState *state;
+    struct SZrCallInfo *callInfo;
+    SZrFunctionStackAnchor savedStackTopAnchor;
+    SZrFunctionStackAnchor savedCallInfoTopAnchor;
+    SZrFunctionStackAnchor slotAnchor;
+    TZrBool hasSavedCallInfoTop;
+    TZrBool active;
+} ZrLibTempValueRoot;
 
 typedef TZrBool (*FZrLibBoundCallback)(ZrLibCallContext *context, SZrTypeValue *result);
 
@@ -111,6 +150,15 @@ typedef struct ZrLibTypeDescriptor {
     const ZrLibMetaMethodDescriptor *metaMethods;
     TZrSize metaMethodCount;
     const TZrChar *documentation;
+    const TZrChar *extendsTypeName;
+    const TZrChar *const *implementsTypeNames;
+    TZrSize implementsTypeCount;
+    const ZrLibEnumMemberDescriptor *enumMembers;
+    TZrSize enumMemberCount;
+    const TZrChar *enumValueTypeName;
+    TZrBool allowValueConstruction;
+    TZrBool allowBoxedConstruction;
+    const TZrChar *constructorSignature;
 } ZrLibTypeDescriptor;
 
 typedef struct ZrLibModuleDescriptor {
@@ -128,6 +176,9 @@ typedef struct ZrLibModuleDescriptor {
     const TZrChar *documentation;
     const ZrLibModuleLinkDescriptor *moduleLinks;
     TZrSize moduleLinkCount;
+    const TZrChar *moduleVersion;
+    TZrUInt32 minRuntimeAbi;
+    TZrUInt64 requiredCapabilities;
 } ZrLibModuleDescriptor;
 
 ZR_LIBRARY_API TZrSize ZrLib_CallContext_ArgumentCount(const ZrLibCallContext *context);
@@ -163,6 +214,17 @@ ZR_LIBRARY_API void ZrLib_CallContext_RaiseTypeError(const ZrLibCallContext *con
 ZR_LIBRARY_API void ZrLib_CallContext_RaiseArityError(const ZrLibCallContext *context,
                                                       TZrSize minArgumentCount,
                                                       TZrSize maxArgumentCount);
+
+ZR_LIBRARY_API TZrBool ZrLib_TempValueRoot_Begin(SZrState *state, ZrLibTempValueRoot *root);
+ZR_LIBRARY_API TZrBool ZrLib_CallContext_BeginTempValueRoot(const ZrLibCallContext *context,
+                                                            ZrLibTempValueRoot *root);
+ZR_LIBRARY_API SZrTypeValue *ZrLib_TempValueRoot_Value(ZrLibTempValueRoot *root);
+ZR_LIBRARY_API TZrBool ZrLib_TempValueRoot_SetValue(ZrLibTempValueRoot *root, const SZrTypeValue *value);
+ZR_LIBRARY_API TZrBool ZrLib_TempValueRoot_SetObject(ZrLibTempValueRoot *root,
+                                                     SZrObject *object,
+                                                     EZrValueType type);
+ZR_LIBRARY_API void ZrLib_TempValueRoot_SetNull(ZrLibTempValueRoot *root);
+ZR_LIBRARY_API void ZrLib_TempValueRoot_End(ZrLibTempValueRoot *root);
 
 ZR_LIBRARY_API void ZrLib_Value_SetNull(SZrTypeValue *value);
 ZR_LIBRARY_API void ZrLib_Value_SetBool(SZrState *state, SZrTypeValue *value, TZrBool boolValue);

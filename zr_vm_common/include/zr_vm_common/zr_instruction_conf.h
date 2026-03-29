@@ -98,8 +98,13 @@
     Z(MARK_TO_BE_CLOSED)                                                                                               \
     Z(CLOSE_SCOPE)                                                                                                     \
     Z(TRY)                                                                                                             \
+    Z(END_TRY)                                                                                                         \
     Z(THROW)                                                                                                           \
-    Z(CATCH)
+    Z(CATCH)                                                                                                           \
+    Z(END_FINALLY)                                                                                                     \
+    Z(SET_PENDING_RETURN)                                                                                              \
+    Z(SET_PENDING_BREAK)                                                                                               \
+    Z(SET_PENDING_CONTINUE)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

@@ -19,6 +19,7 @@
 #include "zr_vm_core/value.h"
 #include "runtime_support.h"
 #include "zr_vm_library.h"
+#include "zr_vm_library/native_registry.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser.h"
@@ -34,6 +35,159 @@
 #ifndef ZR_ARRAY_COUNT
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
+
+static const ZrLibMethodDescriptor kProbeReadableMethods[] = {
+        {"read", 0, 0, ZR_NULL, "int", "Read the current value.", ZR_FALSE},
+};
+
+static const ZrLibMethodDescriptor kProbeStreamReadableMethods[] = {
+        {"available", 0, 0, ZR_NULL, "int", "Return the available item count.", ZR_FALSE},
+};
+
+static const TZrChar *kProbeDeviceImplements[] = {
+        "NativeStreamReadable",
+};
+
+static const ZrLibFieldDescriptor kProbeDeviceFields[] = {
+        {"mode", "NativeMode", "The current device mode."},
+};
+
+static const ZrLibEnumMemberDescriptor kProbeModeMembers[] = {
+        {"Off", ZR_LIB_CONSTANT_KIND_INT, 0, 0.0, ZR_NULL, ZR_FALSE, "Disabled mode."},
+        {"On", ZR_LIB_CONSTANT_KIND_INT, 1, 0.0, ZR_NULL, ZR_FALSE, "Enabled mode."},
+};
+
+static const ZrLibTypeDescriptor kProbeNativeTypes[] = {
+        {"NativeReadable",
+         ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
+         ZR_NULL,
+         0,
+         kProbeReadableMethods,
+         ZR_ARRAY_COUNT(kProbeReadableMethods),
+         ZR_NULL,
+         0,
+         "Readable interface.",
+         ZR_NULL,
+         ZR_NULL,
+         0,
+         ZR_NULL,
+         0,
+         ZR_NULL,
+         ZR_FALSE,
+         ZR_FALSE,
+         "NativeReadable()"},
+        {"NativeStreamReadable",
+         ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
+         ZR_NULL,
+         0,
+         kProbeStreamReadableMethods,
+         ZR_ARRAY_COUNT(kProbeStreamReadableMethods),
+         ZR_NULL,
+         0,
+         "Stream-readable interface.",
+         "NativeReadable",
+         ZR_NULL,
+         0,
+         ZR_NULL,
+         0,
+         ZR_NULL,
+         ZR_FALSE,
+         ZR_FALSE,
+         "NativeStreamReadable()"},
+        {"NativeMode",
+         ZR_OBJECT_PROTOTYPE_TYPE_ENUM,
+         ZR_NULL,
+         0,
+         ZR_NULL,
+         0,
+         ZR_NULL,
+         0,
+         "Device mode enum.",
+         ZR_NULL,
+         ZR_NULL,
+         0,
+         kProbeModeMembers,
+         ZR_ARRAY_COUNT(kProbeModeMembers),
+         "int",
+         ZR_TRUE,
+         ZR_TRUE,
+         "NativeMode(value: int)"},
+        {"NativeDevice",
+         ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+         kProbeDeviceFields,
+         ZR_ARRAY_COUNT(kProbeDeviceFields),
+         ZR_NULL,
+         0,
+         ZR_NULL,
+         0,
+         "Concrete device type.",
+         ZR_NULL,
+         kProbeDeviceImplements,
+         ZR_ARRAY_COUNT(kProbeDeviceImplements),
+         ZR_NULL,
+         0,
+         ZR_NULL,
+         ZR_TRUE,
+         ZR_TRUE,
+         "NativeDevice()"},
+};
+
+static const ZrLibModuleDescriptor kProbeNativeModuleDescriptor = {
+        ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        "probe.native_shapes",
+        ZR_NULL,
+        0,
+        ZR_NULL,
+        0,
+        kProbeNativeTypes,
+        ZR_ARRAY_COUNT(kProbeNativeTypes),
+        ZR_NULL,
+        0,
+        ZR_NULL,
+        "Native test module containing interface, enum and implements metadata.",
+        ZR_NULL,
+        0,
+};
+
+static const ZrLibModuleDescriptor kProbeFutureAbiModuleDescriptor = {
+        ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        "probe.future_abi",
+        ZR_NULL,
+        0,
+        ZR_NULL,
+        0,
+        ZR_NULL,
+        0,
+        ZR_NULL,
+        0,
+        ZR_NULL,
+        "Native module that requires a future runtime ABI.",
+        ZR_NULL,
+        0,
+        "9.9.9",
+        ZR_VM_NATIVE_RUNTIME_ABI_VERSION + 1,
+        0,
+};
+
+static const ZrLibModuleDescriptor kProbeUnsupportedCapabilityModuleDescriptor = {
+        ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        "probe.unsupported_capability",
+        ZR_NULL,
+        0,
+        ZR_NULL,
+        0,
+        ZR_NULL,
+        0,
+        ZR_NULL,
+        0,
+        ZR_NULL,
+        "Native module that requires unsupported runtime capabilities.",
+        ZR_NULL,
+        0,
+        "1.0.0",
+        ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+        ((TZrUInt64)1u << 40),
+};
 
 // 测试时间测量结构
 typedef struct {
@@ -122,6 +276,14 @@ static SZrState *create_test_state(void) {
     return mainState;
 }
 
+static TZrBool register_probe_native_module(SZrState *state) {
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return ZrLibrary_NativeRegistry_RegisterModule(state->global, &kProbeNativeModuleDescriptor);
+}
+
 // 销毁测试用的SZrState
 static void destroy_test_state(SZrState *state) {
     if (!state)
@@ -200,6 +362,17 @@ static SZrObject *get_array_entry_object(SZrState *state, SZrObject *array, TZrS
     }
 
     return ZR_CAST_OBJECT(state, entryValue->value.object);
+}
+
+static const SZrTypeValue *get_array_entry_value(SZrState *state, SZrObject *array, TZrSize index) {
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)index);
+    return ZrCore_Object_GetValue(state, array, &key);
 }
 
 static const SZrTypeValue *get_zr_global_value(SZrState *state, const TZrChar *memberName) {
@@ -1250,6 +1423,7 @@ void test_system_root_aggregates_leaf_modules_and_reuses_cached_instances(void) 
             {"env", "zr.system.env"},
             {"process", "zr.system.process"},
             {"gc", "zr.system.gc"},
+            {"exception", "zr.system.exception"},
             {"vm", "zr.system.vm"},
     };
 
@@ -1350,6 +1524,15 @@ void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
     };
     static const TZrChar *kEnvExports[] = {"getVariable"};
     static const TZrChar *kGcExports[] = {"start", "stop", "step", "collect"};
+    static const TZrChar *kExceptionExports[] = {
+            "registerUnhandledException",
+            "Error",
+            "StackFrame",
+            "RuntimeError",
+            "TypeError",
+            "MemoryError",
+            "ExceptionError",
+    };
     static const TZrChar *kVmExports[] = {"loadedModules", "state", "callModuleExport", "SystemVmState", "SystemLoadedModuleInfo"};
     static const TZrChar *kConsoleAbsentExports[] = {"println", "eprint", "eprintln"};
     static const TZrChar *kProcessAbsentExports[] = {"args", "sleepMs"};
@@ -1364,6 +1547,7 @@ void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
         SZrObjectModule *envModule;
         SZrObjectModule *processModule;
         SZrObjectModule *gcModule;
+        SZrObjectModule *exceptionModule;
         SZrObjectModule *vmModule;
         const SZrTypeValue *argumentsValue;
         TZrSize index;
@@ -1375,6 +1559,7 @@ void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
         envModule = import_native_module(state, "zr.system.env");
         processModule = import_native_module(state, "zr.system.process");
         gcModule = import_native_module(state, "zr.system.gc");
+        exceptionModule = import_native_module(state, "zr.system.exception");
         vmModule = import_native_module(state, "zr.system.vm");
 
         TEST_ASSERT_NOT_NULL(consoleModule);
@@ -1382,6 +1567,7 @@ void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
         TEST_ASSERT_NOT_NULL(envModule);
         TEST_ASSERT_NOT_NULL(processModule);
         TEST_ASSERT_NOT_NULL(gcModule);
+        TEST_ASSERT_NOT_NULL(exceptionModule);
         TEST_ASSERT_NOT_NULL(vmModule);
 
         for (index = 0; index < ZR_ARRAY_COUNT(kConsoleExports); index++) {
@@ -1410,6 +1596,10 @@ void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
 
         for (index = 0; index < ZR_ARRAY_COUNT(kGcExports); index++) {
             TEST_ASSERT_NOT_NULL(get_module_export_value(state, gcModule, kGcExports[index]));
+        }
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kExceptionExports); index++) {
+            TEST_ASSERT_NOT_NULL(get_module_export_value(state, exceptionModule, kExceptionExports[index]));
         }
 
         for (index = 0; index < ZR_ARRAY_COUNT(kVmExports); index++) {
@@ -1474,7 +1664,12 @@ void test_system_native_types_register_complete_struct_fields(void) {
         TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "name", &offset));
         TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "sourceKind", &offset));
         TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "sourcePath", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "registrationKind", &offset));
         TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "hasTypeHints", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "moduleVersion", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "runtimeAbiVersion", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "requiredCapabilities", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "isDescriptorPlugin", &offset));
 
         destroy_test_state(state);
     }
@@ -1496,6 +1691,7 @@ void test_system_root_native_module_info_exposes_module_links(void) {
             {"env", "zr.system.env"},
             {"process", "zr.system.process"},
             {"gc", "zr.system.gc"},
+            {"exception", "zr.system.exception"},
             {"vm", "zr.system.vm"},
     };
 
@@ -1557,6 +1753,317 @@ void test_system_root_native_module_info_exposes_module_links(void) {
             TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, moduleNameValue->value.object),
                                                    kExpectedModules[index].moduleName));
         }
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_native_module_info_exposes_enum_and_interface_descriptors(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Module Info Exposes Enum And Interface Descriptors";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *module;
+        const SZrTypeValue *moduleInfoValue;
+        const SZrTypeValue *typesValue;
+        SZrObject *moduleInfo;
+        SZrObject *typesArray;
+        SZrObject *readableEntry;
+        SZrObject *streamReadableEntry;
+        SZrObject *enumEntry;
+        SZrObject *deviceEntry;
+        const SZrTypeValue *prototypeTypeValue;
+        const SZrTypeValue *allowValueValue;
+        const SZrTypeValue *allowBoxedValue;
+        const SZrTypeValue *extendsValue;
+        const SZrTypeValue *constructorSignatureValue;
+        const SZrTypeValue *implementsValue;
+        const SZrTypeValue *enumMembersValue;
+        const SZrTypeValue *enumValueTypeValue;
+        const SZrTypeValue *firstImplementValue;
+        SZrObject *enumMembersArray;
+        SZrObject *onMemberEntry;
+        const SZrTypeValue *onMemberIntValue;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(register_probe_native_module(state));
+
+        module = import_native_module(state, "probe.native_shapes");
+        TEST_ASSERT_NOT_NULL(module);
+
+        moduleInfoValue = get_module_export_value(state, module, ZR_NATIVE_MODULE_INFO_EXPORT_NAME);
+        TEST_ASSERT_NOT_NULL(moduleInfoValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, moduleInfoValue->type);
+
+        moduleInfo = ZR_CAST_OBJECT(state, moduleInfoValue->value.object);
+        TEST_ASSERT_NOT_NULL(moduleInfo);
+
+        typesValue = get_object_field_value(state, moduleInfo, "types");
+        TEST_ASSERT_NOT_NULL(typesValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, typesValue->type);
+
+        typesArray = ZR_CAST_OBJECT(state, typesValue->value.object);
+        TEST_ASSERT_NOT_NULL(typesArray);
+        TEST_ASSERT_EQUAL_UINT64(4, get_array_length(typesArray));
+
+        readableEntry = find_named_entry_in_array(state, typesArray, "name", "NativeReadable");
+        streamReadableEntry = find_named_entry_in_array(state, typesArray, "name", "NativeStreamReadable");
+        enumEntry = find_named_entry_in_array(state, typesArray, "name", "NativeMode");
+        deviceEntry = find_named_entry_in_array(state, typesArray, "name", "NativeDevice");
+
+        TEST_ASSERT_NOT_NULL(readableEntry);
+        TEST_ASSERT_NOT_NULL(streamReadableEntry);
+        TEST_ASSERT_NOT_NULL(enumEntry);
+        TEST_ASSERT_NOT_NULL(deviceEntry);
+
+        prototypeTypeValue = get_object_field_value(state, readableEntry, "prototypeType");
+        allowValueValue = get_object_field_value(state, readableEntry, "allowValueConstruction");
+        allowBoxedValue = get_object_field_value(state, readableEntry, "allowBoxedConstruction");
+        constructorSignatureValue = get_object_field_value(state, readableEntry, "constructorSignature");
+        TEST_ASSERT_NOT_NULL(prototypeTypeValue);
+        TEST_ASSERT_NOT_NULL(allowValueValue);
+        TEST_ASSERT_NOT_NULL(allowBoxedValue);
+        TEST_ASSERT_NOT_NULL(constructorSignatureValue);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, prototypeTypeValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, allowValueValue->type);
+        TEST_ASSERT_FALSE(allowValueValue->value.nativeObject.nativeBool);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, allowBoxedValue->type);
+        TEST_ASSERT_FALSE(allowBoxedValue->value.nativeObject.nativeBool);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, constructorSignatureValue->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, constructorSignatureValue->value.object),
+                                               "NativeReadable()"));
+
+        prototypeTypeValue = get_object_field_value(state, streamReadableEntry, "prototypeType");
+        extendsValue = get_object_field_value(state, streamReadableEntry, "extendsTypeName");
+        TEST_ASSERT_NOT_NULL(prototypeTypeValue);
+        TEST_ASSERT_NOT_NULL(extendsValue);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, prototypeTypeValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, extendsValue->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, extendsValue->value.object), "NativeReadable"));
+
+        prototypeTypeValue = get_object_field_value(state, enumEntry, "prototypeType");
+        allowValueValue = get_object_field_value(state, enumEntry, "allowValueConstruction");
+        allowBoxedValue = get_object_field_value(state, enumEntry, "allowBoxedConstruction");
+        constructorSignatureValue = get_object_field_value(state, enumEntry, "constructorSignature");
+        enumMembersValue = get_object_field_value(state, enumEntry, "enumMembers");
+        enumValueTypeValue = get_object_field_value(state, enumEntry, "enumValueTypeName");
+        TEST_ASSERT_NOT_NULL(prototypeTypeValue);
+        TEST_ASSERT_NOT_NULL(allowValueValue);
+        TEST_ASSERT_NOT_NULL(allowBoxedValue);
+        TEST_ASSERT_NOT_NULL(constructorSignatureValue);
+        TEST_ASSERT_NOT_NULL(enumMembersValue);
+        TEST_ASSERT_NOT_NULL(enumValueTypeValue);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_ENUM, prototypeTypeValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_TRUE(allowValueValue->value.nativeObject.nativeBool);
+        TEST_ASSERT_TRUE(allowBoxedValue->value.nativeObject.nativeBool);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, constructorSignatureValue->value.object),
+                                               "NativeMode(value: int)"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, enumValueTypeValue->value.object), "int"));
+
+        enumMembersArray = ZR_CAST_OBJECT(state, enumMembersValue->value.object);
+        TEST_ASSERT_NOT_NULL(enumMembersArray);
+        TEST_ASSERT_EQUAL_UINT64(2, get_array_length(enumMembersArray));
+        onMemberEntry = find_named_entry_in_array(state, enumMembersArray, "name", "On");
+        TEST_ASSERT_NOT_NULL(onMemberEntry);
+        onMemberIntValue = get_object_field_value(state, onMemberEntry, "intValue");
+        TEST_ASSERT_NOT_NULL(onMemberIntValue);
+        TEST_ASSERT_EQUAL_INT64(1, onMemberIntValue->value.nativeObject.nativeInt64);
+
+        prototypeTypeValue = get_object_field_value(state, deviceEntry, "prototypeType");
+        implementsValue = get_object_field_value(state, deviceEntry, "implements");
+        TEST_ASSERT_NOT_NULL(prototypeTypeValue);
+        TEST_ASSERT_NOT_NULL(implementsValue);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_CLASS, prototypeTypeValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, implementsValue->type);
+        TEST_ASSERT_EQUAL_UINT64(1, get_array_length(ZR_CAST_OBJECT(state, implementsValue->value.object)));
+        firstImplementValue = get_array_entry_value(state, ZR_CAST_OBJECT(state, implementsValue->value.object), 0);
+        TEST_ASSERT_NOT_NULL(firstImplementValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, firstImplementValue->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstImplementValue->value.object),
+                                               "NativeStreamReadable"));
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_native_module_runtime_registers_enum_members_and_interface_inheritance(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Module Runtime Registers Enum Members And Interface Inheritance";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *module;
+        SZrObjectPrototype *readablePrototype;
+        SZrObjectPrototype *streamReadablePrototype;
+        SZrObjectPrototype *enumPrototype;
+        const SZrTypeValue *onValue;
+        SZrObject *onObject;
+        const SZrTypeValue *enumValueField;
+        const SZrTypeValue *enumNameField;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(register_probe_native_module(state));
+
+        module = import_native_module(state, "probe.native_shapes");
+        TEST_ASSERT_NOT_NULL(module);
+
+        readablePrototype = get_module_exported_prototype(state, module, "NativeReadable");
+        streamReadablePrototype = get_module_exported_prototype(state, module, "NativeStreamReadable");
+        enumPrototype = get_module_exported_prototype(state, module, "NativeMode");
+
+        TEST_ASSERT_NOT_NULL(readablePrototype);
+        TEST_ASSERT_NOT_NULL(streamReadablePrototype);
+        TEST_ASSERT_NOT_NULL(enumPrototype);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, readablePrototype->type);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, streamReadablePrototype->type);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_ENUM, enumPrototype->type);
+        TEST_ASSERT_EQUAL_PTR(readablePrototype, streamReadablePrototype->superPrototype);
+
+        onValue = get_object_field_value(state, &enumPrototype->super, "On");
+        TEST_ASSERT_NOT_NULL(onValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, onValue->type);
+
+        onObject = ZR_CAST_OBJECT(state, onValue->value.object);
+        TEST_ASSERT_NOT_NULL(onObject);
+        TEST_ASSERT_EQUAL_PTR(enumPrototype, onObject->prototype);
+
+        enumValueField = get_object_field_value(state, onObject, "__zr_enumValue");
+        enumNameField = get_object_field_value(state, onObject, "__zr_enumName");
+        TEST_ASSERT_NOT_NULL(enumValueField);
+        TEST_ASSERT_NOT_NULL(enumNameField);
+        TEST_ASSERT_EQUAL_INT64(1, enumValueField->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, enumNameField->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, enumNameField->value.object), "On"));
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_native_enum_construction_returns_runtime_enum_instance(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Enum Construction Returns Runtime Enum Instance";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "var probe = import(\"probe.native_shapes\");\n"
+                "return $probe.NativeMode(1);\n";
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        SZrTypeValue result;
+        SZrObjectModule *module;
+        SZrObjectPrototype *enumPrototype;
+        SZrObject *resultObject;
+        const SZrTypeValue *enumValueField;
+        const SZrTypeValue *enumNameField;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(register_probe_native_module(state));
+
+        sourceName = ZrCore_String_Create(state, "probe_native_enum_runtime_test.zr", 33);
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
+
+        resultObject = ZR_CAST_OBJECT(state, result.value.object);
+        TEST_ASSERT_NOT_NULL(resultObject);
+
+        module = import_native_module(state, "probe.native_shapes");
+        TEST_ASSERT_NOT_NULL(module);
+        enumPrototype = get_module_exported_prototype(state, module, "NativeMode");
+        TEST_ASSERT_NOT_NULL(enumPrototype);
+        TEST_ASSERT_EQUAL_PTR(enumPrototype, resultObject->prototype);
+
+        enumValueField = get_object_field_value(state, resultObject, "__zr_enumValue");
+        enumNameField = get_object_field_value(state, resultObject, "__zr_enumName");
+        TEST_ASSERT_NOT_NULL(enumValueField);
+        TEST_ASSERT_NOT_NULL(enumNameField);
+        TEST_ASSERT_EQUAL_INT64(1, enumValueField->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, enumNameField->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, enumNameField->value.object), "On"));
+
+        ZrCore_Function_Free(state, entryFunction);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_native_registry_rejects_future_runtime_abi(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Registry Rejects Future Runtime ABI";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *errorMessage;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_RegisterModule(state->global, &kProbeFutureAbiModuleDescriptor));
+        TEST_ASSERT_EQUAL_INT(ZR_LIB_NATIVE_REGISTRY_ERROR_VERSION_MISMATCH,
+                              ZrLibrary_NativeRegistry_GetLastErrorCode(state->global));
+        errorMessage = ZrLibrary_NativeRegistry_GetLastErrorMessage(state->global);
+        TEST_ASSERT_NOT_NULL(errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "probe.future_abi"));
+        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "requires runtime ABI"));
+        TEST_ASSERT_NULL(ZrLibrary_NativeRegistry_FindModule(state->global, "probe.future_abi"));
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_native_registry_rejects_unsupported_capabilities(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Registry Rejects Unsupported Capabilities";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *errorMessage;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_FALSE(
+                ZrLibrary_NativeRegistry_RegisterModule(state->global, &kProbeUnsupportedCapabilityModuleDescriptor));
+        TEST_ASSERT_EQUAL_INT(ZR_LIB_NATIVE_REGISTRY_ERROR_CAPABILITY_MISMATCH,
+                              ZrLibrary_NativeRegistry_GetLastErrorCode(state->global));
+        errorMessage = ZrLibrary_NativeRegistry_GetLastErrorMessage(state->global);
+        TEST_ASSERT_NOT_NULL(errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "probe.unsupported_capability"));
+        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "unsupported capabilities"));
+        TEST_ASSERT_NULL(ZrLibrary_NativeRegistry_FindModule(state->global, "probe.unsupported_capability"));
 
         destroy_test_state(state);
     }
@@ -1628,6 +2135,21 @@ int main(void) {
 
     // 18. 根模块原生元信息包含 modules 数组
     RUN_TEST(test_system_root_native_module_info_exposes_module_links);
+
+    // 19. native enum/interface descriptor 元信息完整暴露
+    RUN_TEST(test_native_module_info_exposes_enum_and_interface_descriptors);
+
+    // 20. native runtime 注册 enum 静态成员和 interface 继承链
+    RUN_TEST(test_native_module_runtime_registers_enum_members_and_interface_inheritance);
+
+    // 21. native enum 构造在 runtime 返回正确实例
+    RUN_TEST(test_native_enum_construction_returns_runtime_enum_instance);
+
+    // 22. native registry 拒绝未来 ABI 版本
+    RUN_TEST(test_native_registry_rejects_future_runtime_abi);
+
+    // 23. native registry 拒绝未支持 capability
+    RUN_TEST(test_native_registry_rejects_unsupported_capabilities);
 
     return UNITY_END();
 }

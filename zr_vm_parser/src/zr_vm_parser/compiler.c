@@ -24,13 +24,21 @@ extern TZrBool ZrParser_CompileTimeDeclaration_Execute(SZrCompilerState *cs, SZr
 
 #include <string.h>
 
+#ifndef ZR_ARRAY_COUNT
+#define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
+#endif
+
 // 前向声明（这些函数在其他文件中实现）
 extern void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
 extern void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_script(SZrCompilerState *cs, SZrAstNode *node);
 void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node);
+void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements);
+void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements);
 static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node);
+static void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node);
+void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNode *node);
 
 // 编译期执行函数（在 compile_time_executor.c 中实现）
 extern TZrBool ZrParser_CompileTimeDeclaration_Execute(SZrCompilerState *cs, SZrAstNode *node);
@@ -39,6 +47,7 @@ static void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMet
 static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *node,
                                                   SZrString *superTypeName,
                                                   TZrBool injectThis, TZrUInt32 *outParameterCount);
+static SZrString *create_hidden_extern_local_name(SZrCompilerState *cs, const TZrChar *prefix);
 TZrSize create_label(SZrCompilerState *cs);
 void resolve_label(SZrCompilerState *cs, TZrSize labelId);
 
@@ -86,9 +95,16 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
 
     // 初始化待解析跳转数组
     ZrCore_Array_Init(state, &cs->pendingJumps, sizeof(SZrPendingJump), 8);
+    ZrCore_Array_Init(state, &cs->pendingAbsolutePatches, sizeof(SZrPendingAbsolutePatch), 8);
 
     // 初始化循环标签栈
     ZrCore_Array_Init(state, &cs->loopLabelStack, sizeof(SZrLoopLabel), 4);
+    ZrCore_Array_Init(state, &cs->tryContextStack, sizeof(SZrCompilerTryContext), 4);
+
+    // 初始化调试与异常元数据
+    ZrCore_Array_Init(state, &cs->executionLocations, sizeof(SZrFunctionExecutionLocationInfo), 32);
+    ZrCore_Array_Init(state, &cs->catchClauseInfos, sizeof(SZrCompilerCatchClauseInfo), 8);
+    ZrCore_Array_Init(state, &cs->exceptionHandlerInfos, sizeof(SZrCompilerExceptionHandlerInfo), 4);
 
     // 初始化子函数数组
     ZrCore_Array_Init(state, &cs->childFunctions, sizeof(SZrFunction *), 8);
@@ -140,6 +156,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     // 初始化类型 Prototype 信息数组
     ZrCore_Array_Init(state, &cs->typePrototypes, sizeof(SZrTypePrototypeInfo), 8);
     cs->currentTypePrototypeInfo = ZR_NULL;
+    cs->externBindingsPredeclared = ZR_FALSE;
     
     // 初始化编译期环境
     cs->compileTimeTypeEnv = ZrParser_TypeEnvironment_New(state);
@@ -212,10 +229,35 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         ZrCore_Array_Free(state, &cs->pendingJumps);
     }
 
+    if (cs->pendingAbsolutePatches.isValid && cs->pendingAbsolutePatches.head != ZR_NULL &&
+        cs->pendingAbsolutePatches.capacity > 0 && cs->pendingAbsolutePatches.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->pendingAbsolutePatches);
+    }
+
     // 释放循环标签栈
     if (cs->loopLabelStack.isValid && cs->loopLabelStack.head != ZR_NULL && cs->loopLabelStack.capacity > 0 &&
         cs->loopLabelStack.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->loopLabelStack);
+    }
+
+    if (cs->tryContextStack.isValid && cs->tryContextStack.head != ZR_NULL && cs->tryContextStack.capacity > 0 &&
+        cs->tryContextStack.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->tryContextStack);
+    }
+
+    if (cs->executionLocations.isValid && cs->executionLocations.head != ZR_NULL &&
+        cs->executionLocations.capacity > 0 && cs->executionLocations.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->executionLocations);
+    }
+
+    if (cs->catchClauseInfos.isValid && cs->catchClauseInfos.head != ZR_NULL &&
+        cs->catchClauseInfos.capacity > 0 && cs->catchClauseInfos.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->catchClauseInfos);
+    }
+
+    if (cs->exceptionHandlerInfos.isValid && cs->exceptionHandlerInfos.head != ZR_NULL &&
+        cs->exceptionHandlerInfos.capacity > 0 && cs->exceptionHandlerInfos.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->exceptionHandlerInfos);
     }
 
     // 释放子函数数组（函数本身由 GC 管理）
@@ -271,6 +313,10 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                 if (info->inherits.isValid && info->inherits.head != ZR_NULL &&
                     info->inherits.capacity > 0 && info->inherits.elementSize > 0) {
                     ZrCore_Array_Free(state, &info->inherits);
+                }
+                if (info->implements.isValid && info->implements.head != ZR_NULL &&
+                    info->implements.capacity > 0 && info->implements.elementSize > 0) {
+                    ZrCore_Array_Free(state, &info->implements);
                 }
                 // 释放 members 数组
                 if (info->members.isValid && info->members.head != ZR_NULL &&
@@ -589,8 +635,148 @@ static TZrInstruction create_instruction_4(EZrInstructionCode opcode, TZrUInt16 
     return instruction;
 }
 
+static TZrBool compiler_copy_range_to_raw(SZrCompilerState *cs,
+                                          TZrPtr *outMemory,
+                                          const TZrPtr source,
+                                          TZrSize count,
+                                          TZrSize elementSize) {
+    TZrSize bytes;
+
+    if (outMemory == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outMemory = ZR_NULL;
+    if (cs == ZR_NULL || cs->state == ZR_NULL || count == 0 || source == ZR_NULL || elementSize == 0) {
+        return ZR_TRUE;
+    }
+
+    bytes = count * elementSize;
+    *outMemory = ZrCore_Memory_RawMallocWithType(cs->state->global, bytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (*outMemory == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memcpy(*outMemory, source, bytes);
+    return ZR_TRUE;
+}
+
+static TZrBool compiler_copy_function_exception_metadata_slice(SZrCompilerState *cs,
+                                                               SZrFunction *function,
+                                                               TZrSize executionStart,
+                                                               TZrSize catchStart,
+                                                               TZrSize handlerStart,
+                                                               SZrAstNode *sourceNode) {
+    TZrSize executionCount;
+    TZrSize catchCount;
+    TZrSize handlerCount;
+
+    if (cs == ZR_NULL || function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    executionCount = (cs->executionLocations.length > executionStart)
+                             ? (cs->executionLocations.length - executionStart)
+                             : 0;
+    catchCount = (cs->catchClauseInfos.length > catchStart)
+                         ? (cs->catchClauseInfos.length - catchStart)
+                         : 0;
+    handlerCount = (cs->exceptionHandlerInfos.length > handlerStart)
+                           ? (cs->exceptionHandlerInfos.length - handlerStart)
+                           : 0;
+
+    function->executionLocationInfoList = ZR_NULL;
+    function->executionLocationInfoLength = 0;
+    function->catchClauseList = ZR_NULL;
+    function->catchClauseCount = 0;
+    function->exceptionHandlerList = ZR_NULL;
+    function->exceptionHandlerCount = 0;
+    function->sourceCodeList = (sourceNode != ZR_NULL) ? sourceNode->location.source : ZR_NULL;
+
+    if (executionCount > 0) {
+        SZrFunctionExecutionLocationInfo *src =
+                (SZrFunctionExecutionLocationInfo *)ZrCore_Array_Get(&cs->executionLocations, executionStart);
+        TZrPtr copied = ZR_NULL;
+        if (!compiler_copy_range_to_raw(cs,
+                                        &copied,
+                                        src,
+                                        executionCount,
+                                        sizeof(SZrFunctionExecutionLocationInfo))) {
+            return ZR_FALSE;
+        }
+        function->executionLocationInfoList = (SZrFunctionExecutionLocationInfo *)copied;
+        function->executionLocationInfoLength = (TZrUInt32)executionCount;
+    }
+
+    if (catchCount > 0) {
+        function->catchClauseList = (SZrFunctionCatchClauseInfo *)ZrCore_Memory_RawMallocWithType(
+                cs->state->global,
+                catchCount * sizeof(SZrFunctionCatchClauseInfo),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->catchClauseList == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        for (TZrSize index = 0; index < catchCount; index++) {
+            SZrCompilerCatchClauseInfo *src =
+                    (SZrCompilerCatchClauseInfo *)ZrCore_Array_Get(&cs->catchClauseInfos, catchStart + index);
+            SZrFunctionCatchClauseInfo *dst = &function->catchClauseList[index];
+            SZrLabel *targetLabel = (src != ZR_NULL && src->targetLabelId < cs->labels.length)
+                                            ? (SZrLabel *)ZrCore_Array_Get(&cs->labels, src->targetLabelId)
+                                            : ZR_NULL;
+
+            dst->typeName = (src != ZR_NULL) ? src->typeName : ZR_NULL;
+            dst->targetInstructionOffset =
+                    (targetLabel != ZR_NULL) ? (TZrMemoryOffset)targetLabel->instructionIndex : 0;
+        }
+        function->catchClauseCount = (TZrUInt32)catchCount;
+    }
+
+    if (handlerCount > 0) {
+        function->exceptionHandlerList = (SZrFunctionExceptionHandlerInfo *)ZrCore_Memory_RawMallocWithType(
+                cs->state->global,
+                handlerCount * sizeof(SZrFunctionExceptionHandlerInfo),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->exceptionHandlerList == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        for (TZrSize index = 0; index < handlerCount; index++) {
+            SZrCompilerExceptionHandlerInfo *src =
+                    (SZrCompilerExceptionHandlerInfo *)ZrCore_Array_Get(&cs->exceptionHandlerInfos,
+                                                                        handlerStart + index);
+            SZrFunctionExceptionHandlerInfo *dst = &function->exceptionHandlerList[index];
+            SZrLabel *finallyLabel = (src != ZR_NULL && src->finallyLabelId < cs->labels.length)
+                                             ? (SZrLabel *)ZrCore_Array_Get(&cs->labels, src->finallyLabelId)
+                                             : ZR_NULL;
+            SZrLabel *afterFinallyLabel = (src != ZR_NULL && src->afterFinallyLabelId < cs->labels.length)
+                                                  ? (SZrLabel *)ZrCore_Array_Get(&cs->labels, src->afterFinallyLabelId)
+                                                  : ZR_NULL;
+
+            if (src == ZR_NULL) {
+                memset(dst, 0, sizeof(*dst));
+                continue;
+            }
+
+            dst->protectedStartInstructionOffset = src->protectedStartInstructionOffset;
+            dst->finallyTargetInstructionOffset =
+                    (finallyLabel != ZR_NULL) ? (TZrMemoryOffset)finallyLabel->instructionIndex : 0;
+            dst->afterFinallyInstructionOffset =
+                    (afterFinallyLabel != ZR_NULL) ? (TZrMemoryOffset)afterFinallyLabel->instructionIndex : 0;
+            dst->catchClauseStartIndex = (TZrUInt32)(src->catchClauseStartIndex - catchStart);
+            dst->catchClauseCount = src->catchClauseCount;
+            dst->hasFinally = src->hasFinally;
+        }
+        function->exceptionHandlerCount = (TZrUInt32)handlerCount;
+    }
+
+    return ZR_TRUE;
+}
+
 // 添加指令到当前函数
 void emit_instruction(SZrCompilerState *cs, TZrInstruction instruction) {
+    SZrFunctionExecutionLocationInfo locationInfo;
+
     if (cs == ZR_NULL || cs->hasError) {
         return;
     }
@@ -598,6 +784,12 @@ void emit_instruction(SZrCompilerState *cs, TZrInstruction instruction) {
     ZrCore_Array_Push(cs->state, &cs->instructions, &instruction);
     // instructionCount 应该与 instructions.length 保持同步
     cs->instructionCount = cs->instructions.length;
+
+    locationInfo.currentInstructionOffset = (TZrMemoryOffset)(cs->instructionCount - 1);
+    locationInfo.lineInSource = (cs->currentAst != ZR_NULL && cs->currentAst->location.start.line > 0)
+                                        ? (TZrUInt32)cs->currentAst->location.start.line
+                                        : 0;
+    ZrCore_Array_Push(cs->state, &cs->executionLocations, &locationInfo);
 }
 
 // 添加常量到常量池
@@ -1053,6 +1245,201 @@ static void emit_string_constant_to_slot(SZrCompilerState *cs, TZrUInt32 slot, S
     emit_constant_to_slot(cs, slot, &constantValue);
 }
 
+static void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDeclaration *funcDecl) {
+    if (cs == ZR_NULL || funcDecl == ZR_NULL || cs->typeEnv == ZR_NULL ||
+        funcDecl->name == ZR_NULL || funcDecl->name->name == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (funcDecl->returnType != ZR_NULL) {
+        SZrInferredType returnType;
+        if (ZrParser_AstTypeToInferredType_Convert(cs, funcDecl->returnType, &returnType)) {
+            SZrArray paramTypes;
+            ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), 8);
+            if (funcDecl->params != ZR_NULL) {
+                for (TZrSize i = 0; i < funcDecl->params->count; i++) {
+                    SZrAstNode *paramNode = funcDecl->params->nodes[i];
+                    if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
+                        SZrParameter *param = &paramNode->data.parameter;
+                        if (param->typeInfo != ZR_NULL) {
+                            SZrInferredType paramType;
+                            if (ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
+                                ZrCore_Array_Push(cs->state, &paramTypes, &paramType);
+                            }
+                        } else {
+                            SZrInferredType paramType;
+                            ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+                            ZrCore_Array_Push(cs->state, &paramTypes, &paramType);
+                        }
+                    }
+                }
+            }
+            ZrParser_TypeEnvironment_RegisterFunction(cs->state, cs->typeEnv, funcDecl->name->name, &returnType, &paramTypes);
+            ZrParser_InferredType_Free(cs->state, &returnType);
+            for (TZrSize i = 0; i < paramTypes.length; i++) {
+                SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get(&paramTypes, i);
+                if (paramType != ZR_NULL) {
+                    ZrParser_InferredType_Free(cs->state, paramType);
+                }
+            }
+            ZrCore_Array_Free(cs->state, &paramTypes);
+        }
+    } else {
+        SZrInferredType returnType;
+        SZrArray paramTypes;
+
+        ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_OBJECT);
+        ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), 8);
+        ZrParser_TypeEnvironment_RegisterFunction(cs->state, cs->typeEnv, funcDecl->name->name, &returnType, &paramTypes);
+        ZrParser_InferredType_Free(cs->state, &returnType);
+        ZrCore_Array_Free(cs->state, &paramTypes);
+    }
+}
+
+static void compiler_register_named_value_binding_to_env(SZrCompilerState *cs,
+                                                         SZrTypeEnvironment *env,
+                                                         SZrString *name,
+                                                         SZrString *typeName) {
+    SZrInferredType existingType;
+    SZrInferredType inferredType;
+
+    if (cs == ZR_NULL || env == ZR_NULL || name == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &existingType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_TypeEnvironment_LookupVariable(cs->state, env, name, &existingType)) {
+        ZrParser_InferredType_Free(cs->state, &existingType);
+        return;
+    }
+    ZrParser_InferredType_Free(cs->state, &existingType);
+
+    if (typeName != ZR_NULL) {
+        ZrParser_InferredType_InitFull(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, typeName);
+    } else {
+        ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    }
+    ZrParser_TypeEnvironment_RegisterVariable(cs->state, env, name, &inferredType);
+    ZrParser_InferredType_Free(cs->state, &inferredType);
+}
+
+static void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
+                                                                  SZrTypeEnvironment *env,
+                                                                  SZrExternFunctionDeclaration *functionDecl) {
+    SZrInferredType returnType;
+    SZrArray paramTypes;
+
+    if (cs == ZR_NULL || env == ZR_NULL || functionDecl == ZR_NULL ||
+        functionDecl->name == ZR_NULL || functionDecl->name->name == ZR_NULL) {
+        return;
+    }
+
+    if (functionDecl->returnType != ZR_NULL) {
+        if (!ZrParser_AstTypeToInferredType_Convert(cs, functionDecl->returnType, &returnType)) {
+            return;
+        }
+    } else {
+        ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_NULL);
+    }
+
+    ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), functionDecl->params != ZR_NULL
+                                                                         ? functionDecl->params->count
+                                                                         : 0);
+    if (functionDecl->params != ZR_NULL) {
+        for (TZrSize i = 0; i < functionDecl->params->count; i++) {
+            SZrAstNode *paramNode = functionDecl->params->nodes[i];
+            SZrInferredType paramType;
+
+            if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+                continue;
+            }
+
+            if (paramNode->data.parameter.typeInfo != ZR_NULL) {
+                if (!ZrParser_AstTypeToInferredType_Convert(cs, paramNode->data.parameter.typeInfo, &paramType)) {
+                    continue;
+                }
+            } else {
+                ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+            }
+            ZrCore_Array_Push(cs->state, &paramTypes, &paramType);
+        }
+    }
+
+    ZrParser_TypeEnvironment_RegisterFunction(cs->state, env, functionDecl->name->name, &returnType, &paramTypes);
+
+    ZrParser_InferredType_Free(cs->state, &returnType);
+    for (TZrSize i = 0; i < paramTypes.length; i++) {
+        SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get(&paramTypes, i);
+        if (paramType != ZR_NULL) {
+            ZrParser_InferredType_Free(cs->state, paramType);
+        }
+    }
+    ZrCore_Array_Free(cs->state, &paramTypes);
+}
+
+static TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name) {
+    SZrScope *scope;
+    TZrSize startIndex;
+
+    if (cs == ZR_NULL || name == ZR_NULL || cs->scopeStack.length == 0) {
+        return (TZrUInt32)-1;
+    }
+
+    scope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, cs->scopeStack.length - 1);
+    startIndex = scope != ZR_NULL ? scope->startVarIndex : 0;
+    if (startIndex > cs->localVars.length) {
+        startIndex = cs->localVars.length;
+    }
+
+    for (TZrSize i = cs->localVars.length; i > startIndex; i--) {
+        SZrFunctionLocalVariable *var =
+                (SZrFunctionLocalVariable *)ZrCore_Array_Get(&cs->localVars, i - 1);
+        if (var != ZR_NULL && var->name != ZR_NULL && ZrCore_String_Equal(var->name, name)) {
+            return var->stackSlot;
+        }
+    }
+
+    return (TZrUInt32)-1;
+}
+
+void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) {
+    if (cs == ZR_NULL || statements == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    for (TZrSize i = 0; i < statements->count; i++) {
+        SZrAstNode *stmt = statements->nodes[i];
+        SZrFunctionDeclaration *funcDecl;
+        TZrUInt32 slot;
+        SZrTypeValue nullValue;
+
+        if (stmt == ZR_NULL || stmt->type != ZR_AST_FUNCTION_DECLARATION) {
+            continue;
+        }
+
+        funcDecl = &stmt->data.functionDeclaration;
+        if (funcDecl->name == ZR_NULL || funcDecl->name->name == ZR_NULL) {
+            continue;
+        }
+
+        compiler_register_function_type_binding(cs, funcDecl);
+        if (cs->hasError) {
+            return;
+        }
+
+        if (find_local_var_in_current_scope(cs, funcDecl->name->name) != (TZrUInt32)-1) {
+            continue;
+        }
+
+        slot = allocate_local_var(cs, funcDecl->name->name);
+        ZrCore_Value_ResetAsNull(&nullValue);
+        emit_constant_to_slot(cs, slot, &nullValue);
+        if (cs->hasError) {
+            return;
+        }
+    }
+}
+
 static TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || name == ZR_NULL || cs->hasError) {
         return (TZrUInt32)-1;
@@ -1068,6 +1455,7 @@ static TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *na
     TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TZrUInt16)globalSlot,
                                                        (TZrUInt16)globalSlot, (TZrUInt16)keySlot);
     emit_instruction(cs, getTableInst);
+    ZrParser_Compiler_TrimStackToSlot(cs, globalSlot);
     return globalSlot;
 }
 
@@ -1220,6 +1608,1386 @@ static void emit_super_constructor_call(SZrCompilerState *cs, SZrString *superTy
     emit_instruction(cs, callSuperInst);
 }
 
+static SZrString *create_hidden_extern_local_name(SZrCompilerState *cs, const TZrChar *prefix) {
+    TZrChar buffer[96];
+    int length;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || prefix == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    length = snprintf(buffer,
+                      sizeof(buffer),
+                      "__zr_extern_%s_%u_%u",
+                      prefix,
+                      (unsigned)cs->scopeStack.length,
+                      (unsigned)cs->localVars.length);
+    if (length < 0) {
+        return ZR_NULL;
+    }
+
+    if ((size_t)length >= sizeof(buffer)) {
+        length = (int)sizeof(buffer) - 1;
+        buffer[length] = '\0';
+    }
+
+    return ZrCore_String_Create(cs->state, buffer, (TZrSize)length);
+}
+
+static TZrBool extern_compiler_string_equals(SZrString *value, const TZrChar *literal) {
+    TZrNativeString nativeValue;
+
+    if (value == ZR_NULL || literal == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nativeValue = ZrCore_String_GetNativeString(value);
+    return nativeValue != ZR_NULL && strcmp(nativeValue, literal) == 0;
+}
+
+static TZrBool extern_compiler_identifier_equals(SZrAstNode *node, const TZrChar *literal) {
+    if (node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL || literal == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return extern_compiler_string_equals(node->data.identifier.name, literal);
+}
+
+static TZrBool extern_compiler_make_string_value(SZrCompilerState *cs, const TZrChar *text, SZrTypeValue *outValue) {
+    SZrString *stringObject;
+
+    if (cs == ZR_NULL || text == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stringObject = ZrCore_String_CreateFromNative(cs->state, text);
+    if (stringObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, outValue, ZR_CAST_RAW_OBJECT_AS_SUPER(stringObject));
+    outValue->type = ZR_VALUE_TYPE_STRING;
+    return ZR_TRUE;
+}
+
+typedef struct ZrExternCompilerTempRoot {
+    SZrState *state;
+    SZrFunctionStackAnchor savedStackTopAnchor;
+    SZrFunctionStackAnchor slotAnchor;
+    TZrBool active;
+} ZrExternCompilerTempRoot;
+
+static TZrBool extern_compiler_temp_root_begin(SZrCompilerState *cs, ZrExternCompilerTempRoot *root) {
+    TZrStackValuePointer savedStackTop;
+    TZrStackValuePointer slot;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || root == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(root, 0, sizeof(*root));
+    root->state = cs->state;
+    savedStackTop = cs->state->stackTop.valuePointer;
+    if (savedStackTop == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Function_StackAnchorInit(cs->state, savedStackTop, &root->savedStackTopAnchor);
+    slot = ZrCore_Function_CheckStackAndAnchor(cs->state, 1, savedStackTop, savedStackTop, &root->slotAnchor);
+    if (slot == ZR_NULL) {
+        memset(root, 0, sizeof(*root));
+        return ZR_FALSE;
+    }
+
+    slot = ZrCore_Function_StackAnchorRestore(cs->state, &root->slotAnchor);
+    if (slot == ZR_NULL) {
+        memset(root, 0, sizeof(*root));
+        return ZR_FALSE;
+    }
+
+    cs->state->stackTop.valuePointer = slot + 1;
+    ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slot));
+    root->active = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+static SZrTypeValue *extern_compiler_temp_root_value(ZrExternCompilerTempRoot *root) {
+    TZrStackValuePointer slot;
+
+    if (root == ZR_NULL || !root->active || root->state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    slot = ZrCore_Function_StackAnchorRestore(root->state, &root->slotAnchor);
+    return slot != ZR_NULL ? ZrCore_Stack_GetValue(slot) : ZR_NULL;
+}
+
+static TZrBool extern_compiler_temp_root_set_value(ZrExternCompilerTempRoot *root, const SZrTypeValue *value) {
+    SZrTypeValue *slotValue = extern_compiler_temp_root_value(root);
+    if (slotValue == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *slotValue = *value;
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_temp_root_set_object(ZrExternCompilerTempRoot *root,
+                                                    SZrObject *object,
+                                                    EZrValueType type) {
+    SZrTypeValue *slotValue = extern_compiler_temp_root_value(root);
+    if (slotValue == ZR_NULL || object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(root->state, slotValue, ZR_CAST_RAW_OBJECT_AS_SUPER(object));
+    slotValue->type = type;
+    return ZR_TRUE;
+}
+
+static void extern_compiler_temp_root_end(ZrExternCompilerTempRoot *root) {
+    if (root == ZR_NULL || !root->active || root->state == ZR_NULL) {
+        return;
+    }
+
+    root->state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(root->state, &root->savedStackTopAnchor);
+    memset(root, 0, sizeof(*root));
+}
+
+static TZrBool extern_compiler_set_object_field(SZrCompilerState *cs,
+                                                SZrObject *object,
+                                                const TZrChar *fieldName,
+                                                const SZrTypeValue *value) {
+    SZrString *fieldString;
+    SZrTypeValue key;
+    ZrExternCompilerTempRoot objectRoot;
+    ZrExternCompilerTempRoot valueRoot;
+    TZrBool objectRootActive = ZR_FALSE;
+    TZrBool valueRootActive = ZR_FALSE;
+
+    if (cs == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (extern_compiler_temp_root_begin(cs, &objectRoot)) {
+        objectRootActive = extern_compiler_temp_root_set_object(&objectRoot, object, ZR_VALUE_TYPE_OBJECT);
+    }
+    if ((value->type == ZR_VALUE_TYPE_OBJECT || value->type == ZR_VALUE_TYPE_ARRAY || value->type == ZR_VALUE_TYPE_STRING) &&
+        value->value.object != ZR_NULL &&
+        extern_compiler_temp_root_begin(cs, &valueRoot)) {
+        valueRootActive = extern_compiler_temp_root_set_value(&valueRoot, value);
+    }
+
+    fieldString = ZrCore_String_CreateFromNative(cs->state, fieldName);
+    if (fieldString == ZR_NULL) {
+        if (valueRootActive) {
+            extern_compiler_temp_root_end(&valueRoot);
+        }
+        if (objectRootActive) {
+            extern_compiler_temp_root_end(&objectRoot);
+        }
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Object_SetValue(cs->state, object, &key, value);
+    if (valueRootActive) {
+        extern_compiler_temp_root_end(&valueRoot);
+    }
+    if (objectRootActive) {
+        extern_compiler_temp_root_end(&objectRoot);
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_push_array_value(SZrCompilerState *cs, SZrObject *array, const SZrTypeValue *value) {
+    SZrTypeValue key;
+    ZrExternCompilerTempRoot arrayRoot;
+    ZrExternCompilerTempRoot valueRoot;
+    TZrBool arrayRootActive = ZR_FALSE;
+    TZrBool valueRootActive = ZR_FALSE;
+
+    if (cs == ZR_NULL || array == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (extern_compiler_temp_root_begin(cs, &arrayRoot)) {
+        arrayRootActive = extern_compiler_temp_root_set_object(&arrayRoot, array, ZR_VALUE_TYPE_ARRAY);
+    }
+    if ((value->type == ZR_VALUE_TYPE_OBJECT || value->type == ZR_VALUE_TYPE_ARRAY || value->type == ZR_VALUE_TYPE_STRING) &&
+        value->value.object != ZR_NULL &&
+        extern_compiler_temp_root_begin(cs, &valueRoot)) {
+        valueRootActive = extern_compiler_temp_root_set_value(&valueRoot, value);
+    }
+
+    ZrCore_Value_InitAsInt(cs->state, &key, (TZrInt64)array->nodeMap.elementCount);
+    ZrCore_Object_SetValue(cs->state, array, &key, value);
+    if (valueRootActive) {
+        extern_compiler_temp_root_end(&valueRoot);
+    }
+    if (arrayRootActive) {
+        extern_compiler_temp_root_end(&arrayRoot);
+    }
+    return ZR_TRUE;
+}
+
+static SZrObject *extern_compiler_new_object_constant(SZrCompilerState *cs) {
+    SZrObject *object;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = ZrCore_Object_New(cs->state, ZR_NULL);
+    if (object != ZR_NULL) {
+        ZrCore_Object_Init(cs->state, object);
+    }
+    return object;
+}
+
+static SZrObject *extern_compiler_new_array_constant(SZrCompilerState *cs) {
+    SZrObject *array;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    array = ZrCore_Object_NewCustomized(cs->state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+    if (array != ZR_NULL) {
+        ZrCore_Object_Init(cs->state, array);
+    }
+    return array;
+}
+
+static TZrBool extern_compiler_match_decorator_path(SZrAstNode *decoratorNode,
+                                                    const TZrChar *leafName,
+                                                    TZrBool requireCall,
+                                                    SZrFunctionCall **outCall) {
+    SZrAstNode *expr;
+    SZrPrimaryExpression *primary;
+    SZrAstNode *ffiMember;
+    SZrAstNode *leafMember;
+    SZrAstNode *callMember = ZR_NULL;
+
+    if (outCall != ZR_NULL) {
+        *outCall = ZR_NULL;
+    }
+    if (decoratorNode == ZR_NULL || decoratorNode->type != ZR_AST_DECORATOR_EXPRESSION || leafName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    expr = decoratorNode->data.decoratorExpression.expr;
+    if (expr == ZR_NULL || expr->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    primary = &expr->data.primaryExpression;
+    if (!extern_compiler_identifier_equals(primary->property, "zr") ||
+        primary->members == ZR_NULL ||
+        primary->members->count < (requireCall ? 3 : 2)) {
+        return ZR_FALSE;
+    }
+
+    ffiMember = primary->members->nodes[0];
+    leafMember = primary->members->nodes[1];
+    if (ffiMember == ZR_NULL || ffiMember->type != ZR_AST_MEMBER_EXPRESSION ||
+        leafMember == ZR_NULL || leafMember->type != ZR_AST_MEMBER_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    if (!extern_compiler_identifier_equals(ffiMember->data.memberExpression.property, "ffi") ||
+        !extern_compiler_identifier_equals(leafMember->data.memberExpression.property, leafName)) {
+        return ZR_FALSE;
+    }
+
+    if (requireCall) {
+        callMember = primary->members->nodes[2];
+        if (callMember == ZR_NULL || callMember->type != ZR_AST_FUNCTION_CALL) {
+            return ZR_FALSE;
+        }
+        if (outCall != ZR_NULL) {
+            *outCall = &callMember->data.functionCall;
+        }
+        return primary->members->count == 3;
+    }
+
+    return primary->members->count == 2;
+}
+
+static SZrAstNode *extern_compiler_decorators_find_call(SZrAstNodeArray *decorators,
+                                                        const TZrChar *leafName,
+                                                        SZrFunctionCall **outCall) {
+    if (outCall != ZR_NULL) {
+        *outCall = ZR_NULL;
+    }
+    if (decorators == ZR_NULL || leafName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < decorators->count; index++) {
+        SZrFunctionCall *call = ZR_NULL;
+        SZrAstNode *decorator = decorators->nodes[index];
+        if (extern_compiler_match_decorator_path(decorator, leafName, ZR_TRUE, &call)) {
+            if (outCall != ZR_NULL) {
+                *outCall = call;
+            }
+            return decorator;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool extern_compiler_decorators_has_flag(SZrAstNodeArray *decorators, const TZrChar *leafName) {
+    if (decorators == ZR_NULL || leafName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < decorators->count; index++) {
+        if (extern_compiler_match_decorator_path(decorators->nodes[index], leafName, ZR_FALSE, ZR_NULL)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool extern_compiler_extract_string_argument(SZrFunctionCall *call, SZrString **outString) {
+    if (outString != ZR_NULL) {
+        *outString = ZR_NULL;
+    }
+    if (call == ZR_NULL || outString == ZR_NULL || call->args == ZR_NULL || call->args->count != 1) {
+        return ZR_FALSE;
+    }
+    if (call->args->nodes[0] == ZR_NULL || call->args->nodes[0]->type != ZR_AST_STRING_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    *outString = call->args->nodes[0]->data.stringLiteral.value;
+    return *outString != ZR_NULL;
+}
+
+static TZrBool extern_compiler_extract_int_argument(SZrFunctionCall *call, TZrInt64 *outValue) {
+    if (outValue != ZR_NULL) {
+        *outValue = 0;
+    }
+    if (call == ZR_NULL || outValue == ZR_NULL || call->args == ZR_NULL || call->args->count != 1) {
+        return ZR_FALSE;
+    }
+    if (call->args->nodes[0] == ZR_NULL || call->args->nodes[0]->type != ZR_AST_INTEGER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    *outValue = call->args->nodes[0]->data.integerLiteral.value;
+    return ZR_TRUE;
+}
+
+static SZrString *extern_compiler_decorators_get_string_arg(SZrAstNodeArray *decorators, const TZrChar *leafName) {
+    SZrFunctionCall *call = ZR_NULL;
+    SZrString *result = ZR_NULL;
+
+    if (extern_compiler_decorators_find_call(decorators, leafName, &call) == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return extern_compiler_extract_string_argument(call, &result) ? result : ZR_NULL;
+}
+
+static TZrBool extern_compiler_decorators_get_int_arg(SZrAstNodeArray *decorators,
+                                                      const TZrChar *leafName,
+                                                      TZrInt64 *outValue) {
+    SZrFunctionCall *call = ZR_NULL;
+    if (extern_compiler_decorators_find_call(decorators, leafName, &call) == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return extern_compiler_extract_int_argument(call, outValue);
+}
+
+static SZrAstNode *extern_compiler_find_named_declaration(SZrExternBlock *externBlock, SZrString *name) {
+    if (externBlock == ZR_NULL || name == ZR_NULL || externBlock->declarations == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < externBlock->declarations->count; index++) {
+        SZrAstNode *declaration = externBlock->declarations->nodes[index];
+        if (declaration == ZR_NULL) {
+            continue;
+        }
+
+        switch (declaration->type) {
+            case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+                if (declaration->data.externDelegateDeclaration.name != ZR_NULL &&
+                    declaration->data.externDelegateDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.externDelegateDeclaration.name->name, name)) {
+                    return declaration;
+                }
+                break;
+            case ZR_AST_STRUCT_DECLARATION:
+                if (declaration->data.structDeclaration.name != ZR_NULL &&
+                    declaration->data.structDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.structDeclaration.name->name, name)) {
+                    return declaration;
+                }
+                break;
+            case ZR_AST_ENUM_DECLARATION:
+                if (declaration->data.enumDeclaration.name != ZR_NULL &&
+                    declaration->data.enumDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.enumDeclaration.name->name, name)) {
+                    return declaration;
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool extern_compiler_is_precise_ffi_primitive_name(SZrString *name) {
+    static const TZrChar *kSupported[] = {
+            "void", "bool", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64"
+    };
+
+    if (name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(kSupported); index++) {
+        if (extern_compiler_string_equals(name, kSupported[index])) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool extern_compiler_wrap_pointer_descriptor(SZrCompilerState *cs,
+                                                       SZrTypeValue *baseValue,
+                                                       const TZrChar *directionText) {
+    SZrObject *pointerObject;
+    SZrTypeValue objectValue;
+    ZrExternCompilerTempRoot pointerRoot;
+
+    if (cs == ZR_NULL || baseValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!extern_compiler_temp_root_begin(cs, &pointerRoot)) {
+        return ZR_FALSE;
+    }
+
+    pointerObject = extern_compiler_new_object_constant(cs);
+    if (pointerObject == ZR_NULL) {
+        extern_compiler_temp_root_end(&pointerRoot);
+        return ZR_FALSE;
+    }
+    extern_compiler_temp_root_set_object(&pointerRoot, pointerObject, ZR_VALUE_TYPE_OBJECT);
+
+    if (!extern_compiler_make_string_value(cs, "pointer", &objectValue) ||
+        !extern_compiler_set_object_field(cs, pointerObject, "kind", &objectValue) ||
+        !extern_compiler_set_object_field(cs, pointerObject, "to", baseValue)) {
+        extern_compiler_temp_root_end(&pointerRoot);
+        return ZR_FALSE;
+    }
+
+    if (directionText != ZR_NULL && directionText[0] != '\0') {
+        if (!extern_compiler_make_string_value(cs, directionText, &objectValue) ||
+            !extern_compiler_set_object_field(cs, pointerObject, "direction", &objectValue)) {
+            extern_compiler_temp_root_end(&pointerRoot);
+            return ZR_FALSE;
+        }
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, baseValue, ZR_CAST_RAW_OBJECT_AS_SUPER(pointerObject));
+    baseValue->type = ZR_VALUE_TYPE_OBJECT;
+    extern_compiler_temp_root_end(&pointerRoot);
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_descriptor_set_string_field(SZrCompilerState *cs,
+                                                           SZrObject *object,
+                                                           const TZrChar *fieldName,
+                                                           const TZrChar *text) {
+    SZrTypeValue stringValue;
+
+    if (cs == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || text == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!extern_compiler_make_string_value(cs, text, &stringValue)) {
+        return ZR_FALSE;
+    }
+
+    return extern_compiler_set_object_field(cs, object, fieldName, &stringValue);
+}
+
+static TZrBool extern_compiler_descriptor_set_string_object_field(SZrCompilerState *cs,
+                                                                  SZrObject *object,
+                                                                  const TZrChar *fieldName,
+                                                                  SZrString *text) {
+    SZrTypeValue stringValue;
+
+    if (cs == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || text == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &stringValue, ZR_CAST_RAW_OBJECT_AS_SUPER(text));
+    stringValue.type = ZR_VALUE_TYPE_STRING;
+    return extern_compiler_set_object_field(cs, object, fieldName, &stringValue);
+}
+
+static TZrBool extern_compiler_descriptor_set_int_field(SZrCompilerState *cs,
+                                                        SZrObject *object,
+                                                        const TZrChar *fieldName,
+                                                        TZrInt64 value) {
+    SZrTypeValue intValue;
+
+    if (cs == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsInt(cs->state, &intValue, value);
+    return extern_compiler_set_object_field(cs, object, fieldName, &intValue);
+}
+
+static const TZrChar *extern_compiler_direction_from_decorators(SZrAstNodeArray *decorators) {
+    if (extern_compiler_decorators_has_flag(decorators, "out")) {
+        return "out";
+    }
+    if (extern_compiler_decorators_has_flag(decorators, "inout")) {
+        return "inout";
+    }
+    if (extern_compiler_decorators_has_flag(decorators, "in")) {
+        return "in";
+    }
+    return ZR_NULL;
+}
+
+static TZrBool extern_compiler_apply_string_charset(SZrCompilerState *cs,
+                                                    SZrTypeValue *descriptorValue,
+                                                    SZrString *charsetName) {
+    SZrObject *stringObject;
+    SZrTypeValue kindValue;
+    const TZrChar *kindText = ZR_NULL;
+    ZrExternCompilerTempRoot stringRoot;
+
+    if (cs == ZR_NULL || descriptorValue == ZR_NULL || charsetName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (descriptorValue->type == ZR_VALUE_TYPE_STRING && descriptorValue->value.object != ZR_NULL) {
+        kindText = ZrCore_String_GetNativeString(ZR_CAST_STRING(cs->state, descriptorValue->value.object));
+        if (kindText != ZR_NULL && strcmp(kindText, "string") == 0) {
+            if (!extern_compiler_temp_root_begin(cs, &stringRoot)) {
+                return ZR_FALSE;
+            }
+            stringObject = extern_compiler_new_object_constant(cs);
+            if (stringObject == ZR_NULL) {
+                extern_compiler_temp_root_end(&stringRoot);
+                return ZR_FALSE;
+            }
+            extern_compiler_temp_root_set_object(&stringRoot, stringObject, ZR_VALUE_TYPE_OBJECT);
+            if (!extern_compiler_make_string_value(cs, "string", &kindValue) ||
+                !extern_compiler_set_object_field(cs, stringObject, "kind", &kindValue) ||
+                !extern_compiler_descriptor_set_string_object_field(cs, stringObject, "encoding", charsetName)) {
+                extern_compiler_temp_root_end(&stringRoot);
+                return ZR_FALSE;
+            }
+
+            ZrCore_Value_InitAsRawObject(cs->state, descriptorValue, ZR_CAST_RAW_OBJECT_AS_SUPER(stringObject));
+            descriptorValue->type = ZR_VALUE_TYPE_OBJECT;
+            extern_compiler_temp_root_end(&stringRoot);
+        }
+        return ZR_TRUE;
+    }
+
+    if (descriptorValue->type == ZR_VALUE_TYPE_OBJECT && descriptorValue->value.object != ZR_NULL) {
+        stringObject = ZR_CAST_OBJECT(cs->state, descriptorValue->value.object);
+        if (stringObject == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        if (!extern_compiler_descriptor_set_string_object_field(cs, stringObject, "encoding", charsetName)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_build_type_descriptor_value(SZrCompilerState *cs,
+                                                           SZrExternBlock *externBlock,
+                                                           SZrType *type,
+                                                           SZrAstNodeArray *decorators,
+                                                           SZrFileRange location,
+                                                           SZrTypeValue *outValue);
+
+static TZrBool extern_compiler_build_signature_descriptor_value(SZrCompilerState *cs,
+                                                                SZrExternBlock *externBlock,
+                                                                SZrAstNodeArray *params,
+                                                                SZrParameter *args,
+                                                                SZrType *returnType,
+                                                                SZrAstNodeArray *decorators,
+                                                                TZrBool includeKind,
+                                                                SZrFileRange location,
+                                                                SZrTypeValue *outValue);
+
+static TZrBool extern_compiler_build_struct_descriptor_value(SZrCompilerState *cs,
+                                                             SZrExternBlock *externBlock,
+                                                             SZrAstNode *declarationNode,
+                                                             SZrTypeValue *outValue);
+
+static TZrBool extern_compiler_build_enum_descriptor_value(SZrCompilerState *cs,
+                                                           SZrAstNode *declarationNode,
+                                                           SZrTypeValue *outValue);
+
+static TZrBool extern_compiler_build_delegate_descriptor_value(SZrCompilerState *cs,
+                                                               SZrExternBlock *externBlock,
+                                                               SZrAstNode *declarationNode,
+                                                               TZrBool includeKind,
+                                                               SZrTypeValue *outValue) {
+    SZrExternDelegateDeclaration *delegateDecl;
+
+    if (cs == ZR_NULL || declarationNode == ZR_NULL || declarationNode->type != ZR_AST_EXTERN_DELEGATE_DECLARATION ||
+        outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    delegateDecl = &declarationNode->data.externDelegateDeclaration;
+    return extern_compiler_build_signature_descriptor_value(cs,
+                                                            externBlock,
+                                                            delegateDecl->params,
+                                                            delegateDecl->args,
+                                                            delegateDecl->returnType,
+                                                            delegateDecl->decorators,
+                                                            includeKind,
+                                                            declarationNode->location,
+                                                            outValue);
+}
+
+static TZrBool extern_compiler_build_type_descriptor_value(SZrCompilerState *cs,
+                                                           SZrExternBlock *externBlock,
+                                                           SZrType *type,
+                                                           SZrAstNodeArray *decorators,
+                                                           SZrFileRange location,
+                                                           SZrTypeValue *outValue) {
+    SZrString *charsetName;
+    const TZrChar *directionText;
+
+    if (outValue != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(outValue);
+    }
+    if (cs == ZR_NULL || type == ZR_NULL || outValue == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "extern ffi type descriptor is missing a type annotation", location);
+        return ZR_FALSE;
+    }
+
+    charsetName = extern_compiler_decorators_get_string_arg(decorators, "charset");
+    directionText = extern_compiler_direction_from_decorators(decorators);
+
+    if (type->name != ZR_NULL && type->name->type == ZR_AST_GENERIC_TYPE) {
+        SZrGenericType *genericType = &type->name->data.genericType;
+        if (genericType->name != ZR_NULL &&
+            extern_compiler_string_equals(genericType->name->name, "pointer") &&
+            genericType->params != ZR_NULL &&
+            genericType->params->count == 1 &&
+            genericType->params->nodes[0] != ZR_NULL &&
+            genericType->params->nodes[0]->type == ZR_AST_TYPE) {
+            if (!extern_compiler_build_type_descriptor_value(cs,
+                                                             externBlock,
+                                                             &genericType->params->nodes[0]->data.type,
+                                                             ZR_NULL,
+                                                             genericType->params->nodes[0]->location,
+                                                             outValue) ||
+                !extern_compiler_wrap_pointer_descriptor(cs,
+                                                         outValue,
+                                                         directionText != ZR_NULL ? directionText : "in")) {
+                return ZR_FALSE;
+            }
+            return ZR_TRUE;
+        }
+    }
+
+    if (type->name == ZR_NULL || type->name->type != ZR_AST_IDENTIFIER_LITERAL ||
+        type->name->data.identifier.name == ZR_NULL) {
+        ZrParser_Compiler_Error(cs,
+                                "extern ffi only accepts precise identifier or pointer<T> type syntax in v1",
+                                location);
+        return ZR_FALSE;
+    }
+
+    if (extern_compiler_is_precise_ffi_primitive_name(type->name->data.identifier.name)) {
+        ZrCore_Value_InitAsRawObject(cs->state,
+                                     outValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(type->name->data.identifier.name));
+        outValue->type = ZR_VALUE_TYPE_STRING;
+    } else if (extern_compiler_string_equals(type->name->data.identifier.name, "string")) {
+        if (!extern_compiler_make_string_value(cs, "string", outValue)) {
+            ZrParser_Compiler_Error(cs, "failed to build extern ffi string descriptor", location);
+            return ZR_FALSE;
+        }
+    } else {
+        SZrAstNode *namedDeclaration =
+                extern_compiler_find_named_declaration(externBlock, type->name->data.identifier.name);
+        if (namedDeclaration == ZR_NULL) {
+            ZrParser_Compiler_Error(cs,
+                                    "extern ffi type must resolve to a precise primitive or extern struct/enum/delegate",
+                                    location);
+            return ZR_FALSE;
+        }
+
+        switch (namedDeclaration->type) {
+            case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+                if (!extern_compiler_build_delegate_descriptor_value(cs, externBlock, namedDeclaration, ZR_TRUE, outValue)) {
+                    return ZR_FALSE;
+                }
+                break;
+            case ZR_AST_STRUCT_DECLARATION:
+                if (!extern_compiler_build_struct_descriptor_value(cs, externBlock, namedDeclaration, outValue)) {
+                    return ZR_FALSE;
+                }
+                break;
+            case ZR_AST_ENUM_DECLARATION:
+                if (!extern_compiler_build_enum_descriptor_value(cs, namedDeclaration, outValue)) {
+                    return ZR_FALSE;
+                }
+                break;
+            default:
+                ZrParser_Compiler_Error(cs, "unsupported extern ffi referenced type declaration", location);
+                return ZR_FALSE;
+        }
+    }
+
+    if (!extern_compiler_apply_string_charset(cs, outValue, charsetName)) {
+        ZrParser_Compiler_Error(cs, "failed to apply extern ffi charset decorator", location);
+        return ZR_FALSE;
+    }
+
+    if (directionText != ZR_NULL) {
+        if (!extern_compiler_wrap_pointer_descriptor(cs, outValue, directionText)) {
+            ZrParser_Compiler_Error(cs, "failed to apply extern ffi parameter direction", location);
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_build_signature_descriptor_value(SZrCompilerState *cs,
+                                                                SZrExternBlock *externBlock,
+                                                                SZrAstNodeArray *params,
+                                                                SZrParameter *args,
+                                                                SZrType *returnType,
+                                                                SZrAstNodeArray *decorators,
+                                                                TZrBool includeKind,
+                                                                SZrFileRange location,
+                                                                SZrTypeValue *outValue) {
+    SZrObject *signatureObject;
+    SZrObject *parametersArray;
+    SZrTypeValue signatureValue;
+    SZrTypeValue returnTypeValue;
+    SZrString *callconvName;
+    ZrExternCompilerTempRoot signatureRoot;
+    ZrExternCompilerTempRoot parametersRoot;
+
+    if (cs == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!extern_compiler_temp_root_begin(cs, &signatureRoot) ||
+        !extern_compiler_temp_root_begin(cs, &parametersRoot)) {
+        if (signatureRoot.active) {
+            extern_compiler_temp_root_end(&signatureRoot);
+        }
+        if (parametersRoot.active) {
+            extern_compiler_temp_root_end(&parametersRoot);
+        }
+        return ZR_FALSE;
+    }
+
+    signatureObject = extern_compiler_new_object_constant(cs);
+    parametersArray = extern_compiler_new_array_constant(cs);
+    if (signatureObject == ZR_NULL || parametersArray == ZR_NULL) {
+        extern_compiler_temp_root_end(&parametersRoot);
+        extern_compiler_temp_root_end(&signatureRoot);
+        ZrParser_Compiler_Error(cs, "failed to allocate extern ffi signature descriptor", location);
+        return ZR_FALSE;
+    }
+    extern_compiler_temp_root_set_object(&signatureRoot, signatureObject, ZR_VALUE_TYPE_OBJECT);
+    extern_compiler_temp_root_set_object(&parametersRoot, parametersArray, ZR_VALUE_TYPE_ARRAY);
+
+    if (includeKind &&
+        !extern_compiler_descriptor_set_string_field(cs, signatureObject, "kind", "function")) {
+        extern_compiler_temp_root_end(&parametersRoot);
+        extern_compiler_temp_root_end(&signatureRoot);
+        ZrParser_Compiler_Error(cs, "failed to build extern ffi function kind", location);
+        return ZR_FALSE;
+    }
+
+    if (returnType != ZR_NULL) {
+        if (!extern_compiler_build_type_descriptor_value(cs,
+                                                         externBlock,
+                                                         returnType,
+                                                         decorators,
+                                                         location,
+                                                         &returnTypeValue)) {
+            extern_compiler_temp_root_end(&parametersRoot);
+            extern_compiler_temp_root_end(&signatureRoot);
+            return ZR_FALSE;
+        }
+    } else if (!extern_compiler_make_string_value(cs, "void", &returnTypeValue)) {
+        extern_compiler_temp_root_end(&parametersRoot);
+        extern_compiler_temp_root_end(&signatureRoot);
+        ZrParser_Compiler_Error(cs, "failed to build extern ffi void return type", location);
+        return ZR_FALSE;
+    }
+
+    if (!extern_compiler_set_object_field(cs, signatureObject, "returnType", &returnTypeValue)) {
+        extern_compiler_temp_root_end(&parametersRoot);
+        extern_compiler_temp_root_end(&signatureRoot);
+        ZrParser_Compiler_Error(cs, "failed to set extern ffi return type", location);
+        return ZR_FALSE;
+    }
+
+    if (params != ZR_NULL) {
+        for (TZrSize index = 0; index < params->count; index++) {
+            SZrAstNode *paramNode = params->nodes[index];
+            SZrObject *parameterObject;
+            SZrTypeValue parameterObjectValue;
+            SZrTypeValue parameterTypeValue;
+            ZrExternCompilerTempRoot parameterRoot;
+
+            if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+                continue;
+            }
+
+            if (!extern_compiler_build_type_descriptor_value(cs,
+                                                             externBlock,
+                                                             paramNode->data.parameter.typeInfo,
+                                                             paramNode->data.parameter.decorators,
+                                                             paramNode->location,
+                                                             &parameterTypeValue)) {
+                extern_compiler_temp_root_end(&parametersRoot);
+                extern_compiler_temp_root_end(&signatureRoot);
+                return ZR_FALSE;
+            }
+
+            if (!extern_compiler_temp_root_begin(cs, &parameterRoot)) {
+                extern_compiler_temp_root_end(&parametersRoot);
+                extern_compiler_temp_root_end(&signatureRoot);
+                ZrParser_Compiler_Error(cs, "failed to root extern ffi parameter descriptor", paramNode->location);
+                return ZR_FALSE;
+            }
+            parameterObject = extern_compiler_new_object_constant(cs);
+            if (parameterObject == ZR_NULL ||
+                !extern_compiler_set_object_field(cs, parameterObject, "type", &parameterTypeValue)) {
+                extern_compiler_temp_root_end(&parameterRoot);
+                extern_compiler_temp_root_end(&parametersRoot);
+                extern_compiler_temp_root_end(&signatureRoot);
+                ZrParser_Compiler_Error(cs, "failed to build extern ffi parameter descriptor", paramNode->location);
+                return ZR_FALSE;
+            }
+            extern_compiler_temp_root_set_object(&parameterRoot, parameterObject, ZR_VALUE_TYPE_OBJECT);
+
+            ZrCore_Value_InitAsRawObject(cs->state, &parameterObjectValue, ZR_CAST_RAW_OBJECT_AS_SUPER(parameterObject));
+            parameterObjectValue.type = ZR_VALUE_TYPE_OBJECT;
+            if (!extern_compiler_push_array_value(cs, parametersArray, &parameterObjectValue)) {
+                extern_compiler_temp_root_end(&parameterRoot);
+                extern_compiler_temp_root_end(&parametersRoot);
+                extern_compiler_temp_root_end(&signatureRoot);
+                ZrParser_Compiler_Error(cs, "failed to append extern ffi parameter descriptor", paramNode->location);
+                return ZR_FALSE;
+            }
+            extern_compiler_temp_root_end(&parameterRoot);
+        }
+    }
+
+    if (args != ZR_NULL) {
+        SZrTypeValue varargsValue;
+        ZrCore_Value_ResetAsNull(&varargsValue);
+        varargsValue.type = ZR_VALUE_TYPE_BOOL;
+        varargsValue.value.nativeObject.nativeBool = ZR_TRUE;
+        if (!extern_compiler_set_object_field(cs, signatureObject, "varargs", &varargsValue)) {
+            extern_compiler_temp_root_end(&parametersRoot);
+            extern_compiler_temp_root_end(&signatureRoot);
+            ZrParser_Compiler_Error(cs, "failed to mark extern ffi varargs signature", location);
+            return ZR_FALSE;
+        }
+    }
+
+    callconvName = extern_compiler_decorators_get_string_arg(decorators, "callconv");
+    if (callconvName != ZR_NULL &&
+        !extern_compiler_descriptor_set_string_object_field(cs, signatureObject, "abi", callconvName)) {
+        extern_compiler_temp_root_end(&parametersRoot);
+        extern_compiler_temp_root_end(&signatureRoot);
+        ZrParser_Compiler_Error(cs, "failed to set extern ffi calling convention", location);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &signatureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(parametersArray));
+    signatureValue.type = ZR_VALUE_TYPE_ARRAY;
+    if (!extern_compiler_set_object_field(cs, signatureObject, "parameters", &signatureValue)) {
+        extern_compiler_temp_root_end(&parametersRoot);
+        extern_compiler_temp_root_end(&signatureRoot);
+        ZrParser_Compiler_Error(cs, "failed to set extern ffi parameters array", location);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, outValue, ZR_CAST_RAW_OBJECT_AS_SUPER(signatureObject));
+    outValue->type = ZR_VALUE_TYPE_OBJECT;
+    extern_compiler_temp_root_end(&parametersRoot);
+    extern_compiler_temp_root_end(&signatureRoot);
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_build_struct_descriptor_value(SZrCompilerState *cs,
+                                                             SZrExternBlock *externBlock,
+                                                             SZrAstNode *declarationNode,
+                                                             SZrTypeValue *outValue) {
+    SZrStructDeclaration *structDecl;
+    SZrObject *structObject;
+    SZrObject *fieldsArray;
+    SZrTypeValue fieldsValue;
+    TZrInt64 packValue = 0;
+    TZrInt64 alignValue = 0;
+    ZrExternCompilerTempRoot structRoot;
+    ZrExternCompilerTempRoot fieldsRoot;
+
+    if (cs == ZR_NULL || declarationNode == ZR_NULL || declarationNode->type != ZR_AST_STRUCT_DECLARATION ||
+        outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!extern_compiler_temp_root_begin(cs, &structRoot) ||
+        !extern_compiler_temp_root_begin(cs, &fieldsRoot)) {
+        if (structRoot.active) {
+            extern_compiler_temp_root_end(&structRoot);
+        }
+        if (fieldsRoot.active) {
+            extern_compiler_temp_root_end(&fieldsRoot);
+        }
+        return ZR_FALSE;
+    }
+
+    structDecl = &declarationNode->data.structDeclaration;
+    structObject = extern_compiler_new_object_constant(cs);
+    fieldsArray = extern_compiler_new_array_constant(cs);
+    if (structObject == ZR_NULL || fieldsArray == ZR_NULL ||
+        structDecl->name == ZR_NULL || structDecl->name->name == ZR_NULL) {
+        extern_compiler_temp_root_end(&fieldsRoot);
+        extern_compiler_temp_root_end(&structRoot);
+        return ZR_FALSE;
+    }
+    extern_compiler_temp_root_set_object(&structRoot, structObject, ZR_VALUE_TYPE_OBJECT);
+    extern_compiler_temp_root_set_object(&fieldsRoot, fieldsArray, ZR_VALUE_TYPE_ARRAY);
+
+    if (!extern_compiler_descriptor_set_string_field(cs, structObject, "kind", "struct") ||
+        !extern_compiler_descriptor_set_string_object_field(cs, structObject, "name", structDecl->name->name)) {
+        extern_compiler_temp_root_end(&fieldsRoot);
+        extern_compiler_temp_root_end(&structRoot);
+        return ZR_FALSE;
+    }
+
+    if (extern_compiler_decorators_get_int_arg(structDecl->decorators, "pack", &packValue) &&
+        !extern_compiler_descriptor_set_int_field(cs, structObject, "pack", packValue)) {
+        extern_compiler_temp_root_end(&fieldsRoot);
+        extern_compiler_temp_root_end(&structRoot);
+        return ZR_FALSE;
+    }
+    if (extern_compiler_decorators_get_int_arg(structDecl->decorators, "align", &alignValue) &&
+        !extern_compiler_descriptor_set_int_field(cs, structObject, "align", alignValue)) {
+        extern_compiler_temp_root_end(&fieldsRoot);
+        extern_compiler_temp_root_end(&structRoot);
+        return ZR_FALSE;
+    }
+
+    if (structDecl->members != ZR_NULL) {
+        for (TZrSize index = 0; index < structDecl->members->count; index++) {
+            SZrAstNode *member = structDecl->members->nodes[index];
+            SZrObject *fieldObject;
+            SZrTypeValue fieldObjectValue;
+            SZrTypeValue fieldTypeValue;
+            TZrInt64 offsetValue = 0;
+            ZrExternCompilerTempRoot fieldRoot;
+
+            if (member == ZR_NULL || member->type != ZR_AST_STRUCT_FIELD) {
+                continue;
+            }
+
+            if (!extern_compiler_build_type_descriptor_value(cs,
+                                                             externBlock,
+                                                             member->data.structField.typeInfo,
+                                                             member->data.structField.decorators,
+                                                             member->location,
+                                                             &fieldTypeValue)) {
+                extern_compiler_temp_root_end(&fieldsRoot);
+                extern_compiler_temp_root_end(&structRoot);
+                return ZR_FALSE;
+            }
+
+            if (!extern_compiler_temp_root_begin(cs, &fieldRoot)) {
+                extern_compiler_temp_root_end(&fieldsRoot);
+                extern_compiler_temp_root_end(&structRoot);
+                return ZR_FALSE;
+            }
+            fieldObject = extern_compiler_new_object_constant(cs);
+            if (fieldObject == ZR_NULL ||
+                member->data.structField.name == ZR_NULL ||
+                member->data.structField.name->name == ZR_NULL ||
+                !extern_compiler_descriptor_set_string_object_field(cs,
+                                                                    fieldObject,
+                                                                    "name",
+                                                                    member->data.structField.name->name) ||
+                !extern_compiler_set_object_field(cs, fieldObject, "type", &fieldTypeValue)) {
+                extern_compiler_temp_root_end(&fieldRoot);
+                extern_compiler_temp_root_end(&fieldsRoot);
+                extern_compiler_temp_root_end(&structRoot);
+                return ZR_FALSE;
+            }
+            extern_compiler_temp_root_set_object(&fieldRoot, fieldObject, ZR_VALUE_TYPE_OBJECT);
+
+            if (extern_compiler_decorators_get_int_arg(member->data.structField.decorators, "offset", &offsetValue) &&
+                !extern_compiler_descriptor_set_int_field(cs, fieldObject, "offset", offsetValue)) {
+                extern_compiler_temp_root_end(&fieldRoot);
+                extern_compiler_temp_root_end(&fieldsRoot);
+                extern_compiler_temp_root_end(&structRoot);
+                return ZR_FALSE;
+            }
+
+            ZrCore_Value_InitAsRawObject(cs->state, &fieldObjectValue, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldObject));
+            fieldObjectValue.type = ZR_VALUE_TYPE_OBJECT;
+            if (!extern_compiler_push_array_value(cs, fieldsArray, &fieldObjectValue)) {
+                extern_compiler_temp_root_end(&fieldRoot);
+                extern_compiler_temp_root_end(&fieldsRoot);
+                extern_compiler_temp_root_end(&structRoot);
+                return ZR_FALSE;
+            }
+            extern_compiler_temp_root_end(&fieldRoot);
+        }
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &fieldsValue, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldsArray));
+    fieldsValue.type = ZR_VALUE_TYPE_ARRAY;
+    if (!extern_compiler_set_object_field(cs, structObject, "fields", &fieldsValue)) {
+        extern_compiler_temp_root_end(&fieldsRoot);
+        extern_compiler_temp_root_end(&structRoot);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, outValue, ZR_CAST_RAW_OBJECT_AS_SUPER(structObject));
+    outValue->type = ZR_VALUE_TYPE_OBJECT;
+    extern_compiler_temp_root_end(&fieldsRoot);
+    extern_compiler_temp_root_end(&structRoot);
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_build_enum_descriptor_value(SZrCompilerState *cs,
+                                                           SZrAstNode *declarationNode,
+                                                           SZrTypeValue *outValue) {
+    SZrEnumDeclaration *enumDecl;
+    SZrObject *enumObject;
+    SZrObject *membersArray;
+    SZrTypeValue membersValue;
+    SZrTypeValue underlyingValue;
+    TZrInt64 nextAutoValue = 0;
+    ZrExternCompilerTempRoot enumRoot;
+    ZrExternCompilerTempRoot membersRoot;
+
+    if (cs == ZR_NULL || declarationNode == ZR_NULL || declarationNode->type != ZR_AST_ENUM_DECLARATION ||
+        outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!extern_compiler_temp_root_begin(cs, &enumRoot) ||
+        !extern_compiler_temp_root_begin(cs, &membersRoot)) {
+        if (enumRoot.active) {
+            extern_compiler_temp_root_end(&enumRoot);
+        }
+        if (membersRoot.active) {
+            extern_compiler_temp_root_end(&membersRoot);
+        }
+        return ZR_FALSE;
+    }
+
+    enumDecl = &declarationNode->data.enumDeclaration;
+    enumObject = extern_compiler_new_object_constant(cs);
+    membersArray = extern_compiler_new_array_constant(cs);
+    if (enumObject == ZR_NULL || membersArray == ZR_NULL ||
+        enumDecl->name == ZR_NULL || enumDecl->name->name == ZR_NULL) {
+        extern_compiler_temp_root_end(&membersRoot);
+        extern_compiler_temp_root_end(&enumRoot);
+        return ZR_FALSE;
+    }
+    extern_compiler_temp_root_set_object(&enumRoot, enumObject, ZR_VALUE_TYPE_OBJECT);
+    extern_compiler_temp_root_set_object(&membersRoot, membersArray, ZR_VALUE_TYPE_ARRAY);
+
+    if (!extern_compiler_descriptor_set_string_field(cs, enumObject, "kind", "enum") ||
+        !extern_compiler_descriptor_set_string_object_field(cs, enumObject, "name", enumDecl->name->name)) {
+        extern_compiler_temp_root_end(&membersRoot);
+        extern_compiler_temp_root_end(&enumRoot);
+        return ZR_FALSE;
+    }
+
+    if (enumDecl->baseType != ZR_NULL) {
+        if (!extern_compiler_build_type_descriptor_value(cs,
+                                                         ZR_NULL,
+                                                         enumDecl->baseType,
+                                                         enumDecl->decorators,
+                                                         declarationNode->location,
+                                                         &underlyingValue)) {
+            extern_compiler_temp_root_end(&membersRoot);
+            extern_compiler_temp_root_end(&enumRoot);
+            return ZR_FALSE;
+        }
+    } else {
+        SZrString *underlyingName = extern_compiler_decorators_get_string_arg(enumDecl->decorators, "underlying");
+        if (underlyingName != ZR_NULL) {
+            ZrCore_Value_InitAsRawObject(cs->state, &underlyingValue, ZR_CAST_RAW_OBJECT_AS_SUPER(underlyingName));
+            underlyingValue.type = ZR_VALUE_TYPE_STRING;
+        } else if (!extern_compiler_make_string_value(cs, "i32", &underlyingValue)) {
+            extern_compiler_temp_root_end(&membersRoot);
+            extern_compiler_temp_root_end(&enumRoot);
+            return ZR_FALSE;
+        }
+    }
+
+    if (!extern_compiler_set_object_field(cs, enumObject, "underlyingType", &underlyingValue)) {
+        extern_compiler_temp_root_end(&membersRoot);
+        extern_compiler_temp_root_end(&enumRoot);
+        return ZR_FALSE;
+    }
+
+    if (enumDecl->members != ZR_NULL) {
+        for (TZrSize index = 0; index < enumDecl->members->count; index++) {
+            SZrAstNode *memberNode = enumDecl->members->nodes[index];
+            SZrObject *memberObject;
+            SZrTypeValue memberObjectValue;
+            SZrTypeValue memberValue;
+            TZrInt64 explicitValue = 0;
+            TZrBool hasExplicitValue = ZR_FALSE;
+            const TZrChar *memberNameText;
+            ZrExternCompilerTempRoot memberRoot;
+
+            if (memberNode == ZR_NULL || memberNode->type != ZR_AST_ENUM_MEMBER ||
+                memberNode->data.enumMember.name == ZR_NULL || memberNode->data.enumMember.name->name == ZR_NULL) {
+                continue;
+            }
+
+            if (!extern_compiler_temp_root_begin(cs, &memberRoot)) {
+                extern_compiler_temp_root_end(&membersRoot);
+                extern_compiler_temp_root_end(&enumRoot);
+                return ZR_FALSE;
+            }
+            memberObject = extern_compiler_new_object_constant(cs);
+            if (memberObject == ZR_NULL ||
+                !extern_compiler_descriptor_set_string_object_field(cs,
+                                                                    memberObject,
+                                                                    "name",
+                                                                    memberNode->data.enumMember.name->name)) {
+                extern_compiler_temp_root_end(&memberRoot);
+                extern_compiler_temp_root_end(&membersRoot);
+                extern_compiler_temp_root_end(&enumRoot);
+                return ZR_FALSE;
+            }
+            extern_compiler_temp_root_set_object(&memberRoot, memberObject, ZR_VALUE_TYPE_OBJECT);
+
+            if (memberNode->data.enumMember.value != ZR_NULL &&
+                memberNode->data.enumMember.value->type == ZR_AST_INTEGER_LITERAL) {
+                explicitValue = memberNode->data.enumMember.value->data.integerLiteral.value;
+                hasExplicitValue = ZR_TRUE;
+            } else if (extern_compiler_decorators_get_int_arg(memberNode->data.enumMember.decorators,
+                                                              "value",
+                                                              &explicitValue)) {
+                hasExplicitValue = ZR_TRUE;
+            }
+
+            if (!hasExplicitValue) {
+                explicitValue = nextAutoValue;
+            }
+            nextAutoValue = explicitValue + 1;
+
+            ZrCore_Value_InitAsInt(cs->state, &memberValue, explicitValue);
+            memberNameText = ZrCore_String_GetNativeString(memberNode->data.enumMember.name->name);
+            if (memberNameText == ZR_NULL ||
+                !extern_compiler_set_object_field(cs, memberObject, "value", &memberValue) ||
+                !extern_compiler_set_object_field(cs, enumObject, memberNameText, &memberValue)) {
+                extern_compiler_temp_root_end(&memberRoot);
+                extern_compiler_temp_root_end(&membersRoot);
+                extern_compiler_temp_root_end(&enumRoot);
+                return ZR_FALSE;
+            }
+
+            ZrCore_Value_InitAsRawObject(cs->state, &memberObjectValue, ZR_CAST_RAW_OBJECT_AS_SUPER(memberObject));
+            memberObjectValue.type = ZR_VALUE_TYPE_OBJECT;
+            if (!extern_compiler_push_array_value(cs, membersArray, &memberObjectValue)) {
+                extern_compiler_temp_root_end(&memberRoot);
+                extern_compiler_temp_root_end(&membersRoot);
+                extern_compiler_temp_root_end(&enumRoot);
+                return ZR_FALSE;
+            }
+            extern_compiler_temp_root_end(&memberRoot);
+        }
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &membersValue, ZR_CAST_RAW_OBJECT_AS_SUPER(membersArray));
+    membersValue.type = ZR_VALUE_TYPE_ARRAY;
+    if (!extern_compiler_set_object_field(cs, enumObject, "members", &membersValue)) {
+        extern_compiler_temp_root_end(&membersRoot);
+        extern_compiler_temp_root_end(&enumRoot);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, outValue, ZR_CAST_RAW_OBJECT_AS_SUPER(enumObject));
+    outValue->type = ZR_VALUE_TYPE_OBJECT;
+    extern_compiler_temp_root_end(&membersRoot);
+    extern_compiler_temp_root_end(&enumRoot);
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_emit_get_member_to_slot(SZrCompilerState *cs,
+                                                       TZrUInt32 destSlot,
+                                                       TZrUInt32 objectSlot,
+                                                       SZrString *memberName) {
+    TZrUInt32 keySlot;
+
+    if (cs == ZR_NULL || memberName == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    keySlot = allocate_stack_slot(cs);
+    emit_string_constant_to_slot(cs, keySlot, memberName);
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE),
+                                          (TZrUInt16)destSlot,
+                                          (TZrUInt16)objectSlot,
+                                          (TZrUInt16)keySlot));
+    ZrParser_Compiler_TrimStackToSlot(cs, destSlot);
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_emit_import_module_to_local(SZrCompilerState *cs,
+                                                           SZrString *moduleName,
+                                                           TZrUInt32 localSlot,
+                                                           SZrFileRange location) {
+    SZrString *importName;
+    TZrUInt32 functionSlot;
+    TZrUInt32 argumentSlot;
+
+    if (cs == ZR_NULL || moduleName == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    importName = ZrCore_String_CreateFromNative(cs->state, "import");
+    if (importName == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "failed to create import symbol", location);
+        return ZR_FALSE;
+    }
+
+    functionSlot = emit_load_global_identifier(cs, importName);
+    if (functionSlot == (TZrUInt32)-1) {
+        return ZR_FALSE;
+    }
+
+    argumentSlot = allocate_stack_slot(cs);
+    emit_string_constant_to_slot(cs, argumentSlot, moduleName);
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                          (TZrUInt16)functionSlot,
+                                          (TZrUInt16)functionSlot,
+                                          1));
+    if (functionSlot != localSlot) {
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)localSlot,
+                                              (TZrInt32)functionSlot));
+    }
+    ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_emit_module_function_call_to_local(SZrCompilerState *cs,
+                                                                  TZrUInt32 moduleSlot,
+                                                                  SZrString *functionName,
+                                                                  const SZrTypeValue *argumentValues,
+                                                                  TZrUInt32 argumentCount,
+                                                                  TZrUInt32 localSlot,
+                                                                  SZrFileRange location) {
+    TZrUInt32 functionSlot;
+
+    if (cs == ZR_NULL || functionName == ZR_NULL || (argumentCount > 0 && argumentValues == ZR_NULL) || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    functionSlot = allocate_stack_slot(cs);
+    if (!extern_compiler_emit_get_member_to_slot(cs, functionSlot, moduleSlot, functionName)) {
+        ZrParser_Compiler_Error(cs, "failed to resolve extern ffi module function", location);
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0; index < argumentCount; index++) {
+        TZrUInt32 argumentSlot = allocate_stack_slot(cs);
+        emit_constant_to_slot(cs, argumentSlot, &argumentValues[index]);
+    }
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                          (TZrUInt16)functionSlot,
+                                          (TZrUInt16)functionSlot,
+                                          (TZrUInt16)argumentCount));
+    if (functionSlot != localSlot) {
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)localSlot,
+                                              (TZrInt32)functionSlot));
+    }
+    ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
+    return ZR_TRUE;
+}
+
+static TZrBool extern_compiler_emit_method_call_to_local(SZrCompilerState *cs,
+                                                         TZrUInt32 receiverSlot,
+                                                         SZrString *methodName,
+                                                         const SZrTypeValue *argumentValues,
+                                                         TZrUInt32 argumentCount,
+                                                         TZrUInt32 localSlot,
+                                                         SZrFileRange location) {
+    TZrUInt32 functionSlot;
+    TZrUInt32 selfSlot;
+
+    if (cs == ZR_NULL || methodName == ZR_NULL || (argumentCount > 0 && argumentValues == ZR_NULL) || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    functionSlot = allocate_stack_slot(cs);
+    if (!extern_compiler_emit_get_member_to_slot(cs, functionSlot, receiverSlot, methodName)) {
+        ZrParser_Compiler_Error(cs, "failed to resolve extern ffi receiver method", location);
+        return ZR_FALSE;
+    }
+
+    selfSlot = allocate_stack_slot(cs);
+    emit_instruction(cs,
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                          (TZrUInt16)selfSlot,
+                                          (TZrInt32)receiverSlot));
+    for (TZrUInt32 index = 0; index < argumentCount; index++) {
+        TZrUInt32 argumentSlot = allocate_stack_slot(cs);
+        emit_constant_to_slot(cs, argumentSlot, &argumentValues[index]);
+    }
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                          (TZrUInt16)functionSlot,
+                                          (TZrUInt16)functionSlot,
+                                          (TZrUInt16)(argumentCount + 1)));
+    if (functionSlot != localSlot) {
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)localSlot,
+                                              (TZrInt32)functionSlot));
+    }
+    ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
+    return ZR_TRUE;
+}
+
 // 进入新作用域
 void enter_scope(SZrCompilerState *cs) {
     if (cs == ZR_NULL || cs->hasError) {
@@ -1367,6 +3135,19 @@ void resolve_label(SZrCompilerState *cs, TZrSize labelId) {
                 }
             }
         }
+
+        for (TZrSize i = 0; i < cs->pendingAbsolutePatches.length; i++) {
+            SZrPendingAbsolutePatch *pendingPatch =
+                    (SZrPendingAbsolutePatch *)ZrCore_Array_Get(&cs->pendingAbsolutePatches, i);
+            if (pendingPatch != ZR_NULL && pendingPatch->labelId == labelId &&
+                pendingPatch->instructionIndex < cs->instructions.length) {
+                TZrInstruction *inst =
+                        (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, pendingPatch->instructionIndex);
+                if (inst != ZR_NULL) {
+                    inst->instruction.operand.operand2[0] = (TZrInt32)label->instructionIndex;
+                }
+            }
+        }
     }
 }
 
@@ -1381,6 +3162,18 @@ void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize la
     pendingJump.labelId = labelId;
 
     ZrCore_Array_Push(cs->state, &cs->pendingJumps, &pendingJump);
+}
+
+void add_pending_absolute_patch(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId) {
+    SZrPendingAbsolutePatch pendingPatch;
+
+    if (cs == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    pendingPatch.instructionIndex = instructionIndex;
+    pendingPatch.labelId = labelId;
+    ZrCore_Array_Push(cs->state, &cs->pendingAbsolutePatches, &pendingPatch);
 }
 
 // 外部变量分析辅助函数（用于闭包捕获）
@@ -1636,8 +3429,14 @@ static void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node
             if (tryStmt->block != ZR_NULL) {
                 collect_identifiers_from_node(cs, tryStmt->block, identifierNames);
             }
-            if (tryStmt->catchBlock != ZR_NULL) {
-                collect_identifiers_from_node(cs, tryStmt->catchBlock, identifierNames);
+            if (tryStmt->catchClauses != ZR_NULL) {
+                for (TZrSize i = 0; i < tryStmt->catchClauses->count; i++) {
+                    SZrAstNode *catchClauseNode = tryStmt->catchClauses->nodes[i];
+                    if (catchClauseNode != ZR_NULL && catchClauseNode->type == ZR_AST_CATCH_CLAUSE &&
+                        catchClauseNode->data.catchClause.block != ZR_NULL) {
+                        collect_identifiers_from_node(cs, catchClauseNode->data.catchClause.block, identifierNames);
+                    }
+                }
             }
             if (tryStmt->finallyBlock != ZR_NULL) {
                 collect_identifiers_from_node(cs, tryStmt->finallyBlock, identifierNames);
@@ -1914,55 +3713,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->constParameters.length = 0;
 
     // 注册函数类型到类型环境（在编译函数体之前注册，以便递归调用）
-    if (cs->typeEnv != ZR_NULL && funcDecl->name != ZR_NULL && funcDecl->name->name != ZR_NULL) {
-        SZrInferredType returnType;
-        if (funcDecl->returnType != ZR_NULL) {
-            // 从返回类型注解推断类型
-            if (ZrParser_AstTypeToInferredType_Convert(cs, funcDecl->returnType, &returnType)) {
-                // 收集参数类型
-                SZrArray paramTypes;
-                ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), 8);
-                if (funcDecl->params != ZR_NULL) {
-                    for (TZrSize i = 0; i < funcDecl->params->count; i++) {
-                        SZrAstNode *paramNode = funcDecl->params->nodes[i];
-                        if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
-                            SZrParameter *param = &paramNode->data.parameter;
-                            if (param->typeInfo != ZR_NULL) {
-                                SZrInferredType paramType;
-                                if (ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
-                                    ZrCore_Array_Push(cs->state, &paramTypes, &paramType);
-                                }
-                            } else {
-                                // 没有类型注解，使用对象类型
-                                SZrInferredType paramType;
-                                ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
-                                ZrCore_Array_Push(cs->state, &paramTypes, &paramType);
-                            }
-                        }
-                    }
-                }
-                // 注册函数类型
-                ZrParser_TypeEnvironment_RegisterFunction(cs->state, cs->typeEnv, funcDecl->name->name, &returnType, &paramTypes);
-                ZrParser_InferredType_Free(cs->state, &returnType);
-                for (TZrSize i = 0; i < paramTypes.length; i++) {
-                    SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get(&paramTypes, i);
-                    if (paramType != ZR_NULL) {
-                        ZrParser_InferredType_Free(cs->state, paramType);
-                    }
-                }
-                ZrCore_Array_Free(cs->state, &paramTypes);
-            }
-        } else {
-            // 没有返回类型注解，使用对象类型
-            SZrInferredType returnType;
-            ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_OBJECT);
-            SZrArray paramTypes;
-            ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), 8);
-            ZrParser_TypeEnvironment_RegisterFunction(cs->state, cs->typeEnv, funcDecl->name->name, &returnType, &paramTypes);
-            ZrParser_InferredType_Free(cs->state, &returnType);
-            ZrCore_Array_Free(cs->state, &paramTypes);
-        }
-    }
+    compiler_register_function_type_binding(cs, funcDecl);
 
     // 保存当前编译器状态
     SZrFunction *oldFunction = cs->currentFunction;
@@ -1976,6 +3727,10 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldLocalVarLength = cs->localVars.length;
     TZrSize oldConstantLength = cs->constants.length;
     TZrSize oldClosureVarLength = cs->closureVars.length;
+    TZrSize oldExecutionLocationLength = cs->executionLocations.length;
+    TZrSize oldCatchClauseInfoLength = cs->catchClauseInfos.length;
+    TZrSize oldExceptionHandlerInfoLength = cs->exceptionHandlerInfos.length;
+    TZrSize oldTryContextLength = cs->tryContextStack.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     TZrSize oldConstLocalVarLength = cs->constLocalVars.length;
@@ -2271,6 +4026,10 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->localVars.length = oldLocalVarLength;
         cs->constants.length = oldConstantLength;
         cs->closureVars.length = oldClosureVarLength;
+        cs->executionLocations.length = oldExecutionLocationLength;
+        cs->catchClauseInfos.length = oldCatchClauseInfoLength;
+        cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
+        cs->tryContextStack.length = oldTryContextLength;
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
@@ -2345,6 +4104,14 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     newFunc->hasVariableArguments = hasVariableArguments;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TZrUInt32) node->location.start.line : 0;
     newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TZrUInt32) node->location.end.line : 0;
+    if (!compiler_copy_function_exception_metadata_slice(cs,
+                                                         newFunc,
+                                                         oldExecutionLocationLength,
+                                                         oldCatchClauseInfoLength,
+                                                         oldExceptionHandlerInfoLength,
+                                                         node)) {
+        ZrParser_Compiler_Error(cs, "Failed to copy function exception metadata", node->location);
+    }
     
     // 设置函数名（函数名由函数自身持有）
     // 如果有名称，存储函数名；匿名函数（lambda）为 ZR_NULL
@@ -2386,6 +4153,10 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->localVars.length = oldLocalVarLength;
     cs->constants.length = oldConstantLength;
     cs->closureVars.length = oldClosureVarLength;
+    cs->executionLocations.length = oldExecutionLocationLength;
+    cs->catchClauseInfos.length = oldCatchClauseInfoLength;
+    cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
+    cs->tryContextStack.length = oldTryContextLength;
     cs->isInConstructor = oldIsInConstructor;
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = 0;
@@ -2455,7 +4226,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
 // 编译测试声明
 // 语法：%test("test_name") { ... }
-// 要求：只有测试模式进入，如果throw抛出则测试失败，正常到函数末尾则测试成功
+// 测试体按真实脚本语义编译；通过/失败由宿主边界决定。
 static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -2480,6 +4251,10 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldLocalVarLength = cs->localVars.length;
     TZrSize oldConstantLength = cs->constants.length;
     TZrSize oldClosureVarLength = cs->closureVars.length;
+    TZrSize oldExecutionLocationLength = cs->executionLocations.length;
+    TZrSize oldCatchClauseInfoLength = cs->catchClauseInfos.length;
+    TZrSize oldExceptionHandlerInfoLength = cs->exceptionHandlerInfos.length;
+    TZrSize oldTryContextLength = cs->tryContextStack.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     TZrSize oldConstLocalVarLength = cs->constLocalVars.length;
@@ -2621,31 +4396,7 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
     TZrBool hasVariableArguments = (testDecl->args != ZR_NULL);
 
-    // 生成测试模式检查（只有测试模式才执行）
-    // 测试模式检查在运行时进行，这里先编译测试体
-    // 实现测试模式标志检查（可以通过全局变量或函数参数实现）
-    // 注意：测试模式检查可以通过以下方式实现：
-    // 1. 通过全局变量（如zr.testMode）检查
-    // 2. 通过编译选项/标志
-    // 3. 通过环境变量
-    // TODO: 这里暂时不生成测试模式检查代码，测试体总是编译
-    // 未来可以在测试体前添加条件检查指令
-
-    // 创建成功标签（正常执行到末尾）
-    TZrSize successLabelId = create_label(cs);
-
-    // 创建失败标签（捕获到异常）
-    TZrSize failLabelId = create_label(cs);
-
-    // 创建返回标签（统一返回点）
-    TZrSize returnLabelId = create_label(cs);
-
-    // 用 TRY 包裹测试体，捕获异常
-    // 生成 TRY 指令
-    TZrInstruction tryInst = create_instruction_0(ZR_INSTRUCTION_ENUM(TRY), 0);
-    emit_instruction(cs, tryInst);
-
-    // 编译测试体
+    // 直接编译测试体，未捕获异常由运行时和测试宿主按真实语义处理。
     if (testDecl->body != ZR_NULL) {
         ZrParser_Statement_Compile(cs, testDecl->body);
         if (cs->hasError) {
@@ -2653,64 +4404,14 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
-    // 如果正常执行到这里（没有抛出异常），测试成功
-    // 跳转到成功处理
-    TZrInstruction jumpSuccessInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
-    TZrSize jumpSuccessIndex = cs->instructionCount;
-    emit_instruction(cs, jumpSuccessInst);
-    add_pending_jump(cs, jumpSuccessIndex, successLabelId);
-
-    // 生成 CATCH 指令（捕获异常）
-    TZrInstruction catchInst = create_instruction_0(ZR_INSTRUCTION_ENUM(CATCH), 0);
-    emit_instruction(cs, catchInst);
-
-    // 如果捕获到异常，跳转到失败处理
-    TZrInstruction jumpFailInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
-    TZrSize jumpFailIndex = cs->instructionCount;
-    emit_instruction(cs, jumpFailInst);
-    add_pending_jump(cs, jumpFailIndex, failLabelId);
-
-    // 解析成功标签
-    resolve_label(cs, successLabelId);
-
-    // 生成成功常量（1 表示测试通过）
-    TZrUInt32 successSlot = allocate_stack_slot(cs);
-    SZrTypeValue successValue;
-    ZrCore_Value_InitAsInt(cs->state, &successValue, 1); // 1 表示成功
-    TZrUInt32 successConstantIndex = add_constant(cs, &successValue);
-    TZrInstruction successInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16) successSlot,
-                                                      (TZrInt32) successConstantIndex);
-    emit_instruction(cs, successInst);
-
-    // 跳转到返回处理
-    TZrInstruction jumpReturnInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
-    TZrSize jumpReturnIndex = cs->instructionCount;
-    emit_instruction(cs, jumpReturnInst);
-    add_pending_jump(cs, jumpReturnIndex, returnLabelId);
-
-    // 解析失败标签
-    resolve_label(cs, failLabelId);
-
-    // 生成失败常量（0 表示测试失败）
-    TZrUInt32 failSlot = allocate_stack_slot(cs);
-    SZrTypeValue failValue;
-    ZrCore_Value_InitAsInt(cs->state, &failValue, 0); // 0 表示失败
-    TZrUInt32 failConstantIndex = add_constant(cs, &failValue);
-    TZrInstruction failInst =
-            create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16) failSlot, (TZrInt32) failConstantIndex);
-    emit_instruction(cs, failInst);
-
-    // 解析返回标签
-    resolve_label(cs, returnLabelId);
-
-    // 如果没有显式返回，添加隐式返回（返回测试结果）
+    // 如果没有显式返回，按真实语义补一个 `return null`。
     if (!cs->hasError) {
         if (cs->instructions.length == 0) {
-            // 如果没有任何指令，添加隐式返回成功
+            // 如果没有任何指令，添加隐式 null 返回。
             TZrUInt32 resultSlot = allocate_stack_slot(cs);
-            SZrTypeValue successValue2;
-            ZrCore_Value_InitAsInt(cs->state, &successValue2, 1);
-            TZrUInt32 constantIndex = add_constant(cs, &successValue2);
+            SZrTypeValue nullValue;
+            ZrCore_Value_ResetAsNull(&nullValue);
+            TZrUInt32 constantIndex = add_constant(cs, &nullValue);
             TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16) resultSlot,
                                                        (TZrInt32) constantIndex);
             emit_instruction(cs, inst);
@@ -2726,18 +4427,26 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 if (lastInst != ZR_NULL) {
                     EZrInstructionCode lastOpcode = (EZrInstructionCode) lastInst->instruction.operationCode;
                     if (lastOpcode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
-                        // 添加隐式返回（使用成功槽位）
+                        // 添加隐式 `return null`。
+                        TZrUInt32 resultSlot = allocate_stack_slot(cs);
+                        SZrTypeValue nullValue;
+                        ZrCore_Value_ResetAsNull(&nullValue);
+                        TZrUInt32 constantIndex = add_constant(cs, &nullValue);
+                        TZrInstruction loadNullInst =
+                                create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16) resultSlot,
+                                                     (TZrInt32) constantIndex);
+                        emit_instruction(cs, loadNullInst);
                         TZrInstruction returnInst =
-                                create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TZrUInt16) successSlot, 0);
+                                create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TZrUInt16) resultSlot, 0);
                         emit_instruction(cs, returnInst);
                     }
                 }
             } else {
-                // 如果没有任何指令，添加隐式返回成功
+                // 如果没有任何指令，添加隐式 null 返回。
                 TZrUInt32 resultSlot = allocate_stack_slot(cs);
-                SZrTypeValue successValue2;
-                ZrCore_Value_InitAsInt(cs->state, &successValue2, 1);
-                TZrUInt32 constantIndex = add_constant(cs, &successValue2);
+                SZrTypeValue nullValue;
+                ZrCore_Value_ResetAsNull(&nullValue);
+                TZrUInt32 constantIndex = add_constant(cs, &nullValue);
                 TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16) resultSlot,
                                                            (TZrInt32) constantIndex);
                 emit_instruction(cs, inst);
@@ -2787,6 +4496,10 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->localVars.length = oldLocalVarLength;
         cs->constants.length = oldConstantLength;
         cs->closureVars.length = oldClosureVarLength;
+        cs->executionLocations.length = oldExecutionLocationLength;
+        cs->catchClauseInfos.length = oldCatchClauseInfoLength;
+        cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
+        cs->tryContextStack.length = oldTryContextLength;
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
@@ -2869,6 +4582,14 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     newFunc->hasVariableArguments = hasVariableArguments;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TZrUInt32) node->location.start.line : 0;
     newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TZrUInt32) node->location.end.line : 0;
+    if (!compiler_copy_function_exception_metadata_slice(cs,
+                                                         newFunc,
+                                                         oldExecutionLocationLength,
+                                                         oldCatchClauseInfoLength,
+                                                         oldExceptionHandlerInfoLength,
+                                                         node)) {
+        ZrParser_Compiler_Error(cs, "Failed to copy test exception metadata", node->location);
+    }
 
     if (savedParentInstructions != ZR_NULL && savedParentInstructionsSize > 0) {
         memcpy(cs->instructions.head, savedParentInstructions, savedParentInstructionsSize);
@@ -2902,6 +4623,10 @@ static void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->localVars.length = oldLocalVarLength;
     cs->constants.length = oldConstantLength;
     cs->closureVars.length = oldClosureVarLength;
+    cs->executionLocations.length = oldExecutionLocationLength;
+    cs->catchClauseInfos.length = oldCatchClauseInfoLength;
+    cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
+    cs->tryContextStack.length = oldTryContextLength;
     cs->isInConstructor = oldIsInConstructor;
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = oldConstLocalVarLength;
@@ -3239,13 +4964,17 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 创建 prototype 信息结构
     SZrTypePrototypeInfo info;
+    memset(&info, 0, sizeof(info));
     info.name = typeName;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
     info.accessModifier = structDecl->accessModifier;
     info.isImportedNative = ZR_FALSE;
+    info.allowValueConstruction = ZR_TRUE;
+    info.allowBoxedConstruction = ZR_TRUE;
     
     // 初始化继承数组
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 4);
+    ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 2);
     
     // 处理继承关系
     if (structDecl->inherits != ZR_NULL && structDecl->inherits->count > 0) {
@@ -3521,6 +5250,415 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 恢复当前类型名称
     cs->currentTypeName = oldTypeName;
     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+}
+
+static TZrBool extern_compiler_has_registered_type(SZrCompilerState *cs, SZrString *typeName) {
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
+        SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
+        if (info != ZR_NULL && info->name != ZR_NULL && ZrCore_String_Equal(info->name, typeName)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode *declarationNode) {
+    SZrStructDeclaration *structDecl;
+    SZrTypePrototypeInfo info;
+    TZrUInt32 currentOffset = 0;
+
+    if (cs == ZR_NULL || declarationNode == ZR_NULL || declarationNode->type != ZR_AST_STRUCT_DECLARATION || cs->hasError) {
+        return;
+    }
+
+    structDecl = &declarationNode->data.structDeclaration;
+    if (structDecl->name == ZR_NULL || structDecl->name->name == ZR_NULL ||
+        extern_compiler_has_registered_type(cs, structDecl->name->name)) {
+        return;
+    }
+
+    memset(&info, 0, sizeof(info));
+    info.name = structDecl->name->name;
+    info.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
+    info.accessModifier = structDecl->accessModifier;
+    info.isImportedNative = ZR_FALSE;
+    info.allowValueConstruction = ZR_TRUE;
+    info.allowBoxedConstruction = ZR_TRUE;
+    ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 2);
+    ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 2);
+    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), 8);
+
+    if (structDecl->members != ZR_NULL) {
+        for (TZrSize index = 0; index < structDecl->members->count; index++) {
+            SZrAstNode *member = structDecl->members->nodes[index];
+            SZrTypeMemberInfo memberInfo;
+            TZrInt64 explicitOffset = 0;
+
+            if (member == ZR_NULL || member->type != ZR_AST_STRUCT_FIELD ||
+                member->data.structField.name == ZR_NULL || member->data.structField.name->name == ZR_NULL) {
+                continue;
+            }
+
+            memset(&memberInfo, 0, sizeof(memberInfo));
+            memberInfo.memberType = ZR_AST_STRUCT_FIELD;
+            memberInfo.name = member->data.structField.name->name;
+            memberInfo.accessModifier = member->data.structField.access;
+            memberInfo.isStatic = member->data.structField.isStatic;
+            memberInfo.isConst = member->data.structField.isConst;
+            memberInfo.fieldType = member->data.structField.typeInfo;
+            memberInfo.fieldTypeName = extract_type_name_string(cs, member->data.structField.typeInfo);
+            memberInfo.fieldSize = calculate_type_size(cs, member->data.structField.typeInfo);
+            if (memberInfo.fieldSize == 0) {
+                memberInfo.fieldSize = ZR_ALIGN_SIZE;
+            }
+
+            if (extern_compiler_decorators_get_int_arg(member->data.structField.decorators, "offset", &explicitOffset)) {
+                memberInfo.fieldOffset = (TZrUInt32)explicitOffset;
+                currentOffset = memberInfo.fieldOffset + memberInfo.fieldSize;
+            } else {
+                currentOffset = align_offset(currentOffset, get_type_alignment(cs, member->data.structField.typeInfo));
+                memberInfo.fieldOffset = currentOffset;
+                currentOffset += memberInfo.fieldSize;
+            }
+
+            ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
+        }
+    }
+
+    ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
+    if (cs->typeEnv != ZR_NULL) {
+        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, info.name);
+    }
+    if (cs->compileTimeTypeEnv != ZR_NULL) {
+        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->compileTimeTypeEnv, info.name);
+    }
+}
+
+static void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *declarationNode) {
+    SZrEnumDeclaration *enumDecl;
+    SZrTypePrototypeInfo info;
+    SZrString *underlyingName = ZR_NULL;
+
+    if (cs == ZR_NULL || declarationNode == ZR_NULL || declarationNode->type != ZR_AST_ENUM_DECLARATION || cs->hasError) {
+        return;
+    }
+
+    enumDecl = &declarationNode->data.enumDeclaration;
+    if (enumDecl->name == ZR_NULL || enumDecl->name->name == ZR_NULL ||
+        extern_compiler_has_registered_type(cs, enumDecl->name->name)) {
+        return;
+    }
+
+    memset(&info, 0, sizeof(info));
+    info.name = enumDecl->name->name;
+    info.type = ZR_OBJECT_PROTOTYPE_TYPE_ENUM;
+    info.accessModifier = enumDecl->accessModifier;
+    info.isImportedNative = ZR_FALSE;
+    info.allowValueConstruction = ZR_TRUE;
+    info.allowBoxedConstruction = ZR_TRUE;
+    ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 1);
+    ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 1);
+    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), 4);
+
+    if (enumDecl->baseType != ZR_NULL) {
+        underlyingName = extract_type_name_string(cs, enumDecl->baseType);
+    }
+    if (underlyingName == ZR_NULL) {
+        underlyingName = extern_compiler_decorators_get_string_arg(enumDecl->decorators, "underlying");
+    }
+    if (underlyingName == ZR_NULL) {
+        underlyingName = ZrCore_String_CreateFromNative(cs->state, "i32");
+    }
+    info.enumValueTypeName = underlyingName;
+
+    if (enumDecl->members != ZR_NULL) {
+        for (TZrSize index = 0; index < enumDecl->members->count; index++) {
+            SZrAstNode *memberNode = enumDecl->members->nodes[index];
+            SZrTypeMemberInfo memberInfo;
+
+            if (memberNode == ZR_NULL || memberNode->type != ZR_AST_ENUM_MEMBER ||
+                memberNode->data.enumMember.name == ZR_NULL || memberNode->data.enumMember.name->name == ZR_NULL) {
+                continue;
+            }
+
+            memset(&memberInfo, 0, sizeof(memberInfo));
+            memberInfo.memberType = ZR_AST_CLASS_FIELD;
+            memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
+            memberInfo.isStatic = ZR_TRUE;
+            memberInfo.name = memberNode->data.enumMember.name->name;
+            memberInfo.fieldTypeName = info.name;
+            ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
+        }
+    }
+
+    ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
+    if (cs->typeEnv != ZR_NULL) {
+        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, info.name);
+    }
+    if (cs->compileTimeTypeEnv != ZR_NULL) {
+        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->compileTimeTypeEnv, info.name);
+    }
+}
+
+static void compiler_register_extern_block_bindings(SZrCompilerState *cs, SZrExternBlock *externBlock) {
+    if (cs == ZR_NULL || externBlock == ZR_NULL || externBlock->declarations == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < externBlock->declarations->count; index++) {
+        SZrAstNode *declaration = externBlock->declarations->nodes[index];
+        if (declaration == ZR_NULL) {
+            continue;
+        }
+
+        if (declaration->type == ZR_AST_STRUCT_DECLARATION) {
+            extern_compiler_register_struct_prototype(cs, declaration);
+        } else if (declaration->type == ZR_AST_ENUM_DECLARATION) {
+            extern_compiler_register_enum_prototype(cs, declaration);
+        }
+    }
+
+    for (TZrSize index = 0; index < externBlock->declarations->count; index++) {
+        SZrAstNode *declaration = externBlock->declarations->nodes[index];
+        if (declaration == ZR_NULL) {
+            continue;
+        }
+
+        switch (declaration->type) {
+            case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+                compiler_register_extern_function_type_binding_to_env(
+                        cs,
+                        cs->typeEnv,
+                        &declaration->data.externFunctionDeclaration);
+                compiler_register_extern_function_type_binding_to_env(
+                        cs,
+                        cs->compileTimeTypeEnv,
+                        &declaration->data.externFunctionDeclaration);
+                break;
+            case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+                if (declaration->data.externDelegateDeclaration.name != ZR_NULL) {
+                    SZrString *delegateName = declaration->data.externDelegateDeclaration.name->name;
+                    compiler_register_named_value_binding_to_env(cs, cs->typeEnv, delegateName, delegateName);
+                    compiler_register_named_value_binding_to_env(cs,
+                                                                 cs->compileTimeTypeEnv,
+                                                                 delegateName,
+                                                                 delegateName);
+                }
+                break;
+            case ZR_AST_STRUCT_DECLARATION:
+                if (declaration->data.structDeclaration.name != ZR_NULL) {
+                    SZrString *structName = declaration->data.structDeclaration.name->name;
+                    compiler_register_named_value_binding_to_env(cs, cs->typeEnv, structName, structName);
+                    compiler_register_named_value_binding_to_env(cs, cs->compileTimeTypeEnv, structName, structName);
+                }
+                break;
+            case ZR_AST_ENUM_DECLARATION:
+                if (declaration->data.enumDeclaration.name != ZR_NULL) {
+                    SZrString *enumName = declaration->data.enumDeclaration.name->name;
+                    compiler_register_named_value_binding_to_env(cs, cs->typeEnv, enumName, enumName);
+                    compiler_register_named_value_binding_to_env(cs, cs->compileTimeTypeEnv, enumName, enumName);
+                }
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) {
+    if (cs == ZR_NULL || statements == ZR_NULL || cs->hasError || cs->externBindingsPredeclared) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < statements->count; index++) {
+        SZrAstNode *statement = statements->nodes[index];
+        if (statement == ZR_NULL || statement->type != ZR_AST_EXTERN_BLOCK) {
+            continue;
+        }
+        compiler_register_extern_block_bindings(cs, &statement->data.externBlock);
+        if (cs->hasError) {
+            return;
+        }
+    }
+
+    cs->externBindingsPredeclared = ZR_TRUE;
+}
+
+static void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrExternBlock *externBlock;
+    SZrString *libraryName;
+    SZrString *ffiModuleName;
+    SZrString *loadLibraryName;
+    SZrString *getSymbolName;
+    TZrUInt32 ffiModuleSlot = (TZrUInt32)-1;
+    TZrUInt32 librarySlot = (TZrUInt32)-1;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (node->type != ZR_AST_EXTERN_BLOCK) {
+        ZrParser_Compiler_Error(cs, "Expected extern block declaration", node->location);
+        return;
+    }
+
+    externBlock = &node->data.externBlock;
+    if (externBlock->libraryName == ZR_NULL || externBlock->libraryName->type != ZR_AST_STRING_LITERAL) {
+        ZrParser_Compiler_Error(cs, "extern block requires a string library specifier", node->location);
+        return;
+    }
+
+    libraryName = externBlock->libraryName->data.stringLiteral.value;
+    ffiModuleName = ZrCore_String_CreateFromNative(cs->state, "zr.ffi");
+    loadLibraryName = ZrCore_String_CreateFromNative(cs->state, "loadLibrary");
+    getSymbolName = ZrCore_String_CreateFromNative(cs->state, "getSymbol");
+    if (libraryName == ZR_NULL || ffiModuleName == ZR_NULL || loadLibraryName == ZR_NULL || getSymbolName == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "failed to allocate extern ffi helper strings", node->location);
+        return;
+    }
+
+    if (!cs->externBindingsPredeclared) {
+        compiler_register_extern_block_bindings(cs, externBlock);
+        if (cs->hasError) {
+            return;
+        }
+    }
+
+    if (externBlock->declarations == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < externBlock->declarations->count; index++) {
+        SZrAstNode *declaration = externBlock->declarations->nodes[index];
+        SZrString *bindingName = ZR_NULL;
+        SZrTypeValue descriptorValue;
+
+        if (declaration == ZR_NULL) {
+            continue;
+        }
+
+        ZrCore_Value_ResetAsNull(&descriptorValue);
+        switch (declaration->type) {
+            case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+                if (declaration->data.externDelegateDeclaration.name != ZR_NULL) {
+                    bindingName = declaration->data.externDelegateDeclaration.name->name;
+                }
+                if (bindingName != ZR_NULL &&
+                    extern_compiler_build_delegate_descriptor_value(cs, externBlock, declaration, ZR_TRUE, &descriptorValue)) {
+                    TZrUInt32 localSlot = allocate_local_var(cs, bindingName);
+                    emit_constant_to_slot(cs, localSlot, &descriptorValue);
+                    ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
+                }
+                break;
+            case ZR_AST_STRUCT_DECLARATION:
+                if (declaration->data.structDeclaration.name != ZR_NULL) {
+                    bindingName = declaration->data.structDeclaration.name->name;
+                }
+                if (bindingName != ZR_NULL &&
+                    extern_compiler_build_struct_descriptor_value(cs, externBlock, declaration, &descriptorValue)) {
+                    TZrUInt32 localSlot = allocate_local_var(cs, bindingName);
+                    emit_constant_to_slot(cs, localSlot, &descriptorValue);
+                    ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
+                }
+                break;
+            case ZR_AST_ENUM_DECLARATION:
+                if (declaration->data.enumDeclaration.name != ZR_NULL) {
+                    bindingName = declaration->data.enumDeclaration.name->name;
+                }
+                if (bindingName != ZR_NULL &&
+                    extern_compiler_build_enum_descriptor_value(cs, declaration, &descriptorValue)) {
+                    TZrUInt32 localSlot = allocate_local_var(cs, bindingName);
+                    emit_constant_to_slot(cs, localSlot, &descriptorValue);
+                    ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
+                }
+                break;
+            case ZR_AST_EXTERN_FUNCTION_DECLARATION: {
+                SZrExternFunctionDeclaration *functionDecl = &declaration->data.externFunctionDeclaration;
+                SZrString *entryName = functionDecl->name != ZR_NULL ? functionDecl->name->name : ZR_NULL;
+                SZrString *entryOverride = extern_compiler_decorators_get_string_arg(functionDecl->decorators, "entry");
+                TZrUInt32 localSlot;
+                SZrTypeValue symbolArguments[2];
+
+                if (functionDecl->name == ZR_NULL || functionDecl->name->name == ZR_NULL) {
+                    ZrParser_Compiler_Error(cs, "extern function declaration is missing a name", declaration->location);
+                    return;
+                }
+                if (entryOverride != ZR_NULL) {
+                    entryName = entryOverride;
+                }
+
+                if (!extern_compiler_build_signature_descriptor_value(cs,
+                                                                     externBlock,
+                                                                     functionDecl->params,
+                                                                     functionDecl->args,
+                                                                     functionDecl->returnType,
+                                                                     functionDecl->decorators,
+                                                                     ZR_FALSE,
+                                                                     declaration->location,
+                                                                     &symbolArguments[1])) {
+                    return;
+                }
+
+                ZrCore_Value_InitAsRawObject(cs->state, &symbolArguments[0], ZR_CAST_RAW_OBJECT_AS_SUPER(entryName));
+                symbolArguments[0].type = ZR_VALUE_TYPE_STRING;
+
+                if (ffiModuleSlot == (TZrUInt32)-1) {
+                    SZrString *hiddenFfiName = create_hidden_extern_local_name(cs, "ffi");
+                    SZrString *hiddenLibraryName = create_hidden_extern_local_name(cs, "library");
+                    SZrTypeValue loadArguments[1];
+                    if (hiddenFfiName == ZR_NULL || hiddenLibraryName == ZR_NULL) {
+                        ZrParser_Compiler_Error(cs, "failed to allocate hidden extern locals", declaration->location);
+                        return;
+                    }
+
+                    ffiModuleSlot = allocate_local_var(cs, hiddenFfiName);
+                    if (!extern_compiler_emit_import_module_to_local(cs, ffiModuleName, ffiModuleSlot, declaration->location)) {
+                        return;
+                    }
+
+                    librarySlot = allocate_local_var(cs, hiddenLibraryName);
+                    ZrCore_Value_InitAsRawObject(cs->state, &loadArguments[0], ZR_CAST_RAW_OBJECT_AS_SUPER(libraryName));
+                    loadArguments[0].type = ZR_VALUE_TYPE_STRING;
+                    if (!extern_compiler_emit_module_function_call_to_local(cs,
+                                                                           ffiModuleSlot,
+                                                                           loadLibraryName,
+                                                                           loadArguments,
+                                                                           1,
+                                                                           librarySlot,
+                                                                           declaration->location)) {
+                        return;
+                    }
+                }
+
+                localSlot = allocate_local_var(cs, functionDecl->name->name);
+                if (!extern_compiler_emit_method_call_to_local(cs,
+                                                               librarySlot,
+                                                               getSymbolName,
+                                                               symbolArguments,
+                                                               2,
+                                                               localSlot,
+                                                               declaration->location)) {
+                    return;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (cs->hasError) {
+            return;
+        }
+    }
+}
+
+void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNode *node) {
+    compile_extern_block_declaration(cs, node);
 }
 
 // 编译元函数（@constructor, @destructor 等）
@@ -4248,13 +6386,17 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 创建 prototype 信息结构
     SZrTypePrototypeInfo info;
+    memset(&info, 0, sizeof(info));
     info.name = typeName;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
     info.accessModifier = classDecl->accessModifier;
     info.isImportedNative = ZR_FALSE;
+    info.allowValueConstruction = ZR_TRUE;
+    info.allowBoxedConstruction = ZR_TRUE;
     
     // 初始化继承数组
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 4);
+    ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 2);
     SZrString *primarySuperTypeName = ZR_NULL;
     // 处理继承关系
     if (classDecl->inherits != ZR_NULL && classDecl->inherits->count > 0) {
@@ -4830,6 +6972,16 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             return;
         }
 
+        ZrParser_Compiler_PredeclareExternBindings(cs, script->statements);
+        if (cs->hasError) {
+            return;
+        }
+
+        ZrParser_Compiler_PredeclareFunctionBindings(cs, script->statements);
+        if (cs->hasError) {
+            return;
+        }
+
         // 第二遍：编译运行时代码
         for (TZrSize i = 0; i < script->statements->count; i++) {
             SZrAstNode *stmt = script->statements->nodes[i];
@@ -4849,6 +7001,8 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                     case ZR_AST_USING_STATEMENT:
                     case ZR_AST_BLOCK:
                     case ZR_AST_RETURN_STATEMENT:
+                    case ZR_AST_THROW_STATEMENT:
+                    case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
                     case ZR_AST_IF_EXPRESSION:
                     case ZR_AST_WHILE_LOOP:
                     case ZR_AST_FOR_LOOP:
@@ -4860,6 +7014,9 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                         break;
                     case ZR_AST_STRUCT_DECLARATION:
                         compile_struct_declaration(cs, stmt);
+                        break;
+                    case ZR_AST_EXTERN_BLOCK:
+                        compile_extern_block_declaration(cs, stmt);
                         break;
                     case ZR_AST_CLASS_DECLARATION:
                         compile_class_declaration(cs, stmt);
@@ -5237,6 +7394,12 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
     // 如果返回的是顶层函数，parameterCount 和 hasVariableArguments 已经在 compile_function_declaration 中设置了
     func->lineInSourceStart = (ast->location.start.line > 0) ? (TZrUInt32) ast->location.start.line : 0;
     func->lineInSourceEnd = (ast->location.end.line > 0) ? (TZrUInt32) ast->location.end.line : 0;
+    if (func == cs.currentFunction &&
+        !compiler_copy_function_exception_metadata_slice(&cs, func, 0, 0, 0, ast)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
 
     // 确保所有字段都被正确初始化（避免 ZrCore_Function_Free 中的断言失败）
     if (func->instructionsList == ZR_NULL) {
@@ -5420,6 +7583,11 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
     func->hasVariableArguments = ZR_FALSE;
     func->lineInSourceStart = (ast->location.start.line > 0) ? (TZrUInt32) ast->location.start.line : 0;
     func->lineInSourceEnd = (ast->location.end.line > 0) ? (TZrUInt32) ast->location.end.line : 0;
+    if (!compiler_copy_function_exception_metadata_slice(&cs, func, 0, 0, 0, ast)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_FALSE;
+    }
 
     // 确保所有字段都被正确初始化
     if (func->instructionsList == ZR_NULL) {

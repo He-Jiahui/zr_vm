@@ -17,3 +17,6 @@
 	path = tests/third_party/zr_unity/Unity
 	url = https://github.com/ThrowTheSwitch/Unity.git
 	branch = master
+[submodule "zr_vm_lib_ffi/third_party/zr_libffi/libffi"]
+	path = zr_vm_lib_ffi/third_party/zr_libffi/libffi
+	url = https://github.com/libffi/libffi.git

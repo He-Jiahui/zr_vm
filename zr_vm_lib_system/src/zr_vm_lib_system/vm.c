@@ -133,7 +133,12 @@ static SZrObject *system_vm_make_loaded_module_info(SZrState *state,
                                                     const TZrChar *name,
                                                     const TZrChar *sourceKind,
                                                     const TZrChar *sourcePath,
-                                                    TZrBool hasTypeHints) {
+                                                    const TZrChar *registrationKind,
+                                                    TZrBool hasTypeHints,
+                                                    const TZrChar *moduleVersion,
+                                                    TZrUInt32 runtimeAbiVersion,
+                                                    TZrUInt64 requiredCapabilities,
+                                                    TZrBool isDescriptorPlugin) {
     SZrObject *object;
 
     if (state == ZR_NULL) {
@@ -154,7 +159,16 @@ static SZrObject *system_vm_make_loaded_module_info(SZrState *state,
     if (sourcePath != ZR_NULL) {
         system_vm_write_string_field(state, object, "sourcePath", sourcePath);
     }
+    if (registrationKind != ZR_NULL) {
+        system_vm_write_string_field(state, object, "registrationKind", registrationKind);
+    }
     system_vm_write_bool_field(state, object, "hasTypeHints", hasTypeHints);
+    if (moduleVersion != ZR_NULL) {
+        system_vm_write_string_field(state, object, "moduleVersion", moduleVersion);
+    }
+    system_vm_write_int_field(state, object, "runtimeAbiVersion", (TZrInt64)runtimeAbiVersion);
+    system_vm_write_int_field(state, object, "requiredCapabilities", (TZrInt64)requiredCapabilities);
+    system_vm_write_bool_field(state, object, "isDescriptorPlugin", isDescriptorPlugin);
     return object;
 }
 
@@ -198,14 +212,34 @@ TZrBool ZrSystem_Vm_LoadedModules(ZrLibCallContext *context, SZrTypeValue *resul
                             ZrCore_String_GetNativeString(module->fullPath)) == 0)
                             ? "native"
                             : "source";
-            const ZrLibModuleDescriptor *descriptor =
-                    name != ZR_NULL ? ZrLibrary_NativeRegistry_FindModule(context->state->global, name) : ZR_NULL;
+            ZrLibRegisteredModuleInfo moduleInfo;
+            const ZrLibModuleDescriptor *descriptor = ZR_NULL;
+            const TZrChar *registrationKind = ZR_NULL;
+            const TZrChar *metadataSourcePath = sourcePath;
+            TZrBool isDescriptorPlugin = ZR_FALSE;
+
+            memset(&moduleInfo, 0, sizeof(moduleInfo));
+            if (name != ZR_NULL && ZrLibrary_NativeRegistry_GetModuleInfo(context->state->global, name, &moduleInfo)) {
+                descriptor = moduleInfo.descriptor;
+                metadataSourcePath = moduleInfo.sourcePath != ZR_NULL ? moduleInfo.sourcePath : metadataSourcePath;
+                registrationKind =
+                        moduleInfo.registrationKind == ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_DESCRIPTOR_PLUGIN
+                                ? "descriptor-plugin"
+                                : "builtin";
+                isDescriptorPlugin = moduleInfo.isDescriptorPlugin;
+            }
             SZrObject *info = system_vm_make_loaded_module_info(
                     context->state,
                     name,
                     sourceKind,
-                    sourcePath,
-                    descriptor != ZR_NULL && (descriptor->typeHintsJson != ZR_NULL || descriptor->typeHintCount > 0));
+                    metadataSourcePath,
+                    registrationKind,
+                    descriptor != ZR_NULL && (descriptor->typeHintsJson != ZR_NULL || descriptor->typeHintCount > 0),
+                    descriptor != ZR_NULL ? descriptor->moduleVersion : ZR_NULL,
+                    descriptor != ZR_NULL && descriptor->minRuntimeAbi != 0 ? descriptor->minRuntimeAbi
+                                                                            : ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+                    descriptor != ZR_NULL ? descriptor->requiredCapabilities : 0,
+                    isDescriptorPlugin);
 
             if (info != ZR_NULL) {
                 SZrTypeValue entryValue;

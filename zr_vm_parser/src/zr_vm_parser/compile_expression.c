@@ -48,6 +48,8 @@ static TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs, SZrMemberExp
                                               TZrUInt32 targetSlot);
 static SZrString *resolve_construct_target_type_name(SZrCompilerState *cs, SZrAstNode *target,
                                                      EZrObjectPrototypeType *outPrototypeType);
+static TZrBool resolve_expression_root_type(SZrCompilerState *cs, SZrAstNode *node, SZrString **outTypeName,
+                                            TZrBool *outIsTypeReference);
 static SZrAstNode *find_function_declaration(SZrCompilerState *cs, SZrString *funcName);
 static SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs, SZrFunctionCall *call,
                                               SZrAstNodeArray *paramList);
@@ -104,9 +106,41 @@ static TZrBool zr_string_equals_cstr_local(SZrString *value, const TZrChar *lite
     return nativeValue != ZR_NULL && strcmp(nativeValue, literal) == 0;
 }
 
-static TZrBool is_compile_time_projection_candidate(SZrCompilerState *cs, SZrString *rootName) {
-    SZrFunctionTypeInfo *funcInfo = ZR_NULL;
+static TZrBool has_compile_time_variable_binding_local(SZrCompilerState *cs, SZrString *name) {
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
 
+    for (TZrSize index = 0; index < cs->compileTimeVariables.length; index++) {
+        SZrCompileTimeVariable **varPtr =
+                (SZrCompileTimeVariable **)ZrCore_Array_Get(&cs->compileTimeVariables, index);
+        if (varPtr != ZR_NULL && *varPtr != ZR_NULL && (*varPtr)->name != ZR_NULL &&
+            ZrCore_String_Equal((*varPtr)->name, name)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool has_compile_time_function_binding_local(SZrCompilerState *cs, SZrString *name) {
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < cs->compileTimeFunctions.length; index++) {
+        SZrCompileTimeFunction **funcPtr =
+                (SZrCompileTimeFunction **)ZrCore_Array_Get(&cs->compileTimeFunctions, index);
+        if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL && (*funcPtr)->name != ZR_NULL &&
+            ZrCore_String_Equal((*funcPtr)->name, name)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool is_compile_time_projection_candidate(SZrCompilerState *cs, SZrString *rootName) {
     if (cs == ZR_NULL || rootName == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -117,21 +151,8 @@ static TZrBool is_compile_time_projection_candidate(SZrCompilerState *cs, SZrStr
         return ZR_TRUE;
     }
 
-    if (cs->compileTimeTypeEnv == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    {
-        SZrInferredType variableType;
-        ZrParser_InferredType_Init(cs->state, &variableType, ZR_VALUE_TYPE_OBJECT);
-        if (ZrParser_TypeEnvironment_LookupVariable(cs->state, cs->compileTimeTypeEnv, rootName, &variableType)) {
-            ZrParser_InferredType_Free(cs->state, &variableType);
-            return ZR_TRUE;
-        }
-        ZrParser_InferredType_Free(cs->state, &variableType);
-    }
-
-    return ZrParser_TypeEnvironment_LookupFunction(cs->compileTimeTypeEnv, rootName, &funcInfo);
+    return has_compile_time_variable_binding_local(cs, rootName) ||
+           has_compile_time_function_binding_local(cs, rootName);
 }
 
 static TZrBool try_emit_compile_time_function_call(SZrCompilerState *cs, SZrAstNode *node) {
@@ -140,8 +161,7 @@ static TZrBool try_emit_compile_time_function_call(SZrCompilerState *cs, SZrAstN
     SZrTypeValue compileTimeValue;
     TZrUInt32 destSlot;
 
-    if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION ||
-        cs->compileTimeTypeEnv == ZR_NULL) {
+    if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION) {
         return ZR_FALSE;
     }
 
@@ -192,6 +212,44 @@ static void emit_type_conversion_with_prototype(SZrCompilerState *cs, TZrUInt32 
     // 类型转换指令格式: operandExtra = destSlot, operand1[0] = srcSlot, operand1[1] = prototypeConstantIndex
     TZrInstruction convInst = create_instruction_2(conversionOpcode, (TZrUInt16)destSlot, (TZrUInt16)srcSlot, (TZrUInt16)prototypeConstantIndex);
     emit_instruction(cs, convInst);
+}
+
+static EZrValueType binary_expression_effective_type_after_conversion(EZrValueType originalType,
+                                                                      EZrInstructionCode conversionOpcode) {
+    switch (conversionOpcode) {
+        case ZR_INSTRUCTION_ENUM(TO_BOOL):
+            return ZR_VALUE_TYPE_BOOL;
+        case ZR_INSTRUCTION_ENUM(TO_INT):
+            return ZR_VALUE_TYPE_INT64;
+        case ZR_INSTRUCTION_ENUM(TO_UINT):
+            return ZR_VALUE_TYPE_UINT64;
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+            return ZR_VALUE_TYPE_DOUBLE;
+        case ZR_INSTRUCTION_ENUM(TO_STRING):
+            return ZR_VALUE_TYPE_STRING;
+        default:
+            return originalType;
+    }
+}
+
+static TZrBool binary_expression_type_is_float_like(EZrValueType type) {
+    return (TZrBool)(type == ZR_VALUE_TYPE_FLOAT || type == ZR_VALUE_TYPE_DOUBLE);
+}
+
+static void update_identifier_assignment_type_environment(SZrCompilerState *cs,
+                                                          SZrString *name,
+                                                          SZrAstNode *valueExpression) {
+    SZrInferredType inferredType;
+
+    if (cs == ZR_NULL || name == ZR_NULL || valueExpression == ZR_NULL || cs->typeEnv == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_ExpressionType_Infer(cs, valueExpression, &inferredType)) {
+        ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, name, &inferredType);
+    }
+    ZrParser_InferredType_Free(cs->state, &inferredType);
 }
 
 // 在脚本 AST 中查找类型定义（struct 或 class）
@@ -390,6 +448,77 @@ static SZrString *resolve_expression_type_name(SZrCompilerState *cs, SZrAstNode 
     return typeName;
 }
 
+static TZrBool resolve_primary_expression_root_type(SZrCompilerState *cs,
+                                                    SZrPrimaryExpression *primary,
+                                                    SZrString **outTypeName,
+                                                    TZrBool *outIsTypeReference) {
+    SZrString *currentTypeName = ZR_NULL;
+    TZrBool currentIsTypeReference = ZR_FALSE;
+
+    if (cs == ZR_NULL || primary == ZR_NULL || outTypeName == ZR_NULL || outIsTypeReference == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!resolve_expression_root_type(cs, primary->property, &currentTypeName, &currentIsTypeReference) ||
+        currentTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (primary->members != ZR_NULL) {
+        for (TZrSize i = 0; i < primary->members->count; i++) {
+            SZrAstNode *memberNode = primary->members->nodes[i];
+            SZrMemberExpression *memberExpr;
+            SZrString *memberName;
+            SZrTypeMemberInfo *memberInfo;
+            SZrString *nextTypeName = ZR_NULL;
+            SZrTypePrototypeInfo *nextTypeInfo = ZR_NULL;
+
+            if (memberNode == ZR_NULL) {
+                continue;
+            }
+            if (memberNode->type != ZR_AST_MEMBER_EXPRESSION) {
+                break;
+            }
+
+            memberExpr = &memberNode->data.memberExpression;
+            if (memberExpr->computed || memberExpr->property == ZR_NULL ||
+                memberExpr->property->type != ZR_AST_IDENTIFIER_LITERAL || currentTypeName == ZR_NULL) {
+                break;
+            }
+
+            memberName = memberExpr->property->data.identifier.name;
+            memberInfo = find_compiler_type_member(cs, currentTypeName, memberName);
+            if (memberInfo == ZR_NULL) {
+                break;
+            }
+
+            if ((memberInfo->memberType == ZR_AST_STRUCT_FIELD || memberInfo->memberType == ZR_AST_CLASS_FIELD) &&
+                memberInfo->fieldTypeName != ZR_NULL) {
+                nextTypeName = memberInfo->fieldTypeName;
+            } else if ((memberInfo->memberType == ZR_AST_STRUCT_METHOD ||
+                        memberInfo->memberType == ZR_AST_CLASS_METHOD ||
+                        memberInfo->memberType == ZR_AST_STRUCT_META_FUNCTION ||
+                        memberInfo->memberType == ZR_AST_CLASS_META_FUNCTION) &&
+                       memberInfo->returnTypeName != ZR_NULL) {
+                nextTypeName = memberInfo->returnTypeName;
+            }
+
+            if (nextTypeName == ZR_NULL) {
+                break;
+            }
+
+            currentTypeName = nextTypeName;
+            nextTypeInfo = find_compiler_type_prototype(cs, currentTypeName);
+            currentIsTypeReference =
+                    nextTypeInfo != ZR_NULL && nextTypeInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
+        }
+    }
+
+    *outTypeName = currentTypeName;
+    *outIsTypeReference = currentIsTypeReference;
+    return currentTypeName != ZR_NULL;
+}
+
 static TZrBool resolve_expression_root_type(SZrCompilerState *cs, SZrAstNode *node, SZrString **outTypeName,
                                           TZrBool *outIsTypeReference) {
     if (outTypeName == ZR_NULL || outIsTypeReference == ZR_NULL) {
@@ -409,6 +538,10 @@ static TZrBool resolve_expression_root_type(SZrCompilerState *cs, SZrAstNode *no
             *outIsTypeReference = ZR_TRUE;
             return ZR_TRUE;
         }
+    }
+
+    if (node->type == ZR_AST_PRIMARY_EXPRESSION) {
+        return resolve_primary_expression_root_type(cs, &node->data.primaryExpression, outTypeName, outIsTypeReference);
     }
 
     *outTypeName = resolve_expression_type_name(cs, node);
@@ -563,17 +696,20 @@ static TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const
     SZrTypePrototypeInfo *prototypeInfo;
     SZrAstNode *typeDecl;
     EZrObjectPrototypeType prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
+    TZrBool allowValueConstruction = ZR_FALSE;
+    TZrBool allowBoxedConstruction = ZR_FALSE;
     SZrTypeValue typeNameValue;
     TZrUInt32 typeNameConstantIndex;
 
     if (cs == ZR_NULL || op == ZR_NULL || typeName == ZR_NULL) {
         return (TZrUInt32)-1;
     }
-    ZR_UNUSED_PARAMETER(op);
 
     prototypeInfo = find_compiler_type_prototype(cs, typeName);
     if (prototypeInfo != ZR_NULL) {
         prototypeType = prototypeInfo->type;
+        allowValueConstruction = prototypeInfo->allowValueConstruction;
+        allowBoxedConstruction = prototypeInfo->allowBoxedConstruction;
     } else {
         typeDecl = find_type_declaration(cs, typeName);
         if (typeDecl != ZR_NULL) {
@@ -583,6 +719,10 @@ static TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const
                 prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
             }
         }
+        allowValueConstruction = prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID &&
+                                 prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE &&
+                                 prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
+        allowBoxedConstruction = allowValueConstruction;
     }
 
     if (prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_INVALID ||
@@ -592,10 +732,39 @@ static TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const
         return (TZrUInt32)-1;
     }
 
+    if (strcmp(op, "$") == 0 && !allowValueConstruction) {
+        ZrParser_Compiler_Error(cs, "Prototype does not allow value construction", location);
+        return (TZrUInt32)-1;
+    }
+
+    if (strcmp(op, "new") == 0 && !allowBoxedConstruction) {
+        ZrParser_Compiler_Error(cs, "Prototype does not allow boxed construction", location);
+        return (TZrUInt32)-1;
+    }
+
     destSlot = allocate_stack_slot(cs);
     ZrCore_Value_InitAsRawObject(cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
     typeNameValue.type = ZR_VALUE_TYPE_STRING;
     typeNameConstantIndex = add_constant(cs, &typeNameValue);
+
+    if (prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
+        if (constructorArgs == ZR_NULL || constructorArgs->count != 1) {
+            ZrParser_Compiler_Error(cs, "Enum construction requires exactly one underlying value argument", location);
+            return (TZrUInt32)-1;
+        }
+
+        if (compile_expression_into_slot(cs, constructorArgs->nodes[0], destSlot) == (TZrUInt32)-1) {
+            return (TZrUInt32)-1;
+        }
+
+        emit_instruction(cs,
+                         create_instruction_2(ZR_INSTRUCTION_ENUM(TO_OBJECT),
+                                              (TZrUInt16)destSlot,
+                                              (TZrUInt16)destSlot,
+                                              (TZrUInt16)typeNameConstantIndex));
+        collapse_stack_to_slot(cs, destSlot);
+        return destSlot;
+    }
 
     if (!emit_construct_seed_instance(cs, destSlot, prototypeType, typeNameConstantIndex, location)) {
         return (TZrUInt32)-1;
@@ -1543,6 +1712,8 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 推断左右操作数的类型
     SZrInferredType leftType, rightType, resultType;
+    EZrValueType effectiveLeftType = ZR_VALUE_TYPE_OBJECT;
+    EZrValueType effectiveRightType = ZR_VALUE_TYPE_OBJECT;
     ZrParser_InferredType_Init(cs->state, &leftType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(cs->state, &rightType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(cs->state, &resultType, ZR_VALUE_TYPE_OBJECT);
@@ -1552,6 +1723,8 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         !expression_uses_dynamic_object_access(right)) {
         if (ZrParser_ExpressionType_Infer(cs, left, &leftType) && ZrParser_ExpressionType_Infer(cs, right, &rightType)) {
             hasTypeInfo = ZR_TRUE;
+            effectiveLeftType = leftType.baseType;
+            effectiveRightType = rightType.baseType;
             // 推断结果类型
             if (!ZrParser_BinaryExpressionType_Infer(cs, node, &resultType)) {
                 // 类型推断失败，使用默认类型
@@ -1600,11 +1773,13 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                 TZrUInt32 promotedRightSlot = allocate_stack_slot(cs);
                 emit_type_conversion(cs, promotedRightSlot, rightSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
                 rightSlot = promotedRightSlot;
+                effectiveRightType = ZR_VALUE_TYPE_DOUBLE;
             } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValueType) && ZR_VALUE_IS_TYPE_FLOAT(rightValueType)) {
                 // 左操作数是int，右操作数是float，将左操作数提升为float
                 TZrUInt32 promotedLeftSlot = allocate_stack_slot(cs);
                 emit_type_conversion(cs, promotedLeftSlot, leftSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
                 leftSlot = promotedLeftSlot;
+                effectiveLeftType = ZR_VALUE_TYPE_DOUBLE;
             } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValueType) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValueType)) {
                 // 两个都是整数类型，提升到较大的类型
                 // 类型提升顺序：INT8 < INT16 < INT32 < INT64
@@ -1617,6 +1792,7 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                             TZrUInt32 promotedLeftSlot = allocate_stack_slot(cs);
                             emit_type_conversion(cs, promotedLeftSlot, leftSlot, ZR_INSTRUCTION_ENUM(TO_INT));
                             leftSlot = promotedLeftSlot;
+                            effectiveLeftType = ZR_VALUE_TYPE_INT64;
                         }
                     }
                     // TODO: 对于 INT16 的提升，需要添加 TO_INT16 指令支持
@@ -1628,6 +1804,7 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                             TZrUInt32 promotedRightSlot = allocate_stack_slot(cs);
                             emit_type_conversion(cs, promotedRightSlot, rightSlot, ZR_INSTRUCTION_ENUM(TO_INT));
                             rightSlot = promotedRightSlot;
+                            effectiveRightType = ZR_VALUE_TYPE_INT64;
                         }
                     }
                     // TODO: 对于 INT16 的提升，需要添加 TO_INT16 指令支持
@@ -1642,6 +1819,7 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                 TZrUInt32 convertedLeftSlot = allocate_stack_slot(cs);
                 emit_type_conversion(cs, convertedLeftSlot, leftSlot, leftConvOp);
                 leftSlot = convertedLeftSlot;
+                effectiveLeftType = binary_expression_effective_type_after_conversion(leftType.baseType, leftConvOp);
             }
             
             // 检查右操作数是否需要转换
@@ -1650,6 +1828,7 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                 TZrUInt32 convertedRightSlot = allocate_stack_slot(cs);
                 emit_type_conversion(cs, convertedRightSlot, rightSlot, rightConvOp);
                 rightSlot = convertedRightSlot;
+                effectiveRightType = binary_expression_effective_type_after_conversion(rightType.baseType, rightConvOp);
             }
             
             // 对于非比较操作，可以立即清理类型信息
@@ -1672,9 +1851,13 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         if (!hasTypeInfo) {
             // 类型不明确，使用通用 ADD 指令
             opcode = ZR_INSTRUCTION_ENUM(ADD);
-        } else if (resultType.baseType == ZR_VALUE_TYPE_STRING) {
+        } else if (resultType.baseType == ZR_VALUE_TYPE_STRING ||
+                   effectiveLeftType == ZR_VALUE_TYPE_STRING ||
+                   effectiveRightType == ZR_VALUE_TYPE_STRING) {
             opcode = ZR_INSTRUCTION_ENUM(ADD_STRING);
-        } else if (resultType.baseType == ZR_VALUE_TYPE_FLOAT || resultType.baseType == ZR_VALUE_TYPE_DOUBLE) {
+        } else if (binary_expression_type_is_float_like(resultType.baseType) ||
+                   binary_expression_type_is_float_like(effectiveLeftType) ||
+                   binary_expression_type_is_float_like(effectiveRightType)) {
             opcode = ZR_INSTRUCTION_ENUM(ADD_FLOAT);
         } else {
             opcode = ZR_INSTRUCTION_ENUM(ADD_INT);
@@ -1683,31 +1866,45 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         if (!hasTypeInfo) {
             // 类型不明确，使用通用 SUB 指令
             opcode = ZR_INSTRUCTION_ENUM(SUB);
-        } else if (resultType.baseType == ZR_VALUE_TYPE_FLOAT || resultType.baseType == ZR_VALUE_TYPE_DOUBLE) {
+        } else if (binary_expression_type_is_float_like(resultType.baseType) ||
+                   binary_expression_type_is_float_like(effectiveLeftType) ||
+                   binary_expression_type_is_float_like(effectiveRightType)) {
             opcode = ZR_INSTRUCTION_ENUM(SUB_FLOAT);
         } else {
             opcode = ZR_INSTRUCTION_ENUM(SUB_INT);
         }
     } else if (strcmp(op, "*") == 0) {
-        if (hasTypeInfo && (resultType.baseType == ZR_VALUE_TYPE_FLOAT || resultType.baseType == ZR_VALUE_TYPE_DOUBLE)) {
+        if (hasTypeInfo &&
+            (binary_expression_type_is_float_like(resultType.baseType) ||
+             binary_expression_type_is_float_like(effectiveLeftType) ||
+             binary_expression_type_is_float_like(effectiveRightType))) {
             opcode = ZR_INSTRUCTION_ENUM(MUL_FLOAT);
         } else {
             opcode = ZR_INSTRUCTION_ENUM(MUL_SIGNED);
         }
     } else if (strcmp(op, "/") == 0) {
-        if (hasTypeInfo && (resultType.baseType == ZR_VALUE_TYPE_FLOAT || resultType.baseType == ZR_VALUE_TYPE_DOUBLE)) {
+        if (hasTypeInfo &&
+            (binary_expression_type_is_float_like(resultType.baseType) ||
+             binary_expression_type_is_float_like(effectiveLeftType) ||
+             binary_expression_type_is_float_like(effectiveRightType))) {
             opcode = ZR_INSTRUCTION_ENUM(DIV_FLOAT);
         } else {
             opcode = ZR_INSTRUCTION_ENUM(DIV_SIGNED);
         }
     } else if (strcmp(op, "%") == 0) {
-        if (hasTypeInfo && (resultType.baseType == ZR_VALUE_TYPE_FLOAT || resultType.baseType == ZR_VALUE_TYPE_DOUBLE)) {
+        if (hasTypeInfo &&
+            (binary_expression_type_is_float_like(resultType.baseType) ||
+             binary_expression_type_is_float_like(effectiveLeftType) ||
+             binary_expression_type_is_float_like(effectiveRightType))) {
             opcode = ZR_INSTRUCTION_ENUM(MOD_FLOAT);
         } else {
             opcode = ZR_INSTRUCTION_ENUM(MOD_SIGNED);
         }
     } else if (strcmp(op, "**") == 0) {
-        if (hasTypeInfo && (resultType.baseType == ZR_VALUE_TYPE_FLOAT || resultType.baseType == ZR_VALUE_TYPE_DOUBLE)) {
+        if (hasTypeInfo &&
+            (binary_expression_type_is_float_like(resultType.baseType) ||
+             binary_expression_type_is_float_like(effectiveLeftType) ||
+             binary_expression_type_is_float_like(effectiveRightType))) {
             opcode = ZR_INSTRUCTION_ENUM(POW_FLOAT);
         } else {
             opcode = ZR_INSTRUCTION_ENUM(POW_SIGNED);
@@ -1878,6 +2075,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
             if (strcmp(op, "=") == 0) {
                 TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)localVarIndex, (TZrInt32)rightSlot);
                 emit_instruction(cs, inst);
+                update_identifier_assignment_type_environment(cs, name, right);
             } else {
                 // 复合赋值：先读取左值，执行运算，再赋值
                 TZrUInt32 leftSlot = allocate_stack_slot(cs);
@@ -1918,14 +2116,15 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 // 简单赋值
                 if (strcmp(op, "=") == 0) {
                     if (useUpval) {
-                        // SETUPVAL 格式: operandExtra = closureVarIndex, operand1[0] = rightSlot, operand1[1] = 0
-                        TZrInstruction setUpvalInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETUPVAL), (TZrUInt16)closureVarIndex, (TZrUInt16)rightSlot, 0);
+                        // SETUPVAL 格式: operandExtra = sourceSlot, operand1[0] = closureVarIndex, operand1[1] = 0
+                        TZrInstruction setUpvalInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETUPVAL), (TZrUInt16)rightSlot, (TZrUInt16)closureVarIndex, 0);
                         emit_instruction(cs, setUpvalInst);
                     } else {
-                        // SET_CLOSURE 格式: operandExtra = closureVarIndex, operand1[0] = rightSlot, operand1[1] = 0
-                        TZrInstruction setClosureInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_CLOSURE), (TZrUInt16)closureVarIndex, (TZrUInt16)rightSlot, 0);
+                        // SET_CLOSURE 格式: operandExtra = sourceSlot, operand1[0] = closureVarIndex, operand1[1] = 0
+                        TZrInstruction setClosureInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_CLOSURE), (TZrUInt16)rightSlot, (TZrUInt16)closureVarIndex, 0);
                         emit_instruction(cs, setClosureInst);
                     }
+                    update_identifier_assignment_type_environment(cs, name, right);
                 } else {
                     // 复合赋值：先读取，执行运算，再写入
                     TZrUInt32 leftSlot = allocate_stack_slot(cs);
@@ -1957,10 +2156,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                     
                     // 写入闭包变量
                     if (useUpval) {
-                        TZrInstruction setUpvalInst2 = create_instruction_2(ZR_INSTRUCTION_ENUM(SETUPVAL), (TZrUInt16)closureVarIndex, (TZrUInt16)resultSlot, 0);
+                        TZrInstruction setUpvalInst2 = create_instruction_2(ZR_INSTRUCTION_ENUM(SETUPVAL), (TZrUInt16)resultSlot, (TZrUInt16)closureVarIndex, 0);
                         emit_instruction(cs, setUpvalInst2);
                     } else {
-                        TZrInstruction setClosureInst2 = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_CLOSURE), (TZrUInt16)closureVarIndex, (TZrUInt16)resultSlot, 0);
+                        TZrInstruction setClosureInst2 = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_CLOSURE), (TZrUInt16)resultSlot, (TZrUInt16)closureVarIndex, 0);
                         emit_instruction(cs, setClosureInst2);
                     }
                     
@@ -2022,6 +2221,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 // SET_TABLE 格式: operandExtra = destSlot, operand1[0] = tableSlot, operand1[1] = keySlot
                 TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TZrUInt16)rightSlot, (TZrUInt16)globalSlot, (TZrUInt16)keySlot);
                 emit_instruction(cs, setTableInst);
+                update_identifier_assignment_type_environment(cs, name, right);
                 
                 // 释放临时栈槽
                 ZrParser_Compiler_TrimStackBy(cs, 2); // globalSlot 和 keySlot
@@ -3500,9 +3700,14 @@ static void compile_switch_expression(SZrCompilerState *cs, SZrAstNode *node) {
 
 // 主编译表达式函数
 ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrAstNode *oldCurrentAst;
+
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
+
+    oldCurrentAst = cs->currentAst;
+    cs->currentAst = node;
     
     switch (node->type) {
         // 字面量
@@ -3646,4 +3851,6 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
             }
             break;
     }
+
+    cs->currentAst = oldCurrentAst;
 }

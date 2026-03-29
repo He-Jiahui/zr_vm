@@ -21,7 +21,12 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
             {"name", "string", "Resolved module name."},
             {"sourceKind", "string", "Module source kind such as native or source."},
             {"sourcePath", "string", "Module source path or native module identifier."},
+            {"registrationKind", "string", "How the module descriptor was registered."},
             {"hasTypeHints", "bool", "Whether native type-hint metadata is available."},
+            {"moduleVersion", "string", "Semantic module version reported by the descriptor."},
+            {"runtimeAbiVersion", "int", "Minimum runtime ABI version required by the descriptor."},
+            {"requiredCapabilities", "int", "Capability bitmask required by the descriptor."},
+            {"isDescriptorPlugin", "bool", "Whether the module descriptor came from a dynamic native plugin."},
     };
     static const ZrLibTypeDescriptor kTypes[] = {
             {"SystemVmState",
@@ -32,7 +37,16 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
              0,
              ZR_NULL,
              0,
-             "Runtime VM state snapshot."},
+             "Runtime VM state snapshot.",
+             ZR_NULL,
+             ZR_NULL,
+             0,
+             ZR_NULL,
+             0,
+             ZR_NULL,
+             ZR_TRUE,
+             ZR_TRUE,
+             "SystemVmState()"},
             {"SystemLoadedModuleInfo",
              ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
              kLoadedModuleInfoFields,
@@ -41,7 +55,16 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
              0,
              ZR_NULL,
              0,
-             "Loaded module metadata snapshot."},
+             "Loaded module metadata snapshot.",
+             ZR_NULL,
+             ZR_NULL,
+             0,
+             ZR_NULL,
+             0,
+             ZR_NULL,
+             ZR_TRUE,
+             ZR_TRUE,
+             "SystemLoadedModuleInfo()"},
     };
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"loadedModules", 0, 0, ZrSystem_Vm_LoadedModules, "SystemLoadedModuleInfo[]", "Return metadata for all loaded modules."},
@@ -53,7 +76,7 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
             {"state", "function", "state(): SystemVmState", "Return a snapshot of VM execution state."},
             {"callModuleExport", "function", "callModuleExport(moduleName: string, exportName: string, args: array): any", "Call an export from another module."},
             {"SystemVmState", "type", "struct SystemVmState { loadedModuleCount, garbageCollectionMode, garbageCollectionDebt, garbageCollectionThreshold, stackDepth, frameDepth }", "Runtime VM state snapshot."},
-            {"SystemLoadedModuleInfo", "type", "struct SystemLoadedModuleInfo { name, sourceKind, sourcePath, hasTypeHints }", "Loaded module metadata snapshot."},
+            {"SystemLoadedModuleInfo", "type", "struct SystemLoadedModuleInfo { name, sourceKind, sourcePath, registrationKind, hasTypeHints, moduleVersion, runtimeAbiVersion, requiredCapabilities, isDescriptorPlugin }", "Loaded module metadata snapshot."},
     };
     static const TZrChar kHintsJson[] =
             "{\n"

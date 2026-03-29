@@ -44,6 +44,7 @@ static SZrAstNode *parse_using_statement(SZrParserState *ps);
 static SZrAstNode *parse_literal(SZrParserState *ps);
 static SZrAstNode *parse_identifier(SZrParserState *ps);
 static SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValue);
+static SZrAstNode *parse_decorator_expression(SZrParserState *ps);
 
 // 表达式解析（按优先级从低到高）
 static SZrAstNode *parse_assignment_expression(SZrParserState *ps);
@@ -86,6 +87,10 @@ static SZrAstNode *parse_enum_declaration(SZrParserState *ps);
 static SZrAstNode *parse_enum_member(SZrParserState *ps);
 static SZrAstNode *parse_test_declaration(SZrParserState *ps);
 static SZrAstNode *parse_compile_time_declaration(SZrParserState *ps);
+static SZrAstNode *parse_extern_block(SZrParserState *ps);
+static SZrAstNode *parse_extern_member_declaration(SZrParserState *ps);
+static SZrAstNode *parse_extern_function_declaration(SZrParserState *ps, SZrAstNodeArray *decorators);
+static SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArray *decorators);
 static SZrAstNode *parse_intermediate_statement(SZrParserState *ps);
 
 // 结构体成员解析函数
@@ -172,6 +177,46 @@ static TZrBool consume_token(SZrParserState *ps, EZrToken token) {
 // 查看下一个 token（不消费）
 static EZrToken peek_token(SZrParserState *ps) {
     return ZrParser_Lexer_Lookahead(ps->lexer);
+}
+
+static TZrBool current_identifier_equals(SZrParserState *ps, const TZrChar *text) {
+    SZrString *identName;
+    TZrNativeString nameStr;
+
+    if (ps == ZR_NULL || text == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER) {
+        return ZR_FALSE;
+    }
+
+    identName = ps->lexer->t.seminfo.stringValue;
+    if (identName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nameStr = ZrCore_String_GetNativeString(identName);
+    return nameStr != ZR_NULL && strcmp(nameStr, text) == 0;
+}
+
+static SZrAstNodeArray *parse_leading_decorators(SZrParserState *ps) {
+    SZrAstNodeArray *decorators;
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    decorators = ZrParser_AstNodeArray_New(ps->state, 2);
+    if (decorators == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    while (ps->lexer->t.token == ZR_TK_SHARP) {
+        SZrAstNode *decorator = parse_decorator_expression(ps);
+        if (decorator == ZR_NULL) {
+            break;
+        }
+        ZrParser_AstNodeArray_Add(ps->state, decorators, decorator);
+    }
+
+    return decorators;
 }
 
 static TZrBool consume_type_closing_angle(SZrParserState *ps) {
@@ -2901,6 +2946,7 @@ static EZrAccessModifier parse_access_modifier(SZrParserState *ps) {
 // 解析参数
 static SZrAstNode *parse_parameter(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     
     // 检查是否是可变参数 (...name: type)
     TZrBool isVariadic = ZR_FALSE;
@@ -2918,6 +2964,9 @@ static SZrAstNode *parse_parameter(SZrParserState *ps) {
     
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
 
@@ -2946,6 +2995,7 @@ static SZrAstNode *parse_parameter(SZrParserState *ps) {
     node->data.parameter.typeInfo = typeInfo;
     node->data.parameter.defaultValue = defaultValue;
     node->data.parameter.isConst = isConst;
+    node->data.parameter.decorators = decorators;
     return node;
 }
 
@@ -3685,10 +3735,14 @@ static SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    // 解析 catch（可选）
-    SZrAstNodeArray *catchPattern = ZR_NULL;
-    SZrAstNode *catchBlock = ZR_NULL;
-    if (consume_token(ps, ZR_TK_CATCH)) {
+    // 解析 catch 子句（可重复）
+    SZrAstNodeArray *catchClauses = ZR_NULL;
+    while (consume_token(ps, ZR_TK_CATCH)) {
+        SZrFileRange catchStartLoc = get_current_location(ps);
+        SZrAstNodeArray *catchPattern = ZR_NULL;
+        SZrAstNode *catchBlock = ZR_NULL;
+        SZrAstNode *catchClauseNode;
+
         expect_token(ps, ZR_TK_LPAREN);
         consume_token(ps, ZR_TK_LPAREN);
 
@@ -3698,6 +3752,41 @@ static SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
         consume_token(ps, ZR_TK_RPAREN);
 
         catchBlock = parse_block(ps);
+        if (catchBlock == ZR_NULL) {
+            if (catchPattern != ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+            }
+            if (catchClauses != ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, catchClauses);
+            }
+            return ZR_NULL;
+        }
+
+        if (catchClauses == ZR_NULL) {
+            catchClauses = ZrParser_AstNodeArray_New(ps->state, 2);
+            if (catchClauses == ZR_NULL) {
+                if (catchPattern != ZR_NULL) {
+                    ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+                }
+                ZrParser_Ast_Free(ps->state, catchBlock);
+                return ZR_NULL;
+            }
+        }
+
+        catchClauseNode = create_ast_node(ps,
+                                          ZR_AST_CATCH_CLAUSE,
+                                          ZrParser_FileRange_Merge(catchStartLoc, get_current_location(ps)));
+        if (catchClauseNode == ZR_NULL) {
+            if (catchPattern != ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+            }
+            ZrParser_Ast_Free(ps->state, catchBlock);
+            return ZR_NULL;
+        }
+
+        catchClauseNode->data.catchClause.pattern = catchPattern;
+        catchClauseNode->data.catchClause.block = catchBlock;
+        ZrParser_AstNodeArray_Add(ps->state, catchClauses, catchClauseNode);
     }
 
     // 解析 finally（可选）
@@ -3706,20 +3795,25 @@ static SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
         finallyBlock = parse_block(ps);
     }
 
+    if (catchClauses == ZR_NULL && finallyBlock == ZR_NULL) {
+        report_error(ps, "try statement requires at least one catch clause or a finally block");
+        ZrParser_Ast_Free(ps->state, block);
+        return ZR_NULL;
+    }
+
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange tryLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_TRY_CATCH_FINALLY_STATEMENT, tryLoc);
     if (node == ZR_NULL) {
-        if (catchPattern != ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+        if (catchClauses != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, catchClauses);
         }
         return ZR_NULL;
     }
 
     node->data.tryCatchFinallyStatement.block = block;
-    node->data.tryCatchFinallyStatement.catchPattern = catchPattern;
-    node->data.tryCatchFinallyStatement.catchBlock = catchBlock;
+    node->data.tryCatchFinallyStatement.catchClauses = catchClauses;
     node->data.tryCatchFinallyStatement.finallyBlock = finallyBlock;
     return node;
 }
@@ -4096,6 +4190,18 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                                     ps->lexer->lookaheadLine = savedLookaheadLine;
                                     ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
                                     return parse_compile_time_declaration(ps);
+                                } else if (strcmp(nameStr, "extern") == 0) {
+                                    ps->lexer->currentPos = savedPos;
+                                    ps->lexer->currentChar = savedChar;
+                                    ps->lexer->lineNumber = savedLine;
+                                    ps->lexer->lastLine = savedLastLine;
+                                    ps->lexer->t = savedToken;
+                                    ps->lexer->lookahead = savedLookahead;
+                                    ps->lexer->lookaheadPos = savedLookaheadPos;
+                                    ps->lexer->lookaheadChar = savedLookaheadChar;
+                                    ps->lexer->lookaheadLine = savedLookaheadLine;
+                                    ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                                    return parse_extern_block(ps);
                                 } else if (strcmp(nameStr, "test") == 0) {
                                     // 恢复状态并解析测试声明
                                     ps->lexer->currentPos = savedPos;
@@ -4132,8 +4238,8 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                     return ZR_NULL;
                 }
                 
-                // 如果不是 %compileTime 或 %test，报告错误并跳过 % token 以避免死循环
-                report_error(ps, "Unknown directive after '%' (expected 'compileTime' or 'test')");
+                // 如果不是已知指令，报告错误并跳过 % token 以避免死循环
+                report_error(ps, "Unknown directive after '%' (expected 'compileTime', 'extern' or 'test')");
                 ZrParser_Lexer_Next(ps->lexer);  // 跳过 % token 以避免死循环
                 return ZR_NULL;
             }
@@ -4578,6 +4684,77 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
+        case ZR_AST_EXTERN_BLOCK: {
+            SZrExternBlock *externBlock = &node->data.externBlock;
+            if (externBlock->libraryName != ZR_NULL) {
+                ZrParser_Ast_Free(state, externBlock->libraryName);
+            }
+            if (externBlock->declarations != ZR_NULL) {
+                for (TZrSize i = 0; i < externBlock->declarations->count; i++) {
+                    ZrParser_Ast_Free(state, externBlock->declarations->nodes[i]);
+                }
+                ZrParser_AstNodeArray_Free(state, externBlock->declarations);
+            }
+            break;
+        }
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION: {
+            SZrExternFunctionDeclaration *externDecl = &node->data.externFunctionDeclaration;
+            if (externDecl->name != ZR_NULL) {
+                SZrAstNode *nameNode =
+                        (SZrAstNode *)((char *)externDecl->name - offsetof(SZrAstNode, data.identifier));
+                if (nameNode != ZR_NULL && nameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    ZrParser_Ast_Free(state, nameNode);
+                }
+            }
+            if (externDecl->params != ZR_NULL) {
+                for (TZrSize i = 0; i < externDecl->params->count; i++) {
+                    ZrParser_Ast_Free(state, externDecl->params->nodes[i]);
+                }
+                ZrParser_AstNodeArray_Free(state, externDecl->params);
+            }
+            if (externDecl->returnType != ZR_NULL) {
+                free_type_info(state, externDecl->returnType);
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              externDecl->returnType,
+                                              sizeof(SZrType),
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+            if (externDecl->decorators != ZR_NULL) {
+                for (TZrSize i = 0; i < externDecl->decorators->count; i++) {
+                    ZrParser_Ast_Free(state, externDecl->decorators->nodes[i]);
+                }
+                ZrParser_AstNodeArray_Free(state, externDecl->decorators);
+            }
+            break;
+        }
+        case ZR_AST_PARAMETER: {
+            SZrParameter *param = &node->data.parameter;
+            if (param->name != ZR_NULL) {
+                SZrAstNode *nameNode =
+                        (SZrAstNode *)((char *)param->name - offsetof(SZrAstNode, data.identifier));
+                if (nameNode != ZR_NULL && nameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    ZrParser_Ast_Free(state, nameNode);
+                }
+            }
+            if (param->typeInfo != ZR_NULL) {
+                free_type_info(state, param->typeInfo);
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              param->typeInfo,
+                                              sizeof(SZrType),
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+            if (param->defaultValue != ZR_NULL) {
+                ZrParser_Ast_Free(state, param->defaultValue);
+            }
+            if (param->decorators != ZR_NULL) {
+                for (TZrSize i = 0; i < param->decorators->count; i++) {
+                    ZrParser_Ast_Free(state, param->decorators->nodes[i]);
+                }
+                ZrParser_AstNodeArray_Free(state, param->decorators);
+            }
+            break;
+        }
         case ZR_AST_VARIABLE_DECLARATION: {
             SZrVariableDeclaration *var = &node->data.variableDeclaration;
             if (var->pattern != ZR_NULL) {
@@ -4617,6 +4794,89 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
                 if (nameNode != ZR_NULL && nameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
                     ZrParser_Ast_Free(state, nameNode);
                 }
+            }
+            if (decl->decorators != ZR_NULL) {
+                for (TZrSize i = 0; i < decl->decorators->count; i++) {
+                    ZrParser_Ast_Free(state, decl->decorators->nodes[i]);
+                }
+                ZrParser_AstNodeArray_Free(state, decl->decorators);
+            }
+            break;
+        }
+        case ZR_AST_STRUCT_FIELD: {
+            SZrStructField *field = &node->data.structField;
+            if (field->decorators != ZR_NULL) {
+                for (TZrSize i = 0; i < field->decorators->count; i++) {
+                    ZrParser_Ast_Free(state, field->decorators->nodes[i]);
+                }
+                ZrParser_AstNodeArray_Free(state, field->decorators);
+            }
+            if (field->name != ZR_NULL) {
+                SZrAstNode *nameNode =
+                        (SZrAstNode *)((char *)field->name - offsetof(SZrAstNode, data.identifier));
+                if (nameNode != ZR_NULL && nameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    ZrParser_Ast_Free(state, nameNode);
+                }
+            }
+            if (field->typeInfo != ZR_NULL) {
+                free_type_info(state, field->typeInfo);
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              field->typeInfo,
+                                              sizeof(SZrType),
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+            if (field->init != ZR_NULL) {
+                ZrParser_Ast_Free(state, field->init);
+            }
+            break;
+        }
+        case ZR_AST_ENUM_DECLARATION: {
+            SZrEnumDeclaration *decl = &node->data.enumDeclaration;
+            if (decl->name != ZR_NULL) {
+                SZrAstNode *nameNode =
+                        (SZrAstNode *)((char *)decl->name - offsetof(SZrAstNode, data.identifier));
+                if (nameNode != ZR_NULL && nameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    ZrParser_Ast_Free(state, nameNode);
+                }
+            }
+            if (decl->baseType != ZR_NULL) {
+                free_type_info(state, decl->baseType);
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              decl->baseType,
+                                              sizeof(SZrType),
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+            if (decl->members != ZR_NULL) {
+                for (TZrSize i = 0; i < decl->members->count; i++) {
+                    ZrParser_Ast_Free(state, decl->members->nodes[i]);
+                }
+                ZrParser_AstNodeArray_Free(state, decl->members);
+            }
+            if (decl->decorators != ZR_NULL) {
+                for (TZrSize i = 0; i < decl->decorators->count; i++) {
+                    ZrParser_Ast_Free(state, decl->decorators->nodes[i]);
+                }
+                ZrParser_AstNodeArray_Free(state, decl->decorators);
+            }
+            break;
+        }
+        case ZR_AST_ENUM_MEMBER: {
+            SZrEnumMember *member = &node->data.enumMember;
+            if (member->name != ZR_NULL) {
+                SZrAstNode *nameNode =
+                        (SZrAstNode *)((char *)member->name - offsetof(SZrAstNode, data.identifier));
+                if (nameNode != ZR_NULL && nameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    ZrParser_Ast_Free(state, nameNode);
+                }
+            }
+            if (member->value != ZR_NULL) {
+                ZrParser_Ast_Free(state, member->value);
+            }
+            if (member->decorators != ZR_NULL) {
+                for (TZrSize i = 0; i < member->decorators->count; i++) {
+                    ZrParser_Ast_Free(state, member->decorators->nodes[i]);
+                }
+                ZrParser_AstNodeArray_Free(state, member->decorators);
             }
             break;
         }
@@ -4844,20 +5104,31 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             if (tryStmt->block != ZR_NULL) {
                 ZrParser_Ast_Free(state, tryStmt->block);
             }
-            if (tryStmt->catchPattern != ZR_NULL) {
-                // catchPattern 是 SZrAstNodeArray *，需要释放数组中的节点
-                for (TZrSize i = 0; i < tryStmt->catchPattern->count; i++) {
-                    if (tryStmt->catchPattern->nodes[i] != ZR_NULL) {
-                        ZrParser_Ast_Free(state, tryStmt->catchPattern->nodes[i]);
+            if (tryStmt->catchClauses != ZR_NULL) {
+                for (TZrSize i = 0; i < tryStmt->catchClauses->count; i++) {
+                    if (tryStmt->catchClauses->nodes[i] != ZR_NULL) {
+                        ZrParser_Ast_Free(state, tryStmt->catchClauses->nodes[i]);
                     }
                 }
-                ZrParser_AstNodeArray_Free(state, tryStmt->catchPattern);
-            }
-            if (tryStmt->catchBlock != ZR_NULL) {
-                ZrParser_Ast_Free(state, tryStmt->catchBlock);
+                ZrParser_AstNodeArray_Free(state, tryStmt->catchClauses);
             }
             if (tryStmt->finallyBlock != ZR_NULL) {
                 ZrParser_Ast_Free(state, tryStmt->finallyBlock);
+            }
+            break;
+        }
+        case ZR_AST_CATCH_CLAUSE: {
+            SZrCatchClause *catchClause = &node->data.catchClause;
+            if (catchClause->pattern != ZR_NULL) {
+                for (TZrSize i = 0; i < catchClause->pattern->count; i++) {
+                    if (catchClause->pattern->nodes[i] != ZR_NULL) {
+                        ZrParser_Ast_Free(state, catchClause->pattern->nodes[i]);
+                    }
+                }
+                ZrParser_AstNodeArray_Free(state, catchClause->pattern);
+            }
+            if (catchClause->block != ZR_NULL) {
+                ZrParser_Ast_Free(state, catchClause->block);
             }
             break;
         }
@@ -4939,6 +5210,7 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
 // 解析结构体字段
 static SZrAstNode *parse_struct_field(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
@@ -4982,6 +5254,9 @@ static SZrAstNode *parse_struct_field(SZrParserState *ps) {
     // 解析字段名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
@@ -5011,6 +5286,7 @@ static SZrAstNode *parse_struct_field(SZrParserState *ps) {
     }
     
     node->data.structField.access = access;
+    node->data.structField.decorators = decorators;
     node->data.structField.isStatic = isStatic;
     node->data.structField.isUsingManaged = isUsingManaged;
     node->data.structField.isConst = isConst;
@@ -5219,6 +5495,7 @@ static SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
 // 解析结构体声明
 static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     
     // 解析可见性修饰符（可选，默认 private）
     EZrAccessModifier accessModifier = parse_access_modifier(ps);
@@ -5230,6 +5507,9 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     // 解析结构体名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
@@ -5251,6 +5531,9 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, 8);
     if (members == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, inherits);
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     
@@ -5260,7 +5543,8 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
         
         // 检查是否是字段（以 var 开头，可能前面有访问修饰符、static 或 const）
         EZrToken token = ps->lexer->t.token;
-        if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO || 
+        if (token == ZR_TK_SHARP ||
+            token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO || 
             token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
             token == ZR_TK_VAR) {
             // 可能是字段，尝试解析
@@ -5277,6 +5561,10 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
             
             // 跳过访问修饰符、static、using 和 const（用于 lookahead）
+            while (ps->lexer->t.token == ZR_TK_SHARP) {
+                parse_decorator_expression(ps);
+            }
+
             while (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || 
                    ps->lexer->t.token == ZR_TK_PRO || ps->lexer->t.token == ZR_TK_STATIC ||
                    ps->lexer->t.token == ZR_TK_USING || ps->lexer->t.token == ZR_TK_CONST) {
@@ -5326,7 +5614,7 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
         } else if (token == ZR_TK_AT) {
             // 元函数
             member = parse_struct_meta_function(ps);
-        } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_SHARP) {
+        } else if (token == ZR_TK_IDENTIFIER) {
             // 方法（可能有装饰器）
             member = parse_struct_method(ps);
         } else {
@@ -5354,6 +5642,9 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     if (node == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, inherits);
         ZrParser_AstNodeArray_Free(ps->state, members);
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     
@@ -5361,6 +5652,7 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     node->data.structDeclaration.generic = generic;
     node->data.structDeclaration.inherits = inherits;
     node->data.structDeclaration.members = members;
+    node->data.structDeclaration.decorators = decorators;
     node->data.structDeclaration.accessModifier = accessModifier;
     return node;
 }
@@ -6008,10 +6300,14 @@ static SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
 // 解析枚举成员
 static SZrAstNode *parse_enum_member(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     
     // 解析成员名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
@@ -6035,11 +6331,15 @@ static SZrAstNode *parse_enum_member(SZrParserState *ps) {
     
     SZrAstNode *node = create_ast_node(ps, ZR_AST_ENUM_MEMBER, memberLoc);
     if (node == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     
     node->data.enumMember.name = name;
     node->data.enumMember.value = value;
+    node->data.enumMember.decorators = decorators;
     return node;
 }
 
@@ -6047,6 +6347,7 @@ static SZrAstNode *parse_enum_member(SZrParserState *ps) {
 // 语法：enum Name[: baseType] { members }
 static SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     
     // 解析可见性修饰符（可选，默认 private）
     EZrAccessModifier accessModifier = parse_access_modifier(ps);
@@ -6058,6 +6359,9 @@ static SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     // 解析枚举名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
@@ -6078,6 +6382,9 @@ static SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     // 解析成员列表
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, 8);
     if (members == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     
@@ -6108,13 +6415,252 @@ static SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     SZrAstNode *node = create_ast_node(ps, ZR_AST_ENUM_DECLARATION, enumLoc);
     if (node == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, members);
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     
     node->data.enumDeclaration.name = name;
     node->data.enumDeclaration.baseType = baseType;
     node->data.enumDeclaration.members = members;
+    node->data.enumDeclaration.decorators = decorators;
     node->data.enumDeclaration.accessModifier = accessModifier;
+    return node;
+}
+
+static SZrAstNode *parse_extern_function_declaration(SZrParserState *ps, SZrAstNodeArray *decorators) {
+    SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNode *nameNode;
+    SZrIdentifier *name;
+    SZrAstNodeArray *params = ZR_NULL;
+    SZrParameter *args = ZR_NULL;
+    SZrType *returnType = ZR_NULL;
+    SZrAstNode *node;
+
+    nameNode = parse_identifier(ps);
+    if (nameNode == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
+        return ZR_NULL;
+    }
+    name = &nameNode->data.identifier;
+
+    expect_token(ps, ZR_TK_LPAREN);
+    ZrParser_Lexer_Next(ps->lexer);
+
+    if (ps->lexer->t.token == ZR_TK_PARAMS) {
+        SZrAstNode *argsNode = parse_parameter(ps);
+        if (argsNode != ZR_NULL) {
+            args = &argsNode->data.parameter;
+        }
+        params = ZrParser_AstNodeArray_New(ps->state, 0);
+    } else {
+        params = parse_parameter_list(ps);
+        if (consume_token(ps, ZR_TK_COMMA) && ps->lexer->t.token == ZR_TK_PARAMS) {
+            SZrAstNode *argsNode = parse_parameter(ps);
+            if (argsNode != ZR_NULL) {
+                args = &argsNode->data.parameter;
+            }
+        }
+    }
+
+    expect_token(ps, ZR_TK_RPAREN);
+    consume_token(ps, ZR_TK_RPAREN);
+
+    if (consume_token(ps, ZR_TK_COLON)) {
+        returnType = parse_type(ps);
+    }
+
+    expect_token(ps, ZR_TK_SEMICOLON);
+    consume_token(ps, ZR_TK_SEMICOLON);
+
+    node = create_ast_node(ps, ZR_AST_EXTERN_FUNCTION_DECLARATION, ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    if (node == ZR_NULL) {
+        if (params != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+        }
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
+        return ZR_NULL;
+    }
+
+    node->data.externFunctionDeclaration.name = name;
+    node->data.externFunctionDeclaration.params = params;
+    node->data.externFunctionDeclaration.args = args;
+    node->data.externFunctionDeclaration.returnType = returnType;
+    node->data.externFunctionDeclaration.decorators = decorators;
+    return node;
+}
+
+static SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArray *decorators) {
+    SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNode *nameNode;
+    SZrIdentifier *name;
+    SZrAstNodeArray *params = ZR_NULL;
+    SZrParameter *args = ZR_NULL;
+    SZrType *returnType = ZR_NULL;
+    SZrAstNode *node;
+
+    if (!current_identifier_equals(ps, "delegate")) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
+        report_error(ps, "Expected 'delegate' in extern block");
+        return ZR_NULL;
+    }
+    ZrParser_Lexer_Next(ps->lexer);
+
+    nameNode = parse_identifier(ps);
+    if (nameNode == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
+        return ZR_NULL;
+    }
+    name = &nameNode->data.identifier;
+
+    expect_token(ps, ZR_TK_LPAREN);
+    ZrParser_Lexer_Next(ps->lexer);
+
+    if (ps->lexer->t.token == ZR_TK_PARAMS) {
+        SZrAstNode *argsNode = parse_parameter(ps);
+        if (argsNode != ZR_NULL) {
+            args = &argsNode->data.parameter;
+        }
+        params = ZrParser_AstNodeArray_New(ps->state, 0);
+    } else {
+        params = parse_parameter_list(ps);
+        if (consume_token(ps, ZR_TK_COMMA) && ps->lexer->t.token == ZR_TK_PARAMS) {
+            SZrAstNode *argsNode = parse_parameter(ps);
+            if (argsNode != ZR_NULL) {
+                args = &argsNode->data.parameter;
+            }
+        }
+    }
+
+    expect_token(ps, ZR_TK_RPAREN);
+    consume_token(ps, ZR_TK_RPAREN);
+
+    if (consume_token(ps, ZR_TK_COLON)) {
+        returnType = parse_type(ps);
+    }
+
+    expect_token(ps, ZR_TK_SEMICOLON);
+    consume_token(ps, ZR_TK_SEMICOLON);
+
+    node = create_ast_node(ps, ZR_AST_EXTERN_DELEGATE_DECLARATION, ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    if (node == ZR_NULL) {
+        if (params != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+        }
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
+        return ZR_NULL;
+    }
+
+    node->data.externDelegateDeclaration.name = name;
+    node->data.externDelegateDeclaration.params = params;
+    node->data.externDelegateDeclaration.args = args;
+    node->data.externDelegateDeclaration.returnType = returnType;
+    node->data.externDelegateDeclaration.decorators = decorators;
+    return node;
+}
+
+static SZrAstNode *parse_extern_member_declaration(SZrParserState *ps) {
+    SZrAstNodeArray *decorators = parse_leading_decorators(ps);
+    SZrAstNode *node = ZR_NULL;
+
+    if (ps->lexer->t.token == ZR_TK_STRUCT) {
+        node = parse_struct_declaration(ps);
+        if (node != ZR_NULL && node->type == ZR_AST_STRUCT_DECLARATION && decorators != ZR_NULL) {
+            node->data.structDeclaration.decorators = decorators;
+            decorators = ZR_NULL;
+        }
+    } else if (ps->lexer->t.token == ZR_TK_ENUM) {
+        node = parse_enum_declaration(ps);
+        if (node != ZR_NULL && node->type == ZR_AST_ENUM_DECLARATION && decorators != ZR_NULL) {
+            node->data.enumDeclaration.decorators = decorators;
+            decorators = ZR_NULL;
+        }
+    } else if (current_identifier_equals(ps, "delegate")) {
+        node = parse_extern_delegate_declaration(ps, decorators);
+        decorators = ZR_NULL;
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
+        node = parse_extern_function_declaration(ps, decorators);
+        decorators = ZR_NULL;
+    } else {
+        report_error(ps, "Unexpected declaration inside extern block");
+    }
+
+    if (decorators != ZR_NULL) {
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+    }
+    return node;
+}
+
+static SZrAstNode *parse_extern_block(SZrParserState *ps) {
+    SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNode *libraryName = ZR_NULL;
+    SZrAstNodeArray *declarations = ZR_NULL;
+    SZrAstNode *node;
+
+    expect_token(ps, ZR_TK_PERCENT);
+    ZrParser_Lexer_Next(ps->lexer);
+
+    if (!current_identifier_equals(ps, "extern")) {
+        report_error(ps, "Expected 'extern' after '%'");
+        return ZR_NULL;
+    }
+    ZrParser_Lexer_Next(ps->lexer);
+
+    expect_token(ps, ZR_TK_LPAREN);
+    ZrParser_Lexer_Next(ps->lexer);
+
+    if (ps->lexer->t.token != ZR_TK_STRING) {
+        report_error(ps, "Expected string literal library spec for extern block");
+        return ZR_NULL;
+    }
+    libraryName = parse_literal(ps);
+
+    expect_token(ps, ZR_TK_RPAREN);
+    consume_token(ps, ZR_TK_RPAREN);
+
+    declarations = ZrParser_AstNodeArray_New(ps->state, 4);
+    if (declarations == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (consume_token(ps, ZR_TK_LBRACE)) {
+        while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
+            SZrAstNode *declaration = parse_extern_member_declaration(ps);
+            if (declaration == ZR_NULL) {
+                break;
+            }
+            ZrParser_AstNodeArray_Add(ps->state, declarations, declaration);
+        }
+        expect_token(ps, ZR_TK_RBRACE);
+        consume_token(ps, ZR_TK_RBRACE);
+    } else {
+        SZrAstNode *declaration = parse_extern_member_declaration(ps);
+        if (declaration == ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, declarations);
+            return ZR_NULL;
+        }
+        ZrParser_AstNodeArray_Add(ps->state, declarations, declaration);
+    }
+
+    node = create_ast_node(ps, ZR_AST_EXTERN_BLOCK, ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    if (node == ZR_NULL) {
+        ZrParser_AstNodeArray_Free(ps->state, declarations);
+        return ZR_NULL;
+    }
+
+    node->data.externBlock.libraryName = libraryName;
+    node->data.externBlock.declarations = declarations;
     return node;
 }
 

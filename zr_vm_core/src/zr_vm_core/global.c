@@ -16,6 +16,93 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_common/zr_type_conf.h"
 
+#include <string.h>
+
+static SZrString *global_state_create_permanent_string(SZrState *state, const TZrChar *text) {
+    SZrString *stringObject;
+
+    if (state == ZR_NULL || text == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    stringObject = ZrCore_String_Create(state, text, strlen(text));
+    if (stringObject != ZR_NULL) {
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(stringObject));
+    }
+    return stringObject;
+}
+
+static void global_state_register_zr_member(SZrState *state,
+                                            SZrObject *zrObject,
+                                            const TZrChar *memberName,
+                                            const SZrTypeValue *memberValue) {
+    SZrString *memberNameString;
+    SZrTypeValue memberKey;
+
+    if (state == ZR_NULL || zrObject == ZR_NULL || memberName == ZR_NULL || memberValue == ZR_NULL) {
+        return;
+    }
+
+    memberNameString = global_state_create_permanent_string(state, memberName);
+    if (memberNameString == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberNameString));
+    memberKey.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Object_SetValue(state, zrObject, &memberKey, memberValue);
+}
+
+static void global_state_register_named_prototype(SZrState *state,
+                                                  SZrGlobalState *global,
+                                                  SZrObject *zrObject,
+                                                  SZrObjectPrototype *prototype) {
+    SZrTypeValue prototypeValue;
+
+    if (state == ZR_NULL || global == ZR_NULL || zrObject == ZR_NULL || prototype == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+    prototypeValue.type = ZR_VALUE_TYPE_OBJECT;
+    global_state_register_zr_member(state, zrObject, ZrCore_String_GetNativeString(prototype->name), &prototypeValue);
+}
+
+static void global_state_init_builtin_exception_types(SZrState *state, SZrGlobalState *global, SZrObject *zrObject) {
+    SZrObjectPrototype *errorPrototype;
+    SZrStructPrototype *stackFramePrototype;
+    static const TZrChar *kStackFrameFieldNames[] = {
+            "functionName",
+            "sourceFile",
+            "sourceLine",
+            "instructionOffset",
+    };
+
+    if (state == ZR_NULL || global == ZR_NULL || zrObject == ZR_NULL) {
+        return;
+    }
+
+    errorPrototype = ZrCore_ObjectPrototype_New(state,
+                                                global_state_create_permanent_string(state, "Error"),
+                                                ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    if (errorPrototype != ZR_NULL) {
+        global->errorPrototype = errorPrototype;
+        global_state_register_named_prototype(state, global, zrObject, errorPrototype);
+    }
+
+    stackFramePrototype = ZrCore_StructPrototype_New(state, global_state_create_permanent_string(state, "StackFrame"));
+    if (stackFramePrototype != ZR_NULL) {
+        for (TZrSize index = 0; index < sizeof(kStackFrameFieldNames) / sizeof(kStackFrameFieldNames[0]); index++) {
+            SZrString *fieldName = global_state_create_permanent_string(state, kStackFrameFieldNames[index]);
+            if (fieldName != ZR_NULL) {
+                ZrCore_StructPrototype_AddField(state, stackFramePrototype, fieldName, index);
+            }
+        }
+        global->stackFramePrototype = &stackFramePrototype->super;
+        global_state_register_named_prototype(state, global, zrObject, &stackFramePrototype->super);
+    }
+}
+
 SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAllocationArguments, TZrUInt64 uniqueNumber,
                                  SZrCallbackGlobal *callbacks) {
     SZrGlobalState *global =
@@ -30,7 +117,6 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     SZrState *newState = ZrCore_State_New(global);
     global->mainThreadState = newState;
     global->threadWithStackClosures = ZR_NULL;
-    ZrCore_State_Init(newState, global);
     // todo: main thread cannot yield
 
     // todo:
@@ -59,6 +145,11 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
 
     // exception
     global->panicHandlingFunction = ZR_NULL;
+    global->errorPrototype = ZR_NULL;
+    global->stackFramePrototype = ZR_NULL;
+    ZrCore_Value_ResetAsNull(&global->unhandledExceptionHandler);
+    global->hasUnhandledExceptionHandler = ZR_FALSE;
+    global->registryInitialized = ZR_FALSE;
 
     // injected data
     global->userData = ZR_NULL;
@@ -130,16 +221,31 @@ static void global_state_init_basic_type_object_prototypes(SZrState *state, SZrG
 }
 
 void ZrCore_GlobalState_InitRegistry(SZrState *state, SZrGlobalState *global) {
+    if (state == ZR_NULL || global == ZR_NULL) {
+        return;
+    }
+    if (global->registryInitialized) {
+        return;
+    }
+
     SZrObject *object = ZrCore_Object_New(state, ZR_NULL);
     ZrCore_Object_Init(state, object);  // 初始化对象的 nodeMap
     ZrCore_Value_InitAsRawObject(state, &global->loadedModulesRegistry, ZR_CAST_RAW_OBJECT(object));
-    
-    // 初始化基本类型对象原型
-    global_state_init_basic_type_object_prototypes(state, global);
-    
+
     // 创建全局 zr 对象
     SZrObject *zrObject = ZrCore_Object_New(state, ZR_NULL);
     ZrCore_Object_Init(state, zrObject);
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(zrObject));
+
+    // 将 zr 对象存储到 global->zrObject 中，供 GET_GLOBAL 指令使用
+    SZrTypeValue zrValue;
+    ZrCore_Value_InitAsRawObject(state, &zrValue, ZR_CAST_RAW_OBJECT_AS_SUPER(zrObject));
+    zrValue.type = ZR_VALUE_TYPE_OBJECT;
+    global->zrObject = zrValue;
+
+    // 初始化基本类型对象原型
+    global_state_init_basic_type_object_prototypes(state, global);
+    global_state_init_builtin_exception_types(state, global, zrObject);
     
     // 创建 zr.import native 函数
     SZrClosureNative *importClosure = ZrCore_ClosureNative_New(state, 0);
@@ -157,28 +263,8 @@ void ZrCore_GlobalState_InitRegistry(SZrState *state, SZrGlobalState *global) {
         // importValue.type 已经由 ZrCore_Value_InitAsRawObject 设置为 ZR_VALUE_TYPE_CLOSURE
         importValue.isNative = ZR_TRUE;
         
-        // 创建 "import" 字符串键
-        SZrString *importName = ZrCore_String_Create(state, "import", 6);
-        // 标记字符串为永久对象（避免被 GC 回收，必须在设置值之前标记）
-        // 注意：如果字符串已存在，可能已经被标记为永久对象，ZrCore_RawObject_MarkAsPermanent 会处理这种情况
-        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(importName));
-        
-        SZrTypeValue importKey;
-        ZrCore_Value_InitAsRawObject(state, &importKey, ZR_CAST_RAW_OBJECT_AS_SUPER(importName));
-        // importKey.type 已经由 ZrCore_Value_InitAsRawObject 设置为 ZR_VALUE_TYPE_STRING
-        
-        // 将 import 函数添加到 zr 对象
-        ZrCore_Object_SetValue(state, zrObject, &importKey, &importValue);
+        global_state_register_zr_member(state, zrObject, "import", &importValue);
     }
-    
-    // 将 zr 对象存储到 global->zrObject 中，供 GET_GLOBAL 指令使用
-    SZrTypeValue zrValue;
-    ZrCore_Value_InitAsRawObject(state, &zrValue, ZR_CAST_RAW_OBJECT_AS_SUPER(zrObject));
-    zrValue.type = ZR_VALUE_TYPE_OBJECT;
-    global->zrObject = zrValue;
-    
-    // 标记 zr 对象为永久对象（避免被 GC 回收）
-    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(zrObject));
     
     // 将 zr 对象添加到全局状态（TODO: 需要确认如何访问全局作用域）
     // 根据计划，zr 除非被局部作用域名字覆盖，否则全局只读
@@ -190,6 +276,8 @@ void ZrCore_GlobalState_InitRegistry(SZrState *state, SZrGlobalState *global) {
     // todo: load state value
     // todo: load global value
     // todo: register zr object to global scope
+
+    global->registryInitialized = ZR_TRUE;
 }
 
 // 设置 compileSource 函数指针（由 parser 模块调用）

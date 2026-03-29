@@ -13,6 +13,35 @@
 
 struct SZrGlobalState;
 
+typedef enum EZrVmExceptionHandlerPhase {
+    ZR_VM_EXCEPTION_HANDLER_PHASE_TRY = 0,
+    ZR_VM_EXCEPTION_HANDLER_PHASE_CATCH,
+    ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY
+} EZrVmExceptionHandlerPhase;
+
+typedef enum EZrVmPendingControlKind {
+    ZR_VM_PENDING_CONTROL_NONE = 0,
+    ZR_VM_PENDING_CONTROL_EXCEPTION,
+    ZR_VM_PENDING_CONTROL_RETURN,
+    ZR_VM_PENDING_CONTROL_BREAK,
+    ZR_VM_PENDING_CONTROL_CONTINUE
+} EZrVmPendingControlKind;
+
+typedef struct SZrVmExceptionHandlerState {
+    SZrCallInfo *callInfo;
+    TZrUInt32 handlerIndex;
+    EZrVmExceptionHandlerPhase phase;
+} SZrVmExceptionHandlerState;
+
+typedef struct SZrVmPendingControl {
+    EZrVmPendingControlKind kind;
+    SZrCallInfo *callInfo;
+    TZrMemoryOffset targetInstructionOffset;
+    TZrUInt32 valueSlot;
+    SZrTypeValue value;
+    TZrBool hasValue;
+} SZrVmPendingControl;
+
 struct ZR_STRUCT_ALIGN SZrState {
     SZrRawObject super;
     // reverse pointer to global
@@ -47,6 +76,13 @@ struct ZR_STRUCT_ALIGN SZrState {
     TZrUInt32 nestedNativeCallYieldFlag;
     SZrExceptionLongJump *exceptionRecoverPoint;
     TZrMemoryOffset exceptionHandlingFunctionOffset;
+    SZrTypeValue currentException;
+    EZrThreadStatus currentExceptionStatus;
+    TZrBool hasCurrentException;
+    SZrVmExceptionHandlerState *exceptionHandlerStack;
+    TZrUInt32 exceptionHandlerStackLength;
+    TZrUInt32 exceptionHandlerStackCapacity;
+    SZrVmPendingControl pendingControl;
 
 
     // debug

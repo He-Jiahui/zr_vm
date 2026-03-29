@@ -45,6 +45,24 @@ struct ZR_STRUCT_ALIGN SZrFunctionExecutionLocationInfo {
 
 typedef struct SZrFunctionExecutionLocationInfo SZrFunctionExecutionLocationInfo;
 
+struct ZR_STRUCT_ALIGN SZrFunctionCatchClauseInfo {
+    struct SZrString *typeName;
+    TZrMemoryOffset targetInstructionOffset;
+};
+
+typedef struct SZrFunctionCatchClauseInfo SZrFunctionCatchClauseInfo;
+
+struct ZR_STRUCT_ALIGN SZrFunctionExceptionHandlerInfo {
+    TZrMemoryOffset protectedStartInstructionOffset;
+    TZrMemoryOffset finallyTargetInstructionOffset;
+    TZrMemoryOffset afterFinallyInstructionOffset;
+    TZrUInt32 catchClauseStartIndex;
+    TZrUInt32 catchClauseCount;
+    TZrBool hasFinally;
+};
+
+typedef struct SZrFunctionExceptionHandlerInfo SZrFunctionExceptionHandlerInfo;
+
 struct ZR_STRUCT_ALIGN SZrFunction {
     SZrRawObject super;
     TZrUInt16 parameterCount;
@@ -59,6 +77,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 localVariableLength;
     TZrUInt32 childFunctionLength;
     TZrUInt32 executionLocationInfoLength;
+    TZrUInt32 catchClauseCount;
+    TZrUInt32 exceptionHandlerCount;
     // debug
     TZrUInt32 lineInSourceStart;
     TZrUInt32 lineInSourceEnd;
@@ -71,6 +91,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     struct SZrFunction *childFunctionList;
     // function debug info
     SZrFunctionExecutionLocationInfo *executionLocationInfoList;
+    SZrFunctionCatchClauseInfo *catchClauseList;
+    SZrFunctionExceptionHandlerInfo *exceptionHandlerList;
     TZrUInt32 *lineInSourceList;
     struct SZrString *sourceCodeList;
     SZrRawObject *gcList;

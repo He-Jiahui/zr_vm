@@ -97,6 +97,10 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // exceptions
     // todo:
     FZrPanicHandlingFunction panicHandlingFunction;
+    struct SZrObjectPrototype *errorPrototype;
+    struct SZrObjectPrototype *stackFramePrototype;
+    SZrTypeValue unhandledExceptionHandler;
+    TZrBool hasUnhandledExceptionHandler;
 
     struct SZrObjectPrototype *basicTypeObjectPrototype[ZR_VALUE_TYPE_ENUM_MAX];
 
@@ -104,6 +108,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     SZrCallbackGlobal callbacks;
 
     TZrBool isValid;
+    TZrBool registryInitialized;
     TZrUInt8 empty;
 };
 

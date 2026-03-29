@@ -83,6 +83,8 @@ add_subdirectory("zr_vm_lib_math")
 
 add_subdirectory("zr_vm_lib_system")
 
+add_subdirectory("zr_vm_lib_ffi")
+
 add_subdirectory("zr_vm_language_server")
 
 add_subdirectory("zr_vm_cli")

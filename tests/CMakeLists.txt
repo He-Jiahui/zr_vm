@@ -74,6 +74,7 @@ function(zr_vm_link_parser_core_plus_library target_name)
                 zr_vm_library_shared
                 zr_vm_lib_math_shared
                 zr_vm_lib_system_shared
+                zr_vm_lib_ffi_shared
         )
     else ()
         target_link_libraries(${target_name} PRIVATE
@@ -82,6 +83,7 @@ function(zr_vm_link_parser_core_plus_library target_name)
                 zr_vm_library_static
                 zr_vm_lib_math_static
                 zr_vm_lib_system_static
+                zr_vm_lib_ffi_static
         )
     endif ()
 endfunction()
@@ -227,8 +229,10 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     target_include_directories(zr_vm_exceptions_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
-    zr_vm_link_parser_core(zr_vm_exceptions_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_exceptions_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_module_system_test
@@ -341,6 +345,62 @@ if (TARGET zr_vm_cli_executable AND
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
     )
     zr_vm_link_parser_core(zr_vm_project_fixture_builder)
+endif ()
+
+find_package(Threads REQUIRED)
+
+add_library(
+        zr_vm_ffi_fixture
+        SHARED
+        ${CMAKE_SOURCE_DIR}/tests/ffi/ffi_fixture.c
+)
+target_include_directories(zr_vm_ffi_fixture PRIVATE
+        ${CMAKE_SOURCE_DIR}/tests/ffi
+)
+target_link_libraries(zr_vm_ffi_fixture PRIVATE Threads::Threads)
+set_target_properties(zr_vm_ffi_fixture PROPERTIES
+        OUTPUT_NAME zr_vm_ffi_fixture
+)
+
+if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
+(TARGET zr_vm_core_shared OR TARGET zr_vm_core_static))
+    zr_vm_add_unity_test_target(
+            zr_vm_ffi_test
+            ${CMAKE_SOURCE_DIR}/tests/ffi/test_ffi_module.c
+    )
+    target_include_directories(zr_vm_ffi_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/ffi
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+    )
+    target_compile_definitions(zr_vm_ffi_test PRIVATE
+            ZR_VM_FFI_FIXTURE_PATH="$<TARGET_FILE:zr_vm_ffi_fixture>"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_ffi_test)
+    add_dependencies(zr_vm_ffi_test zr_vm_ffi_fixture)
+
+    zr_vm_add_support_target(
+            zr_vm_ffi_probe
+            ${CMAKE_SOURCE_DIR}/tests/ffi/debug_ffi_close_probe.c
+    )
+    target_include_directories(zr_vm_ffi_probe PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/ffi
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+    )
+    target_compile_definitions(zr_vm_ffi_probe PRIVATE
+            ZR_VM_FFI_FIXTURE_PATH="$<TARGET_FILE:zr_vm_ffi_fixture>"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_ffi_probe)
+    add_dependencies(zr_vm_ffi_probe zr_vm_ffi_fixture)
 endif ()
 
 set(core_runtime_executables "")

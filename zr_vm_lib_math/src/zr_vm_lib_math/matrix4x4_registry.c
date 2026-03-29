@@ -31,7 +31,17 @@ const ZrLibTypeDescriptor *ZrMath_Matrix4x4Registry_GetType(void) {
             {ZR_META_TO_STRING,0,0,ZrMath_Matrix4x4_MetaToString,"string",ZR_NULL},
     };
     static const ZrLibTypeDescriptor kType = {"Matrix4x4", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, kFields, ZR_ARRAY_COUNT(kFields),
-                                              kMethods, ZR_ARRAY_COUNT(kMethods), kMeta, ZR_ARRAY_COUNT(kMeta), ZR_NULL};
+                                              kMethods, ZR_ARRAY_COUNT(kMethods), kMeta, ZR_ARRAY_COUNT(kMeta),
+                                              "4x4 row-major matrix.",
+                                              ZR_NULL,
+                                              ZR_NULL,
+                                              0,
+                                              ZR_NULL,
+                                              0,
+                                              ZR_NULL,
+                                              ZR_TRUE,
+                                              ZR_TRUE,
+                                              "Matrix4x4(...values: float)"};
     return &kType;
 }
 

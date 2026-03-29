@@ -1,0 +1,4 @@
+%extern("/mnt/d/Git/Github/zr_vm_mig/zr_vm/build/codex-wsl-gcc-debug/tests/ffi/libzr_vm_ffi_fixture.so") {
+  #zr.ffi.entry("zr_ffi_add_i32")# Add(lhs:i32, rhs:i32): i32;
+}
+return Add(7, 5);

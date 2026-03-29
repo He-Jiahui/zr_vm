@@ -7,6 +7,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_lib_ffi/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_library/common_state.h"
@@ -27,6 +28,7 @@ static int cli_run(const int argc, char **argv) {
     ZrParser_ToGlobalState_Register(global->mainThreadState);
     ZrVmLibMath_Register(global);
     ZrVmLibSystem_Register(global);
+    ZrVmLibFfi_Register(global);
 
     SZrTypeValue result;
     ZrCore_Value_ResetAsNull(&result);

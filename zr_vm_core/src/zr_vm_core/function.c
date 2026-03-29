@@ -38,6 +38,10 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->instructionsLength = 0;
     function->executionLocationInfoList = ZR_NULL;
     function->executionLocationInfoLength = 0;
+    function->catchClauseList = ZR_NULL;
+    function->catchClauseCount = 0;
+    function->exceptionHandlerList = ZR_NULL;
+    function->exceptionHandlerCount = 0;
     function->closureValueList = ZR_NULL;
     function->closureValueLength = 0;
     function->parameterCount = 0;
@@ -79,6 +83,12 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     }
     if (function->executionLocationInfoList != ZR_NULL && function->executionLocationInfoLength > 0) {
         ZR_MEMORY_RAW_FREE_LIST(global, function->executionLocationInfoList, function->executionLocationInfoLength);
+    }
+    if (function->catchClauseList != ZR_NULL && function->catchClauseCount > 0) {
+        ZR_MEMORY_RAW_FREE_LIST(global, function->catchClauseList, function->catchClauseCount);
+    }
+    if (function->exceptionHandlerList != ZR_NULL && function->exceptionHandlerCount > 0) {
+        ZR_MEMORY_RAW_FREE_LIST(global, function->exceptionHandlerList, function->exceptionHandlerCount);
     }
     if (function->exportedVariables != ZR_NULL && function->exportedVariableLength > 0) {
         ZR_MEMORY_RAW_FREE_LIST(global, function->exportedVariables, function->exportedVariableLength);

@@ -626,6 +626,16 @@ static TZrSize garbage_collector_atomic(struct SZrState *state) {
     if (ZrCore_Value_IsGarbageCollectable(&global->loadedModulesRegistry)) {
         garbage_collector_mark_value(state, &global->loadedModulesRegistry);
     }
+    if (global->errorPrototype != ZR_NULL) {
+        garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->errorPrototype));
+    }
+    if (global->stackFramePrototype != ZR_NULL) {
+        garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->stackFramePrototype));
+    }
+    if (global->hasUnhandledExceptionHandler &&
+        ZrCore_Value_IsGarbageCollectable(&global->unhandledExceptionHandler)) {
+        garbage_collector_mark_value(state, &global->unhandledExceptionHandler);
+    }
 
     // 标记全局元表（basicTypeObjectPrototype）
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
@@ -1401,6 +1411,9 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
         }
         case ZR_RAW_OBJECT_TYPE_FUNCTION: {
             SZrFunction *func = ZR_CAST_FUNCTION(state, o);
+            if (func->functionName != ZR_NULL) {
+                garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(func->functionName));
+            }
             // 遍历函数的闭包值
             for (TZrUInt32 i = 0; i < func->closureValueLength; i++) {
                 if (func->closureValueList[i].name != ZR_NULL) {
@@ -1410,6 +1423,11 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
             // 遍历函数的常量值
             for (TZrUInt32 i = 0; i < func->constantValueLength; i++) {
                 garbage_collector_mark_value(state, &func->constantValueList[i]);
+            }
+            for (TZrUInt32 i = 0; i < func->catchClauseCount; i++) {
+                if (func->catchClauseList[i].typeName != ZR_NULL) {
+                    garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(func->catchClauseList[i].typeName));
+                }
             }
             // 遍历子函数
             for (TZrUInt32 i = 0; i < func->childFunctionLength; i++) {
@@ -1445,6 +1463,14 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
                 }
                 // 移动到下一个闭包值（通过 link.next）
                 closureValue = closureValue->link.next;
+            }
+            if (threadState->hasCurrentException) {
+                garbage_collector_mark_value(state, &threadState->currentException);
+                work++;
+            }
+            if (threadState->pendingControl.hasValue) {
+                garbage_collector_mark_value(state, &threadState->pendingControl.value);
+                work++;
             }
             // 遍历调用信息中的函数
             SZrCallInfo *callInfo = threadState->callInfoList;
@@ -1536,6 +1562,16 @@ void ZrGarbageCollectorRestartCollection(struct SZrState *state) {
     // 标记注册表
     if (ZrCore_Value_IsGarbageCollectable(&global->loadedModulesRegistry)) {
         garbage_collector_mark_value(state, &global->loadedModulesRegistry);
+    }
+    if (global->errorPrototype != ZR_NULL) {
+        garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->errorPrototype));
+    }
+    if (global->stackFramePrototype != ZR_NULL) {
+        garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->stackFramePrototype));
+    }
+    if (global->hasUnhandledExceptionHandler &&
+        ZrCore_Value_IsGarbageCollectable(&global->unhandledExceptionHandler)) {
+        garbage_collector_mark_value(state, &global->unhandledExceptionHandler);
     }
 
     // 标记全局元表（basicTypeObjectPrototype）

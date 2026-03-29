@@ -39,7 +39,16 @@ const ZrLibTypeDescriptor *ZrMath_TensorRegistry_GetType(void) {
             ZR_ARRAY_COUNT(kMethods),
             kMeta,
             ZR_ARRAY_COUNT(kMeta),
-            ZR_NULL
+            "Dynamic row-major tensor.",
+            ZR_NULL,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            ZR_TRUE,
+            ZR_TRUE,
+            "Tensor(shape: array, fillValue: float)"
     };
     return &kType;
 }

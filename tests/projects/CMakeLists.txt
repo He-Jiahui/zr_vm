@@ -1,16 +1,18 @@
-set(HELLO_WORLD_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/hello_world/hello_world.zrp)
-set(IMPORT_BASIC_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/import_basic/import_basic.zrp)
-set(CLASSES_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes/classes.zrp)
-set(CLASSES_FULL_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_full/classes_full.zrp)
-set(CLASSES_STATIC_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_static/classes_static.zrp)
-set(CLASSES_SUPER_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_super/classes_super.zrp)
-set(CLASSES_PROPERTIES_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_properties/classes_properties.zrp)
-set(IMPORT_PUB_FUNCTION_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/import_pub_function/import_pub_function.zrp)
-set(IMPORT_CAPTURE_NATIVE_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/import_capture_native/import_capture_native.zrp)
-set(NATIVE_CHAIN_CALLS_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/native_chain_calls/native_chain_calls.zrp)
-set(NATIVE_VECTOR3_EXPORT_PROBE_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/native_vector3_export_probe/native_vector3_export_probe.zrp)
-set(NATIVE_VECTOR3_CAPTURE_PROBE_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/native_vector3_capture_probe/native_vector3_capture_probe.zrp)
-set(NATIVE_NUMERIC_PIPELINE_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/native_numeric_pipeline/native_numeric_pipeline.zrp)
+set(ZR_VM_PROJECT_FIXTURES_DIR ${CMAKE_SOURCE_DIR}/tests/fixtures/projects)
+
+set(HELLO_WORLD_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/hello_world/hello_world.zrp)
+set(IMPORT_BASIC_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/import_basic/import_basic.zrp)
+set(CLASSES_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/classes/classes.zrp)
+set(CLASSES_FULL_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/classes_full/classes_full.zrp)
+set(CLASSES_STATIC_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/classes_static/classes_static.zrp)
+set(CLASSES_SUPER_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/classes_super/classes_super.zrp)
+set(CLASSES_PROPERTIES_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/classes_properties/classes_properties.zrp)
+set(IMPORT_PUB_FUNCTION_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/import_pub_function/import_pub_function.zrp)
+set(IMPORT_CAPTURE_NATIVE_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/import_capture_native/import_capture_native.zrp)
+set(NATIVE_CHAIN_CALLS_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/native_chain_calls/native_chain_calls.zrp)
+set(NATIVE_VECTOR3_EXPORT_PROBE_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/native_vector3_export_probe/native_vector3_export_probe.zrp)
+set(NATIVE_VECTOR3_CAPTURE_PROBE_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/native_vector3_capture_probe/native_vector3_capture_probe.zrp)
+set(NATIVE_NUMERIC_PIPELINE_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/native_numeric_pipeline/native_numeric_pipeline.zrp)
 
 add_executable(
     zr_vm_project_fixture_builder
@@ -29,7 +31,7 @@ target_include_directories(zr_vm_project_fixture_builder PRIVATE
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
 )
 
-set(IMPORT_BINARY_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/import_binary)
+set(IMPORT_BINARY_SOURCE_DIR ${ZR_VM_PROJECT_FIXTURES_DIR}/import_binary)
 set(IMPORT_BINARY_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/import_binary)
 file(MAKE_DIRECTORY ${IMPORT_BINARY_BUILD_DIR})
 file(MAKE_DIRECTORY ${IMPORT_BINARY_BUILD_DIR}/src)

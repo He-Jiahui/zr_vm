@@ -19,9 +19,31 @@
 extern void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
 extern void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node);
+extern void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value);
 static void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value);
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node);
+
+static SZrAstNode *try_statement_first_catch_clause(SZrTryCatchFinallyStatement *stmt) {
+    if (stmt == ZR_NULL || stmt->catchClauses == ZR_NULL || stmt->catchClauses->count == 0) {
+        return ZR_NULL;
+    }
+    return stmt->catchClauses->nodes[0];
+}
+
+static SZrAstNodeArray *catch_clause_pattern(SZrAstNode *catchClauseNode) {
+    if (catchClauseNode == ZR_NULL || catchClauseNode->type != ZR_AST_CATCH_CLAUSE) {
+        return ZR_NULL;
+    }
+    return catchClauseNode->data.catchClause.pattern;
+}
+
+static SZrAstNode *catch_clause_block(SZrAstNode *catchClauseNode) {
+    if (catchClauseNode == ZR_NULL || catchClauseNode->type != ZR_AST_CATCH_CLAUSE) {
+        return ZR_NULL;
+    }
+    return catchClauseNode->data.catchClause.block;
+}
 
 // 辅助函数声明（在 compiler.c 中实现）
 extern void emit_instruction(SZrCompilerState *cs, TZrInstruction instruction);
@@ -37,6 +59,86 @@ extern void exit_scope(SZrCompilerState *cs);
 extern TZrSize create_label(SZrCompilerState *cs);
 extern void resolve_label(SZrCompilerState *cs, TZrSize labelId);
 extern void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId);
+extern void add_pending_absolute_patch(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId);
+extern void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements);
+
+static TZrBool try_context_find_innermost_finally(const SZrCompilerState *cs, SZrCompilerTryContext *outContext) {
+    if (cs == ZR_NULL || outContext == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = cs->tryContextStack.length; index > 0; index--) {
+        SZrCompilerTryContext *context =
+                (SZrCompilerTryContext *)ZrCore_Array_Get((SZrArray *)&cs->tryContextStack, index - 1);
+        if (context != ZR_NULL && context->finallyLabelId != (TZrSize)-1) {
+            *outContext = *context;
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrString *catch_clause_type_name(SZrAstNode *catchClauseNode) {
+    SZrAstNodeArray *pattern = catch_clause_pattern(catchClauseNode);
+
+    if (pattern == ZR_NULL || pattern->count == 0) {
+        return ZR_NULL;
+    }
+
+    if (pattern->count != 1) {
+        return ZR_NULL;
+    }
+
+    {
+        SZrAstNode *paramNode = pattern->nodes[0];
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            return ZR_NULL;
+        }
+
+        if (paramNode->data.parameter.typeInfo == ZR_NULL || paramNode->data.parameter.typeInfo->name == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        if (paramNode->data.parameter.typeInfo->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+            return paramNode->data.parameter.typeInfo->name->data.identifier.name;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrUInt32 catch_clause_binding_slot(SZrCompilerState *cs, SZrAstNode *catchClauseNode) {
+    SZrAstNodeArray *pattern = catch_clause_pattern(catchClauseNode);
+
+    if (pattern == ZR_NULL || pattern->count == 0) {
+        return allocate_stack_slot(cs);
+    }
+
+    if (pattern->count != 1) {
+        ZrParser_Compiler_Error(cs, "Multiple catch parameters are not supported", catchClauseNode->location);
+        return allocate_stack_slot(cs);
+    }
+
+    {
+        SZrAstNode *paramNode = pattern->nodes[0];
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER ||
+            paramNode->data.parameter.name == ZR_NULL || paramNode->data.parameter.name->name == ZR_NULL) {
+            return allocate_stack_slot(cs);
+        }
+        return allocate_local_var(cs, paramNode->data.parameter.name->name);
+    }
+}
+
+static void emit_jump_to_label(SZrCompilerState *cs, TZrSize labelId) {
+    TZrInstruction jumpInst;
+    TZrSize jumpIndex;
+
+    jumpInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+    jumpIndex = cs->instructionCount;
+    emit_instruction(cs, jumpInst);
+    add_pending_jump(cs, jumpIndex, labelId);
+}
 
 static void emit_constant_to_slot_local(SZrCompilerState *cs, TZrUInt32 slot, const SZrTypeValue *value,
                                         SZrFileRange location) {
@@ -461,33 +563,38 @@ static void compile_expression_statement(SZrCompilerState *cs, SZrAstNode *node)
 
 // 编译返回语句
 static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrCompilerTryContext finallyContext;
+    TZrBool hasFinallyContext = ZR_FALSE;
+    SZrReturnStatement *stmt;
+    TZrUInt32 resultSlot = 0;
+    TZrUInt32 resultCount = 0;
+    TZrBool oldTailCallContext;
+
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
-    
+
     if (node->type != ZR_AST_RETURN_STATEMENT) {
         ZrParser_Compiler_Error(cs, "Expected return statement", node->location);
         return;
     }
-    
-    SZrReturnStatement *stmt = &node->data.returnStatement;
-    
-    TZrUInt32 resultSlot = 0;
-    TZrUInt32 resultCount = 0;
-    
-    // 设置尾调用上下文标志（在编译返回值表达式时使用）
-    TZrBool oldTailCallContext = cs->isInTailCallContext;
-    cs->isInTailCallContext = ZR_TRUE;
-    
+
+    stmt = &node->data.returnStatement;
+    hasFinallyContext = try_context_find_innermost_finally(cs, &finallyContext);
+
+    oldTailCallContext = cs->isInTailCallContext;
+    cs->isInTailCallContext = hasFinallyContext ? ZR_FALSE : ZR_TRUE;
+
     if (stmt->expr != ZR_NULL) {
-        // 编译返回值表达式（可能在尾调用上下文中使用FUNCTION_TAIL_CALL）
         TZrSize exprInstBefore = cs->instructions.length;
+        TZrSize exprInstAfter;
+
         ZrParser_Expression_Compile(cs, stmt->expr);
-        TZrSize exprInstAfter = cs->instructions.length;
-        /* 若最后一条为 FUNCTION_TAIL_CALL，返回值在 operandExtra（resultSlot），否则用 stackSlotCount-1 */
+        exprInstAfter = cs->instructions.length;
         if (exprInstAfter > exprInstBefore) {
             TZrInstruction *lastInst = (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, exprInstAfter - 1);
-            if (lastInst != ZR_NULL && lastInst->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)) {
+            if (lastInst != ZR_NULL &&
+                lastInst->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)) {
                 resultSlot = lastInst->instruction.operandExtra;
             } else {
                 resultSlot = cs->stackSlotCount - 1;
@@ -497,23 +604,38 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
         }
         resultCount = 1;
     } else {
-        // 没有返回值，返回 null
-        resultSlot = allocate_stack_slot(cs);
         SZrTypeValue nullValue;
+        TZrUInt32 constantIndex;
+
+        resultSlot = allocate_stack_slot(cs);
         ZrCore_Value_ResetAsNull(&nullValue);
-        TZrUInt32 constantIndex = add_constant(cs, &nullValue);
-        TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16)resultSlot, (TZrInt32)constantIndex);
-        emit_instruction(cs, inst);
+        constantIndex = add_constant(cs, &nullValue);
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                                              (TZrUInt16)resultSlot,
+                                              (TZrInt32)constantIndex));
         resultCount = 1;
     }
-    
-    // 恢复尾调用上下文标志
+
     cs->isInTailCallContext = oldTailCallContext;
-    
-    // 生成 FUNCTION_RETURN 指令
-    // FUNCTION_RETURN 的参数：resultCount, resultSlot
-    TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), (TZrUInt16)resultCount, (TZrUInt16)resultSlot, 0);
-    emit_instruction(cs, inst);
+
+    if (hasFinallyContext) {
+        TZrSize resumeLabelId = create_label(cs);
+        TZrInstruction pendingInst =
+                create_instruction_1(ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN), (TZrUInt16)resultSlot, 0);
+        TZrSize pendingIndex = cs->instructionCount;
+
+        emit_instruction(cs, pendingInst);
+        add_pending_absolute_patch(cs, pendingIndex, resumeLabelId);
+        emit_jump_to_label(cs, finallyContext.finallyLabelId);
+        resolve_label(cs, resumeLabelId);
+    }
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN),
+                                          (TZrUInt16)resultCount,
+                                          (TZrUInt16)resultSlot,
+                                          0));
 }
 
 // 编译块语句
@@ -531,6 +653,11 @@ static void compile_block_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 进入新作用域
     enter_scope(cs);
+
+    ZrParser_Compiler_PredeclareFunctionBindings(cs, block->body);
+    if (cs->hasError) {
+        return;
+    }
     
     // 编译块内所有语句
     if (block->body != ZR_NULL) {
@@ -1079,44 +1206,61 @@ static void compile_switch_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
 // 编译 break/continue 语句
 static void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrCompilerTryContext finallyContext;
+    TZrBool hasFinallyContext = ZR_FALSE;
+    SZrBreakContinueStatement *stmt;
+    SZrLoopLabel *loopLabel;
+    TZrSize targetLabelId;
+
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
-    
+
     if (node->type != ZR_AST_BREAK_CONTINUE_STATEMENT) {
         ZrParser_Compiler_Error(cs, "Expected break/continue statement", node->location);
         return;
     }
-    
-    SZrBreakContinueStatement *stmt = &node->data.breakContinueStatement;
-    
-    // 检查循环标签栈是否为空
+
+    stmt = &node->data.breakContinueStatement;
     if (cs->loopLabelStack.length == 0) {
-        ZrParser_Compiler_Error(cs, stmt->isBreak ? "break statement not inside a loop" : "continue statement not inside a loop", node->location);
+        ZrParser_Compiler_Error(cs,
+                                stmt->isBreak ? "break statement not inside a loop"
+                                              : "continue statement not inside a loop",
+                                node->location);
         return;
     }
-    
-    // 获取最内层循环的标签
-    SZrLoopLabel *loopLabel = (SZrLoopLabel *)ZrCore_Array_Get(&cs->loopLabelStack, cs->loopLabelStack.length - 1);
+
+    loopLabel = (SZrLoopLabel *)ZrCore_Array_Get(&cs->loopLabelStack, cs->loopLabelStack.length - 1);
     if (loopLabel == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "Invalid loop label stack", node->location);
         return;
     }
-    
-    // 选择目标标签
-    TZrSize targetLabelId = stmt->isBreak ? loopLabel->breakLabelId : loopLabel->continueLabelId;
-    
-    // TODO: 简化迭代器功能：break/continue 不再支持返回值
+
+    targetLabelId = stmt->isBreak ? loopLabel->breakLabelId : loopLabel->continueLabelId;
+    hasFinallyContext = try_context_find_innermost_finally(cs, &finallyContext);
+
     if (stmt->expr != ZR_NULL) {
-        ZrParser_Compiler_Error(cs, stmt->isBreak ? "break statement does not support return value" : "continue statement does not support return value", node->location);
+        ZrParser_Compiler_Error(cs,
+                                stmt->isBreak ? "break statement does not support return value"
+                                              : "continue statement does not support return value",
+                                node->location);
         return;
     }
-    
-    // 生成跳转指令
-    TZrInstruction jumpInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
-    TZrSize jumpIndex = cs->instructionCount;
-    emit_instruction(cs, jumpInst);
-    add_pending_jump(cs, jumpIndex, targetLabelId);
+
+    if (hasFinallyContext) {
+        TZrInstruction pendingInst =
+                create_instruction_1(stmt->isBreak ? ZR_INSTRUCTION_ENUM(SET_PENDING_BREAK)
+                                                   : ZR_INSTRUCTION_ENUM(SET_PENDING_CONTINUE),
+                                     0,
+                                     0);
+        TZrSize pendingIndex = cs->instructionCount;
+        emit_instruction(cs, pendingInst);
+        add_pending_absolute_patch(cs, pendingIndex, targetLabelId);
+        emit_jump_to_label(cs, finallyContext.finallyLabelId);
+        return;
+    }
+
+    emit_jump_to_label(cs, targetLabelId);
 }
 
 // 编译 OUT 语句（用于生成器表达式）
@@ -1178,149 +1322,120 @@ static void compile_throw_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
 // 编译 try-catch-finally 语句
 static void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrTryCatchFinallyStatement *stmt;
+    TZrUInt32 catchClauseStartIndex;
+    TZrUInt32 handlerIndex;
+    SZrCompilerExceptionHandlerInfo handlerInfo;
+    TZrSize finallyLabelId;
+    TZrSize afterFinallyLabelId;
+    TZrBool hasFinally;
+    TZrBool pushedTryContext = ZR_FALSE;
+
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
-    
+
     if (node->type != ZR_AST_TRY_CATCH_FINALLY_STATEMENT) {
         ZrParser_Compiler_Error(cs, "Expected try-catch-finally statement", node->location);
         return;
     }
-    
-    SZrTryCatchFinallyStatement *stmt = &node->data.tryCatchFinallyStatement;
-    
-    // 进入新作用域（用于catch参数）
-    if (stmt->catchBlock != ZR_NULL && stmt->catchPattern != ZR_NULL && stmt->catchPattern->count > 0) {
-        enter_scope(cs);
+
+    stmt = &node->data.tryCatchFinallyStatement;
+    catchClauseStartIndex = (TZrUInt32)cs->catchClauseInfos.length;
+    hasFinally = (TZrBool)(stmt->finallyBlock != ZR_NULL);
+    finallyLabelId = hasFinally ? create_label(cs) : (TZrSize)-1;
+    afterFinallyLabelId = create_label(cs);
+
+    if (stmt->catchClauses != ZR_NULL) {
+        for (TZrSize index = 0; index < stmt->catchClauses->count; index++) {
+            SZrAstNode *catchClauseNode = stmt->catchClauses->nodes[index];
+            SZrCompilerCatchClauseInfo catchInfo;
+
+            if (catchClauseNode == ZR_NULL) {
+                continue;
+            }
+
+            catchInfo.typeName = catch_clause_type_name(catchClauseNode);
+            catchInfo.targetLabelId = create_label(cs);
+            ZrCore_Array_Push(cs->state, &cs->catchClauseInfos, &catchInfo);
+        }
     }
-    
-    // 创建跳过catch的标签（如果try块正常执行完成）
-    TZrSize tryEndLabelId = create_label(cs);
-    
-    // 创建finally标签（用于统一finally处理）
-    TZrSize finallyLabelId = create_label(cs);
-    TZrSize afterFinallyLabelId = create_label(cs);
-    
-    // 生成 TRY 指令（标记异常处理开始）
-    TZrInstruction tryInst = create_instruction_0(ZR_INSTRUCTION_ENUM(TRY), 0);
-    emit_instruction(cs, tryInst);
-    
-    // 编译 try 块
+
+    handlerInfo.protectedStartInstructionOffset = (TZrMemoryOffset)cs->instructionCount;
+    handlerInfo.finallyLabelId = finallyLabelId;
+    handlerInfo.afterFinallyLabelId = afterFinallyLabelId;
+    handlerInfo.catchClauseStartIndex = catchClauseStartIndex;
+    handlerInfo.catchClauseCount = (TZrUInt32)(cs->catchClauseInfos.length - catchClauseStartIndex);
+    handlerInfo.hasFinally = hasFinally;
+    handlerIndex = (TZrUInt32)cs->exceptionHandlerInfos.length;
+    ZrCore_Array_Push(cs->state, &cs->exceptionHandlerInfos, &handlerInfo);
+
+    emit_instruction(cs, create_instruction_0(ZR_INSTRUCTION_ENUM(TRY), (TZrUInt16)handlerIndex));
+
+    if (hasFinally) {
+        SZrCompilerTryContext tryContext;
+        tryContext.handlerIndex = handlerIndex;
+        tryContext.finallyLabelId = finallyLabelId;
+        ZrCore_Array_Push(cs->state, &cs->tryContextStack, &tryContext);
+        pushedTryContext = ZR_TRUE;
+    }
+
     if (stmt->block != ZR_NULL) {
         ZrParser_Statement_Compile(cs, stmt->block);
     }
-    
-    // try块正常完成，跳转到try结束标签
-    TZrInstruction jumpTryEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
-    TZrSize jumpTryEndIndex = cs->instructionCount;
-    emit_instruction(cs, jumpTryEndInst);
-    add_pending_jump(cs, jumpTryEndIndex, tryEndLabelId);
-    
-    // 创建 catch 标签
-    TZrSize catchLabelId = create_label(cs);
-    resolve_label(cs, catchLabelId);
-    
-    // 生成 CATCH 指令（捕获异常）
-    // 异常值会被压到栈上
-    if (stmt->catchBlock != ZR_NULL) {
-        TZrInstruction catchInst = create_instruction_0(ZR_INSTRUCTION_ENUM(CATCH), 0);
-        emit_instruction(cs, catchInst);
-        
-        // 异常值现在在栈顶
-        TZrUInt32 exceptionSlot = cs->stackSlotCount - 1;
-        
-        // 处理 catch 参数（将异常值绑定到变量）
-        if (stmt->catchPattern != ZR_NULL && stmt->catchPattern->count > 0) {
-            // 目前只支持单个catch参数
-            if (stmt->catchPattern->count == 1) {
-                SZrAstNode *paramNode = stmt->catchPattern->nodes[0];
-                if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
-                    SZrParameter *param = &paramNode->data.parameter;
-                    if (param->name != ZR_NULL) {
-                        SZrString *paramName = param->name->name;
-                        if (paramName != ZR_NULL) {
-                            // 分配局部变量槽位
-                            TZrUInt32 varIndex = allocate_local_var(cs, paramName);
-                            
-                            // 将异常值存储到局部变量
-                            TZrInstruction setVarInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)varIndex, (TZrInt32)exceptionSlot);
-                            emit_instruction(cs, setVarInst);
-                            
-                            // 释放异常值栈槽
-                            ZrParser_Compiler_TrimStackBy(cs, 1);
-                        }
-                    }
-                }
-            } else {
-                // 多个catch参数暂不支持
-                ZrParser_Compiler_Error(cs, "Multiple catch parameters are not supported yet", node->location);
+
+    emit_instruction(cs, create_instruction_0(ZR_INSTRUCTION_ENUM(END_TRY), (TZrUInt16)handlerIndex));
+    emit_jump_to_label(cs, hasFinally ? finallyLabelId : afterFinallyLabelId);
+
+    if (stmt->catchClauses != ZR_NULL) {
+        for (TZrSize index = 0; index < stmt->catchClauses->count; index++) {
+            SZrAstNode *catchClauseNode = stmt->catchClauses->nodes[index];
+            SZrCompilerCatchClauseInfo *catchInfo =
+                    (SZrCompilerCatchClauseInfo *)ZrCore_Array_Get(&cs->catchClauseInfos,
+                                                                   catchClauseStartIndex + index);
+            TZrUInt32 bindingSlot;
+
+            if (catchClauseNode == ZR_NULL || catchInfo == ZR_NULL) {
+                continue;
             }
-        } else {
-            // 没有catch参数，丢弃异常值
-            ZrParser_Compiler_TrimStackBy(cs, 1);
+
+            resolve_label(cs, catchInfo->targetLabelId);
+            enter_scope(cs);
+            bindingSlot = catch_clause_binding_slot(cs, catchClauseNode);
+            emit_instruction(cs,
+                             create_instruction_0(ZR_INSTRUCTION_ENUM(CATCH), (TZrUInt16)bindingSlot));
+            if (!cs->hasError && catch_clause_block(catchClauseNode) != ZR_NULL) {
+                ZrParser_Statement_Compile(cs, catch_clause_block(catchClauseNode));
+            }
+            exit_scope(cs);
+            emit_instruction(cs, create_instruction_0(ZR_INSTRUCTION_ENUM(END_TRY), (TZrUInt16)handlerIndex));
+            emit_jump_to_label(cs, hasFinally ? finallyLabelId : afterFinallyLabelId);
         }
-        
-        // 编译 catch 块
-        ZrParser_Statement_Compile(cs, stmt->catchBlock);
-    } else {
-        // 没有catch块，只生成CATCH指令丢弃异常
-        TZrInstruction catchInst = create_instruction_0(ZR_INSTRUCTION_ENUM(CATCH), 0);
-        emit_instruction(cs, catchInst);
-        // 异常值会被自动丢弃
     }
-    
-    // 跳转到finally处理（如果有）或结束
-    if (stmt->finallyBlock != ZR_NULL) {
-        TZrInstruction jumpFinallyInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
-        TZrSize jumpFinallyIndex = cs->instructionCount;
-        emit_instruction(cs, jumpFinallyInst);
-        add_pending_jump(cs, jumpFinallyIndex, finallyLabelId);
-    } else {
-        TZrInstruction jumpAfterInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
-        TZrSize jumpAfterIndex = cs->instructionCount;
-        emit_instruction(cs, jumpAfterInst);
-        add_pending_jump(cs, jumpAfterIndex, afterFinallyLabelId);
+
+    if (pushedTryContext && cs->tryContextStack.length > 0) {
+        cs->tryContextStack.length--;
     }
-    
-    // 解析try结束标签
-    resolve_label(cs, tryEndLabelId);
-    
-    // 如果有finally块，跳转到finally处理
-    if (stmt->finallyBlock != ZR_NULL) {
-        TZrInstruction jumpFinallyInst2 = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
-        TZrSize jumpFinallyIndex2 = cs->instructionCount;
-        emit_instruction(cs, jumpFinallyInst2);
-        add_pending_jump(cs, jumpFinallyIndex2, finallyLabelId);
-    }
-    
-    // 解析finally标签
-    if (stmt->finallyBlock != ZR_NULL) {
+
+    if (hasFinally) {
         resolve_label(cs, finallyLabelId);
-        
-        // 编译 finally 块
         ZrParser_Statement_Compile(cs, stmt->finallyBlock);
-        
-        // 跳转到结束
-        TZrInstruction jumpAfterInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
-        TZrSize jumpAfterIndex = cs->instructionCount;
-        emit_instruction(cs, jumpAfterInst);
-        add_pending_jump(cs, jumpAfterIndex, afterFinallyLabelId);
+        emit_instruction(cs, create_instruction_0(ZR_INSTRUCTION_ENUM(END_FINALLY), (TZrUInt16)handlerIndex));
     }
-    
-    // 解析结束标签
+
     resolve_label(cs, afterFinallyLabelId);
-    
-    // 退出作用域（如果进入了catch作用域）
-    if (stmt->catchBlock != ZR_NULL && stmt->catchPattern != ZR_NULL && stmt->catchPattern->count > 0) {
-        exit_scope(cs);
-    }
 }
 
 // 主编译语句函数
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrAstNode *oldCurrentAst;
+
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
+
+    oldCurrentAst = cs->currentAst;
+    cs->currentAst = node;
     
     switch (node->type) {
         case ZR_AST_VARIABLE_DECLARATION:
@@ -1401,6 +1516,10 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
             // 函数声明可以作为语句编译（嵌套函数）
             compile_function_declaration(cs, node);
             break;
+
+        case ZR_AST_EXTERN_BLOCK:
+            ZrParser_Compiler_CompileExternBlock(cs, node);
+            break;
         
         default:
             // 检查是否是声明类型（不应该作为语句编译）
@@ -1419,6 +1538,8 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
                 node->type == ZR_AST_CLASS_DECLARATION ||
                 node->type == ZR_AST_INTERFACE_DECLARATION ||
                 node->type == ZR_AST_ENUM_DECLARATION ||
+                node->type == ZR_AST_EXTERN_FUNCTION_DECLARATION ||
+                node->type == ZR_AST_EXTERN_DELEGATE_DECLARATION ||
                 node->type == ZR_AST_ENUM_MEMBER ||
                 node->type == ZR_AST_MODULE_DECLARATION ||
                 node->type == ZR_AST_SCRIPT) {
@@ -1441,6 +1562,8 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
                     case ZR_AST_CLASS_DECLARATION: typeName = "CLASS_DECLARATION"; break;
                     case ZR_AST_INTERFACE_DECLARATION: typeName = "INTERFACE_DECLARATION"; break;
                     case ZR_AST_ENUM_DECLARATION: typeName = "ENUM_DECLARATION"; break;
+                    case ZR_AST_EXTERN_FUNCTION_DECLARATION: typeName = "EXTERN_FUNCTION_DECLARATION"; break;
+                    case ZR_AST_EXTERN_DELEGATE_DECLARATION: typeName = "EXTERN_DELEGATE_DECLARATION"; break;
                     case ZR_AST_ENUM_MEMBER: typeName = "ENUM_MEMBER"; break;
                     case ZR_AST_MODULE_DECLARATION: typeName = "MODULE_DECLARATION"; break;
                     case ZR_AST_SCRIPT: typeName = "SCRIPT"; break;
@@ -1458,6 +1581,8 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
             ZrParser_Expression_Compile(cs, node);
             break;
     }
+
+    cs->currentAst = oldCurrentAst;
 }
 
 // 编译解构对象赋值：var {key1, key2, ...} = value;

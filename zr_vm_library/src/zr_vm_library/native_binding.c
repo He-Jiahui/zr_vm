@@ -63,11 +63,26 @@ typedef struct ZrLibBindingEntry {
     } descriptor;
 } ZrLibBindingEntry;
 
+typedef struct ZrLibRegisteredModuleRecord {
+    const ZrLibModuleDescriptor *descriptor;
+    TZrChar *sourcePath;
+    EZrLibNativeModuleRegistrationKind registrationKind;
+    TZrBool isDescriptorPlugin;
+} ZrLibRegisteredModuleRecord;
+
 typedef struct ZrLibrary_NativeRegistryState {
-    SZrArray moduleDescriptors;
+    SZrArray moduleRecords;
     SZrArray bindingEntries;
     SZrArray pluginHandles;
+    EZrLibNativeRegistryErrorCode lastErrorCode;
+    TZrChar lastErrorMessage[512];
 } ZrLibrary_NativeRegistryState;
+
+static const TZrChar *kNativeEnumValueFieldName = "__zr_enumValue";
+static const TZrChar *kNativeEnumNameFieldName = "__zr_enumName";
+static const TZrChar *kNativeEnumValueTypeFieldName = "__zr_enumValueTypeName";
+static const TZrChar *kNativeAllowValueConstructionFieldName = "__zr_allowValueConstruction";
+static const TZrChar *kNativeAllowBoxedConstructionFieldName = "__zr_allowBoxedConstruction";
 
 typedef const ZrLibModuleDescriptor *(*FZrVmGetNativeModuleV1)(void);
 
@@ -85,6 +100,23 @@ static const ZrLibModuleDescriptor *native_registry_find_descriptor_or_plugin(SZ
 static SZrObjectModule *native_registry_resolve_loaded_module(SZrState *state,
                                                               ZrLibrary_NativeRegistryState *registry,
                                                               const TZrChar *moduleName);
+static void native_registry_clear_error(ZrLibrary_NativeRegistryState *registry);
+static void native_registry_set_error(ZrLibrary_NativeRegistryState *registry,
+                                      EZrLibNativeRegistryErrorCode errorCode,
+                                      const TZrChar *format,
+                                      ...);
+static const ZrLibRegisteredModuleRecord *native_registry_find_record(ZrLibrary_NativeRegistryState *registry,
+                                                                      const TZrChar *moduleName);
+static const ZrLibRegisteredModuleRecord *native_registry_find_record_by_descriptor(
+        ZrLibrary_NativeRegistryState *registry,
+        const ZrLibModuleDescriptor *descriptor);
+static TZrBool native_registry_validate_descriptor_compatibility(ZrLibrary_NativeRegistryState *registry,
+                                                                 const ZrLibModuleDescriptor *descriptor);
+static TZrBool native_registry_register_module_record(SZrGlobalState *global,
+                                                      const ZrLibModuleDescriptor *descriptor,
+                                                      EZrLibNativeModuleRegistrationKind registrationKind,
+                                                      const TZrChar *sourcePath,
+                                                      TZrBool isDescriptorPlugin);
 
 static TZrBool native_binding_trace_import_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
@@ -138,6 +170,58 @@ static void native_binding_trace_import(const TZrChar *format, ...) {
     vfprintf(stderr, format, arguments);
     va_end(arguments);
     fflush(stderr);
+}
+
+static void native_registry_clear_error(ZrLibrary_NativeRegistryState *registry) {
+    if (registry == ZR_NULL) {
+        return;
+    }
+
+    registry->lastErrorCode = ZR_LIB_NATIVE_REGISTRY_ERROR_NONE;
+    registry->lastErrorMessage[0] = '\0';
+}
+
+static void native_registry_set_error(ZrLibrary_NativeRegistryState *registry,
+                                      EZrLibNativeRegistryErrorCode errorCode,
+                                      const TZrChar *format,
+                                      ...) {
+    va_list arguments;
+
+    if (registry == ZR_NULL) {
+        return;
+    }
+
+    registry->lastErrorCode = errorCode;
+    registry->lastErrorMessage[0] = '\0';
+    if (format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    vsnprintf(registry->lastErrorMessage, sizeof(registry->lastErrorMessage), format, arguments);
+    va_end(arguments);
+}
+
+static TZrChar *native_registry_duplicate_string(SZrGlobalState *global, const TZrChar *text) {
+    TZrSize length;
+    TZrChar *copy;
+
+    if (global == ZR_NULL || text == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    length = strlen(text);
+    copy = (TZrChar *)global->allocator(global->userAllocationArguments,
+                                        ZR_NULL,
+                                        0,
+                                        length + 1,
+                                        ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    if (copy == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    memcpy(copy, text, length + 1);
+    return copy;
 }
 
 static const TZrChar *native_binding_value_type_name(SZrState *state, const SZrTypeValue *value) {
@@ -309,6 +393,140 @@ static ZrLibBindingEntry *native_registry_find_binding(ZrLibrary_NativeRegistryS
     return ZR_NULL;
 }
 
+static const ZrLibRegisteredModuleRecord *native_registry_find_record(ZrLibrary_NativeRegistryState *registry,
+                                                                      const TZrChar *moduleName) {
+    TZrSize index;
+
+    if (registry == ZR_NULL || moduleName == ZR_NULL || !registry->moduleRecords.isValid) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < registry->moduleRecords.length; index++) {
+        const ZrLibRegisteredModuleRecord *record =
+                (const ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(&registry->moduleRecords, index);
+        if (record != ZR_NULL &&
+            record->descriptor != ZR_NULL &&
+            record->descriptor->moduleName != ZR_NULL &&
+            strcmp(record->descriptor->moduleName, moduleName) == 0) {
+            return record;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const ZrLibRegisteredModuleRecord *native_registry_find_record_by_descriptor(
+        ZrLibrary_NativeRegistryState *registry,
+        const ZrLibModuleDescriptor *descriptor) {
+    TZrSize index;
+
+    if (registry == ZR_NULL || descriptor == ZR_NULL || !registry->moduleRecords.isValid) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < registry->moduleRecords.length; index++) {
+        const ZrLibRegisteredModuleRecord *record =
+                (const ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(&registry->moduleRecords, index);
+        if (record != ZR_NULL && record->descriptor == descriptor) {
+            return record;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool native_registry_validate_descriptor_compatibility(ZrLibrary_NativeRegistryState *registry,
+                                                                 const ZrLibModuleDescriptor *descriptor) {
+    TZrUInt32 minimumRuntimeAbi;
+
+    if (descriptor == ZR_NULL) {
+        native_registry_set_error(registry,
+                                  ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                                  "native descriptor is null");
+        return ZR_FALSE;
+    }
+
+    minimumRuntimeAbi = descriptor->minRuntimeAbi != 0 ? descriptor->minRuntimeAbi : ZR_VM_NATIVE_RUNTIME_ABI_VERSION;
+    if (minimumRuntimeAbi > ZR_VM_NATIVE_RUNTIME_ABI_VERSION) {
+        native_registry_set_error(registry,
+                                  ZR_LIB_NATIVE_REGISTRY_ERROR_VERSION_MISMATCH,
+                                  "module '%s' requires runtime ABI %u but runtime provides %u",
+                                  descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>",
+                                  minimumRuntimeAbi,
+                                  ZR_VM_NATIVE_RUNTIME_ABI_VERSION);
+        return ZR_FALSE;
+    }
+
+    if ((descriptor->requiredCapabilities & ~ZR_VM_NATIVE_RUNTIME_CAPABILITIES) != 0) {
+        native_registry_set_error(registry,
+                                  ZR_LIB_NATIVE_REGISTRY_ERROR_CAPABILITY_MISMATCH,
+                                  "module '%s' requires unsupported capabilities 0x%llx",
+                                  descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>",
+                                  (unsigned long long)(descriptor->requiredCapabilities & ~ZR_VM_NATIVE_RUNTIME_CAPABILITIES));
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool native_registry_register_module_record(SZrGlobalState *global,
+                                                      const ZrLibModuleDescriptor *descriptor,
+                                                      EZrLibNativeModuleRegistrationKind registrationKind,
+                                                      const TZrChar *sourcePath,
+                                                      TZrBool isDescriptorPlugin) {
+    ZrLibrary_NativeRegistryState *registry;
+    TZrSize index;
+
+    if (global == ZR_NULL || descriptor == ZR_NULL || descriptor->moduleName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLibrary_NativeRegistry_Attach(global)) {
+        return ZR_FALSE;
+    }
+
+    registry = native_registry_get(global);
+    if (registry == ZR_NULL || !native_registry_validate_descriptor_compatibility(registry, descriptor)) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < registry->moduleRecords.length; index++) {
+        ZrLibRegisteredModuleRecord *record =
+                (ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(&registry->moduleRecords, index);
+        if (record != ZR_NULL &&
+            record->descriptor != ZR_NULL &&
+            record->descriptor->moduleName != ZR_NULL &&
+            strcmp(record->descriptor->moduleName, descriptor->moduleName) == 0) {
+            if (record->sourcePath != ZR_NULL) {
+                global->allocator(global->userAllocationArguments,
+                                  record->sourcePath,
+                                  strlen(record->sourcePath) + 1,
+                                  0,
+                                  ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            }
+            record->descriptor = descriptor;
+            record->registrationKind = registrationKind;
+            record->isDescriptorPlugin = isDescriptorPlugin;
+            record->sourcePath = native_registry_duplicate_string(global, sourcePath);
+            native_registry_clear_error(registry);
+            return ZR_TRUE;
+        }
+    }
+
+    {
+        ZrLibRegisteredModuleRecord record;
+        memset(&record, 0, sizeof(record));
+        record.descriptor = descriptor;
+        record.registrationKind = registrationKind;
+        record.isDescriptorPlugin = isDescriptorPlugin;
+        record.sourcePath = native_registry_duplicate_string(global, sourcePath);
+        ZrCore_Array_Push(global->mainThreadState, &registry->moduleRecords, &record);
+    }
+
+    native_registry_clear_error(registry);
+    return ZR_TRUE;
+}
+
 static void *native_registry_open_library(const TZrChar *path) {
     if (path == ZR_NULL) {
         return ZR_NULL;
@@ -432,25 +650,68 @@ static const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrSt
 
     handle = native_registry_open_library(candidatePath);
     if (handle == ZR_NULL) {
+        native_registry_set_error(registry,
+                                  ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                                  "failed to load native plugin '%s'",
+                                  candidatePath);
         return ZR_NULL;
     }
 
     symbol = (FZrVmGetNativeModuleV1)native_registry_find_symbol(handle, "ZrVm_GetNativeModule_v1");
     if (symbol == ZR_NULL) {
+        native_registry_set_error(registry,
+                                  ZR_LIB_NATIVE_REGISTRY_ERROR_SYMBOL,
+                                  "native plugin '%s' does not export ZrVm_GetNativeModule_v1",
+                                  candidatePath);
         native_registry_close_library(handle);
         return ZR_NULL;
     }
 
     descriptor = symbol();
-    if (descriptor == ZR_NULL ||
-        descriptor->abiVersion != ZR_VM_NATIVE_PLUGIN_ABI_VERSION ||
-        descriptor->moduleName == ZR_NULL ||
+    if (descriptor == ZR_NULL) {
+        native_registry_set_error(registry,
+                                  ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                                  "native plugin '%s' returned a null module descriptor",
+                                  candidatePath);
+        native_registry_close_library(handle);
+        return ZR_NULL;
+    }
+
+    if (descriptor->abiVersion != ZR_VM_NATIVE_PLUGIN_ABI_VERSION) {
+        native_registry_set_error(registry,
+                                  ZR_LIB_NATIVE_REGISTRY_ERROR_ABI_MISMATCH,
+                                  "native plugin '%s' uses ABI %u but runtime expects %u",
+                                  candidatePath,
+                                  descriptor->abiVersion,
+                                  ZR_VM_NATIVE_PLUGIN_ABI_VERSION);
+        native_registry_close_library(handle);
+        return ZR_NULL;
+    }
+
+    if (descriptor->moduleName == ZR_NULL ||
         strcmp(descriptor->moduleName, requestedModuleName) != 0) {
+        native_registry_set_error(registry,
+                                  ZR_LIB_NATIVE_REGISTRY_ERROR_MODULE_NAME_MISMATCH,
+                                  "native plugin '%s' exports module '%s' but '%s' was requested",
+                                  candidatePath,
+                                  descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>",
+                                  requestedModuleName);
+        native_registry_close_library(handle);
+        return ZR_NULL;
+    }
+
+    if (!native_registry_validate_descriptor_compatibility(registry, descriptor) ||
+        !native_registry_register_module_record(state->global,
+                                               descriptor,
+                                               ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_DESCRIPTOR_PLUGIN,
+                                               candidatePath,
+                                               ZR_TRUE)) {
         native_registry_close_library(handle);
         return ZR_NULL;
     }
 
     ZrCore_Array_Push(state, &registry->pluginHandles, &handle);
+    native_registry_clear_error(registry);
     return descriptor;
 }
 
@@ -651,6 +912,17 @@ static TZrBool native_binding_make_callable_value(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrStackValuePointer native_binding_resolve_call_scratch_base(TZrStackValuePointer stackTop,
+                                                                     const SZrCallInfo *callInfo) {
+    TZrStackValuePointer base = stackTop;
+
+    if (callInfo != ZR_NULL && callInfo->functionTop.valuePointer > base) {
+        base = callInfo->functionTop.valuePointer;
+    }
+
+    return base;
+}
+
 static SZrObject *native_binding_new_instance_with_prototype(SZrState *state, SZrObjectPrototype *prototype) {
     SZrObject *object;
     EZrObjectInternalType internalType;
@@ -705,6 +977,15 @@ static void native_metadata_set_int_field(SZrState *state,
     native_metadata_set_value_field(state, object, fieldName, &fieldValue);
 }
 
+static void native_metadata_set_float_field(SZrState *state,
+                                            SZrObject *object,
+                                            const TZrChar *fieldName,
+                                            TZrFloat64 value) {
+    SZrTypeValue fieldValue;
+    ZrLib_Value_SetFloat(state, &fieldValue, value);
+    native_metadata_set_value_field(state, object, fieldName, &fieldValue);
+}
+
 static void native_metadata_set_bool_field(SZrState *state,
                                            SZrObject *object,
                                            const TZrChar *fieldName,
@@ -739,6 +1020,84 @@ static const TZrChar *native_metadata_constant_type_name(const ZrLibConstantDesc
         default:
             return "value";
     }
+}
+
+static TZrBool native_descriptor_allows_value_construction(const ZrLibTypeDescriptor *descriptor) {
+    if (descriptor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    return descriptor->allowValueConstruction;
+}
+
+static TZrBool native_descriptor_allows_boxed_construction(const ZrLibTypeDescriptor *descriptor) {
+    if (descriptor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    return descriptor->allowBoxedConstruction;
+}
+
+static void native_metadata_set_constant_value_fields(SZrState *state,
+                                                      SZrObject *object,
+                                                      EZrLibConstantKind kind,
+                                                      TZrInt64 intValue,
+                                                      TZrFloat64 floatValue,
+                                                      const TZrChar *stringValue,
+                                                      TZrBool boolValue) {
+    if (state == ZR_NULL || object == ZR_NULL) {
+        return;
+    }
+
+    native_metadata_set_int_field(state, object, "kind", kind);
+    switch (kind) {
+        case ZR_LIB_CONSTANT_KIND_BOOL:
+            native_metadata_set_bool_field(state, object, "boolValue", boolValue);
+            break;
+        case ZR_LIB_CONSTANT_KIND_INT:
+            native_metadata_set_int_field(state, object, "intValue", intValue);
+            break;
+        case ZR_LIB_CONSTANT_KIND_FLOAT:
+            native_metadata_set_float_field(state, object, "floatValue", floatValue);
+            break;
+        case ZR_LIB_CONSTANT_KIND_STRING:
+            native_metadata_set_string_field(state, object, "stringValue", stringValue);
+            break;
+        default:
+            break;
+    }
+}
+
+static TZrBool native_metadata_push_string_value(SZrState *state, SZrObject *array, const TZrChar *value) {
+    SZrTypeValue entryValue;
+
+    if (state == ZR_NULL || array == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrLib_Value_SetString(state, &entryValue, value);
+    return ZrLib_Array_PushValue(state, array, &entryValue);
+}
+
+static SZrObject *native_metadata_make_string_array(SZrState *state,
+                                                    const TZrChar *const *values,
+                                                    TZrSize valueCount) {
+    SZrObject *array;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    array = ZrLib_Array_New(state);
+    if (array == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < valueCount; index++) {
+        if (values[index] != ZR_NULL) {
+            native_metadata_push_string_value(state, array, values[index]);
+        }
+    }
+
+    return array;
 }
 
 static SZrObject *native_metadata_make_field_entry(SZrState *state, const ZrLibFieldDescriptor *descriptor) {
@@ -832,6 +1191,37 @@ static SZrObject *native_metadata_make_constant_entry(SZrState *state, const ZrL
 
     native_metadata_set_string_field(state, object, "name", descriptor->name);
     native_metadata_set_string_field(state, object, "typeName", native_metadata_constant_type_name(descriptor));
+    native_metadata_set_constant_value_fields(state,
+                                              object,
+                                              descriptor->kind,
+                                              descriptor->intValue,
+                                              descriptor->floatValue,
+                                              descriptor->stringValue,
+                                              descriptor->boolValue);
+    return object;
+}
+
+static SZrObject *native_metadata_make_enum_member_entry(SZrState *state, const ZrLibEnumMemberDescriptor *descriptor) {
+    SZrObject *object;
+
+    if (state == ZR_NULL || descriptor == ZR_NULL || descriptor->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = ZrLib_Object_New(state);
+    if (object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    native_metadata_set_string_field(state, object, "name", descriptor->name);
+    native_metadata_set_constant_value_fields(state,
+                                              object,
+                                              descriptor->kind,
+                                              descriptor->intValue,
+                                              descriptor->floatValue,
+                                              descriptor->stringValue,
+                                              descriptor->boolValue);
+    native_metadata_set_string_field(state, object, "documentation", descriptor->documentation);
     return object;
 }
 
@@ -858,6 +1248,8 @@ static SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTy
     SZrObject *fieldsArray;
     SZrObject *methodsArray;
     SZrObject *metaMethodsArray;
+    SZrObject *implementsArray;
+    SZrObject *enumMembersArray;
     TZrSize index;
     SZrTypeValue arrayValue;
 
@@ -869,12 +1261,22 @@ static SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTy
     fieldsArray = ZrLib_Array_New(state);
     methodsArray = ZrLib_Array_New(state);
     metaMethodsArray = ZrLib_Array_New(state);
-    if (object == ZR_NULL || fieldsArray == ZR_NULL || methodsArray == ZR_NULL || metaMethodsArray == ZR_NULL) {
+    implementsArray = native_metadata_make_string_array(state,
+                                                        descriptor->implementsTypeNames,
+                                                        descriptor->implementsTypeCount);
+    enumMembersArray = ZrLib_Array_New(state);
+    if (object == ZR_NULL || fieldsArray == ZR_NULL || methodsArray == ZR_NULL || metaMethodsArray == ZR_NULL ||
+        implementsArray == ZR_NULL || enumMembersArray == ZR_NULL) {
         return ZR_NULL;
     }
 
     native_metadata_set_string_field(state, object, "name", descriptor->name);
     native_metadata_set_int_field(state, object, "prototypeType", descriptor->prototypeType);
+    native_metadata_set_string_field(state, object, "extendsTypeName", descriptor->extendsTypeName);
+    native_metadata_set_string_field(state, object, "enumValueTypeName", descriptor->enumValueTypeName);
+    native_metadata_set_bool_field(state, object, "allowValueConstruction", native_descriptor_allows_value_construction(descriptor));
+    native_metadata_set_bool_field(state, object, "allowBoxedConstruction", native_descriptor_allows_boxed_construction(descriptor));
+    native_metadata_set_string_field(state, object, "constructorSignature", descriptor->constructorSignature);
 
     for (index = 0; index < descriptor->fieldCount; index++) {
         SZrObject *fieldEntry = native_metadata_make_field_entry(state, &descriptor->fields[index]);
@@ -903,17 +1305,32 @@ static SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTy
         }
     }
 
+    for (index = 0; index < descriptor->enumMemberCount; index++) {
+        SZrObject *enumMemberEntry = native_metadata_make_enum_member_entry(state, &descriptor->enumMembers[index]);
+        if (enumMemberEntry != ZR_NULL) {
+            SZrTypeValue entryValue;
+            ZrLib_Value_SetObject(state, &entryValue, enumMemberEntry, ZR_VALUE_TYPE_OBJECT);
+            ZrLib_Array_PushValue(state, enumMembersArray, &entryValue);
+        }
+    }
+
     ZrLib_Value_SetObject(state, &arrayValue, fieldsArray, ZR_VALUE_TYPE_ARRAY);
     native_metadata_set_value_field(state, object, "fields", &arrayValue);
     ZrLib_Value_SetObject(state, &arrayValue, methodsArray, ZR_VALUE_TYPE_ARRAY);
     native_metadata_set_value_field(state, object, "methods", &arrayValue);
     ZrLib_Value_SetObject(state, &arrayValue, metaMethodsArray, ZR_VALUE_TYPE_ARRAY);
     native_metadata_set_value_field(state, object, "metaMethods", &arrayValue);
+    ZrLib_Value_SetObject(state, &arrayValue, implementsArray, ZR_VALUE_TYPE_ARRAY);
+    native_metadata_set_value_field(state, object, "implements", &arrayValue);
+    ZrLib_Value_SetObject(state, &arrayValue, enumMembersArray, ZR_VALUE_TYPE_ARRAY);
+    native_metadata_set_value_field(state, object, "enumMembers", &arrayValue);
 
     return object;
 }
 
-static SZrObject *native_metadata_make_module_info(SZrState *state, const ZrLibModuleDescriptor *descriptor) {
+static SZrObject *native_metadata_make_module_info(SZrState *state,
+                                                   const ZrLibModuleDescriptor *descriptor,
+                                                   const ZrLibRegisteredModuleRecord *record) {
     SZrObject *object;
     SZrObject *functionsArray;
     SZrObject *constantsArray;
@@ -939,6 +1356,25 @@ static SZrObject *native_metadata_make_module_info(SZrState *state, const ZrLibM
     native_metadata_set_int_field(state, object, "version", ZR_NATIVE_MODULE_INFO_VERSION);
     native_metadata_set_string_field(state, object, "moduleName", descriptor->moduleName);
     native_metadata_set_string_field(state, object, "typeHintsJson", descriptor->typeHintsJson);
+    native_metadata_set_string_field(state, object, "moduleVersion", descriptor->moduleVersion);
+    native_metadata_set_int_field(state,
+                                  object,
+                                  "runtimeAbiVersion",
+                                  descriptor->minRuntimeAbi != 0 ? descriptor->minRuntimeAbi : ZR_VM_NATIVE_RUNTIME_ABI_VERSION);
+    native_metadata_set_int_field(state, object, "requiredCapabilities", (TZrInt64)descriptor->requiredCapabilities);
+    native_metadata_set_string_field(state,
+                                     object,
+                                     "registrationKind",
+                                     record != ZR_NULL &&
+                                                     record->registrationKind ==
+                                                             ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_DESCRIPTOR_PLUGIN
+                                             ? "descriptor-plugin"
+                                             : "builtin");
+    native_metadata_set_bool_field(state,
+                                   object,
+                                   "isDescriptorPlugin",
+                                   record != ZR_NULL ? record->isDescriptorPlugin : ZR_FALSE);
+    native_metadata_set_string_field(state, object, "sourcePath", record != ZR_NULL ? record->sourcePath : ZR_NULL);
 
     for (index = 0; index < descriptor->functionCount; index++) {
         SZrObject *entry = native_metadata_make_function_entry(state, &descriptor->functions[index]);
@@ -1178,6 +1614,148 @@ static TZrBool native_registry_add_methods(SZrState *state,
     return ZR_TRUE;
 }
 
+static void native_registry_set_hidden_string_metadata(SZrState *state,
+                                                       SZrObject *object,
+                                                       const TZrChar *fieldName,
+                                                       const TZrChar *value) {
+    SZrTypeValue fieldValue;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL) {
+        return;
+    }
+
+    ZrLib_Value_SetString(state, &fieldValue, value);
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
+}
+
+static void native_registry_set_hidden_bool_metadata(SZrState *state,
+                                                     SZrObject *object,
+                                                     const TZrChar *fieldName,
+                                                     TZrBool value) {
+    SZrTypeValue fieldValue;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return;
+    }
+
+    ZrLib_Value_SetBool(state, &fieldValue, value);
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
+}
+
+static TZrBool native_registry_init_enum_member_scalar(SZrState *state,
+                                                       const ZrLibEnumMemberDescriptor *descriptor,
+                                                       SZrTypeValue *value) {
+    if (state == ZR_NULL || descriptor == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (descriptor->kind) {
+        case ZR_LIB_CONSTANT_KIND_NULL:
+            ZrLib_Value_SetNull(value);
+            return ZR_TRUE;
+        case ZR_LIB_CONSTANT_KIND_BOOL:
+            ZrLib_Value_SetBool(state, value, descriptor->boolValue);
+            return ZR_TRUE;
+        case ZR_LIB_CONSTANT_KIND_INT:
+            ZrLib_Value_SetInt(state, value, descriptor->intValue);
+            return ZR_TRUE;
+        case ZR_LIB_CONSTANT_KIND_FLOAT:
+            ZrLib_Value_SetFloat(state, value, descriptor->floatValue);
+            return ZR_TRUE;
+        case ZR_LIB_CONSTANT_KIND_STRING:
+            ZrLib_Value_SetString(state, value, descriptor->stringValue != ZR_NULL ? descriptor->stringValue : "");
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static SZrObject *native_registry_make_enum_instance(SZrState *state,
+                                                     SZrObjectPrototype *prototype,
+                                                     const SZrTypeValue *underlyingValue,
+                                                     const TZrChar *memberName) {
+    SZrObject *enumObject;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || underlyingValue == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    enumObject = ZrCore_Object_New(state, prototype);
+    if (enumObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Object_Init(state, enumObject);
+    ZrLib_Object_SetFieldCString(state, enumObject, kNativeEnumValueFieldName, underlyingValue);
+    if (memberName != ZR_NULL) {
+        SZrTypeValue nameValue;
+        ZrLib_Value_SetString(state, &nameValue, memberName);
+        ZrLib_Object_SetFieldCString(state, enumObject, kNativeEnumNameFieldName, &nameValue);
+    }
+
+    return enumObject;
+}
+
+static void native_registry_attach_type_runtime_metadata(SZrState *state,
+                                                         const ZrLibTypeDescriptor *typeDescriptor,
+                                                         SZrObjectPrototype *prototype) {
+    if (state == ZR_NULL || typeDescriptor == ZR_NULL || prototype == ZR_NULL) {
+        return;
+    }
+
+    native_registry_set_hidden_bool_metadata(state,
+                                             &prototype->super,
+                                             kNativeAllowValueConstructionFieldName,
+                                             native_descriptor_allows_value_construction(typeDescriptor));
+    native_registry_set_hidden_bool_metadata(state,
+                                             &prototype->super,
+                                             kNativeAllowBoxedConstructionFieldName,
+                                             native_descriptor_allows_boxed_construction(typeDescriptor));
+
+    if (typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
+        native_registry_set_hidden_string_metadata(state,
+                                                   &prototype->super,
+                                                   kNativeEnumValueTypeFieldName,
+                                                   typeDescriptor->enumValueTypeName);
+    }
+}
+
+static TZrBool native_registry_add_enum_members(SZrState *state,
+                                                SZrObjectPrototype *prototype,
+                                                const ZrLibTypeDescriptor *typeDescriptor) {
+    TZrSize index;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || typeDescriptor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeDescriptor->prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
+        return ZR_TRUE;
+    }
+
+    for (index = 0; index < typeDescriptor->enumMemberCount; index++) {
+        const ZrLibEnumMemberDescriptor *memberDescriptor = &typeDescriptor->enumMembers[index];
+        SZrTypeValue scalarValue;
+        SZrObject *enumObject;
+        SZrTypeValue enumValue;
+
+        if (memberDescriptor->name == ZR_NULL ||
+            !native_registry_init_enum_member_scalar(state, memberDescriptor, &scalarValue)) {
+            continue;
+        }
+
+        enumObject = native_registry_make_enum_instance(state, prototype, &scalarValue, memberDescriptor->name);
+        if (enumObject == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrLib_Value_SetObject(state, &enumValue, enumObject, ZR_VALUE_TYPE_OBJECT);
+        ZrLib_Object_SetFieldCString(state, &prototype->super, memberDescriptor->name, &enumValue);
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool native_registry_add_type(SZrState *state,
                                         ZrLibrary_NativeRegistryState *registry,
                                         SZrObjectModule *module,
@@ -1185,6 +1763,7 @@ static TZrBool native_registry_add_type(SZrState *state,
                                         const ZrLibTypeDescriptor *typeDescriptor) {
     SZrString *typeName;
     SZrObjectPrototype *prototype;
+    EZrObjectPrototypeType expectedPrototypeType;
     TZrSize index;
     SZrTypeValue prototypeValue;
 
@@ -1198,7 +1777,17 @@ static TZrBool native_registry_add_type(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+    expectedPrototypeType = typeDescriptor->prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID
+                                    ? typeDescriptor->prototypeType
+                                    : ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
+    prototype = ZrLib_Type_FindPrototype(state, typeDescriptor->name);
+    if (prototype != ZR_NULL &&
+        expectedPrototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID &&
+        prototype->type != expectedPrototypeType) {
+        return ZR_FALSE;
+    }
+
+    if (prototype == ZR_NULL && typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
         prototype = (SZrObjectPrototype *)ZrCore_StructPrototype_New(state, typeName);
         if (prototype != ZR_NULL) {
             SZrStructPrototype *structPrototype = (SZrStructPrototype *)prototype;
@@ -1212,19 +1801,23 @@ static TZrBool native_registry_add_type(SZrState *state,
                 }
             }
         }
-    } else {
+    } else if (prototype == ZR_NULL) {
         prototype = ZrCore_ObjectPrototype_New(state,
                                                typeName,
-                                               typeDescriptor->prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID
-                                                       ? typeDescriptor->prototypeType
-                                                       : ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+                                               expectedPrototypeType);
     }
 
     if (prototype == ZR_NULL) {
         return ZR_FALSE;
     }
 
+    native_registry_attach_type_runtime_metadata(state, typeDescriptor, prototype);
+
     if (!native_registry_add_methods(state, registry, moduleDescriptor, typeDescriptor, prototype)) {
+        return ZR_FALSE;
+    }
+
+    if (!native_registry_add_enum_members(state, prototype, typeDescriptor)) {
         return ZR_FALSE;
     }
 
@@ -1233,6 +1826,67 @@ static TZrBool native_registry_add_type(SZrState *state,
     ZrCore_Module_AddPubExport(state, module, typeName, &prototypeValue);
     native_binding_register_prototype_in_global_scope(state, typeName, &prototypeValue);
     return ZR_TRUE;
+}
+
+static SZrObjectPrototype *native_registry_get_module_prototype(SZrState *state,
+                                                                SZrObjectModule *module,
+                                                                const TZrChar *typeName) {
+    SZrString *name;
+    const SZrTypeValue *exportedValue;
+    SZrObject *object;
+
+    if (state == ZR_NULL || module == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    name = native_binding_create_string(state, typeName);
+    if (name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    exportedValue = ZrCore_Module_GetPubExport(state, module, name);
+    if (exportedValue == ZR_NULL || exportedValue->type != ZR_VALUE_TYPE_OBJECT || exportedValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = ZR_CAST_OBJECT(state, exportedValue->value.object);
+    if (object == ZR_NULL || object->internalType != ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        return ZR_NULL;
+    }
+
+    return (SZrObjectPrototype *)object;
+}
+
+static void native_registry_resolve_type_relationships(SZrState *state,
+                                                       SZrObjectModule *module,
+                                                       const ZrLibModuleDescriptor *descriptor) {
+    TZrSize index;
+
+    if (state == ZR_NULL || module == ZR_NULL || descriptor == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < descriptor->typeCount; index++) {
+        const ZrLibTypeDescriptor *typeDescriptor = &descriptor->types[index];
+        SZrObjectPrototype *prototype;
+        SZrObjectPrototype *superPrototype;
+
+        if (typeDescriptor->name == ZR_NULL || typeDescriptor->extendsTypeName == ZR_NULL) {
+            continue;
+        }
+
+        prototype = native_registry_get_module_prototype(state, module, typeDescriptor->name);
+        if (prototype == ZR_NULL) {
+            continue;
+        }
+
+        superPrototype = ZrLib_Type_FindPrototype(state, typeDescriptor->extendsTypeName);
+        if (superPrototype == ZR_NULL || superPrototype == prototype) {
+            continue;
+        }
+
+        ZrCore_ObjectPrototype_SetSuper(state, prototype, superPrototype);
+    }
 }
 
 static SZrObjectModule *native_registry_materialize_module(SZrState *state,
@@ -1284,6 +1938,8 @@ static SZrObjectModule *native_registry_materialize_module(SZrState *state,
         }
     }
 
+    native_registry_resolve_type_relationships(state, module, descriptor);
+
     for (index = 0; index < descriptor->constantCount; index++) {
         if (!native_registry_add_constant(state, module, &descriptor->constants[index])) {
             native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=register_constant index=%llu name=%s\n",
@@ -1315,7 +1971,9 @@ static SZrObjectModule *native_registry_materialize_module(SZrState *state,
         }
     }
 
-    moduleInfo = native_metadata_make_module_info(state, descriptor);
+    moduleInfo = native_metadata_make_module_info(state,
+                                                  descriptor,
+                                                  native_registry_find_record_by_descriptor(registry, descriptor));
     moduleInfoName = native_binding_create_string(state, ZR_NATIVE_MODULE_INFO_EXPORT_NAME);
     if (moduleInfo == ZR_NULL || moduleInfoName == ZR_NULL) {
         native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=module_info_export\n",
@@ -1461,6 +2119,14 @@ static TZrInt64 native_binding_dispatcher(SZrState *state) {
     return 1;
 }
 
+static TZrStackValuePointer native_binding_temp_root_slot(ZrLibTempValueRoot *root) {
+    if (root == ZR_NULL || !root->active || root->state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_Function_StackAnchorRestore(root->state, &root->slotAnchor);
+}
+
 TZrSize ZrLib_CallContext_ArgumentCount(const ZrLibCallContext *context) {
     return context != ZR_NULL ? context->argumentCount : 0;
 }
@@ -1528,6 +2194,125 @@ void ZrLib_CallContext_RaiseArityError(const ZrLibCallContext *context,
                               (unsigned)maxArgumentCount,
                               (unsigned)context->argumentCount);
     }
+}
+
+TZrBool ZrLib_TempValueRoot_Begin(SZrState *state, ZrLibTempValueRoot *root) {
+    TZrStackValuePointer savedStackTop;
+    TZrStackValuePointer slot;
+
+    if (state == ZR_NULL || root == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(root, 0, sizeof(*root));
+    root->state = state;
+    root->callInfo = state->callInfoList;
+    savedStackTop = state->stackTop.valuePointer;
+    if (savedStackTop == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Function_StackAnchorInit(state, savedStackTop, &root->savedStackTopAnchor);
+    if (root->callInfo != ZR_NULL && root->callInfo->functionTop.valuePointer != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(state, root->callInfo->functionTop.valuePointer, &root->savedCallInfoTopAnchor);
+        root->hasSavedCallInfoTop = ZR_TRUE;
+    }
+
+    slot = ZrCore_Function_CheckStackAndAnchor(state, 1, savedStackTop, savedStackTop, &root->slotAnchor);
+    if (slot == ZR_NULL) {
+        memset(root, 0, sizeof(*root));
+        return ZR_FALSE;
+    }
+
+    if (root->hasSavedCallInfoTop && root->callInfo != ZR_NULL) {
+        root->callInfo->functionTop.valuePointer =
+                ZrCore_Function_StackAnchorRestore(state, &root->savedCallInfoTopAnchor);
+    }
+
+    slot = ZrCore_Function_StackAnchorRestore(state, &root->slotAnchor);
+    if (slot == ZR_NULL) {
+        memset(root, 0, sizeof(*root));
+        return ZR_FALSE;
+    }
+
+    state->stackTop.valuePointer = slot + 1;
+    if (root->callInfo != ZR_NULL &&
+        (root->callInfo->functionTop.valuePointer == ZR_NULL ||
+         root->callInfo->functionTop.valuePointer < state->stackTop.valuePointer)) {
+        root->callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
+
+    ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slot));
+    root->active = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+TZrBool ZrLib_CallContext_BeginTempValueRoot(const ZrLibCallContext *context,
+                                             ZrLibTempValueRoot *root) {
+    if (context == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return ZrLib_TempValueRoot_Begin(context->state, root);
+}
+
+SZrTypeValue *ZrLib_TempValueRoot_Value(ZrLibTempValueRoot *root) {
+    TZrStackValuePointer slot = native_binding_temp_root_slot(root);
+    return slot != ZR_NULL ? ZrCore_Stack_GetValue(slot) : ZR_NULL;
+}
+
+TZrBool ZrLib_TempValueRoot_SetValue(ZrLibTempValueRoot *root, const SZrTypeValue *value) {
+    SZrTypeValue *slotValue;
+
+    if (root == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    slotValue = ZrLib_TempValueRoot_Value(root);
+    if (slotValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Stack_CopyValue(root->state, native_binding_temp_root_slot(root), value);
+    return ZR_TRUE;
+}
+
+TZrBool ZrLib_TempValueRoot_SetObject(ZrLibTempValueRoot *root,
+                                      SZrObject *object,
+                                      EZrValueType type) {
+    SZrTypeValue *slotValue;
+
+    if (root == ZR_NULL || object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    slotValue = ZrLib_TempValueRoot_Value(root);
+    if (slotValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrLib_Value_SetObject(root->state, slotValue, object, type);
+    return ZR_TRUE;
+}
+
+void ZrLib_TempValueRoot_SetNull(ZrLibTempValueRoot *root) {
+    SZrTypeValue *slotValue = ZrLib_TempValueRoot_Value(root);
+    if (slotValue != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(slotValue);
+    }
+}
+
+void ZrLib_TempValueRoot_End(ZrLibTempValueRoot *root) {
+    if (root == ZR_NULL || !root->active || root->state == ZR_NULL) {
+        return;
+    }
+
+    if (root->hasSavedCallInfoTop && root->callInfo != ZR_NULL) {
+        root->callInfo->functionTop.valuePointer =
+                ZrCore_Function_StackAnchorRestore(root->state, &root->savedCallInfoTopAnchor);
+    }
+    root->state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(root->state, &root->savedStackTopAnchor);
+    memset(root, 0, sizeof(*root));
 }
 
 TZrBool ZrLib_CallContext_ReadInt(const ZrLibCallContext *context, TZrSize index, TZrInt64 *outValue) {
@@ -1942,7 +2727,7 @@ TZrBool ZrLib_CallValue(SZrState *state,
     savedCallInfo = state->callInfoList;
     totalArguments = argumentCount + (receiver != ZR_NULL ? 1 : 0);
     scratchSlots = 1 + totalArguments;
-    base = savedCallInfo != ZR_NULL ? savedCallInfo->functionTop.valuePointer : savedStackTop;
+    base = native_binding_resolve_call_scratch_base(savedStackTop, savedCallInfo);
 
     ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
     ZrCore_Function_StackAnchorInit(state, base, &baseAnchor);
@@ -1965,7 +2750,7 @@ TZrBool ZrLib_CallValue(SZrState *state,
         if (hasAnchoredReturnDestination) {
             savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
         }
-        base = savedCallInfo->functionTop.valuePointer;
+        base = native_binding_resolve_call_scratch_base(savedStackTop, savedCallInfo);
     }
 
     ZrCore_Stack_CopyValue(state, base, &stableCallable);
@@ -2043,12 +2828,13 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     }
 
     memset(registry, 0, sizeof(*registry));
-    ZrCore_Array_Construct(&registry->moduleDescriptors);
+    ZrCore_Array_Construct(&registry->moduleRecords);
     ZrCore_Array_Construct(&registry->bindingEntries);
     ZrCore_Array_Construct(&registry->pluginHandles);
-    ZrCore_Array_Init(state, &registry->moduleDescriptors, sizeof(const ZrLibModuleDescriptor *), 8);
+    ZrCore_Array_Init(state, &registry->moduleRecords, sizeof(ZrLibRegisteredModuleRecord), 8);
     ZrCore_Array_Init(state, &registry->bindingEntries, sizeof(ZrLibBindingEntry), 64);
     ZrCore_Array_Init(state, &registry->pluginHandles, sizeof(void *), 4);
+    native_registry_clear_error(registry);
 
     ZrCore_GlobalState_SetNativeModuleLoader(global, native_registry_loader, registry);
     return ZR_TRUE;
@@ -2078,9 +2864,24 @@ void ZrLibrary_NativeRegistry_Free(SZrGlobalState *global) {
         }
     }
 
+    if (registry->moduleRecords.isValid) {
+        for (index = 0; index < registry->moduleRecords.length; index++) {
+            ZrLibRegisteredModuleRecord *record =
+                    (ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(&registry->moduleRecords, index);
+            if (record != ZR_NULL && record->sourcePath != ZR_NULL) {
+                global->allocator(global->userAllocationArguments,
+                                  record->sourcePath,
+                                  strlen(record->sourcePath) + 1,
+                                  0,
+                                  ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+                record->sourcePath = ZR_NULL;
+            }
+        }
+    }
+
     ZrCore_Array_Free(state, &registry->pluginHandles);
     ZrCore_Array_Free(state, &registry->bindingEntries);
-    ZrCore_Array_Free(state, &registry->moduleDescriptors);
+    ZrCore_Array_Free(state, &registry->moduleRecords);
 
     global->allocator(global->userAllocationArguments,
                       registry,
@@ -2091,63 +2892,66 @@ void ZrLibrary_NativeRegistry_Free(SZrGlobalState *global) {
 }
 
 TZrBool ZrLibrary_NativeRegistry_RegisterModule(SZrGlobalState *global, const ZrLibModuleDescriptor *descriptor) {
-    ZrLibrary_NativeRegistryState *registry;
-    TZrSize index;
-
-    if (global == ZR_NULL || descriptor == ZR_NULL || descriptor->moduleName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (!ZrLibrary_NativeRegistry_Attach(global)) {
-        return ZR_FALSE;
-    }
-
-    registry = native_registry_get(global);
-    if (registry == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (index = 0; index < registry->moduleDescriptors.length; index++) {
-        const ZrLibModuleDescriptor **registeredDescriptor =
-                (const ZrLibModuleDescriptor **)ZrCore_Array_Get(&registry->moduleDescriptors, index);
-        if (registeredDescriptor != ZR_NULL &&
-            *registeredDescriptor != ZR_NULL &&
-            (*registeredDescriptor)->moduleName != ZR_NULL &&
-            strcmp((*registeredDescriptor)->moduleName, descriptor->moduleName) == 0) {
-            *registeredDescriptor = descriptor;
-            return ZR_TRUE;
-        }
-    }
-
-    ZrCore_Array_Push(global->mainThreadState, &registry->moduleDescriptors, &descriptor);
-    return ZR_TRUE;
+    return native_registry_register_module_record(global,
+                                                  descriptor,
+                                                  ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_BUILTIN,
+                                                  descriptor != ZR_NULL ? descriptor->moduleName : ZR_NULL,
+                                                  ZR_FALSE);
 }
 
 const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModule(SZrGlobalState *global, const TZrChar *moduleName) {
     ZrLibrary_NativeRegistryState *registry;
-    TZrSize index;
+    const ZrLibRegisteredModuleRecord *record;
 
     if (global == ZR_NULL || moduleName == ZR_NULL) {
         return ZR_NULL;
     }
 
     registry = native_registry_get(global);
-    if (registry == ZR_NULL || !registry->moduleDescriptors.isValid) {
+    if (registry == ZR_NULL || !registry->moduleRecords.isValid) {
         return ZR_NULL;
     }
 
-    for (index = 0; index < registry->moduleDescriptors.length; index++) {
-        const ZrLibModuleDescriptor **descriptor =
-                (const ZrLibModuleDescriptor **)ZrCore_Array_Get(&registry->moduleDescriptors, index);
-        if (descriptor != ZR_NULL &&
-            *descriptor != ZR_NULL &&
-            (*descriptor)->moduleName != ZR_NULL &&
-            strcmp((*descriptor)->moduleName, moduleName) == 0) {
-            return *descriptor;
-        }
+    record = native_registry_find_record(registry, moduleName);
+    return record != ZR_NULL ? record->descriptor : ZR_NULL;
+}
+
+TZrBool ZrLibrary_NativeRegistry_GetModuleInfo(SZrGlobalState *global,
+                                               const TZrChar *moduleName,
+                                               ZrLibRegisteredModuleInfo *outInfo) {
+    ZrLibrary_NativeRegistryState *registry;
+    const ZrLibRegisteredModuleRecord *record;
+
+    if (outInfo == ZR_NULL) {
+        return ZR_FALSE;
     }
 
-    return ZR_NULL;
+    memset(outInfo, 0, sizeof(*outInfo));
+    if (global == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    registry = native_registry_get(global);
+    record = native_registry_find_record(registry, moduleName);
+    if (record == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    outInfo->descriptor = record->descriptor;
+    outInfo->sourcePath = record->sourcePath;
+    outInfo->registrationKind = record->registrationKind;
+    outInfo->isDescriptorPlugin = record->isDescriptorPlugin;
+    return ZR_TRUE;
+}
+
+EZrLibNativeRegistryErrorCode ZrLibrary_NativeRegistry_GetLastErrorCode(SZrGlobalState *global) {
+    ZrLibrary_NativeRegistryState *registry = native_registry_get(global);
+    return registry != ZR_NULL ? registry->lastErrorCode : ZR_LIB_NATIVE_REGISTRY_ERROR_NONE;
+}
+
+const TZrChar *ZrLibrary_NativeRegistry_GetLastErrorMessage(SZrGlobalState *global) {
+    ZrLibrary_NativeRegistryState *registry = native_registry_get(global);
+    return registry != ZR_NULL ? registry->lastErrorMessage : ZR_NULL;
 }
 
 const TZrChar *ZrLibrary_NativeHints_GetSchemaId(void) {

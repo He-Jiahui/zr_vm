@@ -28,7 +28,16 @@ const ZrLibTypeDescriptor *ZrMath_Vector2Registry_GetType(void) {
             kFields, ZR_ARRAY_COUNT(kFields),
             kMethods, ZR_ARRAY_COUNT(kMethods),
             kMeta, ZR_ARRAY_COUNT(kMeta),
-            ZR_NULL
+            "2D vector value type.",
+            ZR_NULL,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            ZR_TRUE,
+            ZR_TRUE,
+            "Vector2(x: float, y: float)"
     };
     return &kType;
 }

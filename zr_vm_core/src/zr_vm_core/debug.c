@@ -41,20 +41,20 @@ TZrDebugSignal ZrCore_Debug_TraceExecution(struct SZrState *state, const TZrInst
 }
 
 ZR_NO_RETURN void ZrCore_Debug_RunError(struct SZrState *state, TZrNativeString format, ...) {
+    TZrChar errorBuffer[1024];
+    TZrNativeString errorMessage;
+    va_list args;
+
     if (state == ZR_NULL || format == ZR_NULL) {
         ZR_ABORT();
     }
 
-    // 格式化错误消息
-    va_list args;
     va_start(args, format);
-    TZrNativeString errorMessage = ZrCore_NativeString_VFormat(state, format, args);
+    vsnprintf(errorBuffer, sizeof(errorBuffer), format, args);
     va_end(args);
 
-    if (errorMessage == ZR_NULL) {
-        // 如果格式化失败，使用默认消息
-        errorMessage = "Runtime error";
-    }
+    errorBuffer[sizeof(errorBuffer) - 1] = '\0';
+    errorMessage = errorBuffer[0] != '\0' ? errorBuffer : "Runtime error";
 
     // 创建错误消息字符串对象
     SZrString *errorString = ZrCore_String_CreateFromNative(state, errorMessage);
@@ -79,23 +79,9 @@ ZR_NO_RETURN void ZrCore_Debug_RunError(struct SZrState *state, TZrNativeString 
     errorValue->isNative = ZR_FALSE;
     state->stackTop.valuePointer++;
 
-    // 检查是否有已注册的异常处理函数
-    SZrGlobalState *global = state->global;
-    if (global != ZR_NULL && global->panicHandlingFunction != ZR_NULL) {
-        // 如果有 panic handling function，先调用它
-        // 注意：在调用之前需要 unlock thread
-        ZR_THREAD_UNLOCK(state);
-        global->panicHandlingFunction(state);
-        // panic handling function 调用后，应该 abort
-        ZR_ABORT();
-    } else {
-        // 如果没有 panic handling function，尝试抛出异常
-        // 如果异常被 catch 捕获，程序可以继续
-        // 如果异常没有被捕获，ZrCore_Exception_Throw 内部会 abort
-        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
-        // 不应该到达这里（因为 ZrCore_Exception_Throw 是 noreturn 或会 longjmp）
-        ZR_ABORT();
-    }
+    // 运行时错误统一进入 VM 异常链路；是否 panic 由未捕获边界决定。
+    ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+    ZR_ABORT();
 }
 
 

@@ -31,6 +31,10 @@ doc_type: category-index
 
 ## 当前主题
 
+- `ffi-extern-declarations.md`
+  - `%extern("lib") decl` 与 `%extern("lib") { decls }` 源级 FFI 语法
+  - extern function / struct / enum / delegate 的 declaration metadata 和 lowering 规则
+  - `compileTimeTypeEnv` 与真正 compile-time callable 的边界
 - `field-scoped-using.md`
   - `class`/`struct` 字段级 `using var` 语法
   - `static using` 非法诊断
@@ -38,5 +42,6 @@ doc_type: category-index
 
 ## 阅读顺序
 
-1. 先看 `field-scoped-using.md`，了解这次落地的字段生命周期语义。
-2. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+1. 先看 `ffi-extern-declarations.md`，了解 `%extern` 语法、descriptor schema 和 `zr.ffi` lowering 路径。
+2. 再看 `field-scoped-using.md`，了解字段生命周期语义。
+3. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
