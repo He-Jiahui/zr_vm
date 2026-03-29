@@ -5,7 +5,7 @@ This document is the single source of truth for naming across first-party Zr VM 
 ## Scope
 
 - Applies to `zr_vm_common`, `zr_vm_core`, `zr_vm_parser`, `zr_vm_library`, `zr_vm_language_server`, `zr_vm_cli`, and `tests`.
-- Does not apply to `third_party/`, generated output, or build/cache directories.
+- Does not apply to module-local `third_party/`, generated output, or build/cache directories.
 
 ## Naming Rules
 
@@ -91,4 +91,4 @@ This document is the single source of truth for naming across first-party Zr VM 
 - Delete empty module stubs based on `ZR_EMPTY_MODULE` and `ZR_EMPTY_FILE` when the translation unit does not carry real logic.
 - Replace `kZr...` macros with `ZR_...`.
 - Do not keep compatibility wrappers, alias macros, or bridge functions.
-- Do not rename `third_party/` content.
+- Do not rename `*/third_party/` content.

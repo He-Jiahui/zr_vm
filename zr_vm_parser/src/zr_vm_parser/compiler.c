@@ -748,15 +748,16 @@ TZrUInt32 allocate_local_var(SZrCompilerState *cs, SZrString *name) {
         return 0;
     }
 
+    TZrUInt32 stackSlot = (TZrUInt32)cs->stackSlotCount;
     SZrFunctionLocalVariable localVar;
     localVar.name = name;
+    localVar.stackSlot = stackSlot;
     localVar.offsetActivate = (TZrMemoryOffset) cs->instructionCount;
     localVar.offsetDead = 0; // 将在变量作用域结束时设置
 
     ZrCore_Array_Push(cs->state, &cs->localVars, &localVar);
     // localVarCount 应该与 localVars.length 保持同步
     cs->localVarCount = cs->localVars.length;
-    TZrUInt32 index = (TZrUInt32) (cs->localVarCount - 1);
     cs->stackSlotCount++;
     if (cs->maxStackSlotCount < cs->stackSlotCount) {
         cs->maxStackSlotCount = cs->stackSlotCount;
@@ -769,7 +770,60 @@ TZrUInt32 allocate_local_var(SZrCompilerState *cs, SZrString *name) {
         }
     }
 
-    return index;
+    return stackSlot;
+}
+
+TZrSize ZrParser_Compiler_GetLocalStackFloor(const SZrCompilerState *cs) {
+    TZrSize floor = 0;
+
+    if (cs == ZR_NULL || !cs->localVars.isValid) {
+        return 0;
+    }
+
+    for (TZrSize i = 0; i < cs->localVars.length; i++) {
+        const SZrFunctionLocalVariable *var =
+                (const SZrFunctionLocalVariable *)ZrCore_Array_Get((SZrArray *)&cs->localVars, i);
+        if (var != ZR_NULL) {
+            TZrSize nextSlot = (TZrSize)var->stackSlot + 1;
+            if (nextSlot > floor) {
+                floor = nextSlot;
+            }
+        }
+    }
+
+    return floor;
+}
+
+void ZrParser_Compiler_TrimStackToCount(SZrCompilerState *cs, TZrSize targetCount) {
+    TZrSize localFloor;
+
+    if (cs == ZR_NULL) {
+        return;
+    }
+
+    localFloor = ZrParser_Compiler_GetLocalStackFloor(cs);
+    if (targetCount < localFloor) {
+        targetCount = localFloor;
+    }
+
+    if (cs->stackSlotCount > targetCount) {
+        cs->stackSlotCount = targetCount;
+    }
+}
+
+void ZrParser_Compiler_TrimStackToSlot(SZrCompilerState *cs, TZrUInt32 slot) {
+    ZrParser_Compiler_TrimStackToCount(cs, (TZrSize)slot + 1);
+}
+
+void ZrParser_Compiler_TrimStackBy(SZrCompilerState *cs, TZrSize amount) {
+    TZrSize targetCount;
+
+    if (cs == ZR_NULL) {
+        return;
+    }
+
+    targetCount = (amount < cs->stackSlotCount) ? (cs->stackSlotCount - amount) : 0;
+    ZrParser_Compiler_TrimStackToCount(cs, targetCount);
 }
 
 // 查找局部变量
@@ -789,7 +843,7 @@ TZrUInt32 find_local_var(SZrCompilerState *cs, SZrString *name) {
             if (var != ZR_NULL && var->name != ZR_NULL) {
                 // 比较字符串
                 if (ZrCore_String_Equal(var->name, name)) {
-                    return (TZrUInt32) index;
+                    return var->stackSlot;
                 }
             }
         }
@@ -1349,6 +1403,21 @@ static void record_external_var_reference(SZrCompilerState *cs, SZrString *name)
     ZrCore_Array_Push(cs->state, &cs->referencedExternalVars, &name);
 }
 
+static void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrArray *identifierNames);
+
+static void collect_identifiers_from_array(SZrCompilerState *cs, SZrAstNodeArray *nodes, SZrArray *identifierNames) {
+    if (cs == ZR_NULL || nodes == ZR_NULL || identifierNames == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize i = 0; i < nodes->count; i++) {
+        SZrAstNode *child = nodes->nodes[i];
+        if (child != ZR_NULL) {
+            collect_identifiers_from_node(cs, child, identifierNames);
+        }
+    }
+}
+
 // 递归遍历AST节点，查找所有标识符引用
 static void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrArray *identifierNames) {
     if (cs == ZR_NULL || node == ZR_NULL || identifierNames == ZR_NULL) {
@@ -1430,21 +1499,12 @@ static void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node
         }
         case ZR_AST_FUNCTION_CALL: {
             SZrFunctionCall *funcCall = &node->data.functionCall;
-            // 注意：SZrFunctionCall 结构可能没有 callee 字段，需要检查实际结构
-            // TODO: 函数调用在 primary expression 中处理，这里暂时跳过
-            if (funcCall->args != ZR_NULL) {
-                for (TZrSize i = 0; i < funcCall->args->count; i++) {
-                    SZrAstNode *arg = funcCall->args->nodes[i];
-                    if (arg != ZR_NULL) {
-                        collect_identifiers_from_node(cs, arg, identifierNames);
-                    }
-                }
-            }
+            collect_identifiers_from_array(cs, funcCall->args, identifierNames);
             break;
         }
         case ZR_AST_MEMBER_EXPRESSION: {
             SZrMemberExpression *memberExpr = &node->data.memberExpression;
-            if (memberExpr->property != ZR_NULL) {
+            if (memberExpr->computed && memberExpr->property != ZR_NULL) {
                 collect_identifiers_from_node(cs, memberExpr->property, identifierNames);
             }
             break;
@@ -1454,43 +1514,39 @@ static void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node
             if (primary->property != ZR_NULL) {
                 collect_identifiers_from_node(cs, primary->property, identifierNames);
             }
-            if (primary->members != ZR_NULL) {
-                for (TZrSize i = 0; i < primary->members->count; i++) {
-                    SZrAstNode *member = primary->members->nodes[i];
-                    if (member != ZR_NULL) {
-                        collect_identifiers_from_node(cs, member, identifierNames);
-                    }
-                }
+            collect_identifiers_from_array(cs, primary->members, identifierNames);
+            break;
+        }
+        case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION: {
+            SZrPrototypeReferenceExpression *prototypeRef = &node->data.prototypeReferenceExpression;
+            if (prototypeRef->target != ZR_NULL) {
+                collect_identifiers_from_node(cs, prototypeRef->target, identifierNames);
             }
+            break;
+        }
+        case ZR_AST_CONSTRUCT_EXPRESSION: {
+            SZrConstructExpression *construct = &node->data.constructExpression;
+            if (construct->target != ZR_NULL) {
+                collect_identifiers_from_node(cs, construct->target, identifierNames);
+            }
+            collect_identifiers_from_array(cs, construct->args, identifierNames);
             break;
         }
         case ZR_AST_ARRAY_LITERAL: {
             SZrArrayLiteral *arrayLit = &node->data.arrayLiteral;
-            if (arrayLit->elements != ZR_NULL) {
-                for (TZrSize i = 0; i < arrayLit->elements->count; i++) {
-                    SZrAstNode *elem = arrayLit->elements->nodes[i];
-                    if (elem != ZR_NULL) {
-                        collect_identifiers_from_node(cs, elem, identifierNames);
-                    }
-                }
-            }
+            collect_identifiers_from_array(cs, arrayLit->elements, identifierNames);
             break;
         }
         case ZR_AST_OBJECT_LITERAL: {
             SZrObjectLiteral *objLit = &node->data.objectLiteral;
-            if (objLit->properties != ZR_NULL) {
-                for (TZrSize i = 0; i < objLit->properties->count; i++) {
-                    SZrAstNode *prop = objLit->properties->nodes[i];
-                    if (prop != ZR_NULL) {
-                        collect_identifiers_from_node(cs, prop, identifierNames);
-                    }
-                }
-            }
+            collect_identifiers_from_array(cs, objLit->properties, identifierNames);
             break;
         }
         case ZR_AST_KEY_VALUE_PAIR: {
             SZrKeyValuePair *kv = &node->data.keyValuePair;
-            if (kv->key != ZR_NULL) {
+            if (kv->key != ZR_NULL &&
+                kv->key->type != ZR_AST_IDENTIFIER_LITERAL &&
+                kv->key->type != ZR_AST_STRING_LITERAL) {
                 collect_identifiers_from_node(cs, kv->key, identifierNames);
             }
             if (kv->value != ZR_NULL) {
@@ -1520,13 +1576,135 @@ static void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node
         }
         case ZR_AST_BLOCK: {
             SZrBlock *block = &node->data.block;
-            if (block->body != ZR_NULL) {
-                for (TZrSize i = 0; i < block->body->count; i++) {
-                    SZrAstNode *stmt = block->body->nodes[i];
-                    if (stmt != ZR_NULL) {
-                        collect_identifiers_from_node(cs, stmt, identifierNames);
-                    }
-                }
+            collect_identifiers_from_array(cs, block->body, identifierNames);
+            break;
+        }
+        case ZR_AST_VARIABLE_DECLARATION: {
+            SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;
+            if (varDecl->value != ZR_NULL) {
+                collect_identifiers_from_node(cs, varDecl->value, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_EXPRESSION_STATEMENT: {
+            SZrExpressionStatement *exprStmt = &node->data.expressionStatement;
+            if (exprStmt->expr != ZR_NULL) {
+                collect_identifiers_from_node(cs, exprStmt->expr, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_USING_STATEMENT: {
+            SZrUsingStatement *usingStmt = &node->data.usingStatement;
+            if (usingStmt->resource != ZR_NULL) {
+                collect_identifiers_from_node(cs, usingStmt->resource, identifierNames);
+            }
+            if (usingStmt->body != ZR_NULL) {
+                collect_identifiers_from_node(cs, usingStmt->body, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_RETURN_STATEMENT: {
+            SZrReturnStatement *returnStmt = &node->data.returnStatement;
+            if (returnStmt->expr != ZR_NULL) {
+                collect_identifiers_from_node(cs, returnStmt->expr, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_BREAK_CONTINUE_STATEMENT: {
+            SZrBreakContinueStatement *breakContinueStmt = &node->data.breakContinueStatement;
+            if (breakContinueStmt->expr != ZR_NULL) {
+                collect_identifiers_from_node(cs, breakContinueStmt->expr, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_THROW_STATEMENT: {
+            SZrThrowStatement *throwStmt = &node->data.throwStatement;
+            if (throwStmt->expr != ZR_NULL) {
+                collect_identifiers_from_node(cs, throwStmt->expr, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_OUT_STATEMENT: {
+            SZrOutStatement *outStmt = &node->data.outStatement;
+            if (outStmt->expr != ZR_NULL) {
+                collect_identifiers_from_node(cs, outStmt->expr, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT: {
+            SZrTryCatchFinallyStatement *tryStmt = &node->data.tryCatchFinallyStatement;
+            if (tryStmt->block != ZR_NULL) {
+                collect_identifiers_from_node(cs, tryStmt->block, identifierNames);
+            }
+            if (tryStmt->catchBlock != ZR_NULL) {
+                collect_identifiers_from_node(cs, tryStmt->catchBlock, identifierNames);
+            }
+            if (tryStmt->finallyBlock != ZR_NULL) {
+                collect_identifiers_from_node(cs, tryStmt->finallyBlock, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_WHILE_LOOP: {
+            SZrWhileLoop *whileLoop = &node->data.whileLoop;
+            if (whileLoop->cond != ZR_NULL) {
+                collect_identifiers_from_node(cs, whileLoop->cond, identifierNames);
+            }
+            if (whileLoop->block != ZR_NULL) {
+                collect_identifiers_from_node(cs, whileLoop->block, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_FOR_LOOP: {
+            SZrForLoop *forLoop = &node->data.forLoop;
+            if (forLoop->init != ZR_NULL) {
+                collect_identifiers_from_node(cs, forLoop->init, identifierNames);
+            }
+            if (forLoop->cond != ZR_NULL) {
+                collect_identifiers_from_node(cs, forLoop->cond, identifierNames);
+            }
+            if (forLoop->step != ZR_NULL) {
+                collect_identifiers_from_node(cs, forLoop->step, identifierNames);
+            }
+            if (forLoop->block != ZR_NULL) {
+                collect_identifiers_from_node(cs, forLoop->block, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_FOREACH_LOOP: {
+            SZrForeachLoop *foreachLoop = &node->data.foreachLoop;
+            if (foreachLoop->expr != ZR_NULL) {
+                collect_identifiers_from_node(cs, foreachLoop->expr, identifierNames);
+            }
+            if (foreachLoop->block != ZR_NULL) {
+                collect_identifiers_from_node(cs, foreachLoop->block, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_SWITCH_EXPRESSION: {
+            SZrSwitchExpression *switchExpr = &node->data.switchExpression;
+            if (switchExpr->expr != ZR_NULL) {
+                collect_identifiers_from_node(cs, switchExpr->expr, identifierNames);
+            }
+            collect_identifiers_from_array(cs, switchExpr->cases, identifierNames);
+            if (switchExpr->defaultCase != ZR_NULL) {
+                collect_identifiers_from_node(cs, switchExpr->defaultCase, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_SWITCH_CASE: {
+            SZrSwitchCase *switchCase = &node->data.switchCase;
+            if (switchCase->value != ZR_NULL) {
+                collect_identifiers_from_node(cs, switchCase->value, identifierNames);
+            }
+            if (switchCase->block != ZR_NULL) {
+                collect_identifiers_from_node(cs, switchCase->block, identifierNames);
+            }
+            break;
+        }
+        case ZR_AST_SWITCH_DEFAULT: {
+            SZrSwitchDefault *switchDefault = &node->data.switchDefault;
+            if (switchDefault->block != ZR_NULL) {
+                collect_identifiers_from_node(cs, switchDefault->block, identifierNames);
             }
             break;
         }
@@ -1563,12 +1741,18 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
         if (localIndex == (TZrUInt32)-1 && closureIndex == (TZrUInt32)-1) {
             // 在父编译器中查找（外部作用域的变量）
             TZrUInt32 parentLocalIndex = find_local_var(parentCompiler, name);
-            if (parentLocalIndex != (TZrUInt32)-1) {
+            TZrUInt32 parentClosureIndex = find_closure_var(parentCompiler, name);
+            if (parentLocalIndex != (TZrUInt32)-1 || parentClosureIndex != (TZrUInt32)-1) {
                 // 这是外部变量，需要捕获到闭包中
-                // 检查是否已经分配过
+                // 注意：index 必须指向父作用域中的真实槽位/上值索引，而不是当前闭包数组长度。
                 if (find_closure_var(cs, name) == (TZrUInt32)-1) {
-                    // 在闭包变量列表中分配
-                    allocate_closure_var(cs, name, ZR_TRUE); // inStack = true，表示在栈上
+                    SZrFunctionClosureVariable closureVar;
+                    closureVar.name = name;
+                    closureVar.inStack = (parentLocalIndex != (TZrUInt32)-1) ? ZR_TRUE : ZR_FALSE;
+                    closureVar.index = (parentLocalIndex != (TZrUInt32)-1) ? parentLocalIndex : parentClosureIndex;
+                    closureVar.valueType = ZR_VALUE_TYPE_NULL;
+                    ZrCore_Array_Push(cs->state, &cs->closureVars, &closureVar);
+                    cs->closureVarCount++;
                 }
             }
         }
@@ -1965,6 +2149,21 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
+    if (oldFunction != ZR_NULL && funcDecl->body != ZR_NULL) {
+        SZrCompilerState parentCompilerSnapshot = {0};
+        parentCompilerSnapshot.localVars.head = (TZrByte *)savedParentLocalVars;
+        parentCompilerSnapshot.localVars.elementSize = sizeof(SZrFunctionLocalVariable);
+        parentCompilerSnapshot.localVars.length = oldLocalVarLength;
+        parentCompilerSnapshot.localVars.capacity = oldLocalVarLength;
+        parentCompilerSnapshot.localVars.isValid = ZR_TRUE;
+        parentCompilerSnapshot.closureVars.head = (TZrByte *)savedParentClosureVars;
+        parentCompilerSnapshot.closureVars.elementSize = sizeof(SZrFunctionClosureVariable);
+        parentCompilerSnapshot.closureVars.length = oldClosureVarLength;
+        parentCompilerSnapshot.closureVars.capacity = oldClosureVarLength;
+        parentCompilerSnapshot.closureVars.isValid = ZR_TRUE;
+        ZrParser_ExternalVariables_Analyze(cs, funcDecl->body, &parentCompilerSnapshot);
+    }
+
     // 检查是否有可变参数
     TZrBool hasVariableArguments = (funcDecl->args != ZR_NULL);
 
@@ -2212,6 +2411,45 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         // 如果是顶层函数声明且没有父函数（不应该发生），将其保存到编译器状态
         // 这样 ZrParser_Compiler_Compile 可以返回它
         cs->topLevelFunction = newFunc;
+    }
+
+    if (oldFunction != ZR_NULL && funcDecl->name != ZR_NULL && funcDecl->name->name != ZR_NULL) {
+        SZrString *functionName = funcDecl->name->name;
+        TZrUInt32 functionVarIndex = find_local_var(cs, functionName);
+        SZrTypeValue funcValue;
+        TZrUInt32 functionConstantIndex;
+        TZrUInt32 closureSlot;
+        TZrUInt32 closureVarCount = (TZrUInt32)newFunc->closureValueLength;
+
+        if (functionVarIndex == (TZrUInt32)-1) {
+            functionVarIndex = allocate_local_var(cs, functionName);
+        }
+
+        ZrCore_Value_InitAsRawObject(cs->state, &funcValue, ZR_CAST_RAW_OBJECT_AS_SUPER(newFunc));
+        funcValue.type = ZR_VALUE_TYPE_FUNCTION;
+        functionConstantIndex = add_constant(cs, &funcValue);
+        closureSlot = allocate_stack_slot(cs);
+
+        emit_instruction(
+                cs,
+                create_instruction_2(ZR_INSTRUCTION_ENUM(CREATE_CLOSURE),
+                                     (TZrUInt16)closureSlot,
+                                     (TZrUInt16)functionConstantIndex,
+                                     (TZrUInt16)closureVarCount));
+        emit_instruction(
+                cs,
+                create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                     (TZrUInt16)functionVarIndex,
+                                     (TZrInt32)closureSlot));
+
+        if (cs->isScriptLevel) {
+            SZrExportedVariable exportedVar;
+            exportedVar.name = functionName;
+            exportedVar.stackSlot = functionVarIndex;
+            exportedVar.accessModifier = ZR_ACCESS_PUBLIC;
+            ZrCore_Array_Push(cs->state, &cs->pubVariables, &exportedVar);
+            ZrCore_Array_Push(cs->state, &cs->proVariables, &exportedVar);
+        }
     }
 }
 
@@ -3004,6 +3242,7 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.name = typeName;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
     info.accessModifier = structDecl->accessModifier;
+    info.isImportedNative = ZR_FALSE;
     
     // 初始化继承数组
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 4);
@@ -4012,6 +4251,7 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.name = typeName;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
     info.accessModifier = classDecl->accessModifier;
+    info.isImportedNative = ZR_FALSE;
     
     // 初始化继承数组
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 4);
@@ -4733,6 +4973,7 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs->typePrototypes.length > 0) {
         // 计算所有 prototype 数据的总大小
         TZrSize totalPrototypeDataSize = 0;
+        TZrSize serializablePrototypeCount = 0;
         TZrByte **prototypeDataArray = (TZrByte **)ZrCore_Memory_RawMalloc(cs->state->global, cs->typePrototypes.length * sizeof(TZrByte *));
         TZrSize *prototypeDataSizes = (TZrSize *)ZrCore_Memory_RawMalloc(cs->state->global, cs->typePrototypes.length * sizeof(TZrSize));
         
@@ -4747,7 +4988,7 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             // 序列化每个 prototype 信息
             for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
                 SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, i);
-                if (info == ZR_NULL || info->name == ZR_NULL) {
+                if (info == ZR_NULL || info->name == ZR_NULL || info->isImportedNative) {
                     prototypeDataArray[i] = ZR_NULL;
                     prototypeDataSizes[i] = 0;
                     continue;
@@ -4760,6 +5001,7 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                     prototypeDataArray[i] = prototypeData;
                     prototypeDataSizes[i] = prototypeDataSize;
                     totalPrototypeDataSize += prototypeDataSize;
+                    serializablePrototypeCount++;
                 } else {
                     prototypeDataArray[i] = ZR_NULL;
                     prototypeDataSizes[i] = 0;
@@ -4774,7 +5016,7 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 if (finalPrototypeData != ZR_NULL) {
                     // 写入 prototype 数量
                     TZrUInt32 *prototypeCountPtr = (TZrUInt32 *)finalPrototypeData;
-                    *prototypeCountPtr = (TZrUInt32)cs->typePrototypes.length;
+                    *prototypeCountPtr = (TZrUInt32)serializablePrototypeCount;
                     
                     // 复制每个 prototype 的数据
                     TZrByte *currentPos = finalPrototypeData + sizeof(TZrUInt32);
@@ -4790,8 +5032,12 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                     // 存储到 function
                     cs->currentFunction->prototypeData = finalPrototypeData;
                     cs->currentFunction->prototypeDataLength = (TZrUInt32)finalDataSize;
-                    cs->currentFunction->prototypeCount = (TZrUInt32)cs->typePrototypes.length;
+                    cs->currentFunction->prototypeCount = (TZrUInt32)serializablePrototypeCount;
                 }
+            } else {
+                cs->currentFunction->prototypeData = ZR_NULL;
+                cs->currentFunction->prototypeDataLength = 0;
+                cs->currentFunction->prototypeCount = 0;
             }
             
             // 释放临时数组

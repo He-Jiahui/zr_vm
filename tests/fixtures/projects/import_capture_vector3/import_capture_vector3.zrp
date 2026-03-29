@@ -1,0 +1,6 @@
+{
+  "name": "import_capture_vector3",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

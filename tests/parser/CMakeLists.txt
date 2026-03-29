@@ -64,14 +64,6 @@ set(CONST_KEYWORD_TEST_SOURCES
 # 创建 const 关键字测试可执行文件
 add_executable(zr_vm_const_keyword_test ${CONST_KEYWORD_TEST_SOURCES})
 
-# 包含Unity测试框架
-target_include_directories(zr_vm_parser_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
-
-# 添加Unity源文件
-set(UNITY_SOURCES
-    ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src/unity.c
-)
-
 set(UNITY_NOOP_LIFECYCLE_SOURCE
     ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
 )
@@ -80,7 +72,7 @@ set(UNITY_NOOP_LIFECYCLE_SOURCE
 if (BUILD_SHARED_LIB)
     target_link_libraries(zr_vm_parser_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
     target_link_libraries(zr_vm_instruction_execution_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
-    target_link_libraries(zr_vm_type_inference_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
+    target_link_libraries(zr_vm_type_inference_test PRIVATE zr_vm_parser_shared zr_vm_core_shared zr_vm_library_shared zr_vm_lib_math_shared zr_vm_lib_system_shared)
     target_link_libraries(zr_vm_compiler_features_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
     target_link_libraries(zr_vm_char_and_type_cast_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
     target_link_libraries(zr_vm_lexer_parser_compiler_execution_test PRIVATE zr_vm_parser_shared zr_vm_core_shared)
@@ -89,7 +81,7 @@ if (BUILD_SHARED_LIB)
 else()
     target_link_libraries(zr_vm_parser_test PRIVATE zr_vm_parser_static zr_vm_core_static)
     target_link_libraries(zr_vm_instruction_execution_test PRIVATE zr_vm_parser_static zr_vm_core_static)
-    target_link_libraries(zr_vm_type_inference_test PRIVATE zr_vm_parser_static zr_vm_core_static)
+    target_link_libraries(zr_vm_type_inference_test PRIVATE zr_vm_parser_static zr_vm_core_static zr_vm_library_static zr_vm_lib_math_static zr_vm_lib_system_static)
     target_link_libraries(zr_vm_compiler_features_test PRIVATE zr_vm_parser_static zr_vm_core_static)
     target_link_libraries(zr_vm_char_and_type_cast_test PRIVATE zr_vm_parser_static zr_vm_core_static)
     target_link_libraries(zr_vm_lexer_parser_compiler_execution_test PRIVATE zr_vm_parser_static zr_vm_core_static)
@@ -97,27 +89,9 @@ else()
     target_link_libraries(zr_vm_const_keyword_test PRIVATE zr_vm_parser_static zr_vm_core_static)
 endif()
 
-# 添加Unity源文件到目标
-target_sources(zr_vm_parser_test PRIVATE ${UNITY_SOURCES})
-target_sources(zr_vm_instruction_execution_test PRIVATE ${UNITY_SOURCES})
-target_sources(zr_vm_type_inference_test PRIVATE ${UNITY_SOURCES})
-target_sources(zr_vm_compiler_features_test PRIVATE ${UNITY_SOURCES})
-target_sources(zr_vm_char_and_type_cast_test PRIVATE ${UNITY_SOURCES})
-target_sources(zr_vm_lexer_parser_compiler_execution_test PRIVATE ${UNITY_SOURCES})
-target_sources(zr_vm_prototype_test PRIVATE ${UNITY_SOURCES})
-target_sources(zr_vm_const_keyword_test PRIVATE ${UNITY_SOURCES})
-
 target_sources(zr_vm_char_and_type_cast_test PRIVATE ${UNITY_NOOP_LIFECYCLE_SOURCE})
 target_sources(zr_vm_prototype_test PRIVATE ${UNITY_NOOP_LIFECYCLE_SOURCE})
 target_sources(zr_vm_const_keyword_test PRIVATE ${UNITY_NOOP_LIFECYCLE_SOURCE})
-
-# 包含Unity测试框架
-target_include_directories(zr_vm_instruction_execution_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
-target_include_directories(zr_vm_type_inference_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
-target_include_directories(zr_vm_compiler_features_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
-target_include_directories(zr_vm_char_and_type_cast_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
-target_include_directories(zr_vm_lexer_parser_compiler_execution_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
-target_include_directories(zr_vm_prototype_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
 
 # 包含头文件目录
 target_include_directories(zr_vm_parser_test PRIVATE 
@@ -136,6 +110,9 @@ target_include_directories(zr_vm_type_inference_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
     ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
 )
 
 target_include_directories(zr_vm_compiler_features_test PRIVATE 
@@ -166,41 +143,19 @@ target_include_directories(zr_vm_const_keyword_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
     ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
-    ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src
 )
 
-# 显式启用UNITY输出
-target_compile_definitions(zr_vm_parser_test PRIVATE
-    UNITY_USE_FLUSH_STDOUT
-)
-
-target_compile_definitions(zr_vm_instruction_execution_test PRIVATE
-    UNITY_USE_FLUSH_STDOUT
-)
-
-target_compile_definitions(zr_vm_type_inference_test PRIVATE
-    UNITY_USE_FLUSH_STDOUT
-)
-
-target_compile_definitions(zr_vm_compiler_features_test PRIVATE
-    UNITY_USE_FLUSH_STDOUT
-)
-
-target_compile_definitions(zr_vm_char_and_type_cast_test PRIVATE
-    UNITY_USE_FLUSH_STDOUT
-)
-
-target_compile_definitions(zr_vm_lexer_parser_compiler_execution_test PRIVATE
-    UNITY_USE_FLUSH_STDOUT
-)
-
-target_compile_definitions(zr_vm_prototype_test PRIVATE
-    UNITY_USE_FLUSH_STDOUT
-)
-
-target_compile_definitions(zr_vm_const_keyword_test PRIVATE
-    UNITY_USE_FLUSH_STDOUT
-)
+foreach(zr_parser_test_target
+        zr_vm_parser_test
+        zr_vm_instruction_execution_test
+        zr_vm_type_inference_test
+        zr_vm_compiler_features_test
+        zr_vm_char_and_type_cast_test
+        zr_vm_lexer_parser_compiler_execution_test
+        zr_vm_prototype_test
+        zr_vm_const_keyword_test)
+    zr_configure_unity_test(${zr_parser_test_target})
+endforeach()
 
 # 复制测试文件到构建目录的多个位置，确保测试可执行文件可以找到
 # 1. 复制到当前构建目录（tests/parser/）

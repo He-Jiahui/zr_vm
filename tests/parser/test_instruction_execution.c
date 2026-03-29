@@ -128,6 +128,26 @@ static TZrInt64 test_close_meta_native(struct SZrState *state) {
     return 0;
 }
 
+static TZrInt64 test_stack_grow_return_native(struct SZrState *state) {
+    SZrCallInfo *callInfo;
+    TZrStackValuePointer functionBase;
+    TZrSize grownSize;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    callInfo = state->callInfoList;
+    functionBase = callInfo->functionBase.valuePointer;
+    grownSize = ZrCore_State_StackGetSize(state) + 32;
+    ZrCore_Stack_GrowTo(state, grownSize, ZR_TRUE);
+
+    functionBase = callInfo->functionBase.valuePointer;
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(functionBase), 214);
+    state->stackTop.valuePointer = functionBase + 1;
+    return 1;
+}
+
 static void attach_close_meta_to_string_prototype(SZrState *state) {
     SZrObjectPrototype *prototype;
     SZrClosureNative *closure;
@@ -527,8 +547,8 @@ static TZrBool execute_function_and_get_result(SZrState *state, SZrFunction *fun
         return ZR_FALSE;
     }
 
-    // 使用 ZrCore_Function_CallWithoutYield 来执行函数（期望 1 个返回值）
-    ZrCore_Function_CallWithoutYield(state, closurePointer, 1);
+    // 使用 restore helper 来执行函数，避免 stack grow 后 closurePointer 失效
+    closurePointer = ZrCore_Function_CallWithoutYieldAndRestore(state, closurePointer, 1);
 
     // 检查执行状态
     if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
@@ -1509,6 +1529,293 @@ void test_execute_settable_instruction(void) {
     TEST_DIVIDER();
 }
 
+void test_execute_object_literal_with_complex_property_values(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Object Literal Return With Complex Property Values";
+    SZrTypeValue result;
+    SZrTypeValue keyValue;
+    const SZrTypeValue *fieldValue;
+    SZrString *keyString;
+    SZrObject *object;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Object literal return",
+              "Testing that complex property expressions still return the object literal itself");
+
+    {
+        const char *source = "return {a: 1 + 2, b: 4 + 5};";
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *function = ZR_NULL;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse complex object literal");
+            destroy_test_state(state);
+            return;
+        }
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+
+        if (function == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile complex object literal");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(execute_function_and_get_result(state, function, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
+
+        object = ZR_CAST_OBJECT(state, result.value.object);
+        TEST_ASSERT_NOT_NULL(object);
+
+        keyString = ZrCore_String_Create(state, "a", 1);
+        TEST_ASSERT_NOT_NULL(keyString);
+        ZrCore_Value_InitAsRawObject(state, &keyValue, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
+        keyValue.type = ZR_VALUE_TYPE_STRING;
+        fieldValue = ZrCore_Object_GetValue(state, object, &keyValue);
+        TEST_ASSERT_NOT_NULL(fieldValue);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(fieldValue->type));
+        TEST_ASSERT_EQUAL_INT64(3, fieldValue->value.nativeObject.nativeInt64);
+
+        keyString = ZrCore_String_Create(state, "b", 1);
+        TEST_ASSERT_NOT_NULL(keyString);
+        ZrCore_Value_InitAsRawObject(state, &keyValue, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
+        keyValue.type = ZR_VALUE_TYPE_STRING;
+        fieldValue = ZrCore_Object_GetValue(state, object, &keyValue);
+        TEST_ASSERT_NOT_NULL(fieldValue);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(fieldValue->type));
+        TEST_ASSERT_EQUAL_INT64(9, fieldValue->value.nativeObject.nativeInt64);
+    }
+
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_execute_string_concat_variable_lifetimes(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "String Concat Variable Lifetimes";
+    SZrTypeValue result;
+    SZrTypeValue keyValue;
+    const SZrTypeValue *fieldValue;
+    SZrString *keyString;
+    SZrObject *object;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("String concat locals",
+              "Testing that string-concat temporaries do not overwrite previously declared locals");
+
+    {
+        const char *source =
+                "var prefix = \"tests\";"
+                "var path = prefix + \"/report.txt\";"
+                "var banner = \"PASS\";"
+                "var text = banner + \"::\" + path;"
+                "return {path: path, text: text};";
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *function = ZR_NULL;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse string concat lifetime source");
+            destroy_test_state(state);
+            return;
+        }
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+
+        if (function == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile string concat lifetime source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(execute_function_and_get_result(state, function, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
+
+        object = ZR_CAST_OBJECT(state, result.value.object);
+        TEST_ASSERT_NOT_NULL(object);
+
+        keyString = ZrCore_String_Create(state, "path", 4);
+        TEST_ASSERT_NOT_NULL(keyString);
+        ZrCore_Value_InitAsRawObject(state, &keyValue, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
+        keyValue.type = ZR_VALUE_TYPE_STRING;
+        fieldValue = ZrCore_Object_GetValue(state, object, &keyValue);
+        TEST_ASSERT_NOT_NULL(fieldValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, fieldValue->type);
+        TEST_ASSERT_EQUAL_STRING("tests/report.txt",
+                                 ZrCore_String_GetNativeString(ZR_CAST_STRING(state, fieldValue->value.object)));
+
+        keyString = ZrCore_String_Create(state, "text", 4);
+        TEST_ASSERT_NOT_NULL(keyString);
+        ZrCore_Value_InitAsRawObject(state, &keyValue, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
+        keyValue.type = ZR_VALUE_TYPE_STRING;
+        fieldValue = ZrCore_Object_GetValue(state, object, &keyValue);
+        TEST_ASSERT_NOT_NULL(fieldValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, fieldValue->type);
+        TEST_ASSERT_EQUAL_STRING("PASS::tests/report.txt",
+                                 ZrCore_String_GetNativeString(ZR_CAST_STRING(state, fieldValue->value.object)));
+    }
+
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_execute_string_concat_with_dynamic_member_number(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "String Concat With Dynamic Member Number";
+    SZrTypeValue result;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("String concat fallback",
+              "Testing runtime string concatenation when the right operand comes from dynamic member access");
+
+    {
+        const char *source =
+                "var summary = { checksum: 7 };"
+                "return \"checksum=\" + summary.checksum;";
+        SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *function = ZR_NULL;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse string concat dynamic-member source");
+            destroy_test_state(state);
+            return;
+        }
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+
+        if (function == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile string concat dynamic-member source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(execute_function_and_get_result(state, function, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.type);
+        TEST_ASSERT_EQUAL_STRING("checksum=7",
+                                 ZrCore_String_GetNativeString(ZR_CAST_STRING(state, result.value.object)));
+    }
+
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_execute_function_helper_restores_base_after_stack_grow(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Function Helper Restores Base After Stack Grow";
+    SZrState *state;
+    SZrClosureNative *closure;
+    SZrTypeValue result;
+    TZrStackValuePointer base;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Function helper stack restoration",
+              "Testing call sites that keep using base after a native callee grows the stack");
+
+    closure = ZrCore_ClosureNative_New(state, 0);
+    TEST_ASSERT_NOT_NULL(closure);
+    closure->nativeFunction = test_stack_grow_return_native;
+
+    base = state->stackTop.valuePointer;
+    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    state->stackTop.valuePointer = base + 1;
+
+    base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, state->threadStatus);
+    ZrCore_Value_ResetAsNull(&result);
+    ZrCore_Value_Copy(state, &result, ZrCore_Stack_GetValue(base));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+    TEST_ASSERT_EQUAL_INT64(214, result.value.nativeObject.nativeInt64);
+
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_execute_function_stack_anchor_restores_base_after_stack_grow(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Function Stack Anchor Restores Base After Stack Grow";
+    SZrState *state;
+    SZrClosureNative *closure;
+    SZrTypeValue result;
+    TZrStackValuePointer base;
+    SZrFunctionStackAnchor baseAnchor;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Function stack anchor restoration",
+              "Testing multi-step call sites that restore base through a shared stack anchor");
+
+    closure = ZrCore_ClosureNative_New(state, 0);
+    TEST_ASSERT_NOT_NULL(closure);
+    closure->nativeFunction = test_stack_grow_return_native;
+
+    base = state->stackTop.valuePointer;
+    base = ZrCore_Function_CheckStackAndAnchor(state, 1, base, base, &baseAnchor);
+    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    state->stackTop.valuePointer = base + 1;
+
+    base = ZrCore_Function_CallWithoutYieldAndRestoreAnchor(state, &baseAnchor, 1);
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, state->threadStatus);
+    ZrCore_Value_ResetAsNull(&result);
+    ZrCore_Value_Copy(state, &result, ZrCore_Stack_GetValue(base));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+    TEST_ASSERT_EQUAL_INT64(214, result.value.nativeObject.nativeInt64);
+
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // 测试 DIV_SIGNED 指令
 void test_execute_div_signed_instruction(void) {
     SZrTestTimer timer;
@@ -2020,6 +2327,11 @@ int main(void) {
     printf("==========\n");
     RUN_TEST(test_execute_create_object);
     RUN_TEST(test_execute_create_object_with_properties);
+    RUN_TEST(test_execute_object_literal_with_complex_property_values);
+    RUN_TEST(test_execute_string_concat_variable_lifetimes);
+    RUN_TEST(test_execute_string_concat_with_dynamic_member_number);
+    RUN_TEST(test_execute_function_helper_restores_base_after_stack_grow);
+    RUN_TEST(test_execute_function_stack_anchor_restores_base_after_stack_grow);
 
     // CREATE_ARRAY 指令测试
     printf("==========\n");

@@ -4,6 +4,7 @@
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/conf.h"
 #include "zr_vm_library/file.h"
+#include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 
 static TZrUInt64 CZrLibrary_CommonState_MemoryCounter[ZR_MEMORY_NATIVE_TYPE_ENUM_MAX] = {};
@@ -56,6 +57,7 @@ SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TZrNativeString conf
     }
     global->userData = project;
     global->sourceLoader = ZrLibrary_Project_SourceLoadImplementation;
+    ZrLibrary_NativeRegistry_Attach(global);
     return global;
 }
 
@@ -65,6 +67,7 @@ void ZrLibrary_CommonState_CommonGlobalState_Free(SZrGlobalState *globalState) {
     }
     ZrLibrary_Project_Free(globalState->mainThreadState, ZR_CAST(SZrLibrary_Project *, globalState->userData));
     globalState->userData = ZR_NULL;
+    ZrLibrary_NativeRegistry_Free(globalState);
 
     ZrCore_GlobalState_Free(globalState);
 }

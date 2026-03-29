@@ -1,0 +1,6 @@
+{
+  "name": "native_vector3_export_probe",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

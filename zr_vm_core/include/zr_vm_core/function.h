@@ -14,6 +14,12 @@ struct SZrTypeValueOnStack;
 struct SZrString;
 struct SZrObjectPrototype;
 
+struct ZR_STRUCT_ALIGN SZrFunctionStackAnchor {
+    TZrMemoryOffset offset;
+};
+
+typedef struct SZrFunctionStackAnchor SZrFunctionStackAnchor;
+
 struct ZR_STRUCT_ALIGN SZrFunctionClosureVariable {
     struct SZrString *name;
     TZrBool inStack;
@@ -25,6 +31,7 @@ typedef struct SZrFunctionClosureVariable SZrFunctionClosureVariable;
 
 struct ZR_STRUCT_ALIGN SZrFunctionLocalVariable {
     struct SZrString *name;
+    TZrUInt32 stackSlot;
     TZrMemoryOffset offsetActivate;
     TZrMemoryOffset offsetDead;
 };
@@ -113,6 +120,35 @@ ZR_CORE_API void ZrCore_Function_Call(struct SZrState *state, TZrStackValuePoint
 
 ZR_CORE_API void ZrCore_Function_CallWithoutYield(struct SZrState *state, TZrStackValuePointer stackPointer,
                                             TZrSize resultCount);
+
+ZR_CORE_API void ZrCore_Function_StackAnchorInit(struct SZrState *state,
+                                           TZrStackValuePointer stackPointer,
+                                           SZrFunctionStackAnchor *anchor);
+
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_StackAnchorRestore(struct SZrState *state,
+                                                              const SZrFunctionStackAnchor *anchor);
+
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_CheckStackAndAnchor(struct SZrState *state,
+                                                               TZrSize size,
+                                                               TZrStackValuePointer checkPointer,
+                                                               TZrStackValuePointer stackPointer,
+                                                               SZrFunctionStackAnchor *anchor);
+
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallAndRestore(struct SZrState *state,
+                                                          TZrStackValuePointer stackPointer,
+                                                          TZrSize resultCount);
+
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldAndRestore(struct SZrState *state,
+                                                                      TZrStackValuePointer stackPointer,
+                                                                      TZrSize resultCount);
+
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallAndRestoreAnchor(struct SZrState *state,
+                                                                const SZrFunctionStackAnchor *anchor,
+                                                                TZrSize resultCount);
+
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldAndRestoreAnchor(struct SZrState *state,
+                                                                              const SZrFunctionStackAnchor *anchor,
+                                                                              TZrSize resultCount);
 
 ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, TZrStackValuePointer stackPointer,
                                                   TZrSize resultCount, TZrStackValuePointer returnDestination);

@@ -6,13 +6,22 @@
 #include <string.h>
 
 #include "unity.h"
+#include "test_support.h"
 #include "test_utils.h"
 
 void setUp(void) {}
 
 void tearDown(void) {}
 
-void test_basic_operations_artifacts_match_golden(void);
+typedef struct {
+    const TZrChar* sourceFileName;
+    const TZrChar* baseName;
+} SZrArtifactGoldenCase;
+
+static const SZrArtifactGoldenCase ZR_ARTIFACT_GOLDEN_CASES[] = {
+    {"artifact_baseline.zr", "artifact_baseline"},
+    {"basic_operations.zr", "basic_operations"},
+};
 
 static TZrBool is_text_artifact_extension(const TZrChar* extension) {
     if (extension == ZR_NULL) {
@@ -136,16 +145,25 @@ static void assert_file_matches_golden(const TZrChar* baseName, const TZrChar* s
     free(goldenBuffer);
 }
 
-void test_basic_operations_artifacts_match_golden(void) {
-    const TZrChar* caseFileName = "artifact_baseline.zr";
-    const TZrChar* baseName = "artifact_baseline";
+static void assert_file_matches_golden_if_present(const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension) {
+    TZrChar goldenPath[1024];
+
+    get_golden_output_path(baseName, subDir, extension, goldenPath, sizeof(goldenPath));
+    if (ZrTests_File_Exists(goldenPath)) {
+        assert_file_matches_golden(baseName, subDir, extension);
+    }
+}
+
+static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
     TZrChar sourcePath[1024];
     TZrSize sourceLength = 0;
     TZrChar* source = ZR_NULL;
     SZrState* state = create_test_state();
+
+    TEST_ASSERT_NOT_NULL(testCase);
     TEST_ASSERT_NOT_NULL(state);
 
-    get_test_case_path(caseFileName, sourcePath, sizeof(sourcePath));
+    get_test_case_path(testCase->sourceFileName, sourcePath, sizeof(sourcePath));
     source = load_zr_file(sourcePath, &sourceLength);
     TEST_ASSERT_NOT_NULL(source);
 
@@ -153,21 +171,31 @@ void test_basic_operations_artifacts_match_golden(void) {
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_TRUE_MESSAGE(result->success, result->errorMessage ? result->errorMessage : "parse_and_compile failed");
 
-    TEST_ASSERT_TRUE(dump_ast_to_file(state, result->ast, baseName));
-    TEST_ASSERT_TRUE(dump_intermediate_to_file(state, result->function, baseName));
-    TEST_ASSERT_TRUE(dump_binary_to_file(state, result->function, baseName));
+    TEST_ASSERT_TRUE(dump_ast_to_file(state, result->ast, testCase->baseName));
+    TEST_ASSERT_TRUE(dump_intermediate_to_file(state, result->function, testCase->baseName));
+    TEST_ASSERT_TRUE(dump_binary_to_file(state, result->function, testCase->baseName));
 
-    assert_file_matches_golden(baseName, "ast", ".zrs");
-    assert_file_matches_golden(baseName, "intermediate", ".zri");
-    assert_file_matches_golden(baseName, "binary", ".zro");
+    assert_file_matches_golden(testCase->baseName, "ast", ".zrs");
+    assert_file_matches_golden(testCase->baseName, "intermediate", ".zri");
+    assert_file_matches_golden(testCase->baseName, "binary", ".zro");
+    assert_file_matches_golden_if_present(testCase->baseName, "ast", ".zrs.json");
+    assert_file_matches_golden_if_present(testCase->baseName, "intermediate", ".zri.json");
 
     free_test_result(result);
     free(source);
     destroy_test_state(state);
 }
 
+void test_artifact_outputs_match_goldens(void) {
+    TZrSize i;
+
+    for (i = 0; i < sizeof(ZR_ARTIFACT_GOLDEN_CASES) / sizeof(ZR_ARTIFACT_GOLDEN_CASES[0]); i++) {
+        run_artifact_case(&ZR_ARTIFACT_GOLDEN_CASES[i]);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_basic_operations_artifacts_match_golden);
+    RUN_TEST(test_artifact_outputs_match_goldens);
     return UNITY_END();
 }

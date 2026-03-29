@@ -63,6 +63,8 @@ enum EZrAstNodeType {
     ZR_AST_FUNCTION_CALL,
     ZR_AST_MEMBER_EXPRESSION,
     ZR_AST_PRIMARY_EXPRESSION,
+    ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION,
+    ZR_AST_CONSTRUCT_EXPRESSION,
 
     // 字面量类型
     ZR_AST_BOOLEAN_LITERAL,
@@ -345,6 +347,18 @@ typedef struct SZrPrimaryExpression {
     SZrAstNode *property;
     SZrAstNodeArray *members; // MemberExpression 或 FunctionCall 数组
 } SZrPrimaryExpression;
+
+typedef struct SZrPrototypeReferenceExpression {
+    SZrAstNode *target;
+} SZrPrototypeReferenceExpression;
+
+typedef struct SZrConstructExpression {
+    SZrAstNode *target;
+    SZrAstNodeArray *args; // Expression 数组，可选
+    EZrOwnershipQualifier ownershipQualifier;
+    TZrBool isUsing;
+    TZrBool isNew;
+} SZrConstructExpression;
 
 // 字面量表达式
 typedef struct SZrArrayLiteral {
@@ -763,6 +777,8 @@ typedef struct SZrAstNode {
         SZrFunctionCall functionCall;
         SZrMemberExpression memberExpression;
         SZrPrimaryExpression primaryExpression;
+        SZrPrototypeReferenceExpression prototypeReferenceExpression;
+        SZrConstructExpression constructExpression;
 
         // 字面量
         SZrBooleanLiteral booleanLiteral;

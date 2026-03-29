@@ -25,6 +25,7 @@ struct SZrStringTable;
 
 // from object.h
 struct SZrObjectPrototype;
+struct SZrObjectModule;
 
 // from state.h
 struct SZrState;
@@ -34,6 +35,10 @@ struct SZrGarbageCollector;
 
 // from string.h
 struct SZrString;
+
+typedef struct SZrObjectModule *(*FZrNativeModuleLoader)(struct SZrState *state,
+                                                         struct SZrString *moduleName,
+                                                         TZrPtr userData);
 
 #if !defined(ZR_STRING_TABLE_INIT_SIZE_LOG2)
 #define ZR_STRING_TABLE_INIT_SIZE_LOG2 12 // 2^12 = 4KB
@@ -80,6 +85,8 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
 
     // IO
     FZrIoLoadSource sourceLoader;
+    FZrNativeModuleLoader nativeModuleLoader;
+    TZrPtr nativeModuleLoaderUserData;
     
     // Parser and Compiler (injected, can be NULL)
     // 如果为NULL，则只支持加载.zro二进制文件
@@ -112,6 +119,10 @@ ZR_CORE_API void ZrCore_GlobalState_InitRegistry(struct SZrState *state, SZrGlob
 // 设置 compileSource 函数指针（由 parser 模块调用）
 ZR_CORE_API void ZrCore_GlobalState_SetCompileSource(SZrGlobalState *global, 
     struct SZrFunction *(*compileSource)(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName));
+
+ZR_CORE_API void ZrCore_GlobalState_SetNativeModuleLoader(SZrGlobalState *global,
+                                                          FZrNativeModuleLoader loader,
+                                                          TZrPtr userData);
 
 ZR_CORE_API void ZrCore_GlobalState_Free(SZrGlobalState *global);
 

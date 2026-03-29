@@ -82,3 +82,6 @@ dkms.conf
 /test_simple.zro
 /test_simple.zrs
 
+# Local debugger scratch scripts
+/tmp_*.gdb
+

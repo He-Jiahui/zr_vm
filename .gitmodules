@@ -1,14 +1,19 @@
-[submodule "third_party/zr_xx_hash/xxHash"]
-	path = third_party/zr_xx_hash/xxHash
+[submodule "zr_vm_core/third_party/zr_xx_hash/xxHash"]
+	path = zr_vm_core/third_party/zr_xx_hash/xxHash
 	url = https://github.com/Cyan4973/xxHash.git
 	branch = release
 
-[submodule "third_party/zr_c_json/cJSON"]
-	path = third_party/zr_c_json/cJSON
+[submodule "zr_vm_library/third_party/zr_c_json/cJSON"]
+	path = zr_vm_library/third_party/zr_c_json/cJSON
 	url = https://github.com/DaveGamble/cJSON
 	branch = master
 
-[submodule "third_party/zr_tiny_dir/tinydir"]
-	path = third_party/zr_tiny_dir/tinydir
+[submodule "zr_vm_library/third_party/zr_tiny_dir/tinydir"]
+	path = zr_vm_library/third_party/zr_tiny_dir/tinydir
 	url = https://github.com/cxong/tinydir
+	branch = master
+
+[submodule "tests/third_party/zr_unity/Unity"]
+	path = tests/third_party/zr_unity/Unity
+	url = https://github.com/ThrowTheSwitch/Unity.git
 	branch = master

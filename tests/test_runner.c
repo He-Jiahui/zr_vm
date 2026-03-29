@@ -5,12 +5,19 @@
 static void print_usage(const char* executable) {
     printf("ZR-VM test runner is a thin wrapper around ctest.\n");
     printf("ctest is the only source of truth for discovery and execution.\n\n");
+    printf("Active suites:\n");
+    printf("  core_runtime\n");
+    printf("  language_pipeline\n");
+    printf("  language_server\n");
+    printf("  projects\n");
+    printf("  golden_regression\n\n");
     printf("Usage:\n");
     printf("  %s --help\n", executable);
     printf("  %s --ctest [ctest arguments...]\n\n", executable);
     printf("Examples:\n");
     printf("  %s --ctest --output-on-failure\n", executable);
-    printf("  %s --ctest --output-on-failure -R scripts_tests\n", executable);
+    printf("  %s --ctest --output-on-failure -R language_pipeline\n", executable);
+    printf("  %s --ctest -N\n", executable);
 }
 
 int main(int argc, char* argv[]) {

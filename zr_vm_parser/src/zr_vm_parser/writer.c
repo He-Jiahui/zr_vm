@@ -1365,6 +1365,8 @@ static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
         case ZR_AST_FUNCTION_CALL: return "FUNCTION_CALL";
         case ZR_AST_MEMBER_EXPRESSION: return "MEMBER_EXPRESSION";
         case ZR_AST_PRIMARY_EXPRESSION: return "PRIMARY_EXPRESSION";
+        case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION: return "PROTOTYPE_REFERENCE_EXPRESSION";
+        case ZR_AST_CONSTRUCT_EXPRESSION: return "CONSTRUCT_EXPRESSION";
         case ZR_AST_IDENTIFIER_LITERAL: return "IDENTIFIER";
         case ZR_AST_BOOLEAN_LITERAL: return "BOOLEAN_LITERAL";
         case ZR_AST_INTEGER_LITERAL: return "INTEGER_LITERAL";
@@ -1602,6 +1604,42 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
                 fprintf(file, "members (%zu):\n", primary->members->count);
                 for (TZrSize i = 0; i < primary->members->count; i++) {
                     print_ast_node(state, file, primary->members->nodes[i], indent + 2);
+                }
+            }
+            break;
+        }
+        case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION: {
+            SZrPrototypeReferenceExpression *prototypeRef = &node->data.prototypeReferenceExpression;
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "target: ");
+            print_ast_node(state, file, prototypeRef->target, indent + 1);
+            break;
+        }
+        case ZR_AST_CONSTRUCT_EXPRESSION: {
+            SZrConstructExpression *construct = &node->data.constructExpression;
+            const TZrChar *ownership = "none";
+            if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
+                ownership = "unique";
+            } else if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
+                ownership = "shared";
+            } else if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
+                ownership = "weak";
+            }
+
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "kind: %s\n", construct->isNew ? "new" : "prototype-call");
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "using: %s\n", construct->isUsing ? "true" : "false");
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "ownership: %s\n", ownership);
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "target: ");
+            print_ast_node(state, file, construct->target, indent + 1);
+            if (construct->args != ZR_NULL) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "args (%zu):\n", construct->args->count);
+                for (TZrSize i = 0; i < construct->args->count; i++) {
+                    print_ast_node(state, file, construct->args->nodes[i], indent + 2);
                 }
             }
             break;

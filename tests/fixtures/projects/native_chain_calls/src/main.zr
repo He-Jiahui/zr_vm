@@ -1,0 +1,3 @@
+var math = import("zr.math");
+
+return 5003 + $math.Complex(3.0, 4.0).magnitude();

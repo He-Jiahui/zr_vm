@@ -79,6 +79,8 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
     TZrSize expectedReturnCount;
     /** 返回值写入的栈槽；ZR_NULL 时 ZrFunctionMoveReturns 使用 functionBase.valuePointer（兼容旧语义） */
     TZrStackValuePointer returnDestination;
+    TZrMemoryOffset returnDestinationReusableOffset;
+    TZrBool hasReturnDestination;
 };
 
 typedef struct SZrCallInfo SZrCallInfo;

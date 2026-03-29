@@ -1,0 +1,7 @@
+var math = import("zr.math");
+var system = import("zr.system");
+
+var byName = system.vm.callModuleExport("zr.math", "sqrt", [4.0]);
+var direct = math.Matrix4x4.scale(2.0, 3.0, 4.0);
+
+return byName + direct.m11 + direct.m22;

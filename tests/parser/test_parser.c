@@ -29,6 +29,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/value.h"
+#include "test_support.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
@@ -113,52 +114,53 @@ static void print_generated_file_path(const char* description, const char* fileN
     printf("  Generated %s: %s\n", description, fileName);
 }
 
-// 简单的测试分配器
-static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, int64_t flag) {
-    ZR_UNUSED_PARAMETER(userData);
-    ZR_UNUSED_PARAMETER(originalSize);
-    ZR_UNUSED_PARAMETER(flag);
-    
-    if (newSize == 0) {
-        if (pointer != ZR_NULL && (TZrPtr)pointer >= (TZrPtr)0x1000) {
-            free(pointer);
-        }
+static char* read_parser_fixture(const char* fileName, TZrSize* outLength) {
+    char filePath[ZR_TESTS_PATH_MAX];
+
+    if (!ZrTests_Path_GetParserFixture(fileName, filePath, sizeof(filePath))) {
         return ZR_NULL;
     }
-    
-    if (pointer == ZR_NULL) {
-        return malloc(newSize);
-    } else {
-        if ((TZrPtr)pointer >= (TZrPtr)0x1000) {
-            return realloc(pointer, newSize);
-        } else {
-            return malloc(newSize);
-        }
-    }
+
+    return ZrTests_ReadTextFile(filePath, outLength);
+}
+
+static TZrBool get_parser_generated_path(const char* baseName,
+                                         const char* subDir,
+                                         const char* extension,
+                                         char* outPath,
+                                         TZrSize maxLen) {
+    return ZrTests_Path_GetGeneratedArtifact("language_pipeline", subDir, baseName, extension, outPath, maxLen);
 }
 
 // 创建测试用的SZrState
 static SZrState* create_test_state(void) {
-    SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState* global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
-    if (!global) return ZR_NULL;
-    
-    SZrState* mainState = global->mainThreadState;
-    if (mainState) {
-        ZrCore_GlobalState_InitRegistry(mainState, global);
-    }
-    
-    return mainState;
+    return ZrTests_State_Create(ZR_NULL);
 }
 
 // 销毁测试用的SZrState
 static void destroy_test_state(SZrState* state) {
-    if (!state) return;
-    
-    SZrGlobalState* global = state->global;
-    if (global) {
-        ZrCore_GlobalState_Free(global);
+    ZrTests_State_Destroy(state);
+}
+
+static SZrAstNode* get_script_statement(SZrAstNode* ast, TZrSize index) {
+    if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT || ast->data.script.statements == ZR_NULL ||
+        index >= ast->data.script.statements->count) {
+        return ZR_NULL;
     }
+
+    return ast->data.script.statements->nodes[index];
+}
+
+static SZrAstNode* unwrap_statement_expression(SZrAstNode* statement) {
+    if (statement == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (statement->type == ZR_AST_EXPRESSION_STATEMENT) {
+        return statement->data.expressionStatement.expr;
+    }
+
+    return statement;
 }
 
 // 测试初始化和清理
@@ -189,15 +191,11 @@ void test_integer_literal(void) {
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        if (ast->data.script.statements != ZR_NULL && ast->data.script.statements->count > 0) {
-            SZrAstNode* stmt = ast->data.script.statements->nodes[0];
-            TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, stmt->type);
-            if (stmt->data.expressionStatement.expr != ZR_NULL) {
-                SZrAstNode* expr = stmt->data.expressionStatement.expr;
-                // 表达式可能是整数字面量
-                if (expr->type == ZR_AST_INTEGER_LITERAL) {
-                    TEST_ASSERT_EQUAL_INT64(123, expr->data.integerLiteral.value);
-                }
+        {
+            SZrAstNode* expr = unwrap_statement_expression(get_script_statement(ast, 0));
+            TEST_ASSERT_NOT_NULL(expr);
+            if (expr->type == ZR_AST_INTEGER_LITERAL) {
+                TEST_ASSERT_EQUAL_INT64(123, expr->data.integerLiteral.value);
             }
         }
         ZrParser_Ast_Free(state, ast);
@@ -549,13 +547,10 @@ void test_unary_expression(void) {
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        if (ast->data.script.statements != ZR_NULL && ast->data.script.statements->count > 0) {
-            SZrAstNode* stmt = ast->data.script.statements->nodes[0];
-            TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, stmt->type);
-            if (stmt->data.expressionStatement.expr != ZR_NULL) {
-                SZrAstNode* expr = stmt->data.expressionStatement.expr;
-                TEST_ASSERT_EQUAL_INT(ZR_AST_UNARY_EXPRESSION, expr->type);
-            }
+        {
+            SZrAstNode* expr = unwrap_statement_expression(get_script_statement(ast, 0));
+            TEST_ASSERT_NOT_NULL(expr);
+            TEST_ASSERT_EQUAL_INT(ZR_AST_UNARY_EXPRESSION, expr->type);
         }
         ZrParser_Ast_Free(state, ast);
     } else {
@@ -564,6 +559,75 @@ void test_unary_expression(void) {
         TEST_FAIL_MESSAGE("Test assertion failed");
     }
     
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_prototype_construction_expression_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Prototype Construction Expression Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Prototype construction parsing",
+              "Testing parsing of `$(math.Vector3)(1.0, 2.0, 3.0)` as a valid construction expression");
+    {
+        const char *source =
+                "var math = import(\"zr.math\");\n"
+                "$(math.Vector3)(1.0, 2.0, 3.0);";
+        SZrString *sourceName = ZrCore_String_Create(state, "prototype_construct.zr", 22);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+        TEST_ASSERT_NOT_NULL(unwrap_statement_expression(get_script_statement(ast, 1)));
+
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_native_boxed_new_expression_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Boxed New Expression Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Native boxed new parsing",
+              "Testing parsing of `new math.Tensor(...)` inside a variable initializer");
+    {
+        const char *source =
+                "var math = import(\"zr.math\");\n"
+                "var tensor = new math.Tensor([2, 2], [1.0, 2.0, 3.0, 4.0]);";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_boxed_new.zr", 19);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, ast->data.script.statements->nodes[1]->type);
+
+        ZrParser_Ast_Free(state, ast);
+    }
+
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
     destroy_test_state(state);
@@ -589,13 +653,10 @@ void test_conditional_expression(void) {
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        if (ast->data.script.statements != ZR_NULL && ast->data.script.statements->count > 0) {
-            SZrAstNode* stmt = ast->data.script.statements->nodes[0];
-            TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, stmt->type);
-            if (stmt->data.expressionStatement.expr != ZR_NULL) {
-                SZrAstNode* expr = stmt->data.expressionStatement.expr;
-                TEST_ASSERT_EQUAL_INT(ZR_AST_CONDITIONAL_EXPRESSION, expr->type);
-            }
+        {
+            SZrAstNode* expr = unwrap_statement_expression(get_script_statement(ast, 0));
+            TEST_ASSERT_NOT_NULL(expr);
+            TEST_ASSERT_EQUAL_INT(ZR_AST_CONDITIONAL_EXPRESSION, expr->type);
         }
         ZrParser_Ast_Free(state, ast);
     } else {
@@ -629,15 +690,11 @@ void test_array_literal(void) {
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        if (ast->data.script.statements != ZR_NULL && ast->data.script.statements->count > 0) {
-            SZrAstNode* stmt = ast->data.script.statements->nodes[0];
-            TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, stmt->type);
-            if (stmt->data.expressionStatement.expr != ZR_NULL) {
-                SZrAstNode* expr = stmt->data.expressionStatement.expr;
-                // 可能是数组字面量或主表达式包装
-                TEST_ASSERT_TRUE(expr->type == ZR_AST_ARRAY_LITERAL || 
-                                expr->type == ZR_AST_PRIMARY_EXPRESSION);
-            }
+        {
+            SZrAstNode* expr = unwrap_statement_expression(get_script_statement(ast, 0));
+            TEST_ASSERT_NOT_NULL(expr);
+            TEST_ASSERT_TRUE(expr->type == ZR_AST_ARRAY_LITERAL ||
+                             expr->type == ZR_AST_PRIMARY_EXPRESSION);
         }
         ZrParser_Ast_Free(state, ast);
     } else {
@@ -671,15 +728,11 @@ void test_object_literal(void) {
     
     if (ast != ZR_NULL) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        if (ast->data.script.statements != ZR_NULL && ast->data.script.statements->count > 0) {
-            SZrAstNode* stmt = ast->data.script.statements->nodes[0];
-            TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, stmt->type);
-            if (stmt->data.expressionStatement.expr != ZR_NULL) {
-                SZrAstNode* expr = stmt->data.expressionStatement.expr;
-                // 可能是对象字面量或主表达式包装
-                TEST_ASSERT_TRUE(expr->type == ZR_AST_OBJECT_LITERAL || 
-                                expr->type == ZR_AST_PRIMARY_EXPRESSION);
-            }
+        {
+            SZrAstNode* expr = unwrap_statement_expression(get_script_statement(ast, 0));
+            TEST_ASSERT_NOT_NULL(expr);
+            TEST_ASSERT_TRUE(expr->type == ZR_AST_OBJECT_LITERAL ||
+                             expr->type == ZR_AST_PRIMARY_EXPRESSION);
         }
         ZrParser_Ast_Free(state, ast);
     } else {
@@ -965,17 +1018,9 @@ void test_simple_zr_file(void) {
     TEST_INFO("Simple.zr file parsing", 
               "Testing parsing of complete simple.zr file with all syntax features");
     
-    // 读取测试文件（从构建目录）
-    FILE* file = fopen("tests/parser/test_simple.zr", "r");
-    if (file == ZR_NULL) {
-        // 尝试从当前目录读取
-        file = fopen("test_simple.zr", "r");
-    }
-    if (file == ZR_NULL) {
-        // 尝试从源目录读取
-        file = fopen("../../tests/parser/test_simple.zr", "r");
-    }
-    if (file == ZR_NULL) {
+    TZrSize readSize = 0;
+    char* source = read_parser_fixture("test_simple.zr", &readSize);
+    if (source == ZR_NULL) {
         // 如果文件不存在，跳过测试
         timer.endTime = clock();
         printf("Skip - Cost Time:%.3fms - %s:\n Cannot find test_simple.zr file\n", 
@@ -984,24 +1029,6 @@ void test_simple_zr_file(void) {
         TEST_DIVIDER();
         return;
     }
-    
-    // 获取文件大小
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    // 读取文件内容
-    char* source = (char*)malloc(fileSize + 1);
-    if (source == ZR_NULL) {
-        fclose(file);
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to allocate memory for file content");
-        destroy_test_state(state);
-        return;
-    }
-    
-    size_t readSize = fread(source, 1, fileSize, file);
-    fclose(file);
-    source[readSize] = '\0';
     
     SZrString* sourceName = ZrCore_String_Create(state, "test_simple.zr", 15);
     SZrAstNode* ast = ZrParser_Parse(state, source, readSize, sourceName);
@@ -1040,15 +1067,9 @@ void test_compiler_generate_files(void) {
     TEST_INFO("Compiler file generation", 
               "Testing compilation of test_simple.zr and generation of .zro binary and .zri intermediate files");
     
-    // 读取测试文件
-    FILE* file = fopen("tests/parser/test_simple.zr", "r");
-    if (file == ZR_NULL) {
-        file = fopen("test_simple.zr", "r");
-    }
-    if (file == ZR_NULL) {
-        file = fopen("../../tests/parser/test_simple.zr", "r");
-    }
-    if (file == ZR_NULL) {
+    TZrSize readSize = 0;
+    char* source = read_parser_fixture("test_simple.zr", &readSize);
+    if (source == ZR_NULL) {
         timer.endTime = clock();
         printf("Skip - Cost Time:%.3fms - %s:\n Cannot find test_simple.zr file\n", 
                0.0, testSummary);
@@ -1056,24 +1077,6 @@ void test_compiler_generate_files(void) {
         TEST_DIVIDER();
         return;
     }
-    
-    // 获取文件大小
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    // 读取文件内容
-    char* source = (char*)malloc(fileSize + 1);
-    if (source == ZR_NULL) {
-        fclose(file);
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to allocate memory for file content");
-        destroy_test_state(state);
-        return;
-    }
-    
-    size_t readSize = fread(source, 1, fileSize, file);
-    fclose(file);
-    source[readSize] = '\0';
     
     // 解析 AST
     SZrString* sourceName = ZrCore_String_Create(state, "test_simple.zr", 15);
@@ -1089,7 +1092,8 @@ void test_compiler_generate_files(void) {
     // AST 节点类型验证（不输出调试信息）
     
     // 输出语法树到 .zrs 文件
-    const char* zrsFileName = "test_simple.zrs";
+    char zrsFileName[ZR_TESTS_PATH_MAX];
+    TEST_ASSERT_TRUE(get_parser_generated_path("test_simple", "ast", ".zrs", zrsFileName, sizeof(zrsFileName)));
     unsigned char writeSyntaxTreeResult = ZrParser_Writer_WriteSyntaxTreeFile(state, ast, zrsFileName);
     if (writeSyntaxTreeResult) {
         print_generated_file_path(".zrs syntax tree file", zrsFileName);
@@ -1107,7 +1111,8 @@ void test_compiler_generate_files(void) {
     }
     
     // 生成 .zro 二进制文件
-    const char* zroFileName = "test_simple.zro";
+    char zroFileName[ZR_TESTS_PATH_MAX];
+    TEST_ASSERT_TRUE(get_parser_generated_path("test_simple", "binary", ".zro", zroFileName, sizeof(zroFileName)));
     unsigned char writeBinaryResult = ZrParser_Writer_WriteBinaryFile(state, function, zroFileName);
     if (!writeBinaryResult) {
         free(source);
@@ -1121,7 +1126,8 @@ void test_compiler_generate_files(void) {
     print_generated_file_path(".zro binary file", zroFileName);
     
     // 生成 .zri 明文中间文件
-    const char* zriFileName = "test_simple.zri";
+    char zriFileName[ZR_TESTS_PATH_MAX];
+    TEST_ASSERT_TRUE(get_parser_generated_path("test_simple", "intermediate", ".zri", zriFileName, sizeof(zriFileName)));
     unsigned char writeIntermediateResult = ZrParser_Writer_WriteIntermediateFile(state, function, zriFileName);
     if (!writeIntermediateResult) {
         free(source);
@@ -1461,6 +1467,8 @@ int main(void) {
     // 表达式测试
     RUN_TEST(test_binary_expression);
     RUN_TEST(test_unary_expression);
+    RUN_TEST(test_prototype_construction_expression_parsing);
+    RUN_TEST(test_native_boxed_new_expression_parsing);
     RUN_TEST(test_conditional_expression);
     RUN_TEST(test_array_literal);
     RUN_TEST(test_object_literal);

@@ -10,6 +10,8 @@
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_lib_math/module.h"
+#include "zr_vm_lib_system/module.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
@@ -101,6 +103,8 @@ static SZrState *create_test_state(void) {
     SZrState *mainState = global->mainThreadState;
     if (mainState) {
         ZrCore_GlobalState_InitRegistry(mainState, global);
+        ZrVmLibMath_Register(global);
+        ZrVmLibSystem_Register(global);
     }
 
     return mainState;
@@ -1225,6 +1229,515 @@ void test_type_inference_template_string_literal_is_string(void) {
     TEST_DIVIDER();
 }
 
+void test_type_inference_import_native_module_keeps_module_name(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Import Native Module Keeps Module Name";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source = "var math = import(\"zr.math\");";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_import_test.zr", 21);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+        TZrBool success;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_TRUE(ast->data.script.statements->count > 0);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION,
+                              ast->data.script.statements->nodes[0]->type);
+
+        expr = ast->data.script.statements->nodes[0]->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, expr->type);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        success = ZrParser_ExpressionType_Infer(cs, expr, &result);
+
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("zr.math", ZrCore_String_GetNativeString(result.typeName));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_type_inference_native_prototype_construction_returns_native_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Prototype Construction Returns Native Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var math = import(\"zr.math\");"
+                "$math.Vector3(1.0, 2.0, 3.0);";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_type_test.zr", 27);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Vector3", ZrCore_String_GetNativeString(result.typeName));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_type_inference_rejects_ordinary_prototype_call(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Rejects Ordinary Prototype Call";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var math = import(\"zr.math\");"
+                "math.Vector3(1.0, 2.0, 3.0);";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_plain_call_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage,
+                                    "Prototype references are not callable; use $target(...) or new target(...)"));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_type_inference_native_boxed_new_returns_registered_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Boxed New Returns Registered Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var math = import(\"zr.math\");"
+                "new math.Tensor([2, 2], [1.0, 2.0, 3.0, 4.0]);";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_tensor_new_type_test.zr", 30);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Tensor", ZrCore_String_GetNativeString(result.typeName));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_type_inference_native_instance_method_uses_registered_return_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Instance Method Uses Registered Return Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var math = import(\"zr.math\");"
+                "var v = $math.Vector3(1.0, 2.0, 3.0);"
+                "v.length();";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_method_type_test.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_DOUBLE, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_type_inference_native_struct_field_access_uses_registered_field_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Struct Field Access Uses Registered Field Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var system = import(\"zr.system\");"
+                "system.vm.state().loadedModuleCount;";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_vm_state_field_type_test.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_type_inference_native_nested_module_method_call_returns_null(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Nested Module Method Call Returns Null";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var system = import(\"zr.system\");"
+                "system.console.printLine(\"hello\");";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_system_console_type_test.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_type_inference_native_fs_info_field_uses_registered_field_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Fs Info Field Uses Registered Field Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var system = import(\"zr.system\");"
+                "system.fs.getInfo(system.fs.currentDirectory()).modifiedMilliseconds;";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_system_fs_info_type_test.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_type_inference_native_process_arguments_is_array(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Process Arguments Is Array";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var system = import(\"zr.system\");"
+                "system.process.arguments;";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_system_process_arguments_type_test.zr", 43);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_type_inference_native_vm_loaded_modules_element_field_uses_registered_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Vm Loaded Modules Element Field Uses Registered Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var system = import(\"zr.system\");"
+                "system.vm.loadedModules()[0].sourcePath;";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_vm_loaded_modules_field_type_test.zr", 43);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // 主测试函数
 int main(void) {
     printf("\n");
@@ -1253,6 +1766,16 @@ int main(void) {
     RUN_TEST(test_type_inference_float_literal);
     RUN_TEST(test_type_inference_string_literal);
     RUN_TEST(test_type_inference_template_string_literal_is_string);
+    RUN_TEST(test_type_inference_import_native_module_keeps_module_name);
+    RUN_TEST(test_type_inference_native_prototype_construction_returns_native_type);
+    RUN_TEST(test_type_inference_rejects_ordinary_prototype_call);
+    RUN_TEST(test_type_inference_native_boxed_new_returns_registered_type);
+    RUN_TEST(test_type_inference_native_instance_method_uses_registered_return_type);
+    RUN_TEST(test_type_inference_native_nested_module_method_call_returns_null);
+    RUN_TEST(test_type_inference_native_fs_info_field_uses_registered_field_type);
+    RUN_TEST(test_type_inference_native_process_arguments_is_array);
+    RUN_TEST(test_type_inference_native_struct_field_access_uses_registered_field_type);
+    RUN_TEST(test_type_inference_native_vm_loaded_modules_element_field_uses_registered_type);
     RUN_TEST(test_type_inference_boolean_literal);
 
     // 表达式类型推断测试

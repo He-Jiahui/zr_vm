@@ -8,8 +8,6 @@ file(TO_CMAKE_PATH "${SCRIPTS_BINARY_DIR_NORMALIZED}" SCRIPTS_BINARY_DIR_NORMALI
 set(SCRIPTS_COMMON_SOURCES
     test_utils.c
     ${CMAKE_SOURCE_DIR}/tests/test_support.c
-    ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/cJSON.c
-    ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src/unity.c
 )
 
 function(zr_vm_configure_scripts_target target_name)
@@ -19,8 +17,6 @@ function(zr_vm_configure_scripts_target target_name)
         ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
         ${CMAKE_SOURCE_DIR}/zr_vm_core/include
         ${CMAKE_SOURCE_DIR}/zr_vm_common/include
-        ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON
-        ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src
     )
 
     if (BUILD_SHARED_LIB)
@@ -29,8 +25,10 @@ function(zr_vm_configure_scripts_target target_name)
         target_link_libraries(${target_name} PRIVATE zr_vm_parser_static zr_vm_core_static)
     endif()
 
+    zr_link_third_party_for_target(${target_name} "zr_c_json")
+    zr_configure_unity_test(${target_name})
+
     target_compile_definitions(${target_name} PRIVATE
-        UNITY_USE_FLUSH_STDOUT
         ZR_VM_SCRIPTS_SOURCE_DIR="${SCRIPTS_SOURCE_DIR_NORMALIZED}"
         ZR_VM_SCRIPTS_BINARY_DIR="${SCRIPTS_BINARY_DIR_NORMALIZED}"
     )

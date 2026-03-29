@@ -178,6 +178,7 @@ typedef struct SZrTypePrototypeInfo {
     SZrString *name;                    // 类型名称
     EZrObjectPrototypeType type;        // STRUCT 或 CLASS
     EZrAccessModifier accessModifier;   // 访问修饰符
+    TZrBool isImportedNative;           // 是否为仅用于编译期解析的原生导入类型
     SZrArray inherits;                  // 继承的类型引用（SZrString* 数组，存储类型名称字符串）
     SZrArray members;                   // 成员信息（字段、方法等，存储 SZrTypeMemberInfo）
 } SZrTypePrototypeInfo;
@@ -324,5 +325,9 @@ ZR_PARSER_API void ZrParser_ToGlobalState_Register(struct SZrState *state);
 
 // 内部辅助函数（在 compiler.c 中实现）
 // 这些函数用于指令生成、常量管理、变量管理等
+ZR_PARSER_API TZrSize ZrParser_Compiler_GetLocalStackFloor(const SZrCompilerState *cs);
+ZR_PARSER_API void ZrParser_Compiler_TrimStackToCount(SZrCompilerState *cs, TZrSize targetCount);
+ZR_PARSER_API void ZrParser_Compiler_TrimStackToSlot(SZrCompilerState *cs, TZrUInt32 slot);
+ZR_PARSER_API void ZrParser_Compiler_TrimStackBy(SZrCompilerState *cs, TZrSize amount);
 
 #endif //ZR_VM_PARSER_COMPILER_H

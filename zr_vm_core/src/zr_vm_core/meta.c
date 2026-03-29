@@ -101,7 +101,8 @@ static TZrInt64 meta_to_string_object(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
     SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrObject *object = ZR_CAST_OBJECT(state, self->value.object);
+    SZrTypeValue stableSelf = *self;
+    SZrObject *object = ZR_CAST_OBJECT(state, stableSelf.value.object);
     SZrString *result = ZR_NULL;
 
     // 尝试调用对象的 TO_STRING 元方法（递归查找）
@@ -110,10 +111,10 @@ static TZrInt64 meta_to_string_object(SZrState *state) {
         // 如果对象有自己的 TO_STRING 元方法，调用它
         // 将 meta->function 放到栈上，self 作为参数
         ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-        ZrCore_Stack_CopyValue(state, base + 1, self);
+        ZrCore_Stack_CopyValue(state, base + 1, &stableSelf);
         state->stackTop.valuePointer = base + 2;
         // 调用元方法
-        ZrCore_Function_CallWithoutYield(state, base, 1);
+        base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
         // 返回值在 base 位置
         SZrTypeValue *returnValue = ZrCore_Stack_GetValue(base);
         if (returnValue->type == ZR_VALUE_TYPE_STRING) {
@@ -204,15 +205,16 @@ static TZrInt64 meta_to_bool_object(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
     SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrObject *object = ZR_CAST_OBJECT(state, self->value.object);
+    SZrTypeValue stableSelf = *self;
+    SZrObject *object = ZR_CAST_OBJECT(state, stableSelf.value.object);
 
     // 尝试调用对象的 TO_BOOL 元方法
     SZrMeta *meta = ZrCore_Object_GetMetaRecursively(state->global, object, ZR_META_TO_BOOL);
     if (meta != ZR_NULL && meta->function != ZR_NULL) {
         ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-        ZrCore_Stack_CopyValue(state, base + 1, self);
+        ZrCore_Stack_CopyValue(state, base + 1, &stableSelf);
         state->stackTop.valuePointer = base + 2;
-        ZrCore_Function_CallWithoutYield(state, base, 1);
+        base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
         SZrTypeValue *returnValue = ZrCore_Stack_GetValue(base);
         if (returnValue->type == ZR_VALUE_TYPE_BOOL) {
             ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), returnValue);

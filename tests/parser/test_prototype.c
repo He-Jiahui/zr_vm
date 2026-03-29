@@ -43,6 +43,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
+#include "test_support.h"
 
 // 测试时间测量结构
 typedef struct {
@@ -120,118 +121,85 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
 
 // 读取文件内容
 static char *read_file_content(const char *filename, TZrSize *size) {
-    FILE *file = fopen(filename, "rb");
-    if (file == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    char *content = (char *) malloc(fileSize + 1);
-    if (content == ZR_NULL) {
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    TZrSize bytesRead = fread(content, 1, fileSize, file);
-    content[bytesRead] = '\0';
-    fclose(file);
-
-    if (size != ZR_NULL) {
-        *size = bytesRead;
-    }
-
-    return content;
+    return ZrTests_ReadTextFile(filename, size);
 }
 
 // 查找测试文件路径
 static char *find_test_file(const char *filename) {
-    char *paths[4];
-    // 第一个路径：当前目录（需要复制，因为 filename 是 const）
-    TZrSize filenameLen = strlen(filename);
-    paths[0] = (char *) malloc(filenameLen + 1);
-    if (paths[0] != ZR_NULL) {
-        memcpy(paths[0], filename, filenameLen + 1);
-    }
-    paths[1] = ZR_NULL; // 将在下面填充
-    paths[2] = ZR_NULL; // 将在下面填充
-    paths[3] = ZR_NULL;
-
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) != ZR_NULL) {
-        TZrSize cwdLen = strlen(cwd);
-        paths[1] = (char *) malloc(cwdLen + filenameLen + 20);
-        if (paths[1] != ZR_NULL) {
-            sprintf(paths[1], "%s/%s", cwd, filename);
-        }
-
-        paths[2] = (char *) malloc(cwdLen + filenameLen + 30);
-        if (paths[2] != ZR_NULL) {
-            sprintf(paths[2], "%s/tests/parser/%s", cwd, filename);
-        }
-    }
-
+    char resolved[ZR_TESTS_PATH_MAX];
+    TZrSize length = 0;
     char *resultPath = ZR_NULL;
-    for (int i = 0; i < 3 && paths[i] != ZR_NULL; i++) {
-        FILE *testFile = fopen(paths[i], "r");
-        if (testFile != ZR_NULL) {
-            fclose(testFile);
-            // 确保返回的路径始终是堆分配的，便于调用方释放
-            resultPath = paths[i];
-            // 释放其他未使用的路径
-            for (int j = 0; j < 3; j++) {
-                if (j != i && paths[j] != ZR_NULL) {
-                    free(paths[j]);
-                }
-            }
-            return resultPath;
-        }
+
+    if (!ZrTests_Path_GetParserFixture(filename, resolved, sizeof(resolved))) {
+        return ZR_NULL;
     }
 
-    // 如果所有路径都未找到，释放所有分配的路径
-    for (int i = 0; i < 3; i++) {
-        if (paths[i] != ZR_NULL) {
-            free(paths[i]);
-        }
+    length = strlen(resolved);
+    resultPath = (char *) malloc(length + 1);
+    if (resultPath != ZR_NULL) {
+        memcpy(resultPath, resolved, length + 1);
     }
 
-    return ZR_NULL;
+    return resultPath;
 }
 
 // 生成输出文件名（将 .zr 替换为新的扩展名）
 static char *generate_output_filename(const char *inputFile, const char *newExt) {
+    const char *fileName = inputFile;
+    const char *forwardSlash;
+    const char *backSlash;
+    const char *extPos;
+    const char *subDir = "runtime";
+    TZrSize baseLen;
+    char baseName[256];
+    char resolved[ZR_TESTS_PATH_MAX];
+    char *outputFile;
+
     if (inputFile == ZR_NULL || newExt == ZR_NULL) {
         return ZR_NULL;
     }
-    
-    TZrSize inputLen = strlen(inputFile);
-    TZrSize extLen = strlen(newExt);
-    
-    // 查找 .zr 的位置
-    const char *extPos = strrchr(inputFile, '.');
-    TZrSize baseLen;
-    if (extPos != ZR_NULL && strcmp(extPos, ".zr") == 0) {
-        // 找到 .zr 扩展名
-        baseLen = extPos - inputFile;
-    } else {
-        // 没有找到 .zr 扩展名，使用整个文件名
-        baseLen = inputLen;
+
+    forwardSlash = strrchr(inputFile, '/');
+    backSlash = strrchr(inputFile, '\\');
+    if (forwardSlash != ZR_NULL || backSlash != ZR_NULL) {
+        const char *lastSeparator = forwardSlash;
+        if (lastSeparator == ZR_NULL || (backSlash != ZR_NULL && backSlash > lastSeparator)) {
+            lastSeparator = backSlash;
+        }
+        fileName = lastSeparator + 1;
     }
-    
-    // 分配新文件名（base + newExt + null terminator）
-    char *outputFile = (char *)malloc(baseLen + extLen + 1);
-    if (outputFile == ZR_NULL) {
+
+    extPos = strrchr(fileName, '.');
+    if (extPos != ZR_NULL && strcmp(extPos, ".zr") == 0) {
+        baseLen = (TZrSize)(extPos - fileName);
+    } else {
+        baseLen = strlen(fileName);
+    }
+
+    if (baseLen >= sizeof(baseName)) {
         return ZR_NULL;
     }
-    
-    // 复制基础文件名
-    memcpy(outputFile, inputFile, baseLen);
-    // 复制新扩展名
-    memcpy(outputFile + baseLen, newExt, extLen);
-    outputFile[baseLen + extLen] = '\0';
-    
+
+    memcpy(baseName, fileName, baseLen);
+    baseName[baseLen] = '\0';
+
+    if (strcmp(newExt, ".zrs") == 0) {
+        subDir = "ast";
+    } else if (strcmp(newExt, ".zri") == 0) {
+        subDir = "intermediate";
+    } else if (strcmp(newExt, ".zro") == 0) {
+        subDir = "binary";
+    }
+
+    if (!ZrTests_Path_GetGeneratedArtifact("language_pipeline", subDir, baseName, newExt, resolved, sizeof(resolved))) {
+        return ZR_NULL;
+    }
+
+    outputFile = (char *)malloc(strlen(resolved) + 1);
+    if (outputFile != ZR_NULL) {
+        strcpy(outputFile, resolved);
+    }
+
     return outputFile;
 }
 

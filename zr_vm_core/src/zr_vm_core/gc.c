@@ -24,6 +24,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/module.h"
 #include "zr_vm_core/native.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
@@ -1311,6 +1312,29 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
                     }
                 }
             }
+            if (obj->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+                SZrObjectModule *module = (SZrObjectModule *)obj;
+
+                if (module->moduleName != ZR_NULL) {
+                    garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(module->moduleName));
+                    work++;
+                }
+                if (module->fullPath != ZR_NULL) {
+                    garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(module->fullPath));
+                    work++;
+                }
+                if (module->proNodeMap.isValid) {
+                    for (TZrSize i = 0; i < module->proNodeMap.capacity; i++) {
+                        SZrHashKeyValuePair *pair = module->proNodeMap.buckets[i];
+                        while (pair != ZR_NULL) {
+                            garbage_collector_mark_value(state, &pair->key);
+                            garbage_collector_mark_value(state, &pair->value);
+                            pair = pair->next;
+                            work++;
+                        }
+                    }
+                }
+            }
             // 标记原型
             if (obj->prototype != ZR_NULL) {
                 garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(obj->prototype));
@@ -1363,6 +1387,16 @@ TZrSize ZrGarbageCollectorPropagateMark(struct SZrState *state) {
                 }
             }
             work = closure->closureValueCount + (closure->function != ZR_NULL ? 1 : 0);
+            break;
+        }
+        case ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE: {
+            SZrClosureValue *closureValue = ZR_CAST_VM_CLOSURE_VALUE(state, o);
+            SZrTypeValue *value = closureValue != ZR_NULL ? ZrCore_ClosureValue_GetValue(closureValue) : ZR_NULL;
+
+            if (value != ZR_NULL) {
+                garbage_collector_mark_value(state, value);
+                work = 1;
+            }
             break;
         }
         case ZR_RAW_OBJECT_TYPE_FUNCTION: {

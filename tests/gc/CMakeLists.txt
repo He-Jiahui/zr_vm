@@ -9,14 +9,6 @@ set(GC_TEST_SOURCES
 # 创建测试可执行文件
 add_executable(zr_vm_gc_test ${GC_TEST_SOURCES})
 
-# 包含Unity测试框架
-target_include_directories(zr_vm_gc_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src)
-
-# 添加Unity源文件
-set(UNITY_SOURCES
-    ${CMAKE_SOURCE_DIR}/third_party/zr_c_json/cJSON/tests/unity/src/unity.c
-)
-
 # 链接必要的库
 if (BUILD_SHARED_LIB)
     target_link_libraries(zr_vm_gc_test PRIVATE zr_vm_core_shared)
@@ -24,23 +16,16 @@ else()
     target_link_libraries(zr_vm_gc_test PRIVATE zr_vm_core_static)
 endif()
 
-# 添加Unity源文件到目标
-target_sources(zr_vm_gc_test PRIVATE ${UNITY_SOURCES})
-
 # 包含头文件目录
 target_include_directories(zr_vm_gc_test PRIVATE 
     ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
 )
 
-# 显式启用UNITY输出
-target_compile_definitions(zr_vm_gc_test PRIVATE
-    UNITY_USE_FLUSH_STDOUT
-)
+zr_configure_unity_test(zr_vm_gc_test)
 
 # 添加测试目标
 enable_testing()
 add_test(NAME gc_tests COMMAND zr_vm_gc_test)
-
 
 

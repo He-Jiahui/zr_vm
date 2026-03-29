@@ -48,6 +48,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/stack.h"
+#include "test_support.h"
 
 // 测试时间测量结构
 typedef struct {
@@ -124,88 +125,26 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
 
 // 读取文件内容
 static char* read_file_content(const char* filename, TZrSize* size) {
-    FILE* file = fopen(filename, "rb");
-    if (file == ZR_NULL) {
-        return ZR_NULL;
-    }
-    
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    char* content = (char*)malloc(fileSize + 1);
-    if (content == ZR_NULL) {
-        fclose(file);
-        return ZR_NULL;
-    }
-    
-    TZrSize bytesRead = fread(content, 1, fileSize, file);
-    content[bytesRead] = '\0';
-    fclose(file);
-    
-    if (size != ZR_NULL) {
-        *size = bytesRead;
-    }
-    
-    return content;
+    return ZrTests_ReadTextFile(filename, size);
 }
 
 // 查找测试文件路径
 static char* find_test_file(const char* filename) {
-    char* paths[] = {
-        filename,  // 当前目录
-        "",  // 将在下面填充
-        "",  // 将在下面填充
-        ZR_NULL
-    };
-    
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) != ZR_NULL) {
-        TZrSize cwdLen = strlen(cwd);
-        TZrSize filenameLen = strlen(filename);
-        paths[1] = (char*)malloc(cwdLen + filenameLen + 20);
-        if (paths[1] != ZR_NULL) {
-            sprintf(paths[1], "%s/%s", cwd, filename);
-        }
-        
-        paths[2] = (char*)malloc(cwdLen + filenameLen + 30);
-        if (paths[2] != ZR_NULL) {
-            sprintf(paths[2], "%s/tests/parser/%s", cwd, filename);
-        }
+    char resolved[ZR_TESTS_PATH_MAX];
+    TZrSize length = 0;
+    char* result = ZR_NULL;
+
+    if (!ZrTests_Path_GetParserFixture(filename, resolved, sizeof(resolved))) {
+        return ZR_NULL;
     }
-    
-    for (int i = 0; paths[i] != ZR_NULL; i++) {
-        FILE* testFile = fopen(paths[i], "r");
-        if (testFile != ZR_NULL) {
-            fclose(testFile);
-            // 确保返回的路径始终是堆分配的，便于调用方释放
-            char* resultPath = ZR_NULL;
-            if (i == 0) {
-                TZrSize len = strlen(paths[0]);
-                resultPath = (char*)malloc(len + 1);
-                if (resultPath != ZR_NULL) {
-                    memcpy(resultPath, paths[0], len + 1);
-                }
-                // 释放后续分配的备用路径
-                if (paths[1] != ZR_NULL) free(paths[1]);
-                if (paths[2] != ZR_NULL) free(paths[2]);
-            } else {
-                // 保留命中的分配路径，释放其他分配的备用路径
-                resultPath = paths[i];
-                for (int j = 1; j < 3; j++) {
-                    if (j != i && paths[j] != ZR_NULL) {
-                        free(paths[j]);
-                    }
-                }
-            }
-            return resultPath;
-        }
-        if (i > 0 && paths[i] != ZR_NULL) {
-            free(paths[i]);
-        }
+
+    length = strlen(resolved);
+    result = (char*)malloc(length + 1);
+    if (result != ZR_NULL) {
+        memcpy(result, resolved, length + 1);
     }
-    
-    return ZR_NULL;
+
+    return result;
 }
 
 // ==================== Lexer 测试 ====================

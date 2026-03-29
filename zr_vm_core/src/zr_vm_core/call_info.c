@@ -21,6 +21,8 @@ void ZrCore_CallInfo_EntryNativeInit(SZrState *state, SZrCallInfo *callInfo, TZr
     callInfo->context.nativeContext.continuationFunction = ZR_NULL;
     callInfo->expectedReturnCount = 0;
     callInfo->returnDestination = ZR_NULL;
+    callInfo->returnDestinationReusableOffset = 0;
+    callInfo->hasReturnDestination = ZR_FALSE;
     // ready to call native function
     ZrCore_Value_ResetAsNull(&functionIndex.valuePointer->value);
     callInfo->functionTop.valuePointer = functionTop.valuePointer;

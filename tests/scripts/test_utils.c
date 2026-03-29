@@ -10,56 +10,16 @@
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "test_support.h"
-#include <sys/stat.h>
-
-#ifndef ZR_VM_SCRIPTS_SOURCE_DIR
-#define ZR_VM_SCRIPTS_SOURCE_DIR "tests/scripts"
-#endif
-
-#ifndef ZR_VM_SCRIPTS_BINARY_DIR
-#define ZR_VM_SCRIPTS_BINARY_DIR "tests/scripts"
-#endif
 
 // 包含cJSON库
 #ifdef __cplusplus
 extern "C" {
 #endif
 // 使用相对路径包含cJSON
-#include "../../../third_party/zr_c_json/cJSON/cJSON.h"
+#include "cJSON/cJSON.h"
 #ifdef __cplusplus
 }
 #endif
-
-#ifdef _MSC_VER
-    #include <direct.h>
-    #define mkdir(path, mode) _mkdir(path)
-#else
-    #include <unistd.h>
-#endif
-
-static void ensure_directory(const TZrChar* path) {
-    if (path == ZR_NULL || path[0] == '\0') {
-        return;
-    }
-    mkdir(path, 0755);
-}
-
-static void build_output_path(const TZrChar* rootDir, const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension,
-                              TZrChar* outPath, TZrSize maxLen) {
-    if (rootDir == ZR_NULL || baseName == ZR_NULL || subDir == ZR_NULL || extension == ZR_NULL || outPath == ZR_NULL ||
-        maxLen == 0) {
-        return;
-    }
-
-    TZrChar outputDir[1024];
-    TZrChar targetDir[1024];
-    snprintf(outputDir, sizeof(outputDir), "%s/output", rootDir);
-    snprintf(targetDir, sizeof(targetDir), "%s/%s", outputDir, subDir);
-    ensure_directory(outputDir);
-    ensure_directory(targetDir);
-
-    snprintf(outPath, maxLen, "%s/%s%s", targetDir, baseName, extension);
-}
 
 // 创建测试用的VM状态
 SZrState* create_test_state(void) {
@@ -73,44 +33,7 @@ void destroy_test_state(SZrState* state) {
 
 // 加载zr文件内容
 TZrChar* load_zr_file(const TZrChar* filepath, TZrSize* outLength) {
-    if (filepath == ZR_NULL || outLength == ZR_NULL) {
-        return ZR_NULL;
-    }
-    
-    FILE* file = fopen(filepath, "rb");
-    if (file == ZR_NULL) {
-        return ZR_NULL;
-    }
-    
-    // 获取文件大小
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    if (fileSize < 0) {
-        fclose(file);
-        return ZR_NULL;
-    }
-    
-    // 分配内存
-    TZrChar* buffer = (TZrChar*)malloc((TZrSize)fileSize + 1);
-    if (buffer == ZR_NULL) {
-        fclose(file);
-        return ZR_NULL;
-    }
-    
-    // 读取文件内容
-    TZrSize readSize = (TZrSize)fread(buffer, 1, (TZrSize)fileSize, file);
-    fclose(file);
-    
-    if (readSize != (TZrSize)fileSize) {
-        free(buffer);
-        return ZR_NULL;
-    }
-    
-    buffer[readSize] = '\0';
-    *outLength = readSize;
-    return buffer;
+    return ZrTests_ReadTextFile(filepath, outLength);
 }
 
 // 解析并编译zr代码
@@ -163,11 +86,15 @@ TZrBool execute_function(SZrState* state, SZrFunction* function, SZrTypeValue* r
 
 // 获取输出目录路径
 void get_output_path(const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension, TZrChar* outPath, TZrSize maxLen) {
-    build_output_path(ZR_VM_SCRIPTS_BINARY_DIR, baseName, subDir, extension, outPath, maxLen);
+    if (!ZrTests_Path_GetGeneratedArtifact("scripts", subDir, baseName, extension, outPath, maxLen) && maxLen > 0) {
+        outPath[0] = '\0';
+    }
 }
 
 void get_golden_output_path(const TZrChar* baseName, const TZrChar* subDir, const TZrChar* extension, TZrChar* outPath, TZrSize maxLen) {
-    build_output_path(ZR_VM_SCRIPTS_SOURCE_DIR, baseName, subDir, extension, outPath, maxLen);
+    if (!ZrTests_Path_GetGoldenArtifact(subDir, baseName, extension, outPath, maxLen) && maxLen > 0) {
+        outPath[0] = '\0';
+    }
 }
 
 void get_test_case_path(const TZrChar* fileName, TZrChar* outPath, TZrSize maxLen) {
@@ -175,7 +102,9 @@ void get_test_case_path(const TZrChar* fileName, TZrChar* outPath, TZrSize maxLe
         return;
     }
 
-    snprintf(outPath, maxLen, "%s/test_cases/%s", ZR_VM_SCRIPTS_SOURCE_DIR, fileName);
+    if (!ZrTests_Path_GetFixture("scripts", fileName, outPath, maxLen)) {
+        outPath[0] = '\0';
+    }
 }
 
 // 辅助函数：将AST节点序列化为JSON（简化版本）

@@ -1,0 +1,16 @@
+var math = import("zr.math");
+
+mixSignalImpl(scale: float) {
+    var base = $math.Complex(3.0, 4.0);
+    var normalized = base.normalized();
+    var angle = normalized.phase();
+    var vector = $math.Vector2(scale, scale * 2.0).normalized();
+    return {
+        magnitude: base.magnitude();
+        phase: angle;
+        vx: vector.x;
+        vy: vector.y;
+    };
+}
+
+pub var mixSignal = mixSignalImpl;

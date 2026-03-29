@@ -628,6 +628,7 @@ static TZrBool ct_invoke_runtime_callable(SZrCompilerState *cs,
     SZrState *state;
     TZrStackValuePointer base;
     TZrSize argCount;
+    SZrFunctionStackAnchor baseAnchor;
 
     if (cs == ZR_NULL || callableValue == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -643,7 +644,7 @@ static TZrBool ct_invoke_runtime_callable(SZrCompilerState *cs,
     state = cs->state;
     argCount = (call != ZR_NULL && call->args != ZR_NULL) ? call->args->count : 0;
     base = state->stackTop.valuePointer;
-    base = ZrCore_Function_CheckStackAndGc(state, argCount + 1, base);
+    base = ZrCore_Function_CheckStackAndAnchor(state, argCount + 1, base, base, &baseAnchor);
     state->stackTop.valuePointer = base;
     ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), callableValue);
     state->stackTop.valuePointer = base + 1;
@@ -652,15 +653,17 @@ static TZrBool ct_invoke_runtime_callable(SZrCompilerState *cs,
         for (TZrSize i = 0; i < call->args->count; i++) {
             SZrTypeValue argValue;
             if (!evaluate_compile_time_expression_internal(cs, call->args->nodes[i], frame, &argValue)) {
+                base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
                 state->stackTop.valuePointer = base;
                 return ZR_FALSE;
             }
+            base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
             ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base + 1 + i), &argValue);
             state->stackTop.valuePointer = base + 2 + i;
         }
     }
 
-    ZrCore_Function_Call(state, base, 1);
+    base = ZrCore_Function_CallAndRestoreAnchor(state, &baseAnchor, 1);
     if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
         ZrParser_CompileTime_Error(cs, ZR_COMPILE_TIME_ERROR_ERROR,
                            "Runtime callable failed during compile-time evaluation",
@@ -931,6 +934,20 @@ static TZrBool evaluate_compile_time_expression_internal(SZrCompilerState *cs,
         case ZR_AST_PRIMARY_EXPRESSION:
             cs->isInCompileTimeContext = oldContext;
             return ct_eval_primary(cs, node, frame, result);
+        case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION:
+            ZrParser_CompileTime_Error(cs,
+                               ZR_COMPILE_TIME_ERROR_ERROR,
+                               "Prototype references are not supported in compile-time expressions",
+                               node->location);
+            cs->isInCompileTimeContext = oldContext;
+            return ZR_FALSE;
+        case ZR_AST_CONSTRUCT_EXPRESSION:
+            ZrParser_CompileTime_Error(cs,
+                               ZR_COMPILE_TIME_ERROR_ERROR,
+                               "Prototype construction is not supported in compile-time expressions",
+                               node->location);
+            cs->isInCompileTimeContext = oldContext;
+            return ZR_FALSE;
         case ZR_AST_EXPRESSION_STATEMENT:
             cs->isInCompileTimeContext = oldContext;
             return evaluate_compile_time_expression_internal(cs, node->data.expressionStatement.expr, frame, result);

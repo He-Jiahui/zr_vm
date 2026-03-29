@@ -1,0 +1,3 @@
+pub greet() {
+    return 7123;
+}

@@ -260,7 +260,7 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
 
     state->stackTop.valuePointer = callBase + 1;
     state->threadStatus = ZR_THREAD_STATUS_FINE;
-    ZrCore_Function_Call(state, callBase, 1);
+    callBase = ZrCore_Function_CallAndRestore(state, callBase, 1);
 
     if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
         ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(callBase));

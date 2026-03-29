@@ -1,0 +1,20 @@
+var math = import("zr.math");
+
+projectVectorsImpl(seed: float) {
+    var a = $math.Vector3(seed, seed + 1.0, seed + 2.0);
+    var b = $math.Vector3(seed + 3.0, seed + 4.0, seed + 5.0);
+    var dot = a.dot(b);
+    var cross = a.cross(b);
+    var matrix = math.Matrix4x4.translation(seed, seed + 2.0, seed + 4.0)
+        .mulMatrix(math.Matrix4x4.scale(2.0, 3.0, 4.0));
+    var moved = matrix.mulVector($math.Vector4(a.x, a.y, a.z, 1.0));
+    return {
+        dot: dot;
+        crossLength: cross.length();
+        movedX: moved.x;
+        movedY: moved.y;
+        movedZ: moved.z;
+    };
+}
+
+pub var projectVectors = projectVectorsImpl;

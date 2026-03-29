@@ -44,6 +44,8 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
 
     // io
     global->sourceLoader = ZR_NULL;
+    global->nativeModuleLoader = ZR_NULL;
+    global->nativeModuleLoaderUserData = ZR_NULL;
 
     // init string table
     ZrCore_StringTable_New(global);
@@ -63,6 +65,8 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
 
     // loader
     global->sourceLoader = ZR_NULL;
+    global->nativeModuleLoader = ZR_NULL;
+    global->nativeModuleLoaderUserData = ZR_NULL;
     
     // parser and compiler (初始化为NULL，需要外部注入)
     // 封装了从源代码解析到编译的全流程
@@ -194,6 +198,17 @@ void ZrCore_GlobalState_SetCompileSource(SZrGlobalState *global,
     if (global != ZR_NULL) {
         global->compileSource = compileSource;
     }
+}
+
+void ZrCore_GlobalState_SetNativeModuleLoader(SZrGlobalState *global,
+                                              FZrNativeModuleLoader loader,
+                                              TZrPtr userData) {
+    if (global == ZR_NULL) {
+        return;
+    }
+
+    global->nativeModuleLoader = loader;
+    global->nativeModuleLoaderUserData = userData;
 }
 
 

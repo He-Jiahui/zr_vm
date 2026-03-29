@@ -1,0 +1,8 @@
+var base = 7000;
+var math = import("zr.math");
+
+runImpl() {
+    return base + $math.Complex(3.0, 4.0).magnitude();
+}
+
+pub var run = runImpl;

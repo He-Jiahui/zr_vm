@@ -1,0 +1,15 @@
+var math = import("zr.math");
+
+runTensorPassImpl() {
+    var lhs = new math.Tensor([2, 2], [1.0, 2.0, 3.0, 4.0]);
+    var rhs = new math.Tensor([2, 2], [5.0, 6.0, 7.0, 8.0]);
+    var product = lhs.matmul(rhs);
+    var mixed = product.add(lhs).mulScalar(0.5);
+    return {
+        sum: mixed.sum();
+        mean: mixed.mean();
+        arr: mixed.toArray();
+    };
+}
+
+pub var runTensorPass = runTensorPassImpl;

@@ -29,6 +29,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/value.h"
+#include "test_support.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
@@ -80,90 +81,25 @@ static char* test_realpath(const char* path, char* resolved_path) {
 #define realpath test_realpath
 #endif
 
-// 简单的测试分配器
-static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
-    ZR_UNUSED_PARAMETER(userData);
-    ZR_UNUSED_PARAMETER(originalSize);
-    ZR_UNUSED_PARAMETER(flag);
-    
-    if (newSize == 0) {
-        if (pointer != ZR_NULL && (TZrPtr)pointer >= (TZrPtr)0x1000) {
-            free(pointer);
-        }
-        return ZR_NULL;
-    }
-    
-    if (pointer == ZR_NULL) {
-        return malloc(newSize);
-    } else {
-        if ((TZrPtr)pointer >= (TZrPtr)0x1000) {
-            return realloc(pointer, newSize);
-        }
-        return ZR_NULL;
-    }
-}
-
 // 创建测试状态
 static SZrState* create_test_state(void) {
-    SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState* global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
-    if (!global) return ZR_NULL;
-    
-    SZrState* mainState = global->mainThreadState;
-    if (mainState) {
-        ZrCore_GlobalState_InitRegistry(mainState, global);
-    }
-    
-    return mainState;
+    return ZrTests_State_Create(ZR_NULL);
 }
 
 // 销毁测试状态
 static void destroy_test_state(SZrState* state) {
-    if (!state) return;
-    
-    SZrGlobalState* global = state->global;
-    if (global) {
-        ZrCore_GlobalState_Free(global);
-    }
+    ZrTests_State_Destroy(state);
 }
 
 // 读取测试文件内容
 static char* read_test_file(const char* filename, size_t* outSize) {
-    FILE* file = fopen(filename, "r");
-    if (file == ZR_NULL) {
-        // 尝试其他路径
-        char path1[512];
-        snprintf(path1, sizeof(path1), "tests/parser/%s", filename);
-        file = fopen(path1, "r");
-    }
-    if (file == ZR_NULL) {
-        char path2[512];
-        snprintf(path2, sizeof(path2), "../../tests/parser/%s", filename);
-        file = fopen(path2, "r");
-    }
-    if (file == ZR_NULL) {
+    char path[ZR_TESTS_PATH_MAX];
+
+    if (!ZrTests_Path_GetParserFixture(filename, path, sizeof(path))) {
         return ZR_NULL;
     }
-    
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    char* source = (char*)malloc(fileSize + 1);
-    if (source == ZR_NULL) {
-        fclose(file);
-        return ZR_NULL;
-    }
-    
-    size_t readSize = fread(source, 1, fileSize, file);
-    fclose(file);
-    source[readSize] = '\0';
-    
-    if (outSize != ZR_NULL) {
-        *outSize = readSize;
-    }
-    
-    return source;
+
+    return ZrTests_ReadTextFile(path, outSize);
 }
 
 // 测试字符字面量解析

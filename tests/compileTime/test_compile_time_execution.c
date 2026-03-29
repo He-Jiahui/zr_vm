@@ -879,6 +879,8 @@ void test_compile_time_member_call_projection(void) {
     SZrCompileResult compileResult;
     TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+    reset_loaded_module_registry(state);
+    state->global->sourceLoader = ZR_NULL;
     TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
 
     ZrParser_CompileResult_Free(state, &compileResult);
@@ -936,6 +938,8 @@ void test_compile_time_import_member_call_projection(void) {
     SZrCompileResult compileResult;
     TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+    reset_loaded_module_registry(state);
+    state->global->sourceLoader = ZR_NULL;
     TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
 
     ZrParser_CompileResult_Free(state, &compileResult);

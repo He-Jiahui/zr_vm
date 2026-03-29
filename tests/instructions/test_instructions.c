@@ -1824,6 +1824,36 @@ static void test_getupval(void) {
     TEST_DIVIDER();
 }
 
+static void test_close_stack_value_closes_matching_upvalue(void) {
+    TEST_START("CloseStackValue closes matching upvalue");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TZrStackValuePointer slot = state->stackTop.valuePointer;
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(slot), 123);
+    state->stackTop.valuePointer = slot + 1;
+
+    SZrClosureValue *closureValue = ZrCore_Closure_FindOrCreateValue(state, slot);
+    TEST_ASSERT_NOT_NULL(closureValue);
+    TEST_ASSERT_FALSE(ZrCore_ClosureValue_IsClosed(closureValue));
+    TEST_ASSERT_EQUAL_PTR(ZrCore_Stack_GetValue(slot), ZrCore_ClosureValue_GetValue(closureValue));
+
+    ZrCore_Closure_CloseStackValue(state, slot);
+
+    TEST_ASSERT_TRUE(ZrCore_ClosureValue_IsClosed(closureValue));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(ZrCore_ClosureValue_GetValue(closureValue)->type));
+    TEST_ASSERT_EQUAL_INT64(123, ZrCore_ClosureValue_GetValue(closureValue)->value.nativeObject.nativeInt64);
+
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "CloseStackValue closes matching upvalue");
+    TEST_DIVIDER();
+}
+
 static void test_setupval(void) {
     TEST_START("SETUPVAL Instruction");
     SZrTestTimer timer;
@@ -1912,7 +1942,7 @@ static void test_create_closure(void) {
     SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, result->value.object);
     TEST_ASSERT_NOT_NULL(closure);
     TEST_ASSERT_EQUAL_PTR(function, closure->function);
-    TEST_ASSERT_EQUAL_UINT(1, closure->closureValueCount);
+    TEST_ASSERT_EQUAL_UINT(function->closureValueLength, closure->closureValueCount);
 
     ZrCore_Function_Free(state, testFunction);
     destroy_test_state(state);
@@ -2649,6 +2679,7 @@ int main(void) {
     RUN_TEST(test_get_closure);
     RUN_TEST(test_set_closure);
     RUN_TEST(test_getupval);
+    RUN_TEST(test_close_stack_value_closes_matching_upvalue);
     RUN_TEST(test_setupval);
     RUN_TEST(test_create_closure);
 

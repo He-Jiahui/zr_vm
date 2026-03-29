@@ -1,0 +1,6 @@
+{
+  "name": "import_pub_function",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

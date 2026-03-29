@@ -8,7 +8,7 @@ Set-Location $RepoRoot
 
 $codeFiles = git ls-files -- '*.h' '*.c' '*.hpp' '*.cpp'
 $codeFiles = $codeFiles | Where-Object {
-    $_ -notlike 'third_party/*' -and
+    $_ -notmatch '(^|/)third_party/' -and
     $_ -notlike 'build/*' -and
     $_ -notlike '.cache/*'
 }

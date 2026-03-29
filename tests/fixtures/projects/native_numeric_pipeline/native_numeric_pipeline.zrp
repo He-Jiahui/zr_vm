@@ -1,0 +1,6 @@
+{
+  "name": "native_numeric_pipeline",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

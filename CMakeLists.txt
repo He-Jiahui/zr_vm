@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.12)
 project(ZR_VM
         VERSION 0.0.1
-        LANGUAGES C CXX      # 支持 C 和 C++（C++ 用于 WASM 绑定）
+        LANGUAGES C          # 默认只启用 C；WASM 分支按需启用 C++
         DESCRIPTION "A ZR VM"
 )
 
@@ -40,8 +40,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 option(USE_SYSTEM_PACKAGES "Use system package manager for dependencies" ON)
 
-find_package(Threads REQUIRED)  # 必选：线程库
-
 # 为 Debug 构建添加 -DDEBUG 宏定义
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_options(-DZR_DEBUG)
@@ -67,11 +65,11 @@ if (UNIX AND NOT WIN32)
 endif ()
 
 message(STATUS "C Compiler ID: ${CMAKE_C_COMPILER_ID}")
-message(STATUS "CXX Compiler ID: ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "Compiler Version: ${CMAKE_C_COMPILER_VERSION}")
+if (CMAKE_CXX_COMPILER_LOADED)
+    message(STATUS "CXX Compiler ID: ${CMAKE_CXX_COMPILER_ID}")
+endif ()
 add_compile_options(-DZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
-
-add_subdirectory("third_party")
 
 add_subdirectory("zr_vm_common")
 
@@ -80,6 +78,10 @@ add_subdirectory("zr_vm_core")
 add_subdirectory("zr_vm_parser")
 
 add_subdirectory("zr_vm_library")
+
+add_subdirectory("zr_vm_lib_math")
+
+add_subdirectory("zr_vm_lib_system")
 
 add_subdirectory("zr_vm_language_server")
 

@@ -5,6 +5,12 @@ set(CLASSES_FULL_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_full/classes_f
 set(CLASSES_STATIC_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_static/classes_static.zrp)
 set(CLASSES_SUPER_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_super/classes_super.zrp)
 set(CLASSES_PROPERTIES_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/classes_properties/classes_properties.zrp)
+set(IMPORT_PUB_FUNCTION_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/import_pub_function/import_pub_function.zrp)
+set(IMPORT_CAPTURE_NATIVE_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/import_capture_native/import_capture_native.zrp)
+set(NATIVE_CHAIN_CALLS_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/native_chain_calls/native_chain_calls.zrp)
+set(NATIVE_VECTOR3_EXPORT_PROBE_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/native_vector3_export_probe/native_vector3_export_probe.zrp)
+set(NATIVE_VECTOR3_CAPTURE_PROBE_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/native_vector3_capture_probe/native_vector3_capture_probe.zrp)
+set(NATIVE_NUMERIC_PIPELINE_PROJECT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/native_numeric_pipeline/native_numeric_pipeline.zrp)
 
 add_executable(
     zr_vm_project_fixture_builder
@@ -142,4 +148,74 @@ set_tests_properties(zr_project_import_binary PROPERTIES
     FIXTURES_REQUIRED zr_project_import_binary_artifacts
     PASS_REGULAR_EXPRESSION "hello from import"
     FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error"
+)
+
+add_test(
+    NAME zr_project_import_pub_function
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${IMPORT_PUB_FUNCTION_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_import_pub_function PROPERTIES
+    PASS_REGULAR_EXPRESSION "7123"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error|null"
+)
+
+add_test(
+    NAME zr_project_import_capture_native
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${IMPORT_CAPTURE_NATIVE_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_import_capture_native PROPERTIES
+    PASS_REGULAR_EXPRESSION "7005"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error|null|Function value is NULL"
+)
+
+add_test(
+    NAME zr_project_native_chain_calls
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${NATIVE_CHAIN_CALLS_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_native_chain_calls PROPERTIES
+    PASS_REGULAR_EXPRESSION "5008"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error|null"
+)
+
+add_test(
+    NAME zr_project_native_vector3_export_probe
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${NATIVE_VECTOR3_EXPORT_PROBE_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_native_vector3_export_probe PROPERTIES
+    PASS_REGULAR_EXPRESSION "1"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error|null|Function value is NULL"
+)
+
+add_test(
+    NAME zr_project_native_vector3_capture_probe
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${NATIVE_VECTOR3_CAPTURE_PROBE_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_native_vector3_capture_probe PROPERTIES
+    PASS_REGULAR_EXPRESSION "6"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error|null|Function value is NULL"
+)
+
+add_test(
+    NAME zr_project_native_numeric_pipeline
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${NATIVE_NUMERIC_PIPELINE_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_native_numeric_pipeline PROPERTIES
+    PASS_REGULAR_EXPRESSION "NATIVE_NUMERIC_PIPELINE_PASS"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error|\\[closure\\]"
+)
+
+add_test(
+    NAME zr_project_native_numeric_pipeline_result
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${NATIVE_NUMERIC_PIPELINE_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_native_numeric_pipeline_result PROPERTIES
+    PASS_REGULAR_EXPRESSION "214"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error|\\[closure\\]|null"
 )

@@ -37,6 +37,8 @@ ZR_CORE_API void ZrCore_Stack_Deconstruct(struct SZrState *state, TZrStackPointe
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Stack_GetAddressFromOffset(struct SZrState *state, TZrMemoryOffset offset);
 
+ZR_CORE_API TZrBool ZrCore_Stack_GrowTo(struct SZrState *state, TZrSize requiredSize, TZrBool canThrowError);
+
 ZR_CORE_API TZrBool ZrCore_Stack_Grow(struct SZrState *state, TZrSize space, TZrBool canThrowError);
 
 ZR_CORE_API TZrBool ZrCore_Stack_CheckFullAndGrow(struct SZrState *state, TZrSize space, TZrNativeString errorMessage);

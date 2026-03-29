@@ -1,0 +1,6 @@
+{
+  "name": "import_capture_native",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

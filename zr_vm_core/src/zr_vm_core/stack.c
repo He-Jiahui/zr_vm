@@ -31,6 +31,9 @@ static void stack_mark_stack_as_relative(SZrState *state) {
     for (SZrCallInfo *callInfo = state->callInfoList; callInfo != ZR_NULL; callInfo = callInfo->previous) {
         callInfo->functionBase.reusableValueOffset = ZrStackSaveAsOffset(state, callInfo->functionBase.valuePointer);
         callInfo->functionTop.reusableValueOffset = ZrStackSaveAsOffset(state, callInfo->functionTop.valuePointer);
+        if (callInfo->hasReturnDestination) {
+            callInfo->returnDestinationReusableOffset = ZrStackSaveAsOffset(state, callInfo->returnDestination);
+        }
     }
 }
 
@@ -45,6 +48,11 @@ static void stack_mark_stack_as_absolute(SZrState *state) {
     for (SZrCallInfo *callInfo = state->callInfoList; callInfo != ZR_NULL; callInfo = callInfo->previous) {
         callInfo->functionBase.valuePointer = ZrStackLoadAsOffset(state, callInfo->functionBase.reusableValueOffset);
         callInfo->functionTop.valuePointer = ZrStackLoadAsOffset(state, callInfo->functionTop.reusableValueOffset);
+        if (callInfo->hasReturnDestination) {
+            callInfo->returnDestination = ZrStackLoadAsOffset(state, callInfo->returnDestinationReusableOffset);
+        } else {
+            callInfo->returnDestination = ZR_NULL;
+        }
         if (!ZrCore_CallInfo_IsNative(callInfo)) {
             callInfo->context.context.trap = 1;
         }
@@ -54,13 +62,16 @@ static void stack_mark_stack_as_absolute(SZrState *state) {
 static TZrBool stack_realloc_internal(SZrState *state, TZrUInt64 newSize, TZrBool throwError) {
     SZrGlobalState *global = state->global;
     TZrSize previousStackSize = ZrCore_State_StackGetSize(state);
+    TZrSize previousStackByteSize =
+            sizeof(SZrTypeValueOnStack) * (previousStackSize + ZR_THREAD_STACK_SIZE_EXTRA);
+    TZrSize newStackByteSize = sizeof(SZrTypeValueOnStack) * (newSize + ZR_THREAD_STACK_SIZE_EXTRA);
     TZrBool previousStopGcFlag = state->global->garbageCollector->stopGcFlag;
     ZR_ASSERT(newSize <= ZR_VM_MAX_STACK || newSize == ZR_VM_ERROR_STACK);
     stack_mark_stack_as_relative(state);
     state->global->garbageCollector->stopGcFlag = ZR_TRUE;
     TZrStackValuePointer newStackPointer = ZR_CAST_STACK_VALUE(
-            ZrCore_Memory_Allocate(global, state->stackBase.valuePointer, previousStackSize + ZR_THREAD_STACK_SIZE_EXTRA,
-                             newSize + ZR_THREAD_STACK_SIZE_EXTRA, ZR_MEMORY_NATIVE_TYPE_STACK));
+            ZrCore_Memory_Allocate(global, state->stackBase.valuePointer, previousStackByteSize,
+                             newStackByteSize, ZR_MEMORY_NATIVE_TYPE_STACK));
     state->global->garbageCollector->stopGcFlag = previousStopGcFlag;
     if (ZR_UNLIKELY(newStackPointer == ZR_NULL)) {
         // todo:
@@ -77,6 +88,12 @@ static TZrBool stack_realloc_internal(SZrState *state, TZrUInt64 newSize, TZrBoo
         ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(newStackPointer + i));
     }
     return ZR_TRUE;
+}
+
+static TZrSize stack_required_size_from_pointer(SZrState *state, TZrStackValuePointer stackPointer, TZrSize extraSpace) {
+    TZrSize currentSize = ZrCore_State_StackGetSize(state);
+    TZrSize requiredSize = (TZrSize) (stackPointer - state->stackBase.valuePointer) + extraSpace;
+    return requiredSize > currentSize ? requiredSize : currentSize;
 }
 
 TZrPtr ZrCore_Stack_Construct(SZrState *state, TZrStackPointer *stack, TZrSize stackLength) {
@@ -111,8 +128,13 @@ TZrStackValuePointer ZrCore_Stack_GetAddressFromOffset(struct SZrState *state, T
     return state->stackTop.valuePointer + offset;
 }
 
+TZrBool ZrCore_Stack_GrowTo(struct SZrState *state, TZrSize requiredSize, TZrBool canThrowError) {
+    return stack_realloc_internal(state, requiredSize, canThrowError);
+}
+
 TZrBool ZrCore_Stack_Grow(struct SZrState *state, TZrSize space, TZrBool canThrowError) {
-    return stack_realloc_internal(state, space, canThrowError);
+    TZrSize requiredSize = stack_required_size_from_pointer(state, state->stackTop.valuePointer, space);
+    return stack_realloc_internal(state, requiredSize, canThrowError);
 }
 
 TZrBool ZrCore_Stack_CheckFullAndGrow(SZrState *state, TZrSize space, TZrNativeString errorMessage) {
@@ -123,7 +145,8 @@ TZrBool ZrCore_Stack_CheckFullAndGrow(SZrState *state, TZrSize space, TZrNativeS
     if (state->stackTail.valuePointer - state->stackTop.valuePointer > (TZrMemoryOffset) space) {
         result = ZR_TRUE;
     } else {
-        result = stack_realloc_internal(state, space, ZR_FALSE);
+        TZrSize requiredSize = stack_required_size_from_pointer(state, state->stackTop.valuePointer, space);
+        result = stack_realloc_internal(state, requiredSize, ZR_FALSE);
     }
     if (result && callInfoTop->functionTop.valuePointer < state->stackTop.valuePointer + space) {
         callInfoTop->functionTop.valuePointer = state->stackTop.valuePointer + space;

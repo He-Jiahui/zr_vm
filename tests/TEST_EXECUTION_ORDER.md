@@ -1,307 +1,111 @@
-# ZR-VM 测试执行顺序文档
+# ZR-VM 测试拓扑与执行顺序
 
-本文档描述了 ZR-VM 测试套件的执行顺序和组织结构，按照**由浅入深、由先到后、由局部到整体**的原则组织。
+本文档描述当前仓库中唯一有效的测试拓扑。CTest 只暴露 5 个分层套件；旧的 `zr_vm_gc_test`、`zr_vm_parser_test`、`zr_vm_scripts_test` 这类分散入口现在只作为套件内部实现细节存在，不再作为活跃测试接口。
 
-## 测试执行策略
+## 活跃套件
 
-### 执行原则
+### 1. `core_runtime`
+- 覆盖范围：GC、instructions、meta，以及其他纯 core/runtime 级断言。
+- 目标：先验证最底层运行时行为，再给上层语言测试提供稳定基础。
 
-1. **由浅入深**：从基础组件测试开始，逐步深入到复杂功能测试
-2. **由先到后**：按照依赖关系，先测试被依赖的模块，再测试依赖其他模块的测试
-3. **由局部到整体**：先测试单个功能点，再测试完整流程
+### 2. `language_pipeline`
+- 覆盖范围：parser、char/type cast、type inference、compiler features、instruction execution、prototype、const keyword、exceptions、named arguments、module system、compile-time、curated scripts 回归。
+- 目标：验证从源码到运行时结果的语言主链路。
+- 说明：import/member-call compile-time projection、deep import projection 等语言回归都归入这里。
 
-### 测试层级
+### 3. `language_server`
+- 覆盖范围：语言服务相关的 5 组行为测试。
+- 目标：保持语言服务行为断言集中暴露为一个 suite，而不是多个独立 CTest 入口。
 
-- **Level 1（基础层）**：最底层的基础组件，不依赖其他模块
-- **Level 2（分析层）**：词法和语法分析，依赖基础层
-- **Level 3（编译层）**：编译和类型系统，依赖分析层
-- **Level 4（执行层）**：VM执行和综合测试，依赖所有层
+### 4. `projects`
+- 覆盖范围：项目级 CLI 回归、import-binary fixture 构建链路、native/vector3/numeric pipeline 等工作区项目样例。
+- 目标：以数据表驱动的方式验证多项目工作流，而不是“一项目一个 `add_test`”。
 
-## 测试执行顺序
+### 5. `golden_regression`
+- 覆盖范围：版本管理中的 AST / intermediate / binary golden 对比。
+- 目标：保证提交到 `tests/golden/` 的快照与当前编译器输出保持一致。
 
-### Level 1: 基础组件测试
+## 执行顺序
 
-#### 1. GC 测试 (`zr_vm_gc_test`)
-- **描述**：垃圾回收器基础功能测试
-- **依赖**：无（最底层）
-- **测试内容**：
-  - 基础类型测试
-  - GC 状态宏测试
-  - GC 函数测试
-  - 边界条件测试
-  - GC 扫描阶段测试
-  - GC 标记遍历测试
-  - GC 根标记测试
-  - GC 状态机测试
-  - GC 分代测试
-  - GC 原生数据测试
-  - GC 完整收集测试
-  - GC 步进测试
-  - GC 屏障测试
+推荐按以下顺序执行：
 
-#### 2. 指令测试 (`zr_vm_instructions_test`)
-- **描述**：VM 指令执行基础测试
-- **依赖**：core 模块
-- **测试内容**：
-  - 基本指令执行
-  - 指令参数验证
-  - 指令错误处理
+1. `core_runtime`
+2. `language_pipeline`
+3. `language_server`
+4. `projects`
+5. `golden_regression`
 
-#### 3. Meta 测试 (`zr_vm_meta_test`)
-- **描述**：元方法基础功能测试
-- **依赖**：core 模块
-- **测试内容**：
-  - 元方法定义
-  - 元方法调用
-  - 元方法查找
+这个顺序遵循“基础运行时 -> 语言主链路 -> 上层集成 -> 快照回归”的分层原则。`golden_regression` 放在最后，是为了在前面的功能行为已确认有效后再检查产物格式漂移。
 
-### Level 2: 词法和语法分析测试
+## 资产布局
 
-#### 4. Lexer 测试 (`zr_vm_lexer_parser_compiler_execution_test` - Lexer 部分)
-- **描述**：词法分析器测试
-- **依赖**：core 模块
-- **测试内容**：
-  - 字符字面量 token 识别
-  - 字符串字面量 token 识别
-  - 字符转义序列解析
-  - 关键字识别
-  - 操作符识别
-  - 标识符识别
+当前有效测试资产统一放在以下目录：
 
-#### 5. Parser 基础测试 (`zr_vm_parser_test`)
-- **描述**：语法分析器基础测试
-- **依赖**：core 模块、parser 模块
-- **测试内容**：
-  - 字面量解析（整数、浮点数、字符串、布尔值、null）
-  - 变量声明解析
-  - 函数声明解析
-  - 结构体声明解析
-  - 类声明解析
-  - 控制流语句解析（if、while、for、switch）
-  - 表达式解析
-  - 对象字面量解析
-  - 数组字面量解析
-  - 完整文件解析（test_simple.zr）
+- `tests/fixtures/parser/`
+  - parser/compiler 输入样例。
+- `tests/fixtures/projects/`
+  - `.zrp` 项目和项目源码 fixture。
+- `tests/fixtures/scripts/`
+  - curated script 回归输入。
+- `tests/golden/ast/`
+  - 版本管理中的 AST golden。
+- `tests/golden/intermediate/`
+  - 版本管理中的 intermediate golden。
+- `tests/golden/binary/`
+  - 版本管理中的 binary golden。
 
-#### 6. 字符字面量和类型转换测试 (`zr_vm_char_and_type_cast_test`)
-- **描述**：扩展语法特性测试
-- **依赖**：core 模块、parser 模块
-- **测试内容**：
-  - 字符字面量解析和编译
-  - 基本类型转换（int、float、string、bool）
-  - 结构体类型转换
-  - 类类型转换
+构建时生成的临时产物统一输出到构建目录下的 `tests_generated/`，例如：
 
-### Level 3: 编译和类型系统测试
+- `out/build/msvc/debug/tests_generated/language_pipeline/`
+- `out/build/msvc/debug/tests_generated/scripts/`
 
-#### 7. 类型推断测试 (`zr_vm_type_inference_test`)
-- **描述**：类型推断系统测试
-- **依赖**：core 模块、parser 模块
-- **测试内容**：
-  - 基本类型推断
-  - 函数返回类型推断
-  - 变量类型推断
-  - 表达式类型推断
+活跃套件不再依赖以下旧路径：
 
-#### 8. 编译器功能测试 (`zr_vm_compiler_features_test`)
-- **描述**：编译器功能测试
-- **依赖**：core 模块、parser 模块
-- **测试内容**：
-  - AST 到指令码转换
-  - 常量生成
-  - 栈槽分配
-  - 指令生成
-  - 函数编译
-  - 控制流编译
+- `tests/scripts/output/`
+- `tests/scripts/test_cases/`
+- 仓库根目录下的 `test_simple.zri/.zro/.zrs`
 
-#### 9. Prototype 测试 (`zr_vm_prototype_test`)
-- **描述**：类型系统高级特性测试
-- **依赖**：core 模块、parser 模块
-- **测试内容**：
-  - 结构体 prototype 生成
-  - 类 prototype 生成
-  - Prototype 继承
-  - Prototype 模块导出
-  - Prototype 运行时创建
+## 运行方式
 
-### Level 4: 执行和综合测试
-
-#### 10. 指令执行测试 (`zr_vm_instruction_execution_test`)
-- **描述**：VM 执行引擎测试
-- **依赖**：core 模块、parser 模块
-- **测试内容**：
-  - 基本指令执行
-  - 算术运算指令
-  - 逻辑运算指令
-  - 类型转换指令执行
-  - 函数调用指令
-  - 控制流指令
-
-#### 11. 模块系统测试 (`zr_vm_module_system_test`)
-- **描述**：模块加载和导出测试
-- **依赖**：core 模块、parser 模块
-- **测试内容**：
-  - 模块声明
-  - 模块导入
-  - 模块导出（public、protected）
-  - 模块缓存
-  - 模块依赖解析
-
-#### 12. 异常处理测试 (`zr_vm_exceptions_test`)
-- **描述**：异常机制测试
-- **依赖**：core 模块、parser 模块
-- **测试内容**：
-  - try-catch-finally 语句
-  - 异常抛出
-  - 异常捕获
-  - 异常传播
-
-#### 13. 综合脚本测试 (`zr_vm_scripts_test`)
-- **描述**：完整流程综合测试
-- **依赖**：所有模块
-- **测试内容**：
-  - 完整脚本解析
-  - 完整脚本编译
-  - 完整脚本执行
-  - 复杂语法特性组合
-  - 实际应用场景模拟
-
-## 测试依赖关系图
-
-```
-Level 1 (基础层)
-├── GC 测试 (无依赖)
-├── 指令测试 (依赖 core)
-└── Meta 测试 (依赖 core)
-
-Level 2 (分析层)
-├── Lexer 测试 (依赖 core)
-├── Parser 基础测试 (依赖 core, parser)
-└── 字符字面量和类型转换测试 (依赖 core, parser)
-
-Level 3 (编译层)
-├── 类型推断测试 (依赖 core, parser)
-├── 编译器功能测试 (依赖 core, parser)
-└── Prototype 测试 (依赖 core, parser)
-
-Level 4 (执行层)
-├── 指令执行测试 (依赖 core, parser)
-├── 模块系统测试 (依赖 core, parser)
-├── 异常处理测试 (依赖 core, parser)
-└── 综合脚本测试 (依赖所有模块)
-```
-
-## 运行测试
-
-### 运行所有测试
+### 列出当前活跃套件
 
 ```bash
-# 使用测试运行器（推荐）
-./zr_vm_test_runner
-
-# 或使用 CTest
-ctest
+ctest -N --test-dir out/build/msvc/debug
 ```
 
-### 运行特定测试
+预期只看到以下 5 个测试：
+
+```text
+core_runtime
+language_pipeline
+language_server
+projects
+golden_regression
+```
+
+### 运行全部测试
 
 ```bash
-# 运行特定测试套件
-./zr_vm_test_runner gc_tests
-./zr_vm_test_runner parser_tests
-./zr_vm_test_runner scripts_tests
-
-# 查看所有可用测试
-./zr_vm_test_runner --help
+ctest --test-dir out/build/msvc/debug --output-on-failure
 ```
 
-### 运行单个测试可执行文件
+### 运行单个套件
 
 ```bash
-# Level 1
-./zr_vm_gc_test
-./zr_vm_instructions_test
-./zr_vm_meta_test
-
-# Level 2
-./zr_vm_parser_test
-./zr_vm_char_and_type_cast_test
-./zr_vm_lexer_parser_compiler_execution_test
-
-# Level 3
-./zr_vm_type_inference_test
-./zr_vm_compiler_features_test
-./zr_vm_prototype_test
-
-# Level 4
-./zr_vm_instruction_execution_test
-./zr_vm_module_system_test
-./zr_vm_exceptions_test
-./zr_vm_scripts_test
+ctest --test-dir out/build/msvc/debug --output-on-failure -R language_pipeline
+ctest --test-dir out/build/msvc/debug --output-on-failure -R projects
 ```
 
-## 测试文件组织
+### 使用薄封装 runner
 
-### 测试文件结构
-
-```
-tests/
-├── test_runner.c              # 主测试运行器
-├── TEST_EXECUTION_ORDER.md    # 本文档
-├── CMakeLists.txt            # 测试主 CMakeLists
-│
-├── gc/                       # GC 测试
-│   ├── gc_tests.c
-│   ├── gc_test_utils.c
-│   └── CMakeLists.txt
-│
-├── parser/                   # Parser 测试
-│   ├── test_parser.c
-│   ├── test_lexer_parser_compiler_execution.c
-│   ├── test_char_and_type_cast.c
-│   ├── test_type_inference.c
-│   ├── test_compiler_features.c
-│   ├── test_instruction_execution.c
-│   ├── test_prototype.c
-│   ├── test_*.zr             # 测试用例文件
-│   └── CMakeLists.txt
-│
-├── instructions/             # 指令测试
-│   ├── test_instructions.c
-│   └── CMakeLists.txt
-│
-├── meta/                     # Meta 测试
-│   ├── test_meta.c
-│   └── CMakeLists.txt
-│
-├── module/                   # 模块系统测试
-│   ├── test_module_system.c
-│   └── CMakeLists.txt
-│
-├── exceptions/               # 异常处理测试
-│   ├── test_exceptions.c
-│   └── CMakeLists.txt
-│
-└── scripts/                  # 综合脚本测试
-    ├── test_comprehensive.c
-    ├── test_utils.c
-    ├── test_cases/           # 测试用例目录
-    └── CMakeLists.txt
+```bash
+./zr_vm_test_runner --ctest --output-on-failure
+./zr_vm_test_runner --ctest --output-on-failure -R golden_regression
 ```
 
-## 测试规范
+## 维护规则
 
-所有测试都应遵循以下规范：
-
-1. **测试开始**：输出 `Unit Test - ${Test Summary}`
-2. **测试信息**：输出 `Testing ${Summary}:\n ${WhatIsTesting}`
-3. **测试完成**：输出 `Pass - Cost Time:${Time} - ${Summary}` 或 `Fail - Cost Time:${Time} - ${Summary}:\n ${Reason}`
-4. **测试分割**：使用 `----` 分割单个测试，使用 `==========` 分割测试模块
-
-## 注意事项
-
-1. **测试顺序很重要**：必须按照依赖关系顺序执行，否则可能导致测试失败
-2. **测试隔离**：每个测试应该独立运行，不依赖其他测试的状态
-3. **资源清理**：测试完成后必须清理所有分配的资源
-4. **错误处理**：测试应该优雅地处理错误情况，并提供有意义的错误信息
-
+1. 新增行为覆盖时，优先并入现有 5 个 suite，不新增第 6 个活跃 CTest 入口。
+2. 需要提交的快照只能放到 `tests/golden/`，不能继续写回 `tests/scripts/output/`。
+3. fixture 只能放到 `tests/fixtures/*`，不能继续散落在旧测试源码目录下。
+4. 只有当旧断言已被等价迁移或被更强断言覆盖后，旧 case 才允许删除。

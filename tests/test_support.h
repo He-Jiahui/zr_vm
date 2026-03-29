@@ -1,19 +1,13 @@
 #ifndef ZR_VM_TEST_SUPPORT_H
 #define ZR_VM_TEST_SUPPORT_H
 
-#include "zr_vm_core/function.h"
-#include "zr_vm_core/global.h"
-#include "zr_vm_core/state.h"
-#include "zr_vm_core/value.h"
+#include "harness/path_support.h"
+#include "harness/runtime_support.h"
 
-TZrPtr ZrTests_Allocator_Default(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag);
-
-SZrState* ZrTests_State_Create(FZrPanicHandlingFunction panicHandler);
-
-void ZrTests_State_Destroy(SZrState* state);
-
-TZrBool ZrTests_Function_Execute(SZrState* state, SZrFunction* function, SZrTypeValue* result);
-
-TZrBool ZrTests_Function_ExecuteExpectInt64(SZrState* state, SZrFunction* function, TZrInt64* result);
+#define ZrTests_Allocator_Default ZrTests_Runtime_Allocator_Default
+#define ZrTests_State_Create ZrTests_Runtime_State_Create
+#define ZrTests_State_Destroy ZrTests_Runtime_State_Destroy
+#define ZrTests_Function_Execute ZrTests_Runtime_Function_Execute
+#define ZrTests_Function_ExecuteExpectInt64 ZrTests_Runtime_Function_ExecuteExpectInt64
 
 #endif

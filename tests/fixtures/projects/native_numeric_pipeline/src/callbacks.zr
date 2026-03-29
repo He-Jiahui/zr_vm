@@ -1,0 +1,33 @@
+var math = import("zr.math");
+var system = import("zr.system");
+
+scaleValue(input: float) {
+    return input * 2.0;
+}
+
+summarizeCallbackImpl(value: float) {
+    return value + 7.0;
+}
+
+runCallbacksImpl(lin, signal, tensor) {
+    var vectorInfo = lin.projectVectors(2.0);
+    var signalInfo = signal.mixSignal(5.0);
+    var tensorInfo = tensor.runTensorPass();
+    var callbackValue = math.invokeCallback(scaleValue, vectorInfo.dot);
+    var exportedValue = system.vm.callModuleExport("callbacks", "summarizeCallback", [callbackValue]);
+    var modules = system.vm.loadedModules();
+    var state = system.vm.state();
+    system.gc.stop();
+    system.gc.step();
+    system.gc.start();
+    system.gc.collect();
+    system.console.printErrorLine("native numeric pipeline stderr ready");
+    return {
+        checksum: exportedValue + signalInfo.magnitude + tensorInfo.sum + tensorInfo.mean;
+        loadedModuleCount: state.loadedModuleCount;
+        moduleNames: modules;
+    };
+}
+
+pub var summarizeCallback = summarizeCallbackImpl;
+pub var runCallbacks = runCallbacksImpl;

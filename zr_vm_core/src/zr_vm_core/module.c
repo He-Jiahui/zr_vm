@@ -287,8 +287,20 @@ static TZrBool convert_io_constant_to_runtime_value(SZrState *state, const SZrIo
                 return ZR_FALSE;
             }
 
-            ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(functionValue));
-            destination->type = source->type;
+            if (source->type == ZR_VALUE_TYPE_CLOSURE) {
+                SZrClosure *closure = ZrCore_Closure_New(state, 0);
+                if (closure == ZR_NULL) {
+                    ZrCore_Function_Free(state, functionValue);
+                    return ZR_FALSE;
+                }
+                closure->function = functionValue;
+                ZrCore_Closure_InitValue(state, closure);
+                ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+                destination->type = ZR_VALUE_TYPE_CLOSURE;
+            } else {
+                ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(functionValue));
+                destination->type = ZR_VALUE_TYPE_FUNCTION;
+            }
             return ZR_TRUE;
         }
         default: {
@@ -333,6 +345,7 @@ static TZrBool populate_runtime_function(SZrState *state, const SZrIoFunction *s
 
         for (TZrSize i = 0; i < source->localVariablesLength; i++) {
             function->localVariableList[i].name = ZR_NULL;
+            function->localVariableList[i].stackSlot = (TZrUInt32)i;
             function->localVariableList[i].offsetActivate = (TZrMemoryOffset) source->localVariables[i].instructionStartIndex;
             function->localVariableList[i].offsetDead = (TZrMemoryOffset) source->localVariables[i].instructionEndIndex;
         }
@@ -707,6 +720,24 @@ TZrInt64 ZrCore_ImportNativeFunction(SZrState *state) {
     
     // 缓存未命中，需要加载、编译和执行
     SZrGlobalState *global = state->global;
+    if (global->nativeModuleLoader != ZR_NULL) {
+        struct SZrObjectModule *nativeModule =
+                global->nativeModuleLoader(state, path, global->nativeModuleLoaderUserData);
+        if (nativeModule != ZR_NULL) {
+            if (nativeModule->fullPath == ZR_NULL || nativeModule->moduleName == ZR_NULL) {
+                TZrUInt64 nativePathHash = ZrCore_Module_CalculatePathHash(state, path);
+                ZrCore_Module_SetInfo(state, nativeModule, path, nativePathHash, path);
+            }
+
+            ZrCore_Module_AddToCache(state, path, nativeModule);
+
+            SZrTypeValue *nativeResult = ZrCore_Stack_GetValue(functionBase);
+            ZrCore_Value_InitAsRawObject(state, nativeResult, ZR_CAST_RAW_OBJECT_AS_SUPER(nativeModule));
+            nativeResult->type = ZR_VALUE_TYPE_OBJECT;
+            ZR_RETURN_IMPORT_RESULT();
+        }
+    }
+
     if (global->sourceLoader == ZR_NULL) {
         // 没有源加载器，返回 null
         ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(functionBase));
@@ -830,9 +861,12 @@ TZrInt64 ZrCore_ImportNativeFunction(SZrState *state) {
     // 执行函数（调用 __entry）
     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
     TZrStackValuePointer callBase = savedStackTop;
+    SZrFunctionStackAnchor functionBaseAnchor;
+    ZrCore_Function_StackAnchorInit(state, functionBase, &functionBaseAnchor);
     ZrCore_Stack_SetRawObjectValue(state, callBase, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     state->stackTop.valuePointer = callBase + 1;
-    ZrCore_Function_Call(state, callBase, 0);
+    callBase = ZrCore_Function_CallAndRestore(state, callBase, 0);
+    functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
     
     // 执行后，栈上的变量值已经可用
     // 收集 pub 和 pro 变量到 module object

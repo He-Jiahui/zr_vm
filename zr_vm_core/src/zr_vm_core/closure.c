@@ -80,7 +80,8 @@ SZrClosureValue *ZrCore_Closure_FindOrCreateValue(struct SZrState *state, TZrSta
         if (closureValue->value.valuePointer < stackPointer) {
             break;
         }
-        ZR_ASSERT(ZrCore_Gc_RawObjectIsDead(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue)));
+        // Open upvalues are anchored by the thread closure list and may survive GC cycles.
+        ZR_ASSERT(!ZrCore_Gc_RawObjectIsDead(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue)));
         if (closureValue->value.valuePointer == stackPointer) {
             return closureValue;
         }
@@ -169,7 +170,9 @@ void ZrCore_Closure_CloseStackValue(struct SZrState *state, TZrStackValuePointer
             break;
         }
         ZR_ASSERT(!ZrCore_ClosureValue_IsClosed(closureValue));
-        if (closureValue->value.valuePointer >= stackPointer) {
+        // Open upvalues are kept in descending stack-slot order. Once we move
+        // below the closing threshold, the remaining entries belong to older frames.
+        if (closureValue->value.valuePointer < stackPointer) {
             break;
         }
         SZrTypeValue *slot = &closureValue->link.closedValue;

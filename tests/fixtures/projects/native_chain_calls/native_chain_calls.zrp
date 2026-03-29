@@ -1,0 +1,6 @@
+{
+  "name": "native_chain_calls",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

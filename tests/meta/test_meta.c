@@ -120,6 +120,8 @@ static void destroy_test_state(SZrState *state) {
 // 调用元方法并获取结果的辅助函数
 static TZrBool call_meta_method(SZrState *state, SZrTypeValue *value, EZrMetaType metaType, SZrTypeValue *result,
                              SZrTypeValue *arg) {
+    SZrFunctionStackAnchor baseAnchor;
+
     if (state == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -137,7 +139,7 @@ static TZrBool call_meta_method(SZrState *state, SZrTypeValue *value, EZrMetaTyp
     TZrStackValuePointer base = savedStackTop;
     TZrSize argCount = (arg != ZR_NULL) ? 1 : 0;
     TZrSize totalArgs = 1 + argCount; // self + 其他参数
-    ZrCore_Function_CheckStackAndGc(state, totalArgs, base);
+    base = ZrCore_Function_CheckStackAndAnchor(state, 1 + totalArgs, base, base, &baseAnchor);
 
     // 将 meta->function 放到栈上
     ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
@@ -153,7 +155,7 @@ static TZrBool call_meta_method(SZrState *state, SZrTypeValue *value, EZrMetaTyp
     state->stackTop.valuePointer = base + 1 + totalArgs;
 
     // 调用元方法
-    ZrCore_Function_CallWithoutYield(state, base, 1);
+    base = ZrCore_Function_CallWithoutYieldAndRestoreAnchor(state, &baseAnchor, 1);
 
     // 检查执行状态
     TZrBool success = ZR_FALSE;

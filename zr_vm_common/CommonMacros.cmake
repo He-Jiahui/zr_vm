@@ -1,6 +1,8 @@
+include(${CMAKE_SOURCE_DIR}/zr_vm_common/ThirdPartyMacros.cmake)
+
 function(zr_declare_module module_name use_common_lib)
     set(zr_module_name ${module_name})
-    file(GLOB_RECURSE zr_module_src
+    file(GLOB_RECURSE zr_module_src CONFIGURE_DEPENDS
             RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
             src/*.c
     )
@@ -43,7 +45,7 @@ endfunction()
 
 function(zr_declare_executable module_name use_common_lib)
     set(zr_module_name ${module_name})
-    file(GLOB_RECURSE zr_module_src
+    file(GLOB_RECURSE zr_module_src CONFIGURE_DEPENDS
             RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
             src/*.c
     )
@@ -99,22 +101,6 @@ function(zr_link_internal_for_module module_name library_name)
         set(zr_module_shared ${zr_module_name}_shared)
         target_link_libraries(${zr_module_shared} PRIVATE ${library_name})
     endif ()
-endfunction()
-
-function(zr_include_third_party_for_module module_name library_name)
-    set(zr_module_name ${module_name})
-    if (BUILD_STATIC_LIB)
-        set(zr_module_static ${zr_module_name}_static)
-        target_include_directories(${zr_module_static} PRIVATE ${CMAKE_SOURCE_DIR}/third_party/${library_name})
-        target_link_libraries(${zr_module_static} PRIVATE ${library_name}_static)
-    endif ()
-
-    if (BUILD_SHARED_LIB)
-        set(zr_module_shared ${zr_module_name}_shared)
-        target_include_directories(${zr_module_shared} PRIVATE ${CMAKE_SOURCE_DIR}/third_party/${library_name})
-        target_link_libraries(${zr_module_shared} PRIVATE ${library_name}_static)
-    endif ()
-
 endfunction()
 
 function(zr_link_library_for_executable module_name library_name)

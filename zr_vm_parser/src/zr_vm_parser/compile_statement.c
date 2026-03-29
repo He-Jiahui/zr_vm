@@ -132,7 +132,7 @@ static void compile_default_fixed_array_initialization(SZrCompilerState *cs,
                                               (TZrUInt16)valueSlot,
                                               (TZrUInt16)arraySlot,
                                               (TZrUInt16)indexSlot));
-        cs->stackSlotCount -= 2;
+        ZrParser_Compiler_TrimStackBy(cs, 2);
     }
 
     {
@@ -152,7 +152,7 @@ static void compile_default_fixed_array_initialization(SZrCompilerState *cs,
                                               (TZrUInt16)valueSlot,
                                               (TZrUInt16)arraySlot,
                                               (TZrUInt16)keySlot));
-        cs->stackSlotCount -= 2;
+        ZrParser_Compiler_TrimStackBy(cs, 2);
     }
 
     ZR_UNUSED_PARAMETER(location);
@@ -290,7 +290,7 @@ static TZrBool compile_using_resource_slot(SZrCompilerState *cs, SZrAstNode *res
                                               (TZrInt32)valueSlot));
     }
 
-    cs->stackSlotCount = (TZrSize)targetSlot + 1;
+    ZrParser_Compiler_TrimStackToSlot(cs, targetSlot);
     *slot = targetSlot;
     return ZR_TRUE;
 }
@@ -420,6 +420,8 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             }
         }
 
+        ZrParser_Compiler_TrimStackToSlot(cs, varIndex);
+
         if (resolvedTypeInitialized) {
             ZrParser_InferredType_Free(cs->state, &resolvedType);
         }
@@ -437,6 +439,8 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
 
 // 编译表达式语句
 static void compile_expression_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    TZrSize previousStackCount;
+
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
@@ -447,10 +451,11 @@ static void compile_expression_statement(SZrCompilerState *cs, SZrAstNode *node)
     }
     
     SZrExpressionStatement *stmt = &node->data.expressionStatement;
+    previousStackCount = cs->stackSlotCount;
     if (stmt->expr != ZR_NULL) {
         // 编译表达式
         ZrParser_Expression_Compile(cs, stmt->expr);
-        // 结果留在栈上，可以被后续使用或自动丢弃
+        ZrParser_Compiler_TrimStackToCount(cs, previousStackCount);
     }
 }
 
@@ -882,7 +887,7 @@ static void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     emit_instruction(cs, moveIteratorInst);
     
     // 释放临时栈槽（iteratorNameSlot, iteratorResultSlot）
-    cs->stackSlotCount -= 2;
+    ZrParser_Compiler_TrimStackBy(cs, 2);
     
     // 创建 "hasNext" 字符串常量
     SZrString *hasNextName = ZrCore_String_Create(cs->state, "hasNext", 7);
@@ -911,7 +916,7 @@ static void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     emit_instruction(cs, moveHasNextInst);
     
     // 释放临时栈槽
-    cs->stackSlotCount -= 2;
+    ZrParser_Compiler_TrimStackBy(cs, 2);
     
     // 如果 hasNext 为 false，跳转到循环结束
     TZrSize loopEndLabelId = loopLabel.breakLabelId;
@@ -943,7 +948,7 @@ static void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     emit_instruction(cs, callNextInst);
     
     // 释放临时栈槽（nextNameSlot）
-    cs->stackSlotCount--;
+    ZrParser_Compiler_TrimStackBy(cs, 1);
     
     // 处理 pattern（将当前值绑定到变量）
     if (foreachLoop->pattern != ZR_NULL) {
@@ -971,7 +976,7 @@ static void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     // 释放 currentValueSlot
-    cs->stackSlotCount--;
+    ZrParser_Compiler_TrimStackBy(cs, 1);
     
     // 编译循环体
     if (foreachLoop->block != ZR_NULL) {
@@ -988,7 +993,7 @@ static void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     resolve_label(cs, loopEndLabelId);
     
     // 释放临时栈槽（iterableSlot, iteratorSlot, hasNextSlot）
-    cs->stackSlotCount -= 3;
+    ZrParser_Compiler_TrimStackBy(cs, 3);
     
     // 弹出循环标签栈
     ZrCore_Array_Pop(&cs->loopLabelStack);
@@ -1141,7 +1146,7 @@ static void compile_out_statement(SZrCompilerState *cs, SZrAstNode *node) {
         emit_instruction(cs, returnInst);
         
         // 释放值栈槽（YIELD 会处理值的传递）
-        cs->stackSlotCount--;
+        ZrParser_Compiler_TrimStackBy(cs, 1);
     } else {
         ZrParser_Compiler_Error(cs, "Out statement requires an expression", node->location);
     }
@@ -1242,7 +1247,7 @@ static void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode
                             emit_instruction(cs, setVarInst);
                             
                             // 释放异常值栈槽
-                            cs->stackSlotCount--;
+                            ZrParser_Compiler_TrimStackBy(cs, 1);
                         }
                     }
                 }
@@ -1252,7 +1257,7 @@ static void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode
             }
         } else {
             // 没有catch参数，丢弃异常值
-            cs->stackSlotCount--;
+            ZrParser_Compiler_TrimStackBy(cs, 1);
         }
         
         // 编译 catch 块
@@ -1519,13 +1524,13 @@ static void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *patte
             emit_instruction(cs, setStackInst);
             
             // 释放临时栈槽（keySlot 和 valueSlot）
-            cs->stackSlotCount -= 2;
+            ZrParser_Compiler_TrimStackBy(cs, 2);
         }
     }
     
     // 3. 释放源对象栈槽（只有在 value 不为 NULL 时才释放，因为如果是 NULL，值已经在栈上且需要保留）
     if (value != ZR_NULL) {
-        cs->stackSlotCount--;
+        ZrParser_Compiler_TrimStackBy(cs, 1);
     }
 }
 
@@ -1592,12 +1597,12 @@ static void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *patter
             emit_instruction(cs, setStackInst);
             
             // 释放临时栈槽（indexSlot 和 valueSlot）
-            cs->stackSlotCount -= 2;
+            ZrParser_Compiler_TrimStackBy(cs, 2);
         }
     }
     
     // 3. 释放源数组栈槽（只有在 value 不为 NULL 时才释放，因为如果是 NULL，值已经在栈上且需要保留）
     if (value != ZR_NULL) {
-        cs->stackSlotCount--;
+        ZrParser_Compiler_TrimStackBy(cs, 1);
     }
 }

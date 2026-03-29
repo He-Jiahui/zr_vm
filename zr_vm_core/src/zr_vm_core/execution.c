@@ -258,8 +258,8 @@ static TZrBool try_builtin_add(SZrState *state, SZrTypeValue *destination, const
         return ZR_FALSE;
     }
 
-    if (ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type)) {
-        return concat_values_to_destination(state, destination, opA, opB, ZR_FALSE);
+    if (ZR_VALUE_IS_TYPE_STRING(opA->type) || ZR_VALUE_IS_TYPE_STRING(opB->type)) {
+        return concat_values_to_destination(state, destination, opA, opB, ZR_TRUE);
     }
 
     if ((ZR_VALUE_IS_TYPE_NUMBER(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opA->type)) &&
@@ -477,7 +477,7 @@ static TZrBool convert_to_struct(SZrState *state, SZrTypeValue *source, SZrObjec
 // 辅助函数：执行 class 类型转换
 // 将源对象转换为目标 class 类型
 static TZrBool convert_to_class(SZrState *state, SZrTypeValue *source, SZrObjectPrototype *targetPrototype, 
-                               SZrTypeValue *destination) {
+                                SZrTypeValue *destination) {
     if (state == ZR_NULL || source == ZR_NULL || targetPrototype == ZR_NULL || destination == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -524,6 +524,70 @@ static TZrBool convert_to_class(SZrState *state, SZrTypeValue *source, SZrObject
     }
     
     return ZR_FALSE;
+}
+
+static TZrBool execution_invoke_meta_call(SZrState *state,
+                                          SZrCallInfo *savedCallInfo,
+                                          TZrStackValuePointer savedStackTop,
+                                          TZrStackValuePointer scratchBase,
+                                          TZrBool reloadScratchFromFunctionTop,
+                                          SZrMeta *meta,
+                                          const SZrTypeValue *arg0,
+                                          const SZrTypeValue *arg1,
+                                          TZrSize argumentCount,
+                                          TZrStackValuePointer *outMetaBase,
+                                          TZrStackValuePointer *outSavedStackTop) {
+    SZrTypeValue stableArguments[2];
+    SZrFunctionStackAnchor savedStackTopAnchor;
+    TZrStackValuePointer metaBase;
+
+    if (outMetaBase != ZR_NULL) {
+        *outMetaBase = scratchBase;
+    }
+    if (outSavedStackTop != ZR_NULL) {
+        *outSavedStackTop = savedStackTop;
+    }
+
+    if (state == ZR_NULL || meta == ZR_NULL || meta->function == ZR_NULL || arg0 == ZR_NULL || argumentCount == 0 ||
+        argumentCount > 2) {
+        return ZR_FALSE;
+    }
+
+    stableArguments[0] = *arg0;
+    if (argumentCount > 1) {
+        if (arg1 == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        stableArguments[1] = *arg1;
+    }
+
+    ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
+    metaBase = ZrCore_Function_CheckStackAndGc(state, 1 + argumentCount, scratchBase);
+    if (reloadScratchFromFunctionTop && savedCallInfo != ZR_NULL) {
+        metaBase = savedCallInfo->functionTop.valuePointer;
+    }
+
+    ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+    ZrCore_Stack_CopyValue(state, metaBase + 1, &stableArguments[0]);
+    if (argumentCount > 1) {
+        ZrCore_Stack_CopyValue(state, metaBase + 2, &stableArguments[1]);
+    }
+
+    state->stackTop.valuePointer = metaBase + 1 + argumentCount;
+    if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+        savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
+
+    metaBase = ZrCore_Function_CallWithoutYieldAndRestore(state, metaBase, 1);
+    savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+    if (outMetaBase != ZR_NULL) {
+        *outMetaBase = metaBase;
+    }
+    if (outSavedStackTop != ZR_NULL) {
+        *outSavedStackTop = savedStackTop;
+    }
+
+    return state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
 void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
@@ -706,20 +770,19 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        // 从函数帧顶部开始分配元方法调用栈，避免覆盖已分配的栈槽
-                        TZrStackValuePointer metaBase = callInfo->functionTop.valuePointer;
-                        ZrCore_Function_CheckStackAndGc(state, 2, metaBase);
-                        // 如果栈增长，functionTop 会被自动更新，需要重新获取
-                        metaBase = callInfo->functionTop.valuePointer;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        state->stackTop.valuePointer = metaBase + 2;
-                        // 更新 functionTop 以包含元方法调用的栈空间
-                        if (callInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
-                            callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
-                        }
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       callInfo->functionTop.valuePointer,
+                                                       ZR_TRUE,
+                                                       meta,
+                                                       opA,
+                                                       ZR_NULL,
+                                                       1,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             if (returnValue->type == ZR_VALUE_TYPE_BOOL) {
                                 ZrCore_Value_Copy(state, destination, returnValue);
@@ -731,7 +794,7 @@ LZrReturning: {
                             // 调用失败，使用默认转换
                             ZR_VALUE_FAST_SET(destination, nativeBool, ZR_TRUE, ZR_VALUE_TYPE_BOOL);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -768,13 +831,19 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 2, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        state->stackTop.valuePointer = metaBase + 2;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       ZR_NULL,
+                                                       1,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             if (ZR_VALUE_IS_TYPE_INT(returnValue->type)) {
                                 ZrCore_Value_Copy(state, destination, returnValue);
@@ -786,7 +855,7 @@ LZrReturning: {
                             // 调用失败，使用默认转换
                             ZrCore_Value_InitAsInt(state, destination, 0);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -814,13 +883,19 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 2, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        state->stackTop.valuePointer = metaBase + 2;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       ZR_NULL,
+                                                       1,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             if (ZR_VALUE_IS_TYPE_INT(returnValue->type)) {
                                 ZrCore_Value_Copy(state, destination, returnValue);
@@ -832,7 +907,7 @@ LZrReturning: {
                             // 调用失败，使用默认转换
                             ZrCore_Value_InitAsUInt(state, destination, 0);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -860,13 +935,19 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 2, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        state->stackTop.valuePointer = metaBase + 2;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       ZR_NULL,
+                                                       1,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             if (ZR_VALUE_IS_TYPE_FLOAT(returnValue->type)) {
                                 ZrCore_Value_Copy(state, destination, returnValue);
@@ -878,7 +959,7 @@ LZrReturning: {
                             // 调用失败，使用默认转换
                             ZrCore_Value_InitAsFloat(state, destination, 0.0);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -937,20 +1018,25 @@ LZrReturning: {
                             TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                             SZrCallInfo *savedCallInfo = state->callInfoList;
                             PROTECT_E(state, callInfo, {
-                                ZrCore_Function_CheckStackAndGc(state, 3, savedStackTop);
-                                TZrStackValuePointer metaBase = savedStackTop;
-                                ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                                ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                                ZrCore_Stack_CopyValue(state, metaBase + 2, typeNameValue);
-                                state->stackTop.valuePointer = metaBase + 3;
-                                ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                                if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                                TZrStackValuePointer metaBase = ZR_NULL;
+                                TZrStackValuePointer restoredStackTop = savedStackTop;
+                                if (execution_invoke_meta_call(state,
+                                                               savedCallInfo,
+                                                               savedStackTop,
+                                                               savedStackTop,
+                                                               ZR_FALSE,
+                                                               meta,
+                                                               opA,
+                                                               typeNameValue,
+                                                               2,
+                                                               &metaBase,
+                                                               &restoredStackTop)) {
                                     SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                                     ZrCore_Value_Copy(state, destination, returnValue);
                                 } else {
                                     ZrCore_Value_ResetAsNull(destination);
                                 }
-                                state->stackTop.valuePointer = savedStackTop;
+                                state->stackTop.valuePointer = restoredStackTop;
                                 state->callInfoList = savedCallInfo;
                             });
                         } else {
@@ -1010,20 +1096,25 @@ LZrReturning: {
                             TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                             SZrCallInfo *savedCallInfo = state->callInfoList;
                             PROTECT_E(state, callInfo, {
-                                ZrCore_Function_CheckStackAndGc(state, 3, savedStackTop);
-                                TZrStackValuePointer metaBase = savedStackTop;
-                                ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                                ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                                ZrCore_Stack_CopyValue(state, metaBase + 2, typeNameValue);
-                                state->stackTop.valuePointer = metaBase + 3;
-                                ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                                if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                                TZrStackValuePointer metaBase = ZR_NULL;
+                                TZrStackValuePointer restoredStackTop = savedStackTop;
+                                if (execution_invoke_meta_call(state,
+                                                               savedCallInfo,
+                                                               savedStackTop,
+                                                               savedStackTop,
+                                                               ZR_FALSE,
+                                                               meta,
+                                                               opA,
+                                                               typeNameValue,
+                                                               2,
+                                                               &metaBase,
+                                                               &restoredStackTop)) {
                                     SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                                     ZrCore_Value_Copy(state, destination, returnValue);
                                 } else {
                                     ZrCore_Value_ResetAsNull(destination);
                                 }
-                                state->stackTop.valuePointer = savedStackTop;
+                                state->stackTop.valuePointer = restoredStackTop;
                                 state->callInfoList = savedCallInfo;
                             });
                         } else {
@@ -1067,20 +1158,25 @@ LZrReturning: {
                         TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                         SZrCallInfo *savedCallInfo = state->callInfoList;
                         PROTECT_E(state, callInfo, {
-                            ZrCore_Function_CheckStackAndGc(state, 3, savedStackTop);
-                            TZrStackValuePointer metaBase = savedStackTop;
-                            ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                            ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                            ZrCore_Stack_CopyValue(state, metaBase + 2, opB);
-                            state->stackTop.valuePointer = metaBase + 3;
-                            ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                            if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                            TZrStackValuePointer metaBase = ZR_NULL;
+                            TZrStackValuePointer restoredStackTop = savedStackTop;
+                            if (execution_invoke_meta_call(state,
+                                                           savedCallInfo,
+                                                           savedStackTop,
+                                                           savedStackTop,
+                                                           ZR_FALSE,
+                                                           meta,
+                                                           opA,
+                                                           opB,
+                                                           2,
+                                                           &metaBase,
+                                                           &restoredStackTop)) {
                                 SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                                 ZrCore_Value_Copy(state, destination, returnValue);
                             } else {
                                 ZrCore_Value_ResetAsNull(destination);
                             }
-                            state->stackTop.valuePointer = savedStackTop;
+                            state->stackTop.valuePointer = restoredStackTop;
                             state->callInfoList = savedCallInfo;
                         });
                     } else {
@@ -1127,20 +1223,25 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 3, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        ZrCore_Stack_CopyValue(state, metaBase + 2, opB);
-                        state->stackTop.valuePointer = metaBase + 3;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       opB,
+                                                       2,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
                             ZrCore_Value_ResetAsNull(destination);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -1172,20 +1273,25 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 3, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        ZrCore_Stack_CopyValue(state, metaBase + 2, opB);
-                        state->stackTop.valuePointer = metaBase + 3;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       opB,
+                                                       2,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
                             ZrCore_Value_ResetAsNull(destination);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -1223,19 +1329,25 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 2, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        state->stackTop.valuePointer = metaBase + 2;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       ZR_NULL,
+                                                       1,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
                             ZrCore_Value_ResetAsNull(destination);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -1253,20 +1365,25 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 3, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        ZrCore_Stack_CopyValue(state, metaBase + 2, opB);
-                        state->stackTop.valuePointer = metaBase + 3;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       opB,
+                                                       2,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
                             ZrCore_Value_ResetAsNull(destination);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -1315,20 +1432,25 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 3, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        ZrCore_Stack_CopyValue(state, metaBase + 2, opB);
-                        state->stackTop.valuePointer = metaBase + 3;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       opB,
+                                                       2,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
                             ZrCore_Value_ResetAsNull(destination);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -1379,20 +1501,25 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 3, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        ZrCore_Stack_CopyValue(state, metaBase + 2, opB);
-                        state->stackTop.valuePointer = metaBase + 3;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       opB,
+                                                       2,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
                             ZrCore_Value_ResetAsNull(destination);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -1446,20 +1573,25 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 3, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        ZrCore_Stack_CopyValue(state, metaBase + 2, opB);
-                        state->stackTop.valuePointer = metaBase + 3;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       opB,
+                                                       2,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
                             ZrCore_Value_ResetAsNull(destination);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -1484,20 +1616,25 @@ LZrReturning: {
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        ZrCore_Function_CheckStackAndGc(state, 3, savedStackTop);
-                        TZrStackValuePointer metaBase = savedStackTop;
-                        ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-                        ZrCore_Stack_CopyValue(state, metaBase + 1, opA);
-                        ZrCore_Stack_CopyValue(state, metaBase + 2, opB);
-                        state->stackTop.valuePointer = metaBase + 3;
-                        ZrCore_Function_CallWithoutYield(state, metaBase, 1);
-                        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                        TZrStackValuePointer metaBase = ZR_NULL;
+                        TZrStackValuePointer restoredStackTop = savedStackTop;
+                        if (execution_invoke_meta_call(state,
+                                                       savedCallInfo,
+                                                       savedStackTop,
+                                                       savedStackTop,
+                                                       ZR_FALSE,
+                                                       meta,
+                                                       opA,
+                                                       opB,
+                                                       2,
+                                                       &metaBase,
+                                                       &restoredStackTop)) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
                             ZrCore_Value_ResetAsNull(destination);
                         }
-                        state->stackTop.valuePointer = savedStackTop;
+                        state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
                 } else {
@@ -1714,6 +1851,7 @@ LZrReturning: {
                 SZrCallInfo *nextCallInfo = ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     // NULL means native call
+                    UPDATE_BASE(callInfo);
                     trap = callInfo->context.context.trap;
                 } else {
                     // a vm call
@@ -1756,6 +1894,7 @@ LZrReturning: {
                 if (nextCallInfo == ZR_NULL) {
                     // Native调用，清除尾调用标志
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
+                    UPDATE_BASE(callInfo);
                     trap = callInfo->context.context.trap;
                 } else {
                     // VM调用：对于尾调用，重用当前callInfo而不是创建新的
@@ -1780,15 +1919,15 @@ LZrReturning: {
                 // save its program counter
                 callInfo->context.context.programCounter = programCounter;
 
-                if (state->toBeClosedValueList.valuePointer > callInfo->functionBase.valuePointer) {
-                    if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
-                        state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
-                    }
-                    ZrCore_Closure_CloseClosure(state,
-                                          callInfo->functionBase.valuePointer + 1,
-                                          ZR_THREAD_STATUS_INVALID,
-                                          ZR_FALSE);
+                if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
+                    state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
                 }
+                // Always close open upvalues for the returning frame. The to-be-closed
+                // list only tracks close metas, not ordinary captured locals.
+                ZrCore_Closure_CloseClosure(state,
+                                      callInfo->functionBase.valuePointer + 1,
+                                      ZR_THREAD_STATUS_INVALID,
+                                      ZR_FALSE);
 
                 // 如果是可变参数函数，需要调整 functionBase 指针
                 // 参考 Lua: if (nparams1) ci->func.p -= ci->u.l.nextraargs + nparams1;
@@ -1904,18 +2043,15 @@ LZrReturning: {
                     // 通过索引直接访问 childFunctionList
                     if (childFunctionIndex < parentFunction->childFunctionLength) {
                         SZrFunction *childFunction = &parentFunction->childFunctionList[childFunctionIndex];
-                        if (childFunction != ZR_NULL && 
+                        if (childFunction != ZR_NULL &&
                             childFunction->super.type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
-                            // 创建闭包对象
-                            SZrClosure *childClosure = ZrCore_Closure_New(state, 0);
-                            if (childClosure != ZR_NULL) {
-                                childClosure->function = childFunction;
-                                ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(childClosure));
-                                destination->type = ZR_VALUE_TYPE_CLOSURE;
-                                destination->isGarbageCollectable = ZR_TRUE;
-                                destination->isNative = ZR_FALSE;
-                                found = ZR_TRUE;
-                            }
+                            SZrClosureValue **parentClosureValues =
+                                    closure != ZR_NULL ? closure->closureValuesExtend : ZR_NULL;
+                            ZrCore_Closure_PushToStack(state, childFunction, parentClosureValues, base, BASE(E(instruction)));
+                            destination->type = ZR_VALUE_TYPE_CLOSURE;
+                            destination->isGarbageCollectable = ZR_TRUE;
+                            destination->isNative = ZR_FALSE;
+                            found = ZR_TRUE;
                         }
                     }
                 }
@@ -2031,14 +2167,12 @@ LZrReturning: {
                     }
                 }
                 if (function != ZR_NULL) {
-                    // 创建闭包对象
-                    SZrClosure *closure = ZrCore_Closure_New(state, closureVarCount);
-                    closure->function = function;
-                    // 初始化闭包值
-                    if (closureVarCount > 0) {
-                        ZrCore_Closure_InitValue(state, closure);
-                    }
-                    ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+                    SZrClosureValue **parentClosureValues =
+                            closure != ZR_NULL ? closure->closureValuesExtend : ZR_NULL;
+                    ZrCore_Closure_PushToStack(state, function, parentClosureValues, base, BASE(E(instruction)));
+                    destination->type = ZR_VALUE_TYPE_CLOSURE;
+                    destination->isGarbageCollectable = ZR_TRUE;
+                    destination->isNative = ZR_FALSE;
                 } else {
                     // 类型错误或函数为NULL
                     ZrCore_Value_ResetAsNull(destination);

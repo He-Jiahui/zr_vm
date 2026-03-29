@@ -1,0 +1,29 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 12
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 3
+
+CONSTANTS (2):
+  [0] unknown type: 15
+  [1] unknown type: 15
+
+LOCAL_VARIABLES (2):
+  [0] greet: offset_activate=0, offset_dead=7
+  [1] buildMessage: offset_activate=2, offset_dead=7
+
+CLOSURE_VARIABLES (0):
+
+INSTRUCTIONS (7):
+  [0] CREATE_CLOSURE (extra=1)
+  [1] SET_STACK (extra=0, operand=1)
+  [2] CREATE_CLOSURE (extra=2)
+  [3] SET_STACK (extra=1, operand=2)
+  [4] GET_STACK (extra=2, operand=1)
+  [5] FUNCTION_TAIL_CALL (extra=2, operand1=2, operand2=0)
+  [6] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
+

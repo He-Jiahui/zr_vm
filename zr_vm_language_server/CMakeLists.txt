@@ -5,7 +5,7 @@ zr_declare_module(${zr_curr_module_name} ON)
 
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_parser")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_core")
-zr_include_third_party_for_module(${zr_curr_module_name} "zr_c_json")
+zr_link_third_party_for_module(${zr_curr_module_name} "zr_c_json")
 
 zr_install_module(${zr_curr_module_name})
 
@@ -13,6 +13,10 @@ zr_install_module(${zr_curr_module_name})
 option(BUILD_WASM "Build WASM version of language server using Emscripten" OFF)
 
 if(BUILD_WASM)
+    if(NOT CMAKE_CXX_COMPILER_LOADED)
+        enable_language(CXX)
+    endif()
+
     # 检查是否为 Emscripten 编译器
     # Emscripten 的编译器 ID 是 "Clang"，但可以通过检查 CMAKE_C_COMPILER 路径或系统名称来判断
     set(IS_EMSCRIPTEN FALSE)
@@ -49,9 +53,6 @@ if(BUILD_WASM)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/*.c
         )
         
-        # 收集第三方库的源文件
-        set(zr_xx_hash_src ${CMAKE_SOURCE_DIR}/third_party/zr_xx_hash/xxHash/xxhash.c)
-        
         # 排除测试文件
         list(FILTER zr_vm_core_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_parser_src EXCLUDE REGEX ".*test.*")
@@ -62,7 +63,6 @@ if(BUILD_WASM)
             ${zr_module_src}
             ${zr_vm_core_src}
             ${zr_vm_parser_src}
-            ${zr_xx_hash_src}
         )
         
         # 设置包含目录
@@ -73,8 +73,6 @@ if(BUILD_WASM)
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-            ${CMAKE_SOURCE_DIR}/third_party/zr_c_json
-            ${CMAKE_SOURCE_DIR}/third_party/zr_xx_hash
         )
         
         # 使用 EMSCRIPTEN_KEEPALIVE + EXPORTED_FUNCTIONS 导出函数
@@ -130,9 +128,8 @@ if(BUILD_WASM)
         # 链接依赖库（WASM 构建需要静态链接所有依赖）
         # 注意：由于依赖库尚未编译为 WASM，暂时只链接 cJSON
         # TODO: 需要确保 zr_vm_parser 和 zr_vm_core 也编译为 WASM 版本
-        target_link_libraries(${zr_curr_module_name}_wasm PRIVATE
-            zr_c_json_static
-        )
+        zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_c_json")
+        zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_xx_hash")
         
         message(STATUS "WASM target ${zr_curr_module_name}_wasm configured for Emscripten")
         message(STATUS "  Output directory: ${CMAKE_BINARY_DIR}/wasm")

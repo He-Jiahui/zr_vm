@@ -17,6 +17,10 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "runtime_support.h"
+#include "zr_vm_library.h"
+#include "zr_vm_lib_math/module.h"
+#include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
@@ -25,6 +29,10 @@
 // Unity 测试宏扩展 - 添加缺失的 UINT64 不等断言
 #ifndef TEST_ASSERT_NOT_EQUAL_UINT64
 #define TEST_ASSERT_NOT_EQUAL_UINT64(expected, actual)                                             TEST_ASSERT_NOT_EQUAL((expected), (actual))
+#endif
+
+#ifndef ZR_ARRAY_COUNT
+#define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
 // 测试时间测量结构
@@ -108,6 +116,7 @@ static SZrState *create_test_state(void) {
         ZrCore_GlobalState_InitRegistry(mainState, global);
         // 注册 parser 模块
         ZrParser_ToGlobalState_Register(mainState);
+        ZrVmLibSystem_Register(global);
     }
 
     return mainState;
@@ -122,6 +131,218 @@ static void destroy_test_state(SZrState *state) {
     if (global) {
         ZrCore_GlobalState_Free(global);
     }
+}
+
+static TZrBool string_equals_cstring(SZrString *value, const TZrChar *expected) {
+    const TZrChar *nativeString;
+
+    if (value == ZR_NULL || expected == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nativeString = ZrCore_String_GetNativeString(value);
+    return nativeString != ZR_NULL && strcmp(nativeString, expected) == 0;
+}
+
+static const SZrTypeValue *get_object_field_value(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
+    SZrString *fieldNameString;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    fieldNameString = ZrCore_String_Create(state, (TZrNativeString)fieldName, strlen(fieldName));
+    if (fieldNameString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldNameString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    return ZrCore_Object_GetValue(state, object, &key);
+}
+
+static const SZrTypeValue *get_module_export_value(SZrState *state, SZrObjectModule *module, const TZrChar *exportName) {
+    SZrString *exportNameString;
+
+    if (state == ZR_NULL || module == ZR_NULL || exportName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    exportNameString = ZrCore_String_Create(state, (TZrNativeString)exportName, strlen(exportName));
+    if (exportNameString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_Module_GetPubExport(state, module, exportNameString);
+}
+
+static TZrSize get_array_length(SZrObject *array) {
+    if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return 0;
+    }
+
+    return array->nodeMap.elementCount;
+}
+
+static SZrObject *get_array_entry_object(SZrState *state, SZrObject *array, TZrSize index) {
+    SZrTypeValue key;
+    const SZrTypeValue *entryValue;
+
+    if (state == ZR_NULL || array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)index);
+    entryValue = ZrCore_Object_GetValue(state, array, &key);
+    if (entryValue == ZR_NULL || entryValue->type != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_OBJECT(state, entryValue->value.object);
+}
+
+static const SZrTypeValue *get_zr_global_value(SZrState *state, const TZrChar *memberName) {
+    SZrGlobalState *global;
+    SZrObject *zrObject;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    global = state->global;
+    if (global->zrObject.type != ZR_VALUE_TYPE_OBJECT || global->zrObject.value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    zrObject = ZR_CAST_OBJECT(state, global->zrObject.value.object);
+    return get_object_field_value(state, zrObject, memberName);
+}
+
+static SZrObjectModule *import_native_module(SZrState *state, const TZrChar *moduleName) {
+    const SZrTypeValue *importValue;
+    SZrTypeValue argument;
+    SZrTypeValue result;
+    SZrObject *object;
+
+    if (state == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    importValue = get_zr_global_value(state, "import");
+    if (importValue == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrLib_Value_SetString(state, &argument, moduleName);
+    if (!ZrLib_CallValue(state, importValue, ZR_NULL, &argument, 1, &result)) {
+        return ZR_NULL;
+    }
+
+    if (result.type != ZR_VALUE_TYPE_OBJECT || result.value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = ZR_CAST_OBJECT(state, result.value.object);
+    if (object == ZR_NULL || object->internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+        return ZR_NULL;
+    }
+
+    return (SZrObjectModule *)object;
+}
+
+typedef struct {
+    const TZrChar *path;
+    const TZrChar *source;
+} SZrModuleFixtureSource;
+
+typedef struct {
+    const TZrByte *bytes;
+    TZrSize length;
+    TZrBool consumed;
+} SZrModuleFixtureReader;
+
+static const SZrModuleFixtureSource *g_module_fixture_sources = ZR_NULL;
+static TZrSize g_module_fixture_source_count = 0;
+
+static TZrBytePtr module_fixture_reader_read(SZrState *state, TZrPtr customData, TZrSize *size) {
+    SZrModuleFixtureReader *reader = (SZrModuleFixtureReader *)customData;
+
+    ZR_UNUSED_PARAMETER(state);
+
+    if (reader == ZR_NULL || size == ZR_NULL || reader->consumed) {
+        if (size != ZR_NULL) {
+            *size = 0;
+        }
+        return ZR_NULL;
+    }
+
+    reader->consumed = ZR_TRUE;
+    *size = reader->length;
+    return (TZrBytePtr)reader->bytes;
+}
+
+static void module_fixture_reader_close(SZrState *state, TZrPtr customData) {
+    ZR_UNUSED_PARAMETER(state);
+
+    if (customData != ZR_NULL) {
+        free(customData);
+    }
+}
+
+static TZrBool module_fixture_source_loader(SZrState *state, TZrNativeString sourcePath, TZrNativeString md5, SZrIo *io) {
+    TZrSize index;
+
+    ZR_UNUSED_PARAMETER(md5);
+
+    if (state == ZR_NULL || sourcePath == ZR_NULL || io == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < g_module_fixture_source_count; index++) {
+        const SZrModuleFixtureSource *fixture = &g_module_fixture_sources[index];
+        if (fixture->path != ZR_NULL &&
+            fixture->source != ZR_NULL &&
+            strcmp(fixture->path, sourcePath) == 0) {
+            SZrModuleFixtureReader *reader =
+                    (SZrModuleFixtureReader *)malloc(sizeof(SZrModuleFixtureReader));
+            if (reader == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            reader->bytes = (const TZrByte *)fixture->source;
+            reader->length = strlen(fixture->source);
+            reader->consumed = ZR_FALSE;
+            ZrCore_Io_Init(state, io, module_fixture_reader_read, module_fixture_reader_close, reader);
+            io->isBinary = ZR_FALSE;
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrObject *find_named_entry_in_array(SZrState *state,
+                                            SZrObject *array,
+                                            const TZrChar *fieldName,
+                                            const TZrChar *expectedValue) {
+    TZrSize index;
+
+    if (state == ZR_NULL || array == ZR_NULL || fieldName == ZR_NULL || expectedValue == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < get_array_length(array); index++) {
+        SZrObject *entry = get_array_entry_object(state, array, index);
+        const SZrTypeValue *fieldValue = get_object_field_value(state, entry, fieldName);
+        if (fieldValue != ZR_NULL &&
+            fieldValue->type == ZR_VALUE_TYPE_STRING &&
+            string_equals_cstring(ZR_CAST_STRING(state, fieldValue->value.object), expectedValue)) {
+            return entry;
+        }
+    }
+
+    return ZR_NULL;
 }
 
 static SZrObjectPrototype *get_module_exported_prototype(SZrState *state,
@@ -879,6 +1100,472 @@ void test_module_restores_field_scoped_using_prototype_metadata(void) {
     TEST_DIVIDER();
 }
 
+void test_source_module_exports_complex_function_graph_without_null_call_targets(void) {
+    static const SZrModuleFixtureSource kFixtures[] = {
+            {
+                    "lin_alg",
+                    "projectVectorsImpl(seed) {\n"
+                    "    return seed + 2;\n"
+                    "}\n"
+                    "pub var projectVectors = projectVectorsImpl;\n",
+            },
+            {
+                    "signal",
+                    "mixSignalImpl(seed) {\n"
+                    "    return seed + 3;\n"
+                    "}\n"
+                    "pub var mixSignal = mixSignalImpl;\n",
+            },
+            {
+                    "tensor_pipeline",
+                    "runTensorPassImpl() {\n"
+                    "    return 11;\n"
+                    "}\n"
+                    "pub var runTensorPass = runTensorPassImpl;\n",
+            },
+            {
+                    "probe_callbacks",
+                    "var lin = import(\"lin_alg\");\n"
+                    "var signal = import(\"signal\");\n"
+                    "var tensor = import(\"tensor_pipeline\");\n"
+                    "\n"
+                    "scaleValue(input) {\n"
+                    "    return input + 1;\n"
+                    "}\n"
+                    "\n"
+                    "runProbeImpl() {\n"
+                    "    var vectorValue = lin.projectVectors(2);\n"
+                    "    var signalValue = signal.mixSignal(5);\n"
+                    "    var tensorValue = tensor.runTensorPass();\n"
+                    "    return scaleValue(vectorValue + signalValue + tensorValue);\n"
+                    "}\n"
+                    "\n"
+                    "summarizeProbeImpl(value) {\n"
+                    "    return value + 7;\n"
+                    "}\n"
+                    "\n"
+                    "pub var runProbe = runProbeImpl;\n"
+                    "pub var summarizeProbe = summarizeProbeImpl;\n",
+            },
+    };
+    SZrTestTimer timer;
+    const char *testSummary = "Source Module Exports Complex Function Graph";
+    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
+    TZrSize previousFixtureCount = g_module_fixture_source_count;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *module;
+        const SZrTypeValue *runExport;
+        const SZrTypeValue *summarizeExport;
+        SZrTypeValue result;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        g_module_fixture_sources = kFixtures;
+        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
+        state->global->sourceLoader = module_fixture_source_loader;
+
+        module = import_native_module(state, "probe_callbacks");
+        TEST_ASSERT_NOT_NULL(module);
+
+        runExport = get_module_export_value(state, module, "runProbe");
+        summarizeExport = get_module_export_value(state, module, "summarizeProbe");
+        TEST_ASSERT_NOT_NULL(runExport);
+        TEST_ASSERT_NOT_NULL(summarizeExport);
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(runExport->type));
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(summarizeExport->type));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FUNCTION(runExport->type) || ZR_VALUE_IS_TYPE_CLOSURE(runExport->type));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FUNCTION(summarizeExport->type) || ZR_VALUE_IS_TYPE_CLOSURE(summarizeExport->type));
+
+        TEST_ASSERT_TRUE(ZrLib_CallValue(state, runExport, ZR_NULL, ZR_NULL, 0, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+        TEST_ASSERT_EQUAL_INT64(24, result.value.nativeObject.nativeInt64);
+
+        state->global->sourceLoader = ZR_NULL;
+        g_module_fixture_sources = previousFixtures;
+        g_module_fixture_source_count = previousFixtureCount;
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_system_vm_call_module_export_executes_nested_native_export(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "System Vm CallModuleExport Executes Nested Native Export";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrTypeValue directArgument;
+        SZrTypeValue directResult;
+        const TZrChar *source =
+                "var system = import(\"zr.system\");\n"
+                "return system.vm.callModuleExport(\"zr.math\", \"sqrt\", [4.0]);\n";
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        SZrTypeValue result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(ZrVmLibMath_Register(state->global));
+
+        ZrLib_Value_SetFloat(state, &directArgument, 4.0);
+        TEST_ASSERT_TRUE(ZrLib_CallModuleExport(state, "zr.math", "sqrt", &directArgument, 1, &directResult));
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(directResult.type));
+
+        sourceName = ZrCore_String_Create(state, "system_vm_call_module_export_test.zr", 37);
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(result.type));
+        TEST_ASSERT_EQUAL_INT(directResult.type, result.type);
+
+        ZrCore_Function_Free(state, entryFunction);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_system_root_aggregates_leaf_modules_and_reuses_cached_instances(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "System Root Aggregates Leaf Modules";
+    static const struct {
+        const TZrChar *exportName;
+        const TZrChar *moduleName;
+    } kExpectedModules[] = {
+            {"console", "zr.system.console"},
+            {"fs", "zr.system.fs"},
+            {"env", "zr.system.env"},
+            {"process", "zr.system.process"},
+            {"gc", "zr.system.gc"},
+            {"vm", "zr.system.vm"},
+    };
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *rootModule;
+        TZrSize index;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        rootModule = import_native_module(state, "zr.system");
+        TEST_ASSERT_NOT_NULL(rootModule);
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kExpectedModules); index++) {
+            SZrObjectModule *leafModule = import_native_module(state, kExpectedModules[index].moduleName);
+            const SZrTypeValue *exportValue = get_module_export_value(state, rootModule, kExpectedModules[index].exportName);
+            SZrObject *exportObject;
+
+            TEST_ASSERT_NOT_NULL(leafModule);
+            TEST_ASSERT_NOT_NULL(exportValue);
+            TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, exportValue->type);
+
+            exportObject = ZR_CAST_OBJECT(state, exportValue->value.object);
+            TEST_ASSERT_NOT_NULL(exportObject);
+            TEST_ASSERT_EQUAL_INT(ZR_OBJECT_INTERNAL_TYPE_MODULE, exportObject->internalType);
+            TEST_ASSERT_EQUAL_PTR(leafModule, exportObject);
+        }
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_system_root_exports_only_submodules(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "System Root Exports Only Submodules";
+    static const TZrChar *kAbsentExports[] = {
+            "printLine",
+            "println",
+            "writeText",
+            "vmState",
+            "gcDisable",
+            "callModuleExport",
+            "SystemFileInfo",
+            "SystemVmState",
+            "SystemLoadedModuleInfo",
+    };
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *rootModule;
+        TZrSize index;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        rootModule = import_native_module(state, "zr.system");
+        TEST_ASSERT_NOT_NULL(rootModule);
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kAbsentExports); index++) {
+            TEST_ASSERT_NULL(get_module_export_value(state, rootModule, kAbsentExports[index]));
+        }
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "System Leaf Modules Expose New API";
+    static const TZrChar *kConsoleExports[] = {"print", "printLine", "printError", "printErrorLine"};
+    static const TZrChar *kFsExports[] = {
+            "currentDirectory",
+            "changeCurrentDirectory",
+            "pathExists",
+            "isFile",
+            "isDirectory",
+            "createDirectory",
+            "createDirectories",
+            "removePath",
+            "readText",
+            "writeText",
+            "appendText",
+            "getInfo",
+            "SystemFileInfo",
+    };
+    static const TZrChar *kEnvExports[] = {"getVariable"};
+    static const TZrChar *kGcExports[] = {"start", "stop", "step", "collect"};
+    static const TZrChar *kVmExports[] = {"loadedModules", "state", "callModuleExport", "SystemVmState", "SystemLoadedModuleInfo"};
+    static const TZrChar *kConsoleAbsentExports[] = {"println", "eprint", "eprintln"};
+    static const TZrChar *kProcessAbsentExports[] = {"args", "sleepMs"};
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *consoleModule;
+        SZrObjectModule *fsModule;
+        SZrObjectModule *envModule;
+        SZrObjectModule *processModule;
+        SZrObjectModule *gcModule;
+        SZrObjectModule *vmModule;
+        const SZrTypeValue *argumentsValue;
+        TZrSize index;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        consoleModule = import_native_module(state, "zr.system.console");
+        fsModule = import_native_module(state, "zr.system.fs");
+        envModule = import_native_module(state, "zr.system.env");
+        processModule = import_native_module(state, "zr.system.process");
+        gcModule = import_native_module(state, "zr.system.gc");
+        vmModule = import_native_module(state, "zr.system.vm");
+
+        TEST_ASSERT_NOT_NULL(consoleModule);
+        TEST_ASSERT_NOT_NULL(fsModule);
+        TEST_ASSERT_NOT_NULL(envModule);
+        TEST_ASSERT_NOT_NULL(processModule);
+        TEST_ASSERT_NOT_NULL(gcModule);
+        TEST_ASSERT_NOT_NULL(vmModule);
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kConsoleExports); index++) {
+            TEST_ASSERT_NOT_NULL(get_module_export_value(state, consoleModule, kConsoleExports[index]));
+        }
+        for (index = 0; index < ZR_ARRAY_COUNT(kConsoleAbsentExports); index++) {
+            TEST_ASSERT_NULL(get_module_export_value(state, consoleModule, kConsoleAbsentExports[index]));
+        }
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kFsExports); index++) {
+            TEST_ASSERT_NOT_NULL(get_module_export_value(state, fsModule, kFsExports[index]));
+        }
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kEnvExports); index++) {
+            TEST_ASSERT_NOT_NULL(get_module_export_value(state, envModule, kEnvExports[index]));
+        }
+
+        argumentsValue = get_module_export_value(state, processModule, "arguments");
+        TEST_ASSERT_NOT_NULL(argumentsValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, argumentsValue->type);
+        TEST_ASSERT_NOT_NULL(get_module_export_value(state, processModule, "sleepMilliseconds"));
+        TEST_ASSERT_NOT_NULL(get_module_export_value(state, processModule, "exit"));
+        for (index = 0; index < ZR_ARRAY_COUNT(kProcessAbsentExports); index++) {
+            TEST_ASSERT_NULL(get_module_export_value(state, processModule, kProcessAbsentExports[index]));
+        }
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kGcExports); index++) {
+            TEST_ASSERT_NOT_NULL(get_module_export_value(state, gcModule, kGcExports[index]));
+        }
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kVmExports); index++) {
+            TEST_ASSERT_NOT_NULL(get_module_export_value(state, vmModule, kVmExports[index]));
+        }
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_system_native_types_register_complete_struct_fields(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "System Native Types Register Complete Struct Fields";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *fsModule;
+        SZrObjectModule *vmModule;
+        SZrObjectPrototype *fileInfoPrototype;
+        SZrObjectPrototype *vmStatePrototype;
+        SZrObjectPrototype *loadedModuleInfoPrototype;
+        TZrUInt64 offset = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        fsModule = import_native_module(state, "zr.system.fs");
+        vmModule = import_native_module(state, "zr.system.vm");
+        TEST_ASSERT_NOT_NULL(fsModule);
+        TEST_ASSERT_NOT_NULL(vmModule);
+
+        fileInfoPrototype = get_module_exported_prototype(state, fsModule, "SystemFileInfo");
+        vmStatePrototype = get_module_exported_prototype(state, vmModule, "SystemVmState");
+        loadedModuleInfoPrototype = get_module_exported_prototype(state, vmModule, "SystemLoadedModuleInfo");
+
+        TEST_ASSERT_NOT_NULL(fileInfoPrototype);
+        TEST_ASSERT_NOT_NULL(vmStatePrototype);
+        TEST_ASSERT_NOT_NULL(loadedModuleInfoPrototype);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, fileInfoPrototype->type);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, vmStatePrototype->type);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, loadedModuleInfoPrototype->type);
+
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)fileInfoPrototype, "path", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)fileInfoPrototype, "size", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)fileInfoPrototype, "isFile", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)fileInfoPrototype, "isDirectory", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)fileInfoPrototype, "modifiedMilliseconds", &offset));
+
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)vmStatePrototype, "loadedModuleCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)vmStatePrototype, "garbageCollectionMode", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)vmStatePrototype, "garbageCollectionDebt", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)vmStatePrototype, "garbageCollectionThreshold", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)vmStatePrototype, "stackDepth", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)vmStatePrototype, "frameDepth", &offset));
+
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "name", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "sourceKind", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "sourcePath", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)loadedModuleInfoPrototype, "hasTypeHints", &offset));
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_system_root_native_module_info_exposes_module_links(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "System Root Native Module Info Exposes Module Links";
+    static const struct {
+        const TZrChar *name;
+        const TZrChar *moduleName;
+    } kExpectedModules[] = {
+            {"console", "zr.system.console"},
+            {"fs", "zr.system.fs"},
+            {"env", "zr.system.env"},
+            {"process", "zr.system.process"},
+            {"gc", "zr.system.gc"},
+            {"vm", "zr.system.vm"},
+    };
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *rootModule;
+        const SZrTypeValue *moduleInfoValue;
+        const SZrTypeValue *functionsValue;
+        const SZrTypeValue *constantsValue;
+        const SZrTypeValue *typesValue;
+        const SZrTypeValue *modulesValue;
+        SZrObject *moduleInfo;
+        TZrSize index;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        rootModule = import_native_module(state, "zr.system");
+        TEST_ASSERT_NOT_NULL(rootModule);
+
+        moduleInfoValue = get_module_export_value(state, rootModule, ZR_NATIVE_MODULE_INFO_EXPORT_NAME);
+        TEST_ASSERT_NOT_NULL(moduleInfoValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, moduleInfoValue->type);
+
+        moduleInfo = ZR_CAST_OBJECT(state, moduleInfoValue->value.object);
+        TEST_ASSERT_NOT_NULL(moduleInfo);
+
+        functionsValue = get_object_field_value(state, moduleInfo, "functions");
+        constantsValue = get_object_field_value(state, moduleInfo, "constants");
+        typesValue = get_object_field_value(state, moduleInfo, "types");
+        modulesValue = get_object_field_value(state, moduleInfo, "modules");
+
+        TEST_ASSERT_NOT_NULL(functionsValue);
+        TEST_ASSERT_NOT_NULL(constantsValue);
+        TEST_ASSERT_NOT_NULL(typesValue);
+        TEST_ASSERT_NOT_NULL(modulesValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, functionsValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, constantsValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, typesValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, modulesValue->type);
+        TEST_ASSERT_EQUAL_UINT64(0, get_array_length(ZR_CAST_OBJECT(state, functionsValue->value.object)));
+        TEST_ASSERT_EQUAL_UINT64(0, get_array_length(ZR_CAST_OBJECT(state, constantsValue->value.object)));
+        TEST_ASSERT_EQUAL_UINT64(0, get_array_length(ZR_CAST_OBJECT(state, typesValue->value.object)));
+        TEST_ASSERT_EQUAL_UINT64(ZR_ARRAY_COUNT(kExpectedModules), get_array_length(ZR_CAST_OBJECT(state, modulesValue->value.object)));
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kExpectedModules); index++) {
+            SZrObject *entry = find_named_entry_in_array(state,
+                                                         ZR_CAST_OBJECT(state, modulesValue->value.object),
+                                                         "name",
+                                                         kExpectedModules[index].name);
+            const SZrTypeValue *moduleNameValue;
+
+            TEST_ASSERT_NOT_NULL(entry);
+            moduleNameValue = get_object_field_value(state, entry, "moduleName");
+            TEST_ASSERT_NOT_NULL(moduleNameValue);
+            TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, moduleNameValue->type);
+            TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, moduleNameValue->value.object),
+                                                   kExpectedModules[index].moduleName));
+        }
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // ==================== 主函数 ====================
 
 int main(void) {
@@ -920,6 +1607,27 @@ int main(void) {
 
     // 11. prototypeData 中 using 字段元数据恢复
     RUN_TEST(test_module_restores_field_scoped_using_prototype_metadata);
+
+    // 12. 复杂 source module 导出函数图不应出现 null call target
+    RUN_TEST(test_source_module_exports_complex_function_graph_without_null_call_targets);
+
+    // 13. zr.system.vm.callModuleExport 可执行嵌套 native 导出
+    RUN_TEST(test_system_vm_call_module_export_executes_nested_native_export);
+
+    // 14. zr.system 聚合根导出叶子模块
+    RUN_TEST(test_system_root_aggregates_leaf_modules_and_reuses_cached_instances);
+
+    // 15. zr.system 根模块仅导出子模块
+    RUN_TEST(test_system_root_exports_only_submodules);
+
+    // 16. 叶子模块导出新的 system API
+    RUN_TEST(test_system_leaf_modules_expose_new_api_and_owned_types);
+
+    // 17. system 原生类型字段元信息完整
+    RUN_TEST(test_system_native_types_register_complete_struct_fields);
+
+    // 18. 根模块原生元信息包含 modules 数组
+    RUN_TEST(test_system_root_native_module_info_exposes_module_links);
 
     return UNITY_END();
 }

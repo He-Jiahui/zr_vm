@@ -1,0 +1,3 @@
+var probe = import("probe_callbacks");
+
+return probe.runProbe();

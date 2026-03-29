@@ -1,0 +1,19 @@
+var system = import("zr.system");
+
+persistReportImpl(summary) {
+    var outDir = "tests/fixtures/projects/native_numeric_pipeline/bin/out";
+    system.fs.createDirectories(outDir);
+    var path = outDir + "/report.txt";
+    var banner = "NATIVE_NUMERIC_PIPELINE_PASS";
+    var text = banner + "\nchecksum=" + summary.checksum + "\nloaded=" + summary.loadedModuleCount;
+    system.fs.writeText(path, text);
+    var replay = system.fs.readText(path);
+    return {
+        path: path;
+        banner: banner;
+        replay: replay;
+        checksum: summary.checksum;
+    };
+}
+
+pub var persistReport = persistReportImpl;

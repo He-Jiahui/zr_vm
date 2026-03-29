@@ -1,0 +1,7 @@
+var math = import("zr.math");
+
+runImpl() {
+    return $math.Complex(5.0, 12.0).magnitude();
+}
+
+pub var run = runImpl;

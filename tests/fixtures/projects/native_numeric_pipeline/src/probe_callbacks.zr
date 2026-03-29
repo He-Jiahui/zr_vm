@@ -1,0 +1,40 @@
+var math = import("zr.math");
+var system = import("zr.system");
+var lin = import("lin_alg");
+var signal = import("signal");
+var tensor = import("tensor_pipeline");
+
+scaleValue(input: float) {
+    return input * 2.0;
+}
+
+runProbeImpl() {
+    system.console.printLine("probe:begin");
+    var vectorInfo = lin.projectVectors(2.0);
+    system.console.printLine("probe:lin");
+    var signalInfo = signal.mixSignal(5.0);
+    system.console.printLine("probe:signal");
+    var tensorInfo = tensor.runTensorPass();
+    system.console.printLine("probe:tensor");
+    var callbackValue = math.invokeCallback(scaleValue, vectorInfo.dot);
+    system.console.printLine("probe:invokeCallback");
+    var exportedValue = system.vm.callModuleExport("probe_callbacks", "summarizeProbe", [callbackValue]);
+    system.console.printLine("probe:callModuleExport");
+    var modules = system.vm.loadedModules();
+    system.console.printLine("probe:loadedModules");
+    var state = system.vm.state();
+    system.console.printLine("probe:vmState");
+    system.gc.stop();
+    system.gc.step();
+    system.gc.start();
+    system.gc.collect();
+    system.console.printErrorLine("probe:stderr");
+    return exportedValue + signalInfo.magnitude + tensorInfo.sum + tensorInfo.mean + state.loadedModuleCount + modules.length;
+}
+
+summarizeProbeImpl(value: float) {
+    return value + 7.0;
+}
+
+pub var runProbe = runProbeImpl;
+pub var summarizeProbe = summarizeProbeImpl;

@@ -61,6 +61,8 @@ void tearDown(void) {}
 
 static TZrBool run_test_case(const TZrChar *testName, const TZrChar *fileName) {
     SZrTestTimer timer;
+    TZrChar filePath[1024];
+    TZrSize readSize = 0;
     timer.startTime = clock();
 
     TEST_START(testName);
@@ -71,59 +73,23 @@ static TZrBool run_test_case(const TZrChar *testName, const TZrChar *fileName) {
         return ZR_FALSE;
     }
 
-    TZrChar filePath[1024];
-    const TZrChar *possiblePaths[] = {
-        "test_cases",
-        "tests/scripts/test_cases",
-        ".",
-        ZR_NULL
-    };
-
-    FILE *testFile = ZR_NULL;
-    for (TZrSize i = 0; possiblePaths[i] != ZR_NULL; i++) {
-        snprintf(filePath, sizeof(filePath), "%s/%s", possiblePaths[i], fileName);
-        testFile = fopen(filePath, "rb");
-        if (testFile != ZR_NULL) {
-            break;
-        }
-    }
-
-    if (testFile == ZR_NULL) {
-        TEST_INFO("File loading", "Could not find test file, trying direct path");
-        testFile = fopen(fileName, "rb");
-    }
-
-    if (testFile == ZR_NULL) {
+    get_test_case_path(fileName, filePath, sizeof(filePath));
+    if (filePath[0] == '\0') {
         destroy_test_state(state);
-        TEST_FAIL_CUSTOM(timer, testName, "Failed to open test file");
+        TEST_FAIL_CUSTOM(timer, testName, "Failed to resolve test case path");
         return ZR_FALSE;
     }
 
-    fseek(testFile, 0, SEEK_END);
-    long fileSize = ftell(testFile);
-    fseek(testFile, 0, SEEK_SET);
-    if (fileSize < 0) {
-        fclose(testFile);
-        destroy_test_state(state);
-        TEST_FAIL_CUSTOM(timer, testName, "Failed to get file size");
-        return ZR_FALSE;
-    }
-
-    TZrChar *source = (TZrChar *)malloc((TZrSize)fileSize + 1);
+    TZrChar *source = load_zr_file(filePath, &readSize);
     if (source == ZR_NULL) {
-        fclose(testFile);
         destroy_test_state(state);
-        TEST_FAIL_CUSTOM(timer, testName, "Failed to allocate memory for source");
+        TEST_FAIL_CUSTOM(timer, testName, "Failed to read test file");
         return ZR_FALSE;
     }
 
-    TZrSize readSize = (TZrSize)fread(source, 1, (TZrSize)fileSize, testFile);
-    fclose(testFile);
-    source[readSize] = '\0';
+    TEST_INFO("Parsing and Compiling", filePath);
 
-    TEST_INFO("Parsing and Compiling", fileName);
-
-    SZrTestResult *result = parse_and_compile(state, source, readSize, fileName);
+    SZrTestResult *result = parse_and_compile(state, source, readSize, filePath);
 
     if (result == ZR_NULL || !result->success) {
         free(source);
