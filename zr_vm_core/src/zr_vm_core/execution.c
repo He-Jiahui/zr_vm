@@ -1379,6 +1379,10 @@ static TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInf
                 for (TZrUInt32 catchIndex = 0; catchIndex < handlerInfo->catchClauseCount; catchIndex++) {
                     SZrFunctionCatchClauseInfo *catchInfo =
                             &function->catchClauseList[handlerInfo->catchClauseStartIndex + catchIndex];
+                    const TZrChar *catchTypeName = "<any>";
+                    if (catchInfo->typeName != ZR_NULL) {
+                        catchTypeName = ZrCore_String_GetNativeStringShort(catchInfo->typeName);
+                    }
                     if (ZrCore_Exception_CatchMatchesTypeName(state, &state->currentException, catchInfo->typeName)) {
                         handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_CATCH;
                         return execution_jump_to_instruction_offset(state,

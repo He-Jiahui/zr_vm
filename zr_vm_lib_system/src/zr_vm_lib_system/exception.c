@@ -104,6 +104,7 @@ TZrBool ZrSystem_Exception_Constructor(ZrLibCallContext *context, SZrTypeValue *
     system_exception_set_message_field(context->state, selfObject, messageArgument, "message");
 
     if (selfValue != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(&exceptionValue);
         ZrCore_Value_Copy(context->state, &exceptionValue, selfValue);
         ZrLib_Object_SetFieldCString(context->state, selfObject, "exception", &exceptionValue);
     }

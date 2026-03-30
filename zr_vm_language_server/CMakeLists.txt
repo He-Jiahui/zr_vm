@@ -15,6 +15,10 @@ option(BUILD_LANGUAGE_SERVER_STDIO "Build native stdio LSP server" ON)
 if(BUILD_LANGUAGE_SERVER_STDIO)
     add_executable(zr_vm_language_server_stdio
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/zr_vm_language_server_stdio.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_transport.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_json.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_documents.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_requests.c
     )
 
     target_include_directories(zr_vm_language_server_stdio PRIVATE

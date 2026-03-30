@@ -178,6 +178,7 @@ void ZrCore_Closure_CloseStackValue(struct SZrState *state, TZrStackValuePointer
         SZrTypeValue *slot = &closureValue->link.closedValue;
         ZR_ASSERT(closureValue->value.valuePointer < state->stackTop.valuePointer);
         ZrCore_Closure_UnlinkValue(closureValue);
+        ZrCore_Value_ResetAsNull(slot);
         ZrCore_Value_Copy(state, slot, ZR_CAST_FROM_STACK_VALUE(closureValue->value.valuePointer));
         closureValue->value.valuePointer = ZR_CAST_STACK_VALUE(slot);
         SZrRawObject *rawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue);

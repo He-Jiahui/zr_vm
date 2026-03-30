@@ -23,6 +23,9 @@ extern void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNod
 static void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value);
 static void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value);
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node);
+static TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
+                                                       SZrString *name,
+                                                       TZrUInt32 stackSlot);
 
 static SZrAstNode *try_statement_first_catch_clause(SZrTryCatchFinallyStatement *stmt) {
     if (stmt == ZR_NULL || stmt->catchClauses == ZR_NULL || stmt->catchClauses->count == 0) {
@@ -106,6 +109,37 @@ static SZrString *catch_clause_type_name(SZrAstNode *catchClauseNode) {
     }
 
     return ZR_NULL;
+}
+
+static TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
+                                                       SZrString *name,
+                                                       TZrUInt32 stackSlot) {
+    SZrFunctionLocalVariable localVar;
+
+    if (cs == ZR_NULL || cs->hasError || name == ZR_NULL) {
+        return 0;
+    }
+
+    if (cs->stackSlotCount == 0 || stackSlot >= cs->stackSlotCount) {
+        return 0;
+    }
+
+    localVar.name = name;
+    localVar.stackSlot = stackSlot;
+    localVar.offsetActivate = (TZrMemoryOffset)cs->instructionCount;
+    localVar.offsetDead = 0;
+
+    ZrCore_Array_Push(cs->state, &cs->localVars, &localVar);
+    cs->localVarCount = cs->localVars.length;
+
+    if (cs->scopeStack.length > 0) {
+        SZrScope *scope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, cs->scopeStack.length - 1);
+        if (scope != ZR_NULL) {
+            scope->varCount++;
+        }
+    }
+
+    return stackSlot;
 }
 
 static TZrUInt32 catch_clause_binding_slot(SZrCompilerState *cs, SZrAstNode *catchClauseNode) {
@@ -462,52 +496,24 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             return;
         }
 
-        if (cs->typeEnv != ZR_NULL) {
-            if (hasResolvedType) {
-                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, varName, &resolvedType);
-            } else {
-                SZrInferredType defaultType;
-                ZrParser_InferredType_Init(cs->state, &defaultType, ZR_VALUE_TYPE_OBJECT);
-                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, varName, &defaultType);
-                ZrParser_InferredType_Free(cs->state, &defaultType);
-            }
-        }
-        
-        // 分配局部变量槽位
-        TZrUInt32 varIndex = allocate_local_var(cs, varName);
-        
-        // 如果是 const 变量，记录到 constLocalVars 数组
-        if (decl->isConst) {
-            ZrCore_Array_Push(cs->state, &cs->constLocalVars, &varName);
-        }
-        
-        // 如果是脚本级变量且可见性为 pub 或 pro，记录到导出列表
-        if (cs->isScriptLevel && decl->accessModifier != ZR_ACCESS_PRIVATE) {
-            SZrExportedVariable exportedVar;
-            exportedVar.name = varName;
-            exportedVar.stackSlot = varIndex;
-            exportedVar.accessModifier = decl->accessModifier;
-            
-            // pub 变量同时添加到 pub 和 pro 列表
-            if (decl->accessModifier == ZR_ACCESS_PUBLIC) {
-                ZrCore_Array_Push(cs->state, &cs->pubVariables, &exportedVar);
-                ZrCore_Array_Push(cs->state, &cs->proVariables, &exportedVar);
-            } else if (decl->accessModifier == ZR_ACCESS_PROTECTED) {
-                // pro 变量只添加到 pro 列表（pro 列表已经包含所有 pub）
-                ZrCore_Array_Push(cs->state, &cs->proVariables, &exportedVar);
-            }
-        }
-        
+        TZrUInt32 varIndex = 0;
+
         // 如果有初始值，编译初始值表达式
         if (decl->value != ZR_NULL) {
             ZrParser_Expression_Compile(cs, decl->value);
-            TZrUInt32 initSlot = cs->stackSlotCount - 1;
-            
-            // 生成 SET_STACK 指令
-            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)varIndex, (TZrInt32)initSlot);
-            emit_instruction(cs, inst);
+            if (cs->hasError || cs->stackSlotCount == 0) {
+                if (resolvedTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &resolvedType);
+                }
+                return;
+            }
+
+            varIndex = bind_existing_stack_slot_as_local_var(cs,
+                                                             varName,
+                                                             (TZrUInt32)(cs->stackSlotCount - 1));
         } else {
             TZrSize fixedArraySize;
+            varIndex = allocate_local_var(cs, varName);
 
             if (hasResolvedType && resolve_fixed_array_size(&resolvedType, &fixedArraySize)) {
                 compile_default_fixed_array_initialization(cs, varIndex, fixedArraySize, node->location);
@@ -520,9 +526,40 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                 TZrInstruction setInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)varIndex, (TZrInt32)varIndex);
                 emit_instruction(cs, setInst);
             }
+
+            ZrParser_Compiler_TrimStackToSlot(cs, varIndex);
         }
 
-        ZrParser_Compiler_TrimStackToSlot(cs, varIndex);
+        if (cs->typeEnv != ZR_NULL) {
+            if (hasResolvedType) {
+                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, varName, &resolvedType);
+            } else {
+                SZrInferredType defaultType;
+                ZrParser_InferredType_Init(cs->state, &defaultType, ZR_VALUE_TYPE_OBJECT);
+                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, varName, &defaultType);
+                ZrParser_InferredType_Free(cs->state, &defaultType);
+            }
+        }
+
+        // 如果是 const 变量，记录到 constLocalVars 数组
+        if (decl->isConst) {
+            ZrCore_Array_Push(cs->state, &cs->constLocalVars, &varName);
+        }
+
+        // 如果是脚本级变量且可见性为 pub 或 pro，记录到导出列表
+        if (cs->isScriptLevel && decl->accessModifier != ZR_ACCESS_PRIVATE) {
+            SZrExportedVariable exportedVar;
+            exportedVar.name = varName;
+            exportedVar.stackSlot = varIndex;
+            exportedVar.accessModifier = decl->accessModifier;
+
+            if (decl->accessModifier == ZR_ACCESS_PUBLIC) {
+                ZrCore_Array_Push(cs->state, &cs->pubVariables, &exportedVar);
+                ZrCore_Array_Push(cs->state, &cs->proVariables, &exportedVar);
+            } else if (decl->accessModifier == ZR_ACCESS_PROTECTED) {
+                ZrCore_Array_Push(cs->state, &cs->proVariables, &exportedVar);
+            }
+        }
 
         if (resolvedTypeInitialized) {
             ZrParser_InferredType_Free(cs->state, &resolvedType);

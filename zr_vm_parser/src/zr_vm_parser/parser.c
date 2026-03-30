@@ -3380,6 +3380,7 @@ static EZrAccessModifier parse_access_modifier(SZrParserState *ps) {
 // 解析参数
 static SZrAstNode *parse_parameter(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNodeArray *decorators = parse_leading_decorators(ps);
 
     // 检查是否是可变参数 (...name: type)
     TZrBool isVariadic = ZR_FALSE;
@@ -3418,6 +3419,9 @@ static SZrAstNode *parse_parameter(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_PARAMETER, startLoc);
     if (node == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
 
@@ -3425,6 +3429,7 @@ static SZrAstNode *parse_parameter(SZrParserState *ps) {
     node->data.parameter.typeInfo = typeInfo;
     node->data.parameter.defaultValue = defaultValue;
     node->data.parameter.isConst = isConst;
+    node->data.parameter.decorators = decorators;
     return node;
 }
 

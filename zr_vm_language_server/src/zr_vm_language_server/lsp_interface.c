@@ -781,10 +781,43 @@ static void enrich_completion_item_metadata(SZrState *state,
     }
 }
 
+static TZrBool should_suppress_parser_diagnostic(SZrDiagnostic *diag) {
+    TZrNativeString codeText;
+    TZrSize codeLength;
+    TZrNativeString messageText;
+    TZrSize messageLength;
+    static const TZrChar parserSyntaxCode[] = "parser_syntax_error";
+    static const TZrChar legacyModuleMessage[] = "Legacy module syntax is not supported; use %module";
+    static const TZrChar legacyImportMessage[] = "Legacy import() syntax is not supported; use %import";
+
+    if (diag == ZR_NULL || diag->code == ZR_NULL || diag->message == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    get_string_view(diag->code, &codeText, &codeLength);
+    if (codeText == ZR_NULL || codeLength != strlen(parserSyntaxCode) ||
+        memcmp(codeText, parserSyntaxCode, codeLength) != 0) {
+        return ZR_FALSE;
+    }
+
+    get_string_view(diag->message, &messageText, &messageLength);
+    if (messageText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (messageLength == strlen(legacyModuleMessage) &&
+        memcmp(messageText, legacyModuleMessage, messageLength) == 0) {
+        return ZR_TRUE;
+    }
+
+    return messageLength == strlen(legacyImportMessage) &&
+           memcmp(messageText, legacyImportMessage, messageLength) == 0;
+}
+
 static void append_lsp_diagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag) {
     SZrLspDiagnostic *lspDiag;
 
-    if (state == ZR_NULL || result == ZR_NULL || diag == ZR_NULL) {
+    if (state == ZR_NULL || result == ZR_NULL || diag == ZR_NULL || should_suppress_parser_diagnostic(diag)) {
         return;
     }
 

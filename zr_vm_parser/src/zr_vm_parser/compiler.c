@@ -2561,7 +2561,6 @@ static TZrBool extern_compiler_build_signature_descriptor_value(SZrCompilerState
     }
     extern_compiler_temp_root_set_object(&signatureRoot, signatureObject, ZR_VALUE_TYPE_OBJECT);
     extern_compiler_temp_root_set_object(&parametersRoot, parametersArray, ZR_VALUE_TYPE_ARRAY);
-
     if (includeKind &&
         !extern_compiler_descriptor_set_string_field(cs, signatureObject, "kind", "function")) {
         extern_compiler_temp_root_end(&parametersRoot);
@@ -5735,7 +5734,6 @@ static void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *n
                                                                      &symbolArguments[1])) {
                     return;
                 }
-
                 ZrCore_Value_InitAsRawObject(cs->state, &symbolArguments[0], ZR_CAST_RAW_OBJECT_AS_SUPER(entryName));
                 symbolArguments[0].type = ZR_VALUE_TYPE_STRING;
 
@@ -7433,6 +7431,7 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
             func->constantValueLength = 0;
             func->constantValueList = ZR_NULL;
         }
+
 
         // 3. 复制局部变量列表（仅对脚本包装函数）
         // 使用 localVars.length 而不是 localVarCount，确保同步

@@ -502,6 +502,10 @@ static TZrBool execute_function_and_get_result(SZrState *state, SZrFunction *fun
         return ZR_FALSE;
     }
 
+    if (result != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(result);
+    }
+
     // 检查 function 参数的有效性
     if (function->instructionsList == ZR_NULL) {
         return ZR_FALSE;
