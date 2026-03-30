@@ -60,6 +60,7 @@ dkms.conf
 /CMakeSettings.json
 /.notes
 /.codex
+/.worktrees
 
 # dist dir
 /zig-out
