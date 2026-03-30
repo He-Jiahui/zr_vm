@@ -1117,8 +1117,8 @@ void test_field_scoped_using_field_parsing(void) {
 
     {
         const char *source =
-            "struct HandleBox { using var handle: unique<Resource>; }\n"
-            "class Holder { static using var resource: unique<Resource>; }";
+            "struct HandleBox { using var handle: %unique Resource; }\n"
+            "class Holder { static using var resource: %unique Resource; }";
         SZrString *sourceName = ZrCore_String_Create(state, "using_fields.zr", 15);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *structDecl;
@@ -1190,7 +1190,7 @@ void test_field_scoped_using_field_requires_var_keyword(void) {
               "Testing that `using` fields without the required `var` keyword are rejected instead of silently becoming ordinary fields");
 
     {
-        const char *source = "struct Broken { using handle: unique<Resource>; }";
+        const char *source = "struct Broken { using handle: %unique Resource; }";
         SZrString *sourceName = ZrCore_String_Create(state, "using_missing_var.zr", 20);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
@@ -1201,6 +1201,96 @@ void test_field_scoped_using_field_requires_var_keyword(void) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, ast->data.script.statements->nodes[0]->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[0]->data.structDeclaration.members);
         TEST_ASSERT_EQUAL_INT(0, (int)ast->data.script.statements->nodes[0]->data.structDeclaration.members->count);
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_owned_class_and_prefixed_ownership_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Owned Class And Prefixed Ownership Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Owned class and prefixed ownership parsing",
+              "Testing %owned class declarations, %unique/%shared/%weak/%borrowed types, and %unique/%shared/%using new expressions");
+
+    {
+        const char *source =
+            "%owned class Holder {}\n"
+            "var owned: %unique Resource;\n"
+            "var sharedRef: %shared Box<int>;\n"
+            "var weakRef: %weak Resource;\n"
+            "var borrowedRef: %borrowed Resource;\n"
+            "var uniqueOwner = %unique new Resource();\n"
+            "var sharedOwner = %shared new Resource();\n"
+            "var scopedOwner = %using new Resource();";
+        SZrString *sourceName = ZrCore_String_Create(state, "owned_prefix_syntax.zr", 22);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *classDecl;
+        SZrAstNode *borrowedDecl;
+        SZrAstNode *uniqueOwnerDecl;
+        SZrAstNode *sharedOwnerDecl;
+        SZrAstNode *scopedOwnerDecl;
+        SZrConstructExpression *uniqueConstruct;
+        SZrConstructExpression *sharedConstruct;
+        SZrConstructExpression *scopedConstruct;
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(8, (int)ast->data.script.statements->count);
+
+        classDecl = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(classDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, classDecl->type);
+        TEST_ASSERT_TRUE(classDecl->data.classDeclaration.isOwned);
+
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+                              ast->data.script.statements->nodes[1]->data.variableDeclaration.typeInfo->ownershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
+                              ast->data.script.statements->nodes[2]->data.variableDeclaration.typeInfo->ownershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_WEAK,
+                              ast->data.script.statements->nodes[3]->data.variableDeclaration.typeInfo->ownershipQualifier);
+
+        borrowedDecl = ast->data.script.statements->nodes[4];
+        TEST_ASSERT_NOT_NULL(borrowedDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, borrowedDecl->type);
+        TEST_ASSERT_NOT_NULL(borrowedDecl->data.variableDeclaration.typeInfo);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_BORROWED,
+                              borrowedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
+
+        uniqueOwnerDecl = ast->data.script.statements->nodes[5];
+        sharedOwnerDecl = ast->data.script.statements->nodes[6];
+        scopedOwnerDecl = ast->data.script.statements->nodes[7];
+        TEST_ASSERT_NOT_NULL(uniqueOwnerDecl);
+        TEST_ASSERT_NOT_NULL(sharedOwnerDecl);
+        TEST_ASSERT_NOT_NULL(scopedOwnerDecl);
+
+        uniqueConstruct = &uniqueOwnerDecl->data.variableDeclaration.value->data.constructExpression;
+        sharedConstruct = &sharedOwnerDecl->data.variableDeclaration.value->data.constructExpression;
+        scopedConstruct = &scopedOwnerDecl->data.variableDeclaration.value->data.constructExpression;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, uniqueOwnerDecl->data.variableDeclaration.value->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, sharedOwnerDecl->data.variableDeclaration.value->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, scopedOwnerDecl->data.variableDeclaration.value->type);
+        TEST_ASSERT_TRUE(uniqueConstruct->isNew);
+        TEST_ASSERT_TRUE(sharedConstruct->isNew);
+        TEST_ASSERT_TRUE(scopedConstruct->isNew);
+        TEST_ASSERT_FALSE(uniqueConstruct->isUsing);
+        TEST_ASSERT_FALSE(sharedConstruct->isUsing);
+        TEST_ASSERT_TRUE(scopedConstruct->isUsing);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE, uniqueConstruct->ownershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED, sharedConstruct->ownershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_NONE, scopedConstruct->ownershipQualifier);
+
         ZrParser_Ast_Free(state, ast);
     }
 
@@ -1788,6 +1878,7 @@ int main(void) {
     RUN_TEST(test_struct_declaration);
     RUN_TEST(test_field_scoped_using_field_parsing);
     RUN_TEST(test_field_scoped_using_field_requires_var_keyword);
+    RUN_TEST(test_owned_class_and_prefixed_ownership_parsing);
     
     TEST_MODULE_DIVIDER();
     printf("Statement Tests\n");

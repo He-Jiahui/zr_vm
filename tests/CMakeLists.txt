@@ -16,6 +16,7 @@ set(ZR_VM_TESTS_HARNESS_SOURCES
 
 set(ZR_VM_SUITE_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_executable_suite.cmake)
 set(ZR_VM_PROJECTS_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_projects_suite.cmake)
+find_program(ZR_VM_NODE_EXECUTABLE node)
 
 function(zr_vm_apply_common_test_settings target_name)
     target_include_directories(${target_name} PRIVATE
@@ -501,6 +502,15 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
             "-DEXECUTABLES=${language_server_executables}"
             "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
             -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
+    add_test(
+            NAME language_server_stdio_smoke
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_smoke.js
+            $<TARGET_FILE:zr_vm_language_server_stdio>
     )
 endif ()
 

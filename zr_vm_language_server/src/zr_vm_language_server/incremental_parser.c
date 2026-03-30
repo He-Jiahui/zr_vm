@@ -9,9 +9,55 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_language_server/semantic_analyzer.h"
 #include "zr_vm_parser/parser.h"
 
 #include <string.h>
+#include <stdio.h>
+
+typedef struct SZrParserDiagnosticCollector {
+    SZrState *state;
+    SZrFileVersion *fileVersion;
+} SZrParserDiagnosticCollector;
+
+static void clear_parser_diagnostics(SZrState *state, SZrFileVersion *fileVersion) {
+    if (state == ZR_NULL || fileVersion == ZR_NULL || !fileVersion->parserDiagnostics.isValid) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < fileVersion->parserDiagnostics.length; index++) {
+        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&fileVersion->parserDiagnostics, index);
+        if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
+            ZrLanguageServer_Diagnostic_Free(state, *diagPtr);
+        }
+    }
+
+    fileVersion->parserDiagnostics.length = 0;
+}
+
+static void collect_parser_diagnostic(TZrPtr userData,
+                                      const SZrFileRange *location,
+                                      const TZrChar *message,
+                                      EZrToken token) {
+    SZrParserDiagnosticCollector *collector = (SZrParserDiagnosticCollector *)userData;
+    SZrDiagnostic *diagnostic;
+
+    ZR_UNUSED_PARAMETER(token);
+
+    if (collector == ZR_NULL || collector->state == ZR_NULL || collector->fileVersion == ZR_NULL ||
+        location == ZR_NULL || message == ZR_NULL) {
+        return;
+    }
+
+    diagnostic = ZrLanguageServer_Diagnostic_New(collector->state,
+                                                 ZR_DIAGNOSTIC_ERROR,
+                                                 *location,
+                                                 message,
+                                                 "parser_syntax_error");
+    if (diagnostic != ZR_NULL) {
+        ZrCore_Array_Push(collector->state, &collector->fileVersion->parserDiagnostics, &diagnostic);
+    }
+}
 
 // 创建文件版本
 SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
@@ -41,6 +87,7 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
     fileVersion->lastContentHash = ZR_NULL;
     fileVersion->lastContentHashLength = 0;
     fileVersion->hasIncrementalInfo = ZR_FALSE;
+    ZrCore_Array_Init(state, &fileVersion->parserDiagnostics, sizeof(SZrDiagnostic *), 4);
     
     // 复制内容
     fileVersion->content = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, contentLength + 1);
@@ -59,19 +106,22 @@ void ZrLanguageServer_FileVersion_Free(SZrState *state, SZrFileVersion *fileVers
     if (state == ZR_NULL || fileVersion == ZR_NULL) {
         return;
     }
-    
+
     if (fileVersion->content != ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, fileVersion->content, fileVersion->contentLength + 1);
     }
-    
+
     if (fileVersion->ast != ZR_NULL) {
         ZrParser_Ast_Free(state, fileVersion->ast);
     }
-    
+
+    clear_parser_diagnostics(state, fileVersion);
+    ZrCore_Array_Free(state, &fileVersion->parserDiagnostics);
+
     if (fileVersion->lastContentHash != ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, fileVersion->lastContentHash, fileVersion->lastContentHashLength + 1);
     }
-    
+
     ZrCore_Memory_RawFree(state->global, fileVersion, sizeof(SZrFileVersion));
 }
 
@@ -109,6 +159,8 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
         ZrParser_Ast_Free(state, fileVersion->ast);
         fileVersion->ast = ZR_NULL;
     }
+
+    clear_parser_diagnostics(state, fileVersion);
     
     // 释放旧哈希
     if (fileVersion->lastContentHash != ZR_NULL) {
@@ -151,7 +203,7 @@ void ZrLanguageServer_IncrementalParser_Free(SZrState *state, SZrIncrementalPars
     if (state == ZR_NULL || parser == ZR_NULL) {
         return;
     }
-    
+
     // 释放所有文件版本
     if (parser->uriToFileMap.isValid && parser->uriToFileMap.buckets != ZR_NULL) {
         // 遍历哈希表释放所有文件版本和节点
@@ -179,11 +231,11 @@ void ZrLanguageServer_IncrementalParser_Free(SZrState *state, SZrIncrementalPars
         // 释放 buckets 数组
         ZrCore_HashSet_Deconstruct(state, &parser->uriToFileMap);
     }
-    
+
     if (parser->parserState != ZR_NULL) {
         ZrParser_State_Free(parser->parserState);
     }
-    
+
     ZrCore_Memory_RawFree(state->global, parser, sizeof(SZrIncrementalParser));
 }
 
@@ -339,10 +391,28 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
     }
     
     // 完全重新解析
-    SZrString *sourceName = uri; // 使用 URI 作为源文件名
-    fileVersion->ast = ZrParser_Parse(state, fileVersion->content, fileVersion->contentLength, sourceName);
+    {
+        SZrParserState parserState;
+        SZrParserDiagnosticCollector collector;
+        SZrString *sourceName = uri; // 使用 URI 作为源文件名
+
+        clear_parser_diagnostics(state, fileVersion);
+        ZrParser_State_Init(&parserState, state, fileVersion->content, fileVersion->contentLength, sourceName);
+        if (parserState.hasError) {
+            ZrParser_State_Free(&parserState);
+            return ZR_FALSE;
+        }
+
+        collector.state = state;
+        collector.fileVersion = fileVersion;
+        parserState.errorCallback = collect_parser_diagnostic;
+        parserState.errorUserData = &collector;
+        parserState.suppressErrorOutput = ZR_TRUE;
+        fileVersion->ast = ZrParser_ParseWithState(&parserState);
+        ZrParser_State_Free(&parserState);
+    }
     
-    if (fileVersion->ast != ZR_NULL) {
+    if (fileVersion->ast != ZR_NULL || fileVersion->parserDiagnostics.length > 0) {
         fileVersion->isDirty = ZR_FALSE;
         
         // 计算并存储内容哈希
@@ -374,6 +444,10 @@ SZrAstNode *ZrLanguageServer_IncrementalParser_GetAST(SZrIncrementalParser *pars
     }
     
     // 如果 AST 不存在或需要重新解析，先解析
+    if (fileVersion->ast == ZR_NULL && !fileVersion->isDirty && fileVersion->parserDiagnostics.length > 0) {
+        return ZR_NULL;
+    }
+
     if (fileVersion->ast == ZR_NULL || fileVersion->isDirty) {
         if (!ZrLanguageServer_IncrementalParser_Parse(parser->state, parser, uri)) {
             return ZR_NULL;

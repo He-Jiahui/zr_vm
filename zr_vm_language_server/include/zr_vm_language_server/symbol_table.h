@@ -39,6 +39,7 @@ typedef struct SZrSymbol {
     EZrSymbolType type;
     SZrString *name;
     SZrFileRange location;           // 定义位置
+    SZrFileRange selectionRange;     // 名称位置
     SZrInferredType *typeInfo;       // 类型信息（可选，可能为ZR_NULL）
     SZrArray references;              // 引用位置数组（SZrFileRange）
     TZrBool isExported;                 // 是否导出

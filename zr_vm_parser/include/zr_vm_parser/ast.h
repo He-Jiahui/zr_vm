@@ -431,6 +431,7 @@ typedef struct SZrVariableDeclaration {
 
 typedef struct SZrFunctionDeclaration {
     SZrIdentifier *name;
+    SZrFileRange nameLocation;
     SZrGenericDeclaration *generic; // 可选
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
@@ -541,6 +542,7 @@ typedef struct SZrEnumMember {
 // 类声明
 typedef struct SZrClassDeclaration {
     SZrIdentifier *name;
+    SZrFileRange nameLocation;
     SZrGenericDeclaration *generic; // 可选
     SZrAstNodeArray *inherits; // Type 数组
     SZrAstNodeArray *members; // ClassField, ClassMethod, ClassProperty, ClassMetaFunction 数组
@@ -556,6 +558,7 @@ typedef struct SZrClassField {
     TZrBool isUsingManaged; // 是否使用 field-scoped using 生命周期管理
     TZrBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
+    SZrFileRange nameLocation;
     SZrType *typeInfo; // 可选
     SZrAstNode *init; // 可选表达式
 } SZrClassField;
@@ -566,6 +569,7 @@ typedef struct SZrClassMethod {
     EZrAccessModifier access;
     TZrBool isStatic;
     SZrIdentifier *name;
+    SZrFileRange nameLocation;
     SZrGenericDeclaration *generic; // 可选
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
@@ -597,6 +601,7 @@ typedef struct SZrClassMetaFunction {
 // 属性 Getter
 typedef struct SZrPropertyGet {
     SZrIdentifier *name;
+    SZrFileRange nameLocation;
     SZrType *targetType; // 可选
     SZrAstNode *body; // Block
 } SZrPropertyGet;
@@ -604,6 +609,7 @@ typedef struct SZrPropertyGet {
 // 属性 Setter
 typedef struct SZrPropertySet {
     SZrIdentifier *name;
+    SZrFileRange nameLocation;
     SZrIdentifier *param;
     SZrType *targetType; // 可选
     SZrAstNode *body; // Block

@@ -13,6 +13,8 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/string.h"
 
+typedef struct SZrDiagnostic SZrDiagnostic;
+
 // 文件版本
 typedef struct SZrFileVersion {
     SZrString *uri;                   // 文件 URI
@@ -25,6 +27,7 @@ typedef struct SZrFileVersion {
     TZrChar *lastContentHash;           // 内容哈希（用于快速比较，可选）
     TZrSize lastContentHashLength;    // 哈希长度
     TZrBool hasIncrementalInfo;         // 是否有增量信息
+    SZrArray parserDiagnostics;      // 语法诊断信息（SZrDiagnostic*）
 } SZrFileVersion;
 
 // 增量解析器

@@ -53,6 +53,9 @@ void wasm_ZrLspContextFree(void* context);
 const char* wasm_ZrLspUpdateDocument(void* context, const char* uri, int uriLen, 
                                  const char* content, int contentLen, int version);
 
+// 关闭文档并移除对应状态
+const char* wasm_ZrLspCloseDocument(void* context, const char* uri, int uriLen);
+
 // 获取诊断
 // uri: UTF-8 字符串指针
 // uriLen: URI 长度
@@ -106,6 +109,20 @@ const char* wasm_ZrLspFindReferences(void* context, const char* uri, int uriLen,
 // 返回: JSON 字符串指针（包含位置数组，需要调用 wasm_free 释放）
 const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
                         int line, int character, const char* newName, int newNameLen);
+
+// 获取文档符号
+const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uriLen);
+
+// 获取工作区符号
+const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int queryLen);
+
+// 获取文档高亮
+const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int uriLen,
+                                      int line, int character);
+
+// 预检查是否可重命名
+const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
+                               int line, int character);
 
 #ifdef __cplusplus
 }

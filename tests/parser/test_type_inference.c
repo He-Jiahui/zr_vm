@@ -777,7 +777,7 @@ void test_convert_ast_type_preserves_ownership_qualifier(void) {
     TEST_ASSERT_NOT_NULL(cs->semanticContext);
 
     TEST_INFO("Ownership-qualified type conversion",
-              "Testing that unique/shared/weak wrappers survive AST->inferred-type conversion and semantic registration");
+              "Testing that %unique/%shared/%borrowed qualifiers survive AST->inferred-type conversion and semantic registration");
 
     TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
         state, cs->typeEnv, ZrCore_String_Create(state, "Resource", 8)));
@@ -786,26 +786,32 @@ void test_convert_ast_type_preserves_ownership_qualifier(void) {
 
     {
         const char *source =
-            "var owned: unique<Resource>;"
-            "var borrowed: shared<Box<int>>;"
-            "var weakRef: weak<Resource>;";
+            "var owned: %unique Resource;"
+            "var sharedRef: %shared Box<int>;"
+            "var borrowedRef: %borrowed Resource;"
+            "var weakRef: %weak Resource;";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_types_test.zr", 23);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *ownedDecl;
+        SZrAstNode *sharedDecl;
         SZrAstNode *borrowedDecl;
 
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_TRUE(ast->data.script.statements->count >= 2);
+        TEST_ASSERT_TRUE(ast->data.script.statements->count >= 3);
 
         ownedDecl = ast->data.script.statements->nodes[0];
-        borrowedDecl = ast->data.script.statements->nodes[1];
+        sharedDecl = ast->data.script.statements->nodes[1];
+        borrowedDecl = ast->data.script.statements->nodes[2];
         TEST_ASSERT_NOT_NULL(ownedDecl);
+        TEST_ASSERT_NOT_NULL(sharedDecl);
         TEST_ASSERT_NOT_NULL(borrowedDecl);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, ownedDecl->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, sharedDecl->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, borrowedDecl->type);
         TEST_ASSERT_NOT_NULL(ownedDecl->data.variableDeclaration.typeInfo);
+        TEST_ASSERT_NOT_NULL(sharedDecl->data.variableDeclaration.typeInfo);
         TEST_ASSERT_NOT_NULL(borrowedDecl->data.variableDeclaration.typeInfo);
 
         ZrParser_InferredType_Init(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
@@ -820,12 +826,21 @@ void test_convert_ast_type_preserves_ownership_qualifier(void) {
 
         ZrParser_InferredType_Init(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
         TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
-            cs, borrowedDecl->data.variableDeclaration.typeInfo, &convertedType));
+            cs, sharedDecl->data.variableDeclaration.typeInfo, &convertedType));
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
                               convertedType.ownershipQualifier);
         TEST_ASSERT_NOT_NULL(convertedType.typeName);
         TEST_ASSERT_EQUAL_STRING("Box<int>", ZrCore_String_GetNativeString(convertedType.typeName));
         TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)convertedType.elementTypes.length);
+        ZrParser_InferredType_Free(state, &convertedType);
+
+        ZrParser_InferredType_Init(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
+            cs, borrowedDecl->data.variableDeclaration.typeInfo, &convertedType));
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_BORROWED,
+                              convertedType.ownershipQualifier);
+        TEST_ASSERT_NOT_NULL(convertedType.typeName);
+        TEST_ASSERT_EQUAL_STRING("Resource", ZrCore_String_GetNativeString(convertedType.typeName));
 
         ownedRecord = find_semantic_type_record(cs->semanticContext,
                                              "Resource",
@@ -1106,12 +1121,13 @@ void test_parser_supports_ownership_types_and_template_strings(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Ownership-qualified type parsing and template string parsing",
-              "Testing unique/shared/weak type annotations and backtick template strings with interpolation");
+              "Testing %unique/%shared/%weak/%borrowed type annotations and backtick template strings with interpolation");
 
     const char *source =
-        "var owned: unique<Resource>;"
-        "var borrowed: shared<Box<int>>;"
-        "var weakRef: weak<Resource>;"
+        "var owned: %unique Resource;"
+        "var sharedRef: %shared Box<int>;"
+        "var weakRef: %weak Resource;"
+        "var borrowedRef: %borrowed Resource;"
         "var message = `hello ${1}`;";
     SZrString *sourceName = ZrCore_String_Create(state, "ownership_template_test.zr", 26);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -1119,32 +1135,38 @@ void test_parser_supports_ownership_types_and_template_strings(void) {
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
     TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-    TEST_ASSERT_TRUE(ast->data.script.statements->count >= 4);
+    TEST_ASSERT_TRUE(ast->data.script.statements->count >= 5);
 
     {
         SZrAstNode *ownedDecl = ast->data.script.statements->nodes[0];
-        SZrAstNode *borrowedDecl = ast->data.script.statements->nodes[1];
+        SZrAstNode *sharedDecl = ast->data.script.statements->nodes[1];
         SZrAstNode *weakDecl = ast->data.script.statements->nodes[2];
-        SZrAstNode *messageDecl = ast->data.script.statements->nodes[3];
+        SZrAstNode *borrowedDecl = ast->data.script.statements->nodes[3];
+        SZrAstNode *messageDecl = ast->data.script.statements->nodes[4];
         SZrAstNode *templateLiteral;
 
         TEST_ASSERT_NOT_NULL(ownedDecl);
-        TEST_ASSERT_NOT_NULL(borrowedDecl);
+        TEST_ASSERT_NOT_NULL(sharedDecl);
         TEST_ASSERT_NOT_NULL(weakDecl);
+        TEST_ASSERT_NOT_NULL(borrowedDecl);
         TEST_ASSERT_NOT_NULL(messageDecl);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, ownedDecl->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, borrowedDecl->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, sharedDecl->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, weakDecl->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, borrowedDecl->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, messageDecl->type);
         TEST_ASSERT_NOT_NULL(ownedDecl->data.variableDeclaration.typeInfo);
-        TEST_ASSERT_NOT_NULL(borrowedDecl->data.variableDeclaration.typeInfo);
+        TEST_ASSERT_NOT_NULL(sharedDecl->data.variableDeclaration.typeInfo);
         TEST_ASSERT_NOT_NULL(weakDecl->data.variableDeclaration.typeInfo);
+        TEST_ASSERT_NOT_NULL(borrowedDecl->data.variableDeclaration.typeInfo);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
                               ownedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
-                              borrowedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
+                              sharedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_WEAK,
                               weakDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_BORROWED,
+                              borrowedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
 
         templateLiteral = messageDecl->data.variableDeclaration.value;
         TEST_ASSERT_NOT_NULL(templateLiteral);

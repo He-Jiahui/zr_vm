@@ -40,12 +40,6 @@ typedef struct SZrLspDiagnostic {
     SZrArray relatedInformation;      // 相关信息（可选）
 } SZrLspDiagnostic;
 
-// LSP 文本编辑
-typedef struct SZrLspTextEdit {
-    SZrLspRange range;
-    SZrString *newText;
-} SZrLspTextEdit;
-
 // LSP 补全项
 typedef struct SZrLspCompletionItem {
     SZrString *label;                 // 标签
@@ -54,18 +48,7 @@ typedef struct SZrLspCompletionItem {
     SZrString *documentation;         // 文档（可选，markdown格式）
     SZrString *insertText;            // 插入文本（可选）
     SZrString *insertTextFormat;      // 插入文本格式（"plaintext"或"snippet"）
-    SZrArray additionalTextEdits;     // 附加编辑（SZrLspTextEdit*）
-    SZrString *sourceType;            // 候选来源（project/builtin/auto-import/directive/symbol）
 } SZrLspCompletionItem;
-
-// LSP Code Action
-typedef struct SZrLspCodeAction {
-    SZrString *title;
-    SZrString *kind;
-    SZrArray edits;                   // SZrLspTextEdit*
-    SZrString *diagnosticCode;
-    SZrString *documentation;
-} SZrLspCodeAction;
 
 // LSP 悬停信息
 typedef struct SZrLspHover {
@@ -73,8 +56,19 @@ typedef struct SZrLspHover {
     SZrLspRange range;                // 范围（可选）
 } SZrLspHover;
 
-typedef struct SZrLspProjectIndex SZrLspProjectIndex;
-typedef struct SZrLspBuiltinDocument SZrLspBuiltinDocument;
+// LSP 符号信息
+typedef struct SZrLspSymbolInformation {
+    SZrString *name;                  // 符号名称
+    TZrInt32 kind;                    // SymbolKind
+    SZrString *containerName;         // 容器名称（可选）
+    SZrLspLocation location;          // 符号位置
+} SZrLspSymbolInformation;
+
+// LSP 文档高亮
+typedef struct SZrLspDocumentHighlight {
+    SZrLspRange range;                // 高亮范围
+    TZrInt32 kind;                    // DocumentHighlightKind
+} SZrLspDocumentHighlight;
 
 // LSP 接口上下文
 typedef struct SZrLspContext {
@@ -82,8 +76,6 @@ typedef struct SZrLspContext {
     SZrIncrementalParser *parser;
     SZrSemanticAnalyzer *analyzer;
     SZrHashSet uriToAnalyzerMap;      // URI 到分析器的映射（值为SZrSemanticAnalyzer*）
-    SZrArray projectIndexes;          // 项目索引（SZrLspProjectIndex*）
-    SZrArray builtinDocuments;        // 内建虚拟文档（SZrLspBuiltinDocument*）
 } SZrLspContext;
 
 // LSP 接口管理函数
@@ -115,13 +107,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *stat
                                                  SZrLspPosition position,
                                                  SZrArray *result);
 
-// 获取 Code Actions
-ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
-                                                  SZrLspContext *context,
-                                                  SZrString *uri,
-                                                  SZrLspRange range,
-                                                  SZrArray *result);
-
 // 获取悬停信息
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                                            SZrLspContext *context,
@@ -151,6 +136,33 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_Rename(SZrState *state,
                                          SZrLspPosition position,
                                          SZrString *newName,
                                          SZrArray *result);
+
+// 获取文档符号
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetDocumentSymbols(SZrState *state,
+                                                      SZrLspContext *context,
+                                                      SZrString *uri,
+                                                      SZrArray *result);
+
+// 获取工作区符号
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
+                                                       SZrLspContext *context,
+                                                       SZrString *query,
+                                                       SZrArray *result);
+
+// 获取文档高亮
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetDocumentHighlights(SZrState *state,
+                                                          SZrLspContext *context,
+                                                          SZrString *uri,
+                                                          SZrLspPosition position,
+                                                          SZrArray *result);
+
+// 预检查是否可重命名
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_PrepareRename(SZrState *state,
+                                                 SZrLspContext *context,
+                                                 SZrString *uri,
+                                                 SZrLspPosition position,
+                                                 SZrLspRange *outRange,
+                                                 SZrString **outPlaceholder);
 
 // 工具函数
 

@@ -1,9 +1,15 @@
 .vscode/**
 .vscode-test/**
+.vscode-test-smoke/**
+.vscode-test-web/**
 src/**
 .gitignore
 .yarnrc
 vsc-extension-quickstart.md
+scripts/**
+test/**
+pnpm-lock.yaml
+package-lock.json
 **/tsconfig.json
 **/*.map
 **/*.ts
