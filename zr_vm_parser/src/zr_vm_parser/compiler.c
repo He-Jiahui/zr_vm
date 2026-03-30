@@ -48,6 +48,8 @@ static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNo
                                                   SZrString *superTypeName,
                                                   TZrBool injectThis, TZrUInt32 *outParameterCount);
 static SZrString *create_hidden_extern_local_name(SZrCompilerState *cs, const TZrChar *prefix);
+static EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node);
+static EZrOwnershipQualifier get_implicit_this_ownership_qualifier(EZrOwnershipQualifier receiverQualifier);
 TZrSize create_label(SZrCompilerState *cs);
 void resolve_label(SZrCompilerState *cs, TZrSize labelId);
 
@@ -57,6 +59,30 @@ void resolve_label(SZrCompilerState *cs, TZrSize labelId);
 // 注意：outData 指向的内存需要调用者释放
 static TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize);
+
+static EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_STRUCT_METHOD:
+            return node->data.structMethod.receiverQualifier;
+        case ZR_AST_CLASS_METHOD:
+            return node->data.classMethod.receiverQualifier;
+        default:
+            return ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+}
+
+static EZrOwnershipQualifier get_implicit_this_ownership_qualifier(EZrOwnershipQualifier receiverQualifier) {
+    if (receiverQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+        receiverQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
+        return ZR_OWNERSHIP_QUALIFIER_BORROWED;
+    }
+
+    return receiverQualifier;
+}
 
 // 初始化编译器状态
 void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
@@ -72,6 +98,8 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     // 初始化常量池
     ZrCore_Array_Init(state, &cs->constants, sizeof(SZrTypeValue), 16);
     cs->constantCount = 0;
+    cs->cachedNullConstantIndex = 0;
+    cs->hasCachedNullConstantIndex = ZR_FALSE;
 
     // 初始化局部变量数组
     ZrCore_Array_Init(state, &cs->localVars, sizeof(SZrFunctionLocalVariable), 16);
@@ -986,6 +1014,23 @@ TZrSize ZrParser_Compiler_GetLocalStackFloor(const SZrCompilerState *cs) {
     return floor;
 }
 
+static TZrUInt32 compiler_get_cached_null_constant_index(SZrCompilerState *cs) {
+    SZrTypeValue nullValue;
+
+    if (cs == ZR_NULL) {
+        return 0;
+    }
+
+    if (cs->hasCachedNullConstantIndex) {
+        return cs->cachedNullConstantIndex;
+    }
+
+    ZrCore_Value_ResetAsNull(&nullValue);
+    cs->cachedNullConstantIndex = add_constant(cs, &nullValue);
+    cs->hasCachedNullConstantIndex = ZR_TRUE;
+    return cs->cachedNullConstantIndex;
+}
+
 void ZrParser_Compiler_TrimStackToCount(SZrCompilerState *cs, TZrSize targetCount) {
     TZrSize localFloor;
 
@@ -999,6 +1044,13 @@ void ZrParser_Compiler_TrimStackToCount(SZrCompilerState *cs, TZrSize targetCoun
     }
 
     if (cs->stackSlotCount > targetCount) {
+        TZrUInt32 nullConstantIndex = compiler_get_cached_null_constant_index(cs);
+        for (TZrSize slot = targetCount; slot < cs->stackSlotCount; slot++) {
+            emit_instruction(cs,
+                             create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                                                  (TZrUInt16)slot,
+                                                  (TZrInt32)nullConstantIndex));
+        }
         cs->stackSlotCount = targetCount;
     }
 }
@@ -5012,6 +5064,7 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.isConst = ZR_FALSE;
             memberInfo.isUsingManaged = ZR_FALSE;
             memberInfo.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+            memberInfo.receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
             memberInfo.callsClose = ZR_FALSE;
             memberInfo.callsDestructor = ZR_FALSE;
             memberInfo.declarationOrder = (TZrUInt32)i;
@@ -5108,6 +5161,7 @@ static void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrStructMethod *method = &member->data.structMethod;
                     memberInfo.accessModifier = method->access;
                     memberInfo.isStatic = method->isStatic;
+                    memberInfo.receiverQualifier = method->receiverQualifier;
                     if (method->name != ZR_NULL) {
                         memberInfo.name = method->name->name;
                     }
@@ -6104,6 +6158,8 @@ static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNo
 
     TZrUInt32 parameterCount = 0;
     if (injectThis) {
+        EZrOwnershipQualifier thisOwnershipQualifier =
+                get_implicit_this_ownership_qualifier(get_member_receiver_qualifier(node));
         SZrString *thisName = ZrCore_String_CreateFromNative(cs->state, "this");
         if (thisName != ZR_NULL) {
             allocate_local_var(cs, thisName);
@@ -6116,6 +6172,7 @@ static SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNo
                 } else {
                     ZrParser_InferredType_Init(cs->state, &thisType, ZR_VALUE_TYPE_OBJECT);
                 }
+                thisType.ownershipQualifier = thisOwnershipQualifier;
                 ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, thisName, &thisType);
                 ZrParser_InferredType_Free(cs->state, &thisType);
             }
@@ -6431,6 +6488,7 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.isConst = ZR_FALSE;
             memberInfo.isUsingManaged = ZR_FALSE;
             memberInfo.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+            memberInfo.receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
             memberInfo.callsClose = ZR_FALSE;
             memberInfo.callsDestructor = ZR_FALSE;
             memberInfo.declarationOrder = (TZrUInt32)i;
@@ -6522,6 +6580,7 @@ static void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrClassMethod *method = &member->data.classMethod;
                     memberInfo.accessModifier = method->access;
                     memberInfo.isStatic = method->isStatic;
+                    memberInfo.receiverQualifier = method->receiverQualifier;
                     if (method->name != ZR_NULL) {
                         memberInfo.name = method->name->name;
                     }

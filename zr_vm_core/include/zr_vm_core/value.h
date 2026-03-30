@@ -12,6 +12,8 @@ struct SZrState;
 struct SZrMeta;
 struct SZrString;
 typedef TZrInt64 (*FZrNativeFunction)(struct SZrState *state);
+struct SZrOwnershipControl;
+struct SZrOwnershipWeakRef;
 
 
 union TZrPureValue {
@@ -22,11 +24,22 @@ union TZrPureValue {
 
 typedef union TZrPureValue TZrPureValue;
 
+typedef enum EZrOwnershipValueKind {
+    ZR_OWNERSHIP_VALUE_KIND_NONE = 0,
+    ZR_OWNERSHIP_VALUE_KIND_UNIQUE,
+    ZR_OWNERSHIP_VALUE_KIND_SHARED,
+    ZR_OWNERSHIP_VALUE_KIND_WEAK,
+    ZR_OWNERSHIP_VALUE_KIND_USING,
+} EZrOwnershipValueKind;
+
 struct ZR_STRUCT_ALIGN SZrTypeValue {
     EZrValueType type;
     TZrPureValue value;
     TZrBool isGarbageCollectable;
     TZrBool isNative;
+    EZrOwnershipValueKind ownershipKind;
+    struct SZrOwnershipControl *ownershipControl;
+    struct SZrOwnershipWeakRef *ownershipWeakRef;
 };
 
 typedef struct SZrTypeValue SZrTypeValue;
@@ -57,6 +70,9 @@ ZR_CORE_API SZrTypeValue *ZrCore_Value_GetStackOffsetValue(struct SZrState *stat
         (VALUE)->value.nativeObject.REGION = (DATA);                                                                   \
         (VALUE)->isGarbageCollectable = ZR_FALSE;                                                                      \
         (VALUE)->isNative = ZR_TRUE;                                                                                   \
+        (VALUE)->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;                                                         \
+        (VALUE)->ownershipControl = ZR_NULL;                                                                           \
+        (VALUE)->ownershipWeakRef = ZR_NULL;                                                                           \
     }
 
 ZR_CORE_API void ZrCore_Value_Copy(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source);

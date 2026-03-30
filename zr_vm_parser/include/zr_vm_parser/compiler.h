@@ -30,6 +30,8 @@ typedef struct SZrCompilerState {
     // 常量池管理
     SZrArray constants;                 // 常量值数组（SZrTypeValue）
     TZrSize constantCount;               // 常量数量
+    TZrUInt32 cachedNullConstantIndex;   // 复用的 null 常量索引
+    TZrBool hasCachedNullConstantIndex;  // 是否已经缓存 null 常量
     
     // 局部变量管理
     SZrArray localVars;                 // 局部变量数组（SZrFunctionLocalVariable）
@@ -230,6 +232,7 @@ typedef struct SZrTypeMemberInfo {
     TZrBool isConst;                      // 是否为 const 字段
     TZrBool isUsingManaged;               // 是否显式使用 field-scoped using
     EZrOwnershipQualifier ownershipQualifier; // 字段所有权限定符
+    EZrOwnershipQualifier receiverQualifier;  // 方法 receiver 所有权限定符
     TZrBool callsClose;                   // 生命周期结束时是否需要先调用 @close
     TZrBool callsDestructor;              // 生命周期结束时是否可能触发 @destructor
     TZrUInt32 declarationOrder;           // 在当前类型中的声明顺序

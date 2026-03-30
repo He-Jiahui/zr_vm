@@ -1,7 +1,7 @@
 //
 // Created by HeJiahui on 2025/7/27.
 //
-#include "tinydir/tinydir.h"
+#include "tinydir.h"
 
 #include "zr_vm_library/conf.h"
 #include "zr_vm_library/file.h"

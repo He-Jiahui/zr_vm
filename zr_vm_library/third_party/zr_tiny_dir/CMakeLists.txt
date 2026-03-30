@@ -6,6 +6,10 @@ set(zr_tiny_dir_src "tinydir.c")
 
 zr_register_owned_third_party(zr_vm_library zr_tiny_dir ${zr_tiny_dir_src})
 
+target_include_directories(zr_third_party_zr_tiny_dir_static PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tinydir)
+
 if (WIN32)
     target_compile_definitions(zr_third_party_zr_tiny_dir_static PRIVATE UNICODE _UNICODE)
 endif ()

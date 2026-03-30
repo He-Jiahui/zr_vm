@@ -167,6 +167,7 @@ enum EZrOwnershipQualifier {
     ZR_OWNERSHIP_QUALIFIER_UNIQUE,
     ZR_OWNERSHIP_QUALIFIER_SHARED,
     ZR_OWNERSHIP_QUALIFIER_WEAK,
+    ZR_OWNERSHIP_QUALIFIER_BORROWED,
 };
 
 typedef enum EZrOwnershipQualifier EZrOwnershipQualifier;
@@ -501,6 +502,7 @@ typedef struct SZrStructMethod {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TZrBool isStatic;
+    EZrOwnershipQualifier receiverQualifier;
     SZrIdentifier *name;
     SZrGenericDeclaration *generic; // 可选
     SZrAstNodeArray *params; // Parameter 数组
@@ -541,6 +543,7 @@ typedef struct SZrClassDeclaration {
     SZrAstNodeArray *members; // ClassField, ClassMethod, ClassProperty, ClassMetaFunction 数组
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
     EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
+    TZrBool isOwned;
 } SZrClassDeclaration;
 
 // 类字段
@@ -560,6 +563,7 @@ typedef struct SZrClassMethod {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TZrBool isStatic;
+    EZrOwnershipQualifier receiverQualifier;
     SZrIdentifier *name;
     SZrGenericDeclaration *generic; // 可选
     SZrAstNodeArray *params; // Parameter 数组

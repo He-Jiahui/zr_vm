@@ -8,6 +8,7 @@
 
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_common/zr_instruction_conf.h"
@@ -55,7 +56,12 @@ static SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs, SZrFunctionC
                                               SZrAstNodeArray *paramList);
 static void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode, SZrAstNodeArray *members,
                                          TZrSize memberStartIndex, TZrUInt32 *ioCurrentSlot,
-                                         SZrString **ioRootTypeName, TZrBool *ioRootIsTypeReference);
+                                         SZrString **ioRootTypeName, TZrBool *ioRootIsTypeReference,
+                                         EZrOwnershipQualifier *ioRootOwnershipQualifier);
+static EZrOwnershipQualifier infer_expression_ownership_qualifier_local(SZrCompilerState *cs, SZrAstNode *node);
+static TZrBool emit_null_reset_to_identifier_binding_local(SZrCompilerState *cs,
+                                                           SZrString *name,
+                                                           SZrFileRange location);
 // 辅助函数声明（在 compiler.c 中实现，需要声明为 extern 或包含头文件）
 // 为了简化，我们直接在 ZrParser_Expression_Compile.c 中重新声明这些函数
 // 注意：这些函数应该在同一编译单元中，或者通过头文件共享
@@ -95,6 +101,148 @@ static void emit_constant_to_slot_local(SZrCompilerState *cs, TZrUInt32 slot, co
     emit_instruction(cs, inst);
 }
 
+static TZrBool construct_expression_is_ownership_builtin(const SZrConstructExpression *constructExpr) {
+    return constructExpr != ZR_NULL &&
+           !constructExpr->isNew &&
+           (constructExpr->isUsing ||
+            constructExpr->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE);
+}
+
+static FZrNativeFunction resolve_ownership_builtin_native(const SZrConstructExpression *constructExpr) {
+    if (constructExpr == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (constructExpr->isUsing) {
+        return ZrCore_Ownership_NativeUsing;
+    }
+
+    switch (constructExpr->ownershipQualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+            return ZrCore_Ownership_NativeUnique;
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+            return ZrCore_Ownership_NativeShared;
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+            return ZrCore_Ownership_NativeWeak;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool emit_native_function_constant_to_slot_local(SZrCompilerState *cs,
+                                                           TZrUInt32 slot,
+                                                           FZrNativeFunction nativeFunction,
+                                                           SZrFileRange location) {
+    SZrTypeValue constantValue;
+    TZrUInt32 constantIndex;
+    TZrInstruction inst;
+
+    if (cs == ZR_NULL || nativeFunction == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsNativePointer(cs->state, &constantValue, ZR_CAST_PTR(nativeFunction));
+    constantIndex = add_constant(cs, &constantValue);
+    inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                                (TZrUInt16)slot,
+                                (TZrInt32)constantIndex);
+    emit_instruction(cs, inst);
+    ZR_UNUSED_PARAMETER(location);
+    return ZR_TRUE;
+}
+
+static TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
+                                                    SZrConstructExpression *constructExpr,
+                                                    SZrFileRange location) {
+    FZrNativeFunction nativeFunction;
+    TZrUInt32 functionSlot;
+    TZrUInt32 argumentSlot;
+    TZrBool shouldResetConsumedIdentifier = ZR_FALSE;
+
+    if (cs == ZR_NULL || constructExpr == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    nativeFunction = resolve_ownership_builtin_native(constructExpr);
+    if (nativeFunction == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Unsupported ownership builtin expression", location);
+        return ZR_FALSE;
+    }
+
+    functionSlot = allocate_stack_slot(cs);
+    argumentSlot = allocate_stack_slot(cs);
+    if (!emit_native_function_constant_to_slot_local(cs, functionSlot, nativeFunction, location)) {
+        ZrParser_Compiler_Error(cs, "Failed to emit ownership builtin helper", location);
+        return ZR_FALSE;
+    }
+
+    shouldResetConsumedIdentifier =
+            constructExpr->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED &&
+            constructExpr->target != ZR_NULL &&
+            constructExpr->target->type == ZR_AST_IDENTIFIER_LITERAL &&
+            infer_expression_ownership_qualifier_local(cs, constructExpr->target) ==
+                    ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+
+    if (compile_expression_into_slot(cs, constructExpr->target, argumentSlot) == (TZrUInt32)-1) {
+        return ZR_FALSE;
+    }
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                          (TZrUInt16)functionSlot,
+                                         (TZrUInt16)functionSlot,
+                                         1));
+    collapse_stack_to_slot(cs, functionSlot);
+    if (shouldResetConsumedIdentifier) {
+        if (!emit_null_reset_to_identifier_binding_local(cs,
+                                                         constructExpr->target->data.identifier.name,
+                                                         location)) {
+            ZrParser_Compiler_Error(cs,
+                                    "Failed to reset consumed ownership source binding",
+                                    location);
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
+                                                              SZrConstructExpression *constructExpr,
+                                                              SZrFileRange location) {
+    FZrNativeFunction nativeFunction;
+    TZrUInt32 functionSlot;
+    TZrUInt32 argumentSlot;
+
+    if (cs == ZR_NULL || constructExpr == ZR_NULL || cs->hasError || cs->stackSlotCount == 0) {
+        return ZR_FALSE;
+    }
+
+    nativeFunction = resolve_ownership_builtin_native(constructExpr);
+    if (nativeFunction == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Unsupported ownership construct wrapper", location);
+        return ZR_FALSE;
+    }
+
+    functionSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+    argumentSlot = allocate_stack_slot(cs);
+    emit_instruction(cs,
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                          (TZrUInt16)argumentSlot,
+                                          (TZrInt32)functionSlot));
+    if (!emit_native_function_constant_to_slot_local(cs, functionSlot, nativeFunction, location)) {
+        ZrParser_Compiler_Error(cs, "Failed to emit ownership construct wrapper", location);
+        return ZR_FALSE;
+    }
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                          (TZrUInt16)functionSlot,
+                                          (TZrUInt16)functionSlot,
+                                          1));
+    collapse_stack_to_slot(cs, functionSlot);
+    return ZR_TRUE;
+}
+
 static TZrBool zr_string_equals_cstr_local(SZrString *value, const TZrChar *literal) {
     TZrNativeString nativeValue;
 
@@ -104,6 +252,110 @@ static TZrBool zr_string_equals_cstr_local(SZrString *value, const TZrChar *lite
 
     nativeValue = ZrCore_String_GetNativeString(value);
     return nativeValue != ZR_NULL && strcmp(nativeValue, literal) == 0;
+}
+
+static TZrBool receiver_ownership_can_call_member_local(EZrOwnershipQualifier receiverQualifier,
+                                                        EZrOwnershipQualifier memberQualifier) {
+    switch (receiverQualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_NONE:
+            return ZR_TRUE;
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK ||
+                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static const TZrChar *receiver_ownership_call_error_local(EZrOwnershipQualifier receiverQualifier) {
+    switch (receiverQualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+            return "Weak-owned receivers can only call %weak, %shared, or %borrowed methods";
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+            return "Shared-owned receivers can only call %shared or %borrowed methods";
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+            return "Unique-owned receivers can only call %borrowed methods";
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+            return "Borrowed receivers can only call %borrowed methods";
+        case ZR_OWNERSHIP_QUALIFIER_NONE:
+        default:
+            return "Receiver ownership qualifier is not compatible with this method";
+    }
+}
+
+static EZrOwnershipQualifier infer_expression_ownership_qualifier_local(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrInferredType inferredType;
+    EZrOwnershipQualifier qualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_ExpressionType_Infer(cs, node, &inferredType)) {
+        qualifier = inferredType.ownershipQualifier;
+    }
+    ZrParser_InferredType_Free(cs->state, &inferredType);
+    return qualifier;
+}
+
+static TZrBool emit_null_reset_to_identifier_binding_local(SZrCompilerState *cs,
+                                                           SZrString *name,
+                                                           SZrFileRange location) {
+    SZrTypeValue nullValue;
+    TZrUInt32 nullSlot;
+    TZrUInt32 localVarIndex;
+    TZrUInt32 closureVarIndex;
+
+    if (cs == ZR_NULL || name == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    nullSlot = allocate_stack_slot(cs);
+    ZrCore_Value_ResetAsNull(&nullValue);
+    emit_constant_to_slot_local(cs, nullSlot, &nullValue, location);
+
+    localVarIndex = find_local_var(cs, name);
+    if (localVarIndex != (TZrUInt32)-1) {
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)localVarIndex,
+                                              (TZrInt32)nullSlot));
+        ZrParser_Compiler_TrimStackBy(cs, 1);
+        return ZR_TRUE;
+    }
+
+    closureVarIndex = find_closure_var(cs, name);
+    if (closureVarIndex != (TZrUInt32)-1) {
+        SZrFunctionClosureVariable *closureVar =
+                (SZrFunctionClosureVariable *)ZrCore_Array_Get(&cs->closureVars, closureVarIndex);
+        if (closureVar != ZR_NULL && closureVar->inStack) {
+            emit_instruction(cs,
+                             create_instruction_2(ZR_INSTRUCTION_ENUM(SETUPVAL),
+                                                  (TZrUInt16)nullSlot,
+                                                  (TZrUInt16)closureVarIndex,
+                                                  0));
+        } else {
+            emit_instruction(cs,
+                             create_instruction_2(ZR_INSTRUCTION_ENUM(SET_CLOSURE),
+                                                  (TZrUInt16)nullSlot,
+                                                  (TZrUInt16)closureVarIndex,
+                                                  0));
+        }
+        ZrParser_Compiler_TrimStackBy(cs, 1);
+        return ZR_TRUE;
+    }
+
+    ZrParser_Compiler_TrimStackBy(cs, 1);
+    return ZR_FALSE;
 }
 
 static TZrBool has_compile_time_variable_binding_local(SZrCompilerState *cs, SZrString *name) {
@@ -814,12 +1066,15 @@ static TZrBool member_call_requires_bound_receiver(const SZrTypeMemberInfo *memb
 
 static void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode, SZrAstNodeArray *members,
                                          TZrSize memberStartIndex, TZrUInt32 *ioCurrentSlot,
-                                         SZrString **ioRootTypeName, TZrBool *ioRootIsTypeReference) {
+                                         SZrString **ioRootTypeName, TZrBool *ioRootIsTypeReference,
+                                         EZrOwnershipQualifier *ioRootOwnershipQualifier) {
     TZrUInt32 currentSlot;
     TZrUInt32 pendingReceiverSlot = (TZrUInt32)-1;
     SZrString *pendingCallResultTypeName = ZR_NULL;
     SZrString *rootTypeName = ioRootTypeName != ZR_NULL ? *ioRootTypeName : ZR_NULL;
     TZrBool rootIsTypeReference = ioRootIsTypeReference != ZR_NULL ? *ioRootIsTypeReference : ZR_FALSE;
+    EZrOwnershipQualifier rootOwnershipQualifier =
+            ioRootOwnershipQualifier != ZR_NULL ? *ioRootOwnershipQualifier : ZR_OWNERSHIP_QUALIFIER_NONE;
 
     if (cs == ZR_NULL || ioCurrentSlot == ZR_NULL || members == ZR_NULL || cs->hasError) {
         return;
@@ -875,7 +1130,17 @@ static void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *prope
                     rootIsTypeReference = getterAccessor->isStatic &&
                                           rootTypeName != ZR_NULL &&
                                           type_name_is_registered_prototype(cs, rootTypeName);
+                    rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
                 } else {
+                    if (nextIsFunctionCall && typeMember != ZR_NULL && !typeMember->isStatic &&
+                        !receiver_ownership_can_call_member_local(rootOwnershipQualifier,
+                                                                  typeMember->receiverQualifier)) {
+                        ZrParser_Compiler_Error(cs,
+                                                receiver_ownership_call_error_local(rootOwnershipQualifier),
+                                                members->nodes[i + 1]->location);
+                        return;
+                    }
+
                     if (nextIsFunctionCall && bindReceiverForCall) {
                         pendingReceiverSlot = allocate_stack_slot(cs);
                         emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
@@ -905,14 +1170,17 @@ static void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *prope
                         (typeMember->memberType == ZR_AST_STRUCT_FIELD ||
                          typeMember->memberType == ZR_AST_CLASS_FIELD)) {
                         rootTypeName = typeMember->fieldTypeName;
+                        rootOwnershipQualifier = typeMember->ownershipQualifier;
                         rootIsTypeReference = isStaticMember &&
                                               rootTypeName != ZR_NULL &&
                                               type_name_is_registered_prototype(cs, rootTypeName);
                     } else if (typeMember != ZR_NULL) {
                         rootTypeName = ZR_NULL;
+                        rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
                         rootIsTypeReference = ZR_FALSE;
                     } else if (!isStaticMember) {
                         rootTypeName = ZR_NULL;
+                        rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
                         rootIsTypeReference = ZR_FALSE;
                     }
                 }
@@ -978,6 +1246,7 @@ static void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *prope
             collapse_stack_to_slot(cs, currentSlot);
             pendingReceiverSlot = (TZrUInt32)-1;
             rootTypeName = pendingCallResultTypeName;
+            rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
             pendingCallResultTypeName = ZR_NULL;
             rootIsTypeReference = ZR_FALSE;
 
@@ -993,6 +1262,9 @@ static void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *prope
     }
     if (ioRootIsTypeReference != ZR_NULL) {
         *ioRootIsTypeReference = rootIsTypeReference;
+    }
+    if (ioRootOwnershipQualifier != ZR_NULL) {
+        *ioRootOwnershipQualifier = rootOwnershipQualifier;
     }
 }
 
@@ -2739,6 +3011,7 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrUInt32 currentSlot = (TZrUInt32)-1;
     SZrString *rootTypeName = ZR_NULL;
     TZrBool rootIsTypeReference = ZR_FALSE;
+    EZrOwnershipQualifier rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     TZrSize memberStartIndex = 0;
 
     // 1. 编译基础属性（标识符或表达式）
@@ -2754,8 +3027,12 @@ static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
 
     currentSlot = cs->stackSlotCount - 1;
     resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
+    rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
+    if (cs->hasError) {
+        return;
+    }
     compile_primary_member_chain(cs, primary->property, primary->members, memberStartIndex, &currentSlot,
-                                 &rootTypeName, &rootIsTypeReference);
+                                 &rootTypeName, &rootIsTypeReference, &rootOwnershipQualifier);
 }
 
 static void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *node) {
@@ -2802,6 +3079,13 @@ static void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node)
     }
 
     constructExpr = &node->data.constructExpression;
+    if (construct_expression_is_ownership_builtin(constructExpr)) {
+        if (!compile_ownership_builtin_expression(cs, constructExpr, node->location) && !cs->hasError) {
+            ZrParser_Compiler_Error(cs, "Failed to compile ownership builtin expression", node->location);
+        }
+        return;
+    }
+
     typeName = resolve_construct_target_type_name(cs, constructExpr->target, &prototypeType);
     if (typeName == ZR_NULL) {
         ZrParser_Compiler_Error(cs,
@@ -2833,6 +3117,15 @@ static void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node)
     if (emit_shorthand_constructor_instance(cs, op, typeName, constructExpr->args, node->location) == (TZrUInt32)-1 &&
         !cs->hasError) {
         ZrParser_Compiler_Error(cs, "Failed to compile construct expression", node->location);
+        return;
+    }
+
+    if ((constructExpr->isUsing ||
+         constructExpr->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) &&
+        constructExpr->isNew) {
+        if (!wrap_constructed_result_with_ownership_builtin(cs, constructExpr, node->location) && !cs->hasError) {
+            ZrParser_Compiler_Error(cs, "Failed to wrap ownership-aware construction result", node->location);
+        }
     }
 }
 

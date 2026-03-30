@@ -170,6 +170,7 @@ TZrBool ZrTests_Runtime_Function_Execute(SZrState *state, SZrFunction *function,
         return ZR_FALSE;
     }
 
+    ZrCore_Value_ResetAsNull(result);
     request.function = function;
     request.closure = ZR_NULL;
     request.resultBase = ZR_NULL;

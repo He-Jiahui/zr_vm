@@ -1511,10 +1511,18 @@ LZrReturning: {
         ZR_ASSERT(base <= state->stackTop.valuePointer &&
                   state->stackTop.valuePointer <= state->stackTail.valuePointer);
 
-        SZrTypeValue *destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;
+        TZrBool destinationIsRet = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG;
+        SZrTypeValue *destination = destinationIsRet ? &ret : &BASE(E(instruction))->value;
 
         ZR_INSTRUCTION_DISPATCH(instruction) {
-            ZR_INSTRUCTION_LABEL(GET_STACK) { *destination = BASE(A2(instruction))->value; }
+            ZR_INSTRUCTION_LABEL(GET_STACK) {
+                SZrTypeValue *source = &BASE(A2(instruction))->value;
+                if (destinationIsRet) {
+                    *destination = *source;
+                } else {
+                    ZrCore_Value_Copy(state, destination, source);
+                }
+            }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_STACK) {
                 // SET_STACK 指令格式：
@@ -1522,13 +1530,17 @@ LZrReturning: {
                 // operand2[0] (A2) = srcSlot (源栈槽)
                 // 将 srcSlot 的值复制到 destSlot
                 SZrTypeValue *srcValue = &BASE(A2(instruction))->value;
-                BASE(E(instruction))->value = *srcValue;
+                ZrCore_Value_Copy(state, &BASE(E(instruction))->value, srcValue);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(GET_CONSTANT) {
                 // ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 // BASE(B1(instruction))->value = *CONST(ret.value.nativeObject.nativeUInt64);
-                *destination = *CONST(A2(instruction));
+                if (destinationIsRet) {
+                    *destination = *CONST(A2(instruction));
+                } else {
+                    ZrCore_Value_Copy(state, destination, CONST(A2(instruction)));
+                }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CONSTANT) {

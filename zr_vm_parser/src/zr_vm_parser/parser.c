@@ -62,7 +62,10 @@ static SZrAstNode *parse_multiplicative_expression(SZrParserState *ps);
 static SZrAstNode *parse_unary_expression(SZrParserState *ps);
 static SZrAstNode *parse_primary_expression(SZrParserState *ps);
 static SZrAstNode *parse_prototype_reference_expression(SZrParserState *ps);
-static SZrAstNode *parse_construct_expression(SZrParserState *ps, TZrBool hasUsingPrefix);
+static SZrAstNode *parse_construct_expression(SZrParserState *ps,
+                                              SZrFileRange startLoc,
+                                              EZrOwnershipQualifier ownershipQualifier,
+                                              TZrBool isUsing);
 static SZrAstNode *parse_generator_expression(SZrParserState *ps);
 
 // 声明和类型解析
@@ -577,6 +580,10 @@ static TZrBool try_get_ownership_qualifier(SZrString *name, EZrOwnershipQualifie
     }
     if (zr_string_equals_literal(name, "weak")) {
         *qualifier = ZR_OWNERSHIP_QUALIFIER_WEAK;
+        return ZR_TRUE;
+    }
+    if (zr_string_equals_literal(name, "borrowed")) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
         return ZR_TRUE;
     }
 
@@ -1278,57 +1285,8 @@ static TZrBool is_lambda_expression_after_lparen(SZrParserState *ps) {
 }
 
 static TZrBool is_expression_level_using_new(SZrParserState *ps) {
-    TZrSize savedPos;
-    TZrInt32 savedChar;
-    TZrInt32 savedLine;
-    TZrInt32 savedLastLine;
-    SZrToken savedToken;
-    SZrToken savedLookahead;
-    TZrSize savedLookaheadPos;
-    TZrInt32 savedLookaheadChar;
-    TZrInt32 savedLookaheadLine;
-    TZrInt32 savedLookaheadLastLine;
-
-    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_USING) {
-        return ZR_FALSE;
-    }
-
-    savedPos = ps->lexer->currentPos;
-    savedChar = ps->lexer->currentChar;
-    savedLine = ps->lexer->lineNumber;
-    savedLastLine = ps->lexer->lastLine;
-    savedToken = ps->lexer->t;
-    savedLookahead = ps->lexer->lookahead;
-    savedLookaheadPos = ps->lexer->lookaheadPos;
-    savedLookaheadChar = ps->lexer->lookaheadChar;
-    savedLookaheadLine = ps->lexer->lookaheadLine;
-    savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
-    ZrParser_Lexer_Next(ps->lexer);
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-        SZrString *name = ps->lexer->t.seminfo.stringValue;
-        if (zr_string_equals_literal(name, "unique") ||
-            zr_string_equals_literal(name, "shared") ||
-            zr_string_equals_literal(name, "share") ||
-            zr_string_equals_literal(name, "weak")) {
-            ZrParser_Lexer_Next(ps->lexer);
-        }
-    }
-
-    {
-        TZrBool result = ps->lexer->t.token == ZR_TK_NEW;
-        ps->lexer->currentPos = savedPos;
-        ps->lexer->currentChar = savedChar;
-        ps->lexer->lineNumber = savedLine;
-        ps->lexer->lastLine = savedLastLine;
-        ps->lexer->t = savedToken;
-        ps->lexer->lookahead = savedLookahead;
-        ps->lexer->lookaheadPos = savedLookaheadPos;
-        ps->lexer->lookaheadChar = savedLookaheadChar;
-        ps->lexer->lookaheadLine = savedLookaheadLine;
-        ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-        return result;
-    }
+    ZR_UNUSED_PARAMETER(ps);
+    return ZR_FALSE;
 }
 
 static SZrAstNodeArray *create_empty_argument_list(SZrParserState *ps) {
@@ -1485,10 +1443,10 @@ static SZrAstNode *parse_prototype_reference_expression(SZrParserState *ps) {
     return prototypeNode;
 }
 
-static SZrAstNode *parse_construct_expression(SZrParserState *ps, TZrBool hasUsingPrefix) {
-    SZrFileRange startLoc;
-    TZrBool isUsing = ZR_FALSE;
-    EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+static SZrAstNode *parse_construct_expression(SZrParserState *ps,
+                                              SZrFileRange startLoc,
+                                              EZrOwnershipQualifier ownershipQualifier,
+                                              TZrBool isUsing) {
     SZrAstNode *target = ZR_NULL;
     SZrAstNodeArray *args = ZR_NULL;
     SZrArray *argNames = ZR_NULL;
@@ -1497,33 +1455,6 @@ static SZrAstNode *parse_construct_expression(SZrParserState *ps, TZrBool hasUsi
 
     if (ps == ZR_NULL) {
         return ZR_NULL;
-    }
-
-    startLoc = get_current_location(ps);
-    if (hasUsingPrefix) {
-        if (ps->lexer->t.token != ZR_TK_USING) {
-            report_error(ps, "Expected 'using' before ownership-qualified new expression");
-            return ZR_NULL;
-        }
-        isUsing = ZR_TRUE;
-        ZrParser_Lexer_Next(ps->lexer);
-    }
-
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-        SZrString *name = ps->lexer->t.seminfo.stringValue;
-        if (zr_string_equals_literal(name, "unique")) {
-            ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
-            ZrParser_Lexer_Next(ps->lexer);
-        } else if (zr_string_equals_literal(name, "shared")) {
-            ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
-            ZrParser_Lexer_Next(ps->lexer);
-        } else if (zr_string_equals_literal(name, "share")) {
-            report_error(ps, "Use 'shared' instead of 'share' in new-expression ownership prefix");
-            ZrParser_Lexer_Next(ps->lexer);
-        } else if (zr_string_equals_literal(name, "weak")) {
-            report_error(ps, "'weak new' is not supported; use 'unique new' or 'shared new'");
-            ZrParser_Lexer_Next(ps->lexer);
-        }
     }
 
     expect_token(ps, ZR_TK_NEW);
@@ -1577,6 +1508,121 @@ static SZrAstNode *parse_construct_expression(SZrParserState *ps, TZrBool hasUsi
     }
 
     return constructNode;
+}
+
+static EZrOwnershipQualifier parse_optional_method_receiver_qualifier(SZrParserState *ps) {
+    EZrOwnershipQualifier qualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
+        return ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+        !try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &qualifier)) {
+        report_error(ps, "Expected ownership qualifier after '%' in method declaration");
+        return ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    return qualifier;
+}
+
+static SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps) {
+    SZrFileRange startLoc;
+    EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    TZrBool isUsing = ZR_FALSE;
+    SZrAstNode *target = ZR_NULL;
+    SZrAstNodeArray *args = ZR_NULL;
+    SZrAstNode *node;
+    SZrFileRange fullLoc;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
+        return ZR_NULL;
+    }
+
+    startLoc = get_current_location(ps);
+    ZrParser_Lexer_Next(ps->lexer);
+
+    if (ps->lexer->t.token == ZR_TK_USING) {
+        isUsing = ZR_TRUE;
+        ZrParser_Lexer_Next(ps->lexer);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+               zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "using")) {
+        isUsing = ZR_TRUE;
+        ZrParser_Lexer_Next(ps->lexer);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+               try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier)) {
+        if (ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
+            report_error(ps, "'%borrowed' is only valid in type and method-receiver positions");
+            return ZR_NULL;
+        }
+        ZrParser_Lexer_Next(ps->lexer);
+    } else {
+        report_error(ps, "Expected ownership directive after '%'");
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_NEW) {
+        if (ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
+            report_error(ps, "'%weak new' is not supported; use '%unique new' or '%shared new'");
+            return ZR_NULL;
+        }
+        return parse_construct_expression(ps, startLoc, ownershipQualifier, isUsing);
+    }
+
+    if (!consume_token(ps, ZR_TK_LPAREN)) {
+        report_error(ps, "Expected '(' or 'new' after ownership directive");
+        return ZR_NULL;
+    }
+
+    target = parse_expression(ps);
+    if (target == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    expect_token(ps, ZR_TK_RPAREN);
+    consume_token(ps, ZR_TK_RPAREN);
+
+    args = create_empty_argument_list(ps);
+    fullLoc = ZrParser_FileRange_Merge(startLoc, get_current_location(ps));
+    node = create_construct_expression_node(ps,
+                                            target,
+                                            args,
+                                            ownershipQualifier,
+                                            isUsing,
+                                            ZR_FALSE,
+                                            fullLoc);
+    if (node == ZR_NULL) {
+        if (args != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, args);
+        }
+        ZrParser_Ast_Free(ps->state, target);
+        return ZR_NULL;
+    }
+
+    return node;
+}
+
+static SZrAstNode *parse_owned_class_declaration(SZrParserState *ps) {
+    SZrAstNode *node;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
+        return ZR_NULL;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    if (!current_identifier_equals(ps, "owned")) {
+        report_error(ps, "Expected 'owned' after '%'");
+        return ZR_NULL;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    node = parse_class_declaration(ps);
+    if (node != ZR_NULL && node->type == ZR_AST_CLASS_DECLARATION) {
+        node->data.classDeclaration.isOwned = ZR_TRUE;
+    }
+    return node;
 }
 
 // 解析成员访问和函数调用
@@ -1916,8 +1962,8 @@ static SZrAstNode *parse_unary_expression(SZrParserState *ps) {
         }
     }
 
-    if (token == ZR_TK_USING && is_expression_level_using_new(ps)) {
-        SZrAstNode *node = parse_construct_expression(ps, ZR_TRUE);
+    if (token == ZR_TK_PERCENT) {
+        SZrAstNode *node = parse_percent_ownership_expression(ps);
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -1925,7 +1971,10 @@ static SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     }
 
     if (token == ZR_TK_NEW) {
-        SZrAstNode *node = parse_construct_expression(ps, ZR_FALSE);
+        SZrAstNode *node = parse_construct_expression(ps,
+                                                      get_current_location(ps),
+                                                      ZR_OWNERSHIP_QUALIFIER_NONE,
+                                                      ZR_FALSE);
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -2463,14 +2512,16 @@ static SZrType *parse_type(SZrParserState *ps) {
     type->hasArraySizeConstraint = ZR_FALSE;
     type->arraySizeExpression = ZR_NULL;
 
-    // 解析所有权限定符（unique<T> / shared<T> / weak<T>）
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
-        try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier) &&
-        peek_token(ps) == ZR_TK_LESS_THAN) {
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
         SZrType *innerType;
 
         ZrParser_Lexer_Next(ps->lexer);
-        expect_token(ps, ZR_TK_LESS_THAN);
+        if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+            !try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier)) {
+            report_error(ps, "Expected ownership qualifier after '%' in type annotation");
+            ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            return ZR_NULL;
+        }
         ZrParser_Lexer_Next(ps->lexer);
 
         innerType = parse_type(ps);
@@ -2479,15 +2530,18 @@ static SZrType *parse_type(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        if (!consume_type_closing_angle(ps)) {
-            expect_token(ps, ZR_TK_GREATER_THAN);
-            consume_token(ps, ZR_TK_GREATER_THAN);
-        }
-
         *type = *innerType;
         type->ownershipQualifier = ownershipQualifier;
         ZrCore_Memory_RawFreeWithType(ps->state->global, innerType, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
         return type;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+        try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier) &&
+        peek_token(ps) == ZR_TK_LESS_THAN) {
+        report_error(ps, "Legacy ownership type syntax is removed; use '%unique Type', '%shared Type', '%weak Type' or '%borrowed Type'");
+        ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        return ZR_NULL;
     }
 
     // 解析类型名称（可能是标识符、泛型类型或元组类型）
@@ -2574,14 +2628,16 @@ static SZrType *parse_type_no_generic(SZrParserState *ps) {
     type->hasArraySizeConstraint = ZR_FALSE;
     type->arraySizeExpression = ZR_NULL;
 
-    // 解析所有权限定符（unique<T> / shared<T> / weak<T>）
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
-        try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier) &&
-        peek_token(ps) == ZR_TK_LESS_THAN) {
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
         SZrType *innerType;
 
         ZrParser_Lexer_Next(ps->lexer);
-        expect_token(ps, ZR_TK_LESS_THAN);
+        if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+            !try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier)) {
+            report_error(ps, "Expected ownership qualifier after '%' in type annotation");
+            ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            return ZR_NULL;
+        }
         ZrParser_Lexer_Next(ps->lexer);
 
         innerType = parse_type_no_generic(ps);
@@ -2590,15 +2646,18 @@ static SZrType *parse_type_no_generic(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        if (!consume_type_closing_angle(ps)) {
-            expect_token(ps, ZR_TK_GREATER_THAN);
-            consume_token(ps, ZR_TK_GREATER_THAN);
-        }
-
         *type = *innerType;
         type->ownershipQualifier = ownershipQualifier;
         ZrCore_Memory_RawFreeWithType(ps->state->global, innerType, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
         return type;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+        try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier) &&
+        peek_token(ps) == ZR_TK_LESS_THAN) {
+        report_error(ps, "Legacy ownership type syntax is removed; use '%unique Type', '%shared Type', '%weak Type' or '%borrowed Type'");
+        ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        return ZR_NULL;
     }
 
     // 解析类型名称（可能是标识符或元组类型，但不解析泛型类型）
@@ -4088,6 +4147,48 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO) {
         // 使用 peek_token 查看下一个 token，不消费当前 token
         EZrToken nextToken = peek_token(ps);
+
+        if (nextToken == ZR_TK_PERCENT) {
+            TZrSize savedPos = ps->lexer->currentPos;
+            TZrInt32 savedChar = ps->lexer->currentChar;
+            TZrInt32 savedLine = ps->lexer->lineNumber;
+            TZrInt32 savedLastLine = ps->lexer->lastLine;
+            SZrToken savedToken = ps->lexer->t;
+            SZrToken savedLookahead = ps->lexer->lookahead;
+            TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
+            TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
+            TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
+            TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
+
+            ZrParser_Lexer_Next(ps->lexer);
+            ZrParser_Lexer_Next(ps->lexer);
+            if (current_identifier_equals(ps, "owned")) {
+                ps->lexer->currentPos = savedPos;
+                ps->lexer->currentChar = savedChar;
+                ps->lexer->lineNumber = savedLine;
+                ps->lexer->lastLine = savedLastLine;
+                ps->lexer->t = savedToken;
+                ps->lexer->lookahead = savedLookahead;
+                ps->lexer->lookaheadPos = savedLookaheadPos;
+                ps->lexer->lookaheadChar = savedLookaheadChar;
+                ps->lexer->lookaheadLine = savedLookaheadLine;
+                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+
+                parse_access_modifier(ps);
+                return parse_owned_class_declaration(ps);
+            }
+
+            ps->lexer->currentPos = savedPos;
+            ps->lexer->currentChar = savedChar;
+            ps->lexer->lineNumber = savedLine;
+            ps->lexer->lastLine = savedLastLine;
+            ps->lexer->t = savedToken;
+            ps->lexer->lookahead = savedLookahead;
+            ps->lexer->lookaheadPos = savedLookaheadPos;
+            ps->lexer->lookaheadChar = savedLookaheadChar;
+            ps->lexer->lookaheadLine = savedLookaheadLine;
+            ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+        }
         
         // 根据下一个 token 调用相应的解析函数（它们会自己解析可见性修饰符）
         switch (nextToken) {
@@ -4134,7 +4235,8 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             return parse_test_declaration(ps);
 
         case ZR_TK_PERCENT:
-            // 检查是否是 %compileTime 或 %test
+            // 检查是否是 %compileTime / %extern / %test / %owned class，
+            // 否则按普通表达式语句处理（例如 %unique new ...）。
             {
                 EZrToken lookahead = peek_token(ps);
                 // test 可能是关键字 ZR_TK_TEST 或标识符 ZR_TK_IDENTIFIER
@@ -4215,12 +4317,24 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                                     ps->lexer->lookaheadLine = savedLookaheadLine;
                                     ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
                                     return parse_test_declaration(ps);
+                                } else if (strcmp(nameStr, "owned") == 0) {
+                                    ps->lexer->currentPos = savedPos;
+                                    ps->lexer->currentChar = savedChar;
+                                    ps->lexer->lineNumber = savedLine;
+                                    ps->lexer->lastLine = savedLastLine;
+                                    ps->lexer->t = savedToken;
+                                    ps->lexer->lookahead = savedLookahead;
+                                    ps->lexer->lookaheadPos = savedLookaheadPos;
+                                    ps->lexer->lookaheadChar = savedLookaheadChar;
+                                    ps->lexer->lookaheadLine = savedLookaheadLine;
+                                    ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                                    return parse_owned_class_declaration(ps);
                                 }
                             }
                         }
                     }
                     
-                    // 恢复状态（标识符不是 "compileTime" 或 "test"）
+                    // 恢复状态，让表达式语句处理 %unique/%shared/%weak/%using 等前缀表达式
                     ps->lexer->currentPos = savedPos;
                     ps->lexer->currentChar = savedChar;
                     ps->lexer->lineNumber = savedLine;
@@ -4231,17 +4345,9 @@ static SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                     ps->lexer->lookaheadChar = savedLookaheadChar;
                     ps->lexer->lookaheadLine = savedLookaheadLine;
                     ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-                } else {
-                    // lookahead 不是标识符也不是 test 关键字，报告错误并跳过 % token
-                    report_error(ps, "Expected identifier or 'test' after '%' (expected 'compileTime' or 'test')");
-                    ZrParser_Lexer_Next(ps->lexer);  // 跳过 % token 以避免死循环
-                    return ZR_NULL;
                 }
-                
-                // 如果不是已知指令，报告错误并跳过 % token 以避免死循环
-                report_error(ps, "Unknown directive after '%' (expected 'compileTime', 'extern' or 'test')");
-                ZrParser_Lexer_Next(ps->lexer);  // 跳过 % token 以避免死循环
-                return ZR_NULL;
+
+                return parse_expression_statement(ps);
             }
 
         case ZR_TK_INTERMEDIATE:
@@ -5299,6 +5405,11 @@ static SZrAstNode *parse_struct_field(SZrParserState *ps) {
 // 解析结构体方法
 static SZrAstNode *parse_struct_method(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    EZrOwnershipQualifier receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        receiverQualifier = parse_optional_method_receiver_qualifier(ps);
+    }
     
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrParser_AstNodeArray_New(ps->state, 2);
@@ -5394,6 +5505,7 @@ static SZrAstNode *parse_struct_method(SZrParserState *ps) {
     node->data.structMethod.decorators = decorators;
     node->data.structMethod.access = access;
     node->data.structMethod.isStatic = isStatic;
+    node->data.structMethod.receiverQualifier = receiverQualifier;
     node->data.structMethod.name = name;
     node->data.structMethod.generic = generic;
     node->data.structMethod.params = params;
@@ -5543,7 +5655,7 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
         
         // 检查是否是字段（以 var 开头，可能前面有访问修饰符、static 或 const）
         EZrToken token = ps->lexer->t.token;
-        if (token == ZR_TK_SHARP ||
+        if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP ||
             token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO || 
             token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
             token == ZR_TK_VAR) {
@@ -5561,6 +5673,9 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
             
             // 跳过访问修饰符、static、using 和 const（用于 lookahead）
+            if (ps->lexer->t.token == ZR_TK_PERCENT) {
+                parse_optional_method_receiver_qualifier(ps);
+            }
             while (ps->lexer->t.token == ZR_TK_SHARP) {
                 parse_decorator_expression(ps);
             }
@@ -5614,7 +5729,7 @@ static SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
         } else if (token == ZR_TK_AT) {
             // 元函数
             member = parse_struct_meta_function(ps);
-        } else if (token == ZR_TK_IDENTIFIER) {
+        } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_PERCENT) {
             // 方法（可能有装饰器）
             member = parse_struct_method(ps);
         } else {
@@ -5747,7 +5862,7 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
         EZrToken token = ps->lexer->t.token;
         
         // 检查是否是装饰器或访问修饰符（可能是字段、方法或属性）
-        if (token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO || 
+        if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO || 
             token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
             token == ZR_TK_VAR) {
             // 保存状态以便向前看
@@ -5763,6 +5878,9 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
             
             // 跳过装饰器
+            if (ps->lexer->t.token == ZR_TK_PERCENT) {
+                parse_optional_method_receiver_qualifier(ps);
+            }
             while (ps->lexer->t.token == ZR_TK_SHARP) {
                 parse_decorator_expression(ps);
             }
@@ -5806,7 +5924,7 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
         } else if (token == ZR_TK_AT) {
             // 元函数
             member = parse_class_meta_function(ps);
-        } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_SHARP) {
+        } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_SHARP || token == ZR_TK_PERCENT) {
             // 方法（可能有装饰器）
             member = parse_class_method(ps);
         } else {
@@ -5844,6 +5962,7 @@ static SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     node->data.classDeclaration.members = members;
     node->data.classDeclaration.decorators = decorators;
     node->data.classDeclaration.accessModifier = accessModifier;
+    node->data.classDeclaration.isOwned = ZR_FALSE;
     return node;
 }
 
@@ -7372,6 +7491,11 @@ static SZrAstNode *parse_class_field(SZrParserState *ps) {
 // 解析类方法
 static SZrAstNode *parse_class_method(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    EZrOwnershipQualifier receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        receiverQualifier = parse_optional_method_receiver_qualifier(ps);
+    }
     
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrParser_AstNodeArray_New(ps->state, 2);
@@ -7467,6 +7591,7 @@ static SZrAstNode *parse_class_method(SZrParserState *ps) {
     node->data.classMethod.decorators = decorators;
     node->data.classMethod.access = access;
     node->data.classMethod.isStatic = isStatic;
+    node->data.classMethod.receiverQualifier = receiverQualifier;
     node->data.classMethod.name = name;
     node->data.classMethod.generic = generic;
     node->data.classMethod.params = params;
