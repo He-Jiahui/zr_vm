@@ -128,7 +128,7 @@ extern `struct` / `enum` 同时具备“zr 类型可见性”和“FFI layout de
 
 每个 `%extern` block 在 lowering 时都会生成一套模块局部隐藏缓存：
 
-1. `import("zr.ffi")`
+1. `%import("zr.ffi")`
 2. `loadLibrary(libraryName)`
 3. 对每个 extern function 调用 `library.getSymbol(entryName, signatureDescriptor)`
 

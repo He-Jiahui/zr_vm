@@ -109,7 +109,7 @@ void test_named_arguments_basic(void) {
               "Testing function call with named arguments: func(c: 3, a: 1, b: 2)");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "testBasicNamedArgs(a: int, b: int, c: int): int {\n"
         "    return a + b + c;\n"
         "}\n"
@@ -186,7 +186,7 @@ void test_named_arguments_mixed(void) {
               "Testing: func(1, c: 3, b: 2)");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "testMixedArgs(a: int, b: int, c: int): int {\n"
         "    return a * 100 + b * 10 + c;\n"
         "}\n"
@@ -244,7 +244,7 @@ void test_named_arguments_with_defaults(void) {
               "Testing: func(5) and func(5, c: 30)");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "testDefaultArgs(a: int, b: int = 10, c: int = 20): int {\n"
         "    return a + b + c;\n"
         "}\n"
@@ -304,7 +304,7 @@ void test_named_arguments_order_independent(void) {
               "Testing: func(c: 10, a: 5, b: 3)");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "testNamedOrder(a: int, b: int, c: int): int {\n"
         "    return a - b + c;\n"
         "}\n"
@@ -362,7 +362,7 @@ void test_named_arguments_complex(void) {
               "Testing: complexFunction(w: 4, x: 1, z: 3, y: 2)");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "complexFunction(x: int, y: int, z: int, w: int): int {\n"
         "    return x * 1000 + y * 100 + z * 10 + w;\n"
         "}\n"

@@ -1,4 +1,4 @@
-module "artifact_baseline";
+%module "artifact_baseline";
 
 pub var greet = () => {
     return "hello artifact";

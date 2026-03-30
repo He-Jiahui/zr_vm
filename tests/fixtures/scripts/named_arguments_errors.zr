@@ -1,4 +1,4 @@
-module "named_arguments_errors";
+%module "named_arguments_errors";
 
 // 这个文件用于测试命名参数的错误处理
 // 注意：这些测试用例应该导致编译错误

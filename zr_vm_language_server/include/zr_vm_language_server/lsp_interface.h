@@ -40,6 +40,12 @@ typedef struct SZrLspDiagnostic {
     SZrArray relatedInformation;      // 相关信息（可选）
 } SZrLspDiagnostic;
 
+// LSP 文本编辑
+typedef struct SZrLspTextEdit {
+    SZrLspRange range;
+    SZrString *newText;
+} SZrLspTextEdit;
+
 // LSP 补全项
 typedef struct SZrLspCompletionItem {
     SZrString *label;                 // 标签
@@ -48,7 +54,18 @@ typedef struct SZrLspCompletionItem {
     SZrString *documentation;         // 文档（可选，markdown格式）
     SZrString *insertText;            // 插入文本（可选）
     SZrString *insertTextFormat;      // 插入文本格式（"plaintext"或"snippet"）
+    SZrArray additionalTextEdits;     // 附加编辑（SZrLspTextEdit*）
+    SZrString *sourceType;            // 候选来源（project/builtin/auto-import/directive/symbol）
 } SZrLspCompletionItem;
+
+// LSP Code Action
+typedef struct SZrLspCodeAction {
+    SZrString *title;
+    SZrString *kind;
+    SZrArray edits;                   // SZrLspTextEdit*
+    SZrString *diagnosticCode;
+    SZrString *documentation;
+} SZrLspCodeAction;
 
 // LSP 悬停信息
 typedef struct SZrLspHover {
@@ -56,12 +73,17 @@ typedef struct SZrLspHover {
     SZrLspRange range;                // 范围（可选）
 } SZrLspHover;
 
+typedef struct SZrLspProjectIndex SZrLspProjectIndex;
+typedef struct SZrLspBuiltinDocument SZrLspBuiltinDocument;
+
 // LSP 接口上下文
 typedef struct SZrLspContext {
     SZrState *state;
     SZrIncrementalParser *parser;
     SZrSemanticAnalyzer *analyzer;
     SZrHashSet uriToAnalyzerMap;      // URI 到分析器的映射（值为SZrSemanticAnalyzer*）
+    SZrArray projectIndexes;          // 项目索引（SZrLspProjectIndex*）
+    SZrArray builtinDocuments;        // 内建虚拟文档（SZrLspBuiltinDocument*）
 } SZrLspContext;
 
 // LSP 接口管理函数
@@ -92,6 +114,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *stat
                                                  SZrString *uri,
                                                  SZrLspPosition position,
                                                  SZrArray *result);
+
+// 获取 Code Actions
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
+                                                  SZrLspContext *context,
+                                                  SZrString *uri,
+                                                  SZrLspRange range,
+                                                  SZrArray *result);
 
 // 获取悬停信息
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,

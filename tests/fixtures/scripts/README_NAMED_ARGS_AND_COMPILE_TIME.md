@@ -137,7 +137,7 @@ golden 快照:   tests/golden/
 如果需要添加更多测试用例，请遵循以下格式：
 
 ```zr
-module "test_name";
+%module "test_name";
 
 // 测试函数（注意：不使用function关键字）
 testFunction(param1: int, param2: int): int {
@@ -154,7 +154,7 @@ testFunction(param1: int, param2: int): int {
 对于编译期测试：
 
 ```zr
-module "compile_time_test";
+%module "compile_time_test";
 
 %compileTime var compileTimeVar = 42;
 

@@ -67,6 +67,14 @@ ZR_PARSER_API TZrBool ZrParser_FunctionCallCompatibility_Check(SZrCompilerState 
                                                       SZrFunctionTypeInfo *funcType,
                                                       SZrFileRange location);
 
+// 解析函数调用的最佳重载
+ZR_PARSER_API TZrBool ZrParser_FunctionCallOverload_Resolve(SZrCompilerState *cs,
+                                                   SZrTypeEnvironment *env,
+                                                   SZrString *funcName,
+                                                   SZrFunctionCall *call,
+                                                   SZrFileRange location,
+                                                   SZrFunctionTypeInfo **resolvedFunction);
+
 // 报告类型错误
 ZR_PARSER_API void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, const SZrInferredType *expectedType, const SZrInferredType *actualType, SZrFileRange location);
 

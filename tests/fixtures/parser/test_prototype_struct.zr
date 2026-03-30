@@ -1,5 +1,5 @@
 // 测试 struct prototype 生成
-module "test_struct";
+%module "test_struct";
 
 // 基本 struct 声明
 struct Vector3 {

@@ -208,7 +208,7 @@ void test_compile_time_variables(void) {
               "Testing %compileTime var MAX_SIZE = 100");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "%compileTime var MAX_SIZE = 100;\n"
         "%compileTime var MIN_SIZE = 1;\n"
         "%compileTime var DEFAULT_VALUE = 42;\n"
@@ -269,7 +269,7 @@ void test_compile_time_functions(void) {
               "Testing %compileTime function calculateSum");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "%compileTime calculateSum(a: int, b: int): int {\n"
         "    return a + b;\n"
         "}\n"
@@ -331,7 +331,7 @@ static void test_compile_time_expressions(void) {
               "Testing %compileTime var complexExpr = (1+2)*3*4 - 10");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "%compileTime calculateSum(a: int, b: int): int {\n"
         "    return a + b;\n"
         "}\n"
@@ -396,7 +396,7 @@ void test_compile_time_recursion(void) {
               "Testing %compileTime function factorial");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "%compileTime factorial(n: int): int {\n"
         "    if (n <= 1) {\n"
         "        return 1;\n"
@@ -461,7 +461,7 @@ void test_compile_time_statements(void) {
               "Testing %compileTime { ... }");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "%compileTime var MAX_SIZE = 100;\n"
         "%compileTime var MIN_SIZE = 1;\n"
         "%compileTime {\n"
@@ -525,7 +525,7 @@ void test_compile_time_array_validation(void) {
               "Testing array size validation using compile-time function");
     
     const TZrChar* source = 
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "%compileTime var MAX_SIZE = 100;\n"
         "%compileTime var MIN_SIZE = 1;\n"
         "%compileTime validateArraySize(size: int): bool {\n"
@@ -588,7 +588,7 @@ void test_compile_time_function_projection_to_runtime(void) {
               "Testing runtime initializer uses %compileTime function call directly");
 
     const TZrChar* source =
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "%compileTime calculateSum(a: int, b: int): int {\n"
         "    return a + b;\n"
         "}\n"
@@ -649,7 +649,7 @@ void test_compile_time_block_persistent_registration(void) {
               "Testing var/function declared inside %compileTime block remain available afterwards");
 
     const TZrChar* source =
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "%compileTime {\n"
         "    var BLOCK_VALUE = 40;\n"
         "    addOffset(base: int): int {\n"
@@ -713,7 +713,7 @@ void test_compile_time_named_and_default_argument_projection(void) {
               "Testing runtime initializer uses named args and default args from %compileTime function");
 
     const TZrChar* source =
-        "module \"test\";\n"
+        "%module \"test\";\n"
         "%compileTime combine(a: int, b: int = 10, c: int = 100): int {\n"
         "    return a + b + c;\n"
         "}\n"
@@ -777,7 +777,7 @@ void test_compile_time_block_forward_reference_diagnostic(void) {
 
     assert_compile_time_compile_failure(
             state,
-            "module \"test\";\n"
+            "%module \"test\";\n"
             "%compileTime {\n"
             "    var computed = laterValue + 1;\n"
             "    var laterValue = 41;\n"
@@ -809,7 +809,7 @@ void test_compile_time_duplicate_declaration_override(void) {
               "Testing later %compileTime var/function declarations override earlier ones");
 
     const TZrChar* source =
-            "module \"test\";\n"
+            "%module \"test\";\n"
             "%compileTime {\n"
             "    var VALUE = 1;\n"
             "    var VALUE = 2;\n"
@@ -861,7 +861,7 @@ void test_compile_time_member_call_projection(void) {
               "Testing compile-time object members can reference compile-time functions and project member calls");
 
     const TZrChar* source =
-            "module \"test\";\n"
+            "%module \"test\";\n"
             "%compileTime addImpl(a: int, b: int): int {\n"
             "    return a + b;\n"
             "}\n"
@@ -897,7 +897,7 @@ void test_compile_time_import_member_call_projection(void) {
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "helper",
-                    "module \"helper\";\n"
+                    "%module \"helper\";\n"
                     "pub var greet = () => {\n"
                     "    return 42;\n"
                     "};\n",
@@ -921,11 +921,11 @@ void test_compile_time_import_member_call_projection(void) {
     state->global->sourceLoader = compile_time_import_source_loader;
 
     TEST_INFO("Compile-time import member call projection",
-              "Testing import(\"helper\").greet() is projected during compilation");
+              "Testing %import(\"helper\").greet() is projected during compilation");
 
     const TZrChar* source =
-            "module \"test\";\n"
-            "var runtimeValue = import(\"helper\").greet();\n"
+            "%module \"test\";\n"
+            "var runtimeValue = %import(\"helper\").greet();\n"
             "%test(\"test\") {\n"
             "    return runtimeValue;\n"
             "}\n";
@@ -970,7 +970,7 @@ void test_compile_time_projection_rejects_function_ref_leak(void) {
 
     assert_compile_time_compile_failure(
             state,
-            "module \"test\";\n"
+            "%module \"test\";\n"
             "%compileTime addImpl(a: int, b: int): int {\n"
             "    return a + b;\n"
             "}\n"
@@ -994,7 +994,7 @@ void test_compile_time_import_deep_member_call_projection(void) {
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "helper",
-                    "module \"helper\";\n"
+                    "%module \"helper\";\n"
                     "pub var toolkit = {\n"
                     "    math: {\n"
                     "        greet: () => {\n"
@@ -1022,12 +1022,12 @@ void test_compile_time_import_deep_member_call_projection(void) {
     state->global->sourceLoader = compile_time_import_source_loader;
 
     TEST_INFO("Compile-time deep import member-call projection",
-              "Testing import(\"helper\").toolkit.math.greet() is fully projected during compilation");
+              "Testing %import(\"helper\").toolkit.math.greet() is fully projected during compilation");
 
     {
         const TZrChar* source =
-                "module \"test\";\n"
-                "var runtimeValue = import(\"helper\").toolkit.math.greet();\n"
+                "%module \"test\";\n"
+                "var runtimeValue = %import(\"helper\").toolkit.math.greet();\n"
                 "%test(\"test\") {\n"
                 "    return runtimeValue;\n"
                 "}\n";

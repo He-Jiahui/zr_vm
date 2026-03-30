@@ -1,4 +1,4 @@
-var math = import("zr.math");
+var math = %import("zr.math");
 
 projectVectorsImpl(seed: float) {
     var a = $math.Vector3(seed, seed + 1.0, seed + 2.0);

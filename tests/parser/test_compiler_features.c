@@ -569,7 +569,7 @@ void test_global_object_access(void) {
     }
 
     // 测试代码：访问全局对象属性
-    const char *source = "var x = zr.import;";
+    const char *source = "var x = zr.Error;";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 

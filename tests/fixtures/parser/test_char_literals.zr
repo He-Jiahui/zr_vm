@@ -1,4 +1,4 @@
-module "char_literals";
+%module "char_literals";
 
 // 基本字符测试
 var c1 = 'a';

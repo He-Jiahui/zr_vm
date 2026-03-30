@@ -1,5 +1,5 @@
 // 测试 prototype 模块导出
-module "test_export";
+%module "test_export";
 
 // pub struct - 应该导出到 pub
 pub struct PublicStruct {

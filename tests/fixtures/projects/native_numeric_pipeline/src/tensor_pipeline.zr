@@ -1,4 +1,4 @@
-var math = import("zr.math");
+var math = %import("zr.math");
 
 runTensorPassImpl() {
     var lhs = new math.Tensor([2, 2], [1.0, 2.0, 3.0, 4.0]);

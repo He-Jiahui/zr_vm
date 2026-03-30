@@ -1,4 +1,4 @@
-module "type_cast_struct";
+%module "type_cast_struct";
 
 // 结构体定义
 struct Vector3 {

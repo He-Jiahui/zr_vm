@@ -172,6 +172,16 @@ static const char *string_node_native(SZrState *state, SZrAstNode *node) {
     return ZrCore_String_GetNativeString(node->data.stringLiteral.value);
 }
 
+static const char *module_declaration_name_native(SZrState *state, SZrAstNode *ast) {
+    if (state == ZR_NULL || ast == ZR_NULL || ast->type != ZR_AST_SCRIPT ||
+        ast->data.script.moduleName == ZR_NULL ||
+        ast->data.script.moduleName->type != ZR_AST_MODULE_DECLARATION) {
+        return ZR_NULL;
+    }
+
+    return string_node_native(state, ast->data.script.moduleName->data.moduleDeclaration.name);
+}
+
 // 测试初始化和清理
 void setUp(void) {
 }
@@ -323,8 +333,8 @@ void test_module_declaration(void) {
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Module declaration parsing", 
-              "Testing parsing of module declaration: module \"test\";");
-    const char* source = "module \"test\";";
+              "Testing parsing of reserved module declaration: %module \"test\";");
+    const char* source = "%module \"test\";";
     SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
@@ -332,6 +342,7 @@ void test_module_declaration(void) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         if (ast->data.script.moduleName != ZR_NULL) {
             TEST_ASSERT_EQUAL_INT(ZR_AST_MODULE_DECLARATION, ast->data.script.moduleName->type);
+            TEST_ASSERT_EQUAL_STRING("test", module_declaration_name_native(state, ast));
         }
         ZrParser_Ast_Free(state, ast);
     } else {
@@ -588,7 +599,7 @@ void test_prototype_construction_expression_parsing(void) {
               "Testing parsing of `$(math.Vector3)(1.0, 2.0, 3.0)` as a valid construction expression");
     {
         const char *source =
-                "var math = import(\"zr.math\");\n"
+                "var math = %import(\"zr.math\");\n"
                 "$(math.Vector3)(1.0, 2.0, 3.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "prototype_construct.zr", 22);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -622,7 +633,7 @@ void test_native_boxed_new_expression_parsing(void) {
               "Testing parsing of `new math.Tensor(...)` inside a variable initializer");
     {
         const char *source =
-                "var math = import(\"zr.math\");\n"
+                "var math = %import(\"zr.math\");\n"
                 "var tensor = new math.Tensor([2, 2], [1.0, 2.0, 3.0, 4.0]);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_boxed_new.zr", 19);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -834,6 +845,194 @@ void test_extern_block_parsing(void) {
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
     destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_reserved_import_expression_variants(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reserved Import Expression Variants";
+    static const struct {
+        const char *source;
+        const char *expectedName;
+    } fixtures[] = {
+        { "var math = %import zr.math;", "zr.math" },
+        { "var math = %import \"zr.math\";", "zr.math" },
+        { "var math = %import(\"zr.math\");", "zr.math" },
+    };
+    TZrSize index;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Reserved import parsing",
+              "Testing that all supported %import spellings normalize to the same import-expression AST");
+
+    for (index = 0; index < sizeof(fixtures) / sizeof(fixtures[0]); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName = ZrCore_String_Create(state, "reserved_import_variants.zr", 27);
+        SZrAstNode *ast = ZrParser_Parse(state, fixtures[index].source, strlen(fixtures[index].source), sourceName);
+        SZrAstNode *statement;
+        SZrAstNode *expr;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        statement = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(statement);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, statement->type);
+        expr = statement->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_IMPORT_EXPRESSION, expr->type);
+        TEST_ASSERT_EQUAL_STRING(fixtures[index].expectedName,
+                                 string_node_native(state, expr->data.importExpression.modulePath));
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_reserved_import_expression_member_chain_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reserved Import Member Chain Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source = "%import(\"helper\").toolkit.math.greet();";
+        SZrString *sourceName = ZrCore_String_Create(state, "reserved_import_chain.zr", 24);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(ast);
+        expr = unwrap_statement_expression(get_script_statement(ast, 0));
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, expr->type);
+        TEST_ASSERT_NOT_NULL(expr->data.primaryExpression.property);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_IMPORT_EXPRESSION, expr->data.primaryExpression.property->type);
+        TEST_ASSERT_EQUAL_STRING("helper",
+                                 string_node_native(state,
+                                                    expr->data.primaryExpression.property->data.importExpression.modulePath));
+        TEST_ASSERT_NOT_NULL(expr->data.primaryExpression.members);
+        TEST_ASSERT_EQUAL_INT(4, (int)expr->data.primaryExpression.members->count);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_legacy_import_syntax_is_rejected(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Legacy Import Syntax Rejected";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "import(\"zr.math\");\n"
+                "zr.import(\"zr.math\");\n"
+                "var ok = 1;";
+        SZrString *sourceName = ZrCore_String_Create(state, "legacy_import_syntax.zr", 23);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, ast->data.script.statements->nodes[0]->type);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_reserved_module_declaration_variants(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reserved Module Declaration Variants";
+    static const struct {
+        const char *source;
+        const char *expectedName;
+    } fixtures[] = {
+        { "%module foo;", "foo" },
+        { "%module \"foo.bar\";", "foo.bar" },
+        { "%module(\"foo.bar\");", "foo.bar" },
+    };
+    TZrSize index;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    for (index = 0; index < sizeof(fixtures) / sizeof(fixtures[0]); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrAstNode *ast;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "reserved_module_variants.zr", 27);
+        ast = ZrParser_Parse(state, fixtures[index].source, strlen(fixtures[index].source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.moduleName);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_MODULE_DECLARATION, ast->data.script.moduleName->type);
+        TEST_ASSERT_EQUAL_STRING(fixtures[index].expectedName, module_declaration_name_native(state, ast));
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_legacy_module_keyword_is_rejected(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Legacy Module Keyword Rejected";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source = "module \"legacy\";\nvar value = 1;";
+        SZrString *sourceName = ZrCore_String_Create(state, "legacy_module_keyword.zr", 24);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NULL(ast->data.script.moduleName);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, ast->data.script.statements->nodes[0]->type);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
     TEST_DIVIDER();
 }
 
@@ -1082,7 +1281,7 @@ void test_simple_script(void) {
     
     TEST_INFO("Simple script parsing", 
               "Testing parsing of simple script with module and variable declarations");
-    const char* source = "module \"test\";\nvar x = 1;\nvar y = 2;";
+    const char* source = "%module(\"test\");\nvar x = 1;\nvar y = 2;";
     SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
@@ -1394,7 +1593,7 @@ void test_compiler_lambda_crlf_locations(void) {
               "Testing that compiled lambda line ranges stay stable when the source uses CRLF line endings");
 
     const char* source =
-        "module \"artifact_baseline\";\r\n"
+        "%module \"artifact_baseline\";\r\n"
         "\r\n"
         "pub var greet = () => {\r\n"
         "    return \"hello artifact\";\r\n"
@@ -1557,6 +1756,8 @@ int main(void) {
     RUN_TEST(test_string_literal);
     RUN_TEST(test_boolean_literal);
     RUN_TEST(test_module_declaration);
+    RUN_TEST(test_reserved_module_declaration_variants);
+    RUN_TEST(test_legacy_module_keyword_is_rejected);
     RUN_TEST(test_variable_declaration);
     RUN_TEST(test_access_modifier_parsing);
     
@@ -1567,6 +1768,9 @@ int main(void) {
     // 表达式测试
     RUN_TEST(test_binary_expression);
     RUN_TEST(test_unary_expression);
+    RUN_TEST(test_reserved_import_expression_variants);
+    RUN_TEST(test_reserved_import_expression_member_chain_parsing);
+    RUN_TEST(test_legacy_import_syntax_is_rejected);
     RUN_TEST(test_prototype_construction_expression_parsing);
     RUN_TEST(test_native_boxed_new_expression_parsing);
     RUN_TEST(test_conditional_expression);

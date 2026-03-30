@@ -1,4 +1,4 @@
-module "compile_time_errors";
+%module "compile_time_errors";
 
 // 这个文件用于测试编译期执行的错误处理
 // 注意：某些测试用例应该导致编译错误或警告

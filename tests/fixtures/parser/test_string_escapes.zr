@@ -1,5 +1,5 @@
 // 测试字符串转义序列
-module "string_escapes";
+%module "string_escapes";
 
 // 基本转义字符
 var s1 = "hello\nworld";

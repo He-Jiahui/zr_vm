@@ -115,6 +115,42 @@ static TZrBool ct_string_equals(SZrString *value, const TZrChar *literal) {
     return nativeValue != ZR_NULL && strcmp(nativeValue, literal) == 0;
 }
 
+static TZrBool ct_eval_import_expression(SZrCompilerState *cs,
+                                         SZrAstNode *node,
+                                         SZrTypeValue *result) {
+    SZrAstNode *modulePathNode;
+    SZrString *moduleName;
+    SZrObjectModule *module;
+
+    if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_IMPORT_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    modulePathNode = node->data.importExpression.modulePath;
+    if (modulePathNode == ZR_NULL || modulePathNode->type != ZR_AST_STRING_LITERAL ||
+        modulePathNode->data.stringLiteral.value == ZR_NULL) {
+        ZrParser_CompileTime_Error(cs,
+                                   ZR_COMPILE_TIME_ERROR_ERROR,
+                                   "Compile-time import requires a normalized string module path",
+                                   node->location);
+        return ZR_FALSE;
+    }
+
+    moduleName = modulePathNode->data.stringLiteral.value;
+    module = ZrCore_Module_ImportByPath(cs->state, moduleName);
+    if (module == ZR_NULL) {
+        ZrParser_CompileTime_Error(cs,
+                                   ZR_COMPILE_TIME_ERROR_ERROR,
+                                   "Compile-time import failed to load module",
+                                   node->location);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(module));
+    result->type = ZR_VALUE_TYPE_OBJECT;
+    return ZR_TRUE;
+}
+
 static void ct_frame_init(SZrCompilerState *cs, SZrCompileTimeFrame *frame, SZrCompileTimeFrame *parent) {
     frame->parent = parent;
     ZrCore_Array_Init(cs->state, &frame->bindings, sizeof(SZrCompileTimeBinding), 4);
@@ -496,18 +532,6 @@ static TZrBool ct_eval_builtin_call(SZrCompilerState *cs,
         return ZR_TRUE;
     }
 
-    if (strcmp(nameStr, "import") == 0) {
-        SZrTypeValue importCallable;
-        SZrClosureNative *importClosure = ZrCore_ClosureNative_New(cs->state, 0);
-        if (importClosure == ZR_NULL) {
-            return ZR_FALSE;
-        }
-        importClosure->nativeFunction = ZrCore_ImportNativeFunction;
-        ZrCore_Value_InitAsRawObject(cs->state, &importCallable, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
-        importCallable.isNative = ZR_TRUE;
-        return ct_call_value(cs, node, &importCallable, call, frame, result);
-    }
-
     return ZR_FALSE;
 }
 
@@ -821,8 +845,7 @@ static TZrBool ct_eval_primary(SZrCompilerState *cs, SZrAstNode *node, SZrCompil
         SZrFunctionCall *call = &primary->members->nodes[0]->data.functionCall;
 
         if (ct_string_equals(funcName, "FatalError") ||
-            ct_string_equals(funcName, "Assert") ||
-            ct_string_equals(funcName, "import")) {
+            ct_string_equals(funcName, "Assert")) {
             if (!ct_eval_builtin_call(cs, node, funcName, call, frame, &currentValue)) {
                 return ZR_FALSE;
             }
@@ -921,6 +944,9 @@ static TZrBool evaluate_compile_time_expression_internal(SZrCompilerState *cs,
         case ZR_AST_UNARY_EXPRESSION:
             cs->isInCompileTimeContext = oldContext;
             return ct_eval_unary(cs, node, frame, result);
+        case ZR_AST_IMPORT_EXPRESSION:
+            cs->isInCompileTimeContext = oldContext;
+            return ct_eval_import_expression(cs, node, result);
         case ZR_AST_CONDITIONAL_EXPRESSION: {
             SZrConditionalExpression *expr = &node->data.conditionalExpression;
             SZrTypeValue condValue;

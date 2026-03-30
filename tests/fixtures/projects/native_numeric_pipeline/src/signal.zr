@@ -1,4 +1,4 @@
-var math = import("zr.math");
+var math = %import("zr.math");
 
 mixSignalImpl(scale: float) {
     var base = $math.Complex(3.0, 4.0);

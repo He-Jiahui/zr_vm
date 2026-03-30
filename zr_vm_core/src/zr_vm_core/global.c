@@ -12,7 +12,6 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
-#include "zr_vm_core/closure.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_common/zr_type_conf.h"
 
@@ -246,25 +245,6 @@ void ZrCore_GlobalState_InitRegistry(SZrState *state, SZrGlobalState *global) {
     // 初始化基本类型对象原型
     global_state_init_basic_type_object_prototypes(state, global);
     global_state_init_builtin_exception_types(state, global, zrObject);
-    
-    // 创建 zr.import native 函数
-    SZrClosureNative *importClosure = ZrCore_ClosureNative_New(state, 0);
-    if (importClosure != ZR_NULL) {
-        importClosure->nativeFunction = ZrCore_ImportNativeFunction;
-        
-        // 标记为永久对象（避免被 GC 回收，必须在设置值之前标记）
-        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
-        
-        // 创建函数值
-        // 注意：ZrClosureNative 的类型是 ZR_VALUE_TYPE_CLOSURE，不是 ZR_VALUE_TYPE_FUNCTION
-        // 不要手动覆盖类型，使用 ZrCore_Value_InitAsRawObject 设置的原始类型
-        SZrTypeValue importValue;
-        ZrCore_Value_InitAsRawObject(state, &importValue, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
-        // importValue.type 已经由 ZrCore_Value_InitAsRawObject 设置为 ZR_VALUE_TYPE_CLOSURE
-        importValue.isNative = ZR_TRUE;
-        
-        global_state_register_zr_member(state, zrObject, "import", &importValue);
-    }
     
     // 将 zr 对象添加到全局状态（TODO: 需要确认如何访问全局作用域）
     // 根据计划，zr 除非被局部作用域名字覆盖，否则全局只读

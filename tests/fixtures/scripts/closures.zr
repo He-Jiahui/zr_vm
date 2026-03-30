@@ -1,4 +1,4 @@
-module "closures";
+%module "closures";
 
 // 闭包变量捕获测试
 var closure_capture_test = () => {

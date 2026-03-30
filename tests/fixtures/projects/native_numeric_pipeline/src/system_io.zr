@@ -1,4 +1,4 @@
-var system = import("zr.system");
+var system = %import("zr.system");
 
 persistReportImpl(summary) {
     var outDir = "tests/fixtures/projects/native_numeric_pipeline/bin/out";

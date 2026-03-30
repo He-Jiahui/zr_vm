@@ -56,6 +56,7 @@ static const TZrChar *get_base_type_name(EZrValueType baseType) {
 static TZrBool inferred_type_from_type_name(SZrCompilerState *cs,
                                             SZrString *typeName,
                                             SZrInferredType *result);
+static TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);
 
 static TZrBool inferred_type_try_map_primitive_name(const TZrNativeString nameStr,
                                                     TZrSize nameLen,
@@ -771,6 +772,20 @@ static TZrBool resolve_best_function_overload(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+TZrBool ZrParser_FunctionCallOverload_Resolve(SZrCompilerState *cs,
+                                              SZrTypeEnvironment *env,
+                                              SZrString *funcName,
+                                              SZrFunctionCall *call,
+                                              SZrFileRange location,
+                                              SZrFunctionTypeInfo **resolvedFunction) {
+    return resolve_best_function_overload(cs,
+                                          env,
+                                          funcName,
+                                          call,
+                                          location,
+                                          resolvedFunction);
+}
+
 static TZrBool zr_string_equals_cstr(SZrString *value, const TZrChar *literal) {
     if (value == ZR_NULL || literal == ZR_NULL) {
         return ZR_FALSE;
@@ -1468,16 +1483,29 @@ static TZrBool inferred_type_from_member_call(SZrCompilerState *cs,
     }
 }
 
-static SZrString *extract_imported_module_name(SZrFunctionCall *call) {
-    if (call == ZR_NULL || call->args == ZR_NULL || call->args->count == 0) {
-        return ZR_NULL;
+static TZrBool infer_import_expression_type(SZrCompilerState *cs,
+                                            SZrAstNode *node,
+                                            SZrInferredType *result) {
+    SZrAstNode *modulePathNode;
+    SZrString *moduleName = ZR_NULL;
+
+    if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_IMPORT_EXPRESSION) {
+        return ZR_FALSE;
     }
 
-    if (call->args->nodes[0] != ZR_NULL && call->args->nodes[0]->type == ZR_AST_STRING_LITERAL) {
-        return call->args->nodes[0]->data.stringLiteral.value;
+    modulePathNode = node->data.importExpression.modulePath;
+    if (modulePathNode != ZR_NULL && modulePathNode->type == ZR_AST_STRING_LITERAL) {
+        moduleName = modulePathNode->data.stringLiteral.value;
     }
 
-    return ZR_NULL;
+    if (moduleName != ZR_NULL) {
+        ensure_native_module_compile_info(cs, moduleName);
+        ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, moduleName);
+    } else {
+        ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+    }
+
+    return ZR_TRUE;
 }
 
 static TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *moduleName) {
@@ -2557,27 +2585,6 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                     ZrParser_InferredType_Free(cs->state, &baseType);
                     return ZR_FALSE;
                 }
-                
-                // import 是运行时内建函数，由宿主负责解析模块，返回对象类型。
-                if (zr_string_equals_cstr(funcName, "import")) {
-                    SZrString *moduleName = extract_imported_module_name(call);
-                    if (moduleName != ZR_NULL) {
-                        ensure_native_module_compile_info(cs, moduleName);
-                        ZrParser_InferredType_InitFull(cs->state, &baseType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, moduleName);
-                    } else {
-                        ZrParser_InferredType_Init(cs->state, &baseType, ZR_VALUE_TYPE_OBJECT);
-                    }
-                    if (primary->members->count > 1) {
-                        TZrBool success =
-                                infer_primary_member_chain_type(cs, &baseType, primary->members, 1, ZR_FALSE, result);
-                        ZrParser_InferredType_Free(cs->state, &baseType);
-                        return success;
-                    }
-                    ZrParser_InferredType_Copy(cs->state, result, &baseType);
-                    ZrParser_InferredType_Free(cs->state, &baseType);
-                    return ZR_TRUE;
-                }
-                
                 // 函数和类型都未找到时，保持动态 object fallback。
                 ZrParser_InferredType_Free(cs->state, &baseType);
                 ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
@@ -2679,6 +2686,9 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         
         case ZR_AST_FUNCTION_CALL:
             return ZrParser_FunctionCallType_Infer(cs, node, result);
+
+        case ZR_AST_IMPORT_EXPRESSION:
+            return infer_import_expression_type(cs, node, result);
         
         case ZR_AST_LAMBDA_EXPRESSION:
             return ZrParser_LambdaType_Infer(cs, node, result);

@@ -229,17 +229,22 @@ SZrReference *ZrLanguageServer_ReferenceTracker_FindReferenceAt(SZrReferenceTrac
             SZrFileRange posRange = position;
             
             // 首先检查源文件是否相同
-            if (refRange.source != posRange.source) {
+            if (refRange.source != posRange.source &&
+                refRange.source != ZR_NULL &&
+                posRange.source != ZR_NULL &&
+                !ZrCore_String_Equal(refRange.source, posRange.source)) {
                 continue;
             }
             
             // 检查位置是否在引用范围内（包含边界）
             // 位置在引用范围内：ref.start <= pos.start && pos.end <= ref.end
+            TZrBool useOffsets = refRange.start.offset > 0 && refRange.end.offset > 0 &&
+                                 posRange.start.offset > 0 && posRange.end.offset > 0 &&
+                                 refRange.source != ZR_NULL && posRange.source != ZR_NULL;
             TZrBool startMatch = (refRange.start.offset <= posRange.start.offset);
             TZrBool endMatch = (posRange.end.offset <= refRange.end.offset);
             
-            // 如果offset为0，使用行号和列号比较
-            if (refRange.start.offset == 0 && posRange.start.offset == 0) {
+            if (!useOffsets || !(startMatch && endMatch)) {
                 startMatch = (refRange.start.line < posRange.start.line) ||
                             (refRange.start.line == posRange.start.line && 
                              refRange.start.column <= posRange.start.column);

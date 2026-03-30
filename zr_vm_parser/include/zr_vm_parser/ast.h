@@ -66,6 +66,7 @@ enum EZrAstNodeType {
     ZR_AST_FUNCTION_CALL,
     ZR_AST_MEMBER_EXPRESSION,
     ZR_AST_PRIMARY_EXPRESSION,
+    ZR_AST_IMPORT_EXPRESSION,
     ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION,
     ZR_AST_CONSTRUCT_EXPRESSION,
 
@@ -353,6 +354,10 @@ typedef struct SZrPrimaryExpression {
     SZrAstNodeArray *members; // MemberExpression 或 FunctionCall 数组
 } SZrPrimaryExpression;
 
+typedef struct SZrImportExpression {
+    SZrAstNode *modulePath; // StringLiteral
+} SZrImportExpression;
+
 typedef struct SZrPrototypeReferenceExpression {
     SZrAstNode *target;
 } SZrPrototypeReferenceExpression;
@@ -413,7 +418,7 @@ typedef struct SZrForeachLoop {
 
 // 声明节点结构
 typedef struct SZrModuleDeclaration {
-    SZrAstNode *name; // Identifier 或 StringLiteral
+    SZrAstNode *name; // StringLiteral
 } SZrModuleDeclaration;
 
 typedef struct SZrVariableDeclaration {
@@ -814,6 +819,7 @@ typedef struct SZrAstNode {
         SZrFunctionCall functionCall;
         SZrMemberExpression memberExpression;
         SZrPrimaryExpression primaryExpression;
+        SZrImportExpression importExpression;
         SZrPrototypeReferenceExpression prototypeReferenceExpression;
         SZrConstructExpression constructExpression;
 

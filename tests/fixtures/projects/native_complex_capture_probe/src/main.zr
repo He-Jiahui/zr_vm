@@ -1,4 +1,4 @@
-var math = import("zr.math");
-var ops = import("ops");
+var math = %import("zr.math");
+var ops = %import("ops");
 
 return $math.Complex(3.0, 4.0).magnitude() + ops.run();

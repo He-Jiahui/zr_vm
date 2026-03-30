@@ -1,4 +1,4 @@
-module "test_declarations";
+%module "test_declarations";
 
 // test声明语法测试
 %test("basic_test"){

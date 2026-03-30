@@ -67,6 +67,7 @@ typedef struct SZrSymbolTable {
     SZrState *state;
     SZrSymbolScope *globalScope;      // 全局作用域
     SZrArray scopeStack;               // 作用域栈（用于构建时）
+    SZrArray allScopes;                // 所有已创建作用域（SZrSymbolScope*）
     SZrObject *nameToSymbolsMap;      // 名称到符号数组的映射对象（使用 nodeMap 存储）
     SZrHashSet nameToSymbolsHashSet;  // 名称到符号的哈希表（用于快速查找）
     TZrBool useHashTable;                // 是否使用哈希表（默认使用 Object）
@@ -98,11 +99,18 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SymbolTable_AddSymbolEx(SZrState
 // 查找符号（返回第一个匹配的符号，如果有重载则返回第一个）
 ZR_LANGUAGE_SERVER_API SZrSymbol *ZrLanguageServer_SymbolTable_Lookup(SZrSymbolTable *table, SZrString *name, 
                                                        SZrSymbolScope *scope);
+ZR_LANGUAGE_SERVER_API SZrSymbol *ZrLanguageServer_SymbolTable_LookupAtPosition(SZrSymbolTable *table,
+                                                                                 SZrString *name,
+                                                                                 SZrFileRange position);
 
 // 查找所有匹配的符号（用于函数重载）
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SymbolTable_LookupAll(SZrState *state, SZrSymbolTable *table, 
-                                                      SZrString *name, SZrSymbolScope *scope,
-                                                      SZrArray *result);
+                                                       SZrString *name, SZrSymbolScope *scope,
+                                                       SZrArray *result);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SymbolTable_GetVisibleSymbolsAtPosition(SZrState *state,
+                                                                                         SZrSymbolTable *table,
+                                                                                         SZrFileRange position,
+                                                                                         SZrArray *result);
 
 // 查找定义位置
 ZR_LANGUAGE_SERVER_API SZrSymbol *ZrLanguageServer_SymbolTable_FindDefinition(SZrSymbolTable *table, 

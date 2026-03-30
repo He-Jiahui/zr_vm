@@ -1,7 +1,7 @@
-module "module_b";
+%module "module_b";
 
 // 模块B引入模块A
-var moduleA = import("module_a");
+var moduleA = %import("module_a");
 
 // 跨模块调用测试
 var cross_module_call_test = () => {

@@ -15,6 +15,8 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_lib_math/module.h"
+#include "zr_vm_lib_system/module.h"
 
 // 测试时间测量结构
 typedef struct {
@@ -153,6 +155,259 @@ static TZrBool has_diagnostic_code(SZrSemanticAnalyzer *analyzer, const char *co
     return ZR_FALSE;
 }
 
+static const char *completion_detail_string(SZrCompletionItem *item) {
+    if (item == ZR_NULL || item->detail == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_GetNativeString(item->detail);
+}
+
+static const char *hover_contents_string(SZrHoverInfo *info) {
+    if (info == ZR_NULL || info->contents == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_GetNativeString(info->contents);
+}
+
+static SZrFileRange file_range_for_nth_substring(const char *content,
+                                                 const char *needle,
+                                                 TZrSize occurrence,
+                                                 TZrBool useEnd) {
+    const char *cursor = content;
+    const char *found = ZR_NULL;
+    TZrSize remaining = occurrence;
+    TZrSize offset = 0;
+    SZrFilePosition position = ZrParser_FilePosition_Create(0, 1, 1);
+
+    while (cursor != ZR_NULL && *cursor != '\0') {
+        found = strstr(cursor, needle);
+        if (found == ZR_NULL) {
+            break;
+        }
+        if (remaining == 0) {
+            if (useEnd) {
+                found += strlen(needle);
+            }
+            offset = (TZrSize)(found - content);
+            break;
+        }
+        remaining--;
+        cursor = found + 1;
+    }
+
+    for (TZrSize index = 0; index < offset && content[index] != '\0'; index++) {
+        position.offset++;
+        if (content[index] == '\n') {
+            position.line++;
+            position.column = 1;
+        } else {
+            position.column++;
+        }
+    }
+
+    return ZrParser_FileRange_Create(position, position, ZR_NULL);
+}
+
+static TZrBool has_completion_label(SZrArray *completions, const char *label) {
+    TZrSize i;
+
+    if (completions == ZR_NULL || label == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (i = 0; i < completions->length; i++) {
+        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(completions, i);
+        if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL || (*itemPtr)->label == ZR_NULL) {
+            continue;
+        }
+
+        if (strcmp(ZrCore_String_GetNativeString((*itemPtr)->label), label) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrSize count_diagnostics_with_code(SZrSemanticAnalyzer *analyzer, const char *code) {
+    TZrSize i;
+    TZrSize count = 0;
+
+    if (analyzer == ZR_NULL || code == ZR_NULL) {
+        return 0;
+    }
+
+    for (i = 0; i < analyzer->diagnostics.length; i++) {
+        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, i);
+        if (diagPtr == ZR_NULL || *diagPtr == ZR_NULL || (*diagPtr)->code == ZR_NULL) {
+            continue;
+        }
+
+        if (strcmp(ZrCore_String_GetNativeStringShort((*diagPtr)->code), code) == 0) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *analyzer,
+                                                       const char *code,
+                                                       TZrInt32 line) {
+    TZrSize i;
+
+    if (analyzer == ZR_NULL || code == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (i = 0; i < analyzer->diagnostics.length; i++) {
+        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, i);
+        if (diagPtr == ZR_NULL || *diagPtr == ZR_NULL || (*diagPtr)->code == ZR_NULL) {
+            continue;
+        }
+
+        if (strcmp(ZrCore_String_GetNativeStringShort((*diagPtr)->code), code) == 0 &&
+            (*diagPtr)->location.start.line == line) {
+            return *diagPtr;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool has_completion_detail_fragment(SZrArray *completions,
+                                              const char *label,
+                                              const char *detailFragment) {
+    TZrSize i;
+
+    if (completions == ZR_NULL || label == ZR_NULL || detailFragment == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (i = 0; i < completions->length; i++) {
+        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(completions, i);
+        const char *detail;
+        if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL || (*itemPtr)->label == ZR_NULL) {
+            continue;
+        }
+
+        if (strcmp(ZrCore_String_GetNativeString((*itemPtr)->label), label) != 0) {
+            continue;
+        }
+
+        detail = completion_detail_string(*itemPtr);
+        if (detail != ZR_NULL && strstr(detail, detailFragment) != ZR_NULL) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static const char *completion_detail_for_label(SZrArray *completions, const char *label) {
+    TZrSize i;
+
+    if (completions == ZR_NULL || label == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (i = 0; i < completions->length; i++) {
+        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(completions, i);
+        if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL || (*itemPtr)->label == ZR_NULL) {
+            continue;
+        }
+
+        if (strcmp(ZrCore_String_GetNativeString((*itemPtr)->label), label) == 0) {
+            return completion_detail_string(*itemPtr);
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void describe_symbol(char *buffer, size_t bufferSize, SZrSymbol *symbol) {
+    const char *name = ZR_NULL;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    if (symbol == ZR_NULL) {
+        snprintf(buffer, bufferSize, "symbol=<null>");
+        return;
+    }
+
+    if (symbol->name != ZR_NULL) {
+        name = ZrCore_String_GetNativeString(symbol->name);
+    }
+
+    snprintf(buffer,
+             bufferSize,
+             "symbol=%s type=%d",
+             name != ZR_NULL ? name : "<unnamed>",
+             (int)symbol->type);
+}
+
+static void describe_file_range(char *buffer, size_t bufferSize, SZrFileRange range) {
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    snprintf(buffer,
+             bufferSize,
+             "[%zu:%d:%d-%zu:%d:%d]",
+             (size_t)range.start.offset,
+             range.start.line,
+             range.start.column,
+             (size_t)range.end.offset,
+             range.end.line,
+             range.end.column);
+}
+
+static void describe_completion_labels(SZrArray *completions, char *buffer, size_t bufferSize) {
+    TZrSize offset = 0;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (completions == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize i = 0; i < completions->length && offset + 1 < bufferSize; i++) {
+        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(completions, i);
+        const char *label;
+        int written;
+
+        if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL || (*itemPtr)->label == ZR_NULL) {
+            continue;
+        }
+
+        label = ZrCore_String_GetNativeString((*itemPtr)->label);
+        if (label == ZR_NULL) {
+            continue;
+        }
+
+        written = snprintf(buffer + offset,
+                           bufferSize - offset,
+                           "%s%s",
+                           offset == 0 ? "" : ", ",
+                           label);
+        if (written < 0) {
+            break;
+        }
+        if ((size_t)written >= bufferSize - offset) {
+            offset = bufferSize - 1;
+            break;
+        }
+        offset += (size_t)written;
+    }
+}
+
 // 测试语义分析器创建和释放
 static void test_semantic_analyzer_create_and_free(SZrState *state) {
     SZrTestTimer timer;
@@ -257,6 +512,65 @@ static void test_semantic_analyzer_type_checking_assignment_path(SZrState *state
     ZrParser_Ast_Free(state, ast);
     ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     TEST_PASS(timer, "Semantic Analyzer Type Checking Assignment Path");
+}
+
+static void test_semantic_analyzer_avoids_false_binary_type_mismatch_diagnostics(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics");
+
+    TEST_INFO("Binary expression diagnostics",
+              "Analyzing native float arithmetic and string concatenation that the compiler accepts should not emit type_mismatch diagnostics");
+
+    SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    if (analyzer == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics",
+                  "Failed to create semantic analyzer");
+        return;
+    }
+
+    {
+        const TZrChar *testCode =
+            "var math = %import zr.math;"
+            "pipeline(seed: float) {"
+            "    var matrix = math.Matrix4x4.translation(seed, seed + 2.0, seed + 4.0);"
+            "    var banner = \"PIPELINE\";"
+            "    return banner + matrix.m00;"
+            "}";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_binary_diagnostics_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (has_diagnostic_code(analyzer, "type_mismatch")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics",
+                      "Unexpected type_mismatch diagnostic for valid native arithmetic/string concatenation");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    TEST_PASS(timer, "Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics");
 }
 
 static void test_semantic_analyzer_populates_semantic_context(SZrState *state) {
@@ -698,6 +1012,975 @@ static void test_semantic_analyzer_get_completions(SZrState *state) {
     TEST_PASS(timer, "Semantic Analyzer Get Completions");
 }
 
+static void test_semantic_analyzer_get_completions_includes_local_scope_symbols(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Get Completions Includes Local Scope Symbols");
+
+    TEST_INFO("Local scope completions",
+              "Getting code completion suggestions inside a function body should include parameters and local variables");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "helper(seed: float) {\n"
+            "    var localValue = seed + 1.0;\n"
+            "    return localValue;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "local_completion_test.zr", 24);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange position;
+        SZrArray completions;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Completions Includes Local Scope Symbols",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Completions Includes Local Scope Symbols",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Completions Includes Local Scope Symbols",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        position = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(0, 3, 5),
+            ZrParser_FilePosition_Create(0, 3, 5),
+            ZR_NULL
+        );
+        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, position, &completions);
+
+        if (!has_completion_label(&completions, "seed") ||
+            !has_completion_label(&completions, "localValue")) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Completions Includes Local Scope Symbols",
+                      "Expected parameter/local symbols in function-body completions");
+            return;
+        }
+
+        ZrCore_Array_Free(state, &completions);
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Get Completions Includes Local Scope Symbols");
+}
+
+static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Get Symbol At Resolves Local References");
+
+    TEST_INFO("Local reference resolution",
+              "Resolving a symbol at a local identifier reference should return the matching parameter/local declaration instead of only global definitions");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "var seed = 0.0;\n"
+            "helper(seed: float) {\n"
+            "    var localValue = seed + 1.0;\n"
+            "    return localValue;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "local_reference_resolution_test.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange position;
+        SZrSymbol *symbol;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Symbol At Resolves Local References",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Symbol At Resolves Local References",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Symbol At Resolves Local References",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        position = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(59, 3, 22),
+            ZrParser_FilePosition_Create(59, 3, 22),
+            sourceName
+        );
+        symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, position);
+        if (symbol == ZR_NULL ||
+            symbol->name == ZR_NULL ||
+            strcmp(ZrCore_String_GetNativeString(symbol->name), "seed") != 0 ||
+            symbol->type != ZR_SYMBOL_PARAMETER) {
+            SZrString *lookupName = ZrCore_String_Create(state, "seed", 4);
+            SZrSymbol *lookupSymbol =
+                ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable,
+                                                              lookupName,
+                                                              position);
+            SZrReference *reference =
+                ZrLanguageServer_ReferenceTracker_FindReferenceAt(analyzer->referenceTracker, position);
+            TZrSize referenceCount =
+                lookupSymbol != ZR_NULL
+                ? ZrLanguageServer_ReferenceTracker_GetReferenceCount(analyzer->referenceTracker, lookupSymbol)
+                : 0;
+            SZrArray references;
+            char detail[256];
+            char lookupDetail[64];
+            char referenceDetail[64];
+            char referenceRangeDetail[64];
+            char queryRangeDetail[64];
+            ZrCore_Array_Construct(&references);
+            ZrCore_Array_Init(state, &references, sizeof(SZrReference *), 4);
+            describe_symbol(detail, sizeof(detail), symbol);
+            describe_symbol(lookupDetail, sizeof(lookupDetail), lookupSymbol);
+            describe_symbol(referenceDetail,
+                            sizeof(referenceDetail),
+                            reference != ZR_NULL ? reference->symbol : ZR_NULL);
+            describe_file_range(queryRangeDetail, sizeof(queryRangeDetail), position);
+            if (lookupSymbol != ZR_NULL &&
+                ZrLanguageServer_ReferenceTracker_FindReferences(state,
+                                                                 analyzer->referenceTracker,
+                                                                 lookupSymbol,
+                                                                 &references) &&
+                references.length > 0) {
+                SZrReference **referencePtr =
+                    (SZrReference **)ZrCore_Array_Get(&references, 0);
+                if (referencePtr != ZR_NULL && *referencePtr != ZR_NULL) {
+                    describe_file_range(referenceRangeDetail,
+                                        sizeof(referenceRangeDetail),
+                                        (*referencePtr)->location);
+                } else {
+                    snprintf(referenceRangeDetail, sizeof(referenceRangeDetail), "<null>");
+                }
+            } else {
+                snprintf(referenceRangeDetail, sizeof(referenceRangeDetail), "<none>");
+            }
+            snprintf(detail + strlen(detail),
+                     sizeof(detail) - strlen(detail),
+                     " lookup=%s refHit=%s refCount=%zu allRefs=%zu query=%s refRange=%s",
+                     lookupDetail,
+                     referenceDetail,
+                     (size_t)referenceCount,
+                     (size_t)analyzer->referenceTracker->allReferences.length,
+                     queryRangeDetail,
+                     referenceRangeDetail);
+            ZrCore_Array_Free(state, &references);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Symbol At Resolves Local References",
+                      detail);
+            return;
+        }
+
+        position = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(82, 4, 12),
+            ZrParser_FilePosition_Create(82, 4, 12),
+            sourceName
+        );
+        symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, position);
+        if (symbol == ZR_NULL ||
+            symbol->name == ZR_NULL ||
+            strcmp(ZrCore_String_GetNativeString(symbol->name), "localValue") != 0 ||
+            symbol->type != ZR_SYMBOL_VARIABLE) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Symbol At Resolves Local References",
+                      "Expected local variable reference to resolve to the local declaration");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Get Symbol At Resolves Local References");
+}
+
+static void test_semantic_analyzer_get_completions_includes_native_hint_entries(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Get Completions Includes Native Hint Entries");
+
+    TEST_INFO("Native hint completions",
+              "Getting code completion suggestions should surface lib_system/lib_math registered hint entries with detail text");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "var system = %import zr.system;\n"
+            "var math = %import zr.math;\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_hint_completion_test.zr", 30);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange position;
+        SZrArray completions;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Completions Includes Native Hint Entries",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Completions Includes Native Hint Entries",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Completions Includes Native Hint Entries",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        position = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(62, 2, 29),
+            ZrParser_FilePosition_Create(62, 2, 29),
+            ZR_NULL
+        );
+        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 16);
+        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, position, &completions);
+
+        if (!has_completion_label(&completions, "readText") ||
+            !has_completion_detail_fragment(&completions, "readText", "readText(") ||
+            !has_completion_label(&completions, "Matrix4x4") ||
+            !has_completion_detail_fragment(&completions, "Matrix4x4", "struct Matrix4x4") ||
+            !has_completion_label(&completions, "translation")) {
+            char labels[512];
+            describe_completion_labels(&completions, labels, sizeof(labels));
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Get Completions Includes Native Hint Entries",
+                      labels);
+            return;
+        }
+
+        ZrCore_Array_Free(state, &completions);
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Get Completions Includes Native Hint Entries");
+}
+
+static void test_semantic_analyzer_local_symbols_surface_rich_hover_and_completion_detail(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail");
+
+    TEST_INFO("Local symbol hover/completion detail",
+              "Local parameters and variables should surface type and access detail in completion and hover results");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "helper(seed: float) {\n"
+            "    var localValue: float = seed + 1.0;\n"
+            "    return localValue;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "rich_hover_local_symbols_test.zr", 32);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange completionPosition;
+        SZrFileRange hoverPosition;
+        SZrArray completions;
+        SZrHoverInfo *hoverInfo = ZR_NULL;
+        const char *hoverText;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        completionPosition = file_range_for_nth_substring(testCode, "return", 0, ZR_FALSE);
+        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
+
+        if (!has_completion_detail_fragment(&completions, "seed", "float") ||
+            !has_completion_detail_fragment(&completions, "localValue", "float") ||
+            !has_completion_detail_fragment(&completions, "localValue", "private")) {
+            char details[512];
+            snprintf(details,
+                     sizeof(details),
+                     "seed=%s | localValue=%s",
+                     completion_detail_for_label(&completions, "seed") != ZR_NULL
+                        ? completion_detail_for_label(&completions, "seed")
+                        : "<null>",
+                     completion_detail_for_label(&completions, "localValue") != ZR_NULL
+                        ? completion_detail_for_label(&completions, "localValue")
+                        : "<null>");
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      details);
+            return;
+        }
+
+        hoverPosition = file_range_for_nth_substring(testCode, "localValue", 1, ZR_FALSE);
+        if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
+            hoverInfo == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      "Failed to get hover info for local variable reference");
+            return;
+        }
+
+        hoverText = hover_contents_string(hoverInfo);
+        if (hoverText == ZR_NULL ||
+            strstr(hoverText, "localValue") == ZR_NULL ||
+            strstr(hoverText, "float") == ZR_NULL ||
+            strstr(hoverText, "private") == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail",
+                      hoverText != ZR_NULL ? hoverText : "<null hover>");
+            return;
+        }
+
+        ZrCore_Array_Free(state, &completions);
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail");
+}
+
+static void test_semantic_analyzer_warns_on_unreachable_statements_after_return_or_throw(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Warns On Unreachable Statements After Return Or Throw");
+
+    TEST_INFO("Deterministic unreachable statements",
+              "Analyzing statements after return/throw should emit warning diagnostics instead of silently treating them as reachable");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "returnFlow() {\n"
+            "    return 1;\n"
+            "    var deadAfterReturn = 2;\n"
+            "}\n"
+            "throwFlow() {\n"
+            "    throw \"boom\";\n"
+            "    var deadAfterThrow = 3;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "unreachable_after_exit_test.zr", 30);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *returnDiag;
+        SZrDiagnostic *throwDiag;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Unreachable Statements After Return Or Throw",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Unreachable Statements After Return Or Throw",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Unreachable Statements After Return Or Throw",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        returnDiag = find_diagnostic_by_code_and_line(analyzer, "unreachable_code", 3);
+        throwDiag = find_diagnostic_by_code_and_line(analyzer, "unreachable_code", 7);
+        if (count_diagnostics_with_code(analyzer, "unreachable_code") < 2 ||
+            returnDiag == ZR_NULL ||
+            throwDiag == ZR_NULL ||
+            returnDiag->severity != ZR_DIAGNOSTIC_WARNING ||
+            throwDiag->severity != ZR_DIAGNOSTIC_WARNING) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Unreachable Statements After Return Or Throw",
+                      "Expected warning diagnostics for statements after return/throw");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Warns On Unreachable Statements After Return Or Throw");
+}
+
+static void test_semantic_analyzer_warns_on_unreachable_if_branches(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Warns On Unreachable If Branches");
+
+    TEST_INFO("Deterministic branch reachability",
+              "Analyzing if(true/false) should emit warnings for the statically unreachable branch");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "branching() {\n"
+            "    if (true) {\n"
+            "        var liveThen = 1;\n"
+            "    } else {\n"
+            "        var deadElse = 2;\n"
+            "    }\n"
+            "    if (false) {\n"
+            "        var deadThen = 3;\n"
+            "    } else {\n"
+            "        var liveElse = 4;\n"
+            "    }\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "unreachable_if_branch_test.zr", 29);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *deadElseDiag;
+        SZrDiagnostic *deadThenDiag;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Unreachable If Branches",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Unreachable If Branches",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Unreachable If Branches",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        deadElseDiag = find_diagnostic_by_code_and_line(analyzer, "unreachable_branch", 4);
+        deadThenDiag = find_diagnostic_by_code_and_line(analyzer, "unreachable_branch", 7);
+        if (count_diagnostics_with_code(analyzer, "unreachable_branch") < 2 ||
+            deadElseDiag == ZR_NULL ||
+            deadThenDiag == ZR_NULL ||
+            deadElseDiag->severity != ZR_DIAGNOSTIC_WARNING ||
+            deadThenDiag->severity != ZR_DIAGNOSTIC_WARNING) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Unreachable If Branches",
+                      "Expected warning diagnostics for statically unreachable if branches");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Warns On Unreachable If Branches");
+}
+
+static void test_semantic_analyzer_warns_on_deterministic_short_circuit_branches(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Warns On Deterministic Short Circuit Branches");
+
+    TEST_INFO("Deterministic short-circuit reachability",
+              "Analyzing true || ... and false && ... should warn that the right-hand branch is unreachable");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "shorts() {\n"
+            "    var skippedOr = true || false;\n"
+            "    var skippedAnd = false && true;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "short_circuit_test.zr", 21);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *orDiag;
+        SZrDiagnostic *andDiag;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Deterministic Short Circuit Branches",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Deterministic Short Circuit Branches",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Deterministic Short Circuit Branches",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        orDiag = find_diagnostic_by_code_and_line(analyzer, "short_circuit_unreachable", 2);
+        andDiag = find_diagnostic_by_code_and_line(analyzer, "short_circuit_unreachable", 3);
+        if (count_diagnostics_with_code(analyzer, "short_circuit_unreachable") < 2 ||
+            orDiag == ZR_NULL ||
+            andDiag == ZR_NULL ||
+            orDiag->severity != ZR_DIAGNOSTIC_WARNING ||
+            andDiag->severity != ZR_DIAGNOSTIC_WARNING) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Warns On Deterministic Short Circuit Branches",
+                      "Expected warning diagnostics for deterministic short-circuit right-hand branches");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Warns On Deterministic Short Circuit Branches");
+}
+
+static void test_semantic_analyzer_reports_declared_ownership_initializer_mismatch(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Declared Ownership Initializer Mismatch");
+
+    TEST_INFO("Ownership compatibility in variable declarations",
+              "Analyzing an explicit unique<T> declaration initialized from shared<T> should emit a type_mismatch diagnostic");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "var borrowed: shared<Resource>;\n"
+            "var owned: unique<Resource> = borrowed;\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_decl_mismatch_test.zr", 31);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagnostic;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Declared Ownership Initializer Mismatch",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Declared Ownership Initializer Mismatch",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Declared Ownership Initializer Mismatch",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 2);
+        if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Declared Ownership Initializer Mismatch",
+                      "Expected type_mismatch diagnostic on the explicit unique<Resource> initializer");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Declared Ownership Initializer Mismatch");
+}
+
+static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Return Ownership Mismatch");
+
+    TEST_INFO("Ownership compatibility in return statements",
+              "Analyzing a function that promises unique<T> but returns shared<T> should emit a type_mismatch diagnostic");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "upgrade(resource: shared<Resource>): unique<Resource> {\n"
+            "    return resource;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_return_mismatch_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagnostic;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Ownership Mismatch",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Ownership Mismatch",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Ownership Mismatch",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 2);
+        if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Ownership Mismatch",
+                      "Expected type_mismatch diagnostic on the incompatible return ownership");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Return Ownership Mismatch");
+}
+
+static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Function Argument Ownership Mismatch");
+
+    TEST_INFO("Ownership compatibility in function calls",
+              "Analyzing a direct function call that passes shared<T> into unique<T> should emit a type_mismatch diagnostic");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "consume(resource: unique<Resource>) {\n"
+            "}\n"
+            "run(resource: shared<Resource>) {\n"
+            "    consume(resource);\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_call_mismatch_test.zr", 31);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagnostic;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Function Argument Ownership Mismatch",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Function Argument Ownership Mismatch",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Function Argument Ownership Mismatch",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 4);
+        if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Function Argument Ownership Mismatch",
+                      "Expected type_mismatch diagnostic on the incompatible function argument ownership");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Function Argument Ownership Mismatch");
+}
+
+static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Method Argument Ownership Mismatch");
+
+    TEST_INFO("Ownership compatibility in method calls",
+              "Analyzing an instance method call that passes shared<T> into unique<T> should emit a type_mismatch diagnostic");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "class ResourceBox {\n"
+            "    consume(resource: unique<Resource>): int {\n"
+            "        return 0;\n"
+            "    }\n"
+            "}\n"
+            "run(box: ResourceBox, resource: shared<Resource>) {\n"
+            "    box.consume(resource);\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_method_call_mismatch_test.zr", 38);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagnostic;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Method Argument Ownership Mismatch",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Method Argument Ownership Mismatch",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Method Argument Ownership Mismatch",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 7);
+        if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Method Argument Ownership Mismatch",
+                      "Expected type_mismatch diagnostic on the incompatible method argument ownership");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Method Argument Ownership Mismatch");
+}
+
+static void test_semantic_analyzer_resolves_overloads_for_call_compatibility(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Resolves Overloads For Call Compatibility");
+
+    TEST_INFO("Overload-aware call compatibility",
+              "Analyzing overload sets should keep the matching call green and still diagnose the unmatched call");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "mix(value: int): int {\n"
+            "    return value;\n"
+            "}\n"
+            "mix(value: string): string {\n"
+            "    return value;\n"
+            "}\n"
+            "run(flag: bool) {\n"
+            "    mix(\"ok\");\n"
+            "    mix(flag);\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "overload_call_compatibility_test.zr", 35);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagnostic;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Resolves Overloads For Call Compatibility",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Resolves Overloads For Call Compatibility",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Resolves Overloads For Call Compatibility",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 9);
+        if (diagnostic == ZR_NULL ||
+            diagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
+            count_diagnostics_with_code(analyzer, "type_mismatch") != 1) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Resolves Overloads For Call Compatibility",
+                      "Expected exactly one type_mismatch diagnostic for the overload call with no compatible candidate");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Resolves Overloads For Call Compatibility");
+}
+
+static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Invalid FFI Decorators");
+
+    TEST_INFO("Decorator semantic validation",
+              "Analyzing invalid zr.ffi decorator usage should emit decorator diagnostics without stopping later analysis");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "%extern(\"fixture\") {\n"
+            "    #zr.ffi.unknown(\"native_bad\")#\n"
+            "    BadUnknown(lhs:i32): i32;\n"
+            "    #zr.ffi.entry(\"native_struct\")#\n"
+            "    struct InvalidTarget {\n"
+            "        var value:i32;\n"
+            "    }\n"
+            "    delegate MutPtr(\n"
+            "        #zr.ffi.out#\n"
+            "        #zr.ffi.inout#\n"
+            "        value:pointer<i32>\n"
+            "    ): void;\n"
+            "    #zr.ffi.callconv(123)#\n"
+            "    BadCallconv(): void;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "invalid_ffi_decorator_test.zr", 29);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Invalid FFI Decorators",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Invalid FFI Decorators",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Invalid FFI Decorators",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (count_diagnostics_with_code(analyzer, "invalid_decorator") != 4) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Invalid FFI Decorators",
+                      "Expected four invalid_decorator diagnostics for unknown target, illegal target, conflicting directions and bad callconv argument");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Invalid FFI Decorators");
+}
+
 // 测试缓存功能
 static void test_semantic_analyzer_cache(SZrState *state) {
     SZrTestTimer timer;
@@ -764,6 +2047,8 @@ int main() {
     
     // 初始化注册表
     ZrCore_GlobalState_InitRegistry(state, global);
+    ZrVmLibMath_Register(global);
+    ZrVmLibSystem_Register(global);
     
     // 运行测试
     test_semantic_analyzer_create_and_free(state);
@@ -773,6 +2058,9 @@ int main() {
     TEST_DIVIDER();
 
     test_semantic_analyzer_type_checking_assignment_path(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_avoids_false_binary_type_mismatch_diagnostics(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_populates_semantic_context(state);
@@ -789,6 +2077,45 @@ int main() {
     TEST_DIVIDER();
     
     test_semantic_analyzer_get_completions(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_get_completions_includes_local_scope_symbols(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_get_symbol_at_resolves_local_references(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_get_completions_includes_native_hint_entries(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_local_symbols_surface_rich_hover_and_completion_detail(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_warns_on_unreachable_statements_after_return_or_throw(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_warns_on_unreachable_if_branches(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_warns_on_deterministic_short_circuit_branches(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_reports_declared_ownership_initializer_mismatch(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_reports_return_ownership_mismatch(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_reports_function_argument_ownership_mismatch(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_reports_method_argument_ownership_mismatch(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_resolves_overloads_for_call_compatibility(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_reports_invalid_ffi_decorators(state);
     TEST_DIVIDER();
     
     test_semantic_analyzer_cache(state);

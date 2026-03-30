@@ -1,8 +1,8 @@
-var math = import("zr.math");
-var system = import("zr.system");
-var lin = import("lin_alg");
-var signal = import("signal");
-var tensor = import("tensor_pipeline");
+var math = %import("zr.math");
+var system = %import("zr.system");
+var lin = %import("lin_alg");
+var signal = %import("signal");
+var tensor = %import("tensor_pipeline");
 
 scaleValue(input: float) {
     return input * 2.0;

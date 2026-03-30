@@ -55,6 +55,8 @@ target_include_directories(zr_vm_language_server_semantic_analyzer_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
     ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
 )
 
 target_include_directories(zr_vm_language_server_incremental_parser_test PRIVATE 
@@ -69,6 +71,12 @@ target_include_directories(zr_vm_language_server_lsp_interface_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
     ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+)
+
+target_compile_definitions(zr_vm_language_server_lsp_interface_test PRIVATE
+    ZR_VM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
 # 链接必要的库
@@ -84,7 +92,9 @@ if (BUILD_SHARED_LIB)
     target_link_libraries(zr_vm_language_server_semantic_analyzer_test PRIVATE 
         zr_vm_language_server_shared 
         zr_vm_parser_shared 
-        zr_vm_core_shared)
+        zr_vm_core_shared
+        zr_vm_lib_math_shared
+        zr_vm_lib_system_shared)
     target_link_libraries(zr_vm_language_server_incremental_parser_test PRIVATE 
         zr_vm_language_server_shared 
         zr_vm_parser_shared 
@@ -92,7 +102,9 @@ if (BUILD_SHARED_LIB)
     target_link_libraries(zr_vm_language_server_lsp_interface_test PRIVATE 
         zr_vm_language_server_shared 
         zr_vm_parser_shared 
-        zr_vm_core_shared)
+        zr_vm_core_shared
+        zr_vm_lib_math_shared
+        zr_vm_lib_system_shared)
 else()
     target_link_libraries(zr_vm_language_server_symbol_table_test PRIVATE 
         zr_vm_language_server_static 
@@ -105,7 +117,9 @@ else()
     target_link_libraries(zr_vm_language_server_semantic_analyzer_test PRIVATE 
         zr_vm_language_server_static 
         zr_vm_parser_static 
-        zr_vm_core_static)
+        zr_vm_core_static
+        zr_vm_lib_math_static
+        zr_vm_lib_system_static)
     target_link_libraries(zr_vm_language_server_incremental_parser_test PRIVATE 
         zr_vm_language_server_static 
         zr_vm_parser_static 
@@ -113,7 +127,9 @@ else()
     target_link_libraries(zr_vm_language_server_lsp_interface_test PRIVATE 
         zr_vm_language_server_static 
         zr_vm_parser_static 
-        zr_vm_core_static)
+        zr_vm_core_static
+        zr_vm_lib_math_static
+        zr_vm_lib_system_static)
 endif()
 
 # 添加测试目标

@@ -1,4 +1,4 @@
-module "classes";
+%module "classes";
 
 // 基类
 class BaseClass {

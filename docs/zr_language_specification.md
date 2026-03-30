@@ -18,7 +18,7 @@
 ### 1.1 关键字
 
 #### 模块和类型声明
-- `module` - 模块声明
+- `%module` - 模块声明
 - `struct` - 结构体声明
 - `class` - 类声明
 - `interface` - 接口声明
@@ -166,14 +166,17 @@
 ### 2.1 模块声明
 
 ```zr
-module "module_name";
+%module "module_name";
 // 或
-module module_name;
+%module module_name;
+// 或
+%module("module_name");
 ```
 
 **说明**:
 - 模块名可以是字符串或标识符
 - 如果包含特殊符号，必须使用字符串形式
+- 括号形式只接受字符串字面量
 - 模块声明必须在文件开头（可选）
 
 ### 2.2 变量声明
@@ -909,11 +912,11 @@ class MyClass {
 var i: int = <int> a;
 
 // 假设 Vector3 为 m 模块声明的结构体，会真实编译为 to_struct 指令
-var m = zr.import("math");
+var m = %import("math");
 var j = <m.Vector3> x;
 
 // 假设 Person 是 k 模块声明的类，会真实编译为 to_object 指令，指令带有 Person 原型信息
-var k = zr.import("PersonInfo");
+var k = %import("PersonInfo");
 var l = <k.Person> p;
 ```
 
@@ -973,7 +976,7 @@ class B<T: C> {}
 
 1. **可选的模块声明**
    ```zr
-   module "module_name";
+   %module "module_name";
    ```
 
 2. **顶层语句（按顺序）**:
@@ -1161,5 +1164,3 @@ var y: uint8 = -1;       // 编译错误：负数不能赋值给无符号类型
 **文档版本**: 1.0  
 **最后更新**: 2025-01-XX  
 **基于**: zr_vm parser implementation and test_simple.zr
-
-

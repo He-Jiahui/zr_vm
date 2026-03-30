@@ -288,60 +288,19 @@ static SZrString *native_binding_create_string(SZrState *state, const TZrChar *t
     return ZrCore_String_CreateTryHitCache(state, text);
 }
 
-static const SZrTypeValue *native_binding_get_zr_global_member(SZrState *state, const TZrChar *memberName) {
-    SZrObject *zrObject;
-    SZrString *memberNameString;
-    SZrTypeValue key;
-
-    if (state == ZR_NULL || state->global == ZR_NULL || memberName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (state->global->zrObject.type != ZR_VALUE_TYPE_OBJECT || state->global->zrObject.value.object == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    zrObject = ZR_CAST_OBJECT(state, state->global->zrObject.value.object);
-    memberNameString = native_binding_create_string(state, memberName);
-    if (zrObject == ZR_NULL || memberNameString == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(memberNameString));
-    key.type = ZR_VALUE_TYPE_STRING;
-    return ZrCore_Object_GetValue(state, zrObject, &key);
-}
-
 static SZrObjectModule *native_binding_import_module(SZrState *state, const TZrChar *moduleName) {
-    const SZrTypeValue *importValue;
-    SZrTypeValue importArgument;
-    SZrTypeValue importResult;
-    SZrObject *moduleObject;
+    SZrString *moduleNameString;
 
     if (state == ZR_NULL || moduleName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    importValue = native_binding_get_zr_global_member(state, "import");
-    if (importValue == ZR_NULL) {
+    moduleNameString = native_binding_create_string(state, moduleName);
+    if (moduleNameString == ZR_NULL) {
         return ZR_NULL;
     }
 
-    ZrLib_Value_SetString(state, &importArgument, moduleName);
-    if (!ZrLib_CallValue(state, importValue, ZR_NULL, &importArgument, 1, &importResult)) {
-        return ZR_NULL;
-    }
-
-    if (importResult.type != ZR_VALUE_TYPE_OBJECT || importResult.value.object == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    moduleObject = ZR_CAST_OBJECT(state, importResult.value.object);
-    if (moduleObject == ZR_NULL || moduleObject->internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE) {
-        return ZR_NULL;
-    }
-
-    return (SZrObjectModule *)moduleObject;
+    return ZrCore_Module_ImportByPath(state, moduleNameString);
 }
 
 static void native_binding_register_prototype_in_global_scope(SZrState *state,

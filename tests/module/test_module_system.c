@@ -393,35 +393,18 @@ static const SZrTypeValue *get_zr_global_value(SZrState *state, const TZrChar *m
 }
 
 static SZrObjectModule *import_native_module(SZrState *state, const TZrChar *moduleName) {
-    const SZrTypeValue *importValue;
-    SZrTypeValue argument;
-    SZrTypeValue result;
-    SZrObject *object;
+    SZrString *modulePath;
 
     if (state == ZR_NULL || moduleName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    importValue = get_zr_global_value(state, "import");
-    if (importValue == ZR_NULL) {
+    modulePath = ZrCore_String_Create(state, moduleName, strlen(moduleName));
+    if (modulePath == ZR_NULL) {
         return ZR_NULL;
     }
 
-    ZrLib_Value_SetString(state, &argument, moduleName);
-    if (!ZrLib_CallValue(state, importValue, ZR_NULL, &argument, 1, &result)) {
-        return ZR_NULL;
-    }
-
-    if (result.type != ZR_VALUE_TYPE_OBJECT || result.value.object == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    object = ZR_CAST_OBJECT(state, result.value.object);
-    if (object == ZR_NULL || object->internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE) {
-        return ZR_NULL;
-    }
-
-    return (SZrObjectModule *)object;
+    return ZrCore_Module_ImportByPath(state, modulePath);
 }
 
 typedef struct {
@@ -857,11 +840,11 @@ void test_module_cache_operations(void) {
     TEST_DIVIDER();
 }
 
-// ==================== 5. zr.import 函数调用 ====================
+// ==================== 5. 内部模块导入 helper / zr.import 隐藏 ====================
 
-void test_zr_import_function_call(void) {
+void test_module_import_helper_and_hidden_zr_import(void) {
     SZrTestTimer timer;
-    const char *testSummary = "zr.import Function Call";
+    const char *testSummary = "Module Import Helper And Hidden zr.import";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -869,31 +852,26 @@ void test_zr_import_function_call(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("zr.import function call", "Testing zr.import native function to load and compile modules");
+    TEST_INFO("module import helper and hidden zr.import",
+              "Testing internal module import helper loads native modules while zr.import is no longer script-visible");
 
-    // 获取全局 zr 对象
     SZrGlobalState *global = state->global;
     TEST_ASSERT_NOT_NULL(global);
     TEST_ASSERT_TRUE(global->zrObject.type == ZR_VALUE_TYPE_OBJECT);
 
-    // 获取 zr.import 函数
-    SZrObject *zrObject = ZR_CAST_OBJECT(state, global->zrObject.value.object);
-    TEST_ASSERT_NOT_NULL(zrObject);
+    TEST_ASSERT_NULL(get_zr_global_value(state, "import"));
 
-    SZrString *importName = ZrCore_String_Create(state, "import", 6);
-    SZrTypeValue importKey;
-    ZrCore_Value_InitAsRawObject(state, &importKey, ZR_CAST_RAW_OBJECT_AS_SUPER(importName));
-    importKey.type = ZR_VALUE_TYPE_STRING;
-
-    const SZrTypeValue *importValue = ZrCore_Object_GetValue(state, zrObject, &importKey);
-    TEST_ASSERT_NOT_NULL(importValue);
-    TEST_ASSERT_TRUE(importValue->type == ZR_VALUE_TYPE_CLOSURE);
-    TEST_ASSERT_TRUE(importValue->isNative);
-    TEST_ASSERT_NOT_NULL(importValue->value.object);
     {
-        SZrClosureNative *importClosure = (SZrClosureNative *) importValue->value.object;
-        TEST_ASSERT_NOT_NULL(importClosure);
-        TEST_ASSERT_NOT_NULL(importClosure->nativeFunction);
+        SZrString *modulePath = ZrCore_String_Create(state, "zr.system", 9);
+        SZrObjectModule *firstImport;
+        SZrObjectModule *cachedImport;
+
+        TEST_ASSERT_NOT_NULL(modulePath);
+        firstImport = ZrCore_Module_ImportByPath(state, modulePath);
+        TEST_ASSERT_NOT_NULL(firstImport);
+        cachedImport = ZrCore_Module_ImportByPath(state, modulePath);
+        TEST_ASSERT_NOT_NULL(cachedImport);
+        TEST_ASSERT_EQUAL_PTR(firstImport, cachedImport);
     }
 
     timer.endTime = clock();
@@ -1130,7 +1108,7 @@ void test_complete_module_loading_flow(void) {
               "Testing complete flow: compile source -> collect exports -> create module -> cache");
 
     // 编译包含导出的源代码
-    const char *source = "module \"test_module\";\npub var pubVar = 100;\npro var proVar = 200;";
+    const char *source = "%module \"test_module\";\npub var pubVar = 100;\npro var proVar = 200;";
     SZrString *sourceName = ZrCore_String_Create(state, "test_module.zr", 14);
     SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
     TEST_ASSERT_NOT_NULL(func);
@@ -1204,7 +1182,7 @@ void test_module_restores_field_scoped_using_prototype_metadata(void) {
 
     {
         const char *source =
-            "module \"field_meta\";\n"
+            "%module \"field_meta\";\n"
             "pub struct HandleBox { using var handle: unique<Resource>; var count: int; }\n"
             "pub class Holder { using var resource: shared<Resource>; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_meta.zr", 13);
@@ -1298,9 +1276,9 @@ void test_source_module_exports_complex_function_graph_without_null_call_targets
             },
             {
                     "probe_callbacks",
-                    "var lin = import(\"lin_alg\");\n"
-                    "var signal = import(\"signal\");\n"
-                    "var tensor = import(\"tensor_pipeline\");\n"
+                    "var lin = %import(\"lin_alg\");\n"
+                    "var signal = %import(\"signal\");\n"
+                    "var tensor = %import(\"tensor_pipeline\");\n"
                     "\n"
                     "scaleValue(input) {\n"
                     "    return input + 1;\n"
@@ -1381,7 +1359,7 @@ void test_system_vm_call_module_export_executes_nested_native_export(void) {
         SZrTypeValue directArgument;
         SZrTypeValue directResult;
         const TZrChar *source =
-                "var system = import(\"zr.system\");\n"
+                "var system = %import(\"zr.system\");\n"
                 "return system.vm.callModuleExport(\"zr.math\", \"sqrt\", [4.0]);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -1968,7 +1946,7 @@ void test_native_enum_construction_returns_runtime_enum_instance(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var probe = import(\"probe.native_shapes\");\n"
+                "var probe = %import(\"probe.native_shapes\");\n"
                 "return $probe.NativeMode(1);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -2094,8 +2072,8 @@ int main(void) {
     // 4. 模块缓存机制
     RUN_TEST(test_module_cache_operations);
 
-    // 5. zr.import 函数调用
-    RUN_TEST(test_zr_import_function_call);
+    // 5. 内部模块导入 helper / zr.import 隐藏
+    RUN_TEST(test_module_import_helper_and_hidden_zr_import);
 
     // 6. 缓存命中/未命中场景
     RUN_TEST(test_module_cache_hit_miss);

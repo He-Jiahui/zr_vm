@@ -1,4 +1,4 @@
-module "type_cast_class";
+%module "type_cast_class";
 
 // 类定义
 class Person {

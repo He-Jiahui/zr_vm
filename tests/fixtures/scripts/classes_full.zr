@@ -1,4 +1,4 @@
-module "classes_full";
+%module "classes_full";
 
 class BaseHero {
     pri var _hp: int = 0;

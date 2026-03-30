@@ -1,4 +1,4 @@
-module "compile_time_execution";
+%module "compile_time_execution";
 
 // 测试1: 编译期变量声明和使用
 %compileTime var MAX_SIZE = 100;

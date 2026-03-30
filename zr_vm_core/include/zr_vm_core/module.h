@@ -62,9 +62,8 @@ ZR_CORE_API TZrUInt64 ZrCore_Module_CalculatePathHash(struct SZrState *state, st
 ZR_CORE_API struct SZrObjectModule *ZrCore_Module_GetFromCache(struct SZrState *state, struct SZrString *path);
 ZR_CORE_API void ZrCore_Module_AddToCache(struct SZrState *state, struct SZrString *path, struct SZrObjectModule *module);
 
-
-// zr.import native 函数
-ZR_CORE_API TZrInt64 ZrCore_ImportNativeFunction(struct SZrState *state);
+// 内部模块导入 helper
+ZR_CORE_API struct SZrObjectModule *ZrCore_Module_ImportByPath(struct SZrState *state, struct SZrString *path);
 
 // 创建并注册 prototype 的 native 函数
 // 参数: (module, typeName, prototypeType, accessModifier, inherits..., members...)

@@ -1596,7 +1596,7 @@ static void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *patte
         return;
     }
     
-    // 1. 编译右侧表达式（例如 import("math")）
+    // 1. 编译右侧表达式（例如 %import("math")）
     // 如果 value 为 NULL，表示值已经在栈上（例如在 foreach 中）
     TZrUInt32 sourceSlot;
     if (value != ZR_NULL) {

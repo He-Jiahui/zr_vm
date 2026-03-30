@@ -202,7 +202,7 @@ static void test_throw_string_is_boxed_and_caught_by_base_error(void) {
 static void test_derived_exception_prefers_first_matching_catch_clause(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
-            "var exception = import(\"zr.system.exception\");\n"
+            "var exception = %import(\"zr.system.exception\");\n"
             "try {\n"
             "    throw $exception.RuntimeError(\"boom\");\n"
             "} catch (e: RuntimeError) {\n"

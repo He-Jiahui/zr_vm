@@ -1,4 +1,4 @@
-module "named_args_and_compile_time";
+%module "named_args_and_compile_time";
 
 // 综合测试：命名参数和编译期执行的结合使用
 

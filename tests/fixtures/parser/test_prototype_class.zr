@@ -1,5 +1,5 @@
 // 测试 class prototype 生成
-module "test_class";
+%module "test_class";
 
 // 基本 class 声明
 class Animal {

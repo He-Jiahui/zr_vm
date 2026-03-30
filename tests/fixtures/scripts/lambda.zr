@@ -1,4 +1,4 @@
-module "lambda";
+%module "lambda";
 
 // 箭头函数语法测试
 var arrow_function_test = () => {

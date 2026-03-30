@@ -1,4 +1,4 @@
-module "basic_operations";
+%module "basic_operations";
 
 // 基本运算测试
 var arithmetic_test = () => {

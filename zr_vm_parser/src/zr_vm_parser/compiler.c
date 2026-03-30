@@ -13,13 +13,16 @@
 extern TZrBool ZrParser_CompileTimeDeclaration_Execute(SZrCompilerState *cs, SZrAstNode *node);
 
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/module.h"
 #include "zr_vm_core/memory.h"
-#include "zr_vm_core/string.h"
-#include "zr_vm_core/value.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/raw_object.h"
+#include "zr_vm_core/stack.h"
+#include "zr_vm_core/string.h"
+#include "zr_vm_core/value.h"
 #include "zr_vm_core/gc.h"
 
 #include <string.h>
@@ -57,6 +60,7 @@ void resolve_label(SZrCompilerState *cs, TZrSize labelId);
 // 注意：outData 指向的内存需要调用者释放
 static TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize);
+static TZrInt64 compiler_internal_import_native_entry(SZrState *state);
 
 // 初始化编译器状态
 void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
@@ -1457,6 +1461,95 @@ static TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *na
     emit_instruction(cs, getTableInst);
     ZrParser_Compiler_TrimStackToSlot(cs, globalSlot);
     return globalSlot;
+}
+
+static TZrInt64 compiler_internal_import_native_entry(SZrState *state) {
+    TZrStackValuePointer functionBase;
+    TZrStackValuePointer argBase;
+    SZrFunctionStackAnchor functionBaseAnchor;
+    SZrTypeValue *result;
+    SZrTypeValue *pathValue;
+    SZrString *path;
+    SZrObjectModule *module;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    functionBase = state->callInfoList->functionBase.valuePointer;
+    ZrCore_Function_StackAnchorInit(state, functionBase, &functionBaseAnchor);
+    argBase = functionBase + 1;
+    result = ZrCore_Stack_GetValue(functionBase);
+
+    if (state->stackTop.valuePointer <= argBase) {
+        functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
+        result = ZrCore_Stack_GetValue(functionBase);
+        ZrCore_Value_ResetAsNull(result);
+        state->stackTop.valuePointer = functionBase + 1;
+        return 1;
+    }
+
+    pathValue = ZrCore_Stack_GetValue(argBase);
+    if (pathValue == ZR_NULL || pathValue->type != ZR_VALUE_TYPE_STRING) {
+        functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
+        result = ZrCore_Stack_GetValue(functionBase);
+        ZrCore_Value_ResetAsNull(result);
+        state->stackTop.valuePointer = functionBase + 1;
+        return 1;
+    }
+
+    path = ZR_CAST_STRING(state, pathValue->value.object);
+    module = ZrCore_Module_ImportByPath(state, path);
+
+    functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
+    result = ZrCore_Stack_GetValue(functionBase);
+    if (module == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(result);
+    } else {
+        ZrCore_Value_InitAsRawObject(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(module));
+        result->type = ZR_VALUE_TYPE_OBJECT;
+    }
+
+    state->stackTop.valuePointer = functionBase + 1;
+    return 1;
+}
+
+ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompilerState *cs,
+                                                                     SZrString *moduleName,
+                                                                     SZrFileRange location) {
+    SZrClosureNative *importClosure;
+    SZrTypeValue importCallable;
+    TZrUInt32 functionSlot;
+    TZrUInt32 argumentSlot;
+
+    if (cs == ZR_NULL || moduleName == ZR_NULL || cs->hasError) {
+        return (TZrUInt32)-1;
+    }
+
+    importClosure = ZrCore_ClosureNative_New(cs->state, 0);
+    if (importClosure == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "failed to create internal import callable", location);
+        return (TZrUInt32)-1;
+    }
+    importClosure->nativeFunction = compiler_internal_import_native_entry;
+    ZrCore_RawObject_MarkAsPermanent(cs->state, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
+
+    ZrCore_Value_InitAsRawObject(cs->state, &importCallable, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
+    importCallable.isNative = ZR_TRUE;
+
+    functionSlot = allocate_stack_slot(cs);
+    emit_constant_to_slot(cs, functionSlot, &importCallable);
+
+    argumentSlot = allocate_stack_slot(cs);
+    emit_string_constant_to_slot(cs, argumentSlot, moduleName);
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                          (TZrUInt16)functionSlot,
+                                          (TZrUInt16)functionSlot,
+                                          1));
+    ZrParser_Compiler_TrimStackToSlot(cs, functionSlot);
+    return functionSlot;
 }
 
 static void emit_object_field_assignment_from_expression(SZrCompilerState *cs,
@@ -2868,37 +2961,22 @@ static TZrBool extern_compiler_emit_import_module_to_local(SZrCompilerState *cs,
                                                            SZrString *moduleName,
                                                            TZrUInt32 localSlot,
                                                            SZrFileRange location) {
-    SZrString *importName;
-    TZrUInt32 functionSlot;
-    TZrUInt32 argumentSlot;
+    TZrUInt32 importSlot;
 
     if (cs == ZR_NULL || moduleName == ZR_NULL || cs->hasError) {
         return ZR_FALSE;
     }
 
-    importName = ZrCore_String_CreateFromNative(cs->state, "import");
-    if (importName == ZR_NULL) {
-        ZrParser_Compiler_Error(cs, "failed to create import symbol", location);
+    importSlot = ZrParser_Compiler_EmitImportModuleExpression(cs, moduleName, location);
+    if (importSlot == (TZrUInt32)-1) {
         return ZR_FALSE;
     }
 
-    functionSlot = emit_load_global_identifier(cs, importName);
-    if (functionSlot == (TZrUInt32)-1) {
-        return ZR_FALSE;
-    }
-
-    argumentSlot = allocate_stack_slot(cs);
-    emit_string_constant_to_slot(cs, argumentSlot, moduleName);
-    emit_instruction(cs,
-                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
-                                          (TZrUInt16)functionSlot,
-                                          (TZrUInt16)functionSlot,
-                                          1));
-    if (functionSlot != localSlot) {
+    if (importSlot != localSlot) {
         emit_instruction(cs,
                          create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                               (TZrUInt16)localSlot,
-                                              (TZrInt32)functionSlot));
+                                              (TZrInt32)importSlot));
     }
     ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
     return ZR_TRUE;
@@ -7062,7 +7140,7 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     // 3. 在返回前添加导出收集代码（如果有导出的变量）
-    // 导出收集在运行时进行（在 zr.import 中执行完 __entry 后）
+    // 导出收集在运行时进行（在内部模块导入 helper 执行完 __entry 后）
     // 这里只需要确保导出信息被正确记录到函数中
     // 导出的变量信息已存储在 cs->pubVariables 和 cs->proVariables 中
     // 这些信息将在编译完成后复制到函数的 exportedVariables 字段中
@@ -7124,7 +7202,7 @@ static void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     // 5. 将 prototype 信息序列化为二进制数据并存储到 function->prototypeData
-    // 运行时创建逻辑将在 zr.import 中实现（在创建模块后）
+    // 运行时创建逻辑将在内部模块导入 helper 中实现（在创建模块后）
     // 使用紧凑二进制格式存储，不再使用常量池
     
     if (cs->typePrototypes.length > 0) {

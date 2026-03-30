@@ -1,4 +1,4 @@
-module "type_cast_basic";
+%module "type_cast_basic";
 
 // 基本类型转换测试
 var test_int_cast = () => {

@@ -1,4 +1,4 @@
-module "named_arguments";
+%module "named_arguments";
 
 // 测试1: 基本命名参数
 testBasicNamedArgs(a: int, b: int, c: int): int {

@@ -1,4 +1,4 @@
-module "intermediate";
+%module "intermediate";
 
 // intermediate语句声明测试
 intermediate TestIntermediate(i: int, j: int): int %

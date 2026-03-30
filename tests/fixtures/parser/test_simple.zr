@@ -1,14 +1,14 @@
-module "simple";
+%module "simple";
 // 命名模块同文件名 走标识符规则  如果包含特殊符号则需要当做字符串
-// 也可以写作 module "sample";
+// 也可以写作 %module sample;
 // 可以在任意地方引入和使用模块
-// import是普通函数 不应特殊处理
-var math = zr.import("math\ntest\xff");
-var math1 = zr.import('1');
-var math2 = zr.import(1.0);
-var math3 = zr.import(0xff);
-var math4 = zr.import(0777);
-var math5 = zr.import(123);
+// %import 是保留语法，支持裸路径、字符串和括号字符串三种写法
+var math = %import math.core;
+var math1 = %import "math.scalar";
+var math2 = %import("math.vector");
+var math3 = %import math.hex;
+var math4 = %import "math.oct";
+var math5 = %import("math.decimal");
 var result = 1 + (5 - 1) * 4;
 
 var myInt = 0xFFFFFFFFFFFFFFFF;
@@ -26,7 +26,7 @@ var test_exp = 5;
 test_exp += -5 * 4 + 1 << 2 == 4 & 1 && 2 | 3 ^ 5 % 1 || 2 ? 3 << 3 : 5;
 
 // 也可以以这样的方式引入
-var {matrix, pi, e, ln} = zr.import("math");
+var {matrix, pi, e, ln} = %import("math");
 
 // 测试方法
 %test("test"){

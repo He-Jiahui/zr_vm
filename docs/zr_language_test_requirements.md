@@ -78,14 +78,14 @@ var b: bool = <bool> 1;
 **状态**: 待实现
 
 ```zr
-module "math";
+%module "math";
 struct Vector3 {
     pub var x: float;
     pub var y: float;
     pub var z: float;
 }
 
-var m = zr.import("math");
+var m = %import("math");
 var obj = {x: 1.0, y: 2.0, z: 3.0};
 var v = <m.Vector3> obj;
 ```
@@ -98,12 +98,12 @@ var v = <m.Vector3> obj;
 **状态**: 待实现
 
 ```zr
-module "PersonInfo";
+%module "PersonInfo";
 class Person {
     pub var id: string;
 }
 
-var k = zr.import("PersonInfo");
+var k = %import("PersonInfo");
 var p = {id: "123"};
 var person = <k.Person> p;
 ```
@@ -570,5 +570,4 @@ tests/parser/
 
 **文档版本**: 1.0  
 **最后更新**: 2025-01-XX
-
 

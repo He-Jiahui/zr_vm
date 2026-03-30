@@ -23,6 +23,11 @@
 #define ZR_AST_CONSTANT_CLASS_PROPERTY 19
 #define ZR_AST_CONSTANT_CLASS_META_FUNCTION 20
 
+// 表达式常量（与 zr_vm_parser/ast.h 保持一致）
+// ZR_AST_ASSIGNMENT_EXPRESSION=26 ... ZR_AST_PRIMARY_EXPRESSION=37,
+// ZR_AST_IMPORT_EXPRESSION=38
+#define ZR_AST_CONSTANT_IMPORT_EXPRESSION 38
+
 // 访问修饰符常量（用于序列化数据，避免依赖parser模块）
 // 这些值必须与zr_vm_parser/ast.h中的EZrAccessModifier枚举值保持一致
 #define ZR_ACCESS_CONSTANT_PUBLIC 0

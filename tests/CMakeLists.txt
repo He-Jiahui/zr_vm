@@ -330,6 +330,46 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
         )
         zr_vm_link_language_server(${language_server_target})
     endforeach ()
+
+    target_include_directories(zr_vm_language_server_semantic_analyzer_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+
+    target_include_directories(zr_vm_language_server_lsp_interface_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+
+    target_compile_definitions(zr_vm_language_server_lsp_interface_test PRIVATE
+            ZR_VM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
+    )
+
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_language_server_semantic_analyzer_test PRIVATE
+                zr_vm_library_shared
+                zr_vm_lib_math_shared
+                zr_vm_lib_system_shared
+        )
+        target_link_libraries(zr_vm_language_server_lsp_interface_test PRIVATE
+                zr_vm_library_shared
+                zr_vm_lib_math_shared
+                zr_vm_lib_system_shared
+        )
+    else ()
+        target_link_libraries(zr_vm_language_server_semantic_analyzer_test PRIVATE
+                zr_vm_library_static
+                zr_vm_lib_math_static
+                zr_vm_lib_system_static
+        )
+        target_link_libraries(zr_vm_language_server_lsp_interface_test PRIVATE
+                zr_vm_library_static
+                zr_vm_lib_math_static
+                zr_vm_lib_system_static
+        )
+    endif ()
 endif ()
 
 if (TARGET zr_vm_cli_executable AND

@@ -1,4 +1,4 @@
-module "decorators";
+%module "decorators";
 
 // 类装饰器测试
 #singleton#

@@ -1367,7 +1367,7 @@ void test_type_inference_import_native_module_keeps_module_name(void) {
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var math = import(\"zr.math\");";
+        const char *source = "var math = %import(\"zr.math\");";
         SZrString *sourceName = ZrCore_String_Create(state, "native_import_test.zr", 21);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
@@ -1385,7 +1385,7 @@ void test_type_inference_import_native_module_keeps_module_name(void) {
 
         expr = ast->data.script.statements->nodes[0]->data.variableDeclaration.value;
         TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, expr->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_IMPORT_EXPRESSION, expr->type);
 
         ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
         success = ZrParser_ExpressionType_Infer(cs, expr, &result);
@@ -1417,7 +1417,7 @@ void test_type_inference_native_prototype_construction_returns_native_type(void)
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var math = import(\"zr.math\");"
+                "var math = %import(\"zr.math\");"
                 "$math.Vector3(1.0, 2.0, 3.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_type_test.zr", 27);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -1469,7 +1469,7 @@ void test_type_inference_rejects_ordinary_prototype_call(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var math = import(\"zr.math\");"
+                "var math = %import(\"zr.math\");"
                 "math.Vector3(1.0, 2.0, 3.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_plain_call_test.zr", 33);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -1522,7 +1522,7 @@ void test_type_inference_native_boxed_new_returns_registered_type(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var math = import(\"zr.math\");"
+                "var math = %import(\"zr.math\");"
                 "new math.Tensor([2, 2], [1.0, 2.0, 3.0, 4.0]);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_tensor_new_type_test.zr", 30);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -1574,7 +1574,7 @@ void test_type_inference_native_enum_construction_returns_enum_type(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = import(\"probe.native_shapes\");"
+                "var probe = %import(\"probe.native_shapes\");"
                 "$probe.NativeMode(1);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_enum_type_test.zr", 24);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -1627,7 +1627,7 @@ void test_type_inference_native_enum_member_access_returns_enum_type(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = import(\"probe.native_shapes\");"
+                "var probe = %import(\"probe.native_shapes\");"
                 "probe.NativeMode.On;";
         SZrString *sourceName = ZrCore_String_Create(state, "native_enum_member_type_test.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -1680,7 +1680,7 @@ void test_type_inference_native_interface_construction_is_rejected(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = import(\"probe.native_shapes\");"
+                "var probe = %import(\"probe.native_shapes\");"
                 "new probe.NativeReadable();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_interface_new_test.zr", 28);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -1733,7 +1733,7 @@ void test_type_inference_native_interface_members_flow_through_implements_chain(
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = import(\"probe.native_shapes\");"
+                "var probe = %import(\"probe.native_shapes\");"
                 "var device: NativeDevice = null;"
                 "device.read();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_interface_chain_type_test.zr", 36);
@@ -1960,7 +1960,7 @@ void test_type_inference_native_instance_method_uses_registered_return_type(void
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var math = import(\"zr.math\");"
+                "var math = %import(\"zr.math\");"
                 "var v = $math.Vector3(1.0, 2.0, 3.0);"
                 "v.length();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_method_type_test.zr", 34);
@@ -2013,7 +2013,7 @@ void test_type_inference_native_struct_field_access_uses_registered_field_type(v
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var system = import(\"zr.system\");"
+                "var system = %import(\"zr.system\");"
                 "system.vm.state().loadedModuleCount;";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vm_state_field_type_test.zr", 34);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2063,7 +2063,7 @@ void test_type_inference_native_nested_module_method_call_returns_null(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var system = import(\"zr.system\");"
+                "var system = %import(\"zr.system\");"
                 "system.console.printLine(\"hello\");";
         SZrString *sourceName = ZrCore_String_Create(state, "native_system_console_type_test.zr", 34);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2113,7 +2113,7 @@ void test_type_inference_native_fs_info_field_uses_registered_field_type(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var system = import(\"zr.system\");"
+                "var system = %import(\"zr.system\");"
                 "system.fs.getInfo(system.fs.currentDirectory()).modifiedMilliseconds;";
         SZrString *sourceName = ZrCore_String_Create(state, "native_system_fs_info_type_test.zr", 34);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2163,7 +2163,7 @@ void test_type_inference_native_process_arguments_is_array(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var system = import(\"zr.system\");"
+                "var system = %import(\"zr.system\");"
                 "system.process.arguments;";
         SZrString *sourceName = ZrCore_String_Create(state, "native_system_process_arguments_type_test.zr", 43);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2213,7 +2213,7 @@ void test_type_inference_native_vm_loaded_modules_element_field_uses_registered_
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var system = import(\"zr.system\");"
+                "var system = %import(\"zr.system\");"
                 "system.vm.loadedModules()[0].sourcePath;";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vm_loaded_modules_field_type_test.zr", 43);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);

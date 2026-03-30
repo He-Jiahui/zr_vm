@@ -1,5 +1,5 @@
-var math = import("zr.math");
-var system = import("zr.system");
+var math = %import("zr.math");
+var system = %import("zr.system");
 
 scaleValue(input: float) {
     return input * 2.0;

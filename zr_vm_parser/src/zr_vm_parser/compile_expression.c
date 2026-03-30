@@ -27,6 +27,7 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_function_call(SZrCompilerState *cs, SZrAstNode *node);
+static void compile_import_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_member_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *node);
@@ -78,6 +79,8 @@ void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize la
 void enter_scope(SZrCompilerState *cs);
 void exit_scope(SZrCompilerState *cs);
 void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
+TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompilerState *cs, SZrString *moduleName,
+                                                       SZrFileRange location);
 
 static void emit_constant_to_slot_local(SZrCompilerState *cs, TZrUInt32 slot, const SZrTypeValue *value,
                                         SZrFileRange location) {
@@ -146,8 +149,7 @@ static TZrBool is_compile_time_projection_candidate(SZrCompilerState *cs, SZrStr
     }
 
     if (zr_string_equals_cstr_local(rootName, "Assert") ||
-        zr_string_equals_cstr_local(rootName, "FatalError") ||
-        zr_string_equals_cstr_local(rootName, "import")) {
+        zr_string_equals_cstr_local(rootName, "FatalError")) {
         return ZR_TRUE;
     }
 
@@ -155,9 +157,24 @@ static TZrBool is_compile_time_projection_candidate(SZrCompilerState *cs, SZrStr
            has_compile_time_function_binding_local(cs, rootName);
 }
 
+static TZrBool primary_root_is_compile_time_projection_candidate(SZrCompilerState *cs, SZrAstNode *rootNode) {
+    if (rootNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (rootNode->type == ZR_AST_IMPORT_EXPRESSION) {
+        return ZR_TRUE;
+    }
+
+    if (rootNode->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    return is_compile_time_projection_candidate(cs, rootNode->data.identifier.name);
+}
+
 static TZrBool try_emit_compile_time_function_call(SZrCompilerState *cs, SZrAstNode *node) {
     SZrPrimaryExpression *primary;
-    SZrString *rootName;
     SZrTypeValue compileTimeValue;
     TZrUInt32 destSlot;
 
@@ -166,21 +183,21 @@ static TZrBool try_emit_compile_time_function_call(SZrCompilerState *cs, SZrAstN
     }
 
     primary = &node->data.primaryExpression;
-    if (primary->property == ZR_NULL || primary->property->type != ZR_AST_IDENTIFIER_LITERAL ||
-        primary->members == ZR_NULL || primary->members->count == 0) {
+    if (primary->property == ZR_NULL || primary->members == ZR_NULL || primary->members->count == 0) {
         return ZR_FALSE;
     }
 
-    rootName = primary->property->data.identifier.name;
-    if (zr_string_equals_cstr_local(rootName, "import")) {
+    if (primary->property->type == ZR_AST_IMPORT_EXPRESSION) {
         SZrAstNode *tailMember = primary->members->nodes[primary->members->count - 1];
         if (primary->members->count < 2 || tailMember == ZR_NULL ||
             tailMember->type != ZR_AST_FUNCTION_CALL) {
             return ZR_FALSE;
         }
+    } else if (primary->property->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
     }
 
-    if (!is_compile_time_projection_candidate(cs, rootName)) {
+    if (!primary_root_is_compile_time_projection_candidate(cs, primary->property)) {
         return ZR_FALSE;
     }
 
@@ -1180,6 +1197,8 @@ static TZrBool expression_uses_dynamic_object_access(SZrAstNode *node) {
         case ZR_AST_MEMBER_EXPRESSION:
         case ZR_AST_FUNCTION_CALL:
             return ZR_TRUE;
+        case ZR_AST_IMPORT_EXPRESSION:
+            return ZR_FALSE;
         case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION:
             return expression_uses_dynamic_object_access(node->data.prototypeReferenceExpression.target);
         case ZR_AST_CONSTRUCT_EXPRESSION:
@@ -2720,6 +2739,34 @@ static void compile_member_expression(SZrCompilerState *cs, SZrAstNode *node) {
     // 因为需要先编译对象表达式
 }
 
+static void compile_import_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrImportExpression *importExpr;
+    SZrAstNode *modulePathNode;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (node->type != ZR_AST_IMPORT_EXPRESSION) {
+        ZrParser_Compiler_Error(cs, "Expected import expression", node->location);
+        return;
+    }
+
+    importExpr = &node->data.importExpression;
+    modulePathNode = importExpr->modulePath;
+    if (modulePathNode == ZR_NULL || modulePathNode->type != ZR_AST_STRING_LITERAL ||
+        modulePathNode->data.stringLiteral.value == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Import expression requires a normalized string module path", node->location);
+        return;
+    }
+
+    if (ZrParser_Compiler_EmitImportModuleExpression(cs, modulePathNode->data.stringLiteral.value, node->location) ==
+        (TZrUInt32)-1 &&
+        !cs->hasError) {
+        ZrParser_Compiler_Error(cs, "Failed to compile import expression", node->location);
+    }
+}
+
 // 编译主表达式（属性访问链和函数调用链）
 static void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -3756,6 +3803,10 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
         case ZR_AST_FUNCTION_CALL:
             compile_function_call(cs, node);
             break;
+
+        case ZR_AST_IMPORT_EXPRESSION:
+            compile_import_expression(cs, node);
+            break;
         
         case ZR_AST_MEMBER_EXPRESSION:
             compile_member_expression(cs, node);
@@ -3838,6 +3889,7 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
                     case ZR_AST_ENUM_DECLARATION: typeName = "ENUM_DECLARATION"; break;
                     case ZR_AST_ENUM_MEMBER: typeName = "ENUM_MEMBER"; break;
                     case ZR_AST_MODULE_DECLARATION: typeName = "MODULE_DECLARATION"; break;
+                    case ZR_AST_IMPORT_EXPRESSION: typeName = "IMPORT_EXPRESSION"; break;
                     case ZR_AST_SCRIPT: typeName = "SCRIPT"; break;
                     default: break;
                 }

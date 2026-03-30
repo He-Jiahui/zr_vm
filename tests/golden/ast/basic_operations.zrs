@@ -1,62 +1,62 @@
 // ZR Syntax Tree File (.zrs)
 // Generated from parsed AST
 
-SCRIPT [line:1:col:7]
-  module:   MODULE_DECLARATION [line:1:col:7]
+SCRIPT [line:1:col:2]
+  module:   MODULE_DECLARATION [line:1:col:2]
     STRING_LITERAL [line:1:col:1]
   value: "basic_operations"
   statements (14):
     VARIABLE_DECLARATION [line:4:col:5]
-      pattern:       IDENTIFIER [line:4:col:23]
+      pattern:       IDENTIFIER [line:4:col:5]
   name: "arithmetic_test"
       value:       LAMBDA_EXPRESSION [line:4:col:26]
         params: ()
         body:         BLOCK [line:4:col:1]
     VARIABLE_DECLARATION [line:16:col:5]
-      pattern:       IDENTIFIER [line:16:col:20]
+      pattern:       IDENTIFIER [line:16:col:5]
   name: "logical_test"
       value:       LAMBDA_EXPRESSION [line:16:col:23]
         params: ()
         body:         BLOCK [line:16:col:1]
     VARIABLE_DECLARATION [line:32:col:5]
-      pattern:       IDENTIFIER [line:32:col:23]
+      pattern:       IDENTIFIER [line:32:col:5]
   name: "comparison_test"
       value:       LAMBDA_EXPRESSION [line:32:col:26]
         params: ()
         body:         BLOCK [line:32:col:1]
     VARIABLE_DECLARATION [line:49:col:5]
-      pattern:       IDENTIFIER [line:49:col:20]
+      pattern:       IDENTIFIER [line:49:col:5]
   name: "bitwise_test"
       value:       LAMBDA_EXPRESSION [line:49:col:23]
         params: ()
         body:         BLOCK [line:49:col:1]
     VARIABLE_DECLARATION [line:61:col:5]
-      pattern:       IDENTIFIER [line:61:col:19]
+      pattern:       IDENTIFIER [line:61:col:5]
   name: "branch_test"
       value:       LAMBDA_EXPRESSION [line:61:col:22]
         params (1):
           PARAMETER [line:61:col:22]
         body:         BLOCK [line:61:col:1]
     VARIABLE_DECLARATION [line:72:col:5]
-      pattern:       IDENTIFIER [line:72:col:18]
+      pattern:       IDENTIFIER [line:72:col:5]
   name: "while_test"
       value:       LAMBDA_EXPRESSION [line:72:col:21]
         params: ()
         body:         BLOCK [line:72:col:1]
     VARIABLE_DECLARATION [line:83:col:5]
-      pattern:       IDENTIFIER [line:83:col:16]
+      pattern:       IDENTIFIER [line:83:col:5]
   name: "for_test"
       value:       LAMBDA_EXPRESSION [line:83:col:19]
         params: ()
         body:         BLOCK [line:83:col:1]
     VARIABLE_DECLARATION [line:92:col:5]
-      pattern:       IDENTIFIER [line:92:col:20]
+      pattern:       IDENTIFIER [line:92:col:5]
   name: "foreach_test"
       value:       LAMBDA_EXPRESSION [line:92:col:23]
         params: ()
         body:         BLOCK [line:92:col:1]
     VARIABLE_DECLARATION [line:102:col:5]
-      pattern:       IDENTIFIER [line:102:col:21]
+      pattern:       IDENTIFIER [line:102:col:5]
   name: "function_test"
       value:       LAMBDA_EXPRESSION [line:102:col:24]
         params (2):
@@ -64,25 +64,25 @@ SCRIPT [line:1:col:7]
           PARAMETER [line:102:col:32]
         body:         BLOCK [line:102:col:1]
     VARIABLE_DECLARATION [line:106:col:5]
-      pattern:       IDENTIFIER [line:106:col:26]
+      pattern:       IDENTIFIER [line:106:col:5]
   name: "call_function_test"
       value:       LAMBDA_EXPRESSION [line:106:col:29]
         params: ()
         body:         BLOCK [line:106:col:1]
     VARIABLE_DECLARATION [line:111:col:5]
-      pattern:       IDENTIFIER [line:111:col:33]
+      pattern:       IDENTIFIER [line:111:col:5]
   name: "variable_declaration_test"
       value:       LAMBDA_EXPRESSION [line:111:col:36]
         params: ()
         body:         BLOCK [line:111:col:1]
     VARIABLE_DECLARATION [line:119:col:5]
-      pattern:       IDENTIFIER [line:119:col:19]
+      pattern:       IDENTIFIER [line:119:col:5]
   name: "return_test"
       value:       LAMBDA_EXPRESSION [line:119:col:22]
         params: ()
         body:         BLOCK [line:119:col:1]
     VARIABLE_DECLARATION [line:124:col:5]
-      pattern:       IDENTIFIER [line:124:col:27]
+      pattern:       IDENTIFIER [line:124:col:5]
   name: "break_continue_test"
       value:       LAMBDA_EXPRESSION [line:124:col:30]
         params: ()
