@@ -1389,6 +1389,66 @@ void test_system_vm_call_module_export_executes_nested_native_export(void) {
     TEST_DIVIDER();
 }
 
+void test_native_vector3_constructor_binds_all_numeric_arguments_at_runtime(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Vector3 Constructor Binds Numeric Arguments";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "var math = %import(\"zr.math\");\n"
+                "var seed = 2.0;\n"
+                "return $math.Vector3(seed, seed + 1.0, seed + 2.0);\n";
+        const TZrChar *sourceNameText = "native_vector3_constructor_runtime_test.zr";
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        SZrTypeValue result;
+        SZrObject *vectorObject;
+        const SZrTypeValue *xValue;
+        const SZrTypeValue *yValue;
+        const SZrTypeValue *zValue;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(ZrVmLibMath_Register(state->global));
+
+        sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
+        TEST_ASSERT_NOT_NULL(sourceName);
+
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
+
+        vectorObject = ZR_CAST_OBJECT(state, result.value.object);
+        TEST_ASSERT_NOT_NULL(vectorObject);
+
+        xValue = get_object_field_value(state, vectorObject, "x");
+        yValue = get_object_field_value(state, vectorObject, "y");
+        zValue = get_object_field_value(state, vectorObject, "z");
+
+        TEST_ASSERT_NOT_NULL(xValue);
+        TEST_ASSERT_NOT_NULL(yValue);
+        TEST_ASSERT_NOT_NULL(zValue);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FLOAT(xValue->type));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FLOAT(yValue->type));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FLOAT(zValue->type));
+        TEST_ASSERT_DOUBLE_WITHIN(0.0001, 2.0, xValue->value.nativeObject.nativeDouble);
+        TEST_ASSERT_DOUBLE_WITHIN(0.0001, 3.0, yValue->value.nativeObject.nativeDouble);
+        TEST_ASSERT_DOUBLE_WITHIN(0.0001, 4.0, zValue->value.nativeObject.nativeDouble);
+
+        ZrCore_Function_Free(state, entryFunction);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 void test_system_root_aggregates_leaf_modules_and_reuses_cached_instances(void) {
     SZrTestTimer timer;
     const char *testSummary = "System Root Aggregates Leaf Modules";
@@ -2099,34 +2159,37 @@ int main(void) {
     // 13. zr.system.vm.callModuleExport 可执行嵌套 native 导出
     RUN_TEST(test_system_vm_call_module_export_executes_nested_native_export);
 
-    // 14. zr.system 聚合根导出叶子模块
+    // 14. native Vector3 构造在 runtime 绑定全部数值参数
+    RUN_TEST(test_native_vector3_constructor_binds_all_numeric_arguments_at_runtime);
+
+    // 15. zr.system 聚合根导出叶子模块
     RUN_TEST(test_system_root_aggregates_leaf_modules_and_reuses_cached_instances);
 
-    // 15. zr.system 根模块仅导出子模块
+    // 16. zr.system 根模块仅导出子模块
     RUN_TEST(test_system_root_exports_only_submodules);
 
-    // 16. 叶子模块导出新的 system API
+    // 17. 叶子模块导出新的 system API
     RUN_TEST(test_system_leaf_modules_expose_new_api_and_owned_types);
 
-    // 17. system 原生类型字段元信息完整
+    // 18. system 原生类型字段元信息完整
     RUN_TEST(test_system_native_types_register_complete_struct_fields);
 
-    // 18. 根模块原生元信息包含 modules 数组
+    // 19. 根模块原生元信息包含 modules 数组
     RUN_TEST(test_system_root_native_module_info_exposes_module_links);
 
-    // 19. native enum/interface descriptor 元信息完整暴露
+    // 20. native enum/interface descriptor 元信息完整暴露
     RUN_TEST(test_native_module_info_exposes_enum_and_interface_descriptors);
 
-    // 20. native runtime 注册 enum 静态成员和 interface 继承链
+    // 21. native runtime 注册 enum 静态成员和 interface 继承链
     RUN_TEST(test_native_module_runtime_registers_enum_members_and_interface_inheritance);
 
-    // 21. native enum 构造在 runtime 返回正确实例
+    // 22. native enum 构造在 runtime 返回正确实例
     RUN_TEST(test_native_enum_construction_returns_runtime_enum_instance);
 
-    // 22. native registry 拒绝未来 ABI 版本
+    // 23. native registry 拒绝未来 ABI 版本
     RUN_TEST(test_native_registry_rejects_future_runtime_abi);
 
-    // 23. native registry 拒绝未支持 capability
+    // 24. native registry 拒绝未支持 capability
     RUN_TEST(test_native_registry_rejects_unsupported_capabilities);
 
     return UNITY_END();

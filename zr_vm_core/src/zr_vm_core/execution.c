@@ -134,6 +134,17 @@ static TZrBool execution_apply_binary_numeric_float(EZrExecutionNumericFallbackO
     return execution_try_binary_numeric_float_fallback(operation, destination, opA, opB);
 }
 
+static void execution_apply_binary_numeric_float_or_raise(SZrState *state,
+                                                          EZrExecutionNumericFallbackOp operation,
+                                                          SZrTypeValue *destination,
+                                                          const SZrTypeValue *opA,
+                                                          const SZrTypeValue *opB,
+                                                          const TZrChar *instructionName) {
+    if (!execution_apply_binary_numeric_float(operation, destination, opA, opB)) {
+        ZrCore_Debug_RunError(state, "%s requires numeric operands", instructionName);
+    }
+}
+
 static TZrBool execution_eval_binary_numeric_compare(EZrExecutionNumericCompareOp operation,
                                                      TZrFloat64 leftValue,
                                                      TZrFloat64 rightValue,
@@ -179,6 +190,17 @@ static TZrBool execution_apply_binary_numeric_compare(EZrExecutionNumericCompare
     return ZR_TRUE;
 }
 
+static void execution_apply_binary_numeric_compare_or_raise(SZrState *state,
+                                                            EZrExecutionNumericCompareOp operation,
+                                                            SZrTypeValue *destination,
+                                                            const SZrTypeValue *opA,
+                                                            const SZrTypeValue *opB,
+                                                            const TZrChar *instructionName) {
+    if (!execution_apply_binary_numeric_compare(operation, destination, opA, opB)) {
+        ZrCore_Debug_RunError(state, "%s requires numeric operands", instructionName);
+    }
+}
+
 static TZrBool execution_try_binary_numeric_float_fallback(EZrExecutionNumericFallbackOp operation,
                                                            SZrTypeValue *destination,
                                                            const SZrTypeValue *opA,
@@ -199,6 +221,17 @@ static TZrBool execution_try_binary_numeric_float_fallback(EZrExecutionNumericFa
 
     ZR_VALUE_FAST_SET(destination, nativeDouble, resultValue, ZR_VALUE_TYPE_DOUBLE);
     return ZR_TRUE;
+}
+
+static void execution_try_binary_numeric_float_fallback_or_raise(SZrState *state,
+                                                                 EZrExecutionNumericFallbackOp operation,
+                                                                 SZrTypeValue *destination,
+                                                                 const SZrTypeValue *opA,
+                                                                 const SZrTypeValue *opB,
+                                                                 const TZrChar *instructionName) {
+    if (!execution_try_binary_numeric_float_fallback(operation, destination, opA, opB)) {
+        ZrCore_Debug_RunError(state, "%s requires numeric operands", instructionName);
+    }
 }
 
 // 辅助函数：从模块中查找类型原型
@@ -1999,16 +2032,16 @@ LZrReturning: {
                         ALGORITHM_2(nativeUInt64, +, opA->type);
                     }
                 } else {
-                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
-                            ZR_EXEC_NUMERIC_FALLBACK_ADD, destination, opA, opB));
+                    execution_try_binary_numeric_float_fallback_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_ADD, destination, opA, opB, "ADD_INT");
                 }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(execution_apply_binary_numeric_float(
-                        ZR_EXEC_NUMERIC_FALLBACK_ADD, destination, opA, opB));
+                execution_apply_binary_numeric_float_or_raise(
+                        state, ZR_EXEC_NUMERIC_FALLBACK_ADD, destination, opA, opB, "ADD_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_STRING) {
@@ -2062,16 +2095,16 @@ LZrReturning: {
                 if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
                     ALGORITHM_2(nativeInt64, -, opA->type);
                 } else {
-                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
-                            ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB));
+                    execution_try_binary_numeric_float_fallback_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB, "SUB_INT");
                 }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SUB_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(execution_apply_binary_numeric_float(
-                        ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB));
+                execution_apply_binary_numeric_float_or_raise(
+                        state, ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB, "SUB_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL) {
@@ -2116,8 +2149,8 @@ LZrReturning: {
                 if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
                     ALGORITHM_2(nativeInt64, *, ZR_VALUE_TYPE_INT64);
                 } else {
-                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
-                            ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB));
+                    execution_try_binary_numeric_float_fallback_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB, "MUL_SIGNED");
                 }
             }
             DONE(1);
@@ -2127,16 +2160,16 @@ LZrReturning: {
                 if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
                     ALGORITHM_2(nativeUInt64, *, ZR_VALUE_TYPE_UINT64);
                 } else {
-                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
-                            ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB));
+                    execution_try_binary_numeric_float_fallback_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB, "MUL_UNSIGNED");
                 }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(execution_apply_binary_numeric_float(
-                        ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB));
+                execution_apply_binary_numeric_float_or_raise(
+                        state, ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB, "MUL_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(NEG) {
@@ -2221,8 +2254,8 @@ LZrReturning: {
                     }
                     ALGORITHM_2(nativeInt64, /, ZR_VALUE_TYPE_INT64);
                 } else {
-                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
-                            ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB));
+                    execution_try_binary_numeric_float_fallback_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB, "DIV_SIGNED");
                 }
             }
             DONE(1);
@@ -2237,16 +2270,16 @@ LZrReturning: {
                     }
                     ALGORITHM_2(nativeUInt64, /, ZR_VALUE_TYPE_UINT64);
                 } else {
-                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
-                            ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB));
+                    execution_try_binary_numeric_float_fallback_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB, "DIV_UNSIGNED");
                 }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(execution_apply_binary_numeric_float(
-                        ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB));
+                execution_apply_binary_numeric_float_or_raise(
+                        state, ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB, "DIV_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD) {
@@ -2299,8 +2332,8 @@ LZrReturning: {
                     }
                     ALGORITHM_CONST_2(nativeInt64, %, ZR_VALUE_TYPE_INT64, divisor);
                 } else {
-                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
-                            ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB));
+                    execution_try_binary_numeric_float_fallback_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB, "MOD_SIGNED");
                 }
             }
             DONE(1);
@@ -2314,16 +2347,16 @@ LZrReturning: {
                     }
                     ALGORITHM_2(nativeUInt64, %, ZR_VALUE_TYPE_UINT64);
                 } else {
-                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
-                            ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB));
+                    execution_try_binary_numeric_float_fallback_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB, "MOD_UNSIGNED");
                 }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(execution_apply_binary_numeric_float(
-                        ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB));
+                execution_apply_binary_numeric_float_or_raise(
+                        state, ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB, "MOD_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW) {
@@ -2377,8 +2410,8 @@ LZrReturning: {
                     }
                     ALGORITHM_FUNC_2(nativeInt64, ZrCore_Math_IntPower, ZR_VALUE_TYPE_INT64);
                 } else {
-                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
-                            ZR_EXEC_NUMERIC_FALLBACK_POW, destination, opA, opB));
+                    execution_try_binary_numeric_float_fallback_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_POW, destination, opA, opB, "POW_SIGNED");
                 }
             }
             DONE(1);
@@ -2394,16 +2427,16 @@ LZrReturning: {
                     }
                     ALGORITHM_FUNC_2(nativeUInt64, ZrCore_Math_UIntPower, ZR_VALUE_TYPE_UINT64);
                 } else {
-                    ZR_ASSERT(execution_try_binary_numeric_float_fallback(
-                            ZR_EXEC_NUMERIC_FALLBACK_POW, destination, opA, opB));
+                    execution_try_binary_numeric_float_fallback_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_POW, destination, opA, opB, "POW_UNSIGNED");
                 }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(execution_apply_binary_numeric_float(
-                        ZR_EXEC_NUMERIC_FALLBACK_POW, destination, opA, opB));
+                execution_apply_binary_numeric_float_or_raise(
+                        state, ZR_EXEC_NUMERIC_FALLBACK_POW, destination, opA, opB, "POW_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_LEFT) {
@@ -2544,8 +2577,8 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(execution_apply_binary_numeric_compare(
-                        ZR_EXEC_NUMERIC_COMPARE_GREATER, destination, opA, opB));
+                execution_apply_binary_numeric_compare_or_raise(
+                        state, ZR_EXEC_NUMERIC_COMPARE_GREATER, destination, opA, opB, "LOGICAL_GREATER_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_SIGNED) {
@@ -2565,8 +2598,8 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(execution_apply_binary_numeric_compare(
-                        ZR_EXEC_NUMERIC_COMPARE_LESS, destination, opA, opB));
+                execution_apply_binary_numeric_compare_or_raise(
+                        state, ZR_EXEC_NUMERIC_COMPARE_LESS, destination, opA, opB, "LOGICAL_LESS_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_EQUAL) {
@@ -2600,8 +2633,13 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(execution_apply_binary_numeric_compare(
-                        ZR_EXEC_NUMERIC_COMPARE_GREATER_EQUAL, destination, opA, opB));
+                execution_apply_binary_numeric_compare_or_raise(
+                        state,
+                        ZR_EXEC_NUMERIC_COMPARE_GREATER_EQUAL,
+                        destination,
+                        opA,
+                        opB,
+                        "LOGICAL_GREATER_EQUAL_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_EQUAL_SIGNED) {
@@ -2621,8 +2659,13 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_EQUAL_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(execution_apply_binary_numeric_compare(
-                        ZR_EXEC_NUMERIC_COMPARE_LESS_EQUAL, destination, opA, opB));
+                execution_apply_binary_numeric_compare_or_raise(
+                        state,
+                        ZR_EXEC_NUMERIC_COMPARE_LESS_EQUAL,
+                        destination,
+                        opA,
+                        opB,
+                        "LOGICAL_LESS_EQUAL_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_NOT) {
