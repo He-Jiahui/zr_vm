@@ -384,41 +384,41 @@ static void print_error_suggestion(const TZrChar *msg) {
         strstr(msg, "INTERFACE_DECLARATION") != ZR_NULL ||
         strstr(msg, "ENUM_DECLARATION") != ZR_NULL ||
         strstr(msg, "cannot be used as") != ZR_NULL) {
-        printf("  Suggestion: Declaration types (interface, struct, class, enum, function) cannot be used as statements or expressions.\n");
-        printf("              They should only appear in their proper declaration contexts (top-level, class body, etc.).\n");
-        printf("              Check if you accidentally placed a declaration inside a block or expression context.\n");
+        fprintf(stderr, "  Suggestion: Declaration types (interface, struct, class, enum, function) cannot be used as statements or expressions.\n");
+        fprintf(stderr, "              They should only appear in their proper declaration contexts (top-level, class body, etc.).\n");
+        fprintf(stderr, "              Check if you accidentally placed a declaration inside a block or expression context.\n");
     } else if (strstr(msg, "Unexpected expression type") != ZR_NULL) {
-        printf("  Suggestion: This AST node type is not supported in expression context.\n");
-        printf("              Possible causes:\n");
-        printf("              1. The node was incorrectly parsed or placed in the wrong context\n");
-        printf("              2. A declaration type was mistakenly used as an expression\n");
-        printf("              3. Missing implementation for this node type in ZrParser_Expression_Compile\n");
-        printf("              Check the AST structure and ensure the node is in the correct context.\n");
+        fprintf(stderr, "  Suggestion: This AST node type is not supported in expression context.\n");
+        fprintf(stderr, "              Possible causes:\n");
+        fprintf(stderr, "              1. The node was incorrectly parsed or placed in the wrong context\n");
+        fprintf(stderr, "              2. A declaration type was mistakenly used as an expression\n");
+        fprintf(stderr, "              3. Missing implementation for this node type in ZrParser_Expression_Compile\n");
+        fprintf(stderr, "              Check the AST structure and ensure the node is in the correct context.\n");
     } else if (strstr(msg, "Type mismatch") != ZR_NULL ||
                strstr(msg, "Incompatible types") != ZR_NULL) {
-        printf("  Suggestion: Type mismatch detected. Check:\n");
-        printf("              1. Variable types match their assignments\n");
-        printf("              2. Function argument types match the function signature\n");
-        printf("              3. Return types match the function declaration\n");
-        printf("              4. Type annotations are correct\n");
+        fprintf(stderr, "  Suggestion: Type mismatch detected. Check:\n");
+        fprintf(stderr, "              1. Variable types match their assignments\n");
+        fprintf(stderr, "              2. Function argument types match the function signature\n");
+        fprintf(stderr, "              3. Return types match the function declaration\n");
+        fprintf(stderr, "              4. Type annotations are correct\n");
     } else if (strstr(msg, "not found") != ZR_NULL) {
-        printf("  Suggestion: The referenced identifier was not found. Check:\n");
-        printf("              1. Variable/function is declared before use\n");
-        printf("              2. Variable/function is in scope\n");
-        printf("              3. Spelling is correct\n");
-        printf("              4. Import statements are correct (if using modules)\n");
+        fprintf(stderr, "  Suggestion: The referenced identifier was not found. Check:\n");
+        fprintf(stderr, "              1. Variable/function is declared before use\n");
+        fprintf(stderr, "              2. Variable/function is in scope\n");
+        fprintf(stderr, "              3. Spelling is correct\n");
+        fprintf(stderr, "              4. Import statements are correct (if using modules)\n");
     } else if (strstr(msg, "Destructuring") != ZR_NULL) {
-        printf("  Suggestion: Destructuring patterns can only be used in variable declarations.\n");
-        printf("              They cannot be used as standalone expressions or statements.\n");
+        fprintf(stderr, "  Suggestion: Destructuring patterns can only be used in variable declarations.\n");
+        fprintf(stderr, "              They cannot be used as standalone expressions or statements.\n");
     } else if (strstr(msg, "Loop or statement") != ZR_NULL) {
-        printf("  Suggestion: Control flow statements (if, while, for, etc.) cannot be used as expressions.\n");
-        printf("              Use them as statements, or use expression forms (if expression, etc.) if available.\n");
+        fprintf(stderr, "  Suggestion: Control flow statements (if, while, for, etc.) cannot be used as expressions.\n");
+        fprintf(stderr, "              Use them as statements, or use expression forms (if expression, etc.) if available.\n");
     } else if (strstr(msg, "Failed to") != ZR_NULL) {
-        printf("  Suggestion: Internal compiler error. This may indicate:\n");
-        printf("              1. Memory allocation failure\n");
-        printf("              2. Invalid compiler state\n");
-        printf("              3. Bug in the compiler\n");
-        printf("              Please report this issue with the source code that triggered it.\n");
+        fprintf(stderr, "  Suggestion: Internal compiler error. This may indicate:\n");
+        fprintf(stderr, "              1. Memory allocation failure\n");
+        fprintf(stderr, "              2. Invalid compiler state\n");
+        fprintf(stderr, "              3. Bug in the compiler\n");
+        fprintf(stderr, "              Please report this issue with the source code that triggered it.\n");
     }
 }
 
@@ -457,7 +457,7 @@ void ZrParser_CompileTime_Error(SZrCompilerState *cs, EZrCompileTimeErrorLevel l
         }
     }
     
-    printf("[CompileTime %s] %s:%d:%d: %s\n", 
+    fprintf(stderr, "[CompileTime %s] %s:%d:%d: %s\n", 
            levelStr, fileName, location.start.line, location.start.column, message);
     
     // 如果是致命错误，设置错误信息
@@ -498,56 +498,56 @@ void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRa
     }
 
     // 输出格式化的错误信息
-    printf("\n");
-    printf("═══════════════════════════════════════════════════════════════\n");
-    printf("Compiler Error\n");
-    printf("═══════════════════════════════════════════════════════════════\n");
-    printf("  Error Message: %s\n", msg);
-    printf("  Location: %.*s:%d:%d - %d:%d\n", 
+    fprintf(stderr, "\n");
+    fprintf(stderr, "═══════════════════════════════════════════════════════════════\n");
+    fprintf(stderr, "Compiler Error\n");
+    fprintf(stderr, "═══════════════════════════════════════════════════════════════\n");
+    fprintf(stderr, "  Error Message: %s\n", msg);
+    fprintf(stderr, "  Location: %.*s:%d:%d - %d:%d\n", 
            (int) nameLen, sourceName, 
            location.start.line, location.start.column,
            location.end.line, location.end.column);
     
     // 输出错误原因分析
-    printf("\n  Error Analysis:\n");
+    fprintf(stderr, "\n  Error Analysis:\n");
     if (strstr(msg, "INTERFACE_METHOD_SIGNATURE") != ZR_NULL ||
         strstr(msg, "INTERFACE_FIELD_DECLARATION") != ZR_NULL ||
         strstr(msg, "INTERFACE_PROPERTY_SIGNATURE") != ZR_NULL) {
-        printf("    - Problem: Interface declaration member found in invalid context\n");
-        printf("    - Root Cause: Interface members (methods, fields, properties) can only appear\n");
-        printf("                  inside interface declaration bodies, not in statements or expressions\n");
+        fprintf(stderr, "    - Problem: Interface declaration member found in invalid context\n");
+        fprintf(stderr, "    - Root Cause: Interface members (methods, fields, properties) can only appear\n");
+        fprintf(stderr, "                  inside interface declaration bodies, not in statements or expressions\n");
     } else if (strstr(msg, "STRUCT_FIELD") != ZR_NULL ||
                strstr(msg, "STRUCT_METHOD") != ZR_NULL ||
                strstr(msg, "CLASS_FIELD") != ZR_NULL ||
                strstr(msg, "CLASS_METHOD") != ZR_NULL) {
-        printf("    - Problem: Struct/Class member found in invalid context\n");
-        printf("    - Root Cause: Struct/Class members can only appear inside struct/class\n");
-        printf("                  declaration bodies, not in statements or expressions\n");
+        fprintf(stderr, "    - Problem: Struct/Class member found in invalid context\n");
+        fprintf(stderr, "    - Root Cause: Struct/Class members can only appear inside struct/class\n");
+        fprintf(stderr, "                  declaration bodies, not in statements or expressions\n");
     } else if (strstr(msg, "Unexpected expression type") != ZR_NULL) {
-        printf("    - Problem: AST node type not supported in expression context\n");
-        printf("    - Root Cause: The compiler encountered a node type that cannot be compiled\n");
-        printf("                  as an expression. This may indicate a parsing error or missing\n");
-        printf("                  implementation for this node type.\n");
+        fprintf(stderr, "    - Problem: AST node type not supported in expression context\n");
+        fprintf(stderr, "    - Root Cause: The compiler encountered a node type that cannot be compiled\n");
+        fprintf(stderr, "                  as an expression. This may indicate a parsing error or missing\n");
+        fprintf(stderr, "                  implementation for this node type.\n");
     } else if (strstr(msg, "Type mismatch") != ZR_NULL ||
                strstr(msg, "Incompatible types") != ZR_NULL) {
-        printf("    - Problem: Type compatibility check failed\n");
-        printf("    - Root Cause: The types of operands, variables, or function arguments are\n");
-        printf("                  not compatible with the operation or assignment being performed\n");
+        fprintf(stderr, "    - Problem: Type compatibility check failed\n");
+        fprintf(stderr, "    - Root Cause: The types of operands, variables, or function arguments are\n");
+        fprintf(stderr, "                  not compatible with the operation or assignment being performed\n");
     } else if (strstr(msg, "not found") != ZR_NULL) {
-        printf("    - Problem: Identifier not found in current scope\n");
-        printf("    - Root Cause: The variable, function, or type name was not found in the\n");
-        printf("                  current scope or type environment\n");
+        fprintf(stderr, "    - Problem: Identifier not found in current scope\n");
+        fprintf(stderr, "    - Root Cause: The variable, function, or type name was not found in the\n");
+        fprintf(stderr, "                  current scope or type environment\n");
     } else {
-        printf("    - Problem: Compilation error occurred\n");
-        printf("    - Root Cause: See error message above for details\n");
+        fprintf(stderr, "    - Problem: Compilation error occurred\n");
+        fprintf(stderr, "    - Root Cause: See error message above for details\n");
     }
     
     // 输出解决建议
-    printf("\n  How to Fix:\n");
+    fprintf(stderr, "\n  How to Fix:\n");
     print_error_suggestion(msg);
     
-    printf("═══════════════════════════════════════════════════════════════\n");
-    printf("\n");
+    fprintf(stderr, "═══════════════════════════════════════════════════════════════\n");
+    fprintf(stderr, "\n");
 }
 
 // 创建指令（辅助函数）

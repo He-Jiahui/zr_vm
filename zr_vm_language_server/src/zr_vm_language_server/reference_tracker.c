@@ -10,6 +10,43 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/string.h"
 
+#include <stdio.h>
+
+static TZrBool source_uri_equals(SZrString *left, SZrString *right) {
+    TZrNativeString leftText;
+    TZrNativeString rightText;
+    TZrSize leftLength;
+    TZrSize rightLength;
+
+    if (left == right) {
+        return ZR_TRUE;
+    }
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (left->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        leftText = ZrCore_String_GetNativeStringShort(left);
+        leftLength = left->shortStringLength;
+    } else {
+        leftText = ZrCore_String_GetNativeString(left);
+        leftLength = left->longStringLength;
+    }
+
+    if (right->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        rightText = ZrCore_String_GetNativeStringShort(right);
+        rightLength = right->shortStringLength;
+    } else {
+        rightText = ZrCore_String_GetNativeString(right);
+        rightLength = right->longStringLength;
+    }
+
+    return leftText != ZR_NULL && rightText != ZR_NULL &&
+           leftLength == rightLength &&
+           memcmp(leftText, rightText, leftLength) == 0;
+}
+
 // 创建引用追踪器
 SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, SZrSymbolTable *symbolTable) {
     if (state == ZR_NULL || symbolTable == ZR_NULL) {
@@ -42,7 +79,7 @@ void ZrLanguageServer_ReferenceTracker_Free(SZrState *state, SZrReferenceTracker
     if (state == ZR_NULL || tracker == ZR_NULL) {
         return;
     }
-    
+
     // 释放所有引用
     for (TZrSize i = 0; i < tracker->allReferences.length; i++) {
         SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(&tracker->allReferences, i);
@@ -229,7 +266,7 @@ SZrReference *ZrLanguageServer_ReferenceTracker_FindReferenceAt(SZrReferenceTrac
             SZrFileRange posRange = position;
             
             // 首先检查源文件是否相同
-            if (refRange.source != posRange.source) {
+            if (!source_uri_equals(refRange.source, posRange.source)) {
                 continue;
             }
             

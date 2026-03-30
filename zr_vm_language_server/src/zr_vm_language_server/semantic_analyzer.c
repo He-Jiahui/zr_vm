@@ -375,7 +375,7 @@ void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer
     if (state == ZR_NULL || analyzer == ZR_NULL) {
         return;
     }
-    
+
     // 释放所有诊断
     for (TZrSize i = 0; i < analyzer->diagnostics.length; i++) {
         SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, i);
@@ -399,15 +399,15 @@ void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer
         ZrCore_Array_Free(state, &analyzer->cache->cachedSymbols);
         ZrCore_Memory_RawFree(state->global, analyzer->cache, sizeof(SZrAnalysisCache));
     }
-    
+
     if (analyzer->referenceTracker != ZR_NULL) {
         ZrLanguageServer_ReferenceTracker_Free(state, analyzer->referenceTracker);
     }
-    
+
     if (analyzer->symbolTable != ZR_NULL) {
         ZrLanguageServer_SymbolTable_Free(state, analyzer->symbolTable);
     }
-    
+
     // 释放编译器状态
     if (analyzer->compilerState != ZR_NULL) {
         ZrParser_CompilerState_Free(analyzer->compilerState);
@@ -416,7 +416,7 @@ void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer
 
     analyzer->semanticContext = ZR_NULL;
     analyzer->hirModule = ZR_NULL;
-    
+
     ZrCore_Memory_RawFree(state->global, analyzer, sizeof(SZrSemanticAnalyzer));
 }
 
@@ -434,6 +434,76 @@ static SZrString *extract_identifier_name(SZrState *state, SZrAstNode *node) {
     }
     
     return ZR_NULL;
+}
+
+static TZrBool string_equals_literal(SZrString *value, const TZrChar *literal) {
+    TZrNativeString text;
+    TZrSize length;
+    TZrSize literalLength;
+
+    if (value == ZR_NULL || literal == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        text = ZrCore_String_GetNativeStringShort(value);
+        length = value->shortStringLength;
+    } else {
+        text = ZrCore_String_GetNativeString(value);
+        length = value->longStringLength;
+    }
+
+    if (text == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    literalLength = strlen(literal);
+    return length == literalLength && memcmp(text, literal, literalLength) == 0;
+}
+
+static TZrBool is_implicit_runtime_identifier(SZrString *name) {
+    return string_equals_literal(name, "this") || string_equals_literal(name, "super");
+}
+
+static SZrString *get_class_property_symbol_name(SZrAstNode *node) {
+    if (node == ZR_NULL || node->type != ZR_AST_CLASS_PROPERTY ||
+        node->data.classProperty.modifier == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (node->data.classProperty.modifier->type == ZR_AST_PROPERTY_GET &&
+        node->data.classProperty.modifier->data.propertyGet.name != ZR_NULL) {
+        return node->data.classProperty.modifier->data.propertyGet.name->name;
+    }
+
+    if (node->data.classProperty.modifier->type == ZR_AST_PROPERTY_SET &&
+        node->data.classProperty.modifier->data.propertySet.name != ZR_NULL) {
+        return node->data.classProperty.modifier->data.propertySet.name->name;
+    }
+
+    return ZR_NULL;
+}
+
+static void add_definition_reference_for_symbol(SZrState *state,
+                                                SZrSemanticAnalyzer *analyzer,
+                                                SZrSymbol *symbol) {
+    SZrFileRange range;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->referenceTracker == ZR_NULL ||
+        symbol == ZR_NULL) {
+        return;
+    }
+
+    range = symbol->selectionRange;
+    if (range.start.offset == 0 && range.end.offset == 0) {
+        range = symbol->location;
+    }
+
+    ZrLanguageServer_ReferenceTracker_AddReference(state,
+                                                   analyzer->referenceTracker,
+                                                   symbol,
+                                                   range,
+                                                   ZR_REFERENCE_DEFINITION);
 }
 
 // 辅助函数：递归计算 AST 节点的哈希值
@@ -927,6 +997,7 @@ static void register_field_symbol_from_ast(SZrState *state,
                                   ZR_SEMANTIC_SYMBOL_KIND_FIELD,
                                   typeInfo,
                                   ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+        add_definition_reference_for_symbol(state, analyzer, symbol);
     }
 
     if (!isUsingManaged) {
@@ -1063,6 +1134,7 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
                                           ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
                                           typeInfo,
                                           ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+                add_definition_reference_for_symbol(state, analyzer, symbol);
             }
             break;
         }
@@ -1116,6 +1188,7 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
                                           ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
                                           returnType,
                                           ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+                add_definition_reference_for_symbol(state, analyzer, symbol);
             }
             break;
         }
@@ -1140,6 +1213,7 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
                                           ZR_SEMANTIC_SYMBOL_KIND_TYPE,
                                           ZR_NULL,
                                           ZR_SEMANTIC_TYPE_KIND_REFERENCE);
+                add_definition_reference_for_symbol(state, analyzer, symbol);
                 
                 // 检查类实现的接口，验证 const 字段匹配
                 if (classDecl->inherits != ZR_NULL && classDecl->inherits->count > 0) {
@@ -1220,13 +1294,59 @@ static void collect_symbols_from_ast(SZrState *state, SZrSemanticAnalyzer *analy
                                     : 0;
                 for (TZrSize memberIndex = 0; memberIndex < classDecl->members->count; memberIndex++) {
                     SZrAstNode *classMember = classDecl->members->nodes[memberIndex];
-                    if (classMember != ZR_NULL && classMember->type == ZR_AST_CLASS_FIELD) {
+                    if (classMember == ZR_NULL) {
+                        continue;
+                    }
+
+                    if (classMember->type == ZR_AST_CLASS_FIELD) {
                         register_field_symbol_from_ast(state,
                                                        analyzer,
                                                        classMember,
                                                        ownerRegionId,
                                                        ZR_DETERMINISTIC_CLEANUP_KIND_INSTANCE_FIELD,
                                                        (TZrInt32)memberIndex);
+                    } else if (classMember->type == ZR_AST_CLASS_METHOD) {
+                        SZrClassMethod *method = &classMember->data.classMethod;
+                        SZrString *memberName = method->name != ZR_NULL ? method->name->name : ZR_NULL;
+                        SZrSymbol *memberSymbol = ZR_NULL;
+                        if (memberName != ZR_NULL) {
+                            ZrLanguageServer_SymbolTable_AddSymbolEx(state,
+                                                                     analyzer->symbolTable,
+                                                                     ZR_SYMBOL_METHOD,
+                                                                     memberName,
+                                                                     classMember->location,
+                                                                     ZR_NULL,
+                                                                     method->access,
+                                                                     classMember,
+                                                                     &memberSymbol);
+                            register_symbol_semantics(analyzer,
+                                                      memberSymbol,
+                                                      ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                                                      ZR_NULL,
+                                                      ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+                            add_definition_reference_for_symbol(state, analyzer, memberSymbol);
+                        }
+                    } else if (classMember->type == ZR_AST_CLASS_PROPERTY) {
+                        SZrClassProperty *property = &classMember->data.classProperty;
+                        SZrString *memberName = get_class_property_symbol_name(classMember);
+                        SZrSymbol *memberSymbol = ZR_NULL;
+                        if (memberName != ZR_NULL) {
+                            ZrLanguageServer_SymbolTable_AddSymbolEx(state,
+                                                                     analyzer->symbolTable,
+                                                                     ZR_SYMBOL_PROPERTY,
+                                                                     memberName,
+                                                                     classMember->location,
+                                                                     ZR_NULL,
+                                                                     property->access,
+                                                                     classMember,
+                                                                     &memberSymbol);
+                            register_symbol_semantics(analyzer,
+                                                      memberSymbol,
+                                                      ZR_SEMANTIC_SYMBOL_KIND_FIELD,
+                                                      ZR_NULL,
+                                                      ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+                            add_definition_reference_for_symbol(state, analyzer, memberSymbol);
+                        }
                     }
                 }
             }
@@ -1315,13 +1435,8 @@ static void collect_references_from_ast(SZrState *state, SZrSemanticAnalyzer *an
                 
                 ZrLanguageServer_ReferenceTracker_AddReference(state, analyzer->referenceTracker,
                                                symbol, node->location, refType);
-            } else {
-                // 未定义的标识符，添加诊断
-                ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state, analyzer,
-                                                ZR_DIAGNOSTIC_ERROR,
-                                                node->location,
-                                                "Undefined identifier",
-                                                "undefined_identifier");
+            } else if (is_implicit_runtime_identifier(name)) {
+                return;
             }
         }
     }
@@ -1368,6 +1483,22 @@ static void collect_references_from_ast(SZrState *state, SZrSemanticAnalyzer *an
             break;
         }
 
+        case ZR_AST_FUNCTION_DECLARATION: {
+            SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
+            if (funcDecl->body != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, funcDecl->body);
+            }
+            break;
+        }
+
+        case ZR_AST_TEST_DECLARATION: {
+            SZrTestDeclaration *testDecl = &node->data.testDeclaration;
+            if (testDecl->body != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, testDecl->body);
+            }
+            break;
+        }
+
         case ZR_AST_USING_STATEMENT: {
             SZrUsingStatement *usingStmt = &node->data.usingStatement;
             record_using_cleanup_step(analyzer, usingStmt->resource);
@@ -1376,6 +1507,14 @@ static void collect_references_from_ast(SZrState *state, SZrSemanticAnalyzer *an
             }
             if (usingStmt->body != ZR_NULL) {
                 collect_references_from_ast(state, analyzer, usingStmt->body);
+            }
+            break;
+        }
+
+        case ZR_AST_RETURN_STATEMENT: {
+            SZrReturnStatement *returnStmt = &node->data.returnStatement;
+            if (returnStmt->expr != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, returnStmt->expr);
             }
             break;
         }
@@ -1447,6 +1586,21 @@ static void collect_references_from_ast(SZrState *state, SZrSemanticAnalyzer *an
             break;
         }
 
+        case ZR_AST_CONSTRUCT_EXPRESSION: {
+            SZrConstructExpression *constructExpr = &node->data.constructExpression;
+            if (constructExpr->target != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, constructExpr->target);
+            }
+            if (constructExpr->args != ZR_NULL && constructExpr->args->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < constructExpr->args->count; i++) {
+                    if (constructExpr->args->nodes[i] != ZR_NULL) {
+                        collect_references_from_ast(state, analyzer, constructExpr->args->nodes[i]);
+                    }
+                }
+            }
+            break;
+        }
+
         case ZR_AST_TEMPLATE_STRING_LITERAL: {
             SZrTemplateStringLiteral *templateLiteral = &node->data.templateStringLiteral;
             record_template_string_segments(analyzer, node);
@@ -1511,6 +1665,62 @@ static void collect_references_from_ast(SZrState *state, SZrSemanticAnalyzer *an
             }
             if (assignExpr->right != ZR_NULL) {
                 collect_references_from_ast(state, analyzer, assignExpr->right);
+            }
+            break;
+        }
+
+        case ZR_AST_CLASS_DECLARATION: {
+            SZrClassDeclaration *classDecl = &node->data.classDeclaration;
+            if (classDecl->inherits != ZR_NULL && classDecl->inherits->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < classDecl->inherits->count; i++) {
+                    if (classDecl->inherits->nodes[i] != ZR_NULL) {
+                        collect_references_from_ast(state, analyzer, classDecl->inherits->nodes[i]);
+                    }
+                }
+            }
+            if (classDecl->members != ZR_NULL && classDecl->members->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < classDecl->members->count; i++) {
+                    if (classDecl->members->nodes[i] != ZR_NULL) {
+                        collect_references_from_ast(state, analyzer, classDecl->members->nodes[i]);
+                    }
+                }
+            }
+            break;
+        }
+
+        case ZR_AST_CLASS_FIELD: {
+            SZrClassField *classField = &node->data.classField;
+            if (classField->init != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, classField->init);
+            }
+            break;
+        }
+
+        case ZR_AST_CLASS_METHOD: {
+            SZrClassMethod *classMethod = &node->data.classMethod;
+            if (classMethod->body != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, classMethod->body);
+            }
+            break;
+        }
+
+        case ZR_AST_CLASS_PROPERTY: {
+            if (node->data.classProperty.modifier != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, node->data.classProperty.modifier);
+            }
+            break;
+        }
+
+        case ZR_AST_PROPERTY_GET: {
+            if (node->data.propertyGet.body != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, node->data.propertyGet.body);
+            }
+            break;
+        }
+
+        case ZR_AST_PROPERTY_SET: {
+            if (node->data.propertySet.body != ZR_NULL) {
+                collect_references_from_ast(state, analyzer, node->data.propertySet.body);
             }
             break;
         }
@@ -1618,8 +1828,17 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(SZrState *state,
 // 获取位置的符号
 SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *analyzer,
                                          SZrFileRange position) {
+    SZrReference *reference;
+
     if (analyzer == ZR_NULL) {
         return ZR_NULL;
+    }
+
+    if (analyzer->referenceTracker != ZR_NULL) {
+        reference = ZrLanguageServer_ReferenceTracker_FindReferenceAt(analyzer->referenceTracker, position);
+        if (reference != ZR_NULL) {
+            return reference->symbol;
+        }
     }
     
     return ZrLanguageServer_SymbolTable_FindDefinition(analyzer->symbolTable, position);
@@ -1672,7 +1891,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
         return ZR_FALSE;
     }
     
-    *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->location, symbol->typeInfo);
+    *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->selectionRange, symbol->typeInfo);
     return *result != ZR_NULL;
 }
 
@@ -1716,6 +1935,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetCompletions(SZrState *state,
                     case ZR_SYMBOL_FUNCTION: kind = "function"; break;
                     case ZR_SYMBOL_CLASS: kind = "class"; break;
                     case ZR_SYMBOL_STRUCT: kind = "struct"; break;
+                    case ZR_SYMBOL_METHOD: kind = "method"; break;
+                    case ZR_SYMBOL_PROPERTY: kind = "property"; break;
+                    case ZR_SYMBOL_FIELD: kind = "field"; break;
                     default: break;
                 }
                 

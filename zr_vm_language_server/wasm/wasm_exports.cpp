@@ -16,6 +16,8 @@ extern "C" {
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/hash_set.h"
+#include "zr_vm_core/value.h"
 #include "zr_vm_parser/location.h"
 
 // 包含 LSP 接口头文件（必须在 extern "C" 块内）
@@ -131,6 +133,16 @@ static const char* string_to_cstr(SZrState *state, SZrString *str) {
     return cstr;
 }
 
+static void free_cstr(SZrState *state, const char *cstr) {
+    TZrSize length;
+    if (state == ZR_NULL || cstr == ZR_NULL) {
+        return;
+    }
+
+    length = strlen(cstr) + 1;
+    ZrCore_Memory_RawFree(state->global, (void*)cstr, length);
+}
+
 // 从 C 字符串创建 SZrString
 static SZrString* cstr_to_string(SZrState *state, const char *cstr, int len) {
     if (state == ZR_NULL || cstr == ZR_NULL) {
@@ -160,7 +172,7 @@ static cJSON* serialize_diagnostics(SZrState *state, SZrArray *diagnostics) {
                     const char *codeStr = string_to_cstr(state, diag->code);
                     if (codeStr != ZR_NULL) {
                         cJSON_AddStringToObject(diagJson, "code", codeStr);
-                        ZrCore_Memory_RawFree(state->global, (void*)codeStr, 0);
+                        free_cstr(state, codeStr);
                     }
                 }
                 
@@ -168,7 +180,7 @@ static cJSON* serialize_diagnostics(SZrState *state, SZrArray *diagnostics) {
                     const char *msgStr = string_to_cstr(state, diag->message);
                     if (msgStr != ZR_NULL) {
                         cJSON_AddStringToObject(diagJson, "message", msgStr);
-                        ZrCore_Memory_RawFree(state->global, (void*)msgStr, 0);
+                        free_cstr(state, msgStr);
                     }
                 }
                 
@@ -197,7 +209,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
                     const char *labelStr = string_to_cstr(state, item->label);
                     if (labelStr != ZR_NULL) {
                         cJSON_AddStringToObject(itemJson, "label", labelStr);
-                        ZrCore_Memory_RawFree(state->global, (void*)labelStr, 0);
+                        free_cstr(state, labelStr);
                     }
                 }
                 
@@ -207,7 +219,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
                     const char *detailStr = string_to_cstr(state, item->detail);
                     if (detailStr != ZR_NULL) {
                         cJSON_AddStringToObject(itemJson, "detail", detailStr);
-                        ZrCore_Memory_RawFree(state->global, (void*)detailStr, 0);
+                        free_cstr(state, detailStr);
                     }
                 }
                 
@@ -218,7 +230,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
                         cJSON_AddStringToObject(docJson, "kind", "markdown");
                         cJSON_AddStringToObject(docJson, "value", docStr);
                         cJSON_AddItemToObject(itemJson, "documentation", docJson);
-                        ZrCore_Memory_RawFree(state->global, (void*)docStr, 0);
+                        free_cstr(state, docStr);
                     }
                 }
                 
@@ -226,7 +238,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
                     const char *insertStr = string_to_cstr(state, item->insertText);
                     if (insertStr != ZR_NULL) {
                         cJSON_AddStringToObject(itemJson, "insertText", insertStr);
-                        ZrCore_Memory_RawFree(state->global, (void*)insertStr, 0);
+                        free_cstr(state, insertStr);
                     }
                 }
                 
@@ -234,7 +246,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
                     const char *formatStr = string_to_cstr(state, item->insertTextFormat);
                     if (formatStr != ZR_NULL) {
                         cJSON_AddStringToObject(itemJson, "insertTextFormat", formatStr);
-                        ZrCore_Memory_RawFree(state->global, (void*)formatStr, 0);
+                        free_cstr(state, formatStr);
                     }
                 }
                 
@@ -263,7 +275,7 @@ static cJSON* serialize_locations(SZrState *state, SZrArray *locations) {
                     const char *uriStr = string_to_cstr(state, loc->uri);
                     if (uriStr != ZR_NULL) {
                         cJSON_AddStringToObject(locJson, "uri", uriStr);
-                        ZrCore_Memory_RawFree(state->global, (void*)uriStr, 0);
+                        free_cstr(state, uriStr);
                     }
                 }
                 
@@ -281,32 +293,139 @@ static cJSON* serialize_locations(SZrState *state, SZrArray *locations) {
 // 序列化悬停信息
 static cJSON* serialize_hover(SZrState *state, SZrLspHover *hover) {
     cJSON *json = cJSON_CreateObject();
+    const char *contentStr = ZR_NULL;
     if (json == ZR_NULL || state == ZR_NULL || hover == ZR_NULL) {
         return json;
     }
     
-    cJSON *contents = cJSON_CreateArray();
+    cJSON *contents = cJSON_CreateObject();
     if (contents != ZR_NULL) {
-        for (TZrSize i = 0; i < hover->contents.length; i++) {
-            SZrString **strPtr = (SZrString **)ZrCore_Array_Get(&hover->contents, i);
+        if (hover->contents.length > 0) {
+            SZrString **strPtr = (SZrString **)ZrCore_Array_Get(&hover->contents, 0);
             if (strPtr != ZR_NULL && *strPtr != ZR_NULL) {
-                const char *contentStr = string_to_cstr(state, *strPtr);
-                if (contentStr != ZR_NULL) {
-                    cJSON *contentJson = cJSON_CreateObject();
-                    cJSON_AddStringToObject(contentJson, "kind", "markdown");
-                    cJSON_AddStringToObject(contentJson, "value", contentStr);
-                    cJSON_AddItemToArray(contents, contentJson);
-                    ZrCore_Memory_RawFree(state->global, (void*)contentStr, 0);
-                }
+                contentStr = string_to_cstr(state, *strPtr);
             }
         }
+        cJSON_AddStringToObject(contents, "kind", "markdown");
+        cJSON_AddStringToObject(contents, "value", contentStr != ZR_NULL ? contentStr : "");
         cJSON_AddItemToObject(json, "contents", contents);
     }
     
     cJSON *range = serialize_lsp_range(hover->range);
     cJSON_AddItemToObject(json, "range", range);
+    if (contentStr != ZR_NULL) {
+        free_cstr(state, contentStr);
+    }
     
     return json;
+}
+
+static cJSON* serialize_symbol_information(SZrState *state, SZrLspSymbolInformation *symbol) {
+    cJSON *json = cJSON_CreateObject();
+    cJSON *locationJson;
+    if (json == ZR_NULL || state == ZR_NULL || symbol == ZR_NULL) {
+        return json;
+    }
+
+    if (symbol->name != ZR_NULL) {
+        const char *nameStr = string_to_cstr(state, symbol->name);
+        if (nameStr != ZR_NULL) {
+            cJSON_AddStringToObject(json, "name", nameStr);
+            free_cstr(state, nameStr);
+        }
+    }
+
+    cJSON_AddNumberToObject(json, "kind", symbol->kind);
+
+    if (symbol->containerName != ZR_NULL) {
+        const char *containerStr = string_to_cstr(state, symbol->containerName);
+        if (containerStr != ZR_NULL) {
+            cJSON_AddStringToObject(json, "containerName", containerStr);
+            free_cstr(state, containerStr);
+        }
+    }
+
+    locationJson = cJSON_CreateObject();
+    if (locationJson != ZR_NULL) {
+        if (symbol->location.uri != ZR_NULL) {
+            const char *uriStr = string_to_cstr(state, symbol->location.uri);
+            if (uriStr != ZR_NULL) {
+                cJSON_AddStringToObject(locationJson, "uri", uriStr);
+                free_cstr(state, uriStr);
+            }
+        }
+        cJSON_AddItemToObject(locationJson, "range", serialize_lsp_range(symbol->location.range));
+        cJSON_AddItemToObject(json, "location", locationJson);
+    }
+    return json;
+}
+
+static cJSON* serialize_symbol_array(SZrState *state, SZrArray *symbols) {
+    cJSON *json = cJSON_CreateArray();
+    if (json == ZR_NULL || state == ZR_NULL || symbols == ZR_NULL) {
+        return json;
+    }
+
+    for (TZrSize i = 0; i < symbols->length; i++) {
+        SZrLspSymbolInformation **symbolPtr = (SZrLspSymbolInformation **)ZrCore_Array_Get(symbols, i);
+        if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_symbol_information(state, *symbolPtr));
+        }
+    }
+
+    return json;
+}
+
+static cJSON* serialize_document_highlight(SZrLspDocumentHighlight *highlight) {
+    cJSON *json = cJSON_CreateObject();
+    if (json == ZR_NULL || highlight == ZR_NULL) {
+        return json;
+    }
+
+    cJSON_AddItemToObject(json, "range", serialize_lsp_range(highlight->range));
+    cJSON_AddNumberToObject(json, "kind", highlight->kind);
+    return json;
+}
+
+static cJSON* serialize_highlights(SZrArray *highlights) {
+    cJSON *json = cJSON_CreateArray();
+    if (json == ZR_NULL || highlights == ZR_NULL) {
+        return json;
+    }
+
+    for (TZrSize i = 0; i < highlights->length; i++) {
+        SZrLspDocumentHighlight **highlightPtr =
+            (SZrLspDocumentHighlight **)ZrCore_Array_Get(highlights, i);
+        if (highlightPtr != ZR_NULL && *highlightPtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_document_highlight(*highlightPtr));
+        }
+    }
+
+    return json;
+}
+
+static void remove_document_state(SZrLspContext *context, SZrString *uri) {
+    SZrTypeValue key;
+    SZrHashKeyValuePair *pair;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return;
+    }
+
+    if (context->parser != ZR_NULL) {
+        ZrLanguageServer_IncrementalParser_RemoveFile(g_wasm_state, context->parser, uri);
+    }
+
+    ZrCore_Value_InitAsRawObject(g_wasm_state, &key, &uri->super);
+    pair = ZrCore_HashSet_Find(g_wasm_state, &context->uriToAnalyzerMap, &key);
+    if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+        SZrSemanticAnalyzer *analyzer = (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+        if (analyzer != ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(g_wasm_state, analyzer);
+        }
+    }
+
+    ZrCore_HashSet_Remove(g_wasm_state, &context->uriToAnalyzerMap, &key);
 }
 
 // 创建错误响应 JSON
@@ -361,11 +480,8 @@ void* wasm_malloc(size_t size) {
 EMSCRIPTEN_KEEPALIVE
 #endif
 void wasm_free(void* ptr) {
-    if (g_wasm_global != ZR_NULL && ptr != ZR_NULL) {
-        // 注意：需要知道原始大小，这里简化处理
-        // TODO: 实现更精确的内存管理
-        // 在 WASM 环境中，内存由 WebAssembly.Memory 管理
-        // 这里可以留空或实现自定义内存跟踪
+    if (ptr != ZR_NULL) {
+        free(ptr);
     }
 }
 
@@ -414,6 +530,26 @@ const char* wasm_ZrLspUpdateDocument(void* context, const char* uri, int uriLen,
     } else {
         return create_error_response("Failed to update document");
     }
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspCloseDocument(void* context, const char* uri, int uriLen) {
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    remove_document_state((SZrLspContext*)context, uriStr);
+
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddBoolToObject(json, "closed", cJSON_True);
+    return create_success_response(json);
 }
 
 #ifdef __EMSCRIPTEN__
@@ -666,6 +802,162 @@ const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
         ZrCore_Array_Free(g_wasm_state, &locations);
         return create_error_response("Failed to rename");
     }
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uriLen) {
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    SZrArray symbols;
+    ZrCore_Array_Init(g_wasm_state, &symbols, sizeof(SZrLspSymbolInformation*), 8);
+
+    if (ZrLanguageServer_Lsp_GetDocumentSymbols(g_wasm_state, (SZrLspContext*)context, uriStr, &symbols)) {
+        cJSON *data = serialize_symbol_array(g_wasm_state, &symbols);
+        const char *jsonStr = create_success_response(data);
+
+        for (TZrSize i = 0; i < symbols.length; i++) {
+            SZrLspSymbolInformation **symbolPtr =
+                (SZrLspSymbolInformation **)ZrCore_Array_Get(&symbols, i);
+            if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
+                ZrCore_Memory_RawFree(g_wasm_state->global, *symbolPtr, sizeof(SZrLspSymbolInformation));
+            }
+        }
+        ZrCore_Array_Free(g_wasm_state, &symbols);
+        return jsonStr;
+    }
+
+    ZrCore_Array_Free(g_wasm_state, &symbols);
+    return create_error_response("Failed to get document symbols");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int queryLen) {
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || query == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    SZrString *queryStr = cstr_to_string(g_wasm_state, query, queryLen);
+    if (queryStr == ZR_NULL) {
+        return create_error_response("Failed to create query string");
+    }
+
+    SZrArray symbols;
+    ZrCore_Array_Init(g_wasm_state, &symbols, sizeof(SZrLspSymbolInformation*), 8);
+
+    if (ZrLanguageServer_Lsp_GetWorkspaceSymbols(g_wasm_state, (SZrLspContext*)context, queryStr, &symbols)) {
+        cJSON *data = serialize_symbol_array(g_wasm_state, &symbols);
+        const char *jsonStr = create_success_response(data);
+
+        for (TZrSize i = 0; i < symbols.length; i++) {
+            SZrLspSymbolInformation **symbolPtr =
+                (SZrLspSymbolInformation **)ZrCore_Array_Get(&symbols, i);
+            if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
+                ZrCore_Memory_RawFree(g_wasm_state->global, *symbolPtr, sizeof(SZrLspSymbolInformation));
+            }
+        }
+        ZrCore_Array_Free(g_wasm_state, &symbols);
+        return jsonStr;
+    }
+
+    ZrCore_Array_Free(g_wasm_state, &symbols);
+    return create_error_response("Failed to get workspace symbols");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int uriLen,
+                                      int line, int character) {
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    SZrLspPosition position;
+    position.line = line;
+    position.character = character;
+
+    SZrArray highlights;
+    ZrCore_Array_Init(g_wasm_state, &highlights, sizeof(SZrLspDocumentHighlight*), 8);
+
+    if (ZrLanguageServer_Lsp_GetDocumentHighlights(
+            g_wasm_state,
+            (SZrLspContext*)context,
+            uriStr,
+            position,
+            &highlights)) {
+        cJSON *data = serialize_highlights(&highlights);
+        const char *jsonStr = create_success_response(data);
+
+        for (TZrSize i = 0; i < highlights.length; i++) {
+            SZrLspDocumentHighlight **highlightPtr =
+                (SZrLspDocumentHighlight **)ZrCore_Array_Get(&highlights, i);
+            if (highlightPtr != ZR_NULL && *highlightPtr != ZR_NULL) {
+                ZrCore_Memory_RawFree(g_wasm_state->global, *highlightPtr, sizeof(SZrLspDocumentHighlight));
+            }
+        }
+        ZrCore_Array_Free(g_wasm_state, &highlights);
+        return jsonStr;
+    }
+
+    ZrCore_Array_Free(g_wasm_state, &highlights);
+    return create_error_response("Failed to get document highlights");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
+                               int line, int character) {
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    SZrLspPosition position;
+    SZrLspRange range;
+    SZrString *placeholder = ZR_NULL;
+    position.line = line;
+    position.character = character;
+
+    if (ZrLanguageServer_Lsp_PrepareRename(
+            g_wasm_state,
+            (SZrLspContext*)context,
+            uriStr,
+            position,
+            &range,
+            &placeholder)) {
+        cJSON *data = cJSON_CreateObject();
+        const char *placeholderStr = string_to_cstr(g_wasm_state, placeholder);
+
+        cJSON_AddItemToObject(data, "range", serialize_lsp_range(range));
+        cJSON_AddStringToObject(data, "placeholder", placeholderStr != ZR_NULL ? placeholderStr : "");
+        if (placeholderStr != ZR_NULL) {
+            free_cstr(g_wasm_state, placeholderStr);
+        }
+        return create_success_response(data);
+    }
+
+    return create_success_response(cJSON_CreateNull());
 }
 
 } // extern "C"

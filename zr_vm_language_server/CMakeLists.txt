@@ -9,6 +9,37 @@ zr_link_third_party_for_module(${zr_curr_module_name} "zr_c_json")
 
 zr_install_module(${zr_curr_module_name})
 
+option(BUILD_LANGUAGE_SERVER_STDIO "Build native stdio LSP server" ON)
+
+if(BUILD_LANGUAGE_SERVER_STDIO)
+    add_executable(zr_vm_language_server_stdio
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/zr_vm_language_server_stdio.c
+    )
+
+    target_include_directories(zr_vm_language_server_stdio PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    )
+
+    if(TARGET zr_vm_language_server_shared)
+        target_link_libraries(zr_vm_language_server_stdio PRIVATE
+            zr_vm_language_server_shared
+            zr_vm_parser_shared
+            zr_vm_core_shared
+        )
+    elseif(TARGET zr_vm_language_server_static)
+        target_link_libraries(zr_vm_language_server_stdio PRIVATE
+            zr_vm_language_server_static
+            zr_vm_parser_static
+            zr_vm_core_static
+        )
+    endif()
+
+    zr_link_third_party_for_target(zr_vm_language_server_stdio "zr_c_json")
+endif()
+
 # WASM 编译支持（使用 Emscripten）
 option(BUILD_WASM "Build WASM version of language server using Emscripten" OFF)
 
@@ -78,7 +109,7 @@ if(BUILD_WASM)
         # 使用 EMSCRIPTEN_KEEPALIVE + EXPORTED_FUNCTIONS 导出函数
         # 函数已在 wasm_exports.cpp 中使用 EMSCRIPTEN_KEEPALIVE 标记
         # 注意：函数名使用 wasm_ 前缀以避免与原始 LSP 函数冲突
-        set(EXPORTED_FUNCTIONS_JSON "[\"_malloc\",\"_free\",\"_wasm_malloc\",\"_wasm_free\",\"_wasm_ZrLspContextNew\",\"_wasm_ZrLspContextFree\",\"_wasm_ZrLspUpdateDocument\",\"_wasm_ZrLspGetDiagnostics\",\"_wasm_ZrLspGetCompletion\",\"_wasm_ZrLspGetHover\",\"_wasm_ZrLspGetDefinition\",\"_wasm_ZrLspFindReferences\",\"_wasm_ZrLspRename\"]")
+        set(EXPORTED_FUNCTIONS_JSON "[\"_malloc\",\"_free\",\"_wasm_malloc\",\"_wasm_free\",\"_wasm_ZrLspContextNew\",\"_wasm_ZrLspContextFree\",\"_wasm_ZrLspUpdateDocument\",\"_wasm_ZrLspCloseDocument\",\"_wasm_ZrLspGetDiagnostics\",\"_wasm_ZrLspGetCompletion\",\"_wasm_ZrLspGetHover\",\"_wasm_ZrLspGetDefinition\",\"_wasm_ZrLspFindReferences\",\"_wasm_ZrLspRename\",\"_wasm_ZrLspGetDocumentSymbols\",\"_wasm_ZrLspGetWorkspaceSymbols\",\"_wasm_ZrLspGetDocumentHighlights\",\"_wasm_ZrLspPrepareRename\"]")
         
         # 设置 Emscripten 编译选项
         target_compile_options(${zr_curr_module_name}_wasm PRIVATE
@@ -102,6 +133,7 @@ if(BUILD_WASM)
         target_link_options(${zr_curr_module_name}_wasm PRIVATE
             "SHELL:-s WASM=1"
             "SHELL:-s ALLOW_MEMORY_GROWTH=1"
+            "SHELL:-s ENVIRONMENT=web,worker"
             "SHELL:-s EXPORTED_FUNCTIONS=${EXPORTED_FUNCTIONS_JSON}"
             "SHELL:-s EXPORTED_RUNTIME_METHODS=[\"UTF8ToString\",\"stringToUTF8\",\"ccall\",\"cwrap\"]"
             "SHELL:-s MODULARIZE=1"

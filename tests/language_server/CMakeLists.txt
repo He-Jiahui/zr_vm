@@ -35,6 +35,8 @@ set(LSP_INTERFACE_TEST_SOURCES
 
 add_executable(zr_vm_language_server_lsp_interface_test ${LSP_INTERFACE_TEST_SOURCES})
 
+find_program(NODE_EXECUTABLE node)
+
 # 包含头文件目录
 target_include_directories(zr_vm_language_server_symbol_table_test PRIVATE 
     ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
@@ -123,3 +125,13 @@ add_test(NAME language_server_reference_tracker_tests COMMAND zr_vm_language_ser
 add_test(NAME language_server_semantic_analyzer_tests COMMAND zr_vm_language_server_semantic_analyzer_test)
 add_test(NAME language_server_incremental_parser_tests COMMAND zr_vm_language_server_incremental_parser_test)
 add_test(NAME language_server_lsp_interface_tests COMMAND zr_vm_language_server_lsp_interface_test)
+
+if (NODE_EXECUTABLE AND TARGET zr_vm_language_server_stdio)
+    add_test(
+        NAME language_server_stdio_smoke
+        COMMAND
+            ${NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/stdio_smoke.js
+            $<TARGET_FILE:zr_vm_language_server_stdio>
+    )
+endif()

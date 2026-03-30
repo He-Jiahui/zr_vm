@@ -56,6 +56,20 @@ typedef struct SZrLspHover {
     SZrLspRange range;                // 范围（可选）
 } SZrLspHover;
 
+// LSP 符号信息
+typedef struct SZrLspSymbolInformation {
+    SZrString *name;                  // 符号名称
+    TZrInt32 kind;                    // SymbolKind
+    SZrString *containerName;         // 容器名称（可选）
+    SZrLspLocation location;          // 符号位置
+} SZrLspSymbolInformation;
+
+// LSP 文档高亮
+typedef struct SZrLspDocumentHighlight {
+    SZrLspRange range;                // 高亮范围
+    TZrInt32 kind;                    // DocumentHighlightKind
+} SZrLspDocumentHighlight;
+
 // LSP 接口上下文
 typedef struct SZrLspContext {
     SZrState *state;
@@ -122,6 +136,33 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_Rename(SZrState *state,
                                          SZrLspPosition position,
                                          SZrString *newName,
                                          SZrArray *result);
+
+// 获取文档符号
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetDocumentSymbols(SZrState *state,
+                                                      SZrLspContext *context,
+                                                      SZrString *uri,
+                                                      SZrArray *result);
+
+// 获取工作区符号
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
+                                                       SZrLspContext *context,
+                                                       SZrString *query,
+                                                       SZrArray *result);
+
+// 获取文档高亮
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetDocumentHighlights(SZrState *state,
+                                                          SZrLspContext *context,
+                                                          SZrString *uri,
+                                                          SZrLspPosition position,
+                                                          SZrArray *result);
+
+// 预检查是否可重命名
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_PrepareRename(SZrState *state,
+                                                 SZrLspContext *context,
+                                                 SZrString *uri,
+                                                 SZrLspPosition position,
+                                                 SZrLspRange *outRange,
+                                                 SZrString **outPlaceholder);
 
 // 工具函数
 

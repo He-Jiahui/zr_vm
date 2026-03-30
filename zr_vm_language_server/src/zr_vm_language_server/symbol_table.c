@@ -14,10 +14,45 @@
 
 #include <string.h>
 
+static TZrBool source_uri_equals(SZrString *left, SZrString *right) {
+    TZrNativeString leftText;
+    TZrNativeString rightText;
+    TZrSize leftLength;
+    TZrSize rightLength;
+
+    if (left == right) {
+        return ZR_TRUE;
+    }
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (left->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        leftText = ZrCore_String_GetNativeStringShort(left);
+        leftLength = left->shortStringLength;
+    } else {
+        leftText = ZrCore_String_GetNativeString(left);
+        leftLength = left->longStringLength;
+    }
+
+    if (right->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        rightText = ZrCore_String_GetNativeStringShort(right);
+        rightLength = right->shortStringLength;
+    } else {
+        rightText = ZrCore_String_GetNativeString(right);
+        rightLength = right->longStringLength;
+    }
+
+    return leftText != ZR_NULL && rightText != ZR_NULL &&
+           leftLength == rightLength &&
+           memcmp(leftText, rightText, leftLength) == 0;
+}
+
 // 辅助函数：检查位置是否在范围内
 static TZrBool is_position_in_range(SZrFileRange position, SZrFileRange symbolRange) {
     // 首先检查源文件是否相同
-    if (position.source != symbolRange.source && 
+    if (!source_uri_equals(position.source, symbolRange.source) &&
         position.source != ZR_NULL && symbolRange.source != ZR_NULL) {
         return ZR_FALSE;
     }
@@ -43,7 +78,7 @@ static TZrBool is_position_in_range(SZrFileRange position, SZrFileRange symbolRa
 // 辅助函数：检查符号是否与范围重叠
 static TZrBool is_symbol_in_range(SZrFileRange symbolRange, SZrFileRange queryRange) {
     // 首先检查源文件是否相同
-    if (queryRange.source != symbolRange.source && 
+    if (!source_uri_equals(queryRange.source, symbolRange.source) &&
         queryRange.source != ZR_NULL && symbolRange.source != ZR_NULL) {
         return ZR_FALSE;
     }
@@ -65,6 +100,50 @@ static TZrBool is_symbol_in_range(SZrFileRange symbolRange, SZrFileRange queryRa
                        queryRange.start.column <= symbolRange.end.column);
     
     return startOverlap && endOverlap;
+}
+
+static SZrFileRange get_symbol_selection_range_from_ast(SZrAstNode *astNode, SZrFileRange fallback) {
+    if (astNode == ZR_NULL) {
+        return fallback;
+    }
+
+    switch (astNode->type) {
+        case ZR_AST_VARIABLE_DECLARATION:
+            if (astNode->data.variableDeclaration.pattern != ZR_NULL &&
+                astNode->data.variableDeclaration.pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
+                return astNode->data.variableDeclaration.pattern->location;
+            }
+            break;
+
+        case ZR_AST_FUNCTION_DECLARATION:
+            return astNode->data.functionDeclaration.nameLocation;
+
+        case ZR_AST_CLASS_DECLARATION:
+            return astNode->data.classDeclaration.nameLocation;
+
+        case ZR_AST_CLASS_FIELD:
+            return astNode->data.classField.nameLocation;
+
+        case ZR_AST_CLASS_METHOD:
+            return astNode->data.classMethod.nameLocation;
+
+        case ZR_AST_CLASS_PROPERTY:
+            if (astNode->data.classProperty.modifier != ZR_NULL) {
+                return get_symbol_selection_range_from_ast(astNode->data.classProperty.modifier, fallback);
+            }
+            break;
+
+        case ZR_AST_PROPERTY_GET:
+            return astNode->data.propertyGet.nameLocation;
+
+        case ZR_AST_PROPERTY_SET:
+            return astNode->data.propertySet.nameLocation;
+
+        default:
+            break;
+    }
+
+    return fallback;
 }
 
 // 创建符号表
@@ -255,6 +334,7 @@ SZrSymbol *ZrLanguageServer_Symbol_New(SZrState *state, EZrSymbolType type,
     symbol->type = type;
     symbol->name = name;
     symbol->location = location;
+    symbol->selectionRange = get_symbol_selection_range_from_ast(astNode, location);
     symbol->typeInfo = typeInfo; // 注意：不复制，只是引用
     symbol->isExported = ZR_FALSE;
     symbol->accessModifier = accessModifier;
@@ -648,7 +728,7 @@ SZrSymbol *ZrLanguageServer_SymbolTable_FindDefinition(SZrSymbolTable *table, SZ
                 SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&scope->symbols, i);
                 if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
                     SZrSymbol *symbol = *symbolPtr;
-                    if (is_position_in_range(position, symbol->location)) {
+                    if (is_position_in_range(position, symbol->selectionRange)) {
                         return symbol;
                     }
                 }
@@ -662,7 +742,7 @@ SZrSymbol *ZrLanguageServer_SymbolTable_FindDefinition(SZrSymbolTable *table, SZ
             SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&table->globalScope->symbols, i);
             if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
                 SZrSymbol *symbol = *symbolPtr;
-                if (is_position_in_range(position, symbol->location)) {
+                if (is_position_in_range(position, symbol->selectionRange)) {
                     return symbol;
                 }
             }
