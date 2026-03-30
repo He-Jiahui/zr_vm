@@ -423,36 +423,15 @@ TZrBool ZrCore_Constant_ResolveReference(
                         continue;
                     }
                     
-                    // 确保prototype实例数组已分配
-                    if (entryFunction->prototypeInstances == ZR_NULL) {
-                        SZrGlobalState *global = state->global;
-                        entryFunction->prototypeInstances = (struct SZrObjectPrototype **)ZrCore_Memory_RawMalloc(
-                            global, entryFunction->prototypeCount * sizeof(struct SZrObjectPrototype *));
-                        if (entryFunction->prototypeInstances == ZR_NULL) {
-                            return ZR_FALSE;
-                        }
-                        ZrCore_Memory_RawSet(entryFunction->prototypeInstances, 0, 
-                            entryFunction->prototypeCount * sizeof(struct SZrObjectPrototype *));
-                        entryFunction->prototypeInstancesLength = entryFunction->prototypeCount;
-                    }
-                    
                     // 实例化prototype（使用module.c中的解析逻辑）
-                    // 注意：这里需要模块上下文来注册prototype到模块导出
-                    // 如果提供了module，使用它；否则尝试查找
+                    // 如果能定位到模块则同步模块导出，否则走 standalone 注册路径
                     struct SZrObjectModule *targetModule = currentModule;
                     if (targetModule == ZR_NULL) {
                         targetModule = find_module_by_entry_function(state, entryFunction);
                     }
                     
-                    // 实例化prototype：通过调用ZrModuleCreatePrototypesFromData来创建所有prototype
-                    // 这会创建所有prototype，但只有第一次调用时会实际创建，后续调用会检查已存在的实例
-                    if (targetModule != ZR_NULL) {
-                        ZrCore_Module_CreatePrototypesFromData(state, targetModule, entryFunction);
-                    } else {
-                        // 没有module，无法正确注册prototype到模块导出
-                        // TODO: 暂时返回失败
-                        return ZR_FALSE;
-                    }
+                    // 这会创建所有prototype；如果它们已存在，则只会复用并补齐注册
+                    ZrCore_Module_CreatePrototypesFromData(state, targetModule, entryFunction);
                     
                     // 检查是否已创建
                     if (prototypeIndex < entryFunction->prototypeInstancesLength &&

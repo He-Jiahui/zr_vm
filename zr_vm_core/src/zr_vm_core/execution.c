@@ -47,6 +47,76 @@ static TZrBool prototype_type_matches(EZrObjectPrototypeType expectedType, EZrOb
     return expectedType == ZR_OBJECT_PROTOTYPE_TYPE_INVALID || expectedType == actualType;
 }
 
+static SZrFunction *execution_find_entry_function(SZrState *state,
+                                                  SZrClosure *currentClosure,
+                                                  SZrCallInfo *currentCallInfo) {
+    if (currentClosure != ZR_NULL &&
+        currentClosure->function != ZR_NULL &&
+        currentClosure->function->prototypeData != ZR_NULL &&
+        currentClosure->function->prototypeCount > 0) {
+        return currentClosure->function;
+    }
+
+    while (state != ZR_NULL && currentCallInfo != ZR_NULL) {
+        if (ZR_CALL_INFO_IS_VM(currentCallInfo) &&
+            currentCallInfo->functionBase.valuePointer >= state->stackBase.valuePointer &&
+            currentCallInfo->functionBase.valuePointer < state->stackTop.valuePointer) {
+            SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValue(currentCallInfo->functionBase.valuePointer);
+            if (functionBaseValue != ZR_NULL && functionBaseValue->type == ZR_VALUE_TYPE_CLOSURE) {
+                SZrClosure *stackClosure = ZR_CAST_VM_CLOSURE(state, functionBaseValue->value.object);
+                if (stackClosure != ZR_NULL &&
+                    stackClosure->function != ZR_NULL &&
+                    stackClosure->function->prototypeData != ZR_NULL &&
+                    stackClosure->function->prototypeCount > 0) {
+                    return stackClosure->function;
+                }
+            }
+        }
+        currentCallInfo = currentCallInfo->previous;
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool execution_try_materialize_global_prototypes(SZrState *state,
+                                                           SZrClosure *currentClosure,
+                                                           SZrCallInfo *currentCallInfo,
+                                                           const SZrTypeValue *tableValue,
+                                                           const SZrTypeValue *keyValue) {
+    SZrObject *globalObject;
+    SZrObject *tableObject;
+    SZrFunction *entryFunction;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || tableValue == ZR_NULL || keyValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (tableValue->type != ZR_VALUE_TYPE_OBJECT || keyValue->type != ZR_VALUE_TYPE_STRING) {
+        return ZR_FALSE;
+    }
+
+    if (state->global->zrObject.type != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_FALSE;
+    }
+
+    globalObject = ZR_CAST_OBJECT(state, state->global->zrObject.value.object);
+    tableObject = ZR_CAST_OBJECT(state, tableValue->value.object);
+    if (globalObject == ZR_NULL || tableObject == ZR_NULL || globalObject != tableObject) {
+        return ZR_FALSE;
+    }
+
+    entryFunction = execution_find_entry_function(state, currentClosure, currentCallInfo);
+    if (entryFunction == ZR_NULL ||
+        entryFunction->prototypeData == ZR_NULL ||
+        entryFunction->prototypeDataLength == 0 ||
+        entryFunction->prototypeCount == 0) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Module_CreatePrototypesFromData(state, ZR_NULL, entryFunction);
+    return ZR_TRUE;
+}
+
 static TZrBool execution_extract_numeric_double(const SZrTypeValue *value, TZrFloat64 *outValue) {
     if (value == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
@@ -966,6 +1036,9 @@ static TZrBool convert_to_enum(SZrState *state,
     if (targetPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
         return ZR_FALSE;
     }
+
+    ZrCore_Value_ResetAsNull(&extractedValue);
+    ZrCore_Value_ResetAsNull(&normalizedValue);
 
     if (source->type == ZR_VALUE_TYPE_OBJECT && source->value.object != ZR_NULL) {
         SZrObject *object = ZR_CAST_OBJECT(state, source->value.object);
@@ -2992,7 +3065,12 @@ LZrReturning: {
                 
                 // 类型检查：确保 table 是对象类型或数组类型
                 if (opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY) {
-                    const SZrTypeValue *result = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, opA->value.object), opB);
+                    SZrObject *tableObject = ZR_CAST_OBJECT(state, opA->value.object);
+                    const SZrTypeValue *result = ZrCore_Object_GetValue(state, tableObject, opB);
+                    if (result == ZR_NULL &&
+                        execution_try_materialize_global_prototypes(state, closure, callInfo, opA, opB)) {
+                        result = ZrCore_Object_GetValue(state, tableObject, opB);
+                    }
                     if (result != ZR_NULL) {
                         ZrCore_Value_Copy(state, destination, result);
                     } else {
@@ -3009,7 +3087,11 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(SETTABLE) {
                 opA = &BASE(A1(instruction))->value; // table object
                 opB = &BASE(B1(instruction))->value; // key
-                ZrCore_Object_SetValue(state, ZR_CAST_OBJECT(state, opA->value.object), opB, destination);
+                if (opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY) {
+                    ZrCore_Object_SetValue(state, ZR_CAST_OBJECT(state, opA->value.object), opB, destination);
+                } else {
+                    ZrCore_Debug_RunError(state, "SETTABLE: table must be an object or array");
+                }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(JUMP) { JUMP(callInfo, instruction, 0); }

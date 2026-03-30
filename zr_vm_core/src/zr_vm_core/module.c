@@ -22,6 +22,7 @@ typedef struct {
     SZrArray inheritTypeNames;  // SZrString*数组，存储继承类型名称
     const SZrCompiledMemberInfo *members;
     TZrUInt32 membersCount;
+    TZrBool needsPostCreateSetup;
 } SZrPrototypeCreationInfo;
 
 static void register_prototype_in_global_scope(SZrState *state, SZrString *typeName,
@@ -45,6 +46,78 @@ static void register_prototype_in_global_scope(SZrState *state, SZrString *typeN
     ZrCore_Object_SetValue(state, zrObject, &key, prototypeValue);
 }
 
+static SZrObjectPrototype *find_prototype_in_global_scope(SZrState *state, SZrString *typeName) {
+    SZrObject *zrObject;
+    SZrTypeValue key;
+    const SZrTypeValue *registeredValue;
+    SZrObjectPrototype *prototype;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (state->global->zrObject.type != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_NULL;
+    }
+
+    zrObject = ZR_CAST_OBJECT(state, state->global->zrObject.value.object);
+    if (zrObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
+    key.type = ZR_VALUE_TYPE_STRING;
+    registeredValue = ZrCore_Object_GetValue(state, zrObject, &key);
+    if (registeredValue == ZR_NULL || registeredValue->type != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_NULL;
+    }
+
+    prototype = (SZrObjectPrototype *)ZR_CAST_OBJECT(state, registeredValue->value.object);
+    if (prototype == ZR_NULL || prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_INVALID) {
+        return ZR_NULL;
+    }
+
+    return prototype;
+}
+
+static TZrBool ensure_prototype_instance_storage(SZrState *state, SZrFunction *entryFunction) {
+    struct SZrObjectPrototype **newStorage;
+    TZrSize storageBytes;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || entryFunction == ZR_NULL || entryFunction->prototypeCount == 0) {
+        return ZR_FALSE;
+    }
+
+    if (entryFunction->prototypeInstances != ZR_NULL &&
+        entryFunction->prototypeInstancesLength >= entryFunction->prototypeCount) {
+        return ZR_TRUE;
+    }
+
+    storageBytes = entryFunction->prototypeCount * sizeof(struct SZrObjectPrototype *);
+    newStorage = (struct SZrObjectPrototype **)ZrCore_Memory_RawMalloc(state->global, storageBytes);
+    if (newStorage == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(newStorage, 0, storageBytes);
+    if (entryFunction->prototypeInstances != ZR_NULL && entryFunction->prototypeInstancesLength > 0) {
+        TZrSize copyCount = entryFunction->prototypeInstancesLength;
+        if (copyCount > entryFunction->prototypeCount) {
+            copyCount = entryFunction->prototypeCount;
+        }
+        ZrCore_Memory_RawCopy(newStorage,
+                              entryFunction->prototypeInstances,
+                              copyCount * sizeof(struct SZrObjectPrototype *));
+        ZrCore_Memory_RawFree(state->global,
+                              entryFunction->prototypeInstances,
+                              entryFunction->prototypeInstancesLength * sizeof(struct SZrObjectPrototype *));
+    }
+
+    entryFunction->prototypeInstances = newStorage;
+    entryFunction->prototypeInstancesLength = entryFunction->prototypeCount;
+    return ZR_TRUE;
+}
+
 static SZrFunction *get_function_from_constant(SZrState *state, const SZrTypeValue *constant) {
     if (state == ZR_NULL || constant == ZR_NULL) {
         return ZR_NULL;
@@ -66,16 +139,24 @@ static SZrFunction *get_function_from_constant(SZrState *state, const SZrTypeVal
 static SZrObjectPrototype *find_prototype_by_name(struct SZrState *state, 
                                                    struct SZrObjectModule *module,
                                                    SZrString *typeName) {
-    if (state == ZR_NULL || module == ZR_NULL || typeName == ZR_NULL) {
+    if (state == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
     }
     
-    // 先在当前模块的导出中查找
-    const SZrTypeValue *exported = ZrCore_Module_GetPubExport(state, module, typeName);
-    if (exported != ZR_NULL && exported->type == ZR_VALUE_TYPE_OBJECT) {
-        SZrObjectPrototype *proto = (SZrObjectPrototype *)ZR_CAST_OBJECT(state, exported->value.object);
-        if (proto != ZR_NULL && proto->type != ZR_OBJECT_PROTOTYPE_TYPE_INVALID) {
-            return proto;
+    if (module != ZR_NULL) {
+        const SZrTypeValue *exported = ZrCore_Module_GetProExport(state, module, typeName);
+        if (exported != ZR_NULL && exported->type == ZR_VALUE_TYPE_OBJECT) {
+            SZrObjectPrototype *proto = (SZrObjectPrototype *)ZR_CAST_OBJECT(state, exported->value.object);
+            if (proto != ZR_NULL && proto->type != ZR_OBJECT_PROTOTYPE_TYPE_INVALID) {
+                return proto;
+            }
+        }
+    }
+
+    {
+        SZrObjectPrototype *globalPrototype = find_prototype_in_global_scope(state, typeName);
+        if (globalPrototype != ZR_NULL) {
+            return globalPrototype;
         }
     }
     
@@ -831,6 +912,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
                 } else if (exportVar->accessModifier == ZR_ACCESS_CONSTANT_PROTECTED) {
                     ZrCore_Module_AddProExport(state, module, exportVar->name, varValue);
                 }
+
             }
         }
     }
@@ -995,6 +1077,7 @@ static TZrBool parse_compiled_prototype_info(struct SZrState *state,
     protoInfo->accessModifier = (EZrAccessModifier)accessModifier;
     protoInfo->prototype = ZR_NULL;  // 稍后创建
     protoInfo->membersCount = membersCount;
+    protoInfo->needsPostCreateSetup = ZR_FALSE;
     
     // 初始化继承类型名称数组
     ZrCore_Array_Init(state, &protoInfo->inheritTypeNames, sizeof(SZrString *), inheritsCount);
@@ -1034,7 +1117,7 @@ static TZrBool parse_compiled_prototype_info(struct SZrState *state,
 TZrSize ZrCore_Module_CreatePrototypesFromData(struct SZrState *state, 
                                          struct SZrObjectModule *module,
                                          struct SZrFunction *entryFunction) {
-    if (state == ZR_NULL || module == ZR_NULL || entryFunction == ZR_NULL) {
+    if (state == ZR_NULL || entryFunction == ZR_NULL) {
         return 0;
     }
     
@@ -1050,6 +1133,9 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(struct SZrState *state,
     }
     
     TZrUInt32 prototypeCount = entryFunction->prototypeCount;
+    if (!ensure_prototype_instance_storage(state, entryFunction)) {
+        return 0;
+    }
     
     // 第一遍：创建所有prototype实例（不设置继承关系）
     SZrArray prototypeInfos;
@@ -1095,34 +1181,46 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(struct SZrState *state,
         if (parse_compiled_prototype_info(state, entryFunction, currentPos, currentPrototypeSize, &protoInfoData)) {
             // 创建prototype对象（第一遍：不设置继承关系）
             if (protoInfoData.typeName != ZR_NULL && protoInfoData.prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID) {
-                SZrObjectPrototype *prototype = ZR_NULL;
-                if (protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
-                    prototype = (SZrObjectPrototype *)ZrCore_StructPrototype_New(state, protoInfoData.typeName);
-                } else if (protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
-                    prototype = ZrCore_ObjectPrototype_New(state, protoInfoData.typeName, protoInfoData.prototypeType);
-                    // 初始化元表
-                    ZrCore_ObjectPrototype_InitMetaTable(state, prototype);
+                TZrBool prototypeWasCreated = ZR_FALSE;
+                SZrObjectPrototype *prototype = entryFunction->prototypeInstances[i];
+                if (prototype == ZR_NULL) {
+                    if (protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+                        prototype = (SZrObjectPrototype *)ZrCore_StructPrototype_New(state, protoInfoData.typeName);
+                    } else if (protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+                        prototype = ZrCore_ObjectPrototype_New(state, protoInfoData.typeName, protoInfoData.prototypeType);
+                        // 初始化元表
+                        ZrCore_ObjectPrototype_InitMetaTable(state, prototype);
+                    }
+                    if (prototype != ZR_NULL) {
+                        entryFunction->prototypeInstances[i] = prototype;
+                        prototypeWasCreated = ZR_TRUE;
+                    }
                 }
                 
                 if (prototype != ZR_NULL) {
                     protoInfoData.prototype = prototype;
+                    protoInfoData.needsPostCreateSetup = prototypeWasCreated;
                     
-                    // 注册到模块导出（先注册，第二遍可能还需要查找）
+                    // 注册到模块导出（如果有模块上下文），第二遍可能还需要查找
                     SZrTypeValue prototypeValue;
                     ZrCore_Value_InitAsRawObject(state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
                     prototypeValue.type = ZR_VALUE_TYPE_OBJECT;
                     
-                    if (protoInfoData.accessModifier == ZR_ACCESS_CONSTANT_PUBLIC) {
-                        ZrCore_Module_AddPubExport(state, module, protoInfoData.typeName, &prototypeValue);
-                    } else if (protoInfoData.accessModifier == ZR_ACCESS_CONSTANT_PROTECTED) {
-                        ZrCore_Module_AddProExport(state, module, protoInfoData.typeName, &prototypeValue);
+                    if (module != ZR_NULL) {
+                        if (protoInfoData.accessModifier == ZR_ACCESS_CONSTANT_PUBLIC) {
+                            ZrCore_Module_AddPubExport(state, module, protoInfoData.typeName, &prototypeValue);
+                        } else if (protoInfoData.accessModifier == ZR_ACCESS_CONSTANT_PROTECTED) {
+                            ZrCore_Module_AddProExport(state, module, protoInfoData.typeName, &prototypeValue);
+                        }
                     }
                     // PRIVATE 不导出，但仍然创建prototype对象
                     register_prototype_in_global_scope(state, protoInfoData.typeName, &prototypeValue);
                     
                     // 保存prototype信息到数组，用于第二遍处理继承关系和成员信息
                     ZrCore_Array_Push(state, &prototypeInfos, &protoInfoData);
-                    createdCount++;
+                    if (prototypeWasCreated) {
+                        createdCount++;
+                    }
                 } else {
                     // 创建失败，清理资源
                     ZrCore_Array_Free(state, &protoInfoData.inheritTypeNames);
@@ -1142,6 +1240,11 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(struct SZrState *state,
     for (TZrSize i = 0; i < prototypeInfos.length; i++) {
         SZrPrototypeCreationInfo *protoInfo = (SZrPrototypeCreationInfo *)ZrCore_Array_Get(&prototypeInfos, i);
         if (protoInfo == ZR_NULL || protoInfo->prototype == ZR_NULL) {
+            continue;
+        }
+
+        if (!protoInfo->needsPostCreateSetup) {
+            ZrCore_Array_Free(state, &protoInfo->inheritTypeNames);
             continue;
         }
         

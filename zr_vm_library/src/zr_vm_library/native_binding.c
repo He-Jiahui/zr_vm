@@ -2678,6 +2678,7 @@ TZrBool ZrLib_CallValue(SZrState *state,
         return ZR_FALSE;
     }
 
+    ZrLib_Value_SetNull(result);
     stableCallable = *callable;
     if (receiver != ZR_NULL) {
         stableReceiver = *receiver;
@@ -2740,7 +2741,8 @@ TZrBool ZrLib_CallValue(SZrState *state,
     }
 
     if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
-        ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(base));
+        SZrTypeValue *stackResult = ZrCore_Stack_GetValue(base);
+        ZrCore_Value_Copy(state, result, stackResult);
         state->stackTop.valuePointer = savedStackTop;
         state->callInfoList = savedCallInfo;
         return ZR_TRUE;
