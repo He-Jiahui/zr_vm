@@ -60,8 +60,9 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_Add(struct SZrState *state, 
     SZrHashKeyValuePair *object = ZrCore_HashSet_GetBucket(set, hash);
     SZrHashKeyValuePair *hashElement = (SZrHashKeyValuePair *)
             ZrCore_Memory_RawMallocWithType(global, sizeof(SZrHashKeyValuePair), ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
-    ZrCore_Value_Copy(state, &hashElement->key, element);
+    ZrCore_Value_ResetAsNull(&hashElement->key);
     ZrCore_Value_ResetAsNull(&hashElement->value);
+    ZrCore_Value_Copy(state, &hashElement->key, element);
     // object->next = hashElement;
     hashElement->next = object;
     set->buckets[ZR_HASH_MOD(hash, set->capacity)] = hashElement;
@@ -80,9 +81,10 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_AddRawObject(struct SZrState
     // todo: it should be managed by gc, how to bind it, stringTable and objectTable
     SZrHashKeyValuePair *hashElement = (SZrHashKeyValuePair *)
             ZrCore_Memory_RawMallocWithType(global, sizeof(SZrHashKeyValuePair), ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+    ZrCore_Value_ResetAsNull(&hashElement->key);
+    ZrCore_Value_ResetAsNull(&hashElement->value);
     ZrCore_Value_InitAsRawObject(state, &hashElement->key, element);
     // object->next = hashElement;
-    ZrCore_Value_ResetAsNull(&hashElement->value);
     hashElement->next = object;
     set->buckets[ZR_HASH_MOD(hash, set->capacity)] = hashElement;
     set->elementCount++;

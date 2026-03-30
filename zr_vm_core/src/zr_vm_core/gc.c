@@ -27,6 +27,7 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/native.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_core/state.h"
 #include <stddef.h>
 #include "zr_vm_core/string.h"
@@ -229,6 +230,8 @@ static void garbage_collector_free_object(struct SZrState *state, SZrRawObject *
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED;
     
     TZrSize objectSize = garbage_collector_get_object_base_size(state, object);
+
+    ZrCore_Ownership_NotifyObjectReleased(state, object);
 
     // 根据对象类型释放特定资源
     switch (object->type) {

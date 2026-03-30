@@ -13,14 +13,13 @@
 // 简单的测试分配器
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
-    ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
     
     if (newSize == 0) {
         // 释放内存
         if (pointer != ZR_NULL) {
             // 检查指针是否在合理范围内（避免释放无效指针）
-            if ((TZrPtr)pointer >= (TZrPtr)0x1000) {
+            if ((TZrPtr)pointer >= (TZrPtr)0x1000 && originalSize > 0 && originalSize < 1024 * 1024 * 1024) {
                 free(pointer);
             }
             // 如果指针无效，不调用free，避免崩溃
@@ -34,7 +33,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     } else {
         // 重新分配内存
         // 检查指针是否在合理范围内（避免realloc无效指针）
-        if ((TZrPtr)pointer >= (TZrPtr)0x1000) {
+        if ((TZrPtr)pointer >= (TZrPtr)0x1000 && originalSize > 0 && originalSize < 1024 * 1024 * 1024) {
             return realloc(pointer, newSize);
         } else {
             // 无效指针，分配新内存

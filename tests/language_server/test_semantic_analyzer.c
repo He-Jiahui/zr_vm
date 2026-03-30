@@ -759,8 +759,8 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "struct HandleBox { using var handle: unique<Resource>; }\n"
-            "class Holder { using var resource: unique<Resource>; }";
+            "struct HandleBox { using var handle: %unique Resource; }\n"
+            "class Holder { using var resource: %unique Resource; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_using_semantic_test.zr", 28);
         SZrAstNode *ast;
         SZrString *handleName;
@@ -879,7 +879,7 @@ static void test_semantic_analyzer_rejects_static_using_field(SZrState *state) {
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
-        const TZrChar *testCode = "class Holder { static using var resource: unique<Resource>; }";
+        const TZrChar *testCode = "class Holder { static using var resource: %unique Resource; }";
         SZrString *sourceName = ZrCore_String_Create(state, "static_using_field_test.zr", 26);
         SZrAstNode *ast;
 

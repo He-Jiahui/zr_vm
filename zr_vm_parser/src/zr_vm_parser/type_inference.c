@@ -57,6 +57,9 @@ static TZrBool inferred_type_from_type_name(SZrCompilerState *cs,
                                             SZrString *typeName,
                                             SZrInferredType *result);
 static TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);
+static TZrBool receiver_ownership_can_call_member(EZrOwnershipQualifier receiverQualifier,
+                                                  EZrOwnershipQualifier memberQualifier);
+static const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQualifier);
 
 static TZrBool inferred_type_try_map_primitive_name(const TZrNativeString nameStr,
                                                     TZrSize nameLen,
@@ -974,6 +977,19 @@ static TZrBool infer_construct_expression_type(SZrCompilerState *cs,
     }
 
     construct = &node->data.constructExpression;
+    if (!construct->isNew &&
+        (construct->isUsing ||
+         construct->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE)) {
+        if (!ZrParser_ExpressionType_Infer(cs, construct->target, result)) {
+            return ZR_FALSE;
+        }
+
+        result->ownershipQualifier = construct->isUsing
+                                             ? ZR_OWNERSHIP_QUALIFIER_UNIQUE
+                                             : construct->ownershipQualifier;
+        return ZR_TRUE;
+    }
+
     if (!resolve_prototype_target_inference(cs, construct->target, &prototype, &typeName)) {
         ZrParser_Compiler_Error(cs,
                         "Construct target must resolve to a registered prototype",
@@ -996,7 +1012,14 @@ static TZrBool infer_construct_expression_type(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    return inferred_type_from_type_name(cs, typeName, result);
+    if (!inferred_type_from_type_name(cs, typeName, result)) {
+        return ZR_FALSE;
+    }
+
+    result->ownershipQualifier = construct->isUsing
+                                     ? ZR_OWNERSHIP_QUALIFIER_UNIQUE
+                                     : construct->ownershipQualifier;
+    return ZR_TRUE;
 }
 
 static TZrBool resolve_constructor_chain_member_type_inference(SZrCompilerState *cs, SZrString **ioTypeName,
@@ -1451,7 +1474,11 @@ static TZrBool inferred_type_from_member_access(SZrCompilerState *cs,
     switch (memberInfo->memberType) {
         case ZR_AST_STRUCT_FIELD:
         case ZR_AST_CLASS_FIELD:
-            return inferred_type_from_type_name(cs, memberInfo->fieldTypeName, result);
+            if (!inferred_type_from_type_name(cs, memberInfo->fieldTypeName, result)) {
+                return ZR_FALSE;
+            }
+            result->ownershipQualifier = memberInfo->ownershipQualifier;
+            return ZR_TRUE;
         case ZR_AST_STRUCT_METHOD:
         case ZR_AST_CLASS_METHOD:
         case ZR_AST_STRUCT_META_FUNCTION:
@@ -1506,6 +1533,55 @@ static TZrBool infer_import_expression_type(SZrCompilerState *cs,
     }
 
     return ZR_TRUE;
+}
+
+static TZrBool receiver_ownership_can_call_member(EZrOwnershipQualifier receiverQualifier,
+                                                  EZrOwnershipQualifier memberQualifier) {
+    switch (receiverQualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_NONE:
+            return ZR_TRUE;
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK ||
+                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQualifier) {
+    switch (receiverQualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+            return "Weak-owned receivers can only call %weak, %shared, or %borrowed methods";
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+            return "Shared-owned receivers can only call %shared or %borrowed methods";
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+            return "Unique-owned receivers can only call %borrowed methods";
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+            return "Borrowed receivers can only call %borrowed methods";
+        case ZR_OWNERSHIP_QUALIFIER_NONE:
+        default:
+            return "Receiver ownership qualifier is not compatible with this method";
+    }
+}
+
+static SZrString *extract_imported_module_name(SZrFunctionCall *call) {
+    if (call == ZR_NULL || call->args == ZR_NULL || call->args->count == 0) {
+        return ZR_NULL;
+    }
+
+    if (call->args->nodes[0] != ZR_NULL && call->args->nodes[0]->type == ZR_AST_STRING_LITERAL) {
+        return call->args->nodes[0]->data.stringLiteral.value;
+    }
+
+    return ZR_NULL;
 }
 
 static TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *moduleName) {
@@ -1841,6 +1917,16 @@ static TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
 
                 ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
                 if (nextIsFunctionCall) {
+                    if (!memberInfo->isStatic &&
+                        !receiver_ownership_can_call_member(currentType.ownershipQualifier,
+                                                            memberInfo->receiverQualifier)) {
+                        ZrParser_Compiler_Error(cs,
+                                                receiver_ownership_call_error(currentType.ownershipQualifier),
+                                                members->nodes[i + 1]->location);
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        ZrParser_InferredType_Free(cs->state, &nextType);
+                        return ZR_FALSE;
+                    }
                     inferred_type_from_member_call(cs, memberInfo, &nextType);
                     i++;
                     nextIsPrototypeReference = ZR_FALSE;

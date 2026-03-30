@@ -654,6 +654,119 @@ void test_native_boxed_new_expression_parsing(void) {
     TEST_DIVIDER();
 }
 
+void test_percent_owned_and_ownership_expression_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Percent Owned And Ownership Expression Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Percent ownership syntax parsing",
+              "Testing parsing of %owned class declarations, prefixed ownership types, %unique/%shared/%using new, and %using(expr)");
+    {
+        const char *source =
+            "%owned class Holder { using var resource: %unique Resource; }\n"
+            "var sharedRef: %shared Box<int>;\n"
+            "var weakRef: %weak Resource;\n"
+            "var uniqueHolder = %unique new Holder();\n"
+            "var sharedHolder = %shared new Holder();\n"
+            "var scopedHolder = %using new Holder();\n"
+            "var borrowedHolder = %using(sharedHolder);";
+        SZrString *sourceName = ZrCore_String_Create(state, "percent_owned_syntax.zr", 23);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *classDecl;
+        SZrAstNode *fieldNode;
+        SZrClassField *field;
+        SZrAstNode *sharedDecl;
+        SZrAstNode *weakDecl;
+        SZrAstNode *uniqueDecl;
+        SZrAstNode *sharedNewDecl;
+        SZrAstNode *usingNewDecl;
+        SZrAstNode *usingExprDecl;
+        SZrAstNode *expr;
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(7, (int)ast->data.script.statements->count);
+
+        classDecl = ast->data.script.statements->nodes[0];
+        sharedDecl = ast->data.script.statements->nodes[1];
+        weakDecl = ast->data.script.statements->nodes[2];
+        uniqueDecl = ast->data.script.statements->nodes[3];
+        sharedNewDecl = ast->data.script.statements->nodes[4];
+        usingNewDecl = ast->data.script.statements->nodes[5];
+        usingExprDecl = ast->data.script.statements->nodes[6];
+
+        TEST_ASSERT_NOT_NULL(classDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, classDecl->type);
+        TEST_ASSERT_NOT_NULL(classDecl->data.classDeclaration.members);
+        TEST_ASSERT_EQUAL_INT(1, (int)classDecl->data.classDeclaration.members->count);
+
+        fieldNode = classDecl->data.classDeclaration.members->nodes[0];
+        TEST_ASSERT_NOT_NULL(fieldNode);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_FIELD, fieldNode->type);
+        field = &fieldNode->data.classField;
+        TEST_ASSERT_TRUE(field->isUsingManaged);
+        TEST_ASSERT_NOT_NULL(field->typeInfo);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE, field->typeInfo->ownershipQualifier);
+
+        TEST_ASSERT_NOT_NULL(sharedDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, sharedDecl->type);
+        TEST_ASSERT_NOT_NULL(sharedDecl->data.variableDeclaration.typeInfo);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
+                              sharedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
+
+        TEST_ASSERT_NOT_NULL(weakDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, weakDecl->type);
+        TEST_ASSERT_NOT_NULL(weakDecl->data.variableDeclaration.typeInfo);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_WEAK,
+                              weakDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
+
+        expr = uniqueDecl->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
+        TEST_ASSERT_TRUE(expr->data.constructExpression.isNew);
+        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+                              expr->data.constructExpression.ownershipQualifier);
+
+        expr = sharedNewDecl->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
+        TEST_ASSERT_TRUE(expr->data.constructExpression.isNew);
+        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
+                              expr->data.constructExpression.ownershipQualifier);
+
+        expr = usingNewDecl->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
+        TEST_ASSERT_TRUE(expr->data.constructExpression.isNew);
+        TEST_ASSERT_TRUE(expr->data.constructExpression.isUsing);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_NONE,
+                              expr->data.constructExpression.ownershipQualifier);
+
+        expr = usingExprDecl->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
+        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
+        TEST_ASSERT_TRUE(expr->data.constructExpression.isUsing);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_NONE,
+                              expr->data.constructExpression.ownershipQualifier);
+
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 // 测试条件表达式解析
 void test_conditional_expression(void) {
     SZrTestTimer timer;
@@ -1863,6 +1976,7 @@ int main(void) {
     RUN_TEST(test_legacy_import_syntax_is_rejected);
     RUN_TEST(test_prototype_construction_expression_parsing);
     RUN_TEST(test_native_boxed_new_expression_parsing);
+    RUN_TEST(test_percent_owned_and_ownership_expression_parsing);
     RUN_TEST(test_conditional_expression);
     RUN_TEST(test_array_literal);
     RUN_TEST(test_object_literal);

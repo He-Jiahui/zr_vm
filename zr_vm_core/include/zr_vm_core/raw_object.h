@@ -9,6 +9,7 @@
 
 struct SZrState;
 struct SZrRawObject;
+struct SZrOwnershipControl;
 
 typedef void (*FRawObjectScanMarkGc)(struct SZrState *state, struct SZrRawObject *parentThis);
 
@@ -19,6 +20,7 @@ struct ZR_STRUCT_ALIGN SZrRawObject {
     SZrGarbageCollectionObjectMark garbageCollectMark;
     struct SZrRawObject *gcList;
     FRawObjectScanMarkGc scanMarkGcFunction;
+    struct SZrOwnershipControl *ownershipControl;
     // default hash value is the address of the object
     TZrUInt64 hash;
 };
@@ -34,6 +36,7 @@ ZR_FORCE_INLINE void ZrCore_RawObject_Construct(SZrRawObject *super, EZrRawObjec
     super->garbageCollectMark.generation = ZR_GARBAGE_COLLECT_GENERATION_INVALID;
     super->gcList = ZR_NULL;
     super->scanMarkGcFunction = ZR_NULL;
+    super->ownershipControl = ZR_NULL;
     // because of the alignment, the hash value should be address / ZR_ALIGN_SIZE
     super->hash = ((TZrUInt64) &super) / ZR_ALIGN_SIZE;
 }

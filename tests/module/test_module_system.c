@@ -1183,8 +1183,8 @@ void test_module_restores_field_scoped_using_prototype_metadata(void) {
     {
         const char *source =
             "%module \"field_meta\";\n"
-            "pub struct HandleBox { using var handle: unique<Resource>; var count: int; }\n"
-            "pub class Holder { using var resource: shared<Resource>; var version: int; }";
+            "pub struct HandleBox { using var handle: %unique Resource; var count: int; }\n"
+            "pub class Holder { using var resource: %shared Resource; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_meta.zr", 13);
         SZrFunction *entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         SZrObjectModule *module;

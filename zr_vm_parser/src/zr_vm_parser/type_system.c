@@ -191,6 +191,12 @@ static TZrBool ownership_qualifier_is_compatible(EZrOwnershipQualifier fromQuali
         return ZR_TRUE;
     }
 
+    if (toQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
+        return fromQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+               fromQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+               fromQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
+    }
+
     if (toQualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
         return fromQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
                fromQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
@@ -294,6 +300,19 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
     if (!ownership_qualifier_is_compatible(fromType->ownershipQualifier,
                                            toType->ownershipQualifier)) {
         return ZR_FALSE;
+    }
+
+    if (fromType->baseType == toType->baseType &&
+        fromType->typeName != ZR_NULL &&
+        toType->typeName != ZR_NULL &&
+        ZrCore_String_Equal(fromType->typeName, toType->typeName)) {
+        if (fromType->isNullable == toType->isNullable) {
+            return ZR_TRUE;
+        }
+
+        if (toType->isNullable && !fromType->isNullable) {
+            return ZR_TRUE;
+        }
     }
     
     // null可以转换为任何可空类型

@@ -8,6 +8,7 @@
 #include "gc_test_utils.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_common/zr_common_conf.h"
 
@@ -835,6 +836,146 @@ void test_gc_barrier_unignores_escaped_object(void) {
     TEST_DIVIDER();
 }
 
+void test_ownership_shared_refcount_and_weak_null_on_release(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Shared Refcount And Weak Null On Release";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Ownership runtime release path",
+              "Testing unique-to-shared promotion, shared retain/release accounting, and weak expiration to null");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+        SZrTypeValue uniqueValue;
+        SZrTypeValue sharedValueA;
+        SZrTypeValue sharedValueB;
+        SZrTypeValue weakValue;
+
+        TEST_ASSERT_NOT_NULL(object);
+        ZrCore_Value_ResetAsNull(&uniqueValue);
+        ZrCore_Value_ResetAsNull(&sharedValueA);
+        ZrCore_Value_ResetAsNull(&sharedValueB);
+        ZrCore_Value_ResetAsNull(&weakValue);
+
+        TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(state, &uniqueValue, object));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
+
+        TEST_ASSERT_TRUE(ZrCore_Ownership_ShareValue(state, &sharedValueA, &uniqueValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(uniqueValue.type));
+        TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
+
+        ZrCore_Value_Copy(state, &sharedValueB, &sharedValueA);
+        TEST_ASSERT_EQUAL_UINT32(2, ZrCore_Ownership_GetStrongRefCount(object));
+
+        TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(state, &weakValue, &sharedValueA));
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+
+        ZrCore_Ownership_ReleaseValue(state, &sharedValueA);
+        TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+
+        ZrCore_Ownership_ReleaseValue(state, &sharedValueB);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_ownership_unique_can_return_to_gc_control(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Unique Can Return To GC Control";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Ownership runtime GC handoff",
+              "Testing that a detached unique-owned object can be handed back to normal GC control explicitly");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+        SZrTypeValue uniqueValue;
+        SZrTypeValue gcValue;
+
+        TEST_ASSERT_NOT_NULL(object);
+        ZrCore_Value_ResetAsNull(&uniqueValue);
+        ZrCore_Value_ResetAsNull(&gcValue);
+
+        TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(state, &uniqueValue, object));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+
+        TEST_ASSERT_TRUE(ZrCore_Ownership_ReturnToGcValue(state, &gcValue, &uniqueValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(uniqueValue.type));
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_UINT32(0, ZrCore_Ownership_GetStrongRefCount(object));
+        TEST_ASSERT_EQUAL_PTR(object, gcValue.value.object);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_ownership_weak_expires_when_returned_object_is_released(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Weak Expires When Returned Object Is Released";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Ownership weak tracking across GC handoff",
+              "Testing that weak references stay valid after explicit return-to-GC and become null once the returned object enters release");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+        SZrTypeValue uniqueValue;
+        SZrTypeValue weakValue;
+        SZrTypeValue gcValue;
+
+        TEST_ASSERT_NOT_NULL(object);
+        ZrCore_Value_ResetAsNull(&uniqueValue);
+        ZrCore_Value_ResetAsNull(&weakValue);
+        ZrCore_Value_ResetAsNull(&gcValue);
+
+        TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(state, &uniqueValue, object));
+        TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(state, &weakValue, &uniqueValue));
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+
+        TEST_ASSERT_TRUE(ZrCore_Ownership_ReturnToGcValue(state, &gcValue, &uniqueValue));
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+
+        ZrCore_Ownership_NotifyObjectReleased(state, object);
+
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+        ZrCore_Value_ResetAsNull(&gcValue);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // 主测试函数
 int main(void) {
     printf("\n");
@@ -876,6 +1017,9 @@ int main(void) {
     RUN_TEST(test_gc_sweep_slice_budget_limits_single_step_sweep);
     RUN_TEST(test_gc_ignore_registry_and_phase_metadata);
     RUN_TEST(test_gc_barrier_unignores_escaped_object);
+    RUN_TEST(test_ownership_shared_refcount_and_weak_null_on_release);
+    RUN_TEST(test_ownership_unique_can_return_to_gc_control);
+    RUN_TEST(test_ownership_weak_expires_when_returned_object_is_released);
     
     printf("\n");
     TEST_MODULE_DIVIDER();

@@ -102,6 +102,97 @@ static TZrBool is_symbol_in_range(SZrFileRange symbolRange, SZrFileRange queryRa
     return startOverlap && endOverlap;
 }
 
+static int compare_file_position(SZrFilePosition left, SZrFilePosition right) {
+    if (left.offset > 0 && right.offset > 0) {
+        if (left.offset < right.offset) {
+            return -1;
+        }
+        if (left.offset > right.offset) {
+            return 1;
+        }
+        return 0;
+    }
+
+    if (left.line < right.line) {
+        return -1;
+    }
+    if (left.line > right.line) {
+        return 1;
+    }
+    if (left.column < right.column) {
+        return -1;
+    }
+    if (left.column > right.column) {
+        return 1;
+    }
+    return 0;
+}
+
+static SZrFileRange get_symbol_match_range(SZrSymbol *symbol) {
+    if (symbol == ZR_NULL) {
+        return ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(0, 0, 0),
+            ZrParser_FilePosition_Create(0, 0, 0),
+            ZR_NULL
+        );
+    }
+
+    if (symbol->selectionRange.start.line > 0 ||
+        symbol->selectionRange.start.column > 0 ||
+        symbol->selectionRange.start.offset > 0 ||
+        symbol->selectionRange.end.line > 0 ||
+        symbol->selectionRange.end.column > 0 ||
+        symbol->selectionRange.end.offset > 0) {
+        return symbol->selectionRange;
+    }
+
+    return symbol->location;
+}
+
+static TZrBool symbol_matches_lookup_position(SZrSymbol *symbol, SZrFileRange position) {
+    SZrFileRange symbolRange;
+
+    if (symbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    symbolRange = get_symbol_match_range(symbol);
+    if (!source_uri_equals(position.source, symbolRange.source) &&
+        position.source != ZR_NULL && symbolRange.source != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return compare_file_position(symbolRange.start, position.start) <= 0;
+}
+
+static TZrBool symbol_is_better_lookup_candidate(SZrSymbol *candidate,
+                                                 SZrSymbol *best) {
+    SZrFileRange candidateRange;
+    SZrFileRange bestRange;
+    int comparison;
+
+    if (candidate == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (best == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    candidateRange = get_symbol_match_range(candidate);
+    bestRange = get_symbol_match_range(best);
+    comparison = compare_file_position(candidateRange.start, bestRange.start);
+    if (comparison != 0) {
+        return comparison > 0;
+    }
+
+    comparison = compare_file_position(candidateRange.end, bestRange.end);
+    if (comparison != 0) {
+        return comparison >= 0;
+    }
+
+    return candidate != best;
+}
+
 static SZrFileRange get_symbol_selection_range_from_ast(SZrAstNode *astNode, SZrFileRange fallback) {
     if (astNode == ZR_NULL) {
         return fallback;
@@ -578,6 +669,57 @@ SZrSymbol *ZrLanguageServer_SymbolTable_Lookup(SZrSymbolTable *table, SZrString 
     }
     
     return ZR_NULL;
+}
+
+SZrSymbol *ZrLanguageServer_SymbolTable_LookupAtPosition(SZrSymbolTable *table,
+                                                         SZrString *name,
+                                                         SZrFileRange position) {
+    SZrSymbol *bestSymbol = ZR_NULL;
+
+    if (table == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (table->nameToSymbolsMap != ZR_NULL) {
+        SZrState *state = table->state;
+        SZrTypeValue key;
+        const SZrTypeValue *existingValue;
+        SZrArray *symbolArray;
+
+        if (state != ZR_NULL) {
+            ZrCore_Value_InitAsRawObject(state, &key, &name->super);
+            existingValue = ZrCore_Object_GetValue(state, table->nameToSymbolsMap, &key);
+            if (existingValue != ZR_NULL && existingValue->type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+                symbolArray = (SZrArray *)existingValue->value.nativeObject.nativePointer;
+                if (symbolArray != ZR_NULL && symbolArray->isValid) {
+                    for (TZrSize i = 0; i < symbolArray->length; i++) {
+                        SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(symbolArray, i);
+                        SZrSymbol *symbol;
+
+                        if (symbolPtr == ZR_NULL || *symbolPtr == ZR_NULL) {
+                            continue;
+                        }
+
+                        symbol = *symbolPtr;
+                        if (is_position_in_range(position, get_symbol_match_range(symbol))) {
+                            return symbol;
+                        }
+
+                        if (symbol_matches_lookup_position(symbol, position) &&
+                            symbol_is_better_lookup_candidate(symbol, bestSymbol)) {
+                            bestSymbol = symbol;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (bestSymbol != ZR_NULL) {
+        return bestSymbol;
+    }
+
+    return ZrLanguageServer_SymbolTable_Lookup(table, name, ZR_NULL);
 }
 
 // 查找所有匹配的符号（用于函数重载）

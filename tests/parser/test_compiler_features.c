@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include "unity.h"
+#include "runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
@@ -1549,8 +1550,8 @@ void test_field_scoped_using_metadata_serializes_into_prototype_data(void) {
 
     {
         const char *source =
-            "pub struct HandleBox { using var handle: unique<Resource>; var count: int; }\n"
-            "pub class Holder { using var resource: shared<Resource>; var version: int; }";
+            "pub struct HandleBox { using var handle: %unique Resource; var count: int; }\n"
+            "pub class Holder { using var resource: %shared Resource; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_using_meta.zr", 19);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
@@ -1637,7 +1638,7 @@ void test_static_using_field_is_rejected_by_compiler(void) {
     }
 
     {
-        const char *source = "class Holder { static using var resource: unique<Resource>; }";
+        const char *source = "class Holder { static using var resource: %unique Resource; }";
         SZrString *sourceName = ZrCore_String_Create(state, "static_using_compile_error.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
@@ -1651,6 +1652,303 @@ void test_static_using_field_is_rejected_by_compiler(void) {
 
         func = ZrParser_Compiler_Compile(state, ast);
         TEST_ASSERT_NULL(func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_ownership_builtin_shared_expression_compiles_without_prototype_target(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Builtin Shared Expression Compiles Without Prototype Target";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Ownership builtin expression lowering",
+              "Testing that %shared(expr) compiles as an ownership builtin call instead of prototype construction");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Box {}\n"
+            "var box = new Box();\n"
+            "var alias = %shared(box);";
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_builtin_shared_expr.zr", 32);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        TZrBool hasNativePointerConstant = ZR_FALSE;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership builtin source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership builtin source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
+        for (TZrUInt32 i = 0; i < func->constantValueLength; i++) {
+            if (func->constantValueList[i].type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+                hasNativePointerConstant = ZR_TRUE;
+                break;
+            }
+        }
+        TEST_ASSERT_TRUE(hasNativePointerConstant);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_ownership_builtin_shared_new_wraps_constructed_result(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Builtin Shared New Wraps Constructed Result";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Ownership builtin new lowering",
+              "Testing that %shared new Box() emits an ownership helper wrapper after normal construction");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Box {}\n"
+            "var box = %shared new Box();";
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_builtin_shared_new.zr", 31);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        TZrBool hasNativePointerConstant = ZR_FALSE;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership builtin new source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership builtin new source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
+        for (TZrUInt32 i = 0; i < func->constantValueLength; i++) {
+            if (func->constantValueList[i].type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+                hasNativePointerConstant = ZR_TRUE;
+                break;
+            }
+        }
+        TEST_ASSERT_TRUE(hasNativePointerConstant);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_ownership_unique_share_runtime_moves_source_to_null(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Unique Share Runtime Moves Source To Null";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Ownership runtime unique->shared move",
+              "Testing that %shared(owner) consumes a %unique owner during execution and leaves the source variable null");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Box {}\n"
+            "var owner = %unique new Box();\n"
+            "var alias = %shared(owner);\n"
+            "if (owner == null && alias != null) {\n"
+            "    return 1;\n"
+            "}\n"
+            "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_unique_share_runtime.zr",
+                                                     strlen("ownership_unique_share_runtime.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        TZrInt64 result = 0;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership unique/share runtime source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership unique/share runtime source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
+        TEST_ASSERT_EQUAL_INT64(1, result);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_ownership_using_share_runtime_moves_source_to_null(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Using Share Runtime Moves Source To Null";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Ownership runtime using->shared move",
+              "Testing that %shared(owner) consumes a %using owner during execution and leaves the source variable null");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Box {}\n"
+            "var owner = %using new Box();\n"
+            "var alias = %shared(owner);\n"
+            "if (owner == null && alias != null) {\n"
+            "    return 1;\n"
+            "}\n"
+            "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_using_share_runtime.zr",
+                                                     strlen("ownership_using_share_runtime.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        TZrInt64 result = 0;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership using/share runtime source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership using/share runtime source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
+        TEST_ASSERT_EQUAL_INT64(1, result);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Weak Runtime Expires To Null After Last Shared Release";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Ownership runtime weak expiration",
+              "Testing that %weak(owner) becomes null after the last %shared owner is overwritten with null");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Box {}\n"
+            "var owner = %shared new Box();\n"
+            "var watcher = %weak(owner);\n"
+            "owner = null;\n"
+            "if (watcher == null) {\n"
+            "    return 1;\n"
+            "}\n"
+            "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_weak_runtime_expire.zr",
+                                                     strlen("ownership_weak_runtime_expire.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        TZrInt64 result = 0;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership weak runtime source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership weak runtime source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
+        TEST_ASSERT_EQUAL_INT64(1, result);
+
+        ZrCore_Function_Free(state, func);
     }
 
     timer.endTime = clock();
@@ -1713,6 +2011,11 @@ int main(void) {
     RUN_TEST(test_using_statement_compiles_through_frontend);
     RUN_TEST(test_field_scoped_using_metadata_serializes_into_prototype_data);
     RUN_TEST(test_static_using_field_is_rejected_by_compiler);
+    RUN_TEST(test_ownership_builtin_shared_expression_compiles_without_prototype_target);
+    RUN_TEST(test_ownership_builtin_shared_new_wraps_constructed_result);
+    RUN_TEST(test_ownership_unique_share_runtime_moves_source_to_null);
+    RUN_TEST(test_ownership_using_share_runtime_moves_source_to_null);
+    RUN_TEST(test_ownership_weak_runtime_expires_to_null_after_last_shared_release);
 
     printf("\n");
     TEST_MODULE_DIVIDER();

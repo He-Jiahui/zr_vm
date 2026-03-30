@@ -14,6 +14,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -27,7 +28,12 @@ void ZrCore_Value_Barrier(struct SZrState *state, SZrRawObject *object, SZrTypeV
 
 void ZrCore_Value_ResetAsNull(SZrTypeValue *value) {
     value->type = ZR_VALUE_TYPE_NULL;
+    value->value.nativeObject.nativeUInt64 = 0;
     value->isGarbageCollectable = ZR_FALSE;
+    value->isNative = ZR_TRUE;
+    value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+    value->ownershipControl = ZR_NULL;
+    value->ownershipWeakRef = ZR_NULL;
 }
 
 void ZrCore_Value_InitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawObject *object) {
@@ -36,6 +42,9 @@ void ZrCore_Value_InitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawOb
     value->value.object = object;
     value->isGarbageCollectable = ZR_TRUE;
     value->isNative = object->isNative;
+    value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+    value->ownershipControl = ZR_NULL;
+    value->ownershipWeakRef = ZR_NULL;
     // check liveness
     ZrCore_Gc_ValueStaticAssertIsAlive(state, value);
 }
@@ -46,6 +55,9 @@ void ZrCore_Value_InitAsUInt(struct SZrState *state, SZrTypeValue *value, TZrUIn
     value->value.nativeObject.nativeUInt64 = intValue;
     value->isGarbageCollectable = ZR_FALSE;
     value->isNative = ZR_TRUE;
+    value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+    value->ownershipControl = ZR_NULL;
+    value->ownershipWeakRef = ZR_NULL;
 }
 
 void ZrCore_Value_InitAsInt(struct SZrState *state, SZrTypeValue *value, TZrInt64 intValue) {
@@ -53,6 +65,9 @@ void ZrCore_Value_InitAsInt(struct SZrState *state, SZrTypeValue *value, TZrInt6
     value->value.nativeObject.nativeInt64 = intValue;
     value->isGarbageCollectable = ZR_FALSE;
     value->isNative = ZR_TRUE;
+    value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+    value->ownershipControl = ZR_NULL;
+    value->ownershipWeakRef = ZR_NULL;
 }
 
 void ZrCore_Value_InitAsFloat(struct SZrState *state, SZrTypeValue *value, TZrFloat64 floatValue) {
@@ -60,6 +75,9 @@ void ZrCore_Value_InitAsFloat(struct SZrState *state, SZrTypeValue *value, TZrFl
     value->value.nativeObject.nativeDouble = floatValue;
     value->isGarbageCollectable = ZR_FALSE;
     value->isNative = ZR_TRUE;
+    value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+    value->ownershipControl = ZR_NULL;
+    value->ownershipWeakRef = ZR_NULL;
 }
 
 void ZrCore_Value_InitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZrPtr pointerValue) {
@@ -67,6 +85,9 @@ void ZrCore_Value_InitAsNativePointer(struct SZrState *state, SZrTypeValue *valu
     value->value.nativeObject.nativePointer = pointerValue;
     value->isGarbageCollectable = ZR_FALSE;
     value->isNative = ZR_TRUE;
+    value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+    value->ownershipControl = ZR_NULL;
+    value->ownershipWeakRef = ZR_NULL;
 }
 
 TZrBool ZrCore_Value_Equal(struct SZrState *state, SZrTypeValue *value1, SZrTypeValue *value2) {
@@ -161,11 +182,7 @@ SZrTypeValue *ZrCore_Value_GetStackOffsetValue(SZrState *state, TZrMemoryOffset 
 
 
 void ZrCore_Value_Copy(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source) {
-    destination->value = source->value;
-    destination->type = source->type;
-    destination->isGarbageCollectable = ZrCore_Value_IsGarbageCollectable(source);
-    destination->isNative = ZrCore_Value_IsNative(source);
-    ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
+    ZrCore_Ownership_AssignValue(state, destination, source);
 }
 
 TZrUInt64 ZrCore_Value_GetHash(struct SZrState *state, const SZrTypeValue *value) {

@@ -8,6 +8,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_core/state.h"
 
 ZR_FORCE_INLINE TZrMemoryOffset ZrStackSaveAsOffset(SZrState *state, TZrStackValuePointer pointer) {
@@ -163,8 +164,8 @@ TZrBool ZrCore_Stack_CheckFullAndGrow(SZrState *state, TZrSize space, TZrNativeS
 }
 
 void ZrCore_Stack_SetRawObjectValue(struct SZrState *state, SZrTypeValueOnStack *destination, SZrRawObject *object) {
-    ZR_UNUSED_PARAMETER(state);
     SZrTypeValue *destinationValue = ZrCore_Stack_GetValue(destination);
+    ZrCore_Ownership_ReleaseValue(state, destinationValue);
     ZrCore_Value_InitAsRawObject(state, destinationValue, object);
     destinationValue->isGarbageCollectable = ZR_TRUE;
     ZrCore_Gc_ValueStaticAssertIsAlive(state, destinationValue);
@@ -172,13 +173,8 @@ void ZrCore_Stack_SetRawObjectValue(struct SZrState *state, SZrTypeValueOnStack 
 
 
 void ZrCore_Stack_CopyValue(SZrState *state, SZrTypeValueOnStack *destination, SZrTypeValue *source) {
-    ZR_UNUSED_PARAMETER(state);
     SZrTypeValue *destinationValue = ZrCore_Stack_GetValue(destination);
-    destinationValue->value.object = source->value.object;
-    destinationValue->type = source->type;
-    destinationValue->isGarbageCollectable = source->isGarbageCollectable;
-    destinationValue->isNative = source->isNative;
-    ZrCore_Gc_ValueStaticAssertIsAlive(state, destinationValue);
+    ZrCore_Value_Copy(state, destinationValue, source);
 }
 
 TZrMemoryOffset ZrCore_Stack_SavePointerAsOffset(struct SZrState *state, TZrStackValuePointer stackPointer) {
