@@ -8,6 +8,7 @@ SZrAstNode *create_ast_node(SZrParserState *ps, EZrAstNodeType type, SZrFileRang
         return ZR_NULL;
     }
 
+    ZrCore_Memory_RawSet(node, 0, sizeof(SZrAstNode));
     node->type = type;
     node->location = location;
     return node;

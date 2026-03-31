@@ -6,68 +6,68 @@ FUNCTION: <anonymous>
   END_LINE: 155
   PARAMETERS: 0
   HAS_VAR_ARGS: false
-  STACK_SIZE: 17
+  STACK_SIZE: 26
 
-CONSTANTS (14):
-  [0] unknown type: 15
-  [1] unknown type: 15
-  [2] unknown type: 15
-  [3] unknown type: 15
-  [4] unknown type: 15
-  [5] unknown type: 15
-  [6] unknown type: 15
-  [7] unknown type: 15
-  [8] unknown type: 15
-  [9] unknown type: 15
-  [10] unknown type: 15
-  [11] unknown type: 15
-  [12] unknown type: 15
-  [13] null
+CONSTANTS (13):
+  [0] function
+  [1] function
+  [2] function
+  [3] function
+  [4] function
+  [5] function
+  [6] function
+  [7] function
+  [8] function
+  [9] function
+  [10] function
+  [11] function
+  [12] null
 
-LOCAL_VARIABLES (13):
-  [0] arithmetic_test: offset_activate=0, offset_dead=26
-  [1] logical_test: offset_activate=2, offset_dead=26
-  [2] comparison_test: offset_activate=4, offset_dead=26
-  [3] bitwise_test: offset_activate=6, offset_dead=26
-  [4] branch_test: offset_activate=8, offset_dead=26
-  [5] while_test: offset_activate=10, offset_dead=26
-  [6] for_test: offset_activate=12, offset_dead=26
-  [7] foreach_test: offset_activate=14, offset_dead=26
-  [8] function_test: offset_activate=16, offset_dead=26
-  [9] call_function_test: offset_activate=18, offset_dead=26
-  [10] variable_declaration_test: offset_activate=20, offset_dead=26
-  [11] return_test: offset_activate=22, offset_dead=26
-  [12] break_continue_test: offset_activate=24, offset_dead=26
+LOCAL_VARIABLES (12):
+  [0] arithmetic_test: offset_activate=1, offset_dead=0
+  [1] logical_test: offset_activate=2, offset_dead=0
+  [2] comparison_test: offset_activate=3, offset_dead=0
+  [3] bitwise_test: offset_activate=4, offset_dead=0
+  [4] branch_test: offset_activate=5, offset_dead=0
+  [5] while_test: offset_activate=6, offset_dead=0
+  [6] for_test: offset_activate=7, offset_dead=0
+  [7] function_test: offset_activate=8, offset_dead=0
+  [8] call_function_test: offset_activate=9, offset_dead=0
+  [9] variable_declaration_test: offset_activate=10, offset_dead=0
+  [10] return_test: offset_activate=11, offset_dead=0
+  [11] break_continue_test: offset_activate=12, offset_dead=0
 
 CLOSURE_VARIABLES (0):
 
-INSTRUCTIONS (28):
-  [0] CREATE_CLOSURE (extra=1)
-  [1] SET_STACK (extra=0, operand=1)
+TYPE_METADATA:
+  LOCAL_BINDINGS (12):
+    [0] arithmetic_test: function
+    [1] logical_test: function
+    [2] comparison_test: function
+    [3] bitwise_test: function
+    [4] branch_test: function
+    [5] while_test: function
+    [6] for_test: function
+    [7] function_test: function
+    [8] call_function_test: function
+    [9] variable_declaration_test: function
+    [10] return_test: function
+    [11] break_continue_test: function
+  EXPORTED_SYMBOLS (0):
+
+INSTRUCTIONS (14):
+  [0] CREATE_CLOSURE (extra=0)
+  [1] CREATE_CLOSURE (extra=1)
   [2] CREATE_CLOSURE (extra=2)
-  [3] SET_STACK (extra=1, operand=2)
-  [4] CREATE_CLOSURE (extra=3)
-  [5] SET_STACK (extra=2, operand=3)
-  [6] CREATE_CLOSURE (extra=4)
-  [7] SET_STACK (extra=3, operand=4)
-  [8] CREATE_CLOSURE (extra=5)
-  [9] SET_STACK (extra=4, operand=5)
-  [10] CREATE_CLOSURE (extra=6)
-  [11] SET_STACK (extra=5, operand=6)
-  [12] CREATE_CLOSURE (extra=7)
-  [13] SET_STACK (extra=6, operand=7)
-  [14] CREATE_CLOSURE (extra=8)
-  [15] SET_STACK (extra=7, operand=8)
-  [16] CREATE_CLOSURE (extra=9)
-  [17] SET_STACK (extra=8, operand=9)
-  [18] CREATE_CLOSURE (extra=10)
-  [19] SET_STACK (extra=9, operand=10)
-  [20] CREATE_CLOSURE (extra=11)
-  [21] SET_STACK (extra=10, operand=11)
-  [22] CREATE_CLOSURE (extra=12)
-  [23] SET_STACK (extra=11, operand=12)
-  [24] CREATE_CLOSURE (extra=13)
-  [25] SET_STACK (extra=12, operand=13)
-  [26] GET_CONSTANT (extra=13, operand=13)
-  [27] FUNCTION_RETURN (extra=1, operand1=13, operand2=0)
+  [3] CREATE_CLOSURE (extra=3)
+  [4] CREATE_CLOSURE (extra=4)
+  [5] CREATE_CLOSURE (extra=5)
+  [6] CREATE_CLOSURE (extra=6)
+  [7] CREATE_CLOSURE (extra=7)
+  [8] CREATE_CLOSURE (extra=8)
+  [9] CREATE_CLOSURE (extra=9)
+  [10] CREATE_CLOSURE (extra=10)
+  [11] CREATE_CLOSURE (extra=11)
+  [12] GET_CONSTANT (extra=12, operand=12)
+  [13] FUNCTION_RETURN (extra=1, operand1=12, operand2=0)
 
