@@ -1347,6 +1347,61 @@ void test_source_module_exports_complex_function_graph_without_null_call_targets
     TEST_DIVIDER();
 }
 
+void test_imported_function_alias_with_parameters_preserves_call_signature(void) {
+    static const SZrModuleFixtureSource kFixtures[] = {
+            {
+                    "dep",
+                    "sumImpl(left: int, right: int) {\n"
+                    "    return left + right;\n"
+                    "}\n"
+                    "pub var sum = sumImpl;\n",
+            },
+    };
+    SZrTestTimer timer;
+    const char *testSummary = "Imported Function Alias With Parameters Preserves Call Signature";
+    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
+    TZrSize previousFixtureCount = g_module_fixture_source_count;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "var dep = %import(\"dep\");\n"
+                "return dep.sum(3, 4);\n";
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        SZrTypeValue result;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        g_module_fixture_sources = kFixtures;
+        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
+        state->global->sourceLoader = module_fixture_source_loader;
+
+        sourceName = ZrCore_String_Create(state, "imported_function_alias_signature_test.zr", 41);
+        TEST_ASSERT_NOT_NULL(sourceName);
+
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+        TEST_ASSERT_EQUAL_INT64(7, result.value.nativeObject.nativeInt64);
+
+        ZrCore_Function_Free(state, entryFunction);
+        state->global->sourceLoader = ZR_NULL;
+        g_module_fixture_sources = previousFixtures;
+        g_module_fixture_source_count = previousFixtureCount;
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 void test_system_vm_call_module_export_executes_nested_native_export(void) {
     SZrTestTimer timer;
     const char *testSummary = "System Vm CallModuleExport Executes Nested Native Export";
@@ -2156,40 +2211,43 @@ int main(void) {
     // 12. 复杂 source module 导出函数图不应出现 null call target
     RUN_TEST(test_source_module_exports_complex_function_graph_without_null_call_targets);
 
-    // 13. zr.system.vm.callModuleExport 可执行嵌套 native 导出
+    // 13. 带参导出函数别名在跨模块调用时保留调用签名
+    RUN_TEST(test_imported_function_alias_with_parameters_preserves_call_signature);
+
+    // 14. zr.system.vm.callModuleExport 可执行嵌套 native 导出
     RUN_TEST(test_system_vm_call_module_export_executes_nested_native_export);
 
-    // 14. native Vector3 构造在 runtime 绑定全部数值参数
+    // 15. native Vector3 构造在 runtime 绑定全部数值参数
     RUN_TEST(test_native_vector3_constructor_binds_all_numeric_arguments_at_runtime);
 
-    // 15. zr.system 聚合根导出叶子模块
+    // 16. zr.system 聚合根导出叶子模块
     RUN_TEST(test_system_root_aggregates_leaf_modules_and_reuses_cached_instances);
 
-    // 16. zr.system 根模块仅导出子模块
+    // 17. zr.system 根模块仅导出子模块
     RUN_TEST(test_system_root_exports_only_submodules);
 
-    // 17. 叶子模块导出新的 system API
+    // 18. 叶子模块导出新的 system API
     RUN_TEST(test_system_leaf_modules_expose_new_api_and_owned_types);
 
-    // 18. system 原生类型字段元信息完整
+    // 19. system 原生类型字段元信息完整
     RUN_TEST(test_system_native_types_register_complete_struct_fields);
 
-    // 19. 根模块原生元信息包含 modules 数组
+    // 20. 根模块原生元信息包含 modules 数组
     RUN_TEST(test_system_root_native_module_info_exposes_module_links);
 
-    // 20. native enum/interface descriptor 元信息完整暴露
+    // 21. native enum/interface descriptor 元信息完整暴露
     RUN_TEST(test_native_module_info_exposes_enum_and_interface_descriptors);
 
-    // 21. native runtime 注册 enum 静态成员和 interface 继承链
+    // 22. native runtime 注册 enum 静态成员和 interface 继承链
     RUN_TEST(test_native_module_runtime_registers_enum_members_and_interface_inheritance);
 
-    // 22. native enum 构造在 runtime 返回正确实例
+    // 23. native enum 构造在 runtime 返回正确实例
     RUN_TEST(test_native_enum_construction_returns_runtime_enum_instance);
 
-    // 23. native registry 拒绝未来 ABI 版本
+    // 24. native registry 拒绝未来 ABI 版本
     RUN_TEST(test_native_registry_rejects_future_runtime_abi);
 
-    // 24. native registry 拒绝未支持 capability
+    // 25. native registry 拒绝未支持 capability
     RUN_TEST(test_native_registry_rejects_unsupported_capabilities);
 
     return UNITY_END();

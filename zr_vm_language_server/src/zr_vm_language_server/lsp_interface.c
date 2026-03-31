@@ -4,6 +4,32 @@
 
 #include "lsp_interface_internal.h"
 
+static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suffix) {
+    TZrNativeString text;
+    TZrSize length;
+    TZrSize suffixLength;
+
+    if (suffix == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        text = ZrCore_String_GetNativeStringShort(value);
+        length = value->shortStringLength;
+    } else {
+        text = ZrCore_String_GetNativeString(value);
+        length = value->longStringLength;
+    }
+
+    suffixLength = strlen(suffix);
+    return text != ZR_NULL && length >= suffixLength &&
+           memcmp(text + length - suffixLength, suffix, suffixLength) == 0;
+}
+
 SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
@@ -24,6 +50,7 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     context->uriToAnalyzerMap.resizeThreshold = 0;
     context->uriToAnalyzerMap.isValid = ZR_FALSE;
     ZrCore_HashSet_Init(state, &context->uriToAnalyzerMap, 4); // capacityLog2 = 4
+    ZrCore_Array_Init(state, &context->projectIndexes, sizeof(SZrLspProjectIndex *), 2);
     
     if (context->parser == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));
@@ -75,6 +102,7 @@ void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context) {
         ZrLanguageServer_SemanticAnalyzer_Free(state, context->analyzer);
     }
 
+    ZrLanguageServer_Lsp_ProjectIndexes_Free(state, context);
     ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));
 }
 
@@ -167,15 +195,23 @@ SZrFilePosition ZrLanguageServer_Lsp_GetDocumentFilePosition(SZrLspContext *cont
     return ZrLanguageServer_LspPosition_ToFilePosition(position);
 }
 
+TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
+                                                SZrLspContext *context,
+                                                SZrString *uri,
+                                                const TZrChar *content,
+                                                TZrSize contentLength,
+                                                TZrSize version,
+                                                TZrBool allowProjectRefresh) {
+    TZrBool analyzeSuccess;
 
-TZrBool ZrLanguageServer_Lsp_UpdateDocument(SZrState *state,
-                          SZrLspContext *context,
-                          SZrString *uri,
-                          const TZrChar *content,
-                          TZrSize contentLength,
-                          TZrSize version) {
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (lsp_string_ends_with_native(uri, ".zrp")) {
+        return allowProjectRefresh
+                   ? ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state, context, uri, content, contentLength)
+                   : ZR_TRUE;
     }
     
     // 更新文件
@@ -208,8 +244,23 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocument(SZrState *state,
             return ZR_FALSE;
         }
 
-        return ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
+        analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
+        if (!analyzeSuccess) {
+            return ZR_FALSE;
+        }
+
+        return !allowProjectRefresh ||
+               ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state, context, uri, content, contentLength);
     }
+}
+
+TZrBool ZrLanguageServer_Lsp_UpdateDocument(SZrState *state,
+                          SZrLspContext *context,
+                          SZrString *uri,
+                          const TZrChar *content,
+                          TZrSize contentLength,
+                          TZrSize version) {
+    return ZrLanguageServer_Lsp_UpdateDocumentCore(state, context, uri, content, contentLength, version, ZR_TRUE);
 }
 
 // 获取诊断
@@ -456,6 +507,10 @@ TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
         return ZR_FALSE;
     }
     
+    if (ZrLanguageServer_Lsp_ProjectTryGetDefinition(state, context, uri, position, result)) {
+        return ZR_TRUE;
+    }
+
     // 初始化结果数组
     if (!result->isValid) {
         ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 1);
@@ -500,6 +555,10 @@ TZrBool ZrLanguageServer_Lsp_FindReferences(SZrState *state,
                           SZrArray *result) {
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (ZrLanguageServer_Lsp_ProjectTryFindReferences(state, context, uri, position, includeDeclaration, result)) {
+        return ZR_TRUE;
     }
     
     // 初始化结果数组
@@ -672,6 +731,8 @@ TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrLspSymbolInformation *), 8);
     }
 
+    ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(state, context, query, result);
+
     if (!context->uriToAnalyzerMap.isValid || context->uriToAnalyzerMap.buckets == ZR_NULL) {
         return ZR_TRUE;
     }
@@ -679,6 +740,14 @@ TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
     for (bucketIndex = 0; bucketIndex < context->uriToAnalyzerMap.capacity; bucketIndex++) {
         SZrHashKeyValuePair *pair = context->uriToAnalyzerMap.buckets[bucketIndex];
         while (pair != ZR_NULL) {
+            if (pair->key.type != ZR_VALUE_TYPE_NULL &&
+                ZrLanguageServer_Lsp_ProjectContainsUri(state,
+                                                        context,
+                                                        (SZrString *)ZrCore_Value_GetRawObject(&pair->key))) {
+                pair = pair->next;
+                continue;
+            }
+
             if (pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
                 SZrSemanticAnalyzer *analyzer = (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
                 if (analyzer != ZR_NULL && analyzer->symbolTable != ZR_NULL &&

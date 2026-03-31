@@ -189,6 +189,8 @@ void setUp(void) {
 void tearDown(void) {
 }
 
+void test_extern_delegate_parameter_decorator_flags_parsing(void);
+
 // ==================== 基础测试 ====================
 
 // 测试整数字面量解析
@@ -1988,6 +1990,7 @@ int main(void) {
     // 声明测试
     RUN_TEST(test_function_declaration);
     RUN_TEST(test_extern_block_parsing);
+    RUN_TEST(test_extern_delegate_parameter_decorator_flags_parsing);
     RUN_TEST(test_extern_single_declaration_normalizes_to_block);
     RUN_TEST(test_struct_declaration);
     RUN_TEST(test_field_scoped_using_field_parsing);

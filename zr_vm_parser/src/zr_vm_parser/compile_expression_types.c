@@ -3,6 +3,7 @@
 //
 
 #include "compile_expression_internal.h"
+#include "type_inference_internal.h"
 
 SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeName) {
     if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || typeName == ZR_NULL) {
@@ -531,6 +532,105 @@ static TZrBool member_call_requires_bound_receiver(const SZrTypeMemberInfo *memb
     return memberInfo->memberType == ZR_AST_STRUCT_METHOD || memberInfo->memberType == ZR_AST_CLASS_METHOD;
 }
 
+static TZrBool emit_argument_conversion_if_needed(SZrCompilerState *cs,
+                                                  SZrAstNode *argNode,
+                                                  TZrUInt32 argSlot,
+                                                  const SZrInferredType *expectedType) {
+    SZrInferredType actualType;
+    EZrInstructionCode conversionOpcode;
+
+    if (cs == ZR_NULL || argNode == ZR_NULL || expectedType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &actualType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_ExpressionType_Infer(cs, argNode, &actualType)) {
+        ZrParser_InferredType_Free(cs->state, &actualType);
+        return ZR_FALSE;
+    }
+
+    conversionOpcode = ZrParser_InferredType_GetConversionOpcode(&actualType, expectedType);
+    ZrParser_InferredType_Free(cs->state, &actualType);
+    if (conversionOpcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+        return ZR_TRUE;
+    }
+
+    emit_type_conversion(cs, argSlot, argSlot, conversionOpcode);
+    return ZR_TRUE;
+}
+
+static TZrBool compile_arguments_against_function_signature(SZrCompilerState *cs,
+                                                            SZrAstNodeArray *argsToCompile,
+                                                            const SZrFunctionTypeInfo *funcType,
+                                                            TZrUInt32 firstArgSlot) {
+    if (cs == ZR_NULL || argsToCompile == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < argsToCompile->count; index++) {
+        SZrAstNode *argNode = argsToCompile->nodes[index];
+        TZrUInt32 argSlot;
+        SZrInferredType *expectedType;
+
+        if (argNode == ZR_NULL) {
+            continue;
+        }
+
+        argSlot = compile_expression_into_slot(cs, argNode, firstArgSlot + (TZrUInt32)index);
+        if (argSlot == (TZrUInt32)-1 || cs->hasError) {
+            return ZR_FALSE;
+        }
+
+        if (funcType == ZR_NULL || index >= funcType->paramTypes.length) {
+            continue;
+        }
+
+        expectedType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&funcType->paramTypes, index);
+        if (expectedType != ZR_NULL &&
+            !emit_argument_conversion_if_needed(cs, argNode, argSlot, expectedType)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool compile_arguments_against_member_signature(SZrCompilerState *cs,
+                                                          SZrAstNodeArray *argsToCompile,
+                                                          const SZrTypeMemberInfo *memberInfo,
+                                                          TZrUInt32 firstArgSlot) {
+    if (cs == ZR_NULL || argsToCompile == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < argsToCompile->count; index++) {
+        SZrAstNode *argNode = argsToCompile->nodes[index];
+        TZrUInt32 argSlot;
+        SZrInferredType *expectedType;
+
+        if (argNode == ZR_NULL) {
+            continue;
+        }
+
+        argSlot = compile_expression_into_slot(cs, argNode, firstArgSlot + (TZrUInt32)index);
+        if (argSlot == (TZrUInt32)-1 || cs->hasError) {
+            return ZR_FALSE;
+        }
+
+        if (memberInfo == ZR_NULL || index >= memberInfo->parameterTypes.length) {
+            continue;
+        }
+
+        expectedType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterTypes, index);
+        if (expectedType != ZR_NULL &&
+            !emit_argument_conversion_if_needed(cs, argNode, argSlot, expectedType)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode, SZrAstNodeArray *members,
                                          TZrSize memberStartIndex, TZrUInt32 *ioCurrentSlot,
                                          SZrString **ioRootTypeName, TZrBool *ioRootIsTypeReference,
@@ -538,6 +638,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
     TZrUInt32 currentSlot;
     TZrUInt32 pendingReceiverSlot = (TZrUInt32)-1;
     SZrString *pendingCallResultTypeName = ZR_NULL;
+    const SZrTypeMemberInfo *pendingCallMemberInfo = ZR_NULL;
     SZrString *rootTypeName = ioRootTypeName != ZR_NULL ? *ioRootTypeName : ZR_NULL;
     TZrBool rootIsTypeReference = ioRootIsTypeReference != ZR_NULL ? *ioRootIsTypeReference : ZR_FALSE;
     EZrOwnershipQualifier rootOwnershipQualifier =
@@ -579,6 +680,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 bindReceiverForCall = member_call_requires_bound_receiver(typeMember);
                 pendingCallResultTypeName =
                         nextIsFunctionCall && typeMember != ZR_NULL ? typeMember->returnTypeName : ZR_NULL;
+                pendingCallMemberInfo = nextIsFunctionCall ? typeMember : ZR_NULL;
 
                 getterAccessor = find_hidden_property_accessor_member(cs, rootTypeName, memberName, ZR_FALSE);
                 if (!can_use_property_accessor(rootIsTypeReference, getterAccessor)) {
@@ -655,6 +757,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
         } else if (member->type == ZR_AST_FUNCTION_CALL) {
             SZrFunctionCall *call = &member->data.functionCall;
             SZrAstNodeArray *argsToCompile = call->args;
+            SZrFunctionTypeInfo *resolvedFunctionType = ZR_NULL;
 
             if (rootIsTypeReference) {
                 ZrParser_Compiler_Error(cs,
@@ -680,6 +783,23 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         }
                     }
                 }
+
+                if (cs->typeEnv != ZR_NULL &&
+                    resolve_best_function_overload(cs,
+                                                   cs->typeEnv,
+                                                   funcName,
+                                                   call,
+                                                   member->location,
+                                                   &resolvedFunctionType)) {
+                    ZR_UNUSED_PARAMETER(resolvedFunctionType);
+                } else if (cs->compileTimeTypeEnv != ZR_NULL) {
+                    resolve_best_function_overload(cs,
+                                                   cs->compileTimeTypeEnv,
+                                                   funcName,
+                                                   call,
+                                                   member->location,
+                                                   &resolvedFunctionType);
+                }
             }
 
             TZrUInt32 argCount = 0;
@@ -690,13 +810,35 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             }
 
             if (argsToCompile != ZR_NULL) {
-                for (TZrSize j = 0; j < argsToCompile->count; j++) {
-                    SZrAstNode *argNode = argsToCompile->nodes[j];
-                    if (argNode != ZR_NULL) {
-                        TZrUInt32 argSlot =
-                                compile_expression_into_slot(cs, argNode, argBaseSlot + (TZrUInt32)j);
-                        if (argSlot == (TZrUInt32)-1 || cs->hasError) {
-                            break;
+                if (pendingCallMemberInfo != ZR_NULL) {
+                    if (!compile_arguments_against_member_signature(cs,
+                                                                    argsToCompile,
+                                                                    pendingCallMemberInfo,
+                                                                    argBaseSlot)) {
+                        if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                            ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                        }
+                        return;
+                    }
+                } else if (resolvedFunctionType != ZR_NULL) {
+                    if (!compile_arguments_against_function_signature(cs,
+                                                                      argsToCompile,
+                                                                      resolvedFunctionType,
+                                                                      argBaseSlot)) {
+                        if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                            ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                        }
+                        return;
+                    }
+                } else {
+                    for (TZrSize j = 0; j < argsToCompile->count; j++) {
+                        SZrAstNode *argNode = argsToCompile->nodes[j];
+                        if (argNode != ZR_NULL) {
+                            TZrUInt32 argSlot =
+                                    compile_expression_into_slot(cs, argNode, argBaseSlot + (TZrUInt32)j);
+                            if (argSlot == (TZrUInt32)-1 || cs->hasError) {
+                                break;
+                            }
                         }
                     }
                 }
@@ -715,6 +857,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             rootTypeName = pendingCallResultTypeName;
             rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
             pendingCallResultTypeName = ZR_NULL;
+            pendingCallMemberInfo = ZR_NULL;
             rootIsTypeReference = ZR_FALSE;
 
             if (argsToCompile != call->args && argsToCompile != ZR_NULL) {

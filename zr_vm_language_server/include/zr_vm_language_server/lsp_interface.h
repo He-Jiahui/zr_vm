@@ -76,6 +76,7 @@ typedef struct SZrLspContext {
     SZrIncrementalParser *parser;
     SZrSemanticAnalyzer *analyzer;
     SZrHashSet uriToAnalyzerMap;      // URI 到分析器的映射（值为SZrSemanticAnalyzer*）
+    SZrArray projectIndexes;          // 已打开项目索引（SZrLspProjectIndex*，内部使用）
 } SZrLspContext;
 
 // LSP 接口管理函数

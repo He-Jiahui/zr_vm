@@ -64,6 +64,7 @@ ZR_CORE_API void ZrCore_Module_AddToCache(struct SZrState *state, struct SZrStri
 
 // 内部模块导入 helper
 ZR_CORE_API struct SZrObjectModule *ZrCore_Module_ImportByPath(struct SZrState *state, struct SZrString *path);
+ZR_CORE_API TZrInt64 ZrCore_Module_ImportNativeEntry(struct SZrState *state);
 
 // 创建并注册 prototype 的 native 函数
 // 参数: (module, typeName, prototypeType, accessModifier, inherits..., members...)

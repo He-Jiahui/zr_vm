@@ -4,6 +4,42 @@
 
 #include "compiler_internal.h"
 
+static void compiler_struct_append_parameter_type(SZrCompilerState *cs,
+                                                  SZrArray *parameterTypes,
+                                                  SZrType *typeInfo) {
+    SZrInferredType paramType;
+
+    if (cs == ZR_NULL || parameterTypes == ZR_NULL) {
+        return;
+    }
+
+    if (typeInfo != ZR_NULL && ZrParser_AstTypeToInferredType_Convert(cs, typeInfo, &paramType)) {
+        ZrCore_Array_Push(cs->state, parameterTypes, &paramType);
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+    ZrCore_Array_Push(cs->state, parameterTypes, &paramType);
+}
+
+static void compiler_struct_collect_parameter_types(SZrCompilerState *cs,
+                                                    SZrArray *parameterTypes,
+                                                    SZrAstNodeArray *params) {
+    if (cs == ZR_NULL || parameterTypes == ZR_NULL || params == ZR_NULL || params->count == 0) {
+        return;
+    }
+
+    ZrCore_Array_Init(cs->state, parameterTypes, sizeof(SZrInferredType), params->count);
+    for (TZrSize paramIndex = 0; paramIndex < params->count; paramIndex++) {
+        SZrAstNode *paramNode = params->nodes[paramIndex];
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        compiler_struct_append_parameter_type(cs, parameterTypes, paramNode->data.parameter.typeInfo);
+    }
+}
+
 SZrString *get_type_name_from_inferred_type(SZrCompilerState *cs, const SZrInferredType *inferredType) {
     if (cs == ZR_NULL || inferredType == ZR_NULL) {
         return ZR_NULL;
@@ -373,6 +409,8 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             }
             
             SZrTypeMemberInfo memberInfo;
+            memset(&memberInfo, 0, sizeof(memberInfo));
+
             // 初始化所有字段
             memberInfo.memberType = member->type;
             memberInfo.isStatic = ZR_FALSE;
@@ -492,6 +530,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     // 实际的函数编译和引用索引设置需要在方法编译完成后进行
                     if (method->params != ZR_NULL) {
                         memberInfo.parameterCount = (TZrUInt32)method->params->count;
+                        compiler_struct_collect_parameter_types(cs, &memberInfo.parameterTypes, method->params);
                     }
                     memberInfo.isMetaMethod = ZR_FALSE;
                     break;
@@ -530,6 +569,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     // TODO: 需要将元方法编译为函数并存储函数引用索引
                     if (metaFunc->params != ZR_NULL) {
                         memberInfo.parameterCount = (TZrUInt32)metaFunc->params->count;
+                        compiler_struct_collect_parameter_types(cs, &memberInfo.parameterTypes, metaFunc->params);
                     }
                     break;
                 }

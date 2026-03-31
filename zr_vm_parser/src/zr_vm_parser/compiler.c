@@ -338,6 +338,11 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 }
             }
         }
+        if (!cs->hasError && !compiler_build_script_typed_metadata(cs)) {
+            ZrParser_Compiler_Error(cs, "Failed to build typed metadata for compiled script", node->location);
+            return;
+        }
+
         printf("  Finished compiling statements, total instructions: %zu\n", cs->instructionCount);
         exit_scope(cs);
     }

@@ -1613,13 +1613,13 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
     TEST_START("Semantic Analyzer Reports Declared Ownership Initializer Mismatch");
 
     TEST_INFO("Ownership compatibility in variable declarations",
-              "Analyzing an explicit unique<T> declaration initialized from shared<T> should emit a type_mismatch diagnostic");
+              "Analyzing an explicit %unique T declaration initialized from %shared T should emit a type_mismatch diagnostic");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "var borrowed: shared<Resource>;\n"
-            "var owned: unique<Resource> = borrowed;\n";
+            "var borrowed: %shared Resource;\n"
+            "var owned: %unique Resource = borrowed;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_decl_mismatch_test.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrDiagnostic *diagnostic;
@@ -1670,12 +1670,12 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
     TEST_START("Semantic Analyzer Reports Return Ownership Mismatch");
 
     TEST_INFO("Ownership compatibility in return statements",
-              "Analyzing a function that promises unique<T> but returns shared<T> should emit a type_mismatch diagnostic");
+              "Analyzing a function that promises %unique T but returns %shared T should emit a type_mismatch diagnostic");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "upgrade(resource: shared<Resource>): unique<Resource> {\n"
+            "upgrade(resource: %shared Resource): %unique Resource {\n"
             "    return resource;\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_return_mismatch_test.zr", 33);
@@ -1728,14 +1728,14 @@ static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(
     TEST_START("Semantic Analyzer Reports Function Argument Ownership Mismatch");
 
     TEST_INFO("Ownership compatibility in function calls",
-              "Analyzing a direct function call that passes shared<T> into unique<T> should emit a type_mismatch diagnostic");
+              "Analyzing a direct function call that passes %shared T into %unique T should emit a type_mismatch diagnostic");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "consume(resource: unique<Resource>) {\n"
+            "consume(resource: %unique Resource) {\n"
             "}\n"
-            "run(resource: shared<Resource>) {\n"
+            "run(resource: %shared Resource) {\n"
             "    consume(resource);\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_call_mismatch_test.zr", 31);
@@ -1788,17 +1788,17 @@ static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZ
     TEST_START("Semantic Analyzer Reports Method Argument Ownership Mismatch");
 
     TEST_INFO("Ownership compatibility in method calls",
-              "Analyzing an instance method call that passes shared<T> into unique<T> should emit a type_mismatch diagnostic");
+              "Analyzing an instance method call that passes %shared T into %unique T should emit a type_mismatch diagnostic");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
             "class ResourceBox {\n"
-            "    consume(resource: unique<Resource>): int {\n"
+            "    consume(resource: %unique Resource): int {\n"
             "        return 0;\n"
             "    }\n"
             "}\n"
-            "run(box: ResourceBox, resource: shared<Resource>) {\n"
+            "run(box: ResourceBox, resource: %shared Resource) {\n"
             "    box.consume(resource);\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_method_call_mismatch_test.zr", 38);

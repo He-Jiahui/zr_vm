@@ -23,7 +23,7 @@ static TZrBool source_uri_equals(SZrString *left, SZrString *right) {
     }
 
     if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
+        return ZR_TRUE;
     }
 
     if (left->shortStringLength < ZR_VM_LONG_STRING_FLAG) {

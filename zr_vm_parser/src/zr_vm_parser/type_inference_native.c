@@ -20,6 +20,8 @@
 #include <math.h>
 #include <limits.h>
 
+#define ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ((TZrUInt32)-1)
+
 static const SZrTypeValue *native_module_info_get_object_field(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
     SZrString *fieldString;
     SZrTypeValue key;
@@ -254,6 +256,7 @@ static void native_module_info_add_method_member(SZrState *state,
     memberInfo.name = memberName;
     memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
     memberInfo.isStatic = isStatic;
+    memberInfo.parameterCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.returnTypeName = returnTypeName;
     ZrCore_Array_Push(state, &info->members, &memberInfo);
 }
@@ -288,6 +291,7 @@ static void native_module_info_add_meta_method_member(SZrState *state,
     memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
     memberInfo.metaType = metaType;
     memberInfo.isMetaMethod = ZR_TRUE;
+    memberInfo.parameterCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.returnTypeName = returnTypeName;
     ZrCore_Array_Push(state, &info->members, &memberInfo);
 }
@@ -375,8 +379,17 @@ TZrBool inferred_type_from_type_name(SZrCompilerState *cs, SZrString *typeName, 
 static TZrBool inferred_type_from_member_access(SZrCompilerState *cs,
                                                 const SZrTypeMemberInfo *memberInfo,
                                                 SZrInferredType *result) {
+    TZrNativeString memberNameString = ZR_NULL;
+
     if (cs == ZR_NULL || memberInfo == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (memberInfo->name != ZR_NULL) {
+        memberNameString = ZrCore_String_GetNativeStringShort(memberInfo->name);
+        if (memberNameString == ZR_NULL) {
+            memberNameString = ZrCore_String_GetNativeString(memberInfo->name);
+        }
     }
 
     switch (memberInfo->memberType) {
@@ -391,6 +404,20 @@ static TZrBool inferred_type_from_member_access(SZrCompilerState *cs,
         case ZR_AST_CLASS_METHOD:
         case ZR_AST_STRUCT_META_FUNCTION:
         case ZR_AST_CLASS_META_FUNCTION:
+            if (memberNameString != ZR_NULL && strncmp(memberNameString, "__get_", 6) == 0 &&
+                memberInfo->returnTypeName != ZR_NULL) {
+                return inferred_type_from_type_name(cs, memberInfo->returnTypeName, result);
+            }
+            if (memberNameString != ZR_NULL && strncmp(memberNameString, "__set_", 6) == 0 &&
+                memberInfo->parameterTypes.length > 0) {
+                SZrInferredType *parameterType =
+                        (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterTypes, 0);
+                if (parameterType != ZR_NULL) {
+                    ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+                    ZrParser_InferredType_Copy(cs->state, result, parameterType);
+                    return ZR_TRUE;
+                }
+            }
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_CLOSURE);
             return ZR_TRUE;
         default:
@@ -418,6 +445,64 @@ static TZrBool inferred_type_from_member_call(SZrCompilerState *cs,
     }
 }
 
+static TZrBool validate_member_call_arguments(SZrCompilerState *cs,
+                                              const SZrTypeMemberInfo *memberInfo,
+                                              SZrFunctionCall *call,
+                                              SZrFileRange location) {
+    TZrSize argCount;
+
+    if (cs == ZR_NULL || memberInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    argCount = (call != ZR_NULL && call->args != ZR_NULL) ? call->args->count : 0;
+    if (memberInfo->parameterCount == ZR_MEMBER_PARAMETER_COUNT_UNKNOWN &&
+        memberInfo->parameterTypes.length == 0) {
+        return ZR_TRUE;
+    }
+
+    if (memberInfo->parameterCount != (TZrUInt32)argCount) {
+        ZrParser_Compiler_Error(cs, "Argument count mismatch", location);
+        return ZR_FALSE;
+    }
+
+    if (memberInfo->parameterTypes.length == 0) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < memberInfo->parameterTypes.length; index++) {
+        SZrAstNode *argNode;
+        SZrInferredType *paramType;
+        SZrInferredType argType;
+
+        if (call == ZR_NULL || call->args == ZR_NULL || index >= call->args->count) {
+            ZrParser_Compiler_Error(cs, "Argument count mismatch", location);
+            return ZR_FALSE;
+        }
+
+        argNode = call->args->nodes[index];
+        paramType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterTypes, index);
+        if (argNode == ZR_NULL || paramType == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrParser_InferredType_Init(cs->state, &argType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_ExpressionType_Infer(cs, argNode, &argType)) {
+            ZrParser_InferredType_Free(cs->state, &argType);
+            return ZR_FALSE;
+        }
+
+        if (!ZrParser_InferredType_IsCompatible(&argType, paramType)) {
+            ZrParser_TypeError_Report(cs, "Argument type mismatch", paramType, &argType, location);
+            ZrParser_InferredType_Free(cs->state, &argType);
+            return ZR_FALSE;
+        }
+        ZrParser_InferredType_Free(cs->state, &argType);
+    }
+
+    return ZR_TRUE;
+}
+
 TZrBool infer_import_expression_type(SZrCompilerState *cs,
                                      SZrAstNode *node,
                                      SZrInferredType *result) {
@@ -434,7 +519,7 @@ TZrBool infer_import_expression_type(SZrCompilerState *cs,
     }
 
     if (moduleName != ZR_NULL) {
-        ensure_native_module_compile_info(cs, moduleName);
+        ensure_import_module_compile_info(cs, moduleName);
         ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, moduleName);
     } else {
         ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
@@ -831,6 +916,14 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                         ZrParser_Compiler_Error(cs,
                                                 receiver_ownership_call_error(currentType.ownershipQualifier),
                                                 members->nodes[i + 1]->location);
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        ZrParser_InferredType_Free(cs->state, &nextType);
+                        return ZR_FALSE;
+                    }
+                    if (!validate_member_call_arguments(cs,
+                                                        memberInfo,
+                                                        &members->nodes[i + 1]->data.functionCall,
+                                                        members->nodes[i + 1]->location)) {
                         ZrParser_InferredType_Free(cs->state, &currentType);
                         ZrParser_InferredType_Free(cs->state, &nextType);
                         return ZR_FALSE;

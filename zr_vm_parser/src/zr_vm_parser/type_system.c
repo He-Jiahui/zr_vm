@@ -13,6 +13,16 @@
 
 // 类型操作函数实现
 
+static TZrBool inferred_type_is_reference_like(EZrValueType baseType) {
+    return baseType == ZR_VALUE_TYPE_OBJECT ||
+           baseType == ZR_VALUE_TYPE_STRING ||
+           baseType == ZR_VALUE_TYPE_ARRAY ||
+           baseType == ZR_VALUE_TYPE_BUFFER ||
+           baseType == ZR_VALUE_TYPE_FUNCTION ||
+           baseType == ZR_VALUE_TYPE_CLOSURE ||
+           baseType == ZR_VALUE_TYPE_THREAD;
+}
+
 // 初始化类型（使用基础类型）
 void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *type, EZrValueType baseType) {
     if (state == ZR_NULL || type == ZR_NULL) {
@@ -297,9 +307,22 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
         return ZR_TRUE;
     }
 
+    // null 可以转换为显式可空类型，以及现有运行时允许置空的引用类型。
+    if (fromType->baseType == ZR_VALUE_TYPE_NULL) {
+        if (toType->isNullable || inferred_type_is_reference_like(toType->baseType)) {
+            return ZR_TRUE;
+        }
+    }
+
     if (!ownership_qualifier_is_compatible(fromType->ownershipQualifier,
                                            toType->ownershipQualifier)) {
         return ZR_FALSE;
+    }
+
+    if (toType->baseType == ZR_VALUE_TYPE_OBJECT &&
+        toType->typeName == ZR_NULL &&
+        toType->elementTypes.length == 0) {
+        return ZR_TRUE;
     }
 
     if (fromType->baseType == toType->baseType &&
@@ -313,11 +336,6 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
         if (toType->isNullable && !fromType->isNullable) {
             return ZR_TRUE;
         }
-    }
-    
-    // null可以转换为任何可空类型
-    if (fromType->baseType == ZR_VALUE_TYPE_NULL && toType->isNullable) {
-        return ZR_TRUE;
     }
     
     // 整数类型提升：较小的整数类型可以转换为较大的整数类型

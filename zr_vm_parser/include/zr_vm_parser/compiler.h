@@ -247,6 +247,7 @@ typedef struct SZrTypeMemberInfo {
       SZrFunction *compiledFunction;       // 编译后的函数对象（用于最终序列化时重新落常量池）
       TZrUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
       TZrUInt32 parameterCount;             // 参数数量
+      SZrArray parameterTypes;              // 参数类型数组（SZrInferredType）
       EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
     TZrBool isMetaMethod;                 // 是否为元方法
     SZrString *returnTypeName;          // 返回类型名称（字符串表示，用于运行时类型查找）

@@ -1,0 +1,259 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 50
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 9
+
+CONSTANTS (33):
+  [0] function
+  [1] function
+  [2] function
+  [3] function
+  [4] function
+  [5] function
+  [6] function
+  [7] string: "DerivedCounter"
+  [8] null
+  [9] string: "__constructor"
+  [10] string: "MutableCounter"
+  [11] int: 5
+  [12] string: "getTotal"
+  [13] string: "add"
+  [14] int: 3
+  [15] string: "multiply"
+  [16] int: 2
+  [17] string: "Util"
+  [18] string: "magic"
+  [19] string: "BaseCounter"
+  [20] string: "baseValue"
+  [21] string: "int"
+  [22] string: "getBaseValue"
+  [23] function
+  [24] string: "derivedValue"
+  [25] string: "constructor"
+  [26] function
+  [27] function
+  [28] string: "value"
+  [29] function
+  [30] function
+  [31] function
+  [32] function
+
+LOCAL_VARIABLES (2):
+  [0] derived: offset_activate=14, offset_dead=69
+  [1] counter: offset_activate=30, offset_dead=69
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (2):
+    [0] derived: DerivedCounter
+    [1] counter: MutableCounter
+  EXPORTED_SYMBOLS (0):
+
+PROTOTYPES (4):
+// ========== PROTOTYPES FROM DATA (count: 4) ==========
+// --- Prototype 1 ---
+class BaseCounter {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "baseValue",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "getBaseValue",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 23,
+      parameterCount: 1,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+class DerivedCounter : BaseCounter {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "derivedValue",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 26,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "getTotal",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 27,
+      parameterCount: 1,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
+class MutableCounter {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "value",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 29,
+      parameterCount: 2,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "add",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 30,
+      parameterCount: 2,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "multiply",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 31,
+      parameterCount: 2,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 4 ---
+class Util {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "magic",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 32,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (69):
+  [0] OPCODE_71 (extra=0)
+  [1] GET_CONSTANT (extra=1, operand=7)
+  [2] GETTABLE (extra=0, operand1=0, operand2=1)
+  [3] GET_CONSTANT (extra=1, operand=8)
+  [4] GET_CONSTANT (extra=0, operand=8)
+  [5] CREATE_OBJECT (extra=0)
+  [6] OPCODE_16 (extra=0, operand2=458752, operand1=0, operand1_1=7)
+  [7] GET_CONSTANT (extra=1, operand=9)
+  [8] GETTABLE (extra=2, operand1=0, operand2=1)
+  [9] SET_STACK (extra=3, operand=0)
+  [10] FUNCTION_CALL (extra=2, operand1=2, operand2=1)
+  [11] GET_CONSTANT (extra=1, operand=8)
+  [12] GET_CONSTANT (extra=2, operand=8)
+  [13] GET_CONSTANT (extra=3, operand=8)
+  [14] OPCODE_71 (extra=1)
+  [15] GET_CONSTANT (extra=2, operand=10)
+  [16] GETTABLE (extra=1, operand1=1, operand2=2)
+  [17] GET_CONSTANT (extra=2, operand=8)
+  [18] GET_CONSTANT (extra=1, operand=8)
+  [19] CREATE_OBJECT (extra=1)
+  [20] OPCODE_16 (extra=1, operand2=655361, operand1=1, operand1_1=10)
+  [21] GET_CONSTANT (extra=2, operand=9)
+  [22] GETTABLE (extra=3, operand1=1, operand2=2)
+  [23] SET_STACK (extra=4, operand=1)
+  [24] GET_CONSTANT (extra=5, operand=11)
+  [25] FUNCTION_CALL (extra=3, operand1=3, operand2=2)
+  [26] GET_CONSTANT (extra=2, operand=8)
+  [27] GET_CONSTANT (extra=3, operand=8)
+  [28] GET_CONSTANT (extra=4, operand=8)
+  [29] GET_CONSTANT (extra=5, operand=8)
+  [30] GET_STACK (extra=2, operand=0)
+  [31] SET_STACK (extra=3, operand=2)
+  [32] GET_CONSTANT (extra=4, operand=12)
+  [33] GETTABLE (extra=2, operand1=2, operand2=4)
+  [34] FUNCTION_CALL (extra=2, operand1=2, operand2=1)
+  [35] GET_CONSTANT (extra=3, operand=8)
+  [36] GET_CONSTANT (extra=4, operand=8)
+  [37] GET_STACK (extra=3, operand=1)
+  [38] SET_STACK (extra=4, operand=3)
+  [39] GET_CONSTANT (extra=5, operand=13)
+  [40] GETTABLE (extra=3, operand1=3, operand2=5)
+  [41] GET_CONSTANT (extra=6, operand=14)
+  [42] SET_STACK (extra=5, operand=6)
+  [43] GET_CONSTANT (extra=6, operand=8)
+  [44] FUNCTION_CALL (extra=3, operand1=3, operand2=2)
+  [45] GET_CONSTANT (extra=4, operand=8)
+  [46] GET_CONSTANT (extra=5, operand=8)
+  [47] ADD (extra=4, operand1=2, operand2=3)
+  [48] GET_STACK (extra=5, operand=1)
+  [49] SET_STACK (extra=6, operand=5)
+  [50] GET_CONSTANT (extra=7, operand=15)
+  [51] GETTABLE (extra=5, operand1=5, operand2=7)
+  [52] GET_CONSTANT (extra=8, operand=16)
+  [53] SET_STACK (extra=7, operand=8)
+  [54] GET_CONSTANT (extra=8, operand=8)
+  [55] FUNCTION_CALL (extra=5, operand1=5, operand2=2)
+  [56] GET_CONSTANT (extra=6, operand=8)
+  [57] GET_CONSTANT (extra=7, operand=8)
+  [58] ADD (extra=6, operand1=4, operand2=5)
+  [59] OPCODE_71 (extra=7)
+  [60] GET_CONSTANT (extra=8, operand=17)
+  [61] GETTABLE (extra=7, operand1=7, operand2=8)
+  [62] GET_CONSTANT (extra=8, operand=8)
+  [63] GET_CONSTANT (extra=8, operand=18)
+  [64] GETTABLE (extra=7, operand1=7, operand2=8)
+  [65] GET_CONSTANT (extra=8, operand=8)
+  [66] FUNCTION_CALL (extra=7, operand1=7, operand2=0)
+  [67] ADD (extra=8, operand1=6, operand2=7)
+  [68] FUNCTION_RETURN (extra=1, operand1=8, operand2=0)
+

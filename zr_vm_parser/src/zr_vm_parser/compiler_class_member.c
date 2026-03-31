@@ -73,6 +73,8 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
+    TZrUInt32 oldCachedNullConstantIndex = cs->cachedNullConstantIndex;
+    TZrBool oldHasCachedNullConstantIndex = cs->hasCachedNullConstantIndex;
     TZrSize oldInstructionLength = cs->instructions.length;
     TZrSize oldLocalVarLength = cs->localVars.length;
     TZrSize oldConstantLength = cs->constants.length;
@@ -175,6 +177,8 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     cs->localVars.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    cs->cachedNullConstantIndex = 0;
+    cs->hasCachedNullConstantIndex = ZR_FALSE;
 
     enter_scope(cs);
 
@@ -325,6 +329,8 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         cs->localVarCount = oldLocalVarCount;
         cs->constantCount = oldConstantCount;
         cs->closureVarCount = oldClosureVarCount;
+        cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
+        cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
         cs->instructions.length = oldInstructionLength;
         cs->localVars.length = oldLocalVarLength;
         cs->constants.length = oldConstantLength;
@@ -417,6 +423,8 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
+    cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
+    cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
     cs->instructions.length = oldInstructionLength;
     cs->localVars.length = oldLocalVarLength;
     cs->constants.length = oldConstantLength;

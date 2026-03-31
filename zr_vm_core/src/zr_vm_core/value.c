@@ -2,7 +2,6 @@
 // Created by HeJiahui on 2025/6/20.
 //
 #include <stdarg.h>
-#include <stdio.h>
 
 #include "zr_vm_core/value.h"
 
@@ -165,9 +164,12 @@ SZrTypeValue *ZrCore_Value_GetStackOffsetValue(SZrState *state, TZrMemoryOffset 
     TZrMemoryOffset closureIndex = ZR_VM_STACK_GLOBAL_MODULE_REGISTRY - offset;
     ZR_CHECK(state, offset <= ZR_VM_STACK_CLOSURE_MAX, "closure offset is out of range");
     SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValue(callInfoTop->functionBase.valuePointer);
-    if (ZrCore_Value_IsNative(functionBaseValue) && ZrCore_Value_GetType(functionBaseValue) == ZR_VALUE_TYPE_FUNCTION) {
-        // is native function closure
-        SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, functionBaseValue);
+    if (ZrCore_Value_IsNative(functionBaseValue) &&
+        (ZrCore_Value_GetType(functionBaseValue) == ZR_VALUE_TYPE_FUNCTION ||
+         ZrCore_Value_GetType(functionBaseValue) == ZR_VALUE_TYPE_CLOSURE)) {
+        // Native callables are backed by SZrClosureNative. Some producers tag them
+        // as FUNCTION, while native bindings currently surface them as CLOSURE.
+        SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, functionBaseValue->value.object);
         return (closureIndex <= (TZrMemoryOffset) closure->closureValueCount)
                        ? closure->closureValuesExtend[closureIndex - 1]
                        : &global->nullValue;

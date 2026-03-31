@@ -4,7 +4,11 @@
 
 #include "zr_vm_parser/writer.h"
 
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/io.h"
+#include "zr_vm_core/module.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/debug.h"
@@ -269,6 +273,34 @@ static void write_prototype_struct(SZrState *state, FILE *file, const SZrCompile
 
 static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *function, const TZrChar *defaultName);
 
+static TZrUInt64 writer_get_serializable_native_helper_id(FZrNativeFunction function) {
+    if (function == ZR_NULL) {
+        return ZR_IO_NATIVE_HELPER_NONE;
+    }
+
+    if (function == ZrCore_Module_ImportNativeEntry) {
+        return ZR_IO_NATIVE_HELPER_MODULE_IMPORT;
+    }
+
+    if (function == ZrCore_Ownership_NativeUnique) {
+        return ZR_IO_NATIVE_HELPER_OWNERSHIP_UNIQUE;
+    }
+
+    if (function == ZrCore_Ownership_NativeShared) {
+        return ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED;
+    }
+
+    if (function == ZrCore_Ownership_NativeWeak) {
+        return ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK;
+    }
+
+    if (function == ZrCore_Ownership_NativeUsing) {
+        return ZR_IO_NATIVE_HELPER_OWNERSHIP_USING;
+    }
+
+    return ZR_IO_NATIVE_HELPER_NONE;
+}
+
 static void write_function_name(SZrState *state, FILE *file, SZrFunction *function, const TZrChar *defaultName) {
     if (function != ZR_NULL && function->functionName != ZR_NULL) {
         write_string_with_length(state, file, function->functionName);
@@ -340,6 +372,8 @@ static void write_function_local_variables(FILE *file, SZrFunction *function) {
 
 static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *constant) {
     TZrUInt32 type = (TZrUInt32) constant->type;
+    TZrUInt64 startLineConst = 0;
+    TZrUInt64 endLineConst = 0;
     fwrite(&type, sizeof(TZrUInt32), 1, file);
 
     switch (constant->type) {
@@ -375,28 +409,100 @@ static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *c
         case ZR_VALUE_TYPE_CLOSURE: {
             TZrBool hasFunctionValue = ZR_FALSE;
             SZrFunction *functionValue = ZR_NULL;
+            TZrUInt64 helperId = ZR_IO_NATIVE_HELPER_NONE;
             if (constant->value.object != ZR_NULL) {
                 SZrRawObject *rawObj = constant->value.object;
                 if (rawObj->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
                     functionValue = ZR_CAST(SZrFunction *, rawObj);
                     hasFunctionValue = ZR_TRUE;
+                } else if (rawObj->type == ZR_RAW_OBJECT_TYPE_CLOSURE) {
+                    if (constant->isNative) {
+                        SZrClosureNative *nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, rawObj);
+                        if (nativeClosure != ZR_NULL) {
+                            helperId = writer_get_serializable_native_helper_id(nativeClosure->nativeFunction);
+                        }
+                    } else {
+                        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, rawObj);
+                        if (closure != ZR_NULL && closure->function != ZR_NULL) {
+                            functionValue = closure->function;
+                            hasFunctionValue = ZR_TRUE;
+                        }
+                    }
                 }
             }
             fwrite(&hasFunctionValue, sizeof(TZrBool), 1, file);
             if (hasFunctionValue) {
                 write_io_function(state, file, functionValue, ZR_NULL);
             }
+            startLineConst = helperId;
+            break;
+        }
+        case ZR_VALUE_TYPE_NATIVE_POINTER: {
+            FZrNativeFunction nativeFunction = ZR_CAST_PTR(constant->value.nativeObject.nativePointer);
+            startLineConst = writer_get_serializable_native_helper_id(nativeFunction);
             break;
         }
         default:
             break;
     }
 
-    {
-        TZrUInt64 startLineConst = 0;
-        TZrUInt64 endLineConst = 0;
-        fwrite(&startLineConst, sizeof(TZrUInt64), 1, file);
-        fwrite(&endLineConst, sizeof(TZrUInt64), 1, file);
+    fwrite(&startLineConst, sizeof(TZrUInt64), 1, file);
+    fwrite(&endLineConst, sizeof(TZrUInt64), 1, file);
+}
+
+static void write_function_typed_type_ref(FILE *file, SZrState *state, const SZrFunctionTypedTypeRef *typeRef) {
+    TZrUInt32 baseType = ZR_VALUE_TYPE_OBJECT;
+    TZrUInt8 isNullable = ZR_FALSE;
+    TZrUInt32 ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    TZrUInt8 isArray = ZR_FALSE;
+    TZrUInt32 elementBaseType = ZR_VALUE_TYPE_OBJECT;
+
+    if (typeRef != ZR_NULL) {
+        baseType = (TZrUInt32)typeRef->baseType;
+        isNullable = typeRef->isNullable ? ZR_TRUE : ZR_FALSE;
+        ownershipQualifier = (TZrUInt32)typeRef->ownershipQualifier;
+        isArray = typeRef->isArray ? ZR_TRUE : ZR_FALSE;
+        elementBaseType = (TZrUInt32)typeRef->elementBaseType;
+    }
+
+    fwrite(&baseType, sizeof(TZrUInt32), 1, file);
+    fwrite(&isNullable, sizeof(TZrUInt8), 1, file);
+    fwrite(&ownershipQualifier, sizeof(TZrUInt32), 1, file);
+    fwrite(&isArray, sizeof(TZrUInt8), 1, file);
+    write_string_with_length(state, file, typeRef != ZR_NULL ? typeRef->typeName : ZR_NULL);
+    fwrite(&elementBaseType, sizeof(TZrUInt32), 1, file);
+    write_string_with_length(state, file, typeRef != ZR_NULL ? typeRef->elementTypeName : ZR_NULL);
+}
+
+static void write_function_typed_local_bindings(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 typedLocalCount = function != ZR_NULL ? function->typedLocalBindingLength : 0;
+
+    fwrite(&typedLocalCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < typedLocalCount; index++) {
+        SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+        write_string_with_length(state, file, binding->name);
+        fwrite(&binding->stackSlot, sizeof(TZrUInt32), 1, file);
+        write_function_typed_type_ref(file, state, &binding->type);
+    }
+}
+
+static void write_function_typed_export_symbols(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 symbolCount = function != ZR_NULL ? function->typedExportedSymbolLength : 0;
+
+    fwrite(&symbolCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < symbolCount; index++) {
+        SZrFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[index];
+        TZrUInt64 parameterCount = symbol->parameterCount;
+
+        write_string_with_length(state, file, symbol->name);
+        fwrite(&symbol->stackSlot, sizeof(TZrUInt32), 1, file);
+        fwrite(&symbol->accessModifier, sizeof(TZrUInt8), 1, file);
+        fwrite(&symbol->symbolKind, sizeof(TZrUInt8), 1, file);
+        write_function_typed_type_ref(file, state, &symbol->valueType);
+        fwrite(&parameterCount, sizeof(TZrUInt64), 1, file);
+        for (TZrUInt64 paramIndex = 0; paramIndex < parameterCount; paramIndex++) {
+            write_function_typed_type_ref(file, state, &symbol->parameterTypes[paramIndex]);
+        }
     }
 }
 
@@ -556,6 +662,9 @@ static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *funct
             fwrite(&exported->accessModifier, sizeof(TZrUInt8), 1, file);
         }
     }
+
+    write_function_typed_local_bindings(file, state, function);
+    write_function_typed_export_symbols(file, state, function);
 
     write_function_prototypes(state, file, function);
 

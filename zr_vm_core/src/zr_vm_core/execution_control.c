@@ -110,10 +110,16 @@ static SZrFunction *execution_call_info_function(SZrState *state, SZrCallInfo *c
     }
 
     if (baseValue->type == ZR_VALUE_TYPE_CLOSURE) {
+        if (baseValue->isNative) {
+            return ZR_NULL;
+        }
         SZrClosure *frameClosure = ZR_CAST_VM_CLOSURE(state, baseValue->value.object);
         return frameClosure != ZR_NULL ? frameClosure->function : ZR_NULL;
     }
     if (baseValue->type == ZR_VALUE_TYPE_FUNCTION) {
+        if (baseValue->isNative) {
+            return ZR_NULL;
+        }
         return ZR_CAST_FUNCTION(state, baseValue->value.object);
     }
 

@@ -63,12 +63,12 @@ TZrUInt64 value_to_uint64(const SZrTypeValue *value);
 TZrDouble value_to_double(const SZrTypeValue *value);
 
 TZrBool concat_values_to_destination(SZrState *state,
-                                     SZrTypeValue *destination,
+                                     SZrTypeValue *outResult,
                                      const SZrTypeValue *opA,
                                      const SZrTypeValue *opB,
                                      TZrBool safeMode);
 TZrBool try_builtin_add(SZrState *state,
-                        SZrTypeValue *destination,
+                        SZrTypeValue *outResult,
                         const SZrTypeValue *opA,
                         const SZrTypeValue *opB);
 

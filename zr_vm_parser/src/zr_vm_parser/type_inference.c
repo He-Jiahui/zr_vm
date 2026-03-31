@@ -218,6 +218,10 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             return ZR_TRUE;
         }
     }
+
+    if (find_compiler_type_prototype_inference(cs, name) != ZR_NULL) {
+        return inferred_type_from_type_name(cs, name, result);
+    }
     
     // 未找到变量类型，不立即报错
     // 可能是全局对象 zr 的属性访问，或者子函数，或者全局对象的其他属性
@@ -437,20 +441,70 @@ static TZrBool check_array_literal_size(SZrCompilerState *cs, SZrAstNode *arrayL
 
 // 从数组字面量推断类型
 TZrBool ZrParser_ArrayLiteralType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+    SZrArrayLiteral *arrayLiteral;
+    SZrInferredType commonElementType;
+    TZrBool hasCommonElementType = ZR_FALSE;
+
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_ARRAY_LITERAL) {
         return ZR_FALSE;
     }
-    
-    // 数组字面量返回数组类型
+
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_ARRAY);
-    
-    // 推断元素类型（如果需要）
-    // TODO: 注意：元素类型推断需要遍历数组元素，这里暂时跳过
-    // 未来可以实现元素类型推断
-    // 1. 推断所有元素类型
-    // 2. 找到公共类型
-    // 3. 设置elementTypes
-    
+    arrayLiteral = &node->data.arrayLiteral;
+    if (arrayLiteral->elements == ZR_NULL || arrayLiteral->elements->count == 0) {
+        return ZR_TRUE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &commonElementType, ZR_VALUE_TYPE_OBJECT);
+    for (TZrSize index = 0; index < arrayLiteral->elements->count; index++) {
+        SZrAstNode *elementNode = arrayLiteral->elements->nodes[index];
+        SZrInferredType elementType;
+
+        if (elementNode == ZR_NULL) {
+            continue;
+        }
+
+        ZrParser_InferredType_Init(cs->state, &elementType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_ExpressionType_Infer(cs, elementNode, &elementType)) {
+            ZrParser_InferredType_Free(cs->state, &elementType);
+            if (hasCommonElementType) {
+                ZrParser_InferredType_Free(cs->state, &commonElementType);
+            }
+            return ZR_FALSE;
+        }
+
+        if (!hasCommonElementType) {
+            ZrParser_InferredType_Copy(cs->state, &commonElementType, &elementType);
+            hasCommonElementType = ZR_TRUE;
+            ZrParser_InferredType_Free(cs->state, &elementType);
+            continue;
+        }
+
+        {
+            SZrInferredType mergedType;
+
+            ZrParser_InferredType_Init(cs->state, &mergedType, ZR_VALUE_TYPE_OBJECT);
+            if (ZrParser_InferredType_GetCommonType(cs->state, &mergedType, &commonElementType, &elementType)) {
+                ZrParser_InferredType_Free(cs->state, &commonElementType);
+                ZrParser_InferredType_Init(cs->state, &commonElementType, ZR_VALUE_TYPE_OBJECT);
+                ZrParser_InferredType_Copy(cs->state, &commonElementType, &mergedType);
+                ZrParser_InferredType_Free(cs->state, &mergedType);
+            } else {
+                ZrParser_InferredType_Free(cs->state, &commonElementType);
+                ZrParser_InferredType_Init(cs->state, &commonElementType, ZR_VALUE_TYPE_OBJECT);
+            }
+        }
+
+        ZrParser_InferredType_Free(cs->state, &elementType);
+    }
+
+    if (!hasCommonElementType) {
+        ZrParser_InferredType_Free(cs->state, &commonElementType);
+        return ZR_TRUE;
+    }
+
+    ZrCore_Array_Init(cs->state, &result->elementTypes, sizeof(SZrInferredType), 1);
+    ZrCore_Array_Push(cs->state, &result->elementTypes, &commonElementType);
     return ZR_TRUE;
 }
 

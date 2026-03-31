@@ -672,14 +672,65 @@ SZrAstNode *parse_owned_class_declaration(SZrParserState *ps) {
 
 // 解析成员访问和函数调用
 
+static TZrBool is_member_name_token(EZrToken token) {
+    return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST ||
+           (token >= ZR_TK_MODULE && token <= ZR_TK_NAN);
+}
+
+static SZrAstNode *parse_member_name(SZrParserState *ps) {
+    SZrFileRange memberLoc;
+    EZrToken token;
+    SZrString *name = ZR_NULL;
+    TZrNativeString nativeName = ZR_NULL;
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    token = ps->lexer->t.token;
+    if (!is_member_name_token(token)) {
+        report_error(ps, "Expected identifier");
+        return ZR_NULL;
+    }
+
+    memberLoc = get_current_token_location(ps);
+    if (token == ZR_TK_IDENTIFIER) {
+        name = ps->lexer->t.seminfo.stringValue;
+        nativeName = name != ZR_NULL ? ZrCore_String_GetNativeString(name) : ZR_NULL;
+        if (nativeName != ZR_NULL && strcmp(nativeName, "import") == 0 && peek_token(ps) == ZR_TK_LPAREN) {
+            report_error(ps, "Legacy import() syntax is not supported; use %import");
+            skip_legacy_import_call(ps);
+            return ZR_NULL;
+        }
+    } else if (token == ZR_TK_TEST) {
+        name = ps->lexer->t.seminfo.stringValue;
+        if (name == ZR_NULL) {
+            name = ZrCore_String_Create(ps->state, "test", 4);
+        }
+    } else {
+        const TZrChar *tokenStr = ZrParser_Lexer_TokenToString(ps->lexer, token);
+        if (tokenStr != ZR_NULL) {
+            name = ZrCore_String_Create(ps->state, (TZrNativeString)tokenStr, strlen(tokenStr));
+        }
+    }
+
+    if (name == ZR_NULL) {
+        report_error(ps, "Failed to create member name");
+        return ZR_NULL;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    return create_identifier_node_with_location(ps, name, memberLoc);
+}
+
 SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
     SZrFileRange startLoc = base->location;
 
     while (ZR_TRUE) {
         // 点号成员访问
         if (consume_token(ps, ZR_TK_DOT)) {
-            // 期望标识符
-            if (ps->lexer->t.token != ZR_TK_IDENTIFIER) {
+            // 成员名上下文允许关键字以普通名称形式出现，例如 zr.ffi.out
+            if (!is_member_name_token(ps->lexer->t.token)) {
                 const TZrChar *tokenStr = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
                 TZrChar errorMsg[256];
                 snprintf(errorMsg, sizeof(errorMsg), "Expected identifier after '.' (遇到 '%s')", tokenStr);
@@ -687,9 +738,9 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 return ZR_NULL;
             }
 
-            SZrAstNode *property = parse_identifier(ps);
+            SZrAstNode *property = parse_member_name(ps);
             if (property == ZR_NULL) {
-                // parse_identifier 已经报告了错误
+                // parse_member_name 已经报告了错误
                 return ZR_NULL;
             }
 

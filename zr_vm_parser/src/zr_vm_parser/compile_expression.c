@@ -494,6 +494,10 @@ static TZrBool is_const_variable(SZrCompilerState *cs, SZrString *name, SZrArray
 
 // 编译赋值表达式
 static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    EZrInstructionCode assignmentConversionOpcode = ZR_INSTRUCTION_ENUM(ENUM_MAX);
+    SZrInferredType leftType;
+    SZrInferredType rightType;
+
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
@@ -506,10 +510,28 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     const TZrChar *op = node->data.assignmentExpression.op.op;
     SZrAstNode *left = node->data.assignmentExpression.left;
     SZrAstNode *right = node->data.assignmentExpression.right;
+
+    ZrParser_InferredType_Init(cs->state, &leftType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(cs->state, &rightType, ZR_VALUE_TYPE_OBJECT);
+    if (strcmp(op, "=") == 0 &&
+        ZrParser_ExpressionType_Infer(cs, left, &leftType) &&
+        ZrParser_ExpressionType_Infer(cs, right, &rightType)) {
+        if (!ZrParser_AssignmentCompatibility_Check(cs, &leftType, &rightType, node->location)) {
+            ZrParser_InferredType_Free(cs->state, &leftType);
+            ZrParser_InferredType_Free(cs->state, &rightType);
+            return;
+        }
+        assignmentConversionOpcode = ZrParser_InferredType_GetConversionOpcode(&rightType, &leftType);
+    }
+    ZrParser_InferredType_Free(cs->state, &leftType);
+    ZrParser_InferredType_Free(cs->state, &rightType);
     
     // 编译右值
     ZrParser_Expression_Compile(cs, right);
     TZrUInt32 rightSlot = cs->stackSlotCount - 1;
+    if (!cs->hasError && assignmentConversionOpcode != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+        emit_type_conversion(cs, rightSlot, rightSlot, assignmentConversionOpcode);
+    }
     
     // 处理左值（标识符）
     if (left->type == ZR_AST_IDENTIFIER_LITERAL) {

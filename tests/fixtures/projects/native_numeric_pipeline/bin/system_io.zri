@@ -1,0 +1,152 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 20
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 5
+
+CONSTANTS (4):
+  [0] null
+  [1] native closure
+  [2] string: "zr.system"
+  [3] function
+
+LOCAL_VARIABLES (3):
+  [0] persistReportImpl: offset_activate=0, offset_dead=8
+  [1] system: offset_activate=5, offset_dead=8
+  [2] persistReport: offset_activate=8, offset_dead=8
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (3):
+    [0] persistReportImpl: function
+    [1] system: zr.system
+    [3] persistReport: object
+  EXPORTED_SYMBOLS (2):
+    fn persistReportImpl(object): object
+    fn persistReport(object): object
+
+INSTRUCTIONS (10):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=1)
+  [2] GET_CONSTANT (extra=2, operand=2)
+  [3] FUNCTION_CALL (extra=1, operand1=1, operand2=1)
+  [4] GET_CONSTANT (extra=2, operand=0)
+  [5] CREATE_CLOSURE (extra=2)
+  [6] SET_STACK (extra=0, operand=2)
+  [7] GET_STACK (extra=3, operand=0)
+  [8] GET_CONSTANT (extra=4, operand=0)
+  [9] FUNCTION_RETURN (extra=1, operand1=4, operand2=0)
+
+CHILD_FUNCTIONS (1):
+  [0] FUNCTION:
+    NAME: persistReportImpl
+    START_LINE: 3
+    END_LINE: 17
+    PARAMETERS: 1
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 20
+    CONSTANTS (15):
+      [0] string: "tests/fixtures/projects/native_numeric_pipeline/bin/out"
+      [1] string: "fs"
+      [2] null
+      [3] string: "createDirectories"
+      [4] string: "/report.txt"
+      [5] string: "NATIVE_NUMERIC_PIPELINE_PASS"
+      [6] string: "
+checksum="
+      [7] string: "checksum"
+      [8] string: "
+loaded="
+      [9] string: "loadedModuleCount"
+      [10] string: "writeText"
+      [11] string: "readText"
+      [12] string: "path"
+      [13] string: "banner"
+      [14] string: "replay"
+    INSTRUCTIONS (79):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] OPCODE_6 (extra=2)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] OPCODE_8 (extra=2, operand1=2, operand2=3)
+      [4] GET_CONSTANT (extra=3, operand=2)
+      [5] GET_CONSTANT (extra=3, operand=3)
+      [6] OPCODE_8 (extra=2, operand1=2, operand2=3)
+      [7] GET_CONSTANT (extra=3, operand=2)
+      [8] GET_STACK (extra=3, operand=1)
+      [9] OPCODE_68 (extra=2, operand1=2, operand2=1)
+      [10] GET_CONSTANT (extra=3, operand=2)
+      [11] GET_CONSTANT (extra=2, operand=2)
+      [12] GET_STACK (extra=2, operand=1)
+      [13] GET_CONSTANT (extra=3, operand=4)
+      [14] OPCODE_20 (extra=4, operand2=196610, operand1=2, operand1_1=3)
+      [15] GET_CONSTANT (extra=5, operand=5)
+      [16] GET_STACK (extra=6, operand=5)
+      [17] GET_CONSTANT (extra=7, operand=6)
+      [18] OPCODE_20 (extra=8, operand2=458758, operand1=6, operand1_1=7)
+      [19] GET_STACK (extra=9, operand=0)
+      [20] GET_CONSTANT (extra=10, operand=7)
+      [21] OPCODE_8 (extra=9, operand1=9, operand2=10)
+      [22] GET_CONSTANT (extra=10, operand=2)
+      [23] OPCODE_17 (extra=10, operand2=589832, operand1=8, operand1_1=9)
+      [24] GET_CONSTANT (extra=11, operand=8)
+      [25] OPCODE_17 (extra=12, operand2=720906, operand1=10, operand1_1=11)
+      [26] GET_STACK (extra=13, operand=0)
+      [27] GET_CONSTANT (extra=14, operand=9)
+      [28] OPCODE_8 (extra=13, operand1=13, operand2=14)
+      [29] GET_CONSTANT (extra=14, operand=2)
+      [30] OPCODE_17 (extra=14, operand2=851980, operand1=12, operand1_1=13)
+      [31] OPCODE_6 (extra=15)
+      [32] GET_CONSTANT (extra=16, operand=1)
+      [33] OPCODE_8 (extra=15, operand1=15, operand2=16)
+      [34] GET_CONSTANT (extra=16, operand=2)
+      [35] GET_CONSTANT (extra=16, operand=10)
+      [36] OPCODE_8 (extra=15, operand1=15, operand2=16)
+      [37] GET_CONSTANT (extra=16, operand=2)
+      [38] GET_STACK (extra=16, operand=4)
+      [39] GET_STACK (extra=17, operand=14)
+      [40] OPCODE_68 (extra=15, operand1=15, operand2=2)
+      [41] GET_CONSTANT (extra=16, operand=2)
+      [42] GET_CONSTANT (extra=17, operand=2)
+      [43] GET_CONSTANT (extra=15, operand=2)
+      [44] OPCODE_6 (extra=15)
+      [45] GET_CONSTANT (extra=16, operand=1)
+      [46] OPCODE_8 (extra=15, operand1=15, operand2=16)
+      [47] GET_CONSTANT (extra=16, operand=2)
+      [48] GET_CONSTANT (extra=16, operand=11)
+      [49] OPCODE_8 (extra=15, operand1=15, operand2=16)
+      [50] GET_CONSTANT (extra=16, operand=2)
+      [51] GET_STACK (extra=16, operand=4)
+      [52] OPCODE_68 (extra=15, operand1=15, operand2=1)
+      [53] GET_CONSTANT (extra=16, operand=2)
+      [54] CREATE_OBJECT (extra=16)
+      [55] GET_CONSTANT (extra=17, operand=12)
+      [56] GET_STACK (extra=18, operand=4)
+      [57] OPCODE_9 (extra=18, operand1=16, operand2=17)
+      [58] GET_CONSTANT (extra=17, operand=2)
+      [59] GET_CONSTANT (extra=18, operand=2)
+      [60] GET_CONSTANT (extra=17, operand=13)
+      [61] GET_STACK (extra=18, operand=5)
+      [62] OPCODE_9 (extra=18, operand1=16, operand2=17)
+      [63] GET_CONSTANT (extra=17, operand=2)
+      [64] GET_CONSTANT (extra=18, operand=2)
+      [65] GET_CONSTANT (extra=17, operand=14)
+      [66] GET_STACK (extra=18, operand=15)
+      [67] OPCODE_9 (extra=18, operand1=16, operand2=17)
+      [68] GET_CONSTANT (extra=17, operand=2)
+      [69] GET_CONSTANT (extra=18, operand=2)
+      [70] GET_CONSTANT (extra=17, operand=7)
+      [71] GET_STACK (extra=18, operand=0)
+      [72] GET_CONSTANT (extra=19, operand=7)
+      [73] OPCODE_8 (extra=18, operand1=18, operand2=19)
+      [74] GET_CONSTANT (extra=19, operand=2)
+      [75] OPCODE_9 (extra=18, operand1=16, operand2=17)
+      [76] GET_CONSTANT (extra=17, operand=2)
+      [77] GET_CONSTANT (extra=18, operand=2)
+      [78] FUNCTION_RETURN (extra=1, operand1=16, operand2=0)
+
+

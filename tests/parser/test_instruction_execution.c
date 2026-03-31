@@ -120,6 +120,142 @@ static void destroy_test_state(SZrState *state) {
     }
 }
 
+typedef struct SZrImportTestFixture {
+    const TZrChar *moduleName;
+    const TZrByte *bytes;
+    TZrSize length;
+    TZrBool isBinary;
+    TZrBool consumed;
+} SZrImportTestFixture;
+
+static SZrImportTestFixture g_import_test_fixture = {0};
+
+static TZrBytePtr import_test_fixture_read(SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size) {
+    SZrImportTestFixture *fixture = (SZrImportTestFixture *)customData;
+    ZR_UNUSED_PARAMETER(state);
+
+    if (size == ZR_NULL || fixture == ZR_NULL || fixture->consumed || fixture->bytes == ZR_NULL || fixture->length == 0) {
+        if (size != ZR_NULL) {
+            *size = 0;
+        }
+        return ZR_NULL;
+    }
+
+    fixture->consumed = ZR_TRUE;
+    *size = fixture->length;
+    return (TZrBytePtr)fixture->bytes;
+}
+
+static void import_test_fixture_close(SZrState *state, TZrPtr customData) {
+    ZR_UNUSED_PARAMETER(state);
+    ZR_UNUSED_PARAMETER(customData);
+}
+
+static TZrBool import_test_fixture_source_loader(SZrState *state,
+                                                 TZrNativeString sourcePath,
+                                                 TZrNativeString md5,
+                                                 SZrIo *io) {
+    ZR_UNUSED_PARAMETER(md5);
+
+    if (state == ZR_NULL || sourcePath == ZR_NULL || io == ZR_NULL || g_import_test_fixture.moduleName == ZR_NULL ||
+        strcmp(sourcePath, g_import_test_fixture.moduleName) != 0) {
+        return ZR_FALSE;
+    }
+
+    g_import_test_fixture.consumed = ZR_FALSE;
+    ZrCore_Io_Init(state,
+                   io,
+                   import_test_fixture_read,
+                   import_test_fixture_close,
+                   &g_import_test_fixture);
+    io->isBinary = g_import_test_fixture.isBinary;
+    return ZR_TRUE;
+}
+
+static void install_import_test_fixture(SZrState *state,
+                                        const TZrChar *moduleName,
+                                        const TZrByte *bytes,
+                                        TZrSize length,
+                                        TZrBool isBinary) {
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(moduleName);
+    TEST_ASSERT_NOT_NULL(bytes);
+    TEST_ASSERT_TRUE(length > 0);
+
+    ZrParser_ToGlobalState_Register(state);
+    g_import_test_fixture.moduleName = moduleName;
+    g_import_test_fixture.bytes = bytes;
+    g_import_test_fixture.length = length;
+    g_import_test_fixture.isBinary = isBinary;
+    g_import_test_fixture.consumed = ZR_FALSE;
+    state->global->sourceLoader = import_test_fixture_source_loader;
+}
+
+static TZrByte *read_test_file_bytes(const TZrChar *path, TZrSize *outLength) {
+    FILE *file;
+    long fileSize;
+    TZrByte *buffer;
+
+    if (path == ZR_NULL || outLength == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    file = fopen(path, "rb");
+    if (file == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    fileSize = ftell(file);
+    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    buffer = (TZrByte *)malloc((size_t)fileSize);
+    if (buffer == ZR_NULL) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    if (fileSize > 0 && fread(buffer, 1, (size_t)fileSize, file) != (size_t)fileSize) {
+        free(buffer);
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    fclose(file);
+    *outLength = (TZrSize)fileSize;
+    return buffer;
+}
+
+static TZrByte *build_binary_import_fixture(SZrState *state,
+                                            const TZrChar *moduleSource,
+                                            const TZrChar *binaryPath,
+                                            TZrSize *outLength) {
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(moduleSource);
+    TEST_ASSERT_NOT_NULL(binaryPath);
+    TEST_ASSERT_NOT_NULL(outLength);
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)binaryPath, strlen(binaryPath));
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, moduleSource, strlen(moduleSource), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+
+    return read_test_file_bytes(binaryPath, outLength);
+}
+
 static TZrInt64 g_usingCloseInvocationCount = 0;
 
 static TZrInt64 test_close_meta_native(struct SZrState *state) {
@@ -582,6 +718,22 @@ static TZrBool execute_function_and_get_result(SZrState *state, SZrFunction *fun
     }
 
     return ZR_FALSE;
+}
+
+static TZrUInt32 count_instruction_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
+    TZrUInt32 count = 0;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return 0;
+    }
+
+    for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+        if ((EZrInstructionCode)function->instructionsList[index].instruction.operationCode == opcode) {
+            count++;
+        }
+    }
+
+    return count;
 }
 
 // 测试初始化和清理
@@ -2316,6 +2468,102 @@ void test_execute_nested_using_return_invokes_all_close_meta(void) {
     TEST_DIVIDER();
 }
 
+void test_execute_source_import_typed_call_runtime_result(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Source Import Typed Call Runtime Result";
+    const char *moduleSource = "add(lhs: float, rhs: float): float { return lhs + rhs; }";
+    const char *source = "var math = %import(\"math\"); return math.add(1, 2.5);";
+    SZrTypeValue result;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+    TEST_INFO("Source import typed call execution",
+              "Testing that source-imported typed functions emit TO_FLOAT and return the executed float result");
+
+    {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        install_import_test_fixture(state,
+                                    "math",
+                                    (const TZrByte *)moduleSource,
+                                    strlen(moduleSource),
+                                    ZR_FALSE);
+
+        sourceName = ZrCore_String_Create(state, "source_import_runtime_test.zr", 29);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_EQUAL_UINT32(1, count_instruction_opcode(function, ZR_INSTRUCTION_ENUM(TO_FLOAT)));
+        TEST_ASSERT_TRUE(execute_function_and_get_result(state, function, &result));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FLOAT(result.type));
+        TEST_ASSERT_DOUBLE_WITHIN(0.0001, 3.5, result.value.nativeObject.nativeDouble);
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+void test_execute_binary_import_typed_call_runtime_result(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Binary Import Typed Call Runtime Result";
+    const char *moduleSource = "add(lhs: float, rhs: float): float { return lhs + rhs; }";
+    const char *source = "var math = %import(\"math\"); return math.add(1, 2.5);";
+    const char *binaryPath = "instruction_import_runtime_fixture.zro";
+    SZrTypeValue result;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+    TEST_INFO("Binary import typed call execution",
+              "Testing that binary-imported typed functions emit TO_FLOAT and return the executed float result");
+
+    {
+        SZrState *state = create_test_state();
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes = ZR_NULL;
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        binaryBytes = build_binary_import_fixture(state, moduleSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+        install_import_test_fixture(state, "math", binaryBytes, binaryLength, ZR_TRUE);
+
+        sourceName = ZrCore_String_Create(state, "binary_import_runtime_test.zr", 29);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_EQUAL_UINT32(1, count_instruction_opcode(function, ZR_INSTRUCTION_ENUM(TO_FLOAT)));
+        TEST_ASSERT_TRUE(execute_function_and_get_result(state, function, &result));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FLOAT(result.type));
+        TEST_ASSERT_DOUBLE_WITHIN(0.0001, 3.5, result.value.nativeObject.nativeDouble);
+
+        free(binaryBytes);
+        remove(binaryPath);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // ==================== 主函数 ====================
 
 int main(void) {
@@ -2372,6 +2620,8 @@ int main(void) {
     RUN_TEST(test_execute_using_statement_invokes_close_meta);
     RUN_TEST(test_execute_using_declaration_invokes_close_meta);
     RUN_TEST(test_execute_nested_using_return_invokes_all_close_meta);
+    RUN_TEST(test_execute_source_import_typed_call_runtime_result);
+    RUN_TEST(test_execute_binary_import_typed_call_runtime_result);
 
     // GETTABLE/SETTABLE 指令测试
     printf("==========\n");

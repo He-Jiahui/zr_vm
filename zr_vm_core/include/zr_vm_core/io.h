@@ -11,8 +11,18 @@
 struct SZrState;
 struct SZrGlobalState;
 struct SZrString;
+struct SZrFunction;
 
 typedef TZrBytePtr (*FZrIoRead)(struct SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size);
+
+typedef enum EZrIoNativeHelperId {
+    ZR_IO_NATIVE_HELPER_NONE = 0,
+    ZR_IO_NATIVE_HELPER_MODULE_IMPORT = 1,
+    ZR_IO_NATIVE_HELPER_OWNERSHIP_UNIQUE = 2,
+    ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED = 3,
+    ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK = 4,
+    ZR_IO_NATIVE_HELPER_OWNERSHIP_USING = 5
+} EZrIoNativeHelperId;
 
 typedef EZrThreadStatus (*FZrIoWrite)(struct SZrState *state, TZrBytePtr buffer, TZrSize size, TZrPtr customData);
 
@@ -80,6 +90,32 @@ struct SZrIoFunctionExportedVariable {
 
 typedef struct SZrIoFunctionExportedVariable SZrIoFunctionExportedVariable;
 
+typedef struct SZrIoFunctionTypedTypeRef {
+    EZrValueType baseType;
+    TZrBool isNullable;
+    TZrUInt32 ownershipQualifier;
+    TZrBool isArray;
+    struct SZrString *typeName;
+    EZrValueType elementBaseType;
+    struct SZrString *elementTypeName;
+} SZrIoFunctionTypedTypeRef;
+
+typedef struct SZrIoFunctionTypedLocalBinding {
+    struct SZrString *name;
+    TZrUInt32 stackSlot;
+    SZrIoFunctionTypedTypeRef type;
+} SZrIoFunctionTypedLocalBinding;
+
+typedef struct SZrIoFunctionTypedExportSymbol {
+    struct SZrString *name;
+    TZrUInt32 stackSlot;
+    TZrUInt8 accessModifier;
+    TZrUInt8 symbolKind;
+    SZrIoFunctionTypedTypeRef valueType;
+    TZrSize parameterCount;
+    SZrIoFunctionTypedTypeRef *parameterTypes;
+} SZrIoFunctionTypedExportSymbol;
+
 struct SZrIoFunction;
 
 struct SZrIoFunctionClosure {
@@ -138,8 +174,14 @@ struct SZrIoFunction {
     SZrIoFunctionConstantVariable *constantVariables;
     TZrSize exportedVariablesLength;
     SZrIoFunctionExportedVariable *exportedVariables;
+    TZrSize typedLocalBindingsLength;
+    SZrIoFunctionTypedLocalBinding *typedLocalBindings;
+    TZrSize typedExportedSymbolsLength;
+    SZrIoFunctionTypedExportSymbol *typedExportedSymbols;
     TZrSize prototypesLength;                // prototype 数量
+    TZrSize classesLength;
     SZrIoClass *classes;                      // class prototype 数组（如果 type 是 CLASS）
+    TZrSize structsLength;
     SZrIoStruct *structs;                     // struct prototype 数组（如果 type 是 STRUCT）
     TZrSize closuresLength;
     SZrIoFunctionClosure *closures;
@@ -286,4 +328,8 @@ ZR_CORE_API SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io);
 ZR_CORE_API void ZrCore_Io_ReadSourceFree(struct SZrGlobalState *global, SZrIoSource *source);
 
 ZR_CORE_API SZrIoSource *ZrCore_Io_LoadSource(struct SZrState *state, TZrNativeString sourceName, TZrNativeString md5);
+
+ZR_CORE_API struct SZrFunction *ZrCore_Io_LoadEntryFunctionToRuntime(struct SZrState *state,
+                                                                     const SZrIoSource *source);
+ZR_CORE_API FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helperId);
 #endif // ZR_VM_CORE_IO_H

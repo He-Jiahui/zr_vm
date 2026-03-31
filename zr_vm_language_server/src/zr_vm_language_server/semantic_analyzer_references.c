@@ -13,7 +13,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
     if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrString *name = ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(state, node);
         if (name != ZR_NULL) {
-            SZrSymbol *symbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, name, ZR_NULL);
+            SZrSymbol *symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable,
+                                                                              name,
+                                                                              node->location);
             if (symbol != ZR_NULL) {
                 // 根据上下文判断引用类型
                 EZrReferenceType refType = ZR_REFERENCE_READ; // 默认是读引用
@@ -147,7 +149,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
                 if (primaryExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
                     SZrString *name = ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(state, primaryExpr->property);
                     if (name != ZR_NULL) {
-                        SZrSymbol *symbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, name, ZR_NULL);
+                        SZrSymbol *symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable,
+                                                                                          name,
+                                                                                          primaryExpr->property->location);
                         if (symbol != ZR_NULL && symbol->type == ZR_SYMBOL_FUNCTION) {
                             // 如果后面有函数调用，则是调用引用
                             TZrBool isCall = (primaryExpr->members != ZR_NULL && 
@@ -249,7 +253,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
                 if (assignExpr->left->type == ZR_AST_IDENTIFIER_LITERAL) {
                     SZrString *name = ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(state, assignExpr->left);
                     if (name != ZR_NULL) {
-                        SZrSymbol *symbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, name, ZR_NULL);
+                        SZrSymbol *symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable,
+                                                                                          name,
+                                                                                          assignExpr->left->location);
                         if (symbol != ZR_NULL) {
                             ZrLanguageServer_ReferenceTracker_AddReference(state, analyzer->referenceTracker,
                                                            symbol, assignExpr->left->location, 

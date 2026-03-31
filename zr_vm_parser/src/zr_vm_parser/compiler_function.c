@@ -37,6 +37,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
+    TZrUInt32 oldCachedNullConstantIndex = cs->cachedNullConstantIndex;
+    TZrBool oldHasCachedNullConstantIndex = cs->hasCachedNullConstantIndex;
     TZrSize oldInstructionLength = cs->instructions.length;
     TZrSize oldLocalVarLength = cs->localVars.length;
     TZrSize oldConstantLength = cs->constants.length;
@@ -164,6 +166,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->localVars.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    cs->cachedNullConstantIndex = 0;
+    cs->hasCachedNullConstantIndex = ZR_FALSE;
 
     // 进入函数作用域（嵌套函数需要设置父编译器引用）
     // 保存父编译器引用（如果有）
@@ -336,6 +340,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->localVarCount = oldLocalVarCount;
         cs->constantCount = oldConstantCount;
         cs->closureVarCount = oldClosureVarCount;
+        cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
+        cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
         cs->instructions.length = oldInstructionLength;
         cs->localVars.length = oldLocalVarLength;
         cs->constants.length = oldConstantLength;
@@ -463,6 +469,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
+    cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
+    cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
     cs->instructions.length = oldInstructionLength;
     cs->localVars.length = oldLocalVarLength;
     cs->constants.length = oldConstantLength;

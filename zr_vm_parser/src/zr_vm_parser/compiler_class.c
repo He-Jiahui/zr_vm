@@ -4,6 +4,42 @@
 
 #include "compiler_internal.h"
 
+static void compiler_class_append_parameter_type(SZrCompilerState *cs,
+                                                 SZrArray *parameterTypes,
+                                                 SZrType *typeInfo) {
+    SZrInferredType paramType;
+
+    if (cs == ZR_NULL || parameterTypes == ZR_NULL) {
+        return;
+    }
+
+    if (typeInfo != ZR_NULL && ZrParser_AstTypeToInferredType_Convert(cs, typeInfo, &paramType)) {
+        ZrCore_Array_Push(cs->state, parameterTypes, &paramType);
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+    ZrCore_Array_Push(cs->state, parameterTypes, &paramType);
+}
+
+static void compiler_class_collect_parameter_types(SZrCompilerState *cs,
+                                                   SZrArray *parameterTypes,
+                                                   SZrAstNodeArray *params) {
+    if (cs == ZR_NULL || parameterTypes == ZR_NULL || params == ZR_NULL || params->count == 0) {
+        return;
+    }
+
+    ZrCore_Array_Init(cs->state, parameterTypes, sizeof(SZrInferredType), params->count);
+    for (TZrSize paramIndex = 0; paramIndex < params->count; paramIndex++) {
+        SZrAstNode *paramNode = params->nodes[paramIndex];
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        compiler_class_append_parameter_type(cs, parameterTypes, paramNode->data.parameter.typeInfo);
+    }
+}
+
 void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -74,6 +110,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             }
             
             SZrTypeMemberInfo memberInfo;
+            memset(&memberInfo, 0, sizeof(memberInfo));
+
             // 初始化所有字段
             memberInfo.memberType = member->type;
             memberInfo.isStatic = ZR_FALSE;
@@ -182,6 +220,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     } else {
                         memberInfo.returnTypeName = ZR_NULL; // 无返回类型（void）
                     }
+                    compiler_class_collect_parameter_types(cs, &memberInfo.parameterTypes, method->params);
+                    memberInfo.parameterCount = (TZrUInt32)memberInfo.parameterTypes.length;
                     {
                         TZrUInt32 compiledParameterCount = 0;
                         SZrFunction *compiledMethod =
@@ -198,7 +238,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                ZR_CAST_RAW_OBJECT_AS_SUPER(compiledMethod));
                         memberInfo.compiledFunction = compiledMethod;
                         memberInfo.functionConstantIndex = add_constant(cs, &functionValue);
-                        memberInfo.parameterCount = compiledParameterCount;
+                        ZR_UNUSED_PARAMETER(compiledParameterCount);
                     }
                     memberInfo.isMetaMethod = ZR_FALSE;
                     break;
@@ -226,7 +266,10 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                         compiler_create_hidden_property_accessor_name(cs, setter->name->name, ZR_TRUE);
                             }
                             memberInfo.returnTypeName = ZR_NULL;
+                            ZrCore_Array_Init(cs->state, &memberInfo.parameterTypes, sizeof(SZrInferredType), 1);
+                            compiler_class_append_parameter_type(cs, &memberInfo.parameterTypes, setter->targetType);
                         }
+                        memberInfo.parameterCount = (TZrUInt32)memberInfo.parameterTypes.length;
 
                         SZrFunction *compiledProperty =
                                 compile_class_member_function(cs, member, primarySuperTypeName, !property->isStatic,
@@ -242,7 +285,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                ZR_CAST_RAW_OBJECT_AS_SUPER(compiledProperty));
                         memberInfo.compiledFunction = compiledProperty;
                         memberInfo.functionConstantIndex = add_constant(cs, &functionValue);
-                        memberInfo.parameterCount = compiledParameterCount;
+                        ZR_UNUSED_PARAMETER(compiledParameterCount);
                     }
                     memberInfo.isMetaMethod = ZR_FALSE;
                     break;
@@ -276,6 +319,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     } else {
                         memberInfo.returnTypeName = ZR_NULL; // 无返回类型（void）
                     }
+                    compiler_class_collect_parameter_types(cs, &memberInfo.parameterTypes, metaFunc->params);
+                    memberInfo.parameterCount = (TZrUInt32)memberInfo.parameterTypes.length;
                     if (memberInfo.isMetaMethod) {
                         TZrUInt32 compiledParameterCount = 0;
                         SZrFunction *compiledMeta =
@@ -292,7 +337,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                ZR_CAST_RAW_OBJECT_AS_SUPER(compiledMeta));
                         memberInfo.compiledFunction = compiledMeta;
                         memberInfo.functionConstantIndex = add_constant(cs, &functionValue);
-                        memberInfo.parameterCount = compiledParameterCount;
+                        ZR_UNUSED_PARAMETER(compiledParameterCount);
                     }
                     break;
                 }

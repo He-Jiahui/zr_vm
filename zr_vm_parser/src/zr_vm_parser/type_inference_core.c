@@ -20,6 +20,45 @@
 #include <math.h>
 #include <limits.h>
 
+static SZrString *type_inference_create_hidden_property_accessor_name(SZrCompilerState *cs,
+                                                                      SZrString *propertyName,
+                                                                      TZrBool isSetter) {
+    const TZrChar *prefix = isSetter ? "__set_" : "__get_";
+    TZrNativeString propertyNameString;
+    TZrSize prefixLength;
+    TZrSize propertyNameLength;
+    TZrSize bufferSize;
+    TZrChar *buffer;
+    SZrString *result;
+
+    if (cs == ZR_NULL || propertyName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    propertyNameString = ZrCore_String_GetNativeString(propertyName);
+    if (propertyNameString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    prefixLength = strlen(prefix);
+    propertyNameLength = propertyName->shortStringLength < ZR_VM_LONG_STRING_FLAG
+                                 ? propertyName->shortStringLength
+                                 : propertyName->longStringLength;
+    bufferSize = prefixLength + propertyNameLength + 1;
+    buffer = (TZrChar *)ZrCore_Memory_RawMalloc(cs->state->global, bufferSize);
+    if (buffer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    memcpy(buffer, prefix, prefixLength);
+    memcpy(buffer + prefixLength, propertyNameString, propertyNameLength);
+    buffer[bufferSize - 1] = '\0';
+
+    result = ZrCore_String_CreateFromNative(cs->state, buffer);
+    ZrCore_Memory_RawFree(cs->state->global, buffer, bufferSize);
+    return result;
+}
+
 //
 // Created by Auto on 2025/01/XX.
 //
@@ -899,11 +938,35 @@ SZrTypeMemberInfo *find_compiler_type_member_inference(SZrCompilerState *cs,
                                                        SZrString *typeName,
                                                        SZrString *memberName) {
     SZrTypePrototypeInfo *info = find_compiler_type_prototype_inference(cs, typeName);
+    SZrTypeMemberInfo *memberInfo;
+    SZrString *accessorName;
+
     if (info == ZR_NULL || memberName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    return find_compiler_type_member_recursive_inference(cs, info, memberName, 0);
+    memberInfo = find_compiler_type_member_recursive_inference(cs, info, memberName, 0);
+    if (memberInfo != ZR_NULL) {
+        return memberInfo;
+    }
+
+    accessorName = type_inference_create_hidden_property_accessor_name(cs, memberName, ZR_FALSE);
+    if (accessorName != ZR_NULL) {
+        memberInfo = find_compiler_type_member_recursive_inference(cs, info, accessorName, 0);
+        if (memberInfo != ZR_NULL) {
+            return memberInfo;
+        }
+    }
+
+    accessorName = type_inference_create_hidden_property_accessor_name(cs, memberName, ZR_TRUE);
+    if (accessorName != ZR_NULL) {
+        memberInfo = find_compiler_type_member_recursive_inference(cs, info, accessorName, 0);
+        if (memberInfo != ZR_NULL) {
+            return memberInfo;
+        }
+    }
+
+    return ZR_NULL;
 }
 
 TZrBool type_name_is_module_prototype_inference(SZrCompilerState *cs, SZrString *typeName) {

@@ -29,6 +29,8 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
+    TZrUInt32 oldCachedNullConstantIndex = cs->cachedNullConstantIndex;
+    TZrBool oldHasCachedNullConstantIndex = cs->hasCachedNullConstantIndex;
     TZrBool oldIsInConstructor = cs->isInConstructor;
     
     // 设置 isInConstructor 标志（如果是构造函数）
@@ -60,6 +62,8 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     cs->localVars.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    cs->cachedNullConstantIndex = 0;
+    cs->hasCachedNullConstantIndex = ZR_FALSE;
     
     // 进入函数作用域
     enter_scope(cs);
@@ -175,6 +179,8 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
         cs->localVarCount = oldLocalVarCount;
         cs->constantCount = oldConstantCount;
         cs->closureVarCount = oldClosureVarCount;
+        cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
+        cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = ZR_NULL;
         cs->constLocalVars.length = 0;
@@ -261,6 +267,8 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
+    cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
+    cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
     cs->isInConstructor = oldIsInConstructor;
     
     // 清空数组（但保留已分配的内存）

@@ -1,0 +1,313 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 14
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 13
+
+CONSTANTS (34):
+  [0] native closure
+  [1] string: "zr.math"
+  [2] null
+  [3] native closure
+  [4] string: "zr.system"
+  [5] native closure
+  [6] string: "lin_alg"
+  [7] native closure
+  [8] string: "signal"
+  [9] native closure
+  [10] string: "tensor_pipeline"
+  [11] native closure
+  [12] string: "system_io"
+  [13] native closure
+  [14] string: "callbacks"
+  [15] string: "runCallbacks"
+  [16] string: "persistReport"
+  [17] string: "console"
+  [18] string: "printLine"
+  [19] string: "NATIVE_NUMERIC_PIPELINE_PASS "
+  [20] string: "banner"
+  [21] string: "checksum"
+  [22] string: "projectVectorsImpl"
+  [23] string: "object"
+  [24] string: "projectVectors"
+  [25] string: "mixSignalImpl"
+  [26] string: "mixSignal"
+  [27] string: "runTensorPassImpl"
+  [28] string: "runTensorPass"
+  [29] string: "persistReportImpl"
+  [30] string: "scaleValue"
+  [31] string: "summarizeCallbackImpl"
+  [32] string: "runCallbacksImpl"
+  [33] string: "summarizeCallback"
+
+LOCAL_VARIABLES (9):
+  [0] math: offset_activate=4, offset_dead=70
+  [1] system: offset_activate=8, offset_dead=70
+  [2] lin: offset_activate=12, offset_dead=70
+  [3] signal: offset_activate=16, offset_dead=70
+  [4] tensor: offset_activate=20, offset_dead=70
+  [5] io: offset_activate=24, offset_dead=70
+  [6] callbacks: offset_activate=28, offset_dead=70
+  [7] summary: offset_activate=39, offset_dead=70
+  [8] output: offset_activate=46, offset_dead=70
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (9):
+    [0] math: zr.math
+    [1] system: zr.system
+    [2] lin: lin_alg
+    [3] signal: signal
+    [4] tensor: tensor_pipeline
+    [5] io: system_io
+    [6] callbacks: callbacks
+    [7] summary: object
+    [8] output: object
+  EXPORTED_SYMBOLS (0):
+
+PROTOTYPES (5):
+// ========== PROTOTYPES FROM DATA (count: 5) ==========
+// --- Prototype 1 ---
+module lin_alg {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "projectVectorsImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "projectVectors",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+module signal {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "mixSignalImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "mixSignal",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
+module tensor_pipeline {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "runTensorPassImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "runTensorPass",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "object"
+    }
+  ]
+}
+
+// --- Prototype 4 ---
+module system_io {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "persistReportImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "persistReport",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    }
+  ]
+}
+
+// --- Prototype 5 ---
+module callbacks {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "scaleValue",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "summarizeCallbackImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "runCallbacksImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 3,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "summarizeCallback",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "runCallbacks",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 3,
+      returnType: "object"
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (70):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=1)
+  [2] FUNCTION_CALL (extra=0, operand1=0, operand2=1)
+  [3] GET_CONSTANT (extra=1, operand=2)
+  [4] GET_CONSTANT (extra=1, operand=3)
+  [5] GET_CONSTANT (extra=2, operand=4)
+  [6] FUNCTION_CALL (extra=1, operand1=1, operand2=1)
+  [7] GET_CONSTANT (extra=2, operand=2)
+  [8] GET_CONSTANT (extra=2, operand=5)
+  [9] GET_CONSTANT (extra=3, operand=6)
+  [10] FUNCTION_CALL (extra=2, operand1=2, operand2=1)
+  [11] GET_CONSTANT (extra=3, operand=2)
+  [12] GET_CONSTANT (extra=3, operand=7)
+  [13] GET_CONSTANT (extra=4, operand=8)
+  [14] FUNCTION_CALL (extra=3, operand1=3, operand2=1)
+  [15] GET_CONSTANT (extra=4, operand=2)
+  [16] GET_CONSTANT (extra=4, operand=9)
+  [17] GET_CONSTANT (extra=5, operand=10)
+  [18] FUNCTION_CALL (extra=4, operand1=4, operand2=1)
+  [19] GET_CONSTANT (extra=5, operand=2)
+  [20] GET_CONSTANT (extra=5, operand=11)
+  [21] GET_CONSTANT (extra=6, operand=12)
+  [22] FUNCTION_CALL (extra=5, operand1=5, operand2=1)
+  [23] GET_CONSTANT (extra=6, operand=2)
+  [24] GET_CONSTANT (extra=6, operand=13)
+  [25] GET_CONSTANT (extra=7, operand=14)
+  [26] FUNCTION_CALL (extra=6, operand1=6, operand2=1)
+  [27] GET_CONSTANT (extra=7, operand=2)
+  [28] GET_STACK (extra=7, operand=6)
+  [29] GET_CONSTANT (extra=8, operand=15)
+  [30] GETTABLE (extra=7, operand1=7, operand2=8)
+  [31] GET_CONSTANT (extra=8, operand=2)
+  [32] GET_STACK (extra=8, operand=2)
+  [33] GET_STACK (extra=9, operand=3)
+  [34] GET_STACK (extra=10, operand=4)
+  [35] FUNCTION_CALL (extra=7, operand1=7, operand2=3)
+  [36] GET_CONSTANT (extra=8, operand=2)
+  [37] GET_CONSTANT (extra=9, operand=2)
+  [38] GET_CONSTANT (extra=10, operand=2)
+  [39] GET_STACK (extra=8, operand=5)
+  [40] GET_CONSTANT (extra=9, operand=16)
+  [41] GETTABLE (extra=8, operand1=8, operand2=9)
+  [42] GET_CONSTANT (extra=9, operand=2)
+  [43] GET_STACK (extra=9, operand=7)
+  [44] FUNCTION_CALL (extra=8, operand1=8, operand2=1)
+  [45] GET_CONSTANT (extra=9, operand=2)
+  [46] GET_STACK (extra=9, operand=1)
+  [47] GET_CONSTANT (extra=10, operand=17)
+  [48] GETTABLE (extra=9, operand1=9, operand2=10)
+  [49] GET_CONSTANT (extra=10, operand=2)
+  [50] GET_CONSTANT (extra=10, operand=18)
+  [51] GETTABLE (extra=9, operand1=9, operand2=10)
+  [52] GET_CONSTANT (extra=10, operand=2)
+  [53] GET_CONSTANT (extra=10, operand=19)
+  [54] GET_STACK (extra=11, operand=8)
+  [55] GET_CONSTANT (extra=12, operand=20)
+  [56] GETTABLE (extra=11, operand1=11, operand2=12)
+  [57] GET_CONSTANT (extra=12, operand=2)
+  [58] ADD (extra=12, operand1=10, operand2=11)
+  [59] SET_STACK (extra=10, operand=12)
+  [60] GET_CONSTANT (extra=11, operand=2)
+  [61] GET_CONSTANT (extra=12, operand=2)
+  [62] FUNCTION_CALL (extra=9, operand1=9, operand2=1)
+  [63] GET_CONSTANT (extra=10, operand=2)
+  [64] GET_CONSTANT (extra=9, operand=2)
+  [65] GET_STACK (extra=9, operand=8)
+  [66] GET_CONSTANT (extra=10, operand=21)
+  [67] GETTABLE (extra=9, operand1=9, operand2=10)
+  [68] GET_CONSTANT (extra=10, operand=2)
+  [69] FUNCTION_RETURN (extra=1, operand1=9, operand2=0)
+

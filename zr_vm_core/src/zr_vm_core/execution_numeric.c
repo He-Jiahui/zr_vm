@@ -255,19 +255,26 @@ TZrDouble value_to_double(const SZrTypeValue *value) {
 }
 
 TZrBool concat_values_to_destination(SZrState *state,
-                                     SZrTypeValue *destination,
+                                     SZrTypeValue *outResult,
                                      const SZrTypeValue *opA,
                                      const SZrTypeValue *opB,
                                      TZrBool safeMode) {
     TZrMemoryOffset savedStackTopOffset;
+    TZrMemoryOffset tempBaseOffset;
     TZrStackValuePointer savedStackTop;
     TZrStackValuePointer tempBase;
     SZrCallInfo *currentCallInfo;
     SZrTypeValue *resultValue;
+    SZrTypeValue stableOpA;
+    SZrTypeValue stableOpB;
 
-    if (state == ZR_NULL || destination == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
+    if (state == ZR_NULL || outResult == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
         return ZR_FALSE;
     }
+
+    stableOpA = *opA;
+    stableOpB = *opB;
+    ZrCore_Value_ResetAsNull(outResult);
 
     savedStackTop = state->stackTop.valuePointer;
     savedStackTopOffset = ZrCore_Stack_SavePointerAsOffset(state, savedStackTop);
@@ -277,9 +284,10 @@ TZrBool concat_values_to_destination(SZrState *state,
     if (currentCallInfo != ZR_NULL) {
         tempBase = currentCallInfo->functionTop.valuePointer;
     }
+    tempBaseOffset = ZrCore_Stack_SavePointerAsOffset(state, tempBase);
 
-    ZrCore_Stack_CopyValue(state, tempBase, (SZrTypeValue *)opA);
-    ZrCore_Stack_CopyValue(state, tempBase + 1, (SZrTypeValue *)opB);
+    ZrCore_Stack_CopyValue(state, tempBase, &stableOpA);
+    ZrCore_Stack_CopyValue(state, tempBase + 1, &stableOpB);
     state->stackTop.valuePointer = tempBase + 2;
     if (currentCallInfo != ZR_NULL && currentCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         currentCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
@@ -291,11 +299,10 @@ TZrBool concat_values_to_destination(SZrState *state,
         ZrCore_String_Concat(state, 2);
     }
 
+    tempBase = ZrCore_Stack_LoadOffsetToPointer(state, tempBaseOffset);
     resultValue = ZrCore_Stack_GetValue(tempBase);
     if (resultValue != ZR_NULL) {
-        ZrCore_Value_Copy(state, destination, resultValue);
-    } else {
-        ZrCore_Value_ResetAsNull(destination);
+        *outResult = *resultValue;
     }
     state->stackTop.valuePointer = ZrCore_Stack_LoadOffsetToPointer(state, savedStackTopOffset);
     return ZR_TRUE;
@@ -303,26 +310,26 @@ TZrBool concat_values_to_destination(SZrState *state,
 
 
 TZrBool try_builtin_add(SZrState *state,
-                        SZrTypeValue *destination,
+                        SZrTypeValue *outResult,
                         const SZrTypeValue *opA,
                         const SZrTypeValue *opB) {
-    if (state == ZR_NULL || destination == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
+    if (state == ZR_NULL || outResult == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
         return ZR_FALSE;
     }
 
     if (ZR_VALUE_IS_TYPE_STRING(opA->type) || ZR_VALUE_IS_TYPE_STRING(opB->type)) {
-        return concat_values_to_destination(state, destination, opA, opB, ZR_TRUE);
+        return concat_values_to_destination(state, outResult, opA, opB, ZR_TRUE);
     }
 
     if ((ZR_VALUE_IS_TYPE_NUMBER(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opA->type)) &&
         (ZR_VALUE_IS_TYPE_NUMBER(opB->type) || ZR_VALUE_IS_TYPE_BOOL(opB->type))) {
         if (ZR_VALUE_IS_TYPE_FLOAT(opA->type) || ZR_VALUE_IS_TYPE_FLOAT(opB->type)) {
-            ZrCore_Value_InitAsFloat(state, destination, value_to_double(opA) + value_to_double(opB));
+            ZrCore_Value_InitAsFloat(state, outResult, value_to_double(opA) + value_to_double(opB));
         } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) || ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type) ||
                    ZR_VALUE_IS_TYPE_BOOL(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opB->type)) {
-            ZrCore_Value_InitAsInt(state, destination, value_to_int64(opA) + value_to_int64(opB));
+            ZrCore_Value_InitAsInt(state, outResult, value_to_int64(opA) + value_to_int64(opB));
         } else {
-            ZrCore_Value_InitAsUInt(state, destination, value_to_uint64(opA) + value_to_uint64(opB));
+            ZrCore_Value_InitAsUInt(state, outResult, value_to_uint64(opA) + value_to_uint64(opB));
         }
         return ZR_TRUE;
     }

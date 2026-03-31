@@ -268,6 +268,24 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                 // 释放 members 数组
                 if (info->members.isValid && info->members.head != ZR_NULL &&
                     info->members.capacity > 0 && info->members.elementSize > 0) {
+                    for (TZrSize memberIndex = 0; memberIndex < info->members.length; memberIndex++) {
+                        SZrTypeMemberInfo *memberInfo =
+                                (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, memberIndex);
+                        if (memberInfo != ZR_NULL &&
+                            memberInfo->parameterTypes.isValid &&
+                            memberInfo->parameterTypes.head != ZR_NULL &&
+                            memberInfo->parameterTypes.capacity > 0 &&
+                            memberInfo->parameterTypes.elementSize > 0) {
+                            for (TZrSize paramIndex = 0; paramIndex < memberInfo->parameterTypes.length; paramIndex++) {
+                                SZrInferredType *paramType =
+                                        (SZrInferredType *)ZrCore_Array_Get(&memberInfo->parameterTypes, paramIndex);
+                                if (paramType != ZR_NULL) {
+                                    ZrParser_InferredType_Free(state, paramType);
+                                }
+                            }
+                            ZrCore_Array_Free(state, &memberInfo->parameterTypes);
+                        }
+                    }
                     ZrCore_Array_Free(state, &info->members);
                 }
             }

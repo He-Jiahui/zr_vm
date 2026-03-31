@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/hash_set.h"
@@ -121,6 +122,7 @@ static void zr_string_concat_stack_values(SZrState *state, TZrSize count, TZrBoo
     SZrGlobalState *global;
     TZrSize availableCount;
     TZrStackValuePointer firstSlot;
+    SZrFunctionStackAnchor firstSlotAnchor;
     SZrString **stringValues = ZR_NULL;
     TZrNativeString buffer = ZR_NULL;
     TZrSize totalLength = 0;
@@ -136,6 +138,7 @@ static void zr_string_concat_stack_values(SZrState *state, TZrSize count, TZrBoo
 
     global = state->global;
     firstSlot = state->stackTop.valuePointer - count;
+    ZrCore_Function_StackAnchorInit(state, firstSlot, &firstSlotAnchor);
     if (count == 1) {
         SZrTypeValue *value = ZrCore_Stack_GetValue(firstSlot);
         SZrString *singleString = ZR_NULL;
@@ -156,6 +159,7 @@ static void zr_string_concat_stack_values(SZrState *state, TZrSize count, TZrBoo
         }
 
         singleString = ZrCore_Value_ConvertToString(state, value);
+        firstSlot = ZrCore_Function_StackAnchorRestore(state, &firstSlotAnchor);
         zr_string_collapse_stack_window(state, firstSlot, singleString);
         return;
     }
@@ -180,6 +184,7 @@ static void zr_string_concat_stack_values(SZrState *state, TZrSize count, TZrBoo
             stringValue = ZR_CAST_STRING(state, value->value.object);
         } else if (convertNonStrings) {
             stringValue = ZrCore_Value_ConvertToString(state, value);
+            firstSlot = ZrCore_Function_StackAnchorRestore(state, &firstSlotAnchor);
         }
 
         if (stringValue == ZR_NULL) {
@@ -214,6 +219,7 @@ static void zr_string_concat_stack_values(SZrState *state, TZrSize count, TZrBoo
 
     {
         SZrString *result = ZrCore_String_Create(state, buffer, totalLength);
+        firstSlot = ZrCore_Function_StackAnchorRestore(state, &firstSlotAnchor);
         ZrCore_Memory_RawFreeWithType(global,
                                 buffer,
                                 totalLength + 1,
@@ -227,6 +233,7 @@ static void zr_string_concat_stack_values(SZrState *state, TZrSize count, TZrBoo
     }
 
 concat_fail:
+    firstSlot = ZrCore_Function_StackAnchorRestore(state, &firstSlotAnchor);
     if (buffer != ZR_NULL) {
         ZrCore_Memory_RawFreeWithType(global,
                                 buffer,

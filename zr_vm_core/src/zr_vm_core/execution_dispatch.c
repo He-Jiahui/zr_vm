@@ -55,9 +55,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define UPDATE_BASE(CALL_INFO) (base = (CALL_INFO)->functionBase.valuePointer + 1)
 #define UPDATE_STACK(CALL_INFO)                                                                                        \
     {                                                                                                                  \
-        if (ZR_UNLIKELY(trap)) {                                                                                       \
-            UPDATE_BASE(CALL_INFO);                                                                                    \
-        }                                                                                                              \
+        UPDATE_BASE(CALL_INFO);                                                                                        \
     }
 #define SAVE_PC(STATE, CALL_INFO) ((CALL_INFO)->context.context.programCounter = programCounter)
 #define SAVE_STATE(STATE, CALL_INFO)                                                                                   \
@@ -70,12 +68,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             SAVE_PC(STATE, CALL_INFO); \
             (STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer; \
             EXP; \
+            UPDATE_BASE(CALL_INFO); \
             UPDATE_TRAP(CALL_INFO); \
         } while(0)
     #define PROTECT_EH(STATE, CALL_INFO, EXP) \
         do { \
             SAVE_PC(STATE, CALL_INFO); \
             EXP; \
+            UPDATE_BASE(CALL_INFO); \
             UPDATE_TRAP(CALL_INFO); \
         } while(0)
     #define PROTECT_E(STATE, CALL_INFO, EXP) \
@@ -83,12 +83,13 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             SAVE_PC(STATE, CALL_INFO); \
             (STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer; \
             EXP; \
+            UPDATE_BASE(CALL_INFO); \
         } while(0)
 #else
     // GCC/Clang 支持语句表达式
-    #define PROTECT_ESH(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP), UPDATE_TRAP(CALL_INFO))
-    #define PROTECT_EH(STATE, CALL_INFO, EXP) (SAVE_PC(STATE, CALL_INFO), (EXP), UPDATE_TRAP(CALL_INFO))
-    #define PROTECT_E(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP))
+    #define PROTECT_ESH(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP), UPDATE_BASE(CALL_INFO), UPDATE_TRAP(CALL_INFO))
+    #define PROTECT_EH(STATE, CALL_INFO, EXP) (SAVE_PC(STATE, CALL_INFO), (EXP), UPDATE_BASE(CALL_INFO), UPDATE_TRAP(CALL_INFO))
+    #define PROTECT_E(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP), UPDATE_BASE(CALL_INFO))
 #endif
 
 #define JUMP(CALL_INFO, INSTRUCTION, OFFSET)                                                                           \
@@ -124,6 +125,7 @@ LZrReturning: {
             // 超出指令范围，退出循环（相当于隐式返回）
             break;
         }
+        UPDATE_BASE(callInfo);
         // debug line
 #if ZR_DEBUG
 #endif
@@ -262,8 +264,8 @@ LZrReturning: {
                         if (execution_invoke_meta_call(state,
                                                        savedCallInfo,
                                                        savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
+                                                       callInfo->functionTop.valuePointer,
+                                                       ZR_TRUE,
                                                        meta,
                                                        opA,
                                                        ZR_NULL,
@@ -314,8 +316,8 @@ LZrReturning: {
                         if (execution_invoke_meta_call(state,
                                                        savedCallInfo,
                                                        savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
+                                                       callInfo->functionTop.valuePointer,
+                                                       ZR_TRUE,
                                                        meta,
                                                        opA,
                                                        ZR_NULL,
@@ -366,8 +368,8 @@ LZrReturning: {
                         if (execution_invoke_meta_call(state,
                                                        savedCallInfo,
                                                        savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
+                                                       callInfo->functionTop.valuePointer,
+                                                       ZR_TRUE,
                                                        meta,
                                                        opA,
                                                        ZR_NULL,
@@ -406,10 +408,14 @@ LZrReturning: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TO_STRING) {
+                SZrString *resultString;
+
                 opA = &BASE(A1(instruction))->value;
-                SZrString *result = ZrCore_Value_ConvertToString(state, opA);
-                if (result != ZR_NULL) {
-                    ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(result));
+                resultString = ZrCore_Value_ConvertToString(state, opA);
+                UPDATE_BASE(callInfo);
+                destination = destinationIsRet ? &ret : &BASE(E(instruction))->value;
+                if (resultString != ZR_NULL) {
+                    ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(resultString));
                 } else {
                     // 转换失败，返回 null
                     ZrCore_Value_ResetAsNull(destination);
@@ -581,9 +587,19 @@ LZrReturning: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD) {
+                SZrTypeValue builtinResult;
+
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                if (try_builtin_add(state, destination, opA, opB)) {
+                ZrCore_Value_ResetAsNull(&builtinResult);
+                if (try_builtin_add(state, &builtinResult, opA, opB)) {
+                    if (destinationIsRet) {
+                        ret = builtinResult;
+                    } else {
+                        UPDATE_BASE(callInfo);
+                        destination = &BASE(E(instruction))->value;
+                        ZrCore_Value_Copy(state, destination, &builtinResult);
+                    }
                     // 基础数值和字符串拼接直接在运行时处理。
                 } else {
                     SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_ADD);
@@ -644,11 +660,22 @@ LZrReturning: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_STRING) {
+                SZrTypeValue concatResult;
+
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type));
-                if (!concat_values_to_destination(state, destination, opA, opB, ZR_FALSE)) {
+                ZrCore_Value_ResetAsNull(&concatResult);
+                if (!concat_values_to_destination(state, &concatResult, opA, opB, ZR_FALSE)) {
+                    UPDATE_BASE(callInfo);
+                    destination = destinationIsRet ? &ret : &BASE(E(instruction))->value;
                     ZrCore_Value_ResetAsNull(destination);
+                } else if (destinationIsRet) {
+                    ret = concatResult;
+                } else {
+                    UPDATE_BASE(callInfo);
+                    destination = &BASE(E(instruction))->value;
+                    ZrCore_Value_Copy(state, destination, &concatResult);
                 }
             }
             DONE(1);

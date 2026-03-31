@@ -63,6 +63,37 @@ struct ZR_STRUCT_ALIGN SZrFunctionExceptionHandlerInfo {
 
 typedef struct SZrFunctionExceptionHandlerInfo SZrFunctionExceptionHandlerInfo;
 
+typedef enum EZrFunctionTypedSymbolKind {
+    ZR_FUNCTION_TYPED_SYMBOL_VARIABLE = 1,
+    ZR_FUNCTION_TYPED_SYMBOL_FUNCTION = 2
+} EZrFunctionTypedSymbolKind;
+
+typedef struct SZrFunctionTypedTypeRef {
+    EZrValueType baseType;
+    TZrBool isNullable;
+    TZrUInt32 ownershipQualifier;
+    TZrBool isArray;
+    struct SZrString *typeName;
+    EZrValueType elementBaseType;
+    struct SZrString *elementTypeName;
+} SZrFunctionTypedTypeRef;
+
+typedef struct SZrFunctionTypedLocalBinding {
+    struct SZrString *name;
+    TZrUInt32 stackSlot;
+    SZrFunctionTypedTypeRef type;
+} SZrFunctionTypedLocalBinding;
+
+typedef struct SZrFunctionTypedExportSymbol {
+    struct SZrString *name;
+    TZrUInt32 stackSlot;
+    TZrUInt8 accessModifier;
+    TZrUInt8 symbolKind;
+    SZrFunctionTypedTypeRef valueType;
+    TZrUInt32 parameterCount;
+    SZrFunctionTypedTypeRef *parameterTypes;
+} SZrFunctionTypedExportSymbol;
+
 struct ZR_STRUCT_ALIGN SZrFunction {
     SZrRawObject super;
     TZrUInt16 parameterCount;
@@ -105,6 +136,11 @@ struct ZR_STRUCT_ALIGN SZrFunction {
         TZrUInt8 accessModifier;                      // 可见性修饰符 (0=PRIVATE, 1=PUBLIC, 2=PROTECTED)
     } *exportedVariables;                           // 导出变量数组
     TZrUInt32 exportedVariableLength;                 // 导出变量数量
+
+    SZrFunctionTypedLocalBinding *typedLocalBindings;
+    TZrUInt32 typedLocalBindingLength;
+    SZrFunctionTypedExportSymbol *typedExportedSymbols;
+    TZrUInt32 typedExportedSymbolLength;
     
     // prototype数据存储（从常量池迁移）
     TZrByte *prototypeData;                           // prototype 二进制数据（序列化后的 SZrCompiledPrototypeInfo 数组）

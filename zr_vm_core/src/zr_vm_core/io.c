@@ -180,6 +180,72 @@ static void io_read_function_exported_variables(SZrIo *io, SZrIoFunctionExported
     }
 }
 
+static void io_read_function_typed_type_ref(SZrIo *io, SZrIoFunctionTypedTypeRef *typeRef) {
+    TZrUInt32 baseType = ZR_VALUE_TYPE_OBJECT;
+    TZrUInt8 isNullable = ZR_FALSE;
+    TZrUInt32 ownershipQualifier = 0;
+    TZrUInt8 isArray = ZR_FALSE;
+    TZrUInt32 elementBaseType = ZR_VALUE_TYPE_OBJECT;
+
+    if (io == ZR_NULL || typeRef == ZR_NULL) {
+        return;
+    }
+
+    ZR_IO_READ_NATIVE_TYPE(io, baseType, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, isNullable, TZrUInt8);
+    ZR_IO_READ_NATIVE_TYPE(io, ownershipQualifier, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, isArray, TZrUInt8);
+    typeRef->typeName = io_read_string_with_length(io);
+    ZR_IO_READ_NATIVE_TYPE(io, elementBaseType, TZrUInt32);
+    typeRef->elementTypeName = io_read_string_with_length(io);
+
+    typeRef->baseType = (EZrValueType)baseType;
+    typeRef->isNullable = isNullable ? ZR_TRUE : ZR_FALSE;
+    typeRef->ownershipQualifier = ownershipQualifier;
+    typeRef->isArray = isArray ? ZR_TRUE : ZR_FALSE;
+    typeRef->elementBaseType = (EZrValueType)elementBaseType;
+}
+
+static void io_read_function_typed_local_bindings(SZrIo *io,
+                                                  SZrIoFunctionTypedLocalBinding *bindings,
+                                                  TZrSize count) {
+    for (TZrSize i = 0; i < count; i++) {
+        SZrIoFunctionTypedLocalBinding *binding = &bindings[i];
+        binding->name = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->stackSlot, TZrUInt32);
+        io_read_function_typed_type_ref(io, &binding->type);
+    }
+}
+
+static void io_read_function_typed_export_symbols(SZrIo *io,
+                                                  SZrIoFunctionTypedExportSymbol *symbols,
+                                                  TZrSize count) {
+    SZrGlobalState *global = io->state->global;
+
+    for (TZrSize i = 0; i < count; i++) {
+        SZrIoFunctionTypedExportSymbol *symbol = &symbols[i];
+
+        symbol->name = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, symbol->stackSlot, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, symbol->accessModifier, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, symbol->symbolKind, TZrUInt8);
+        io_read_function_typed_type_ref(io, &symbol->valueType);
+        ZR_IO_READ_NATIVE_TYPE(io, symbol->parameterCount, TZrSize);
+        if (symbol->parameterCount > 0) {
+            symbol->parameterTypes = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                              sizeof(SZrIoFunctionTypedTypeRef) *
+                                                                      symbol->parameterCount);
+            if (symbol->parameterTypes != ZR_NULL) {
+                for (TZrSize paramIndex = 0; paramIndex < symbol->parameterCount; paramIndex++) {
+                    io_read_function_typed_type_ref(io, &symbol->parameterTypes[paramIndex]);
+                }
+            }
+        } else {
+            symbol->parameterTypes = ZR_NULL;
+        }
+    }
+}
+
 static void io_read_classes(SZrIo *io, SZrIoClass *classes, TZrSize count);
 static void io_read_structs(SZrIo *io, SZrIoStruct *structs, TZrSize count);
 
@@ -248,6 +314,28 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         } else {
             function->exportedVariables = ZR_NULL;
         }
+        ZR_IO_READ_NATIVE_TYPE(io, function->typedLocalBindingsLength, TZrSize);
+        if (function->typedLocalBindingsLength > 0) {
+            function->typedLocalBindings = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                                    sizeof(SZrIoFunctionTypedLocalBinding) *
+                                                                            function->typedLocalBindingsLength);
+            io_read_function_typed_local_bindings(io,
+                                                  function->typedLocalBindings,
+                                                  function->typedLocalBindingsLength);
+        } else {
+            function->typedLocalBindings = ZR_NULL;
+        }
+        ZR_IO_READ_NATIVE_TYPE(io, function->typedExportedSymbolsLength, TZrSize);
+        if (function->typedExportedSymbolsLength > 0) {
+            function->typedExportedSymbols = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                                      sizeof(SZrIoFunctionTypedExportSymbol) *
+                                                                              function->typedExportedSymbolsLength);
+            io_read_function_typed_export_symbols(io,
+                                                  function->typedExportedSymbols,
+                                                  function->typedExportedSymbolsLength);
+        } else {
+            function->typedExportedSymbols = ZR_NULL;
+        }
         // 读取PROTOTYPES_LENGTH和PROTOTYPES（结构化格式）
         ZR_IO_READ_NATIVE_TYPE(io, function->prototypesLength, TZrSize);
         function->classes = ZR_NULL;
@@ -258,6 +346,7 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         TZrSize classCount = 0;
         TZrSize structCount = 0;
         ZR_IO_READ_NATIVE_TYPE(io, classCount, TZrSize);
+        function->classesLength = classCount;
 
         if (classCount > 0) {
             function->classes = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoClass) * classCount);
@@ -267,6 +356,7 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         }
 
         ZR_IO_READ_NATIVE_TYPE(io, structCount, TZrSize);
+        function->structsLength = structCount;
         if (structCount > 0) {
             function->structs = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoStruct) * structCount);
             if (function->structs != ZR_NULL) {

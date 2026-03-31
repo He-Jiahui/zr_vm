@@ -4,6 +4,7 @@
 
 #include "zr_vm_parser/writer.h"
 
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
@@ -19,6 +20,187 @@
 
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_core/constant_reference.h"
+
+static const TZrChar *writer_intermediate_primitive_type_name(EZrValueType baseType) {
+    switch (baseType) {
+        case ZR_VALUE_TYPE_NULL:
+            return "null";
+        case ZR_VALUE_TYPE_BOOL:
+            return "bool";
+        case ZR_VALUE_TYPE_INT8:
+            return "i8";
+        case ZR_VALUE_TYPE_INT16:
+            return "i16";
+        case ZR_VALUE_TYPE_INT32:
+            return "i32";
+        case ZR_VALUE_TYPE_INT64:
+            return "int";
+        case ZR_VALUE_TYPE_UINT8:
+            return "u8";
+        case ZR_VALUE_TYPE_UINT16:
+            return "u16";
+        case ZR_VALUE_TYPE_UINT32:
+            return "u32";
+        case ZR_VALUE_TYPE_UINT64:
+            return "uint";
+        case ZR_VALUE_TYPE_FLOAT:
+        case ZR_VALUE_TYPE_DOUBLE:
+            return "float";
+        case ZR_VALUE_TYPE_STRING:
+            return "string";
+        case ZR_VALUE_TYPE_FUNCTION:
+        case ZR_VALUE_TYPE_CLOSURE:
+            return "function";
+        case ZR_VALUE_TYPE_ARRAY:
+            return "array";
+        default:
+            return "object";
+    }
+}
+
+static void writer_intermediate_format_type_ref(const SZrFunctionTypedTypeRef *typeRef,
+                                                TZrChar *buffer,
+                                                TZrSize bufferSize) {
+    const TZrChar *baseName;
+    TZrNativeString userTypeName;
+    TZrNativeString elementTypeName;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (typeRef == ZR_NULL) {
+        snprintf(buffer, bufferSize, "object");
+        return;
+    }
+
+    if (typeRef->isArray) {
+        if (typeRef->elementTypeName != ZR_NULL) {
+            elementTypeName = ZrCore_String_GetNativeString(typeRef->elementTypeName);
+            snprintf(buffer, bufferSize, "%s[]", elementTypeName != ZR_NULL ? elementTypeName : "object");
+        } else {
+            snprintf(buffer, bufferSize, "%s[]", writer_intermediate_primitive_type_name(typeRef->elementBaseType));
+        }
+        return;
+    }
+
+    userTypeName = typeRef->typeName != ZR_NULL ? ZrCore_String_GetNativeString(typeRef->typeName) : ZR_NULL;
+    if (userTypeName != ZR_NULL) {
+        snprintf(buffer, bufferSize, "%s", userTypeName);
+        return;
+    }
+
+    baseName = writer_intermediate_primitive_type_name(typeRef->baseType);
+    snprintf(buffer, bufferSize, "%s", baseName);
+}
+
+static void writer_intermediate_write_type_metadata(FILE *file, SZrState *state, SZrFunction *function) {
+    ZR_UNUSED_PARAMETER(state);
+    fprintf(file, "TYPE_METADATA:\n");
+
+    fprintf(file, "  LOCAL_BINDINGS (%u):\n", function->typedLocalBindingLength);
+    for (TZrUInt32 index = 0; index < function->typedLocalBindingLength; index++) {
+        SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+        TZrNativeString name = binding->name != ZR_NULL ? ZrCore_String_GetNativeString(binding->name) : "<unnamed>";
+        TZrChar typeBuffer[128];
+
+        writer_intermediate_format_type_ref(&binding->type, typeBuffer, sizeof(typeBuffer));
+        fprintf(file, "    [%u] %s: %s\n", binding->stackSlot, name != ZR_NULL ? name : "<unnamed>", typeBuffer);
+    }
+
+    fprintf(file, "  EXPORTED_SYMBOLS (%u):\n", function->typedExportedSymbolLength);
+    for (TZrUInt32 index = 0; index < function->typedExportedSymbolLength; index++) {
+        SZrFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[index];
+        TZrNativeString name = symbol->name != ZR_NULL ? ZrCore_String_GetNativeString(symbol->name) : "<unnamed>";
+        TZrChar valueTypeBuffer[128];
+
+        writer_intermediate_format_type_ref(&symbol->valueType, valueTypeBuffer, sizeof(valueTypeBuffer));
+        if (symbol->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION) {
+            fprintf(file, "    fn %s(", name != ZR_NULL ? name : "<unnamed>");
+            for (TZrUInt32 paramIndex = 0; paramIndex < symbol->parameterCount; paramIndex++) {
+                TZrChar paramBuffer[128];
+                if (paramIndex > 0) {
+                    fprintf(file, ", ");
+                }
+                writer_intermediate_format_type_ref(&symbol->parameterTypes[paramIndex],
+                                                    paramBuffer,
+                                                    sizeof(paramBuffer));
+                fprintf(file, "%s", paramBuffer);
+            }
+            fprintf(file, "): %s\n", valueTypeBuffer);
+        } else {
+            fprintf(file, "    var %s: %s\n", name != ZR_NULL ? name : "<unnamed>", valueTypeBuffer);
+        }
+    }
+
+    fprintf(file, "\n");
+}
+
+static void writer_intermediate_write_constant(FILE *file, SZrState *state, const SZrTypeValue *constant) {
+    if (file == ZR_NULL || constant == ZR_NULL) {
+        return;
+    }
+
+    switch (constant->type) {
+        case ZR_VALUE_TYPE_NULL:
+            fprintf(file, "null\n");
+            break;
+
+        case ZR_VALUE_TYPE_BOOL:
+            fprintf(file, "bool: %s\n", constant->value.nativeObject.nativeBool ? "true" : "false");
+            break;
+
+        case ZR_VALUE_TYPE_INT8:
+        case ZR_VALUE_TYPE_INT16:
+        case ZR_VALUE_TYPE_INT32:
+        case ZR_VALUE_TYPE_INT64:
+            fprintf(file, "int: %lld\n", (long long) constant->value.nativeObject.nativeInt64);
+            break;
+
+        case ZR_VALUE_TYPE_FLOAT:
+        case ZR_VALUE_TYPE_DOUBLE:
+            fprintf(file, "float: %f\n", constant->value.nativeObject.nativeDouble);
+            break;
+
+        case ZR_VALUE_TYPE_STRING:
+            if (constant->value.object == ZR_NULL) {
+                fprintf(file, "string: \"\"\n");
+            } else {
+                SZrRawObject *rawObj = constant->value.object;
+                if (rawObj->type == ZR_VALUE_TYPE_STRING) {
+                    SZrString *str = ZR_CAST_STRING(state, rawObj);
+                    TZrNativeString strStr = ZrCore_String_GetNativeString(str);
+                    fprintf(file, "string: \"%s\"\n", strStr != ZR_NULL ? strStr : "");
+                } else {
+                    fprintf(file, "string: \"\"\n");
+                }
+            }
+            break;
+
+        case ZR_VALUE_TYPE_FUNCTION:
+            fprintf(file, "function\n");
+            break;
+
+        case ZR_VALUE_TYPE_CLOSURE:
+            if (constant->value.object != ZR_NULL) {
+                SZrRawObject *rawObj = constant->value.object;
+                fprintf(file, "%sclosure\n", rawObj->isNative ? "native " : "");
+            } else {
+                fprintf(file, "closure\n");
+            }
+            break;
+
+        case ZR_VALUE_TYPE_NATIVE_POINTER:
+            fprintf(file, "native pointer\n");
+            break;
+
+        default:
+            fprintf(file, "unknown type: %u\n", (TZrUInt32) constant->type);
+            break;
+    }
+}
+
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZrFunction *function, const TZrChar *filename) {
     if (state == ZR_NULL || function == ZR_NULL || filename == ZR_NULL) {
         return ZR_FALSE;
@@ -61,45 +243,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
     for (TZrUInt32 i = 0; i < function->constantValueLength; i++) {
         SZrTypeValue *constant = &function->constantValueList[i];
         fprintf(file, "  [%u] ", i);
-        switch (constant->type) {
-            case ZR_VALUE_TYPE_NULL:
-                fprintf(file, "null\n");
-                break;
-            case ZR_VALUE_TYPE_BOOL:
-                fprintf(file, "bool: %s\n", constant->value.nativeObject.nativeBool ? "true" : "false");
-                break;
-            case ZR_VALUE_TYPE_INT8:
-            case ZR_VALUE_TYPE_INT16:
-            case ZR_VALUE_TYPE_INT32:
-            case ZR_VALUE_TYPE_INT64:
-                fprintf(file, "int: %lld\n", (long long)constant->value.nativeObject.nativeInt64);
-                break;
-            case ZR_VALUE_TYPE_FLOAT:
-            case ZR_VALUE_TYPE_DOUBLE:
-                fprintf(file, "float: %f\n", constant->value.nativeObject.nativeDouble);
-                break;
-            case ZR_VALUE_TYPE_STRING: {
-                // 检查 object 是否为 NULL 或类型不匹配
-                if (constant->value.object == ZR_NULL) {
-                    fprintf(file, "string: \"\"\n");
-                } else {
-                    // 验证对象类型
-                    SZrRawObject *rawObj = constant->value.object;
-                    if (rawObj->type == ZR_VALUE_TYPE_STRING) {
-                        SZrString *str = ZR_CAST_STRING(state, rawObj);
-                        TZrNativeString strStr = ZrCore_String_GetNativeString(str);
-                        fprintf(file, "string: \"%s\"\n", strStr);
-                    } else {
-                        // 类型不匹配，输出空字符串
-                        fprintf(file, "string: \"\"\n");
-                    }
-                }
-                break;
-            }
-            default:
-                fprintf(file, "unknown type: %u\n", (TZrUInt32)constant->type);
-                break;
-        }
+        writer_intermediate_write_constant(file, state, constant);
     }
     fprintf(file, "\n");
     
@@ -147,6 +291,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                 closure->index, typeName);
     }
     fprintf(file, "\n");
+
+    writer_intermediate_write_type_metadata(file, state, function);
     
     // Prototype 数据列表
     if (function->prototypeData != ZR_NULL && function->prototypeCount > 0) {
@@ -556,42 +702,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             for (TZrUInt32 j = 0; j < childFunc->constantValueLength; j++) {
                 SZrTypeValue *constant = &childFunc->constantValueList[j];
                 fprintf(file, "      [%u] ", j);
-                switch (constant->type) {
-                    case ZR_VALUE_TYPE_NULL:
-                        fprintf(file, "null\n");
-                        break;
-                    case ZR_VALUE_TYPE_BOOL:
-                        fprintf(file, "bool: %s\n", constant->value.nativeObject.nativeBool ? "true" : "false");
-                        break;
-                    case ZR_VALUE_TYPE_INT8:
-                    case ZR_VALUE_TYPE_INT16:
-                    case ZR_VALUE_TYPE_INT32:
-                    case ZR_VALUE_TYPE_INT64:
-                        fprintf(file, "int: %lld\n", (long long)constant->value.nativeObject.nativeInt64);
-                        break;
-                    case ZR_VALUE_TYPE_FLOAT:
-                    case ZR_VALUE_TYPE_DOUBLE:
-                        fprintf(file, "float: %f\n", constant->value.nativeObject.nativeDouble);
-                        break;
-                    case ZR_VALUE_TYPE_STRING: {
-                        if (constant->value.object == ZR_NULL) {
-                            fprintf(file, "string: \"\"\n");
-                        } else {
-                            SZrRawObject *rawObj = constant->value.object;
-                            if (rawObj->type == ZR_VALUE_TYPE_STRING) {
-                                SZrString *str = ZR_CAST_STRING(state, rawObj);
-                                TZrNativeString strStr = ZrCore_String_GetNativeString(str);
-                                fprintf(file, "string: \"%s\"\n", strStr);
-                            } else {
-                                fprintf(file, "string: \"\"\n");
-                            }
-                        }
-                        break;
-                    }
-                    default:
-                        fprintf(file, "unknown type: %u\n", (TZrUInt32)constant->type);
-                        break;
-                }
+                writer_intermediate_write_constant(file, state, constant);
             }
             fprintf(file, "    INSTRUCTIONS (%u):\n", childFunc->instructionsLength);
             for (TZrUInt32 j = 0; j < childFunc->instructionsLength; j++) {

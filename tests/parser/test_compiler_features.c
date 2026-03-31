@@ -15,6 +15,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
+#include "zr_vm_parser/writer.h"
 
 // 测试时间测量结构
 typedef struct {
@@ -139,6 +140,48 @@ static void destroy_test_state(SZrState *state) {
     if (state != ZR_NULL && state->global != ZR_NULL) {
         ZrCore_GlobalState_Free(state->global);
     }
+}
+
+static char *read_text_file_owned(const TZrChar *path) {
+    FILE *file;
+    long fileSize;
+    char *buffer;
+
+    if (path == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    file = fopen(path, "rb");
+    if (file == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    fileSize = ftell(file);
+    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    buffer = (char *)malloc((size_t)fileSize + 1);
+    if (buffer == ZR_NULL) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    if (fileSize > 0 && fread(buffer, 1, (size_t)fileSize, file) != (size_t)fileSize) {
+        free(buffer);
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    buffer[fileSize] = '\0';
+    fclose(file);
+    return buffer;
 }
 
 static SZrFunction *get_single_compiled_child_function(SZrFunction *wrapper) {
@@ -1957,6 +2000,125 @@ void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void)
     TEST_DIVIDER();
 }
 
+void test_function_call_argument_conversion_emits_to_float(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Function Call Argument Conversion Emits TO_FLOAT";
+    TZrUInt32 toFloatCount = 0;
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Function call argument conversion",
+              "Testing that calling a typed float function with an int argument emits a TO_FLOAT conversion before FUNCTION_CALL");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "add(lhs: float, rhs: float): float { return lhs + rhs; }\n"
+                "var value = add(1, 2.0);";
+        SZrString *sourceName = ZrCore_String_Create(state, "typed_call_conversion_test.zr", 29);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse typed call conversion source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile typed call conversion source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
+        for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
+            if ((EZrInstructionCode)func->instructionsList[i].instruction.operationCode == ZR_INSTRUCTION_ENUM(TO_FLOAT)) {
+                toFloatCount++;
+            }
+        }
+        TEST_ASSERT_EQUAL_UINT32(1, toFloatCount);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_intermediate_writer_emits_type_metadata_section(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Intermediate Writer Emits Type Metadata Section";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Intermediate writer type metadata",
+              "Testing that .zri output includes a dedicated type metadata section with exported signatures");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "pub var numbers = [1, 2, 3];\n"
+                "add(lhs: int, rhs: int): int { return lhs + rhs; }\n"
+                "return add(1, 2);";
+        const char *intermediatePath = "typed_metadata_intermediate_test.zri";
+        SZrString *sourceName = ZrCore_String_Create(state, "typed_metadata_intermediate_test.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        char *intermediateText;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse typed metadata intermediate source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile typed metadata intermediate source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, func, intermediatePath));
+        intermediateText = read_text_file_owned(intermediatePath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "TYPE_METADATA"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "EXPORTED_SYMBOLS"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "add(int, int): int"));
+
+        free(intermediateText);
+        remove(intermediatePath);
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 // 主测试函数
 int main(void) {
     printf("\n");
@@ -2000,6 +2162,8 @@ int main(void) {
     RUN_TEST(test_function_call_type_inference);
     RUN_TEST(test_member_access_type_inference);
     RUN_TEST(test_type_conversion_instructions);
+    RUN_TEST(test_function_call_argument_conversion_emits_to_float);
+    RUN_TEST(test_intermediate_writer_emits_type_metadata_section);
 
     // 高级功能测试模块
     printf("==========\n");

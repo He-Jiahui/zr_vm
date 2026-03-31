@@ -3,6 +3,305 @@
 //
 
 #include "semantic_analyzer_internal.h"
+#include "zr_vm_library/native_registry.h"
+
+static void semantic_get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
+    if (text == ZR_NULL || length == ZR_NULL) {
+        return;
+    }
+
+    *text = ZR_NULL;
+    *length = 0;
+    if (value == ZR_NULL) {
+        return;
+    }
+
+    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        *text = ZrCore_String_GetNativeStringShort(value);
+        *length = value->shortStringLength;
+    } else {
+        *text = ZrCore_String_GetNativeString(value);
+        *length = value->longStringLength;
+    }
+}
+
+static const TZrChar *semantic_symbol_kind_text(EZrSymbolType type) {
+    switch (type) {
+        case ZR_SYMBOL_FUNCTION: return "function";
+        case ZR_SYMBOL_CLASS: return "class";
+        case ZR_SYMBOL_STRUCT: return "struct";
+        case ZR_SYMBOL_METHOD: return "method";
+        case ZR_SYMBOL_PROPERTY: return "property";
+        case ZR_SYMBOL_FIELD: return "field";
+        case ZR_SYMBOL_PARAMETER: return "parameter";
+        case ZR_SYMBOL_ENUM: return "enum";
+        case ZR_SYMBOL_INTERFACE: return "interface";
+        case ZR_SYMBOL_MODULE: return "module";
+        default: return "variable";
+    }
+}
+
+static const TZrChar *semantic_access_modifier_text(EZrAccessModifier accessModifier) {
+    switch (accessModifier) {
+        case ZR_ACCESS_PUBLIC: return "public";
+        case ZR_ACCESS_PROTECTED: return "protected";
+        case ZR_ACCESS_PRIVATE:
+        default:
+            return "private";
+    }
+}
+
+static void semantic_build_symbol_detail(SZrState *state,
+                                         SZrSymbol *symbol,
+                                         TZrChar *buffer,
+                                         TZrSize bufferSize) {
+    TZrChar typeBuffer[128];
+    const TZrChar *typeText = semantic_symbol_kind_text(symbol != ZR_NULL ? symbol->type : ZR_SYMBOL_VARIABLE);
+    const TZrChar *accessText = semantic_access_modifier_text(symbol != ZR_NULL
+                                                              ? symbol->accessModifier
+                                                              : ZR_ACCESS_PRIVATE);
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (state != ZR_NULL && symbol != ZR_NULL && symbol->typeInfo != ZR_NULL) {
+        typeText = ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
+    }
+
+    snprintf(buffer, bufferSize, "%s %s", accessText, typeText != ZR_NULL ? typeText : "object");
+}
+
+static TZrBool semantic_completion_has_label(SZrArray *items, const TZrChar *label) {
+    if (items == ZR_NULL || label == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < items->length; index++) {
+        SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(items, index);
+        TZrNativeString itemLabel;
+        TZrSize itemLabelLength;
+        TZrSize labelLength;
+
+        if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL || (*itemPtr)->label == ZR_NULL) {
+            continue;
+        }
+
+        semantic_get_string_view((*itemPtr)->label, &itemLabel, &itemLabelLength);
+        labelLength = strlen(label);
+        if (itemLabel != ZR_NULL &&
+            itemLabelLength == labelLength &&
+            memcmp(itemLabel, label, labelLength) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void semantic_append_completion_item(SZrState *state,
+                                            SZrArray *result,
+                                            const TZrChar *label,
+                                            const TZrChar *kind,
+                                            const TZrChar *detail,
+                                            SZrInferredType *typeInfo) {
+    SZrCompletionItem *item;
+
+    if (state == ZR_NULL || result == ZR_NULL || label == ZR_NULL ||
+        semantic_completion_has_label(result, label)) {
+        return;
+    }
+
+    item = ZrLanguageServer_CompletionItem_New(state, label, kind, detail, ZR_NULL, typeInfo);
+    if (item != ZR_NULL) {
+        ZrCore_Array_Push(state, result, &item);
+    }
+}
+
+static void semantic_append_symbol_completion(SZrState *state,
+                                              SZrArray *result,
+                                              SZrSymbol *symbol) {
+    TZrNativeString nameText;
+    TZrSize nameLength;
+    TZrChar label[256];
+    TZrChar detail[160];
+
+    if (state == ZR_NULL || result == ZR_NULL || symbol == ZR_NULL || symbol->name == ZR_NULL) {
+        return;
+    }
+
+    semantic_get_string_view(symbol->name, &nameText, &nameLength);
+    if (nameText == ZR_NULL || nameLength == 0 || nameLength >= sizeof(label)) {
+        return;
+    }
+
+    memcpy(label, nameText, nameLength);
+    label[nameLength] = '\0';
+    semantic_build_symbol_detail(state, symbol, detail, sizeof(detail));
+    semantic_append_completion_item(state,
+                                    result,
+                                    label,
+                                    semantic_symbol_kind_text(symbol->type),
+                                    detail,
+                                    symbol->typeInfo);
+}
+
+static const ZrLibModuleDescriptor *semantic_resolve_native_module_descriptor(SZrState *state,
+                                                                              const TZrChar *moduleName) {
+    if (state == ZR_NULL || state->global == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrLibrary_NativeRegistry_FindModule(state->global, moduleName);
+}
+
+static void semantic_append_native_module_descriptor_completions(SZrState *state,
+                                                                 const ZrLibModuleDescriptor *descriptor,
+                                                                 SZrArray *result,
+                                                                 TZrSize depth) {
+    if (state == ZR_NULL || descriptor == ZR_NULL || result == ZR_NULL || depth > 4) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < descriptor->typeHintCount; index++) {
+        const ZrLibTypeHintDescriptor *hint = &descriptor->typeHints[index];
+        if (hint->symbolName != ZR_NULL) {
+            semantic_append_completion_item(state,
+                                            result,
+                                            hint->symbolName,
+                                            hint->symbolKind != ZR_NULL ? hint->symbolKind : "symbol",
+                                            hint->signature,
+                                            ZR_NULL);
+        }
+    }
+
+    for (TZrSize index = 0; index < descriptor->functionCount; index++) {
+        const ZrLibFunctionDescriptor *functionDescriptor = &descriptor->functions[index];
+        TZrChar detail[192];
+
+        if (functionDescriptor->name == ZR_NULL) {
+            continue;
+        }
+
+        snprintf(detail,
+                 sizeof(detail),
+                 "%s(...): %s",
+                 functionDescriptor->name,
+                 functionDescriptor->returnTypeName != ZR_NULL ? functionDescriptor->returnTypeName : "object");
+        semantic_append_completion_item(state, result, functionDescriptor->name, "function", detail, ZR_NULL);
+    }
+
+    for (TZrSize index = 0; index < descriptor->typeCount; index++) {
+        const ZrLibTypeDescriptor *typeDescriptor = &descriptor->types[index];
+        const TZrChar *kind;
+        TZrChar detail[192];
+
+        if (typeDescriptor->name == ZR_NULL) {
+            continue;
+        }
+
+        kind = (typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) ? "class" : "struct";
+        snprintf(detail, sizeof(detail), "%s %s", kind, typeDescriptor->name);
+        semantic_append_completion_item(state, result, typeDescriptor->name, kind, detail, ZR_NULL);
+
+        for (TZrSize methodIndex = 0; methodIndex < typeDescriptor->methodCount; methodIndex++) {
+            const ZrLibMethodDescriptor *methodDescriptor = &typeDescriptor->methods[methodIndex];
+            TZrChar methodDetail[192];
+
+            if (methodDescriptor->name == ZR_NULL) {
+                continue;
+            }
+
+            snprintf(methodDetail,
+                     sizeof(methodDetail),
+                     "%s(...): %s",
+                     methodDescriptor->name,
+                     methodDescriptor->returnTypeName != ZR_NULL ? methodDescriptor->returnTypeName : "object");
+            semantic_append_completion_item(state, result, methodDescriptor->name, "method", methodDetail, ZR_NULL);
+        }
+    }
+
+    for (TZrSize index = 0; index < descriptor->moduleLinkCount; index++) {
+        const ZrLibModuleLinkDescriptor *linkDescriptor = &descriptor->moduleLinks[index];
+        const ZrLibModuleDescriptor *linkedDescriptor;
+
+        if (linkDescriptor->moduleName == ZR_NULL) {
+            continue;
+        }
+
+        linkedDescriptor = semantic_resolve_native_module_descriptor(state, linkDescriptor->moduleName);
+        semantic_append_native_module_descriptor_completions(state, linkedDescriptor, result, depth + 1);
+    }
+}
+
+static void semantic_append_imported_module_completions(SZrState *state,
+                                                        SZrAstNode *node,
+                                                        SZrArray *result) {
+    const ZrLibModuleDescriptor *descriptor;
+    TZrNativeString moduleText;
+    TZrSize moduleLength;
+    TZrChar moduleName[256];
+
+    if (state == ZR_NULL || node == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+
+    switch (node->type) {
+        case ZR_AST_SCRIPT:
+            if (node->data.script.statements != ZR_NULL && node->data.script.statements->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.script.statements->count; index++) {
+                    semantic_append_imported_module_completions(state,
+                                                                node->data.script.statements->nodes[index],
+                                                                result);
+                }
+            }
+            return;
+
+        case ZR_AST_BLOCK:
+            if (node->data.block.body != ZR_NULL && node->data.block.body->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.block.body->count; index++) {
+                    semantic_append_imported_module_completions(state,
+                                                                node->data.block.body->nodes[index],
+                                                                result);
+                }
+            }
+            return;
+
+        case ZR_AST_FUNCTION_DECLARATION:
+            semantic_append_imported_module_completions(state, node->data.functionDeclaration.body, result);
+            return;
+
+        case ZR_AST_TEST_DECLARATION:
+            semantic_append_imported_module_completions(state, node->data.testDeclaration.body, result);
+            return;
+
+        case ZR_AST_VARIABLE_DECLARATION:
+            if (node->data.variableDeclaration.value == ZR_NULL ||
+                node->data.variableDeclaration.value->type != ZR_AST_IMPORT_EXPRESSION ||
+                node->data.variableDeclaration.value->data.importExpression.modulePath == ZR_NULL ||
+                node->data.variableDeclaration.value->data.importExpression.modulePath->type != ZR_AST_STRING_LITERAL ||
+                node->data.variableDeclaration.value->data.importExpression.modulePath->data.stringLiteral.value == ZR_NULL) {
+                return;
+            }
+
+            semantic_get_string_view(node->data.variableDeclaration.value->data.importExpression.modulePath->data.stringLiteral.value,
+                                     &moduleText,
+                                     &moduleLength);
+            if (moduleText == ZR_NULL || moduleLength == 0 || moduleLength >= sizeof(moduleName)) {
+                return;
+            }
+
+            memcpy(moduleName, moduleText, moduleLength);
+            moduleName[moduleLength] = '\0';
+            descriptor = semantic_resolve_native_module_descriptor(state, moduleName);
+            semantic_append_native_module_descriptor_completions(state, descriptor, result, 0);
+            return;
+
+        default:
+            return;
+    }
+}
 
 SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     if (state == ZR_NULL) {
@@ -108,6 +407,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_Analyze(SZrState *state,
     if (state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL) {
         return ZR_FALSE;
     }
+
+    analyzer->ast = ast;
     
     // 检查缓存
     TZrSize astHash = 0;
@@ -125,9 +426,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_Analyze(SZrState *state,
             return ZR_TRUE;
         }
     }
-    
-    analyzer->ast = ast;
-    
+
     // 清除旧的诊断信息
     for (TZrSize i = 0; i < analyzer->diagnostics.length; i++) {
         SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, i);
@@ -219,48 +518,42 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
                                      SZrSemanticAnalyzer *analyzer,
                                      SZrFileRange position,
                                      SZrHoverInfo **result) {
+    TZrNativeString nameStr;
+    TZrSize nameLen;
+    TZrChar typeBuffer[128];
+    TZrChar buffer[512];
+    const TZrChar *kindText;
+    const TZrChar *typeText;
+    const TZrChar *accessText;
+
     if (state == ZR_NULL || analyzer == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
     
-    // 查找位置的符号
     SZrSymbol *symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, position);
     if (symbol == ZR_NULL) {
         return ZR_FALSE;
     }
-    
-    // 构建悬停信息
-    TZrChar buffer[512];
-    
-    // 符号类型
-    const TZrChar *typeName = "unknown";
-    switch (symbol->type) {
-        case ZR_SYMBOL_VARIABLE: typeName = "variable"; break;
-        case ZR_SYMBOL_FUNCTION: typeName = "function"; break;
-        case ZR_SYMBOL_CLASS: typeName = "class"; break;
-        case ZR_SYMBOL_STRUCT: typeName = "struct"; break;
-        default: break;
-    }
-    
-    // 符号名称
-    TZrNativeString nameStr;
-    TZrSize nameLen;
-    if (symbol->name->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-        nameStr = ZrCore_String_GetNativeStringShort(symbol->name);
-        nameLen = symbol->name->shortStringLength;
-    } else {
-        nameStr = ZrCore_String_GetNativeString(symbol->name);
-        nameLen = symbol->name->longStringLength;
-    }
-    
-    snprintf(buffer, sizeof(buffer), "**%s**: %.*s\n\nType: %s",
-             typeName, (int)nameLen, nameStr, typeName);
-    
-    SZrString *contents = ZrCore_String_Create(state, buffer, strlen(buffer));
-    if (contents == ZR_NULL) {
+
+    semantic_get_string_view(symbol->name, &nameStr, &nameLen);
+    if (nameStr == ZR_NULL || nameLen == 0) {
         return ZR_FALSE;
     }
-    
+
+    kindText = semantic_symbol_kind_text(symbol->type);
+    accessText = semantic_access_modifier_text(symbol->accessModifier);
+    typeText = (symbol->typeInfo != ZR_NULL)
+               ? ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer))
+               : kindText;
+    snprintf(buffer,
+             sizeof(buffer),
+             "**%s**: %.*s\n\nType: %s\nAccess: %s",
+             kindText,
+             (int)nameLen,
+             nameStr,
+             typeText != ZR_NULL ? typeText : "object",
+             accessText);
+
     *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->selectionRange, symbol->typeInfo);
     return *result != ZR_NULL;
 }
@@ -270,58 +563,34 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetCompletions(SZrState *state,
                                        SZrSemanticAnalyzer *analyzer,
                                        SZrFileRange position,
                                        SZrArray *result) {
-    ZR_UNUSED_PARAMETER(position);
+    SZrArray visibleSymbols;
+
     if (state == ZR_NULL || analyzer == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
     
-    // 初始化结果数组
     if (!result->isValid) {
         ZrCore_Array_Init(state, result, sizeof(SZrCompletionItem *), 8);
     }
-    
-    // 获取当前作用域的所有符号
-    SZrSymbolScope *scope = ZrLanguageServer_SymbolTable_GetCurrentScope(analyzer->symbolTable);
-    if (scope != ZR_NULL) {
-        for (TZrSize i = 0; i < scope->symbols.length; i++) {
-            SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&scope->symbols, i);
+
+    ZrCore_Array_Construct(&visibleSymbols);
+    if (ZrLanguageServer_SymbolTable_GetVisibleSymbolsAtPosition(state,
+                                                                 analyzer->symbolTable,
+                                                                 position,
+                                                                 &visibleSymbols)) {
+        for (TZrSize index = 0; index < visibleSymbols.length; index++) {
+            SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&visibleSymbols, index);
             if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
-                SZrSymbol *symbol = *symbolPtr;
-                
-                // 获取符号名称
-                TZrNativeString nameStr;
-                TZrSize nameLen;
-                if (symbol->name->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-                    nameStr = ZrCore_String_GetNativeStringShort(symbol->name);
-                    nameLen = symbol->name->shortStringLength;
-                } else {
-                    nameStr = ZrCore_String_GetNativeString(symbol->name);
-                    nameLen = symbol->name->longStringLength;
-                }
-                
-                // 确定补全类型
-                const TZrChar *kind = "variable";
-                switch (symbol->type) {
-                    case ZR_SYMBOL_FUNCTION: kind = "function"; break;
-                    case ZR_SYMBOL_CLASS: kind = "class"; break;
-                    case ZR_SYMBOL_STRUCT: kind = "struct"; break;
-                    case ZR_SYMBOL_METHOD: kind = "method"; break;
-                    case ZR_SYMBOL_PROPERTY: kind = "property"; break;
-                    case ZR_SYMBOL_FIELD: kind = "field"; break;
-                    default: break;
-                }
-                
-                TZrChar label[256];
-                snprintf(label, sizeof(label), "%.*s", (int)nameLen, nameStr);
-                
-                SZrCompletionItem *item = ZrLanguageServer_CompletionItem_New(state, label, kind, ZR_NULL, ZR_NULL, symbol->typeInfo);
-                if (item != ZR_NULL) {
-                    ZrCore_Array_Push(state, result, &item);
-                }
+                semantic_append_symbol_completion(state, result, *symbolPtr);
             }
         }
     }
-    
+    ZrCore_Array_Free(state, &visibleSymbols);
+
+    if (analyzer->ast != ZR_NULL) {
+        semantic_append_imported_module_completions(state, analyzer->ast, result);
+    }
+
     return ZR_TRUE;
 }
 

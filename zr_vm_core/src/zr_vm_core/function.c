@@ -54,6 +54,10 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->sourceCodeList = ZR_NULL;
     function->exportedVariables = ZR_NULL;
     function->exportedVariableLength = 0;
+    function->typedLocalBindings = ZR_NULL;
+    function->typedLocalBindingLength = 0;
+    function->typedExportedSymbols = ZR_NULL;
+    function->typedExportedSymbolLength = 0;
     function->functionName = ZR_NULL;  // 函数名，匿名函数为 ZR_NULL
     function->prototypeData = ZR_NULL;
     function->prototypeDataLength = 0;
@@ -92,6 +96,27 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     }
     if (function->exportedVariables != ZR_NULL && function->exportedVariableLength > 0) {
         ZR_MEMORY_RAW_FREE_LIST(global, function->exportedVariables, function->exportedVariableLength);
+    }
+    if (function->typedExportedSymbols != ZR_NULL && function->typedExportedSymbolLength > 0) {
+        for (TZrUInt32 i = 0; i < function->typedExportedSymbolLength; i++) {
+            SZrFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[i];
+            if (symbol->parameterTypes != ZR_NULL && symbol->parameterCount > 0) {
+                ZrCore_Memory_RawFreeWithType(global,
+                                              symbol->parameterTypes,
+                                              sizeof(SZrFunctionTypedTypeRef) * symbol->parameterCount,
+                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+        }
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->typedExportedSymbols,
+                                      sizeof(SZrFunctionTypedExportSymbol) * function->typedExportedSymbolLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->typedLocalBindings != ZR_NULL && function->typedLocalBindingLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->typedLocalBindings,
+                                      sizeof(SZrFunctionTypedLocalBinding) * function->typedLocalBindingLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     if (function->prototypeData != ZR_NULL && function->prototypeDataLength > 0) {
         ZrCore_Memory_RawFreeWithType(global, function->prototypeData, function->prototypeDataLength, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
@@ -390,10 +415,10 @@ SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, TZrStackValuePointe
             } break;
             case ZR_VALUE_TYPE_CLOSURE: {
                 // 闭包类型：与 VM 函数类似，但需要通过 ZR_CAST_VM_CLOSURE 转换
-                // 闭包不是 native 的（isNative 应该是 ZR_FALSE）
                 if (isNative) {
-                    // Native 闭包应该使用 ZR_VALUE_TYPE_FUNCTION
-                    // 这里不应该到达，但为了安全起见，我们处理它
+                    // Native callables are also backed by SZrClosureNative. Native
+                    // bindings and some runtime helpers currently surface them as
+                    // CLOSURE + isNative, so this is a valid call path.
                     SZrClosureNative *native = ZR_CAST_NATIVE_CLOSURE(state, value->value.object);
                     function_pre_call_native(state, stackPointer, resultCount, native->nativeFunction);
                     return ZR_NULL;

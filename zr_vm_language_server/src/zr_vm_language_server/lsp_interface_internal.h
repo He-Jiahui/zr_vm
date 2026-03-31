@@ -2,6 +2,7 @@
 #define ZR_VM_LANGUAGE_SERVER_LSP_INTERFACE_INTERNAL_H
 
 #include "zr_vm_language_server/lsp_interface.h"
+#include "zr_vm_library/project.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/hash_set.h"
@@ -43,5 +44,65 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                            SZrArray *result);
 SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyzer *analyzer,
                                                               SZrFileRange position);
+SZrFileVersion *ZrLanguageServer_Lsp_GetDocumentFileVersion(SZrLspContext *context, SZrString *uri);
+SZrFilePosition ZrLanguageServer_Lsp_GetDocumentFilePosition(SZrLspContext *context,
+                                                             SZrString *uri,
+                                                             SZrLspPosition position);
+
+typedef struct SZrLspProjectFileRecord {
+    SZrString *uri;
+    SZrString *path;
+    SZrString *moduleName;
+} SZrLspProjectFileRecord;
+
+typedef struct SZrLspProjectIndex {
+    SZrLibrary_Project *project;
+    SZrString *projectFileUri;
+    SZrString *projectFilePath;
+    SZrString *projectRootPath;
+    SZrString *sourceRootPath;
+    SZrArray files; // SZrLspProjectFileRecord*
+} SZrLspProjectIndex;
+
+SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state,
+                                                              SZrLspContext *context,
+                                                              SZrString *uri);
+SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state,
+                                                       SZrLspContext *context,
+                                                       SZrString *uri);
+void ZrLanguageServer_Lsp_RemoveAnalyzer(SZrState *state,
+                                         SZrLspContext *context,
+                                         SZrString *uri);
+TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
+                                                SZrLspContext *context,
+                                                SZrString *uri,
+                                                const TZrChar *content,
+                                                TZrSize contentLength,
+                                                TZrSize version,
+                                                TZrBool allowProjectRefresh);
+void ZrLanguageServer_Lsp_ProjectIndexes_Free(SZrState *state, SZrLspContext *context);
+TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
+                                                              SZrLspContext *context,
+                                                              SZrString *uri,
+                                                              const TZrChar *content,
+                                                              TZrSize contentLength);
+TZrBool ZrLanguageServer_Lsp_ProjectTryGetDefinition(SZrState *state,
+                                                     SZrLspContext *context,
+                                                     SZrString *uri,
+                                                     SZrLspPosition position,
+                                                     SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_ProjectTryFindReferences(SZrState *state,
+                                                      SZrLspContext *context,
+                                                      SZrString *uri,
+                                                      SZrLspPosition position,
+                                                      TZrBool includeDeclaration,
+                                                      SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_ProjectContainsUri(SZrState *state,
+                                                SZrLspContext *context,
+                                                SZrString *uri);
+TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
+                                                           SZrLspContext *context,
+                                                           SZrString *query,
+                                                           SZrArray *result);
 
 #endif

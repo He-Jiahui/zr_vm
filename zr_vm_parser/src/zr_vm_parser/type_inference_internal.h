@@ -45,6 +45,7 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                                         SZrInferredType *result);
 const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQualifier);
 SZrString *extract_imported_module_name(SZrFunctionCall *call);
+TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);
 TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);
 TZrBool infer_import_expression_type(SZrCompilerState *cs,
                                      SZrAstNode *node,

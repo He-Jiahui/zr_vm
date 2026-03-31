@@ -65,15 +65,16 @@ void emit_string_constant_to_slot(SZrCompilerState *cs, TZrUInt32 slot, SZrStrin
 }
 
 void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDeclaration *funcDecl) {
+    SZrInferredType returnType;
+    SZrArray paramTypes;
+
     if (cs == ZR_NULL || funcDecl == ZR_NULL || cs->typeEnv == ZR_NULL ||
         funcDecl->name == ZR_NULL || funcDecl->name->name == ZR_NULL || cs->hasError) {
         return;
     }
 
     if (funcDecl->returnType != ZR_NULL) {
-        SZrInferredType returnType;
         if (ZrParser_AstTypeToInferredType_Convert(cs, funcDecl->returnType, &returnType)) {
-            SZrArray paramTypes;
             ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), 8);
             if (funcDecl->params != ZR_NULL) {
                 for (TZrSize i = 0; i < funcDecl->params->count; i++) {
@@ -104,13 +105,34 @@ void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDe
             ZrCore_Array_Free(cs->state, &paramTypes);
         }
     } else {
-        SZrInferredType returnType;
-        SZrArray paramTypes;
-
         ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_OBJECT);
         ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), 8);
+        if (funcDecl->params != ZR_NULL) {
+            for (TZrSize i = 0; i < funcDecl->params->count; i++) {
+                SZrAstNode *paramNode = funcDecl->params->nodes[i];
+                if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
+                    SZrParameter *param = &paramNode->data.parameter;
+                    SZrInferredType paramType;
+
+                    if (param->typeInfo != ZR_NULL) {
+                        if (!ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
+                            continue;
+                        }
+                    } else {
+                        ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+                    }
+                    ZrCore_Array_Push(cs->state, &paramTypes, &paramType);
+                }
+            }
+        }
         ZrParser_TypeEnvironment_RegisterFunction(cs->state, cs->typeEnv, funcDecl->name->name, &returnType, &paramTypes);
         ZrParser_InferredType_Free(cs->state, &returnType);
+        for (TZrSize i = 0; i < paramTypes.length; i++) {
+            SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get(&paramTypes, i);
+            if (paramType != ZR_NULL) {
+                ZrParser_InferredType_Free(cs->state, paramType);
+            }
+        }
         ZrCore_Array_Free(cs->state, &paramTypes);
     }
 }
@@ -278,57 +300,6 @@ TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) {
     return globalSlot;
 }
 
-TZrInt64 compiler_internal_import_native_entry(SZrState *state) {
-    TZrStackValuePointer functionBase;
-    TZrStackValuePointer argBase;
-    SZrFunctionStackAnchor functionBaseAnchor;
-    SZrTypeValue *result;
-    SZrTypeValue *pathValue;
-    SZrString *path;
-    SZrObjectModule *module;
-
-    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
-        return 0;
-    }
-
-    functionBase = state->callInfoList->functionBase.valuePointer;
-    ZrCore_Function_StackAnchorInit(state, functionBase, &functionBaseAnchor);
-    argBase = functionBase + 1;
-    result = ZrCore_Stack_GetValue(functionBase);
-
-    if (state->stackTop.valuePointer <= argBase) {
-        functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
-        result = ZrCore_Stack_GetValue(functionBase);
-        ZrCore_Value_ResetAsNull(result);
-        state->stackTop.valuePointer = functionBase + 1;
-        return 1;
-    }
-
-    pathValue = ZrCore_Stack_GetValue(argBase);
-    if (pathValue == ZR_NULL || pathValue->type != ZR_VALUE_TYPE_STRING) {
-        functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
-        result = ZrCore_Stack_GetValue(functionBase);
-        ZrCore_Value_ResetAsNull(result);
-        state->stackTop.valuePointer = functionBase + 1;
-        return 1;
-    }
-
-    path = ZR_CAST_STRING(state, pathValue->value.object);
-    module = ZrCore_Module_ImportByPath(state, path);
-
-    functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
-    result = ZrCore_Stack_GetValue(functionBase);
-    if (module == ZR_NULL) {
-        ZrCore_Value_ResetAsNull(result);
-    } else {
-        ZrCore_Value_InitAsRawObject(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(module));
-        result->type = ZR_VALUE_TYPE_OBJECT;
-    }
-
-    state->stackTop.valuePointer = functionBase + 1;
-    return 1;
-}
-
 ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompilerState *cs,
                                                                      SZrString *moduleName,
                                                                      SZrFileRange location) {
@@ -346,7 +317,7 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompiler
         ZrParser_Compiler_Error(cs, "failed to create internal import callable", location);
         return (TZrUInt32)-1;
     }
-    importClosure->nativeFunction = compiler_internal_import_native_entry;
+    importClosure->nativeFunction = ZrCore_Module_ImportNativeEntry;
     ZrCore_RawObject_MarkAsPermanent(cs->state, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
 
     ZrCore_Value_InitAsRawObject(cs->state, &importCallable, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));

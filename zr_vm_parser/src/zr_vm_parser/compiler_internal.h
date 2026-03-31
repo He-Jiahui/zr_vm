@@ -162,8 +162,6 @@ void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNo
 
 TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) ;
 
-TZrInt64 compiler_internal_import_native_entry(SZrState *state) ;
-
 void emit_object_field_assignment_from_expression(SZrCompilerState *cs,
                                                          TZrUInt32 objectSlot,
                                                          SZrString *fieldName,
@@ -283,6 +281,12 @@ TZrBool extern_compiler_build_enum_descriptor_value(SZrCompilerState *cs,
                                                            SZrAstNode *declarationNode,
                                                            SZrTypeValue *outValue) ;
 
+TZrBool extern_compiler_build_delegate_descriptor_value(SZrCompilerState *cs,
+                                                               SZrExternBlock *externBlock,
+                                                               SZrAstNode *declarationNode,
+                                                               TZrBool includeKind,
+                                                               SZrTypeValue *outValue) ;
+
 TZrBool extern_compiler_emit_get_member_to_slot(SZrCompilerState *cs,
                                                        TZrUInt32 destSlot,
                                                        TZrUInt32 objectSlot,
@@ -381,6 +385,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
 
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize) ;
+
+TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs);
 
 void compile_script(SZrCompilerState *cs, SZrAstNode *node) ;
 

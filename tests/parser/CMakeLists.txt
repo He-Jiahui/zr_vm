@@ -3,6 +3,7 @@
 # 添加测试源文件
 set(PARSER_TEST_SOURCES
     test_parser.c
+    test_parser_extern.c
 )
 
 # 创建测试可执行文件

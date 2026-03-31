@@ -16,6 +16,8 @@
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
 
+#include <errno.h>
+
 // 测试时间测量结构
 typedef struct {
     clock_t startTime;
@@ -97,6 +99,9 @@ static TZrBool diagnostic_array_contains_range(SZrArray *diagnostics,
                                                TZrInt32 endLine,
                                                TZrInt32 endCharacter);
 static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZrChar *needle);
+static TZrBool build_fixture_native_path(const TZrChar *relativePath, TZrChar *buffer, TZrSize bufferSize);
+static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength);
+static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrChar *path);
 
 // 测试 LSP 上下文创建和释放
 static void test_lsp_context_create_and_free(SZrState *state) {
@@ -557,6 +562,24 @@ static TZrBool lsp_range_equals(SZrLspRange range,
            range.end.character == endCharacter;
 }
 
+static TZrBool location_array_contains_uri_and_range(SZrArray *locations,
+                                                     const TZrChar *uri,
+                                                     TZrInt32 startLine,
+                                                     TZrInt32 startCharacter,
+                                                     TZrInt32 endLine,
+                                                     TZrInt32 endCharacter) {
+    for (TZrSize index = 0; locations != ZR_NULL && index < locations->length; index++) {
+        SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, index);
+        if (locationPtr != ZR_NULL && *locationPtr != ZR_NULL &&
+            strcmp(test_string_ptr((*locationPtr)->uri), uri) == 0 &&
+            lsp_range_equals((*locationPtr)->range, startLine, startCharacter, endLine, endCharacter)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool location_array_contains_range(SZrArray *locations,
                                              TZrInt32 startLine,
                                              TZrInt32 startCharacter,
@@ -641,6 +664,94 @@ static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZ
     }
 
     return ZR_FALSE;
+}
+
+static TZrBool build_fixture_native_path(const TZrChar *relativePath,
+                                         TZrChar *buffer,
+                                         TZrSize bufferSize) {
+    int written;
+
+    if (relativePath == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    written = snprintf(buffer, (size_t)bufferSize, "%s%c%s", ZR_VM_SOURCE_ROOT, ZR_SEPARATOR, relativePath);
+    return written > 0 && (TZrSize)written < bufferSize;
+}
+
+static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength) {
+    FILE *file;
+    TZrChar *buffer = ZR_NULL;
+    long fileSize;
+    size_t readCount;
+
+    if (path == ZR_NULL || outLength == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    *outLength = 0;
+    file = fopen(path, "rb");
+    if (file == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    fileSize = ftell(file);
+    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    buffer = (TZrChar *)malloc((size_t)fileSize + 1);
+    if (buffer == ZR_NULL) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    readCount = fread(buffer, 1, (size_t)fileSize, file);
+    fclose(file);
+    if (readCount != (size_t)fileSize) {
+        free(buffer);
+        return ZR_NULL;
+    }
+
+    buffer[fileSize] = '\0';
+    *outLength = (TZrSize)fileSize;
+    return buffer;
+}
+
+static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrChar *path) {
+    TZrChar uriBuffer[2048];
+    TZrSize pathLength;
+    TZrSize writeIndex = 0;
+
+    if (state == ZR_NULL || path == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pathLength = strlen(path);
+    if (pathLength + 16 >= sizeof(uriBuffer)) {
+        return ZR_NULL;
+    }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    memcpy(uriBuffer, "file:///", 8);
+    writeIndex = 8;
+#else
+    memcpy(uriBuffer, "file://", 7);
+    writeIndex = 7;
+#endif
+
+    for (TZrSize index = 0; index < pathLength && writeIndex + 2 < sizeof(uriBuffer); index++) {
+        TZrChar current = path[index];
+        uriBuffer[writeIndex++] = current == '\\' ? '/' : current;
+    }
+    uriBuffer[writeIndex] = '\0';
+    return ZrCore_String_Create(state, uriBuffer, writeIndex);
 }
 
 static SZrLspSymbolInformation *find_symbol_information_by_name(SZrArray *symbols, const TZrChar *name) {
@@ -832,6 +943,343 @@ static void test_lsp_get_workspace_symbols(SZrState *state) {
     ZrCore_Array_Free(state, &symbols);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Get Workspace Symbols");
+}
+
+static void test_lsp_project_definition_resolves_imported_function(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *greetUri = ZR_NULL;
+    SZrLspPosition definitionPosition;
+    SZrLspPosition expectedDefinition;
+    SZrArray definitions;
+    TZrChar projectPath[1024];
+    TZrChar mainPath[1024];
+    TZrChar greetPath[1024];
+    TZrChar *projectContent = ZR_NULL;
+    TZrChar *mainContent = ZR_NULL;
+    TZrChar *greetContent = ZR_NULL;
+    TZrSize projectLength = 0;
+    TZrSize mainLength = 0;
+    TZrSize greetLength = 0;
+
+    TEST_START("LSP Project Definition Resolves Imported Function");
+    TEST_INFO("Project Definition", "Opening a .zrp should let goto definition jump to imported source files");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/import_pub_function/import_pub_function.zrp",
+                                   projectPath,
+                                   sizeof(projectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/import_pub_function/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/import_pub_function/src/greet.zr",
+                                   greetPath,
+                                   sizeof(greetPath))) {
+        TEST_FAIL(timer, "LSP Project Definition Resolves Imported Function", "Failed to build fixture paths");
+        return;
+    }
+
+    projectContent = read_fixture_text_file(projectPath, &projectLength);
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    greetContent = read_fixture_text_file(greetPath, &greetLength);
+    if (projectContent == ZR_NULL || mainContent == ZR_NULL || greetContent == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        TEST_FAIL(timer, "LSP Project Definition Resolves Imported Function", "Failed to read project fixture content");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        TEST_FAIL(timer, "LSP Project Definition Resolves Imported Function", "Failed to create LSP context");
+        return;
+    }
+
+    projectUri = create_file_uri_from_native_path(state, projectPath);
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    greetUri = create_file_uri_from_native_path(state, greetPath);
+    if (projectUri == ZR_NULL || mainUri == ZR_NULL || greetUri == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project Definition Resolves Imported Function", "Failed to create fixture URIs");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, projectUri, projectContent, projectLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1)) {
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project Definition Resolves Imported Function", "Failed to open project fixture documents");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(mainContent, "greet();", 0, 0, &definitionPosition) ||
+        !lsp_find_position_for_substring(greetContent, "greet()", 0, 0, &expectedDefinition)) {
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project Definition Resolves Imported Function", "Failed to compute fixture positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 2);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, definitionPosition, &definitions) ||
+        definitions.length == 0) {
+        ZrCore_Array_Free(state, &definitions);
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project Definition Resolves Imported Function", "Expected imported function usage to resolve to greet.zr");
+        return;
+    }
+
+    {
+        SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(&definitions, 0);
+        if (locationPtr == ZR_NULL || *locationPtr == ZR_NULL ||
+            strcmp(test_string_ptr((*locationPtr)->uri), test_string_ptr(greetUri)) != 0 ||
+            !lsp_range_equals((*locationPtr)->range,
+                              expectedDefinition.line,
+                              expectedDefinition.character,
+                              expectedDefinition.line,
+                              expectedDefinition.character + 5)) {
+            ZrCore_Array_Free(state, &definitions);
+            free(projectContent);
+            free(mainContent);
+            free(greetContent);
+            ZrLanguageServer_LspContext_Free(state, context);
+            TEST_FAIL(timer, "LSP Project Definition Resolves Imported Function", "Imported definition should point at greet.zr:greet");
+            return;
+        }
+    }
+
+    ZrCore_Array_Free(state, &definitions);
+    free(projectContent);
+    free(mainContent);
+    free(greetContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Project Definition Resolves Imported Function");
+}
+
+static void test_lsp_project_references_include_imported_function_usage(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *greetUri = ZR_NULL;
+    SZrLspPosition definitionPosition;
+    SZrLspPosition usagePosition;
+    SZrArray references;
+    TZrChar projectPath[1024];
+    TZrChar mainPath[1024];
+    TZrChar greetPath[1024];
+    TZrChar *projectContent = ZR_NULL;
+    TZrChar *mainContent = ZR_NULL;
+    TZrChar *greetContent = ZR_NULL;
+    TZrSize projectLength = 0;
+    TZrSize mainLength = 0;
+    TZrSize greetLength = 0;
+
+    TEST_START("LSP Project References Include Imported Function Usage");
+    TEST_INFO("Project References", "Opening a .zrp should let references cross imported project source files");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/import_pub_function/import_pub_function.zrp",
+                                   projectPath,
+                                   sizeof(projectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/import_pub_function/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/import_pub_function/src/greet.zr",
+                                   greetPath,
+                                   sizeof(greetPath))) {
+        TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to build fixture paths");
+        return;
+    }
+
+    projectContent = read_fixture_text_file(projectPath, &projectLength);
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    greetContent = read_fixture_text_file(greetPath, &greetLength);
+    if (projectContent == ZR_NULL || mainContent == ZR_NULL || greetContent == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to read project fixture content");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to create LSP context");
+        return;
+    }
+
+    projectUri = create_file_uri_from_native_path(state, projectPath);
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    greetUri = create_file_uri_from_native_path(state, greetPath);
+    if (projectUri == ZR_NULL || mainUri == ZR_NULL || greetUri == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to create fixture URIs");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, projectUri, projectContent, projectLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1)) {
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to open project fixture documents");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(greetContent, "greet()", 0, 0, &definitionPosition) ||
+        !lsp_find_position_for_substring(mainContent, "greet();", 0, 0, &usagePosition)) {
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Failed to compute fixture positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_FindReferences(state, context, greetUri, definitionPosition, ZR_TRUE, &references) ||
+        references.length < 2 ||
+        !location_array_contains_uri_and_range(&references,
+                                               test_string_ptr(greetUri),
+                                               definitionPosition.line,
+                                               definitionPosition.character,
+                                               definitionPosition.line,
+                                               definitionPosition.character + 5) ||
+        !location_array_contains_uri_and_range(&references,
+                                               test_string_ptr(mainUri),
+                                               usagePosition.line,
+                                               usagePosition.character,
+                                               usagePosition.line,
+                                               usagePosition.character + 5)) {
+        ZrCore_Array_Free(state, &references);
+        free(projectContent);
+        free(mainContent);
+        free(greetContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project References Include Imported Function Usage", "Expected project references to include both greet definition and imported usage");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &references);
+    free(projectContent);
+    free(mainContent);
+    free(greetContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Project References Include Imported Function Usage");
+}
+
+static void test_lsp_project_workspace_symbols_include_imported_exports(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *query = ZR_NULL;
+    SZrArray symbols;
+    TZrChar projectPath[1024];
+    TZrChar mainPath[1024];
+    TZrChar *projectContent = ZR_NULL;
+    TZrChar *mainContent = ZR_NULL;
+    TZrSize projectLength = 0;
+    TZrSize mainLength = 0;
+    SZrLspSymbolInformation *symbolInfo;
+
+    TEST_START("LSP Project Workspace Symbols Include Imported Exports");
+    TEST_INFO("Project Workspace Symbols", "Opening a .zrp should index imported project exports for workspace/symbol");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/import_pub_function/import_pub_function.zrp",
+                                   projectPath,
+                                   sizeof(projectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/import_pub_function/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath))) {
+        TEST_FAIL(timer, "LSP Project Workspace Symbols Include Imported Exports", "Failed to build fixture paths");
+        return;
+    }
+
+    projectContent = read_fixture_text_file(projectPath, &projectLength);
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    if (projectContent == ZR_NULL || mainContent == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        TEST_FAIL(timer, "LSP Project Workspace Symbols Include Imported Exports", "Failed to read project fixture content");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        TEST_FAIL(timer, "LSP Project Workspace Symbols Include Imported Exports", "Failed to create LSP context");
+        return;
+    }
+
+    projectUri = create_file_uri_from_native_path(state, projectPath);
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    query = ZrCore_String_Create(state, "greet", 5);
+    if (projectUri == ZR_NULL || mainUri == ZR_NULL || query == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project Workspace Symbols Include Imported Exports", "Failed to create fixture URIs");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, projectUri, projectContent, projectLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1)) {
+        free(projectContent);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project Workspace Symbols Include Imported Exports", "Failed to open project fixture documents");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), 4);
+    if (!ZrLanguageServer_Lsp_GetWorkspaceSymbols(state, context, query, &symbols)) {
+        ZrCore_Array_Free(state, &symbols);
+        free(projectContent);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project Workspace Symbols Include Imported Exports", "workspace/symbol request failed");
+        return;
+    }
+
+    symbolInfo = find_symbol_information_by_name(&symbols, "greet");
+    if (symbolInfo == ZR_NULL) {
+        ZrCore_Array_Free(state, &symbols);
+        free(projectContent);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project Workspace Symbols Include Imported Exports", "Expected workspace symbols to include greet from greet.zr");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &symbols);
+    free(projectContent);
+    free(mainContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Project Workspace Symbols Include Imported Exports");
 }
 
 // 测试获取文档高亮
@@ -1336,6 +1784,15 @@ int main() {
     TEST_DIVIDER();
 
     test_lsp_get_workspace_symbols(state);
+    TEST_DIVIDER();
+
+    test_lsp_project_definition_resolves_imported_function(state);
+    TEST_DIVIDER();
+
+    test_lsp_project_references_include_imported_function_usage(state);
+    TEST_DIVIDER();
+
+    test_lsp_project_workspace_symbols_include_imported_exports(state);
     TEST_DIVIDER();
 
     test_lsp_get_document_highlights(state);
