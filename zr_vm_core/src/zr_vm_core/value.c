@@ -380,6 +380,7 @@ struct SZrMeta *ZrCore_Value_GetMeta(struct SZrState *state, SZrTypeValue *value
 TZrBool ZrCore_Value_CallMetaMethod(struct SZrState *state, SZrTypeValue *value, EZrMetaType metaType, SZrTypeValue *result,
                             TZrSize argumentCount, ...) {
     SZrTypeValue stableValue;
+    SZrTypeValue copiedResult;
     SZrFunctionStackAnchor savedStackTopAnchor;
 
     if (state == ZR_NULL || value == ZR_NULL) {
@@ -439,7 +440,9 @@ TZrBool ZrCore_Value_CallMetaMethod(struct SZrState *state, SZrTypeValue *value,
         // 获取返回值
         SZrTypeValue *returnValue = ZrCore_Stack_GetValue(base);
         if (result != ZR_NULL) {
-            ZrCore_Value_Copy(state, result, returnValue);
+            ZrCore_Value_ResetAsNull(&copiedResult);
+            ZrCore_Value_Copy(state, &copiedResult, returnValue);
+            *result = copiedResult;
         }
         success = ZR_TRUE;
     }

@@ -120,59 +120,14 @@ static void destroy_test_state(SZrState *state) {
 // 调用元方法并获取结果的辅助函数
 static TZrBool call_meta_method(SZrState *state, SZrTypeValue *value, EZrMetaType metaType, SZrTypeValue *result,
                              SZrTypeValue *arg) {
-    SZrFunctionStackAnchor baseAnchor;
-
     if (state == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    SZrMeta *meta = ZrCore_Value_GetMeta(state, value, metaType);
-    if (meta == ZR_NULL || meta->function == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    // 保存当前栈状态
-    TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-    SZrCallInfo *savedCallInfo = state->callInfoList;
-
-    // 准备调用元方法
-    TZrStackValuePointer base = savedStackTop;
-    TZrSize argCount = (arg != ZR_NULL) ? 1 : 0;
-    TZrSize totalArgs = 1 + argCount; // self + 其他参数
-    base = ZrCore_Function_CheckStackAndAnchor(state, 1 + totalArgs, base, base, &baseAnchor);
-
-    // 将 meta->function 放到栈上
-    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-
-    // 将 self 放到栈上
-    ZrCore_Stack_CopyValue(state, base + 1, value);
-
-    // 如果有参数，放到栈上
     if (arg != ZR_NULL) {
-        ZrCore_Stack_CopyValue(state, base + 2, arg);
+        return ZrCore_Value_CallMetaMethod(state, value, metaType, result, 1, arg);
     }
-
-    state->stackTop.valuePointer = base + 1 + totalArgs;
-
-    // 调用元方法
-    base = ZrCore_Function_CallWithoutYieldAndRestoreAnchor(state, &baseAnchor, 1);
-
-    // 检查执行状态
-    TZrBool success = ZR_FALSE;
-    if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
-        // 获取返回值
-        SZrTypeValue *returnValue = ZrCore_Stack_GetValue(base);
-        if (result != ZR_NULL) {
-            ZrCore_Value_Copy(state, result, returnValue);
-        }
-        success = ZR_TRUE;
-    }
-
-    // 恢复栈状态
-    state->stackTop.valuePointer = savedStackTop;
-    state->callInfoList = savedCallInfo;
-
-    return success;
+    return ZrCore_Value_CallMetaMethod(state, value, metaType, result, 0);
 }
 
 // 测试初始化和清理

@@ -1,0 +1,147 @@
+//
+// Internal execution helpers shared across split translation units.
+//
+
+#ifndef ZR_VM_CORE_EXECUTION_INTERNAL_H
+#define ZR_VM_CORE_EXECUTION_INTERNAL_H
+
+#include "zr_vm_core/execution.h"
+
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/conversion.h"
+#include "zr_vm_core/exception.h"
+#include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
+#include "zr_vm_core/hash_set.h"
+#include "zr_vm_core/math.h"
+#include "zr_vm_core/meta.h"
+#include "zr_vm_core/module.h"
+#include "zr_vm_core/object.h"
+#include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
+#include "zr_vm_common/zr_object_conf.h"
+#include "zr_vm_common/zr_string_conf.h"
+
+typedef enum EZrExecutionNumericFallbackOp {
+    ZR_EXEC_NUMERIC_FALLBACK_ADD = 0,
+    ZR_EXEC_NUMERIC_FALLBACK_SUB,
+    ZR_EXEC_NUMERIC_FALLBACK_MUL,
+    ZR_EXEC_NUMERIC_FALLBACK_DIV,
+    ZR_EXEC_NUMERIC_FALLBACK_MOD,
+    ZR_EXEC_NUMERIC_FALLBACK_POW
+} EZrExecutionNumericFallbackOp;
+
+typedef enum EZrExecutionNumericCompareOp {
+    ZR_EXEC_NUMERIC_COMPARE_GREATER = 0,
+    ZR_EXEC_NUMERIC_COMPARE_LESS,
+    ZR_EXEC_NUMERIC_COMPARE_GREATER_EQUAL,
+    ZR_EXEC_NUMERIC_COMPARE_LESS_EQUAL
+} EZrExecutionNumericCompareOp;
+
+#define EXEC_DONE(N) ZR_INSTRUCTION_DONE(instruction, programCounter, N)
+#define EXEC_E(INSTRUCTION) ((INSTRUCTION).instruction.operandExtra)
+#define EXEC_A0(INSTRUCTION) ((INSTRUCTION).instruction.operand.operand0[0])
+#define EXEC_B0(INSTRUCTION) ((INSTRUCTION).instruction.operand.operand0[1])
+#define EXEC_C0(INSTRUCTION) ((INSTRUCTION).instruction.operand.operand0[2])
+#define EXEC_D0(INSTRUCTION) ((INSTRUCTION).instruction.operand.operand0[3])
+#define EXEC_A1(INSTRUCTION) ((INSTRUCTION).instruction.operand.operand1[0])
+#define EXEC_B1(INSTRUCTION) ((INSTRUCTION).instruction.operand.operand1[1])
+#define EXEC_A2(INSTRUCTION) ((INSTRUCTION).instruction.operand.operand2[0])
+
+TZrBool execution_try_materialize_global_prototypes(SZrState *state,
+                                                    SZrClosure *currentClosure,
+                                                    SZrCallInfo *currentCallInfo,
+                                                    const SZrTypeValue *tableValue,
+                                                    const SZrTypeValue *keyValue);
+
+TZrInt64 value_to_int64(const SZrTypeValue *value);
+TZrUInt64 value_to_uint64(const SZrTypeValue *value);
+TZrDouble value_to_double(const SZrTypeValue *value);
+
+TZrBool concat_values_to_destination(SZrState *state,
+                                     SZrTypeValue *destination,
+                                     const SZrTypeValue *opA,
+                                     const SZrTypeValue *opB,
+                                     TZrBool safeMode);
+TZrBool try_builtin_add(SZrState *state,
+                        SZrTypeValue *destination,
+                        const SZrTypeValue *opA,
+                        const SZrTypeValue *opB);
+
+void execution_apply_binary_numeric_float_or_raise(SZrState *state,
+                                                   EZrExecutionNumericFallbackOp operation,
+                                                   SZrTypeValue *destination,
+                                                   const SZrTypeValue *opA,
+                                                   const SZrTypeValue *opB,
+                                                   const TZrChar *instructionName);
+void execution_apply_binary_numeric_compare_or_raise(SZrState *state,
+                                                     EZrExecutionNumericCompareOp operation,
+                                                     SZrTypeValue *destination,
+                                                     const SZrTypeValue *opA,
+                                                     const SZrTypeValue *opB,
+                                                     const TZrChar *instructionName);
+void execution_try_binary_numeric_float_fallback_or_raise(SZrState *state,
+                                                          EZrExecutionNumericFallbackOp operation,
+                                                          SZrTypeValue *destination,
+                                                          const SZrTypeValue *opA,
+                                                          const SZrTypeValue *opB,
+                                                          const TZrChar *instructionName);
+
+SZrObjectPrototype *find_type_prototype(SZrState *state,
+                                        SZrString *typeName,
+                                        EZrObjectPrototypeType expectedType);
+TZrBool convert_to_struct(SZrState *state,
+                          SZrTypeValue *source,
+                          SZrObjectPrototype *targetPrototype,
+                          SZrTypeValue *destination);
+TZrBool convert_to_class(SZrState *state,
+                         SZrTypeValue *source,
+                         SZrObjectPrototype *targetPrototype,
+                         SZrTypeValue *destination);
+TZrBool convert_to_enum(SZrState *state,
+                        SZrTypeValue *source,
+                        SZrObjectPrototype *targetPrototype,
+                        SZrTypeValue *destination);
+
+TZrSize close_scope_cleanup_registrations(SZrState *state, TZrSize cleanupCount);
+TZrBool execution_invoke_meta_call(SZrState *state,
+                                   SZrCallInfo *savedCallInfo,
+                                   TZrStackValuePointer savedStackTop,
+                                   TZrStackValuePointer scratchBase,
+                                   TZrBool reloadScratchFromFunctionTop,
+                                   SZrMeta *meta,
+                                   const SZrTypeValue *arg0,
+                                   const SZrTypeValue *arg1,
+                                   TZrSize argumentCount,
+                                   TZrStackValuePointer *outMetaBase,
+                                   TZrStackValuePointer *outSavedStackTop);
+
+TZrBool execution_push_exception_handler(SZrState *state, SZrCallInfo *callInfo, TZrUInt32 handlerIndex);
+SZrVmExceptionHandlerState *execution_find_handler_state(SZrState *state,
+                                                         SZrCallInfo *callInfo,
+                                                         TZrUInt32 handlerIndex);
+const SZrFunctionExceptionHandlerInfo *execution_lookup_exception_handler_info(
+        SZrState *state,
+        const SZrVmExceptionHandlerState *handlerState,
+        SZrFunction **outFunction);
+void execution_pop_exception_handler(SZrState *state, SZrVmExceptionHandlerState *handlerState);
+
+TZrBool execution_jump_to_instruction_offset(SZrState *state,
+                                             SZrCallInfo **ioCallInfo,
+                                             SZrCallInfo *targetCallInfo,
+                                             TZrMemoryOffset instructionOffset);
+void execution_clear_pending_control(SZrState *state);
+void execution_set_pending_control(SZrState *state,
+                                   EZrVmPendingControlKind kind,
+                                   SZrCallInfo *callInfo,
+                                   TZrMemoryOffset targetInstructionOffset,
+                                   TZrUInt32 valueSlot,
+                                   const SZrTypeValue *value);
+TZrBool execution_resume_pending_via_outer_finally(SZrState *state, SZrCallInfo **ioCallInfo);
+TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioCallInfo);
+
+#endif // ZR_VM_CORE_EXECUTION_INTERNAL_H
