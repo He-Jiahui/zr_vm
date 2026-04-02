@@ -55,7 +55,7 @@ ZR_FORCE_INLINE void ZrStateResetDebugHookCount(SZrState *state) { state->debugH
 SZrState *ZrCore_State_New(SZrGlobalState *global) {
     // FZrAllocator allocator = global->allocator;
     SZrState *newState = ZrCore_Memory_Allocate(global, NULL, 0, sizeof(SZrState), ZR_MEMORY_NATIVE_TYPE_STATE);
-    ZrCore_RawObject_Construct(&newState->super, ZR_VALUE_TYPE_THREAD);
+    ZrCore_RawObject_Construct(&newState->super, ZR_RAW_OBJECT_TYPE_THREAD);
     ZrCore_State_Init(newState, global);
     return newState;
 }
@@ -135,6 +135,7 @@ void ZrCore_State_MainThreadLaunch(SZrState *state, TZrPtr arguments) {
 }
 
 void ZrCore_State_Exit(SZrState *state) {
+    ZR_UNUSED_PARAMETER(state);
     // SZrGlobalState *global = state->global;
     // todo
 }
@@ -208,8 +209,6 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
 }
 
 EZrThreadStatus ZrCore_State_DoRun(SZrState *state, TZrNativeString entry) {
-    SZrGlobalState *global = state->global;
-
     // todo: use loaded module is currently not supported
 
     SZrIoSource *source = ZrCore_Io_LoadSource(state, entry, ZR_NULL);

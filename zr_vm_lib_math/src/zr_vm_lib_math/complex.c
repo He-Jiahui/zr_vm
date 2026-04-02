@@ -25,7 +25,9 @@ TZrBool ZrMath_Complex_Conjugate(ZrLibCallContext *context, SZrTypeValue *result
     ZrMathComplex value; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     object = ZrMath_MakeComplex(context->state, value.real, -value.imag);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Complex_Normalized(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex value; TZrFloat64 magnitude; SZrObject *object;
@@ -33,34 +35,44 @@ TZrBool ZrMath_Complex_Normalized(ZrLibCallContext *context, SZrTypeValue *resul
     magnitude = sqrt(value.real * value.real + value.imag * value.imag);
     object = magnitude <= ZR_MATH_EPSILON ? ZrMath_MakeComplex(context->state, 0.0, 0.0)
                                           : ZrMath_MakeComplex(context->state, value.real / magnitude, value.imag / magnitude);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Complex_MetaAdd(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex lhs; ZrMathComplex rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadComplexObject(context->state, other, &rhs)) return ZR_FALSE;
     object = ZrMath_MakeComplex(context->state, lhs.real + rhs.real, lhs.imag + rhs.imag);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Complex_MetaSub(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex lhs; ZrMathComplex rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadComplexObject(context->state, other, &rhs)) return ZR_FALSE;
     object = ZrMath_MakeComplex(context->state, lhs.real - rhs.real, lhs.imag - rhs.imag);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Complex_MetaMul(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex lhs; ZrMathComplex rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadComplexObject(context->state, other, &rhs)) return ZR_FALSE;
     object = ZrMath_MakeComplex(context->state, lhs.real * rhs.real - lhs.imag * rhs.imag, lhs.real * rhs.imag + lhs.imag * rhs.real);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Complex_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex value; SZrObject *object;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     object = ZrMath_MakeComplex(context->state, -value.real, -value.imag);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Complex_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex lhs; ZrMathComplex rhs; SZrObject *other = ZR_NULL; TZrFloat64 dl; TZrFloat64 dr;

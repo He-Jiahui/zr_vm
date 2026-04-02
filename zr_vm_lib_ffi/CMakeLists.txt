@@ -89,6 +89,7 @@ if (NOT ZR_VM_LIBFFI_FOUND AND WIN32 AND MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             FFI_BUILDING=1
             X86_WIN64=1
     )
+    target_compile_options(zr_vm_libffi_vendor PRIVATE "$<$<COMPILE_LANGUAGE:C>:/W0>")
     set_target_properties(zr_vm_libffi_vendor PROPERTIES OUTPUT_NAME zr_vm_libffi_vendor)
 
     set(ZR_VM_LIBFFI_FOUND ON)

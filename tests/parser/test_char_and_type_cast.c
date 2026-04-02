@@ -58,7 +58,8 @@ typedef struct {
 } while(0)
 
 #define TEST_FAIL_CUSTOM(timer, summary, reason) do { \
-    double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
+    clock_t failureTime = clock(); \
+    double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
 } while(0)
@@ -103,7 +104,7 @@ static char* read_test_file(const char* filename, size_t* outSize) {
 }
 
 // 测试字符字面量解析
-void test_char_literals_parsing(void) {
+static void test_char_literals_parsing(void) {
     SZrTestTimer timer;
     const char* testSummary = "Character Literals Parsing";
     
@@ -151,7 +152,7 @@ void test_char_literals_parsing(void) {
 }
 
 // 测试字符字面量编译
-void test_char_literals_compilation(void) {
+static void test_char_literals_compilation(void) {
     SZrTestTimer timer;
     const char* testSummary = "Character Literals Compilation";
     
@@ -206,7 +207,7 @@ void test_char_literals_compilation(void) {
 }
 
 // 测试基本类型转换解析
-void test_type_cast_basic_parsing(void) {
+static void test_type_cast_basic_parsing(void) {
     SZrTestTimer timer;
     const char* testSummary = "Basic Type Cast Parsing";
     
@@ -254,7 +255,7 @@ void test_type_cast_basic_parsing(void) {
 }
 
 // 测试基本类型转换编译
-void test_type_cast_basic_compilation(void) {
+static void test_type_cast_basic_compilation(void) {
     SZrTestTimer timer;
     const char* testSummary = "Basic Type Cast Compilation";
     
@@ -309,7 +310,7 @@ void test_type_cast_basic_compilation(void) {
 }
 
 // 测试结构体类型转换解析
-void test_type_cast_struct_parsing(void) {
+static void test_type_cast_struct_parsing(void) {
     SZrTestTimer timer;
     const char* testSummary = "Struct Type Cast Parsing";
     
@@ -357,7 +358,7 @@ void test_type_cast_struct_parsing(void) {
 }
 
 // 测试类类型转换解析
-void test_type_cast_class_parsing(void) {
+static void test_type_cast_class_parsing(void) {
     SZrTestTimer timer;
     const char* testSummary = "Class Type Cast Parsing";
     
@@ -426,4 +427,5 @@ int main(void) {
     
     return UNITY_END();
 }
+
 

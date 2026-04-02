@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_parser/type_system.h"
+#include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/semantic.h"
 
 #include "zr_vm_core/array.h"
@@ -161,6 +162,18 @@ TZrBool ZrParser_InferredType_Equal(const SZrInferredType *type1, const SZrInfer
             return ZR_FALSE;
         }
     }
+
+    if (type1->hasArraySizeConstraint != type2->hasArraySizeConstraint) {
+        return ZR_FALSE;
+    }
+
+    if (type1->hasArraySizeConstraint) {
+        if (type1->arrayFixedSize != type2->arrayFixedSize ||
+            type1->arrayMinSize != type2->arrayMinSize ||
+            type1->arrayMaxSize != type2->arrayMaxSize) {
+            return ZR_FALSE;
+        }
+    }
     
     // Compare inline element type arrays.
     if (type1->elementTypes.length != type2->elementTypes.length) {
@@ -291,6 +304,127 @@ static TZrBool function_type_info_matches_signature(const SZrFunctionTypeInfo *f
     return ZR_TRUE;
 }
 
+static void free_generic_parameter_info_array(SZrState *state, SZrArray *genericParameters) {
+    if (state == ZR_NULL || genericParameters == ZR_NULL ||
+        !genericParameters->isValid || genericParameters->head == ZR_NULL ||
+        genericParameters->capacity == 0 || genericParameters->elementSize == 0) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < genericParameters->length; index++) {
+        SZrTypeGenericParameterInfo *genericInfo =
+                (SZrTypeGenericParameterInfo *)ZrCore_Array_Get(genericParameters, index);
+        if (genericInfo != ZR_NULL &&
+            genericInfo->constraintTypeNames.isValid &&
+            genericInfo->constraintTypeNames.head != ZR_NULL &&
+            genericInfo->constraintTypeNames.capacity > 0 &&
+            genericInfo->constraintTypeNames.elementSize > 0) {
+            ZrCore_Array_Free(state, &genericInfo->constraintTypeNames);
+        }
+    }
+
+    ZrCore_Array_Free(state, genericParameters);
+}
+
+static TZrBool copy_generic_parameter_info_array(SZrState *state,
+                                                 SZrArray *dest,
+                                                 const SZrArray *src) {
+    if (dest == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Construct(dest);
+    if (state == ZR_NULL || src == ZR_NULL || !src->isValid || src->length == 0) {
+        return ZR_TRUE;
+    }
+
+    ZrCore_Array_Init(state, dest, sizeof(SZrTypeGenericParameterInfo), src->length);
+    for (TZrSize index = 0; index < src->length; index++) {
+        const SZrTypeGenericParameterInfo *sourceInfo =
+                (const SZrTypeGenericParameterInfo *)ZrCore_Array_Get((SZrArray *)src, index);
+        SZrTypeGenericParameterInfo copiedInfo;
+        if (sourceInfo == ZR_NULL) {
+            continue;
+        }
+
+        memset(&copiedInfo, 0, sizeof(copiedInfo));
+        copiedInfo.name = sourceInfo->name;
+        copiedInfo.genericKind = sourceInfo->genericKind;
+        copiedInfo.variance = sourceInfo->variance;
+        copiedInfo.requiresClass = sourceInfo->requiresClass;
+        copiedInfo.requiresStruct = sourceInfo->requiresStruct;
+        copiedInfo.requiresNew = sourceInfo->requiresNew;
+        ZrCore_Array_Construct(&copiedInfo.constraintTypeNames);
+
+        if (sourceInfo->constraintTypeNames.isValid && sourceInfo->constraintTypeNames.length > 0) {
+            ZrCore_Array_Init(state,
+                              &copiedInfo.constraintTypeNames,
+                              sizeof(SZrString *),
+                              sourceInfo->constraintTypeNames.length);
+            for (TZrSize constraintIndex = 0; constraintIndex < sourceInfo->constraintTypeNames.length; constraintIndex++) {
+                SZrString **constraintTypeName =
+                        (SZrString **)ZrCore_Array_Get((SZrArray *)&sourceInfo->constraintTypeNames, constraintIndex);
+                if (constraintTypeName != ZR_NULL) {
+                    ZrCore_Array_Push(state, &copiedInfo.constraintTypeNames, constraintTypeName);
+                }
+            }
+        }
+
+        ZrCore_Array_Push(state, dest, &copiedInfo);
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool copy_parameter_passing_mode_array(SZrState *state,
+                                                 SZrArray *dest,
+                                                 const SZrArray *src) {
+    if (dest == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Construct(dest);
+    if (state == ZR_NULL || src == ZR_NULL || !src->isValid || src->length == 0) {
+        return ZR_TRUE;
+    }
+
+    ZrCore_Array_Init(state, dest, sizeof(EZrParameterPassingMode), src->length);
+    for (TZrSize index = 0; index < src->length; index++) {
+        EZrParameterPassingMode *mode =
+                (EZrParameterPassingMode *)ZrCore_Array_Get((SZrArray *)src, index);
+        if (mode != ZR_NULL) {
+            ZrCore_Array_Push(state, dest, mode);
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static void free_function_type_info_payload(SZrState *state, SZrFunctionTypeInfo *funcInfo) {
+    if (state == ZR_NULL || funcInfo == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Free(state, &funcInfo->returnType);
+    if (funcInfo->paramTypes.isValid) {
+        for (TZrSize j = 0; j < funcInfo->paramTypes.length; j++) {
+            SZrInferredType *paramType =
+                    (SZrInferredType *)ZrCore_Array_Get(&funcInfo->paramTypes, j);
+            if (paramType != ZR_NULL) {
+                ZrParser_InferredType_Free(state, paramType);
+            }
+        }
+        ZrCore_Array_Free(state, &funcInfo->paramTypes);
+    }
+    free_generic_parameter_info_array(state, &funcInfo->genericParameters);
+    if (funcInfo->parameterPassingModes.isValid &&
+        funcInfo->parameterPassingModes.head != ZR_NULL &&
+        funcInfo->parameterPassingModes.capacity > 0 &&
+        funcInfo->parameterPassingModes.elementSize > 0) {
+        ZrCore_Array_Free(state, &funcInfo->parameterPassingModes);
+    }
+}
+
 // 检查类型是否为数字类型（保留用于未来扩展）
 // static TZrBool is_number_type(EZrValueType type) {
 //     return ZR_VALUE_IS_TYPE_NUMBER(type);
@@ -335,6 +469,28 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
 
         if (toType->isNullable && !fromType->isNullable) {
             return ZR_TRUE;
+        }
+    }
+
+    if (fromType->baseType == ZR_VALUE_TYPE_ARRAY && toType->baseType == ZR_VALUE_TYPE_ARRAY) {
+        if (toType->hasArraySizeConstraint) {
+            if (!fromType->hasArraySizeConstraint) {
+                return ZR_FALSE;
+            }
+
+            if (toType->arrayFixedSize > 0) {
+                if (fromType->arrayFixedSize == 0 || fromType->arrayFixedSize != toType->arrayFixedSize) {
+                    return ZR_FALSE;
+                }
+            } else {
+                if (toType->arrayMinSize > 0 && fromType->arrayMinSize < toType->arrayMinSize) {
+                    return ZR_FALSE;
+                }
+                if (toType->arrayMaxSize > 0 &&
+                    (fromType->arrayMaxSize == 0 || fromType->arrayMaxSize > toType->arrayMaxSize)) {
+                    return ZR_FALSE;
+                }
+            }
         }
     }
     
@@ -524,18 +680,7 @@ void ZrParser_TypeEnvironment_Free(SZrState *state, SZrTypeEnvironment *env) {
         for (TZrSize i = 0; i < env->functionReturnTypes.length; i++) {
             SZrFunctionTypeInfo **funcInfo = (SZrFunctionTypeInfo **)ZrCore_Array_Get(&env->functionReturnTypes, i);
             if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL) {
-                // 释放函数类型信息
-                ZrParser_InferredType_Free(state, &(*funcInfo)->returnType);
-                if ((*funcInfo)->paramTypes.isValid) {
-                    for (TZrSize j = 0; j < (*funcInfo)->paramTypes.length; j++) {
-                        SZrInferredType *paramType =
-                                (SZrInferredType *)ZrCore_Array_Get(&(*funcInfo)->paramTypes, j);
-                        if (paramType != ZR_NULL) {
-                            ZrParser_InferredType_Free(state, paramType);
-                        }
-                    }
-                    ZrCore_Array_Free(state, &(*funcInfo)->paramTypes);
-                }
+                free_function_type_info_payload(state, *funcInfo);
                 ZrCore_Memory_RawFreeWithType(state->global, *funcInfo, sizeof(SZrFunctionTypeInfo), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
             }
         }
@@ -621,6 +766,24 @@ TZrBool ZrParser_TypeEnvironment_LookupVariable(SZrState *state, SZrTypeEnvironm
 
 // 注册函数类型
 TZrBool ZrParser_TypeEnvironment_RegisterFunction(SZrState *state, SZrTypeEnvironment *env, SZrString *name, const SZrInferredType *returnType, SZrArray *paramTypes) {
+    return ZrParser_TypeEnvironment_RegisterFunctionEx(state,
+                                                       env,
+                                                       name,
+                                                       returnType,
+                                                       paramTypes,
+                                                       ZR_NULL,
+                                                       ZR_NULL,
+                                                       ZR_NULL);
+}
+
+TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
+                                                    SZrTypeEnvironment *env,
+                                                    SZrString *name,
+                                                    const SZrInferredType *returnType,
+                                                    SZrArray *paramTypes,
+                                                    SZrArray *genericParameters,
+                                                    SZrArray *parameterPassingModes,
+                                                    SZrAstNode *declarationNode) {
     TZrTypeId typeId;
     TZrSymbolId symbolId;
     TZrOverloadSetId overloadSetId;
@@ -635,6 +798,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunction(SZrState *state, SZrTypeEnviro
         SZrFunctionTypeInfo **funcInfo = (SZrFunctionTypeInfo **)ZrCore_Array_Get(&env->functionReturnTypes, i);
         if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL && 
             (*funcInfo)->name != ZR_NULL && ZrCore_String_Equal((*funcInfo)->name, name) &&
+            (*funcInfo)->genericParameters.length == (genericParameters != ZR_NULL ? genericParameters->length : 0) &&
             function_type_info_matches_signature(*funcInfo, returnType, paramTypes)) {
             return ZR_FALSE;
         }
@@ -649,6 +813,10 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunction(SZrState *state, SZrTypeEnviro
     
     funcInfo->name = name;
     ZrParser_InferredType_Copy(state, &funcInfo->returnType, returnType);
+    ZrCore_Array_Construct(&funcInfo->paramTypes);
+    ZrCore_Array_Construct(&funcInfo->genericParameters);
+    ZrCore_Array_Construct(&funcInfo->parameterPassingModes);
+    funcInfo->declarationNode = declarationNode;
     
     // Deep-copy parameter type array values.
     if (paramTypes != ZR_NULL && paramTypes->isValid && paramTypes->capacity > 0 && paramTypes->length > 0) {
@@ -661,8 +829,13 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunction(SZrState *state, SZrTypeEnviro
                 ZrCore_Array_Push(state, &funcInfo->paramTypes, &copiedType);
             }
         }
-    } else {
-        ZrCore_Array_Construct(&funcInfo->paramTypes);
+    }
+
+    if (!copy_generic_parameter_info_array(state, &funcInfo->genericParameters, genericParameters) ||
+        !copy_parameter_passing_mode_array(state, &funcInfo->parameterPassingModes, parameterPassingModes)) {
+        free_function_type_info_payload(state, funcInfo);
+        ZrCore_Memory_RawFreeWithType(state->global, funcInfo, sizeof(SZrFunctionTypeInfo), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        return ZR_FALSE;
     }
     
     ZrCore_Array_Push(state, &env->functionReturnTypes, &funcInfo);

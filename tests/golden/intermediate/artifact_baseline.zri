@@ -24,6 +24,9 @@ TYPE_METADATA:
     [1] buildMessage: function
   EXPORTED_SYMBOLS (1):
     fn greet(): object
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
 
 INSTRUCTIONS (5):
   [0] CREATE_CLOSURE (extra=0)

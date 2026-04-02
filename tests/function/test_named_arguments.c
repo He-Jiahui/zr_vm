@@ -46,7 +46,8 @@ typedef struct {
 } while(0)
 
 #define TEST_FAIL_CUSTOM(timer, summary, reason) do { \
-    double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
+    clock_t failureTime = clock(); \
+    double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
 } while(0)
@@ -95,7 +96,7 @@ void tearDown(void) {
 // ==================== 命名参数测试 ====================
 
 // 测试1: 基本命名参数调用
-void test_named_arguments_basic(void) {
+static void test_named_arguments_basic(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Named Arguments - Basic";
     
@@ -172,7 +173,7 @@ void test_named_arguments_basic(void) {
 }
 
 // 测试2: 位置参数和命名参数混合
-void test_named_arguments_mixed(void) {
+static void test_named_arguments_mixed(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Named Arguments - Mixed Positional and Named";
     
@@ -230,7 +231,7 @@ void test_named_arguments_mixed(void) {
 }
 
 // 测试3: 默认参数与命名参数结合
-void test_named_arguments_with_defaults(void) {
+static void test_named_arguments_with_defaults(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Named Arguments - With Default Parameters";
     
@@ -290,7 +291,7 @@ void test_named_arguments_with_defaults(void) {
 }
 
 // 测试4: 命名参数顺序无关
-void test_named_arguments_order_independent(void) {
+static void test_named_arguments_order_independent(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Named Arguments - Order Independent";
     
@@ -348,7 +349,7 @@ void test_named_arguments_order_independent(void) {
 }
 
 // 测试5: 复杂函数调用中的命名参数
-void test_named_arguments_complex(void) {
+static void test_named_arguments_complex(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Named Arguments - Complex Function Call";
     
@@ -421,3 +422,4 @@ int main(void) {
     
     return UNITY_END();
 }
+

@@ -929,46 +929,87 @@ var l = <k.Person> p;
 
 ### 3.7 泛型和动态类型原型
 
-#### 静态泛型
+#### 元数据泛型（v1）
 
-静态泛型为可在编译期明确为基本类型或者已知类/结构体，能进行指令优化。编译期间可以进行类型推断，从而给出更明确的结果。一旦类型是确定的，指令就可以被优化，而且不允许模糊类型进入，或者必须强制转换进入。
-
-```zr
-class A<T> {
-    pub man: T;
-    pub static woman: T;  // 每个泛型在明确后，会产生对应的原型，比如 A<int>，然后 A<int>.woman 里面是 int 类型
-}
-
-// 静态泛型编译期即可明确，生成对应的原型
-var a: A<int> = new A<int>();
-```
-
-#### 动态泛型
-
-动态泛型可以在运行时生效，通过原型里面的动态的 generic 列表明确后取得。
+zr 当前采用接近 C# 的“开放泛型定义 + 闭型懒实例化 + 共享函数体”模型，而不是 C++ 式模板单态化。源码定义、native 导入和 binary/import 导入都落到同一套泛型元数据与闭型缓存机制上。
 
 ```zr
-class A<T> {
-    pub man: T;
+class Box<T> {
+    pub value: T;
 }
 
-// 动态泛型在第一次遭遇的时候会进行检查并生成，在指令中实现
-var a = new A();  // T 在运行时确定
+struct Pair<TLeft, TRight> {
+    pub left: TLeft;
+    pub right: TRight;
+}
+
+interface IProducer<out T> {
+    next(): T;
+}
+
+class Matrix<T, const N: int> {
+    pub rows: Array<T>[N];
+}
+
+func map<TIn, TOut>(source: Array<TIn>, f: Func<TIn, TOut>): Array<TOut> {
+    return source;
+}
 ```
 
 **说明**:
-- 静态泛型：编译期即可明确，生成对应的原型
-- 动态泛型：在第一次遭遇的时候会进行检查并生成，在指令中实现
-- 泛型类和函数会维护一个泛型表，通过泛型成员的数量组成键值对
+- 泛型声明支持 `class`、`struct`、`interface`、`func`、实例方法。
+- 使用处支持显式实参 `foo<int>(...)`、`obj.method<string>(...)`，也支持从接收者和调用参数做类型推断。
+- 嵌套泛型会保留规范化后的闭型名称，例如 `Map<string, Array<List<int>>>`。
+- 整数 const 泛型的身份以编译期归约值为准，因此 `Matrix<int, 2 + 2>` 与 `Matrix<int, 4>` 视为同一闭型。
+- 源码层当前不支持通过 `new Box()` 这类省略实参的形式把类型留到运行时再决定；源码可见的是闭型使用，开放泛型主要存在于编译器和元数据层。
 
-#### 泛型约束
+#### 泛型约束与继承
+
+泛型约束使用 C# 风格 `where` 子句，v1 支持以下约束：
+- 基类 / 接口约束
+- `class`
+- `struct`
+- `new()`
 
 ```zr
-class C {}
+class Base<T> {
+    pub value: T;
+}
 
-// 泛型约束：T 必须是 C 或其子类
-class B<T: C> {}
+class Derived<T, const N: int> : Base<T>
+where T: class, new()
+{
+}
 ```
+
+继承与实现列表中的泛型实参同样支持转发、固定和 const 表达式，闭型实例化时会进行替换与约束校验。
+
+#### 方差与参数作用
+
+`in/out` 与 `%in/%out/%ref` 是两套独立机制：
+- `in/out` 只用于 `interface` 泛型参数，分别表示逆变和协变。
+- class / struct / function / method 泛型参数当前不允许声明 `in/out`。
+- `%in/%out/%ref` 只用于函数或方法参数，描述调用时的参数作用，不表示泛型方差。
+
+```zr
+interface IConsumer<in T> {
+    accept(value: T): void;
+}
+
+func tryGet<T>(key: string, %out value: T): bool {
+    value = null;
+    return true;
+}
+
+func swap<T>(%ref left: T, %ref right: T): void {
+}
+```
+
+**语义规则**:
+- `%in` 形参在函数体内视为只读，禁止再次赋值。
+- `%out` 实参必须是可赋值左值，且被调用函数必须保证在所有控制流路径上完成赋值。
+- `%ref` 实参必须是可赋值左值，并按不变位置匹配。
+- interface 方差位置会做专用诊断，字段、双向 property 和不合法的嵌套泛型位置都会报错。
 
 ---
 
@@ -999,14 +1040,14 @@ class B<T: C> {}
 - **语句分隔**: 语句可以以分号结尾（必须）
 - **块表达式**: 块表达式不可返回值，但是生成器可以延迟返回
 - **函数重载**: 支持函数重载，函数类型越明确，使用越快的指令集，但是不明确类型调用的时候使用不明确类型函数重载，若不存在则需要强制转换
-- **泛型**: 支持泛型（语法支持）
+- **泛型**: 支持元数据泛型、显式泛型调用、泛型方法、整数 const 泛型、`where` 约束和 interface 方差
 
 ### 5.2 类型系统
 
 - **类型推断**: 支持类型推断，未明确类型的变量推断为 `object`
 - **类型注解**: 支持显式类型注解
 - **类型转换**: 支持强制类型转换 `<Type>`
-- **泛型**: 支持静态泛型和动态泛型
+- **泛型**: 支持 class/struct/interface/function/method 泛型、嵌套泛型和整数 const 泛型闭型实例化
 - **类型检查**: 编译期进行类型兼容性检查，运行时（debug模式）可进行额外检查
 - **范围约束**: 支持为变量和数组添加范围约束，编译期和运行时都会验证
 - **边界检查**: 编译期检查数组索引边界（字面量索引），运行时（debug模式）检查所有索引访问
@@ -1104,7 +1145,7 @@ var y: uint8 = -1;       // 编译错误：负数不能赋值给无符号类型
 
 1. 字符字面量的各种转义序列
 2. 类型转换 `<Type>` 的各种场景
-3. 泛型约束语法
+3. 泛型声明、约束、方差和 `%in/%out/%ref` 参数作用语法
 4. 装饰器的各种用法
 5. 中间代码的各种指令
 6. 类型检查和边界检查的各种场景

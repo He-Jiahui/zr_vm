@@ -1,0 +1,6 @@
+{
+  "name": "lsp_discovery_nested",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

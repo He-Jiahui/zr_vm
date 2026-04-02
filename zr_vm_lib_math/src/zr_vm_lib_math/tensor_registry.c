@@ -12,23 +12,23 @@ const ZrLibTypeDescriptor *ZrMath_TensorRegistry_GetType(void) {
             {"size", "int", ZR_NULL},
     };
     static const ZrLibMethodDescriptor kMethods[] = {
-            {"clone", 0, 0, ZrMath_Tensor_Clone, "Tensor", ZR_NULL, ZR_FALSE},
-            {"reshape", 1, 1, ZrMath_Tensor_Reshape, "Tensor", ZR_NULL, ZR_FALSE},
-            {"fill", 1, 1, ZrMath_Tensor_Fill, "Tensor", ZR_NULL, ZR_FALSE},
-            {"get", 1, 1, ZrMath_Tensor_Get, "float", ZR_NULL, ZR_FALSE},
-            {"set", 2, 2, ZrMath_Tensor_Set, "Tensor", ZR_NULL, ZR_FALSE},
-            {"sum", 0, 0, ZrMath_Tensor_Sum, "float", ZR_NULL, ZR_FALSE},
-            {"mean", 0, 0, ZrMath_Tensor_Mean, "float", ZR_NULL, ZR_FALSE},
-            {"transpose2D", 0, 0, ZrMath_Tensor_Transpose2D, "Tensor", ZR_NULL, ZR_FALSE},
-            {"matmul", 1, 1, ZrMath_Tensor_Matmul, "Tensor", ZR_NULL, ZR_FALSE},
-            {"add", 1, 1, ZrMath_Tensor_Add, "Tensor", ZR_NULL, ZR_FALSE},
-            {"sub", 1, 1, ZrMath_Tensor_Sub, "Tensor", ZR_NULL, ZR_FALSE},
-            {"mulScalar", 1, 1, ZrMath_Tensor_MulScalar, "Tensor", ZR_NULL, ZR_FALSE},
-            {"toArray", 0, 0, ZrMath_Tensor_ToArray, "array", ZR_NULL, ZR_FALSE},
+            {"clone", 0, 0, ZrMath_Tensor_Clone, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"reshape", 1, 1, ZrMath_Tensor_Reshape, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"fill", 1, 1, ZrMath_Tensor_Fill, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"get", 1, 1, ZrMath_Tensor_Get, "float", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"set", 2, 2, ZrMath_Tensor_Set, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"sum", 0, 0, ZrMath_Tensor_Sum, "float", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"mean", 0, 0, ZrMath_Tensor_Mean, "float", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"transpose2D", 0, 0, ZrMath_Tensor_Transpose2D, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"matmul", 1, 1, ZrMath_Tensor_Matmul, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"add", 1, 1, ZrMath_Tensor_Add, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"sub", 1, 1, ZrMath_Tensor_Sub, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"mulScalar", 1, 1, ZrMath_Tensor_MulScalar, "Tensor", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"toArray", 0, 0, ZrMath_Tensor_ToArray, "array", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
     };
     static const ZrLibMetaMethodDescriptor kMeta[] = {
-            {ZR_META_CONSTRUCTOR, 2, 2, ZrMath_Tensor_Construct, "Tensor", ZR_NULL},
-            {ZR_META_TO_STRING, 0, 0, ZrMath_Tensor_MetaToString, "string", ZR_NULL},
+            {ZR_META_CONSTRUCTOR, 2, 2, ZrMath_Tensor_Construct, "Tensor", ZR_NULL, ZR_NULL, 0},
+            {ZR_META_TO_STRING, 0, 0, ZrMath_Tensor_MetaToString, "string", ZR_NULL, ZR_NULL, 0},
     };
     static const ZrLibTypeDescriptor kType = {
             "Tensor",
@@ -48,7 +48,9 @@ const ZrLibTypeDescriptor *ZrMath_TensorRegistry_GetType(void) {
             ZR_NULL,
             ZR_TRUE,
             ZR_TRUE,
-            "Tensor(shape: array, fillValue: float)"
+            "Tensor(shape: array, fillValue: float)",
+            ZR_NULL,
+            0
     };
     return &kType;
 }

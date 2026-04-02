@@ -60,6 +60,24 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '',
 ].join('\n');
 
+const PROJECT_INFERENCE_SMOKE_SOURCE = [
+    'var greetModule = %import("greet");',
+    '',
+    'class Hero {',
+    '    pub total(): int {',
+    '        return 1;',
+    '    }',
+    '}',
+    '',
+    'take(): %unique Hero {',
+    '    return %unique new Hero();',
+    '}',
+    '',
+    'var hero = take();',
+    'return greetModule.greet();',
+    '',
+].join('\n');
+
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
@@ -286,12 +304,16 @@ function completionDocumentationText(item) {
     return markdownLikeToString(item?.documentation);
 }
 
+function detailText(item) {
+    return item?.detail ?? item?.label?.detail ?? '';
+}
+
 function locationUri(entry) {
     if (!entry) {
         return undefined;
     }
 
-    return entry.uri ?? entry.targetUri;
+    return entry.uri ?? entry.targetUri ?? entry.location?.uri;
 }
 
 function locationRange(entry) {
@@ -299,7 +321,7 @@ function locationRange(entry) {
         return undefined;
     }
 
-    return entry.range ?? entry.targetSelectionRange ?? entry.targetRange;
+    return entry.range ?? entry.targetSelectionRange ?? entry.targetRange ?? entry.location?.range;
 }
 
 function positionEquals(position, line, character) {
@@ -320,6 +342,128 @@ function hasDocumentSymbol(items, name) {
     return items.some((item) =>
         item &&
         (item.name === name || hasDocumentSymbol(item.children, name)));
+}
+
+function semanticTokenData(tokens) {
+    if (!tokens || !tokens.data) {
+        return [];
+    }
+
+    if (Array.isArray(tokens.data)) {
+        return tokens.data;
+    }
+
+    if (typeof tokens.data.length === 'number') {
+        return Array.from(tokens.data);
+    }
+
+    return [];
+}
+
+function decodeSemanticTokens(document, legend, tokens) {
+    const data = semanticTokenData(tokens);
+    const tokenTypes = Array.isArray(legend?.tokenTypes) ? legend.tokenTypes : [];
+    const decoded = [];
+    let line = 0;
+    let character = 0;
+
+    for (let index = 0; index + 4 < data.length; index += 5) {
+        const deltaLine = data[index];
+        const deltaCharacter = data[index + 1];
+        const length = data[index + 2];
+        const typeIndex = data[index + 3];
+
+        line += deltaLine;
+        character = deltaLine === 0 ? character + deltaCharacter : deltaCharacter;
+        decoded.push({
+            line,
+            character,
+            length,
+            type: tokenTypes[typeIndex] ?? `unknown:${typeIndex}`,
+            text: document.getText(new vscode.Range(line, character, line, character + length)),
+        });
+    }
+
+    return decoded;
+}
+
+function hasSemanticToken(decodedTokens, expectedType, expectedText) {
+    return decodedTokens.some((token) =>
+        token.type === expectedType && token.text === expectedText);
+}
+
+async function verifyProjectInferenceAndSemanticTokens(workspaceRoot) {
+    const projectMainUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'main.zr');
+    const smokeUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'project_inference_smoke.zr');
+    const featureTimeoutMs = 30000;
+    const projectDocument = await openDocument(projectMainUri);
+    const aliasUsagePosition = findPositionBySubstring(projectDocument, 'greetModule.greet()', 0, 1);
+
+    const hover = await withRetry(
+        async () => vscode.commands.executeCommand(
+            'vscode.executeHoverProvider',
+            projectDocument.uri,
+            aliasUsagePosition,
+        ),
+        (items) => Array.isArray(items) && items.length > 0,
+        featureTimeoutMs,
+        'project import hover provider',
+    );
+    assert(hoverText(hover).includes('module <greet>'),
+        'Import alias hover should render module display text');
+
+    await vscode.workspace.fs.writeFile(
+        smokeUri,
+        new TextEncoder().encode(PROJECT_INFERENCE_SMOKE_SOURCE),
+    );
+
+    const document = await openDocument(smokeUri);
+    const takeUsagePosition = findPositionBySubstring(document, 'var hero = take();', 0, 'var hero = '.length);
+
+    const takeHover = await withRetry(
+        async () => vscode.commands.executeCommand(
+            'vscode.executeHoverProvider',
+            document.uri,
+            takeUsagePosition,
+        ),
+        (items) => Array.isArray(items) && items.length > 0,
+        featureTimeoutMs,
+        'ownership hover provider',
+    );
+    assert(hoverText(takeHover).includes('%unique Hero'),
+        'Hover should preserve ownership qualifiers in function type display');
+
+    const semanticLegend = await withRetry(
+        async () => vscode.commands.executeCommand(
+            'vscode.provideDocumentSemanticTokensLegend',
+            document.uri,
+        ),
+        (value) => Array.isArray(value?.tokenTypes) && value.tokenTypes.length > 0,
+        featureTimeoutMs,
+        'semantic token legend',
+    );
+    const semanticTokens = await withRetry(
+        async () => vscode.commands.executeCommand(
+            'vscode.provideDocumentSemanticTokens',
+            document.uri,
+        ),
+        (value) => semanticTokenData(value).length > 0,
+        featureTimeoutMs,
+        'semantic tokens',
+    );
+    const decodedTokens = decodeSemanticTokens(document, semanticLegend, semanticTokens);
+    assert(hasSemanticToken(decodedTokens, 'keyword', '%import'),
+        'Semantic tokens should mark %import as a keyword');
+    assert(hasSemanticToken(decodedTokens, 'keyword', '%unique'),
+        'Semantic tokens should mark ownership directives as keywords');
+    assert(hasSemanticToken(decodedTokens, 'namespace', 'greetModule'),
+        'Semantic tokens should mark imported module aliases as namespaces');
+    assert(hasSemanticToken(decodedTokens, 'class', 'Hero'),
+        'Semantic tokens should mark class names');
+    assert(hasSemanticToken(decodedTokens, 'method', 'total'),
+        'Semantic tokens should mark methods');
+
+    await vscode.workspace.fs.delete(smokeUri, { useTrash: false });
 }
 
 async function verifyClassLanguageFeatures(workspaceRoot) {
@@ -507,6 +651,7 @@ async function runSmokeSuite({ expectedMode }) {
         `Unexpected smoke mode: ${expectedMode}`);
 
     await verifyLanguageFeatures(workspaceFolder.uri);
+    await verifyProjectInferenceAndSemanticTokens(workspaceFolder.uri);
     await verifyClassLanguageFeatures(workspaceFolder.uri);
     await verifyDiagnostics(workspaceFolder.uri);
 }

@@ -58,7 +58,8 @@ typedef struct {
 } while(0)
 
 #define TEST_FAIL_CUSTOM(timer, summary, reason) do { \
-    double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
+    clock_t failureTime = clock(); \
+    double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
 } while(0)
@@ -194,7 +195,7 @@ void test_extern_delegate_parameter_decorator_flags_parsing(void);
 // ==================== 基础测试 ====================
 
 // 测试整数字面量解析
-void test_integer_literal(void) {
+static void test_integer_literal(void) {
     SZrTestTimer timer;
     const char* testSummary = "Integer Literal Parsing";
     
@@ -233,7 +234,7 @@ void test_integer_literal(void) {
 }
 
 // 测试浮点数字面量解析
-void test_float_literal(void) {
+static void test_float_literal(void) {
     SZrTestTimer timer;
     const char* testSummary = "Float Literal Parsing";
     
@@ -265,7 +266,7 @@ void test_float_literal(void) {
 }
 
 // 测试字符串字面量解析
-void test_string_literal(void) {
+static void test_string_literal(void) {
     SZrTestTimer timer;
     const char* testSummary = "String Literal Parsing";
     
@@ -297,7 +298,7 @@ void test_string_literal(void) {
 }
 
 // 测试布尔字面量解析
-void test_boolean_literal(void) {
+static void test_boolean_literal(void) {
     SZrTestTimer timer;
     const char* testSummary = "Boolean Literal Parsing";
     
@@ -324,7 +325,7 @@ void test_boolean_literal(void) {
 }
 
 // 测试模块声明解析
-void test_module_declaration(void) {
+static void test_module_declaration(void) {
     SZrTestTimer timer;
     const char* testSummary = "Module Declaration Parsing";
     
@@ -360,7 +361,7 @@ void test_module_declaration(void) {
 }
 
 // 测试变量声明解析
-void test_variable_declaration(void) {
+static void test_variable_declaration(void) {
     SZrTestTimer timer;
     const char* testSummary = "Variable Declaration Parsing";
     
@@ -396,7 +397,7 @@ void test_variable_declaration(void) {
 }
 
 // 测试可见性修饰符解析
-void test_access_modifier_parsing(void) {
+static void test_access_modifier_parsing(void) {
     SZrTestTimer timer;
     const char* testSummary = "Access Modifier Parsing";
     
@@ -524,7 +525,7 @@ void test_access_modifier_parsing(void) {
 // ==================== 表达式测试 ====================
 
 // 测试二元表达式解析
-void test_binary_expression(void) {
+static void test_binary_expression(void) {
     SZrTestTimer timer;
     const char* testSummary = "Binary Expression Parsing";
     
@@ -551,7 +552,7 @@ void test_binary_expression(void) {
 }
 
 // 测试一元表达式解析
-void test_unary_expression(void) {
+static void test_unary_expression(void) {
     SZrTestTimer timer;
     const char* testSummary = "Unary Expression Parsing";
     
@@ -587,7 +588,7 @@ void test_unary_expression(void) {
     TEST_DIVIDER();
 }
 
-void test_prototype_construction_expression_parsing(void) {
+static void test_prototype_construction_expression_parsing(void) {
     SZrTestTimer timer;
     const char *testSummary = "Prototype Construction Expression Parsing";
 
@@ -621,7 +622,7 @@ void test_prototype_construction_expression_parsing(void) {
     TEST_DIVIDER();
 }
 
-void test_native_boxed_new_expression_parsing(void) {
+static void test_native_boxed_new_expression_parsing(void) {
     SZrTestTimer timer;
     const char *testSummary = "Native Boxed New Expression Parsing";
 
@@ -656,7 +657,230 @@ void test_native_boxed_new_expression_parsing(void) {
     TEST_DIVIDER();
 }
 
-void test_percent_owned_and_ownership_expression_parsing(void) {
+static void test_generic_boxed_new_expression_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Generic Boxed New Expression Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Generic boxed new parsing",
+              "Testing parsing of `new Array<int>()` preserves a generic construct target");
+    {
+        const char *source = "var values = new Array<int>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "generic_boxed_new.zr", 20);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *decl;
+        SZrAstNode *expr;
+        SZrAstNode *target;
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        decl = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(decl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, decl->type);
+
+        expr = decl->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
+        TEST_ASSERT_TRUE(expr->data.constructExpression.isNew);
+
+        target = expr->data.constructExpression.target;
+        TEST_ASSERT_NOT_NULL(target);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE, target->type);
+        TEST_ASSERT_NOT_NULL(target->data.type.name);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, target->data.type.name->type);
+        TEST_ASSERT_NOT_NULL(target->data.type.name->data.genericType.name);
+        TEST_ASSERT_EQUAL_STRING("Array",
+                                 ZrCore_String_GetNativeString(
+                                         target->data.type.name->data.genericType.name->name));
+        TEST_ASSERT_NOT_NULL(target->data.type.name->data.genericType.params);
+        TEST_ASSERT_EQUAL_INT(1, (int)target->data.type.name->data.genericType.params->count);
+
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_explicit_generic_function_call_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Explicit Generic Function Call Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "map<TIn, TOut>(source: Array<TIn>): Array<TOut> { return source; }\n"
+                "map<int, string>(values);";
+        SZrString *sourceName = ZrCore_String_Create(state, "explicit_generic_call.zr", 24);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *statement;
+        SZrAstNode *expr;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        statement = ast->data.script.statements->nodes[1];
+        TEST_ASSERT_NOT_NULL(statement);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, statement->type);
+
+        expr = statement->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, expr->type);
+        TEST_ASSERT_NOT_NULL(expr->data.primaryExpression.property);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, expr->data.primaryExpression.property->type);
+        TEST_ASSERT_NOT_NULL(expr->data.primaryExpression.members);
+        TEST_ASSERT_EQUAL_INT(1, (int)expr->data.primaryExpression.members->count);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_CALL, expr->data.primaryExpression.members->nodes[0]->type);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_interface_variance_and_where_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Interface Variance And Where Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "interface IProducer<out T> where T: class, Disposable, new() {\n"
+                "    next(): T;\n"
+                "}";
+        SZrString *sourceName = ZrCore_String_Create(state, "interface_variance_where.zr", 27);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *decl;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        decl = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(decl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_INTERFACE_DECLARATION, decl->type);
+        TEST_ASSERT_NOT_NULL(decl->data.interfaceDeclaration.generic);
+        TEST_ASSERT_NOT_NULL(decl->data.interfaceDeclaration.members);
+        TEST_ASSERT_EQUAL_INT(1, (int)decl->data.interfaceDeclaration.members->count);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_parameter_passing_mode_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Parameter Passing Mode Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "swap<T>(%ref left: T, %ref right: T): T {\n"
+                "    return left;\n"
+                "}";
+        SZrString *sourceName = ZrCore_String_Create(state, "parameter_passing_mode.zr", 25);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *decl;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        decl = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(decl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, decl->type);
+        TEST_ASSERT_NOT_NULL(decl->data.functionDeclaration.generic);
+        TEST_ASSERT_NOT_NULL(decl->data.functionDeclaration.params);
+        TEST_ASSERT_EQUAL_INT(2, (int)decl->data.functionDeclaration.params->count);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_const_generic_construction_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Const Generic Construction Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "class Matrix<T, const N: int> {\n"
+                "    var rows: Array<T>[N];\n"
+                "}\n"
+                "var matrix = new Matrix<int, 4>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "const_generic_construction.zr", 29);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *decl;
+        SZrAstNode *constructDecl;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        decl = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(decl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, decl->type);
+        TEST_ASSERT_NOT_NULL(decl->data.classDeclaration.generic);
+
+        constructDecl = ast->data.script.statements->nodes[1];
+        TEST_ASSERT_NOT_NULL(constructDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, constructDecl->type);
+        TEST_ASSERT_NOT_NULL(constructDecl->data.variableDeclaration.value);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, constructDecl->data.variableDeclaration.value->type);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_percent_owned_and_ownership_expression_parsing(void) {
     SZrTestTimer timer;
     const char *testSummary = "Percent Owned And Ownership Expression Parsing";
 
@@ -770,7 +994,7 @@ void test_percent_owned_and_ownership_expression_parsing(void) {
 }
 
 // 测试条件表达式解析
-void test_conditional_expression(void) {
+static void test_conditional_expression(void) {
     SZrTestTimer timer;
     const char* testSummary = "Conditional Expression Parsing";
     
@@ -807,7 +1031,7 @@ void test_conditional_expression(void) {
 }
 
 // 测试数组字面量解析
-void test_array_literal(void) {
+static void test_array_literal(void) {
     SZrTestTimer timer;
     const char* testSummary = "Array Literal Parsing";
     
@@ -845,7 +1069,7 @@ void test_array_literal(void) {
 }
 
 // 测试对象字面量解析
-void test_object_literal(void) {
+static void test_object_literal(void) {
     SZrTestTimer timer;
     const char* testSummary = "Object Literal Parsing";
     
@@ -885,7 +1109,7 @@ void test_object_literal(void) {
 // ==================== 声明测试 ====================
 
 // 测试函数声明解析
-void test_function_declaration(void) {
+static void test_function_declaration(void) {
     SZrTestTimer timer;
     const char* testSummary = "Function Declaration Parsing";
     
@@ -911,7 +1135,7 @@ void test_function_declaration(void) {
     TEST_DIVIDER();
 }
 
-void test_extern_block_parsing(void) {
+static void test_extern_block_parsing(void) {
     SZrTestTimer timer;
     const char *testSummary = "Extern Block Parsing";
     const char *source =
@@ -963,7 +1187,7 @@ void test_extern_block_parsing(void) {
     TEST_DIVIDER();
 }
 
-void test_reserved_import_expression_variants(void) {
+static void test_reserved_import_expression_variants(void) {
     SZrTestTimer timer;
     const char *testSummary = "Reserved Import Expression Variants";
     static const struct {
@@ -1013,7 +1237,7 @@ void test_reserved_import_expression_variants(void) {
     TEST_DIVIDER();
 }
 
-void test_reserved_import_expression_member_chain_parsing(void) {
+static void test_reserved_import_expression_member_chain_parsing(void) {
     SZrTestTimer timer;
     const char *testSummary = "Reserved Import Member Chain Parsing";
 
@@ -1049,7 +1273,57 @@ void test_reserved_import_expression_member_chain_parsing(void) {
     TEST_DIVIDER();
 }
 
-void test_legacy_import_syntax_is_rejected(void) {
+static void test_reserved_type_expression_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reserved Type Expression Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "var math = %import(\"zr.math\");\n"
+                "var reflection = %type(math.Vector3);";
+        SZrString *sourceName = ZrCore_String_Create(state, "reserved_type_expression.zr", 27);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *statement;
+        SZrAstNode *expr;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        statement = ast->data.script.statements->nodes[1];
+        TEST_ASSERT_NOT_NULL(statement);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, statement->type);
+
+        expr = statement->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_QUERY_EXPRESSION, expr->type);
+        TEST_ASSERT_NOT_NULL(expr->data.typeQueryExpression.operand);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, expr->data.typeQueryExpression.operand->type);
+        TEST_ASSERT_NOT_NULL(expr->data.typeQueryExpression.operand->data.primaryExpression.property);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL,
+                              expr->data.typeQueryExpression.operand->data.primaryExpression.property->type);
+        TEST_ASSERT_EQUAL_STRING("math",
+                                 ZrCore_String_GetNativeString(
+                                         expr->data.typeQueryExpression.operand->data.primaryExpression.property->data.identifier.name));
+        TEST_ASSERT_NOT_NULL(expr->data.typeQueryExpression.operand->data.primaryExpression.members);
+        TEST_ASSERT_EQUAL_INT(1, (int)expr->data.typeQueryExpression.operand->data.primaryExpression.members->count);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_legacy_import_syntax_is_rejected(void) {
     SZrTestTimer timer;
     const char *testSummary = "Legacy Import Syntax Rejected";
 
@@ -1081,7 +1355,7 @@ void test_legacy_import_syntax_is_rejected(void) {
     TEST_DIVIDER();
 }
 
-void test_reserved_module_declaration_variants(void) {
+static void test_reserved_module_declaration_variants(void) {
     SZrTestTimer timer;
     const char *testSummary = "Reserved Module Declaration Variants";
     static const struct {
@@ -1121,7 +1395,7 @@ void test_reserved_module_declaration_variants(void) {
     TEST_DIVIDER();
 }
 
-void test_legacy_module_keyword_is_rejected(void) {
+static void test_legacy_module_keyword_is_rejected(void) {
     SZrTestTimer timer;
     const char *testSummary = "Legacy Module Keyword Rejected";
 
@@ -1151,7 +1425,7 @@ void test_legacy_module_keyword_is_rejected(void) {
     TEST_DIVIDER();
 }
 
-void test_extern_single_declaration_normalizes_to_block(void) {
+static void test_extern_single_declaration_normalizes_to_block(void) {
     SZrTestTimer timer;
     const char *testSummary = "Extern Single Declaration Parsing";
     const char *source = "%extern(\"fixture\") Add(lhs:i32, rhs:i32): i32;";
@@ -1191,7 +1465,7 @@ void test_extern_single_declaration_normalizes_to_block(void) {
 }
 
 // 测试结构体声明解析
-void test_struct_declaration(void) {
+static void test_struct_declaration(void) {
     SZrTestTimer timer;
     const char* testSummary = "Struct Declaration Parsing";
     
@@ -1217,7 +1491,7 @@ void test_struct_declaration(void) {
     TEST_DIVIDER();
 }
 
-void test_field_scoped_using_field_parsing(void) {
+static void test_field_scoped_using_field_parsing(void) {
     SZrTestTimer timer;
     const char *testSummary = "Field-Scoped Using Field Parsing";
 
@@ -1291,7 +1565,7 @@ void test_field_scoped_using_field_parsing(void) {
     TEST_DIVIDER();
 }
 
-void test_field_scoped_using_field_requires_var_keyword(void) {
+static void test_field_scoped_using_field_requires_var_keyword(void) {
     SZrTestTimer timer;
     const char *testSummary = "Field-Scoped Using Requires Var Keyword";
 
@@ -1325,7 +1599,7 @@ void test_field_scoped_using_field_requires_var_keyword(void) {
     TEST_DIVIDER();
 }
 
-void test_owned_class_and_prefixed_ownership_parsing(void) {
+static void test_owned_class_and_prefixed_ownership_parsing(void) {
     SZrTestTimer timer;
     const char *testSummary = "Owned Class And Prefixed Ownership Parsing";
 
@@ -1418,7 +1692,7 @@ void test_owned_class_and_prefixed_ownership_parsing(void) {
 // ==================== 语句测试 ====================
 
 // 测试 if 语句解析
-void test_if_statement(void) {
+static void test_if_statement(void) {
     SZrTestTimer timer;
     const char* testSummary = "If Statement Parsing";
     
@@ -1445,7 +1719,7 @@ void test_if_statement(void) {
 }
 
 // 测试返回语句解析
-void test_return_statement(void) {
+static void test_return_statement(void) {
     SZrTestTimer timer;
     const char* testSummary = "Return Statement Parsing";
     
@@ -1474,7 +1748,7 @@ void test_return_statement(void) {
 // ==================== 完整脚本测试 ====================
 
 // 测试简单脚本解析
-void test_simple_script(void) {
+static void test_simple_script(void) {
     SZrTestTimer timer;
     const char* testSummary = "Simple Script Parsing";
     
@@ -1509,7 +1783,7 @@ void test_simple_script(void) {
 }
 
 // 测试 simple.zr 完整文件解析
-void test_simple_zr_file(void) {
+static void test_simple_zr_file(void) {
     SZrTestTimer timer;
     const char* testSummary = "Simple.zr File Parsing";
     
@@ -1557,7 +1831,7 @@ void test_simple_zr_file(void) {
 }
 
 // 测试编译器生成文件
-void test_compiler_generate_files(void) {
+static void test_compiler_generate_files(void) {
     
     SZrTestTimer timer;
     const char* testSummary = "Compiler Generate .zro and .zri Files";
@@ -1656,7 +1930,7 @@ void test_compiler_generate_files(void) {
 }
 
 // 测试数组字面量编译
-void test_compiler_array_literal(void) {
+static void test_compiler_array_literal(void) {
     SZrTestTimer timer;
     const char* testSummary = "Compiler Array Literal";
     
@@ -1699,7 +1973,7 @@ void test_compiler_array_literal(void) {
 }
 
 // 测试对象字面量编译
-void test_compiler_object_literal(void) {
+static void test_compiler_object_literal(void) {
     SZrTestTimer timer;
     const char* testSummary = "Compiler Object Literal";
     
@@ -1742,7 +2016,7 @@ void test_compiler_object_literal(void) {
 }
 
 // 测试 Lambda 表达式编译
-void test_compiler_lambda_expression(void) {
+static void test_compiler_lambda_expression(void) {
     SZrTestTimer timer;
     const char* testSummary = "Compiler Lambda Expression";
     
@@ -1784,7 +2058,7 @@ void test_compiler_lambda_expression(void) {
     TEST_DIVIDER();
 }
 
-void test_compiler_lambda_crlf_locations(void) {
+static void test_compiler_lambda_crlf_locations(void) {
     SZrTestTimer timer;
     const char* testSummary = "Compiler Lambda CRLF Locations";
 
@@ -1856,7 +2130,7 @@ void test_compiler_lambda_crlf_locations(void) {
 }
 
 // 测试 break/continue 语句编译
-void test_compiler_break_continue(void) {
+static void test_compiler_break_continue(void) {
     SZrTestTimer timer;
     const char* testSummary = "Compiler Break/Continue Statement";
     
@@ -1900,7 +2174,7 @@ void test_compiler_break_continue(void) {
 }
 
 // 测试 OUT 语句编译
-void test_compiler_out_statement(void) {
+static void test_compiler_out_statement(void) {
     SZrTestTimer timer;
     const char* testSummary = "Compiler Out Statement";
     
@@ -1975,9 +2249,15 @@ int main(void) {
     RUN_TEST(test_unary_expression);
     RUN_TEST(test_reserved_import_expression_variants);
     RUN_TEST(test_reserved_import_expression_member_chain_parsing);
+    RUN_TEST(test_reserved_type_expression_parsing);
     RUN_TEST(test_legacy_import_syntax_is_rejected);
     RUN_TEST(test_prototype_construction_expression_parsing);
     RUN_TEST(test_native_boxed_new_expression_parsing);
+    RUN_TEST(test_generic_boxed_new_expression_parsing);
+    RUN_TEST(test_explicit_generic_function_call_parsing);
+    RUN_TEST(test_interface_variance_and_where_parsing);
+    RUN_TEST(test_parameter_passing_mode_parsing);
+    RUN_TEST(test_const_generic_construction_parsing);
     RUN_TEST(test_percent_owned_and_ownership_expression_parsing);
     RUN_TEST(test_conditional_expression);
     RUN_TEST(test_array_literal);
@@ -2028,3 +2308,4 @@ int main(void) {
     
     return UNITY_END();
 }
+

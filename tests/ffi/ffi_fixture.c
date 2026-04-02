@@ -27,6 +27,22 @@ typedef double (*ZrFfiFixtureUnaryCallback)(double value);
 
 static const char *kZrFfiFixtureVersion = "1.2.3-fixture";
 
+ZR_FFI_FIXTURE_EXPORT const char *zr_ffi_version_string(void);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_add_i32(int32_t lhs, int32_t rhs);
+ZR_FFI_FIXTURE_EXPORT double zr_ffi_mul_f64(double lhs, double rhs);
+ZR_FFI_FIXTURE_EXPORT size_t zr_ffi_strlen_utf8(const char *text);
+ZR_FFI_FIXTURE_EXPORT ZrFfiFixturePoint zr_ffi_make_point(int32_t x, int32_t y);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_sum_point(ZrFfiFixturePoint point);
+ZR_FFI_FIXTURE_EXPORT void zr_ffi_fill_point(ZrFfiFixturePoint *outPoint, int32_t x, int32_t y);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_increment_i32(int32_t *value);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_sum_varargs_i32(int32_t count, ...);
+ZR_FFI_FIXTURE_EXPORT int32_t ZR_FFI_FIXTURE_STDCALL zr_ffi_stdcall_add_i32(int32_t lhs, int32_t rhs);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_fill_bytes(uint8_t *buffer, size_t length, uint8_t seed);
+ZR_FFI_FIXTURE_EXPORT double zr_ffi_apply_callback(double value, ZrFfiFixtureUnaryCallback callback);
+ZR_FFI_FIXTURE_EXPORT double zr_ffi_apply_callback_foreign_thread(double value,
+                                                                  ZrFfiFixtureUnaryCallback callback);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_flip_mode(int32_t modeValue);
+
 ZR_FFI_FIXTURE_EXPORT const char *zr_ffi_version_string(void) {
     return kZrFfiFixtureVersion;
 }

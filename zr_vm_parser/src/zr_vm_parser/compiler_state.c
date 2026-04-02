@@ -67,6 +67,8 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->hasFatalError = ZR_FALSE;
     cs->hasCompileTimeError = ZR_FALSE;
     cs->errorMessage = ZR_NULL;
+    cs->errorMessageStorage = ZR_NULL;
+    cs->errorMessageStorageCapacity = 0;
     cs->errorLocation.start.line = 0;
     cs->errorLocation.start.column = 0;
     cs->errorLocation.end.line = 0;
@@ -265,6 +267,21 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                     info->implements.capacity > 0 && info->implements.elementSize > 0) {
                     ZrCore_Array_Free(state, &info->implements);
                 }
+                if (info->genericParameters.isValid && info->genericParameters.head != ZR_NULL &&
+                    info->genericParameters.capacity > 0 && info->genericParameters.elementSize > 0) {
+                    for (TZrSize genericIndex = 0; genericIndex < info->genericParameters.length; genericIndex++) {
+                        SZrTypeGenericParameterInfo *genericInfo =
+                                (SZrTypeGenericParameterInfo *)ZrCore_Array_Get(&info->genericParameters, genericIndex);
+                        if (genericInfo != ZR_NULL &&
+                            genericInfo->constraintTypeNames.isValid &&
+                            genericInfo->constraintTypeNames.head != ZR_NULL &&
+                            genericInfo->constraintTypeNames.capacity > 0 &&
+                            genericInfo->constraintTypeNames.elementSize > 0) {
+                            ZrCore_Array_Free(state, &genericInfo->constraintTypeNames);
+                        }
+                    }
+                    ZrCore_Array_Free(state, &info->genericParameters);
+                }
                 // 释放 members 数组
                 if (info->members.isValid && info->members.head != ZR_NULL &&
                     info->members.capacity > 0 && info->members.elementSize > 0) {
@@ -284,6 +301,33 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                                 }
                             }
                             ZrCore_Array_Free(state, &memberInfo->parameterTypes);
+                        }
+                        if (memberInfo != ZR_NULL &&
+                            memberInfo->genericParameters.isValid &&
+                            memberInfo->genericParameters.head != ZR_NULL &&
+                            memberInfo->genericParameters.capacity > 0 &&
+                            memberInfo->genericParameters.elementSize > 0) {
+                            for (TZrSize genericIndex = 0; genericIndex < memberInfo->genericParameters.length;
+                                 genericIndex++) {
+                                SZrTypeGenericParameterInfo *genericInfo =
+                                        (SZrTypeGenericParameterInfo *)ZrCore_Array_Get(&memberInfo->genericParameters,
+                                                                                        genericIndex);
+                                if (genericInfo != ZR_NULL &&
+                                    genericInfo->constraintTypeNames.isValid &&
+                                    genericInfo->constraintTypeNames.head != ZR_NULL &&
+                                    genericInfo->constraintTypeNames.capacity > 0 &&
+                                    genericInfo->constraintTypeNames.elementSize > 0) {
+                                    ZrCore_Array_Free(state, &genericInfo->constraintTypeNames);
+                                }
+                            }
+                            ZrCore_Array_Free(state, &memberInfo->genericParameters);
+                        }
+                        if (memberInfo != ZR_NULL &&
+                            memberInfo->parameterPassingModes.isValid &&
+                            memberInfo->parameterPassingModes.head != ZR_NULL &&
+                            memberInfo->parameterPassingModes.capacity > 0 &&
+                            memberInfo->parameterPassingModes.elementSize > 0) {
+                            ZrCore_Array_Free(state, &memberInfo->parameterPassingModes);
                         }
                     }
                     ZrCore_Array_Free(state, &info->members);
@@ -371,6 +415,16 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
     if (cs->semanticContext != ZR_NULL) {
         ZrParser_SemanticContext_Free(cs->semanticContext);
         cs->semanticContext = ZR_NULL;
+    }
+
+    if (cs->errorMessageStorage != ZR_NULL && cs->errorMessageStorageCapacity > 0) {
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      cs->errorMessageStorage,
+                                      cs->errorMessageStorageCapacity,
+                                      ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+        cs->errorMessageStorage = ZR_NULL;
+        cs->errorMessageStorageCapacity = 0;
+        cs->errorMessage = ZR_NULL;
     }
 }
 

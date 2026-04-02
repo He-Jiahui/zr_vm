@@ -122,28 +122,6 @@ char *apply_content_changes(SZrString *uri,
     return current;
 }
 
-static void remove_document_state(SZrStdioServer *server, SZrString *uri) {
-    SZrTypeValue key;
-    SZrHashKeyValuePair *pair;
-
-    if (server == ZR_NULL || uri == ZR_NULL || server->context == ZR_NULL) {
-        return;
-    }
-
-    if (server->context->parser != ZR_NULL) {
-        ZrLanguageServer_IncrementalParser_RemoveFile(server->state, server->context->parser, uri);
-    }
-
-    ZrCore_Value_InitAsRawObject(server->state, &key, &uri->super);
-    pair = ZrCore_HashSet_Find(server->state, &server->context->uriToAnalyzerMap, &key);
-    if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-        SZrSemanticAnalyzer *analyzer = (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
-        if (analyzer != ZR_NULL) {
-            ZrLanguageServer_SemanticAnalyzer_Free(server->state, analyzer);
-        }
-    }
-    ZrCore_HashSet_Remove(server->state, &server->context->uriToAnalyzerMap, &key);
-}
 
 void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     SZrArray diagnostics;

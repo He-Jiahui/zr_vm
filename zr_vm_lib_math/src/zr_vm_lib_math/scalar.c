@@ -39,7 +39,8 @@ TZrBool ZrMath_Scalar_Clamp(ZrLibCallContext *context, SZrTypeValue *result) {
     TZrFloat64 value = 0.0, minimum = 0.0, maximum = 0.0;
     if (!ZrLib_CallContext_ReadFloat(context, 0, &value) || !ZrLib_CallContext_ReadFloat(context, 1, &minimum) ||
         !ZrLib_CallContext_ReadFloat(context, 2, &maximum)) return ZR_FALSE;
-    if (value < minimum) value = minimum; if (value > maximum) value = maximum;
+    if (value < minimum) value = minimum;
+    if (value > maximum) value = maximum;
     ZrLib_Value_SetFloat(context->state, result, value); return ZR_TRUE;
 }
 TZrBool ZrMath_Scalar_Lerp(ZrLibCallContext *context, SZrTypeValue *result) {

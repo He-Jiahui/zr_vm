@@ -6,6 +6,9 @@ zr_declare_module(${zr_curr_module_name} ON)
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_parser")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_core")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_library")
+zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_system")
+zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_math")
+zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_container")
 zr_link_third_party_for_module(${zr_curr_module_name} "zr_c_json")
 
 zr_install_module(${zr_curr_module_name})
@@ -88,10 +91,30 @@ if(BUILD_WASM)
         file(GLOB_RECURSE zr_vm_parser_src
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/*.c
         )
+
+        file(GLOB_RECURSE zr_vm_library_src
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/src/*.c
+        )
+
+        file(GLOB_RECURSE zr_vm_lib_system_src
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/src/*.c
+        )
+
+        file(GLOB_RECURSE zr_vm_lib_math_src
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/src/*.c
+        )
+
+        file(GLOB_RECURSE zr_vm_lib_container_src
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/src/*.c
+        )
         
         # 排除测试文件
         list(FILTER zr_vm_core_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_parser_src EXCLUDE REGEX ".*test.*")
+        list(FILTER zr_vm_library_src EXCLUDE REGEX ".*test.*")
+        list(FILTER zr_vm_lib_system_src EXCLUDE REGEX ".*test.*")
+        list(FILTER zr_vm_lib_math_src EXCLUDE REGEX ".*test.*")
+        list(FILTER zr_vm_lib_container_src EXCLUDE REGEX ".*test.*")
         
         # 创建 WASM 可执行文件（包含所有依赖的源文件）
         add_executable(${zr_curr_module_name}_wasm 
@@ -99,6 +122,10 @@ if(BUILD_WASM)
             ${zr_module_src}
             ${zr_vm_core_src}
             ${zr_vm_parser_src}
+            ${zr_vm_library_src}
+            ${zr_vm_lib_system_src}
+            ${zr_vm_lib_math_src}
+            ${zr_vm_lib_container_src}
         )
         
         # 设置包含目录
@@ -107,6 +134,10 @@ if(BUILD_WASM)
         )
         target_include_directories(${zr_curr_module_name}_wasm PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
         )
@@ -114,7 +145,7 @@ if(BUILD_WASM)
         # 使用 EMSCRIPTEN_KEEPALIVE + EXPORTED_FUNCTIONS 导出函数
         # 函数已在 wasm_exports.cpp 中使用 EMSCRIPTEN_KEEPALIVE 标记
         # 注意：函数名使用 wasm_ 前缀以避免与原始 LSP 函数冲突
-        set(EXPORTED_FUNCTIONS_JSON "[\"_malloc\",\"_free\",\"_wasm_malloc\",\"_wasm_free\",\"_wasm_ZrLspContextNew\",\"_wasm_ZrLspContextFree\",\"_wasm_ZrLspUpdateDocument\",\"_wasm_ZrLspCloseDocument\",\"_wasm_ZrLspGetDiagnostics\",\"_wasm_ZrLspGetCompletion\",\"_wasm_ZrLspGetHover\",\"_wasm_ZrLspGetDefinition\",\"_wasm_ZrLspFindReferences\",\"_wasm_ZrLspRename\",\"_wasm_ZrLspGetDocumentSymbols\",\"_wasm_ZrLspGetWorkspaceSymbols\",\"_wasm_ZrLspGetDocumentHighlights\",\"_wasm_ZrLspPrepareRename\"]")
+        set(EXPORTED_FUNCTIONS_JSON "[\"_malloc\",\"_free\",\"_wasm_malloc\",\"_wasm_free\",\"_wasm_ZrLspContextNew\",\"_wasm_ZrLspContextFree\",\"_wasm_ZrLspUpdateDocument\",\"_wasm_ZrLspCloseDocument\",\"_wasm_ZrLspGetDiagnostics\",\"_wasm_ZrLspGetCompletion\",\"_wasm_ZrLspGetHover\",\"_wasm_ZrLspGetDefinition\",\"_wasm_ZrLspFindReferences\",\"_wasm_ZrLspRename\",\"_wasm_ZrLspGetDocumentSymbols\",\"_wasm_ZrLspGetWorkspaceSymbols\",\"_wasm_ZrLspGetDocumentHighlights\",\"_wasm_ZrLspGetSemanticTokens\",\"_wasm_ZrLspPrepareRename\"]")
         
         # 设置 Emscripten 编译选项
         target_compile_options(${zr_curr_module_name}_wasm PRIVATE
@@ -167,6 +198,7 @@ if(BUILD_WASM)
         # TODO: 需要确保 zr_vm_parser 和 zr_vm_core 也编译为 WASM 版本
         zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_c_json")
         zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_xx_hash")
+        zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_tiny_dir")
         
         message(STATUS "WASM target ${zr_curr_module_name}_wasm configured for Emscripten")
         message(STATUS "  Output directory: ${CMAKE_BINARY_DIR}/wasm")

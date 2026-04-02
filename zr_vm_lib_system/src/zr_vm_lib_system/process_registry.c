@@ -13,8 +13,8 @@ const ZrLibModuleDescriptor *ZrSystem_ProcessRegistry_GetModule(void) {
             {"arguments", ZR_LIB_CONSTANT_KIND_ARRAY, 0, 0.0, ZR_NULL, ZR_FALSE, "Process argument list.", "string[]"},
     };
     static const ZrLibFunctionDescriptor kFunctions[] = {
-            {"sleepMilliseconds", 1, 1, ZrSystem_Process_SleepMilliseconds, "null", "Sleep for the requested number of milliseconds."},
-            {"exit", 1, 1, ZrSystem_Process_Exit, "null", "Terminate the process with the given exit code."},
+            {"sleepMilliseconds", 1, 1, ZrSystem_Process_SleepMilliseconds, "null", "Sleep for the requested number of milliseconds.", ZR_NULL, 0},
+            {"exit", 1, 1, ZrSystem_Process_Exit, "null", "Terminate the process with the given exit code.", ZR_NULL, 0},
     };
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"arguments", "constant", "arguments: string[]", "Process argument list."},
@@ -40,6 +40,9 @@ const ZrLibModuleDescriptor *ZrSystem_ProcessRegistry_GetModule(void) {
             kHintsJson,
             "Process helpers.",
             ZR_NULL,
+            0,
+            "1.0.0",
+            ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
             0,
     };
 

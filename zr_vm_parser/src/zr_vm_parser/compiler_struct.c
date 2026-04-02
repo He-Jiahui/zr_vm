@@ -40,6 +40,26 @@ static void compiler_struct_collect_parameter_types(SZrCompilerState *cs,
     }
 }
 
+void compiler_collect_parameter_passing_modes(SZrState *state,
+                                              SZrArray *parameterPassingModes,
+                                              SZrAstNodeArray *params) {
+    if (state == ZR_NULL || parameterPassingModes == ZR_NULL || params == ZR_NULL || params->count == 0) {
+        return;
+    }
+
+    ZrCore_Array_Init(state, parameterPassingModes, sizeof(EZrParameterPassingMode), params->count);
+    for (TZrSize paramIndex = 0; paramIndex < params->count; paramIndex++) {
+        SZrAstNode *paramNode = params->nodes[paramIndex];
+        EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        passingMode = paramNode->data.parameter.passingMode;
+        ZrCore_Array_Push(state, parameterPassingModes, &passingMode);
+    }
+}
+
 SZrString *get_type_name_from_inferred_type(SZrCompilerState *cs, const SZrInferredType *inferredType) {
     if (cs == ZR_NULL || inferredType == ZR_NULL) {
         return ZR_NULL;
@@ -76,164 +96,333 @@ SZrString *get_type_name_from_inferred_type(SZrCompilerState *cs, const SZrInfer
     return ZR_NULL;
 }
 
+static TZrBool compiler_append_text_fragment(char *buffer,
+                                             TZrSize bufferSize,
+                                             TZrSize *offset,
+                                             const TZrChar *fragment) {
+    TZrSize fragmentLength;
+
+    if (buffer == ZR_NULL || offset == ZR_NULL || fragment == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fragmentLength = strlen(fragment);
+    if (*offset + fragmentLength + 1 > bufferSize) {
+        return ZR_FALSE;
+    }
+
+    memcpy(buffer + *offset, fragment, fragmentLength);
+    *offset += fragmentLength;
+    buffer[*offset] = '\0';
+    return ZR_TRUE;
+}
+
+static TZrBool compiler_append_ast_node_display_text(SZrCompilerState *cs,
+                                                     const SZrAstNode *node,
+                                                     char *buffer,
+                                                     TZrSize bufferSize,
+                                                     TZrSize *offset) {
+    if (cs == ZR_NULL || node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_TYPE: {
+            SZrString *typeName = extract_type_name_string(cs, (SZrType *)&node->data.type);
+            return typeName != ZR_NULL &&
+                   compiler_append_text_fragment(buffer, bufferSize, offset, ZrCore_String_GetNativeString(typeName));
+        }
+        case ZR_AST_IDENTIFIER_LITERAL:
+            return node->data.identifier.name != ZR_NULL &&
+                   compiler_append_text_fragment(buffer,
+                                                bufferSize,
+                                                offset,
+                                                ZrCore_String_GetNativeString(node->data.identifier.name));
+        case ZR_AST_INTEGER_LITERAL:
+            if (node->data.integerLiteral.literal != ZR_NULL) {
+                return compiler_append_text_fragment(buffer,
+                                                     bufferSize,
+                                                     offset,
+                                                     ZrCore_String_GetNativeString(node->data.integerLiteral.literal));
+            }
+            {
+                char integerBuffer[64];
+                snprintf(integerBuffer, sizeof(integerBuffer), "%lld", (long long)node->data.integerLiteral.value);
+                return compiler_append_text_fragment(buffer, bufferSize, offset, integerBuffer);
+            }
+        case ZR_AST_FLOAT_LITERAL:
+            if (node->data.floatLiteral.literal != ZR_NULL) {
+                return compiler_append_text_fragment(buffer,
+                                                     bufferSize,
+                                                     offset,
+                                                     ZrCore_String_GetNativeString(node->data.floatLiteral.literal));
+            }
+            return ZR_FALSE;
+        case ZR_AST_UNARY_EXPRESSION:
+            return node->data.unaryExpression.op.op != ZR_NULL &&
+                   compiler_append_text_fragment(buffer, bufferSize, offset, node->data.unaryExpression.op.op) &&
+                   compiler_append_ast_node_display_text(cs,
+                                                        node->data.unaryExpression.argument,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset);
+        case ZR_AST_BINARY_EXPRESSION:
+            return compiler_append_ast_node_display_text(cs,
+                                                        node->data.binaryExpression.left,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset) &&
+                   compiler_append_text_fragment(buffer, bufferSize, offset, " ") &&
+                   node->data.binaryExpression.op.op != ZR_NULL &&
+                   compiler_append_text_fragment(buffer, bufferSize, offset, node->data.binaryExpression.op.op) &&
+                   compiler_append_text_fragment(buffer, bufferSize, offset, " ") &&
+                   compiler_append_ast_node_display_text(cs,
+                                                        node->data.binaryExpression.right,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset);
+        default:
+            return ZR_FALSE;
+    }
+}
+
+SZrString *extract_generic_argument_name_string(SZrCompilerState *cs, SZrAstNode *node) {
+    char buffer[1024];
+    TZrSize offset = 0;
+
+    if (cs == ZR_NULL || node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (node->type != ZR_AST_TYPE) {
+        SZrTypeValue evaluatedValue;
+        if (ZrParser_Compiler_EvaluateCompileTimeExpression(cs, node, &evaluatedValue)) {
+            char integerBuffer[64];
+
+            switch (evaluatedValue.type) {
+                case ZR_VALUE_TYPE_INT8:
+                case ZR_VALUE_TYPE_INT16:
+                case ZR_VALUE_TYPE_INT32:
+                case ZR_VALUE_TYPE_INT64:
+                    snprintf(integerBuffer,
+                             sizeof(integerBuffer),
+                             "%lld",
+                             (long long)evaluatedValue.value.nativeObject.nativeInt64);
+                    return ZrCore_String_CreateFromNative(cs->state, integerBuffer);
+                case ZR_VALUE_TYPE_UINT8:
+                case ZR_VALUE_TYPE_UINT16:
+                case ZR_VALUE_TYPE_UINT32:
+                case ZR_VALUE_TYPE_UINT64:
+                    snprintf(integerBuffer,
+                             sizeof(integerBuffer),
+                             "%llu",
+                             (unsigned long long)evaluatedValue.value.nativeObject.nativeUInt64);
+                    return ZrCore_String_CreateFromNative(cs->state, integerBuffer);
+                default:
+                    break;
+            }
+        }
+    }
+
+    if (!compiler_append_ast_node_display_text(cs, node, buffer, sizeof(buffer), &offset)) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(cs->state, buffer, offset);
+}
+
+static SZrString *compiler_extract_type_name_node_string(SZrCompilerState *cs, SZrAstNode *typeNameNode) {
+    if (cs == ZR_NULL || typeNameNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (typeNameNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return typeNameNode->data.identifier.name;
+    }
+
+    if (typeNameNode->type == ZR_AST_GENERIC_TYPE) {
+        SZrGenericType *genericType = &typeNameNode->data.genericType;
+        char buffer[1024];
+        TZrSize offset = 0;
+
+        if (genericType->name == ZR_NULL || genericType->name->name == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        buffer[0] = '\0';
+        if (!compiler_append_text_fragment(buffer,
+                                           sizeof(buffer),
+                                           &offset,
+                                           ZrCore_String_GetNativeString(genericType->name->name)) ||
+            !compiler_append_text_fragment(buffer, sizeof(buffer), &offset, "<")) {
+            return ZR_NULL;
+        }
+
+        if (genericType->params != ZR_NULL) {
+            for (TZrSize index = 0; index < genericType->params->count; index++) {
+                SZrAstNode *paramNode = genericType->params->nodes[index];
+                SZrString *paramTypeName;
+
+                if (index > 0 && !compiler_append_text_fragment(buffer, sizeof(buffer), &offset, ", ")) {
+                    return ZR_NULL;
+                }
+
+                paramTypeName = extract_generic_argument_name_string(cs, paramNode);
+                if (paramTypeName == ZR_NULL ||
+                    !compiler_append_text_fragment(buffer,
+                                                   sizeof(buffer),
+                                                   &offset,
+                                                   ZrCore_String_GetNativeString(paramTypeName))) {
+                    return ZR_NULL;
+                }
+            }
+        }
+
+        if (!compiler_append_text_fragment(buffer, sizeof(buffer), &offset, ">")) {
+            return ZR_NULL;
+        }
+
+        return ZrCore_String_Create(cs->state, buffer, offset);
+    }
+
+    if (typeNameNode->type == ZR_AST_TUPLE_TYPE) {
+        SZrTupleType *tupleType = &typeNameNode->data.tupleType;
+        char buffer[1024];
+        TZrSize offset = 0;
+
+        buffer[0] = '\0';
+        if (!compiler_append_text_fragment(buffer, sizeof(buffer), &offset, "(")) {
+            return ZR_NULL;
+        }
+
+        if (tupleType->elements != ZR_NULL) {
+            for (TZrSize index = 0; index < tupleType->elements->count; index++) {
+                SZrAstNode *elemNode = tupleType->elements->nodes[index];
+                SZrString *elemTypeName;
+
+                if (index > 0 && !compiler_append_text_fragment(buffer, sizeof(buffer), &offset, ", ")) {
+                    return ZR_NULL;
+                }
+
+                elemTypeName = extract_generic_argument_name_string(cs, elemNode);
+                if (elemTypeName == ZR_NULL ||
+                    !compiler_append_text_fragment(buffer,
+                                                   sizeof(buffer),
+                                                   &offset,
+                                                   ZrCore_String_GetNativeString(elemTypeName))) {
+                    return ZR_NULL;
+                }
+            }
+        }
+
+        if (!compiler_append_text_fragment(buffer, sizeof(buffer), &offset, ")")) {
+            return ZR_NULL;
+        }
+
+        return ZrCore_String_Create(cs->state, buffer, offset);
+    }
+
+    return ZR_NULL;
+}
+
 // 辅助函数：从类型节点提取类型名称字符串
 SZrString *extract_type_name_string(SZrCompilerState *cs, SZrType *type) {
+    SZrString *baseName;
+    char buffer[1024];
+    TZrSize offset = 0;
+
     if (cs == ZR_NULL || type == ZR_NULL || type->name == ZR_NULL) {
         return ZR_NULL;
     }
-    
-    if (type->name->type == ZR_AST_IDENTIFIER_LITERAL) {
-        SZrString *baseName = type->name->data.identifier.name;
-        // 处理数组维度
-        if (type->dimensions > 0) {
-            // 构建数组类型名称，例如 "int[]" 或 "int[][]"
-            TZrNativeString baseNameStr = ZrCore_String_GetNativeStringShort(baseName);
-            if (baseNameStr == ZR_NULL) {
-                baseNameStr = *ZrCore_String_GetNativeStringLong(baseName);
-            }
-            if (baseNameStr != ZR_NULL) {
-                TZrSize baseLen = strlen(baseNameStr);
-                TZrSize totalLen = baseLen + type->dimensions * 2; // 每个维度需要 "[]"
-                char *arrayTypeName = (char *)ZrCore_Memory_RawMalloc(cs->state->global, totalLen + 1);
-                if (arrayTypeName != ZR_NULL) {
-                    strcpy(arrayTypeName, baseNameStr);
-                    for (TZrInt32 i = 0; i < type->dimensions; i++) {
-                        strcat(arrayTypeName, "[]");
-                    }
-                    SZrString *result = ZrCore_String_CreateFromNative(cs->state, arrayTypeName);
-                    ZrCore_Memory_RawFree(cs->state->global, arrayTypeName, totalLen + 1);
-                    return result;
-                }
-            }
-        }
-        return baseName;
-    }
-    
-    // 处理泛型类型（如 Array<int>）
-    if (type->name->type == ZR_AST_GENERIC_TYPE) {
-        SZrGenericType *genericType = &type->name->data.genericType;
-        if (genericType->name != ZR_NULL) {
-            TZrNativeString genericNameStr = ZrCore_String_GetNativeStringShort(genericType->name->name);
-            if (genericNameStr == ZR_NULL) {
-                genericNameStr = *ZrCore_String_GetNativeStringLong(genericType->name->name);
-            }
-            if (genericNameStr != ZR_NULL) {
-                // 构建泛型类型名称，例如 "Array<int>"
-                TZrSize nameLen = strlen(genericNameStr);
-                TZrSize totalLen = nameLen + 2; // "<" 和 ">"
-                
-                // 计算参数类型名称的总长度
-                if (genericType->params != ZR_NULL && genericType->params->count > 0) {
-                    for (TZrSize i = 0; i < genericType->params->count; i++) {
-                        SZrAstNode *paramNode = genericType->params->nodes[i];
-                        if (paramNode != ZR_NULL && paramNode->type == ZR_AST_TYPE) {
-                            SZrString *paramTypeName = extract_type_name_string(cs, &paramNode->data.type);
-                            if (paramTypeName != ZR_NULL) {
-                                TZrNativeString paramStr = ZrCore_String_GetNativeStringShort(paramTypeName);
-                                if (paramStr == ZR_NULL) {
-                                    paramStr = *ZrCore_String_GetNativeStringLong(paramTypeName);
-                                }
-                                if (paramStr != ZR_NULL) {
-                                    totalLen += strlen(paramStr);
-                                    if (i > 0) {
-                                        totalLen += 2; // ", "
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                char *genericTypeName = (char *)ZrCore_Memory_RawMalloc(cs->state->global, totalLen + 1);
-                if (genericTypeName != ZR_NULL) {
-                    strcpy(genericTypeName, genericNameStr);
-                    strcat(genericTypeName, "<");
-                    if (genericType->params != ZR_NULL && genericType->params->count > 0) {
-                        for (TZrSize i = 0; i < genericType->params->count; i++) {
-                            if (i > 0) {
-                                strcat(genericTypeName, ", ");
-                            }
-                            SZrAstNode *paramNode = genericType->params->nodes[i];
-                            if (paramNode != ZR_NULL && paramNode->type == ZR_AST_TYPE) {
-                                SZrString *paramTypeName = extract_type_name_string(cs, &paramNode->data.type);
-                                if (paramTypeName != ZR_NULL) {
-                                    TZrNativeString paramStr = ZrCore_String_GetNativeStringShort(paramTypeName);
-                                    if (paramStr == ZR_NULL) {
-                                        paramStr = *ZrCore_String_GetNativeStringLong(paramTypeName);
-                                    }
-                                    if (paramStr != ZR_NULL) {
-                                        strcat(genericTypeName, paramStr);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    strcat(genericTypeName, ">");
-                    SZrString *result = ZrCore_String_CreateFromNative(cs->state, genericTypeName);
-                    ZrCore_Memory_RawFree(cs->state->global, genericTypeName, totalLen + 1);
-                    return result;
-                }
-            }
-        }
+
+    baseName = compiler_extract_type_name_node_string(cs, type->name);
+    if (baseName == ZR_NULL) {
         return ZR_NULL;
     }
-    
-    // 处理元组类型（如 (int, string)）
-    if (type->name->type == ZR_AST_TUPLE_TYPE) {
-        SZrTupleType *tupleType = &type->name->data.tupleType;
-        if (tupleType->elements != ZR_NULL && tupleType->elements->count > 0) {
-            TZrSize totalLen = 2; // "(" 和 ")"
-            // 计算元素类型名称的总长度
-            for (TZrSize i = 0; i < tupleType->elements->count; i++) {
-                SZrAstNode *elemNode = tupleType->elements->nodes[i];
-                if (elemNode != ZR_NULL && elemNode->type == ZR_AST_TYPE) {
-                    SZrString *elemTypeName = extract_type_name_string(cs, &elemNode->data.type);
-                    if (elemTypeName != ZR_NULL) {
-                        TZrNativeString elemStr = ZrCore_String_GetNativeStringShort(elemTypeName);
-                        if (elemStr == ZR_NULL) {
-                            elemStr = *ZrCore_String_GetNativeStringLong(elemTypeName);
-                        }
-                        if (elemStr != ZR_NULL) {
-                            totalLen += strlen(elemStr);
-                            if (i > 0) {
-                                totalLen += 2; // ", "
-                            }
-                        }
-                    }
-                }
-            }
-            
-            char *tupleTypeName = (char *)ZrCore_Memory_RawMalloc(cs->state->global, totalLen + 1);
-            if (tupleTypeName != ZR_NULL) {
-                strcpy(tupleTypeName, "(");
-                for (TZrSize i = 0; i < tupleType->elements->count; i++) {
-                    if (i > 0) {
-                        strcat(tupleTypeName, ", ");
-                    }
-                    SZrAstNode *elemNode = tupleType->elements->nodes[i];
-                    if (elemNode != ZR_NULL && elemNode->type == ZR_AST_TYPE) {
-                        SZrString *elemTypeName = extract_type_name_string(cs, &elemNode->data.type);
-                        if (elemTypeName != ZR_NULL) {
-                            TZrNativeString elemStr = ZrCore_String_GetNativeStringShort(elemTypeName);
-                            if (elemStr == ZR_NULL) {
-                                elemStr = *ZrCore_String_GetNativeStringLong(elemTypeName);
-                            }
-                            if (elemStr != ZR_NULL) {
-                                strcat(tupleTypeName, elemStr);
-                            }
-                        }
-                    }
-                }
-                strcat(tupleTypeName, ")");
-                SZrString *result = ZrCore_String_CreateFromNative(cs->state, tupleTypeName);
-                ZrCore_Memory_RawFree(cs->state->global, tupleTypeName, totalLen + 1);
-                return result;
-            }
-        }
+
+    buffer[0] = '\0';
+    if (!compiler_append_text_fragment(buffer, sizeof(buffer), &offset, ZrCore_String_GetNativeString(baseName))) {
         return ZR_NULL;
     }
-    
-    return ZR_NULL;
+
+    if (type->subType != ZR_NULL) {
+        SZrString *subTypeName = extract_type_name_string(cs, type->subType);
+        if (subTypeName == ZR_NULL ||
+            !compiler_append_text_fragment(buffer, sizeof(buffer), &offset, ".") ||
+            !compiler_append_text_fragment(buffer,
+                                           sizeof(buffer),
+                                           &offset,
+                                           ZrCore_String_GetNativeString(subTypeName))) {
+            return ZR_NULL;
+        }
+    }
+
+    for (TZrInt32 index = 0; index < type->dimensions; index++) {
+        if (!compiler_append_text_fragment(buffer, sizeof(buffer), &offset, "[]")) {
+            return ZR_NULL;
+        }
+    }
+
+    return ZrCore_String_Create(cs->state, buffer, offset);
+}
+
+void compiler_collect_generic_parameter_info(SZrCompilerState *cs,
+                                             SZrArray *genericParameters,
+                                             SZrGenericDeclaration *genericDeclaration) {
+    if (cs == ZR_NULL || genericParameters == ZR_NULL || genericDeclaration == ZR_NULL ||
+        genericDeclaration->params == ZR_NULL) {
+        return;
+    }
+
+    if (!genericParameters->isValid || genericParameters->head == ZR_NULL ||
+        genericParameters->capacity == 0 || genericParameters->elementSize == 0) {
+        ZrCore_Array_Init(cs->state,
+                          genericParameters,
+                          sizeof(SZrTypeGenericParameterInfo),
+                          genericDeclaration->params->count > 0 ? genericDeclaration->params->count : 1);
+    }
+
+    for (TZrSize index = 0; index < genericDeclaration->params->count; index++) {
+        SZrAstNode *paramNode = genericDeclaration->params->nodes[index];
+        SZrTypeGenericParameterInfo genericInfo;
+        SZrParameter *parameter;
+
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        parameter = &paramNode->data.parameter;
+        memset(&genericInfo, 0, sizeof(genericInfo));
+        genericInfo.name = parameter->name != ZR_NULL ? parameter->name->name : ZR_NULL;
+        genericInfo.genericKind = parameter->genericKind;
+        genericInfo.variance = parameter->variance;
+        genericInfo.requiresClass = parameter->genericRequiresClass;
+        genericInfo.requiresStruct = parameter->genericRequiresStruct;
+        genericInfo.requiresNew = parameter->genericRequiresNew;
+        ZrCore_Array_Init(cs->state,
+                          &genericInfo.constraintTypeNames,
+                          sizeof(SZrString *),
+                          parameter->genericTypeConstraints != ZR_NULL ? parameter->genericTypeConstraints->count : 1);
+
+        if (parameter->genericTypeConstraints != ZR_NULL) {
+            for (TZrSize constraintIndex = 0; constraintIndex < parameter->genericTypeConstraints->count;
+                 constraintIndex++) {
+                SZrAstNode *constraintNode = parameter->genericTypeConstraints->nodes[constraintIndex];
+                SZrString *constraintName;
+
+                if (constraintNode == ZR_NULL || constraintNode->type != ZR_AST_TYPE) {
+                    continue;
+                }
+
+                constraintName = extract_type_name_string(cs, &constraintNode->data.type);
+                if (constraintName != ZR_NULL) {
+                    ZrCore_Array_Push(cs->state, &genericInfo.constraintTypeNames, &constraintName);
+                }
+            }
+        }
+
+        ZrCore_Array_Push(cs->state, genericParameters, &genericInfo);
+    }
 }
 
 // 辅助函数：计算类型的大小（字节数）
@@ -342,7 +531,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     if (node->type != ZR_AST_STRUCT_DECLARATION) {
-        ZrParser_Compiler_Error(cs, "Expected struct declaration node", node->location);
+        ZrParser_Statement_Compile(cs, node);
         return;
     }
     
@@ -378,18 +567,24 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 初始化继承数组
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 4);
     ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 2);
+    ZrCore_Array_Init(cs->state,
+                      &info.genericParameters,
+                      sizeof(SZrTypeGenericParameterInfo),
+                      structDecl->generic != ZR_NULL && structDecl->generic->params != ZR_NULL
+                              ? structDecl->generic->params->count
+                              : 1);
+    compiler_collect_generic_parameter_info(cs, &info.genericParameters, structDecl->generic);
     
     // 处理继承关系
     if (structDecl->inherits != ZR_NULL && structDecl->inherits->count > 0) {
         for (TZrSize i = 0; i < structDecl->inherits->count; i++) {
             SZrAstNode *inheritType = structDecl->inherits->nodes[i];
             if (inheritType != ZR_NULL && inheritType->type == ZR_AST_TYPE) {
-                SZrType *type = &inheritType->data.type;
-                // TODO: 提取类型名称（简化处理，只处理简单类型名）
-                if (type->name != ZR_NULL && type->name->type == ZR_AST_IDENTIFIER_LITERAL) {
-                    SZrString *inheritTypeName = type->name->data.identifier.name;
-                    if (inheritTypeName != ZR_NULL) {
-                        ZrCore_Array_Push(cs->state, &info.inherits, &inheritTypeName);
+                SZrString *inheritTypeName = extract_type_name_string(cs, &inheritType->data.type);
+                if (inheritTypeName != ZR_NULL) {
+                    ZrCore_Array_Push(cs->state, &info.inherits, &inheritTypeName);
+                    if (info.extendsTypeName == ZR_NULL) {
+                        info.extendsTypeName = inheritTypeName;
                     }
                 }
             }
@@ -430,6 +625,10 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.compiledFunction = ZR_NULL;
             memberInfo.functionConstantIndex = 0;
             memberInfo.parameterCount = 0;
+            ZrCore_Array_Construct(&memberInfo.parameterTypes);
+            ZrCore_Array_Construct(&memberInfo.genericParameters);
+            ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
+            memberInfo.declarationNode = member;
             memberInfo.metaType = 0; // ZR_META_ENUM_MAX表示非元方法
             memberInfo.isMetaMethod = ZR_FALSE;
             memberInfo.returnTypeName = ZR_NULL;
@@ -524,6 +723,13 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     } else {
                         memberInfo.returnTypeName = ZR_NULL; // 无返回类型（void）
                     }
+                    ZrCore_Array_Init(cs->state,
+                                      &memberInfo.genericParameters,
+                                      sizeof(SZrTypeGenericParameterInfo),
+                                      method->generic != ZR_NULL && method->generic->params != ZR_NULL
+                                              ? method->generic->params->count
+                                              : 1);
+                    compiler_collect_generic_parameter_info(cs, &memberInfo.genericParameters, method->generic);
                     // 方法信息（函数引用等）将在方法编译后设置
                     // 需要将方法编译为函数并存储函数引用索引
                     // 注意：方法编译应该在prototype创建时进行，这里只记录方法信息
@@ -531,6 +737,9 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     if (method->params != ZR_NULL) {
                         memberInfo.parameterCount = (TZrUInt32)method->params->count;
                         compiler_struct_collect_parameter_types(cs, &memberInfo.parameterTypes, method->params);
+                        compiler_collect_parameter_passing_modes(cs->state,
+                                                                 &memberInfo.parameterPassingModes,
+                                                                 method->params);
                     }
                     memberInfo.isMetaMethod = ZR_FALSE;
                     break;
@@ -570,6 +779,9 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     if (metaFunc->params != ZR_NULL) {
                         memberInfo.parameterCount = (TZrUInt32)metaFunc->params->count;
                         compiler_struct_collect_parameter_types(cs, &memberInfo.parameterTypes, metaFunc->params);
+                        compiler_collect_parameter_passing_modes(cs->state,
+                                                                 &memberInfo.parameterPassingModes,
+                                                                 metaFunc->params);
                     }
                     break;
                 }

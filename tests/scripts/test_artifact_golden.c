@@ -187,7 +187,7 @@ static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
     destroy_test_state(state);
 }
 
-void test_artifact_outputs_match_goldens(void) {
+static void test_artifact_outputs_match_goldens(void) {
     TZrSize i;
 
     for (i = 0; i < sizeof(ZR_ARTIFACT_GOLDEN_CASES) / sizeof(ZR_ARTIFACT_GOLDEN_CASES[0]); i++) {

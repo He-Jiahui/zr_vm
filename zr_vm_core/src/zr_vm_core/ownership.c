@@ -41,7 +41,7 @@ static void ownership_set_value_from_object(SZrTypeValue *value,
         return;
     }
 
-    value->type = object->type;
+    value->type = (EZrValueType)object->type;
     value->value.object = object;
     value->isGarbageCollectable = ZR_TRUE;
     value->isNative = object->isNative;

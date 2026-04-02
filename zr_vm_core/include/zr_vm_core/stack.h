@@ -54,7 +54,9 @@ ZR_FORCE_INLINE SZrTypeValue *ZrCore_Stack_GetValue(SZrTypeValueOnStack *valueOn
 ZR_CORE_API void ZrCore_Stack_SetRawObjectValue(struct SZrState *state, SZrTypeValueOnStack *destination,
                                           SZrRawObject *object);
 
-ZR_CORE_API void ZrCore_Stack_CopyValue(struct SZrState *state, SZrTypeValueOnStack *destination, SZrTypeValue *source);
+ZR_CORE_API void ZrCore_Stack_CopyValue(struct SZrState *state,
+                                        SZrTypeValueOnStack *destination,
+                                        const SZrTypeValue *source);
 
 ZR_CORE_API TZrMemoryOffset ZrCore_Stack_SavePointerAsOffset(struct SZrState *state, TZrStackValuePointer stackPointer);
 

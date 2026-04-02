@@ -33,6 +33,8 @@ static SZrString *create_string_from_const_text(SZrState *state, const TZrChar *
     return ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
 }
 
+static TZrBool file_range_contains_position(SZrFileRange range, SZrFileRange position);
+
 static TZrBool normalize_module_key(const TZrChar *modulePath, TZrChar *buffer, TZrSize bufferSize) {
     TZrSize length;
     TZrSize writeIndex = 0;
@@ -179,7 +181,7 @@ void ZrLanguageServer_LspProject_CollectImportBindings(SZrState *state, SZrAstNo
     }
 }
 
-static SZrLspImportBinding *find_import_binding_by_alias(SZrArray *bindings, SZrString *aliasName) {
+SZrLspImportBinding *ZrLanguageServer_LspProject_FindImportBindingByAlias(SZrArray *bindings, SZrString *aliasName) {
     for (TZrSize index = 0; bindings != ZR_NULL && index < bindings->length; index++) {
         SZrLspImportBinding **bindingPtr =
             (SZrLspImportBinding **)ZrCore_Array_Get(bindings, index);
@@ -190,6 +192,38 @@ static SZrLspImportBinding *find_import_binding_by_alias(SZrArray *bindings, SZr
     }
 
     return ZR_NULL;
+}
+
+static TZrBool variable_declaration_get_import_binding_hit(SZrAstNode *node,
+                                                           SZrArray *bindings,
+                                                           SZrFileRange position,
+                                                           SZrLspImportBinding **outBinding,
+                                                           SZrFileRange *outLocation) {
+    SZrVariableDeclaration *varDecl;
+    SZrLspImportBinding *binding;
+
+    if (node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION || bindings == ZR_NULL ||
+        outBinding == ZR_NULL || outLocation == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    varDecl = &node->data.variableDeclaration;
+    if (varDecl->pattern == ZR_NULL ||
+        varDecl->pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
+        varDecl->value == ZR_NULL ||
+        varDecl->value->type != ZR_AST_IMPORT_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    binding = ZrLanguageServer_LspProject_FindImportBindingByAlias(bindings,
+                                                                   varDecl->pattern->data.identifier.name);
+    if (binding == ZR_NULL || !file_range_contains_position(varDecl->pattern->location, position)) {
+        return ZR_FALSE;
+    }
+
+    *outBinding = binding;
+    *outLocation = varDecl->pattern->location;
+    return ZR_TRUE;
 }
 
 static TZrBool file_range_contains_position(SZrFileRange range, SZrFileRange position) {
@@ -232,7 +266,7 @@ static TZrBool primary_expression_get_imported_member(SZrAstNode *node,
         return ZR_FALSE;
     }
 
-    binding = find_import_binding_by_alias(bindings, receiverNode->data.identifier.name);
+    binding = ZrLanguageServer_LspProject_FindImportBindingByAlias(bindings, receiverNode->data.identifier.name);
     if (binding == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -240,6 +274,35 @@ static TZrBool primary_expression_get_imported_member(SZrAstNode *node,
     outHit->moduleName = binding->moduleName;
     outHit->memberName = memberNode->data.memberExpression.property->data.identifier.name;
     outHit->location = memberNode->data.memberExpression.property->location;
+    return ZR_TRUE;
+}
+
+static TZrBool primary_expression_get_import_binding_hit(SZrAstNode *node,
+                                                         SZrArray *bindings,
+                                                         SZrFileRange position,
+                                                         SZrLspImportBinding **outBinding,
+                                                         SZrFileRange *outLocation) {
+    SZrAstNode *receiverNode;
+    SZrLspImportBinding *binding;
+
+    if (node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION || bindings == ZR_NULL ||
+        outBinding == ZR_NULL || outLocation == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    receiverNode = node->data.primaryExpression.property;
+    if (receiverNode == ZR_NULL || receiverNode->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    binding = ZrLanguageServer_LspProject_FindImportBindingByAlias(bindings,
+                                                                   receiverNode->data.identifier.name);
+    if (binding == ZR_NULL || !file_range_contains_position(receiverNode->location, position)) {
+        return ZR_FALSE;
+    }
+
+    *outBinding = binding;
+    *outLocation = receiverNode->location;
     return ZR_TRUE;
 }
 
@@ -488,11 +551,472 @@ static TZrBool find_imported_member_hit_recursive(SZrAstNode *node,
     return ZR_FALSE;
 }
 
+static TZrBool find_import_binding_hit_recursive(SZrAstNode *node,
+                                                 SZrArray *bindings,
+                                                 SZrFileRange position,
+                                                 SZrLspImportBinding **outBinding,
+                                                 SZrFileRange *outLocation);
+
+static TZrBool find_import_binding_hit_in_node_array(SZrAstNodeArray *nodes,
+                                                     SZrArray *bindings,
+                                                     SZrFileRange position,
+                                                     SZrLspImportBinding **outBinding,
+                                                     SZrFileRange *outLocation) {
+    if (nodes == ZR_NULL || nodes->nodes == ZR_NULL || bindings == ZR_NULL ||
+        outBinding == ZR_NULL || outLocation == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < nodes->count; index++) {
+        if (find_import_binding_hit_recursive(nodes->nodes[index],
+                                              bindings,
+                                              position,
+                                              outBinding,
+                                              outLocation)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool find_import_binding_hit_recursive(SZrAstNode *node,
+                                                 SZrArray *bindings,
+                                                 SZrFileRange position,
+                                                 SZrLspImportBinding **outBinding,
+                                                 SZrFileRange *outLocation) {
+    if (node == ZR_NULL || bindings == ZR_NULL || outBinding == ZR_NULL || outLocation == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (variable_declaration_get_import_binding_hit(node, bindings, position, outBinding, outLocation) ||
+        primary_expression_get_import_binding_hit(node, bindings, position, outBinding, outLocation)) {
+        return ZR_TRUE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_SCRIPT:
+            return find_import_binding_hit_in_node_array(node->data.script.statements,
+                                                         bindings,
+                                                         position,
+                                                         outBinding,
+                                                         outLocation);
+
+        case ZR_AST_BLOCK:
+            return find_import_binding_hit_in_node_array(node->data.block.body,
+                                                         bindings,
+                                                         position,
+                                                         outBinding,
+                                                         outLocation);
+
+        case ZR_AST_FUNCTION_DECLARATION:
+            return find_import_binding_hit_recursive(node->data.functionDeclaration.body,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_TEST_DECLARATION:
+            return find_import_binding_hit_recursive(node->data.testDeclaration.body,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_STRUCT_METHOD:
+            return find_import_binding_hit_recursive(node->data.structMethod.body,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return find_import_binding_hit_recursive(node->data.structMetaFunction.body,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_CLASS_METHOD:
+            return find_import_binding_hit_recursive(node->data.classMethod.body,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_CLASS_META_FUNCTION:
+            return find_import_binding_hit_recursive(node->data.classMetaFunction.body,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_PROPERTY_GET:
+            return find_import_binding_hit_recursive(node->data.propertyGet.body,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_PROPERTY_SET:
+            return find_import_binding_hit_recursive(node->data.propertySet.body,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_CLASS_PROPERTY:
+            return find_import_binding_hit_recursive(node->data.classProperty.modifier,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_VARIABLE_DECLARATION:
+            return find_import_binding_hit_recursive(node->data.variableDeclaration.value,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_STRUCT_FIELD:
+            return find_import_binding_hit_recursive(node->data.structField.init,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_CLASS_FIELD:
+            return find_import_binding_hit_recursive(node->data.classField.init,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_ENUM_MEMBER:
+            return find_import_binding_hit_recursive(node->data.enumMember.value,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_RETURN_STATEMENT:
+            return find_import_binding_hit_recursive(node->data.returnStatement.expr,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_EXPRESSION_STATEMENT:
+            return find_import_binding_hit_recursive(node->data.expressionStatement.expr,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_USING_STATEMENT:
+            return find_import_binding_hit_recursive(node->data.usingStatement.resource,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.usingStatement.body,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_BREAK_CONTINUE_STATEMENT:
+            return find_import_binding_hit_recursive(node->data.breakContinueStatement.expr,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_THROW_STATEMENT:
+            return find_import_binding_hit_recursive(node->data.throwStatement.expr,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_OUT_STATEMENT:
+            return find_import_binding_hit_recursive(node->data.outStatement.expr,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
+            return find_import_binding_hit_recursive(node->data.tryCatchFinallyStatement.block,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_in_node_array(node->data.tryCatchFinallyStatement.catchClauses,
+                                                        bindings,
+                                                        position,
+                                                        outBinding,
+                                                        outLocation) ||
+                   find_import_binding_hit_recursive(node->data.tryCatchFinallyStatement.finallyBlock,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_CATCH_CLAUSE:
+            return find_import_binding_hit_recursive(node->data.catchClause.block,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_ASSIGNMENT_EXPRESSION:
+            return find_import_binding_hit_recursive(node->data.assignmentExpression.left,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.assignmentExpression.right,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_BINARY_EXPRESSION:
+            return find_import_binding_hit_recursive(node->data.binaryExpression.left,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.binaryExpression.right,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_LOGICAL_EXPRESSION:
+            return find_import_binding_hit_recursive(node->data.logicalExpression.left,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.logicalExpression.right,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_CONDITIONAL_EXPRESSION:
+            return find_import_binding_hit_recursive(node->data.conditionalExpression.test,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.conditionalExpression.consequent,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.conditionalExpression.alternate,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_UNARY_EXPRESSION:
+            return find_import_binding_hit_recursive(node->data.unaryExpression.argument,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_TYPE_CAST_EXPRESSION:
+            return find_import_binding_hit_recursive(node->data.typeCastExpression.expression,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_LAMBDA_EXPRESSION:
+            return find_import_binding_hit_recursive(node->data.lambdaExpression.block,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_IF_EXPRESSION:
+            return find_import_binding_hit_recursive(node->data.ifExpression.condition,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.ifExpression.thenExpr,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.ifExpression.elseExpr,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_SWITCH_EXPRESSION:
+            return find_import_binding_hit_recursive(node->data.switchExpression.expr,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_in_node_array(node->data.switchExpression.cases,
+                                                        bindings,
+                                                        position,
+                                                        outBinding,
+                                                        outLocation) ||
+                   find_import_binding_hit_recursive(node->data.switchExpression.defaultCase,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_SWITCH_CASE:
+            return find_import_binding_hit_recursive(node->data.switchCase.value,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.switchCase.block,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_SWITCH_DEFAULT:
+            return find_import_binding_hit_recursive(node->data.switchDefault.block,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_FUNCTION_CALL:
+            return find_import_binding_hit_in_node_array(node->data.functionCall.args,
+                                                         bindings,
+                                                         position,
+                                                         outBinding,
+                                                         outLocation);
+
+        case ZR_AST_PRIMARY_EXPRESSION:
+            return find_import_binding_hit_recursive(node->data.primaryExpression.property,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_in_node_array(node->data.primaryExpression.members,
+                                                        bindings,
+                                                        position,
+                                                        outBinding,
+                                                        outLocation);
+
+        case ZR_AST_MEMBER_EXPRESSION:
+            return node->data.memberExpression.computed &&
+                   find_import_binding_hit_recursive(node->data.memberExpression.property,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_ARRAY_LITERAL:
+            return find_import_binding_hit_in_node_array(node->data.arrayLiteral.elements,
+                                                         bindings,
+                                                         position,
+                                                         outBinding,
+                                                         outLocation);
+
+        case ZR_AST_OBJECT_LITERAL:
+            return find_import_binding_hit_in_node_array(node->data.objectLiteral.properties,
+                                                         bindings,
+                                                         position,
+                                                         outBinding,
+                                                         outLocation);
+
+        case ZR_AST_KEY_VALUE_PAIR:
+            return find_import_binding_hit_recursive(node->data.keyValuePair.key,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.keyValuePair.value,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_WHILE_LOOP:
+            return find_import_binding_hit_recursive(node->data.whileLoop.cond,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.whileLoop.block,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_FOR_LOOP:
+            return find_import_binding_hit_recursive(node->data.forLoop.init,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.forLoop.cond,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.forLoop.step,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.forLoop.block,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        case ZR_AST_FOREACH_LOOP:
+            return find_import_binding_hit_recursive(node->data.foreachLoop.expr,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation) ||
+                   find_import_binding_hit_recursive(node->data.foreachLoop.block,
+                                                    bindings,
+                                                    position,
+                                                    outBinding,
+                                                    outLocation);
+
+        default:
+            break;
+    }
+
+    return ZR_FALSE;
+}
+
 TZrBool ZrLanguageServer_LspProject_FindImportedMemberHit(SZrAstNode *node,
                                                           SZrArray *bindings,
                                                           SZrFileRange position,
                                                           SZrLspImportedMemberHit *outHit) {
     return find_imported_member_hit_recursive(node, bindings, position, outHit);
+}
+
+TZrBool ZrLanguageServer_LspProject_FindImportBindingHit(SZrAstNode *node,
+                                                         SZrArray *bindings,
+                                                         SZrFileRange position,
+                                                         SZrLspImportBinding **outBinding,
+                                                         SZrFileRange *outLocation) {
+    return find_import_binding_hit_recursive(node, bindings, position, outBinding, outLocation);
 }
 
 static TZrBool append_lsp_location(SZrState *state, SZrArray *result, SZrString *uri, SZrFileRange range) {

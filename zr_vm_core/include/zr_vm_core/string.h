@@ -128,7 +128,7 @@ ZR_FORCE_INLINE TZrNativeString *ZrCore_String_GetNativeStringLong(const SZrStri
     return (TZrNativeString *) string->stringDataExtend;
 }
 
-ZR_FORCE_INLINE TZrNativeString ZrCore_String_GetNativeString(SZrString *string) {
+ZR_FORCE_INLINE TZrNativeString ZrCore_String_GetNativeString(const SZrString *string) {
     if (string->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
         return ZrCore_String_GetNativeStringShort(string);
     } else {

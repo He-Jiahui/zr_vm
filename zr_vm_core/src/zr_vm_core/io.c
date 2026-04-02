@@ -246,6 +246,73 @@ static void io_read_function_typed_export_symbols(SZrIo *io,
     }
 }
 
+static void io_read_function_metadata_parameters(SZrIo *io,
+                                                 SZrIoFunctionMetadataParameter **outParameters,
+                                                 TZrSize *outCount) {
+    SZrGlobalState *global;
+    TZrSize count;
+
+    if (io == ZR_NULL || outParameters == ZR_NULL || outCount == ZR_NULL) {
+        return;
+    }
+
+    global = io->state->global;
+    ZR_IO_READ_NATIVE_TYPE(io, count, TZrSize);
+    *outCount = count;
+    *outParameters = ZR_NULL;
+    if (count == 0) {
+        return;
+    }
+
+    *outParameters = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionMetadataParameter) * count);
+    if (*outParameters == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < count; index++) {
+        (*outParameters)[index].name = io_read_string_with_length(io);
+        io_read_function_typed_type_ref(io, &(*outParameters)[index].type);
+    }
+}
+
+static void io_read_function_compile_time_variable_infos(SZrIo *io,
+                                                         SZrIoFunctionCompileTimeVariableInfo *infos,
+                                                         TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        infos[index].name = io_read_string_with_length(io);
+        io_read_function_typed_type_ref(io, &infos[index].type);
+        ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceStart, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceEnd, TZrUInt32);
+    }
+}
+
+static void io_read_function_compile_time_function_infos(SZrIo *io,
+                                                         SZrIoFunctionCompileTimeFunctionInfo *infos,
+                                                         TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        infos[index].name = io_read_string_with_length(io);
+        io_read_function_typed_type_ref(io, &infos[index].returnType);
+        io_read_function_metadata_parameters(io, &infos[index].parameters, &infos[index].parameterCount);
+        ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceStart, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceEnd, TZrUInt32);
+    }
+}
+
+static void io_read_function_test_infos(SZrIo *io,
+                                        SZrIoFunctionTestInfo *infos,
+                                        TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        TZrUInt8 hasVariableArguments = ZR_FALSE;
+
+        infos[index].name = io_read_string_with_length(io);
+        io_read_function_metadata_parameters(io, &infos[index].parameters, &infos[index].parameterCount);
+        ZR_IO_READ_NATIVE_TYPE(io, hasVariableArguments, TZrUInt8);
+        infos[index].hasVariableArguments = hasVariableArguments ? ZR_TRUE : ZR_FALSE;
+        ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceStart, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceEnd, TZrUInt32);
+    }
+}
+
 static void io_read_classes(SZrIo *io, SZrIoClass *classes, TZrSize count);
 static void io_read_structs(SZrIo *io, SZrIoStruct *structs, TZrSize count);
 
@@ -336,10 +403,52 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         } else {
             function->typedExportedSymbols = ZR_NULL;
         }
+        function->compileTimeVariableInfosLength = 0;
+        function->compileTimeVariableInfos = ZR_NULL;
+        function->compileTimeFunctionInfosLength = 0;
+        function->compileTimeFunctionInfos = ZR_NULL;
+        function->testInfosLength = 0;
+        function->testInfos = ZR_NULL;
+        if (io->sourceVersionPatch >= 2) {
+            ZR_IO_READ_NATIVE_TYPE(io, function->compileTimeVariableInfosLength, TZrSize);
+            if (function->compileTimeVariableInfosLength > 0) {
+                function->compileTimeVariableInfos =
+                        ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                 sizeof(SZrIoFunctionCompileTimeVariableInfo) *
+                                                         function->compileTimeVariableInfosLength);
+                if (function->compileTimeVariableInfos != ZR_NULL) {
+                    io_read_function_compile_time_variable_infos(io,
+                                                                 function->compileTimeVariableInfos,
+                                                                 function->compileTimeVariableInfosLength);
+                }
+            }
+            ZR_IO_READ_NATIVE_TYPE(io, function->compileTimeFunctionInfosLength, TZrSize);
+            if (function->compileTimeFunctionInfosLength > 0) {
+                function->compileTimeFunctionInfos =
+                        ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                 sizeof(SZrIoFunctionCompileTimeFunctionInfo) *
+                                                         function->compileTimeFunctionInfosLength);
+                if (function->compileTimeFunctionInfos != ZR_NULL) {
+                    io_read_function_compile_time_function_infos(io,
+                                                                 function->compileTimeFunctionInfos,
+                                                                 function->compileTimeFunctionInfosLength);
+                }
+            }
+            ZR_IO_READ_NATIVE_TYPE(io, function->testInfosLength, TZrSize);
+            if (function->testInfosLength > 0) {
+                function->testInfos =
+                        ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionTestInfo) * function->testInfosLength);
+                if (function->testInfos != ZR_NULL) {
+                    io_read_function_test_infos(io, function->testInfos, function->testInfosLength);
+                }
+            }
+        }
         // 读取PROTOTYPES_LENGTH和PROTOTYPES（结构化格式）
         ZR_IO_READ_NATIVE_TYPE(io, function->prototypesLength, TZrSize);
         function->classes = ZR_NULL;
         function->structs = ZR_NULL;
+        function->prototypeDataLength = 0;
+        function->prototypeData = ZR_NULL;
 
         // writer 总是会在 PROTOTYPES_LENGTH 后继续写入 CLASS/STRUCT count，
         // 即便 prototypesLength == 0 也会写两个 0，用于固定 .zro 布局。
@@ -361,6 +470,15 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
             function->structs = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoStruct) * structCount);
             if (function->structs != ZR_NULL) {
                 io_read_structs(io, function->structs, structCount);
+            }
+        }
+        if (io->sourceVersionPatch >= 3) {
+            ZR_IO_READ_NATIVE_TYPE(io, function->prototypeDataLength, TZrSize);
+            if (function->prototypeDataLength > 0) {
+                function->prototypeData = ZR_IO_MALLOC_NATIVE_DATA(global, function->prototypeDataLength);
+                if (function->prototypeData != ZR_NULL) {
+                    ZrCore_Io_Read(io, function->prototypeData, function->prototypeDataLength);
+                }
             }
         }
         ZR_IO_READ_NATIVE_TYPE(io, function->closuresLength, TZrSize);
@@ -575,6 +693,7 @@ SZrIo *ZrCore_Io_New(struct SZrGlobalState *global) {
     io->pointer = ZR_NULL;
     io->remained = 0;
     io->isBinary = ZR_FALSE;
+    io->sourceVersionPatch = 0;
     return io;
 }
 
@@ -592,6 +711,7 @@ void ZrCore_Io_Init(SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close
     io->pointer = ZR_NULL;
     io->remained = 0;
     io->isBinary = ZR_FALSE;
+    io->sourceVersionPatch = 0;
 }
 
 TZrSize ZrCore_Io_Read(SZrIo *io, TZrBytePtr buffer, TZrSize size) {
@@ -628,6 +748,7 @@ SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
     ZR_IO_READ_NATIVE_TYPE(io, source->versionMinor, TZrUInt32);
     ZR_IO_READ_NATIVE_TYPE(io, source->versionPatch, TZrUInt32);
     ZR_IO_READ_NATIVE_TYPE(io, source->format, TZrUInt64);
+    io->sourceVersionPatch = source->versionPatch;
     ZR_IO_READ_NATIVE_TYPE(io, source->nativeIntSize, TZrUInt8);
     ZR_IO_READ_NATIVE_TYPE(io, source->typeSizeSize, TZrUInt8);
     ZR_IO_READ_NATIVE_TYPE(io, source->typeInstructionSize, TZrUInt8);

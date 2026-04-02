@@ -15,6 +15,7 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 
@@ -275,6 +276,17 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
     }
 
     return ZR_NULL;
+}
+
+static TZrBool diagnostic_message_contains(SZrDiagnostic *diagnostic, const char *fragment) {
+    const char *messageText;
+
+    if (diagnostic == ZR_NULL || diagnostic->message == ZR_NULL || fragment == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    messageText = ZrCore_String_GetNativeString(diagnostic->message);
+    return messageText != ZR_NULL && strstr(messageText, fragment) != ZR_NULL;
 }
 
 static TZrBool has_completion_detail_fragment(SZrArray *completions,
@@ -1401,6 +1413,352 @@ static void test_semantic_analyzer_local_symbols_surface_rich_hover_and_completi
     TEST_PASS(timer, "Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail");
 }
 
+static void test_semantic_analyzer_generic_function_symbols_surface_signature_detail(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Generic Function Symbols Surface Signature Detail");
+
+    TEST_INFO("Generic hover/completion detail",
+              "Generic function symbols should expose explicit generic and passing-mode signature text in completion and hover");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "func swap<T>(%ref value: T): T {\n"
+            "    return value;\n"
+            "}\n"
+            "func use(): void {\n"
+            "    var slot: int = 1;\n"
+            "    swap<int>(slot);\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "generic_signature_hover_test.zr", 30);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange completionPosition;
+        SZrFileRange hoverPosition;
+        SZrArray completions;
+        SZrHoverInfo *hoverInfo = ZR_NULL;
+        const char *hoverText;
+        const char *detailText;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Function Symbols Surface Signature Detail",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Function Symbols Surface Signature Detail",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Function Symbols Surface Signature Detail",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        completionPosition = file_range_for_nth_substring(testCode, "swap<int>", 0, ZR_FALSE);
+        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
+
+        detailText = completion_detail_for_label(&completions, "swap");
+        if (detailText == ZR_NULL ||
+            strstr(detailText, "swap<T>(") == ZR_NULL ||
+            strstr(detailText, "%ref value: T") == ZR_NULL ||
+            strstr(detailText, "): T") == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Function Symbols Surface Signature Detail",
+                      detailText != ZR_NULL ? detailText : "<null detail>");
+            return;
+        }
+
+        hoverPosition = file_range_for_nth_substring(testCode, "swap", 1, ZR_FALSE);
+        if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
+            hoverInfo == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Function Symbols Surface Signature Detail",
+                      "Failed to get hover info for generic function call");
+            return;
+        }
+
+        hoverText = hover_contents_string(hoverInfo);
+        if (hoverText == ZR_NULL ||
+            strstr(hoverText, "swap<T>(") == ZR_NULL ||
+            strstr(hoverText, "%ref value: T") == ZR_NULL ||
+            strstr(hoverText, "Access: public") == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Function Symbols Surface Signature Detail",
+                      hoverText != ZR_NULL ? hoverText : "<null hover>");
+            return;
+        }
+
+        ZrCore_Array_Free(state, &completions);
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Generic Function Symbols Surface Signature Detail");
+}
+
+static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Generic Type Symbols Surface Signature Detail");
+
+    TEST_INFO("Generic type hover/completion detail",
+              "Generic class and interface symbols should surface inheritance, const generics, variance, and where clauses in completion and hover");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "interface Producer<out T> {\n"
+            "    next(): T;\n"
+            "}\n"
+            "class Item {\n"
+            "    pub @constructor() { }\n"
+            "}\n"
+            "class Derived<T, const N: int> : Producer<T>\n"
+            "where T: class, new() {\n"
+            "}\n"
+            "func use(): void {\n"
+            "    var value: Derived<Item, 4> = null;\n"
+            "    value;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "generic_type_signature_hover_test.zr", 36);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange completionPosition;
+        SZrFileRange derivedHoverPosition;
+        SZrFileRange producerHoverPosition;
+        SZrArray completions;
+        SZrHoverInfo *hoverInfo = ZR_NULL;
+        const char *detailText;
+        const char *hoverText;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        completionPosition = file_range_for_nth_substring(testCode, "value;", 0, ZR_FALSE);
+        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
+
+        detailText = completion_detail_for_label(&completions, "Derived");
+        if (detailText == ZR_NULL ||
+            strstr(detailText, "class Derived<T, const N: int>") == ZR_NULL ||
+            strstr(detailText, ": Producer<T>") == ZR_NULL ||
+            strstr(detailText, "where T: class, new()") == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
+                      detailText != ZR_NULL ? detailText : "<null detail>");
+            return;
+        }
+
+        detailText = completion_detail_for_label(&completions, "Producer");
+        if (detailText == ZR_NULL ||
+            strstr(detailText, "interface Producer<out T>") == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
+                      detailText != ZR_NULL ? detailText : "<null detail>");
+            return;
+        }
+
+        derivedHoverPosition = file_range_for_nth_substring(testCode, "Derived", 1, ZR_FALSE);
+        if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, derivedHoverPosition, &hoverInfo) ||
+            hoverInfo == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
+                      "Failed to get hover info for generic class reference");
+            return;
+        }
+
+        hoverText = hover_contents_string(hoverInfo);
+        if (hoverText == ZR_NULL ||
+            strstr(hoverText, "class Derived<T, const N: int> : Producer<T>") == ZR_NULL ||
+            strstr(hoverText, "Resolved Type: Derived<Item, 4>") == ZR_NULL ||
+            strstr(hoverText, "where T: class, new()") == ZR_NULL ||
+            strstr(hoverText, "Access: private") == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
+                      hoverText != ZR_NULL ? hoverText : "<null hover>");
+            return;
+        }
+
+        producerHoverPosition = file_range_for_nth_substring(testCode, "Producer", 1, ZR_FALSE);
+        if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, producerHoverPosition, &hoverInfo) ||
+            hoverInfo == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
+                      "Failed to get hover info for generic interface reference");
+            return;
+        }
+
+        hoverText = hover_contents_string(hoverInfo);
+        if (hoverText == ZR_NULL ||
+            strstr(hoverText, "interface Producer<out T>") == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
+                      hoverText != ZR_NULL ? hoverText : "<null hover>");
+            return;
+        }
+
+        ZrCore_Array_Free(state, &completions);
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Generic Type Symbols Surface Signature Detail");
+}
+
+static void test_semantic_analyzer_reports_invalid_interface_variance_positions(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Invalid Interface Variance Positions");
+
+    TEST_INFO("Variance diagnostics",
+              "Illegal interface variance positions should emit dedicated diagnostics for method, field, property, and nested generic usage");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "interface Producer<out T> {\n"
+            "    accept(value: T): void;\n"
+            "}\n"
+            "interface Consumer<in T> {\n"
+            "    next(): T;\n"
+            "}\n"
+            "interface Store<out T> {\n"
+            "    pub var value: T;\n"
+            "}\n"
+            "interface OutputProperty<out T> {\n"
+            "    pub set item: T;\n"
+            "}\n"
+            "interface InputProperty<in T> {\n"
+            "    pub get item: T;\n"
+            "}\n"
+            "interface Sink<in T> {\n"
+            "    accept(value: T): void;\n"
+            "}\n"
+            "interface Nested<out T> {\n"
+            "    next(): Sink<T>;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "invalid_variance_positions_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagAccept;
+        SZrDiagnostic *diagReturn;
+        SZrDiagnostic *diagField;
+        SZrDiagnostic *diagSetter;
+        SZrDiagnostic *diagGetter;
+        SZrDiagnostic *diagNested;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Invalid Interface Variance Positions",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Invalid Interface Variance Positions",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Invalid Interface Variance Positions",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagAccept = find_diagnostic_by_code_and_line(analyzer, "invalid_variance", 2);
+        diagReturn = find_diagnostic_by_code_and_line(analyzer, "invalid_variance", 5);
+        diagField = find_diagnostic_by_code_and_line(analyzer, "invalid_variance", 8);
+        diagSetter = find_diagnostic_by_code_and_line(analyzer, "invalid_variance", 11);
+        diagGetter = find_diagnostic_by_code_and_line(analyzer, "invalid_variance", 14);
+        diagNested = find_diagnostic_by_code_and_line(analyzer, "invalid_variance", 20);
+        if (count_diagnostics_with_code(analyzer, "invalid_variance") != 6 ||
+            diagAccept == ZR_NULL ||
+            diagReturn == ZR_NULL ||
+            diagField == ZR_NULL ||
+            diagSetter == ZR_NULL ||
+            diagGetter == ZR_NULL ||
+            diagNested == ZR_NULL ||
+            !diagnostic_message_contains(diagAccept, "covariant") ||
+            !diagnostic_message_contains(diagReturn, "contravariant") ||
+            !diagnostic_message_contains(diagField, "field") ||
+            !diagnostic_message_contains(diagSetter, "setter") ||
+            !diagnostic_message_contains(diagGetter, "getter") ||
+            !diagnostic_message_contains(diagNested, "nested")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Invalid Interface Variance Positions",
+                      "Expected six invalid_variance diagnostics covering parameter, return, field, property, and nested generic positions");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Invalid Interface Variance Positions");
+}
+
 static void test_semantic_analyzer_warns_on_unreachable_statements_after_return_or_throw(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Warns On Unreachable Statements After Return Or Throw");
@@ -2024,7 +2382,7 @@ static void test_semantic_analyzer_cache(SZrState *state) {
 }
 
 // 主测试函数
-int main() {
+int main(void) {
     printf("==========\n");
     printf("Language Server - Semantic Analyzer Tests\n");
     printf("==========\n\n");
@@ -2049,6 +2407,7 @@ int main() {
     ZrCore_GlobalState_InitRegistry(state, global);
     ZrVmLibMath_Register(global);
     ZrVmLibSystem_Register(global);
+    ZrVmLibContainer_Register(global);
     
     // 运行测试
     test_semantic_analyzer_create_and_free(state);
@@ -2091,6 +2450,15 @@ int main() {
     test_semantic_analyzer_local_symbols_surface_rich_hover_and_completion_detail(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_generic_function_symbols_surface_signature_detail(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_generic_type_symbols_surface_signature_detail(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_reports_invalid_interface_variance_positions(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_warns_on_unreachable_statements_after_return_or_throw(state);
     TEST_DIVIDER();
 
@@ -2130,3 +2498,4 @@ int main() {
     
     return 0;
 }
+

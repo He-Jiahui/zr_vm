@@ -200,7 +200,7 @@ SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize s
     TZrPtr memory = ZrCore_Memory_GcMalloc(state, ZR_MEMORY_NATIVE_TYPE_OBJECT, size);
     SZrRawObject *object = ZR_CAST_RAW_OBJECT(memory);
 
-    ZrCore_RawObject_Construct(object, type);
+    ZrCore_RawObject_Construct(object, (EZrRawObjectType)type);
     object->isNative = isNative;
     object->garbageCollectMark.status = global->garbageCollector->gcInitializeObjectStatus;
     object->garbageCollectMark.generation = global->garbageCollector->gcGeneration;
@@ -268,6 +268,6 @@ void ZrCore_RawObject_MarkAsPermanent(SZrState *state, SZrRawObject *object) {
 
 void ZrCore_Gc_ValueStaticAssertIsAlive(SZrState *state, SZrTypeValue *value) {
     ZR_ASSERT(!value->isGarbageCollectable ||
-              ((value->type == value->value.object->type) &&
+              ((value->type == (EZrValueType)value->value.object->type) &&
                ((state == ZR_NULL) || !ZrCore_Gc_RawObjectIsDead(state->global, value->value.object))));
 }

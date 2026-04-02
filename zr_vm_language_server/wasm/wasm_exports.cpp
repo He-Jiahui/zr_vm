@@ -290,6 +290,27 @@ static cJSON* serialize_locations(SZrState *state, SZrArray *locations) {
     return json;
 }
 
+static cJSON* serialize_semantic_tokens(SZrArray *tokens) {
+    cJSON *json = cJSON_CreateObject();
+    cJSON *data = cJSON_CreateArray();
+
+    if (json == ZR_NULL || data == ZR_NULL) {
+        cJSON_Delete(json);
+        cJSON_Delete(data);
+        return ZR_NULL;
+    }
+
+    for (TZrSize i = 0; tokens != ZR_NULL && i < tokens->length; i++) {
+        TZrUInt32 *valuePtr = (TZrUInt32 *)ZrCore_Array_Get(tokens, i);
+        if (valuePtr != ZR_NULL) {
+            cJSON_AddItemToArray(data, cJSON_CreateNumber((double)(*valuePtr)));
+        }
+    }
+
+    cJSON_AddItemToObject(json, "data", data);
+    return json;
+}
+
 // 序列化悬停信息
 static cJSON* serialize_hover(SZrState *state, SZrLspHover *hover) {
     cJSON *json = cJSON_CreateObject();
@@ -917,6 +938,33 @@ const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int 
 
     ZrCore_Array_Free(g_wasm_state, &highlights);
     return create_error_response("Failed to get document highlights");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetSemanticTokens(void* context, const char* uri, int uriLen) {
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    SZrArray tokens;
+    ZrCore_Array_Init(g_wasm_state, &tokens, sizeof(TZrUInt32), 32);
+
+    if (ZrLanguageServer_Lsp_GetSemanticTokens(g_wasm_state, (SZrLspContext*)context, uriStr, &tokens)) {
+        cJSON *data = serialize_semantic_tokens(&tokens);
+        const char *jsonStr = create_success_response(data);
+        ZrCore_Array_Free(g_wasm_state, &tokens);
+        return jsonStr;
+    }
+
+    ZrCore_Array_Free(g_wasm_state, &tokens);
+    return create_error_response("Failed to get semantic tokens");
 }
 
 #ifdef __EMSCRIPTEN__

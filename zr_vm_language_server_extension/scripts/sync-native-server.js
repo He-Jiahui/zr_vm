@@ -10,25 +10,12 @@ const sourceDir = process.argv[2]
     ? path.resolve(process.argv[2])
     : resolveDefaultSourceDir();
 
-const requiredFiles = process.platform === 'win32'
-    ? [
-        'zr_vm_language_server_stdio.exe',
-        'zr_vm_language_server.dll',
-        'zr_vm_parser.dll',
-        'zr_vm_core.dll',
-    ]
-    : [
-        'zr_vm_language_server_stdio',
-    ];
-
-const optionalFiles = process.platform === 'win32'
-    ? [
-        'zr_vm_language_server_stdio.pdb',
-        'zr_vm_language_server.pdb',
-        'zr_vm_parser.pdb',
-        'zr_vm_core.pdb',
-    ]
-    : [];
+const { requiredFiles, optionalFiles } = process.platform === 'win32'
+    ? collectWindowsNativeAssets(sourceDir)
+    : {
+        requiredFiles: ['zr_vm_language_server_stdio'],
+        optionalFiles: [],
+    };
 
 if (!fs.existsSync(sourceDir)) {
     console.error(`Native server source directory does not exist: ${sourceDir}`);
@@ -69,4 +56,20 @@ function resolveDefaultSourceDir() {
     }
 
     return candidates[0];
+}
+
+function collectWindowsNativeAssets(nativeSourceDir) {
+    const entries = fs.readdirSync(nativeSourceDir, { withFileTypes: true });
+    const dllFiles = entries
+        .filter((entry) => entry.isFile() && /^zr_vm_.*\.dll$/i.test(entry.name))
+        .map((entry) => entry.name)
+        .sort();
+    const pdbFiles = ['zr_vm_language_server_stdio.pdb', ...dllFiles.map((fileName) => fileName.replace(/\.dll$/i, '.pdb'))]
+        .filter((fileName, index, allFileNames) => allFileNames.indexOf(fileName) === index)
+        .filter((fileName) => entries.some((entry) => entry.isFile() && entry.name === fileName));
+
+    return {
+        requiredFiles: ['zr_vm_language_server_stdio.exe', ...dllFiles],
+        optionalFiles: pdbFiles,
+    };
 }

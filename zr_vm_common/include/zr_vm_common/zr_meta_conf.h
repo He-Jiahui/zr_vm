@@ -31,6 +31,8 @@
     Z(BIT_OR)                                                                                                          \
     Z(BIT_XOR)                                                                                                         \
     Z(BIT_NOT)                                                                                                         \
+    Z(GET_ITEM)                                                                                                        \
+    Z(SET_ITEM)                                                                                                        \
     Z(CLOSE)
 
 

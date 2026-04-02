@@ -171,7 +171,7 @@ TZrBool zr_ffi_read_bool_value(const SZrTypeValue *value, TZrBool *outValue) {
     }
 
     if (value->type == ZR_VALUE_TYPE_BOOL) {
-        *outValue = value->value.nativeObject.nativeBool;
+        *outValue = value->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
         return ZR_TRUE;
     }
 
@@ -294,7 +294,6 @@ SZrObject *zr_ffi_get_self_object(const ZrLibCallContext *context) {
     selfValue = ZrLib_CallContext_Self(context);
     if (selfValue == ZR_NULL || selfValue->type != ZR_VALUE_TYPE_OBJECT || selfValue->value.object == ZR_NULL) {
         ZrCore_Debug_RunError(context->state, "ffi method called without a valid receiver");
-        return ZR_NULL;
     }
 
     return ZR_CAST_OBJECT(context->state, selfValue->value.object);

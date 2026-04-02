@@ -30,7 +30,9 @@ TZrBool ZrMath_Vector3_Normalized(ZrLibCallContext *context, SZrTypeValue *resul
     length = sqrt(ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 3));
     object = length <= ZR_MATH_EPSILON ? ZrMath_MakeVector3(context->state, 0.0, 0.0, 0.0)
                                        : ZrMath_MakeVector3(context->state, value.x / length, value.y / length, value.z / length);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Vector3_Dot(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector3 lhs; ZrMathVector3 rhs; SZrObject *other = ZR_NULL;
@@ -49,21 +51,27 @@ TZrBool ZrMath_Vector3_Lerp(ZrLibCallContext *context, SZrTypeValue *result) {
     if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector3Object(context->state, other, &rhs) || !ZrLib_CallContext_ReadFloat(context, 1, &factor)) return ZR_FALSE;
     object = ZrMath_MakeVector3(context->state, lhs.x + (rhs.x - lhs.x) * factor, lhs.y + (rhs.y - lhs.y) * factor, lhs.z + (rhs.z - lhs.z) * factor);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Vector3_Cross(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector3 lhs; ZrMathVector3 rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector3Object(context->state, other, &rhs)) return ZR_FALSE;
     object = ZrMath_MakeVector3(context->state, lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x * rhs.y - lhs.y * rhs.x);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Vector3_MetaAdd(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector3 lhs; ZrMathVector3 rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector3Object(context->state, other, &rhs)) return ZR_FALSE;
     object = ZrMath_MakeVector3(context->state, lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 
 TZrBool ZrMath_Vector3_MetaSub(ZrLibCallContext *context, SZrTypeValue *result) {
@@ -71,14 +79,18 @@ TZrBool ZrMath_Vector3_MetaSub(ZrLibCallContext *context, SZrTypeValue *result) 
     if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector3Object(context->state, other, &rhs)) return ZR_FALSE;
     object = ZrMath_MakeVector3(context->state, lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 
 TZrBool ZrMath_Vector3_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector3 value; SZrObject *object;
     if (!ZrMath_ReadVector3Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     object = ZrMath_MakeVector3(context->state, -value.x, -value.y, -value.z);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 
 TZrBool ZrMath_Vector3_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result) {

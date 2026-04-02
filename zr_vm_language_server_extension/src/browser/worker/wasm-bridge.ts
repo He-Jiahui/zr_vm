@@ -178,6 +178,14 @@ export class ZrWasmBridge {
         );
     }
 
+    async getSemanticTokens(uri: string): Promise<WasmResponse<unknown>> {
+        return this.invoke<unknown>(
+            'wasm_ZrLspGetSemanticTokens',
+            ['number', 'string', 'number'],
+            [await this.context(), uri, byteLength(uri)],
+        );
+    }
+
     async prepareRename(uri: string, line: number, character: number): Promise<WasmResponse<unknown>> {
         return this.invoke<unknown>(
             'wasm_ZrLspPrepareRename',

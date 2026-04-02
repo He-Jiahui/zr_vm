@@ -967,7 +967,7 @@ static void get_line_snippet_lexer(SZrLexState *ls, TZrChar *buffer, TZrSize buf
         TZrSize needed = 20 - (lineEnd - pos);
         if (snippetStart >= needed) {
             snippetStart -= needed;
-            displayColumn += needed;
+            displayColumn += (TZrInt32)needed;
         } else {
             snippetStart = 0;
             displayColumn = column;

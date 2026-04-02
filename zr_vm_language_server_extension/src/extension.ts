@@ -124,7 +124,6 @@ async function startClient(
         serverOptions,
         clientOptions,
     );
-
     await client.start();
     await client.setTrace(resolveTrace(config.get<string>('trace.server', 'off')));
 

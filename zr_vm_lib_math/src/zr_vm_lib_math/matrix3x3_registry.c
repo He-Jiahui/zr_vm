@@ -12,17 +12,17 @@ const ZrLibTypeDescriptor *ZrMath_Matrix3x3Registry_GetType(void) {
             {"m20", "float", ZR_NULL}, {"m21", "float", ZR_NULL}, {"m22", "float", ZR_NULL}
     };
     static const ZrLibMethodDescriptor kMethods[] = {
-            {"identity", 0, 0, ZrMath_Matrix3x3_Identity, "Matrix3x3", ZR_NULL, ZR_TRUE},
-            {"transpose", 0, 0, ZrMath_Matrix3x3_Transpose, "Matrix3x3", ZR_NULL, ZR_FALSE},
-            {"determinant", 0, 0, ZrMath_Matrix3x3_Determinant, "float", ZR_NULL, ZR_FALSE},
-            {"inverse", 0, 0, ZrMath_Matrix3x3_Inverse, "Matrix3x3", ZR_NULL, ZR_FALSE},
-            {"mulVector", 1, 1, ZrMath_Matrix3x3_MulVector, "Vector3", ZR_NULL, ZR_FALSE},
-            {"mulMatrix", 1, 1, ZrMath_Matrix3x3_MulMatrix, "Matrix3x3", ZR_NULL, ZR_FALSE},
+            {"identity", 0, 0, ZrMath_Matrix3x3_Identity, "Matrix3x3", ZR_NULL, ZR_TRUE, ZR_NULL, 0},
+            {"transpose", 0, 0, ZrMath_Matrix3x3_Transpose, "Matrix3x3", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"determinant", 0, 0, ZrMath_Matrix3x3_Determinant, "float", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"inverse", 0, 0, ZrMath_Matrix3x3_Inverse, "Matrix3x3", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"mulVector", 1, 1, ZrMath_Matrix3x3_MulVector, "Vector3", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+            {"mulMatrix", 1, 1, ZrMath_Matrix3x3_MulMatrix, "Matrix3x3", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
     };
     static const ZrLibMetaMethodDescriptor kMeta[] = {
-            {ZR_META_CONSTRUCTOR, 0, 9, ZrMath_Matrix3x3_Construct, "Matrix3x3", ZR_NULL},
-            {ZR_META_MUL, 1, 1, ZrMath_Matrix3x3_MetaMul, "object", ZR_NULL},
-            {ZR_META_TO_STRING, 0, 0, ZrMath_Matrix3x3_MetaToString, "string", ZR_NULL},
+            {ZR_META_CONSTRUCTOR, 0, 9, ZrMath_Matrix3x3_Construct, "Matrix3x3", ZR_NULL, ZR_NULL, 0},
+            {ZR_META_MUL, 1, 1, ZrMath_Matrix3x3_MetaMul, "object", ZR_NULL, ZR_NULL, 0},
+            {ZR_META_TO_STRING, 0, 0, ZrMath_Matrix3x3_MetaToString, "string", ZR_NULL, ZR_NULL, 0},
     };
     static const ZrLibTypeDescriptor kType = {
             "Matrix3x3",
@@ -42,7 +42,9 @@ const ZrLibTypeDescriptor *ZrMath_Matrix3x3Registry_GetType(void) {
             ZR_NULL,
             ZR_TRUE,
             ZR_TRUE,
-            "Matrix3x3(...values: float)"
+            "Matrix3x3(...values: float)",
+            ZR_NULL,
+            0
     };
     return &kType;
 }

@@ -156,7 +156,8 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
             ZrCore_Value_InitAsInt(cs->state, &constantValue, value ? 1 : 0);
             constantValue.type = ZR_VALUE_TYPE_BOOL;
             constantIndex = add_constant(cs, &constantValue);
-            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), destSlot, (TZrInt32)constantIndex);
+            TZrInstruction inst = create_instruction_1(
+                    ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
             emit_instruction(cs, inst);
             break;
         }
@@ -165,7 +166,8 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
             TZrInt64 value = node->data.integerLiteral.value;
             ZrCore_Value_InitAsInt(cs->state, &constantValue, value);
             constantIndex = add_constant(cs, &constantValue);
-            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), destSlot, (TZrInt32)constantIndex);
+            TZrInstruction inst = create_instruction_1(
+                    ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
             emit_instruction(cs, inst);
             break;
         }
@@ -174,7 +176,8 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
             TZrDouble value = node->data.floatLiteral.value;
             ZrCore_Value_InitAsFloat(cs->state, &constantValue, value);
             constantIndex = add_constant(cs, &constantValue);
-            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), destSlot, (TZrInt32)constantIndex);
+            TZrInstruction inst = create_instruction_1(
+                    ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
             emit_instruction(cs, inst);
             break;
         }
@@ -185,7 +188,8 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
                 ZrCore_Value_InitAsRawObject(cs->state, &constantValue, ZR_CAST_RAW_OBJECT_AS_SUPER(value));
                 constantValue.type = ZR_VALUE_TYPE_STRING;
                 constantIndex = add_constant(cs, &constantValue);
-                TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), destSlot, (TZrInt32)constantIndex);
+                TZrInstruction inst = create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
                 emit_instruction(cs, inst);
             }
             break;
@@ -196,7 +200,8 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
             ZrCore_Value_InitAsInt(cs->state, &constantValue, (TZrInt64)value);
             constantValue.type = ZR_VALUE_TYPE_INT8;
             constantIndex = add_constant(cs, &constantValue);
-            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), destSlot, (TZrInt32)constantIndex);
+            TZrInstruction inst = create_instruction_1(
+                    ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
             emit_instruction(cs, inst);
             break;
         }
@@ -204,7 +209,8 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
         case ZR_AST_NULL_LITERAL: {
             ZrCore_Value_ResetAsNull(&constantValue);
             constantIndex = add_constant(cs, &constantValue);
-            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), destSlot, (TZrInt32)constantIndex);
+            TZrInstruction inst = create_instruction_1(
+                    ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)constantIndex);
             emit_instruction(cs, inst);
             break;
         }
@@ -242,7 +248,8 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         // 找到局部变量：使用 GET_STACK
         // 即使这个变量名是 "zr"，也使用局部变量而不是全局 zr 对象
         TZrUInt32 destSlot = allocate_stack_slot(cs);
-        TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_STACK), destSlot, (TZrInt32)localVarIndex);
+        TZrInstruction inst = create_instruction_1(
+                ZR_INSTRUCTION_ENUM(GET_STACK), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)localVarIndex);
         emit_instruction(cs, inst);
         return;
     }
@@ -318,7 +325,8 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
     // 如果不是子函数，尝试作为全局对象（zr）的属性访问（使用 GET_GLOBAL + GETTABLE）
     // 1. 使用 GET_GLOBAL 获取全局 zr 对象
     TZrUInt32 globalObjSlot = allocate_stack_slot(cs);
-    TZrInstruction getGlobalInst = create_instruction_0(ZR_INSTRUCTION_ENUM(GET_GLOBAL), (TZrUInt16)globalObjSlot);
+    TZrInstruction getGlobalInst =
+            create_instruction_0(ZR_INSTRUCTION_ENUM(GET_GLOBAL), ZR_COMPILE_SLOT_U16(globalObjSlot));
     emit_instruction(cs, getGlobalInst);
     
     // 2. 将属性名作为字符串常量压栈
@@ -362,7 +370,7 @@ void compile_array_literal(SZrCompilerState *cs, SZrAstNode *node) {
             
             // 编译元素值
             ZrParser_Expression_Compile(cs, elemNode);
-            TZrUInt32 valueSlot = cs->stackSlotCount - 1;
+            TZrUInt32 valueSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
             
             // 创建索引常量
             SZrTypeValue indexValue;
@@ -434,7 +442,7 @@ void compile_object_literal(SZrCompilerState *cs, SZrAstNode *node) {
                         
                         // 编译值
                         ZrParser_Expression_Compile(cs, kv->value);
-                        TZrUInt32 valueSlot = cs->stackSlotCount - 1;
+                        TZrUInt32 valueSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
                         
                         // 使用 SETTABLE 设置对象属性
                         TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TZrUInt16)valueSlot, (TZrUInt16)destSlot, (TZrUInt16)keySlot);
@@ -446,11 +454,11 @@ void compile_object_literal(SZrCompilerState *cs, SZrAstNode *node) {
                 } else {
                     // 键是表达式（字符串字面量或计算键）
                     ZrParser_Expression_Compile(cs, kv->key);
-                    TZrUInt32 keySlot = cs->stackSlotCount - 1;
+                    TZrUInt32 keySlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
                     
                     // 编译值
                     ZrParser_Expression_Compile(cs, kv->value);
-                    TZrUInt32 valueSlot = cs->stackSlotCount - 1;
+                    TZrUInt32 valueSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
                     
                     // 使用 SETTABLE 设置对象属性
                     TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TZrUInt16)valueSlot, (TZrUInt16)destSlot, (TZrUInt16)keySlot);

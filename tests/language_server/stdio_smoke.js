@@ -262,6 +262,7 @@ async function main() {
     const client = new LspClient(serverPath);
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
     const docsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr';
+    const genericUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr';
     const initialText = 'var x = 10; var y = x;';
     const documentationText = [
         'module "documentation";',
@@ -284,6 +285,25 @@ async function main() {
         '}',
         '',
     ].join('\n');
+    const genericText = [
+        'class Item {',
+        '    pub @constructor() { }',
+        '}',
+        'class Derived<T, const N: int> {',
+        '}',
+        'class Matrix<T, const N: int> { }',
+        'class Box<T> {',
+        '    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }',
+        '}',
+        'func use(): void {',
+        '    var value: Derived<Item, 2 + 2> = null;',
+        '    var box = new Box<int>();',
+        '    var m = new Matrix<int, 2 + 2>();',
+        '    value;',
+        '    box.shape(m);',
+        '}',
+        '',
+    ].join('\n');
 
     const initializeResult = await client.request('initialize', {
         processId: null,
@@ -299,10 +319,20 @@ async function main() {
     assert(initializeResult.capabilities, 'initialize missing capabilities');
     assert(initializeResult.capabilities.textDocumentSync.change === 2,
         'server must advertise incremental sync');
+    assert(initializeResult.capabilities.signatureHelpProvider &&
+        Array.isArray(initializeResult.capabilities.signatureHelpProvider.triggerCharacters) &&
+        initializeResult.capabilities.signatureHelpProvider.triggerCharacters.includes('('),
+        'signatureHelpProvider must advertise trigger characters');
     assert(initializeResult.capabilities.definitionProvider === true,
         'definitionProvider must be enabled');
     assert(initializeResult.capabilities.renameProvider.prepareProvider === true,
         'renameProvider.prepareProvider must be enabled');
+    assert(initializeResult.capabilities.semanticTokensProvider &&
+        initializeResult.capabilities.semanticTokensProvider.full === true,
+        'semanticTokensProvider.full must be enabled');
+    assert(Array.isArray(initializeResult.capabilities.semanticTokensProvider.legend?.tokenTypes) &&
+        initializeResult.capabilities.semanticTokensProvider.legend.tokenTypes.includes('keyword'),
+        'semantic token legend must include keyword');
 
     client.notify('initialized', {});
     client.notify('textDocument/didOpen', {
@@ -439,6 +469,80 @@ async function main() {
     assert(typeof bonusCompletion.documentation.value === 'string' &&
         bonusCompletion.documentation.value.includes('Shared bonus exposed through get/set.'),
         'completion documentation should include the leading property comment');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: genericUri,
+            languageId: 'zr',
+            version: 1,
+            text: genericText,
+        },
+    });
+
+    const genericDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(genericDiagnostics.uri === genericUri, 'generic diagnostics uri mismatch');
+    assert(Array.isArray(genericDiagnostics.diagnostics) && genericDiagnostics.diagnostics.length === 0,
+        'generic fixture should open without diagnostics');
+
+    const genericTypePosition = findPosition(genericText, 'Derived<Item, 2 + 2>', 0, 0);
+    const genericDefinitionPosition = findPosition(genericText, 'class Derived<T, const N: int>', 0, 6);
+    const genericCallPosition = findPosition(genericText, 'box.shape(m);', 0, 10);
+
+    const genericCompletions = await client.request('textDocument/completion', {
+        textDocument: { uri: genericUri },
+        position: genericTypePosition,
+    });
+    assert(Array.isArray(genericCompletions), 'generic completion must return an array');
+    const derivedCompletion = genericCompletions.find((item) => item && item.label === 'Derived');
+    assert(derivedCompletion && typeof derivedCompletion.detail === 'string' &&
+        derivedCompletion.detail.includes('Resolved Type: Derived<Item, 4>'),
+        'generic completion detail should include the normalized closed instantiation');
+
+    const genericDefinition = await client.request('textDocument/definition', {
+        textDocument: { uri: genericUri },
+        position: genericTypePosition,
+    });
+    assert(Array.isArray(genericDefinition) && genericDefinition.length > 0,
+        'generic definition must return at least one location');
+    assert(genericDefinition.some((location) =>
+        location &&
+        location.uri === genericUri &&
+        location.range &&
+        location.range.start &&
+        location.range.start.line === genericDefinitionPosition.line &&
+        location.range.start.character === genericDefinitionPosition.character),
+        'generic definition should jump from closed use to open generic declaration');
+
+    const signatureHelp = await client.request('textDocument/signatureHelp', {
+        textDocument: { uri: genericUri },
+        position: genericCallPosition,
+    });
+    assert(signatureHelp && Array.isArray(signatureHelp.signatures) && signatureHelp.signatures.length > 0,
+        'signatureHelp must return at least one signature');
+    assert(signatureHelp.activeParameter === 0,
+        'signatureHelp activeParameter must resolve to the current argument index');
+    assert(signatureHelp.signatures.some((signature) =>
+        signature &&
+        typeof signature.label === 'string' &&
+        signature.label.includes('shape<const N: int>(value: Matrix<int, 4>): Matrix<int, 4>')),
+        'signatureHelp should show the closed generic method signature with normalized const generics');
+
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: genericUri,
+        },
+    });
+
+    const genericCloseDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(genericCloseDiagnostics.uri === genericUri, 'generic didClose diagnostics uri mismatch');
+    assert(Array.isArray(genericCloseDiagnostics.diagnostics) && genericCloseDiagnostics.diagnostics.length === 0,
+        'generic didClose must clear diagnostics');
+
+    const semanticTokens = await client.request('textDocument/semanticTokens/full', {
+        textDocument: { uri: docsUri },
+    });
+    assert(semanticTokens && Array.isArray(semanticTokens.data),
+        'semanticTokens/full must return a data array');
 
     client.notify('textDocument/didClose', {
         textDocument: {

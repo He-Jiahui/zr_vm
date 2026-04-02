@@ -46,7 +46,7 @@ ZR_LIBRARY_API EZrLibrary_File_Exist ZrLibrary_File_Exist(TZrNativeString path);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_File_GetDirectory(TZrNativeString path, ZR_OUT TZrNativeString directory);
 
-ZR_LIBRARY_API void ZrLibrary_File_PathJoin(TZrNativeString path1, TZrNativeString path2, ZR_OUT TZrNativeString result);
+ZR_LIBRARY_API void ZrLibrary_File_PathJoin(const TZrChar *path1, const TZrChar *path2, ZR_OUT TZrNativeString result);
 
 
 ZR_LIBRARY_API TZrNativeString ZrLibrary_File_ReadAll(SZrGlobalState *global, TZrNativeString path);

@@ -120,6 +120,9 @@ const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int 
 const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int uriLen,
                                       int line, int character);
 
+// 获取完整语义 token 数据
+const char* wasm_ZrLspGetSemanticTokens(void* context, const char* uri, int uriLen);
+
 // 预检查是否可重命名
 const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
                                int line, int character);

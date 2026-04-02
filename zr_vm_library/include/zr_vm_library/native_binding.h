@@ -54,6 +54,19 @@ typedef struct ZrLibFieldDescriptor {
     const TZrChar *documentation;
 } ZrLibFieldDescriptor;
 
+typedef struct ZrLibParameterDescriptor {
+    const TZrChar *name;
+    const TZrChar *typeName;
+    const TZrChar *documentation;
+} ZrLibParameterDescriptor;
+
+typedef struct ZrLibGenericParameterDescriptor {
+    const TZrChar *name;
+    const TZrChar *documentation;
+    const TZrChar *const *constraintTypeNames;
+    TZrSize constraintTypeCount;
+} ZrLibGenericParameterDescriptor;
+
 typedef struct ZrLibEnumMemberDescriptor {
     const TZrChar *name;
     EZrLibConstantKind kind;
@@ -102,6 +115,8 @@ typedef struct ZrLibFunctionDescriptor {
     FZrLibBoundCallback callback;
     const TZrChar *returnTypeName;
     const TZrChar *documentation;
+    const ZrLibParameterDescriptor *parameters;
+    TZrSize parameterCount;
 } ZrLibFunctionDescriptor;
 
 typedef struct ZrLibMethodDescriptor {
@@ -112,6 +127,8 @@ typedef struct ZrLibMethodDescriptor {
     const TZrChar *returnTypeName;
     const TZrChar *documentation;
     TZrBool isStatic;
+    const ZrLibParameterDescriptor *parameters;
+    TZrSize parameterCount;
 } ZrLibMethodDescriptor;
 
 typedef struct ZrLibMetaMethodDescriptor {
@@ -121,6 +138,8 @@ typedef struct ZrLibMetaMethodDescriptor {
     FZrLibBoundCallback callback;
     const TZrChar *returnTypeName;
     const TZrChar *documentation;
+    const ZrLibParameterDescriptor *parameters;
+    TZrSize parameterCount;
 } ZrLibMetaMethodDescriptor;
 
 typedef struct ZrLibConstantDescriptor {
@@ -159,6 +178,8 @@ typedef struct ZrLibTypeDescriptor {
     TZrBool allowValueConstruction;
     TZrBool allowBoxedConstruction;
     const TZrChar *constructorSignature;
+    const ZrLibGenericParameterDescriptor *genericParameters;
+    TZrSize genericParameterCount;
 } ZrLibTypeDescriptor;
 
 typedef struct ZrLibModuleDescriptor {

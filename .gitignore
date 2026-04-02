@@ -61,6 +61,8 @@ dkms.conf
 /.notes
 /.codex
 /.worktrees
+.vscode-test-web
+.vscode-test-smoke
 
 # dist dir
 /zig-out

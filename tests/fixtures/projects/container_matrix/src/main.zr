@@ -1,0 +1,13 @@
+var system = %import("zr.system");
+var fixed = %import("fixed_input");
+var queueStage = %import("queue_stage");
+var dedupeStage = %import("dedupe_stage");
+var aggregateStage = %import("aggregate_stage");
+
+var fixedValues = fixed.buildFixedInput();
+var queue = queueStage.buildQueue(fixedValues);
+var uniquePairs = dedupeStage.drainUnique(queue);
+var checksum = aggregateStage.aggregateAndChecksum(uniquePairs);
+
+system.console.printLine("CONTAINER_MATRIX_PASS");
+return checksum;

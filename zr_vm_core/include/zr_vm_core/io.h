@@ -21,7 +21,8 @@ typedef enum EZrIoNativeHelperId {
     ZR_IO_NATIVE_HELPER_OWNERSHIP_UNIQUE = 2,
     ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED = 3,
     ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK = 4,
-    ZR_IO_NATIVE_HELPER_OWNERSHIP_USING = 5
+    ZR_IO_NATIVE_HELPER_OWNERSHIP_USING = 5,
+    ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF = 6
 } EZrIoNativeHelperId;
 
 typedef EZrThreadStatus (*FZrIoWrite)(struct SZrState *state, TZrBytePtr buffer, TZrSize size, TZrPtr customData);
@@ -36,6 +37,7 @@ struct ZR_STRUCT_ALIGN SZrIo {
     TZrPtr customData;
     FZrIoClose close;
     TZrBool isBinary;
+    TZrUInt32 sourceVersionPatch;
 };
 
 typedef struct SZrIo SZrIo;
@@ -116,6 +118,36 @@ typedef struct SZrIoFunctionTypedExportSymbol {
     SZrIoFunctionTypedTypeRef *parameterTypes;
 } SZrIoFunctionTypedExportSymbol;
 
+typedef struct SZrIoFunctionMetadataParameter {
+    struct SZrString *name;
+    SZrIoFunctionTypedTypeRef type;
+} SZrIoFunctionMetadataParameter;
+
+typedef struct SZrIoFunctionCompileTimeVariableInfo {
+    struct SZrString *name;
+    SZrIoFunctionTypedTypeRef type;
+    TZrUInt32 lineInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+} SZrIoFunctionCompileTimeVariableInfo;
+
+typedef struct SZrIoFunctionCompileTimeFunctionInfo {
+    struct SZrString *name;
+    SZrIoFunctionTypedTypeRef returnType;
+    TZrSize parameterCount;
+    SZrIoFunctionMetadataParameter *parameters;
+    TZrUInt32 lineInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+} SZrIoFunctionCompileTimeFunctionInfo;
+
+typedef struct SZrIoFunctionTestInfo {
+    struct SZrString *name;
+    TZrSize parameterCount;
+    SZrIoFunctionMetadataParameter *parameters;
+    TZrBool hasVariableArguments;
+    TZrUInt32 lineInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+} SZrIoFunctionTestInfo;
+
 struct SZrIoFunction;
 
 struct SZrIoFunctionClosure {
@@ -178,11 +210,19 @@ struct SZrIoFunction {
     SZrIoFunctionTypedLocalBinding *typedLocalBindings;
     TZrSize typedExportedSymbolsLength;
     SZrIoFunctionTypedExportSymbol *typedExportedSymbols;
+    TZrSize compileTimeVariableInfosLength;
+    SZrIoFunctionCompileTimeVariableInfo *compileTimeVariableInfos;
+    TZrSize compileTimeFunctionInfosLength;
+    SZrIoFunctionCompileTimeFunctionInfo *compileTimeFunctionInfos;
+    TZrSize testInfosLength;
+    SZrIoFunctionTestInfo *testInfos;
     TZrSize prototypesLength;                // prototype 数量
     TZrSize classesLength;
     SZrIoClass *classes;                      // class prototype 数组（如果 type 是 CLASS）
     TZrSize structsLength;
     SZrIoStruct *structs;                     // struct prototype 数组（如果 type 是 STRUCT）
+    TZrSize prototypeDataLength;              // 完整 prototypeData blob（含头部 count）
+    TZrByte *prototypeData;
     TZrSize closuresLength;
     SZrIoFunctionClosure *closures;
     TZrSize debugInfosLength;

@@ -95,6 +95,31 @@ static void writer_intermediate_format_type_ref(const SZrFunctionTypedTypeRef *t
     snprintf(buffer, bufferSize, "%s", baseName);
 }
 
+static void writer_intermediate_write_metadata_parameters(FILE *file,
+                                                          const SZrFunctionMetadataParameter *parameters,
+                                                          TZrUInt32 parameterCount) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    for (TZrUInt32 index = 0; index < parameterCount; index++) {
+        const SZrFunctionMetadataParameter *parameter = &parameters[index];
+        TZrNativeString name = parameter->name != ZR_NULL ? ZrCore_String_GetNativeString(parameter->name) : ZR_NULL;
+        TZrChar typeBuffer[128];
+
+        if (index > 0) {
+            fprintf(file, ", ");
+        }
+
+        writer_intermediate_format_type_ref(&parameter->type, typeBuffer, sizeof(typeBuffer));
+        if (name != ZR_NULL && name[0] != '\0') {
+            fprintf(file, "%s: %s", name, typeBuffer);
+        } else {
+            fprintf(file, "%s", typeBuffer);
+        }
+    }
+}
+
 static void writer_intermediate_write_type_metadata(FILE *file, SZrState *state, SZrFunction *function) {
     ZR_UNUSED_PARAMETER(state);
     fprintf(file, "TYPE_METADATA:\n");
@@ -134,6 +159,44 @@ static void writer_intermediate_write_type_metadata(FILE *file, SZrState *state,
         }
     }
 
+    fprintf(file, "  COMPILE_TIME_VARIABLES (%u):\n", function->compileTimeVariableInfoLength);
+    for (TZrUInt32 index = 0; index < function->compileTimeVariableInfoLength; index++) {
+        SZrFunctionCompileTimeVariableInfo *info = &function->compileTimeVariableInfos[index];
+        TZrNativeString name = info->name != ZR_NULL ? ZrCore_String_GetNativeString(info->name) : "<unnamed>";
+        TZrChar typeBuffer[128];
+
+        writer_intermediate_format_type_ref(&info->type, typeBuffer, sizeof(typeBuffer));
+        fprintf(file, "    var %s: %s\n", name != ZR_NULL ? name : "<unnamed>", typeBuffer);
+    }
+
+    fprintf(file, "  COMPILE_TIME_FUNCTIONS (%u):\n", function->compileTimeFunctionInfoLength);
+    for (TZrUInt32 index = 0; index < function->compileTimeFunctionInfoLength; index++) {
+        SZrFunctionCompileTimeFunctionInfo *info = &function->compileTimeFunctionInfos[index];
+        TZrNativeString name = info->name != ZR_NULL ? ZrCore_String_GetNativeString(info->name) : "<unnamed>";
+        TZrChar returnTypeBuffer[128];
+
+        writer_intermediate_format_type_ref(&info->returnType, returnTypeBuffer, sizeof(returnTypeBuffer));
+        fprintf(file, "    fn %s(", name != ZR_NULL ? name : "<unnamed>");
+        writer_intermediate_write_metadata_parameters(file, info->parameters, info->parameterCount);
+        fprintf(file, "): %s\n", returnTypeBuffer);
+    }
+
+    fprintf(file, "  TESTS (%u):\n", function->testInfoLength);
+    for (TZrUInt32 index = 0; index < function->testInfoLength; index++) {
+        SZrFunctionTestInfo *info = &function->testInfos[index];
+        TZrNativeString name = info->name != ZR_NULL ? ZrCore_String_GetNativeString(info->name) : "<unnamed>";
+
+        fprintf(file, "    test %s(", name != ZR_NULL ? name : "<unnamed>");
+        writer_intermediate_write_metadata_parameters(file, info->parameters, info->parameterCount);
+        if (info->hasVariableArguments) {
+            if (info->parameterCount > 0) {
+                fprintf(file, ", ");
+            }
+            fprintf(file, "...");
+        }
+        fprintf(file, ")\n");
+    }
+
     fprintf(file, "\n");
 }
 
@@ -168,7 +231,7 @@ static void writer_intermediate_write_constant(FILE *file, SZrState *state, cons
                 fprintf(file, "string: \"\"\n");
             } else {
                 SZrRawObject *rawObj = constant->value.object;
-                if (rawObj->type == ZR_VALUE_TYPE_STRING) {
+                if (rawObj->type == ZR_RAW_OBJECT_TYPE_STRING) {
                     SZrString *str = ZR_CAST_STRING(state, rawObj);
                     TZrNativeString strStr = ZrCore_String_GetNativeString(str);
                     fprintf(file, "string: \"%s\"\n", strStr != ZR_NULL ? strStr : "");

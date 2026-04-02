@@ -264,7 +264,7 @@ static void test_symbol_reference_count(SZrState *state) {
 }
 
 // 主测试函数
-int main() {
+int main(void) {
     printf("==========\n");
     printf("Language Server - Symbol Table Tests\n");
     printf("==========\n\n");
@@ -310,3 +310,4 @@ int main() {
     
     return 0;
 }
+

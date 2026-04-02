@@ -13,6 +13,8 @@
 
 #if defined(ZR_PLATFORM_WIN)
 #include <windows.h>
+#elif defined(__EMSCRIPTEN__)
+#include <emscripten.h>
 #endif
 
 TZrBool ZrSystem_Process_SleepMilliseconds(ZrLibCallContext *context, SZrTypeValue *result) {
@@ -28,6 +30,11 @@ TZrBool ZrSystem_Process_SleepMilliseconds(ZrLibCallContext *context, SZrTypeVal
 
 #if defined(ZR_PLATFORM_WIN)
     Sleep((DWORD)(milliseconds < 0 ? 0 : milliseconds));
+#elif defined(__EMSCRIPTEN__)
+    {
+        TZrInt64 clampedMilliseconds = milliseconds < 0 ? 0 : milliseconds;
+        emscripten_sleep((unsigned int)clampedMilliseconds);
+    }
 #else
     {
         struct timespec sleepTime;
@@ -56,5 +63,4 @@ TZrBool ZrSystem_Process_Exit(ZrLibCallContext *context, SZrTypeValue *result) {
     }
 
     exit((int)exitCode);
-    return ZR_FALSE;
 }

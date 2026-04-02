@@ -47,6 +47,9 @@ typedef struct SZrFunctionTypeInfo {
     SZrString *name;                 // 函数名
     SZrInferredType returnType;      // 返回类型
     SZrArray paramTypes;             // 参数类型数组（SZrInferredType）
+    SZrArray genericParameters;      // 泛型参数数组（SZrTypeGenericParameterInfo）
+    SZrArray parameterPassingModes;  // 参数传递模式数组（EZrParameterPassingMode）
+    SZrAstNode *declarationNode;     // 源声明节点（可选）
 } SZrFunctionTypeInfo;
 
 // 类型环境结构体
@@ -101,6 +104,14 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupVariable(SZrState *state, S
 
 // 注册函数类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterFunction(SZrState *state, SZrTypeEnvironment *env, SZrString *name, const SZrInferredType *returnType, SZrArray *paramTypes);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
+                                                                  SZrTypeEnvironment *env,
+                                                                  SZrString *name,
+                                                                  const SZrInferredType *returnType,
+                                                                  SZrArray *paramTypes,
+                                                                  SZrArray *genericParameters,
+                                                                  SZrArray *parameterPassingModes,
+                                                                  SZrAstNode *declarationNode);
 
 // 查找函数类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupFunction(SZrTypeEnvironment *env, SZrString *name, SZrFunctionTypeInfo **result);

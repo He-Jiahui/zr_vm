@@ -303,10 +303,7 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                         compile_class_declaration(cs, stmt);
                         break;
                     case ZR_AST_INTERFACE_DECLARATION:
-                        // 处理interface声明
-                        // 注意：interface主要用于类型检查，不需要生成运行时代码
-                        // 可以在这里进行interface的类型信息收集和验证
-                        // TODO: 暂时跳过，后续可以实现interface的类型检查
+                        compile_interface_declaration(cs, stmt);
                         break;
                     case ZR_AST_ENUM_DECLARATION:
                         // 处理enum声明
@@ -716,6 +713,18 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
 
     ZrParser_CompilerState_Free(&cs);
     return func;
+}
+
+ZR_PARSER_API void ZrParser_Compiler_CompileStructDeclaration(SZrCompilerState *cs, SZrAstNode *node) {
+    compile_struct_declaration(cs, node);
+}
+
+ZR_PARSER_API void ZrParser_Compiler_CompileClassDeclaration(SZrCompilerState *cs, SZrAstNode *node) {
+    compile_class_declaration(cs, node);
+}
+
+ZR_PARSER_API void ZrParser_Compiler_CompileInterfaceDeclaration(SZrCompilerState *cs, SZrAstNode *node) {
+    compile_interface_declaration(cs, node);
 }
 
 // 编译 AST 为函数和测试函数列表（新接口）

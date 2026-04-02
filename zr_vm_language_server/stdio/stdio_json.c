@@ -210,6 +210,119 @@ cJSON *serialize_hover(const SZrLspHover *hover) {
     return json;
 }
 
+static cJSON *serialize_markdown_content(SZrString *value) {
+    cJSON *json;
+    char *text;
+
+    if (value == ZR_NULL) {
+        return NULL;
+    }
+
+    text = zr_string_to_c_string(value);
+    if (text == NULL) {
+        return NULL;
+    }
+
+    json = cJSON_CreateObject();
+    if (json != NULL) {
+        cJSON_AddStringToObject(json, "kind", "markdown");
+        cJSON_AddStringToObject(json, "value", text);
+    }
+
+    free(text);
+    return json;
+}
+
+cJSON *serialize_signature_help(const SZrLspSignatureHelp *help) {
+    cJSON *json;
+    cJSON *signatures;
+
+    if (help == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    signatures = cJSON_CreateArray();
+    if (json == NULL || signatures == NULL) {
+        cJSON_Delete(json);
+        cJSON_Delete(signatures);
+        return NULL;
+    }
+
+    for (TZrSize signatureIndex = 0; signatureIndex < help->signatures.length; signatureIndex++) {
+        SZrLspSignatureInformation **signaturePtr =
+            (SZrLspSignatureInformation **)ZrCore_Array_Get((SZrArray *)&help->signatures, signatureIndex);
+        cJSON *signatureJson;
+        char *labelText;
+
+        if (signaturePtr == ZR_NULL || *signaturePtr == ZR_NULL) {
+            continue;
+        }
+
+        signatureJson = cJSON_CreateObject();
+        labelText = zr_string_to_c_string((*signaturePtr)->label);
+        if (signatureJson == NULL || labelText == NULL) {
+            cJSON_Delete(signatureJson);
+            free(labelText);
+            continue;
+        }
+
+        cJSON_AddStringToObject(signatureJson, "label", labelText);
+        free(labelText);
+
+        if ((*signaturePtr)->documentation != ZR_NULL) {
+            cJSON *documentation = serialize_markdown_content((*signaturePtr)->documentation);
+            if (documentation != NULL) {
+                cJSON_AddItemToObject(signatureJson, "documentation", documentation);
+            }
+        }
+
+        if ((*signaturePtr)->parameters.length > 0) {
+            cJSON *parameters = cJSON_CreateArray();
+            if (parameters != NULL) {
+                for (TZrSize parameterIndex = 0; parameterIndex < (*signaturePtr)->parameters.length; parameterIndex++) {
+                    SZrLspParameterInformation **parameterPtr =
+                        (SZrLspParameterInformation **)ZrCore_Array_Get(&(*signaturePtr)->parameters, parameterIndex);
+                    cJSON *parameterJson;
+                    char *parameterLabel;
+
+                    if (parameterPtr == ZR_NULL || *parameterPtr == ZR_NULL) {
+                        continue;
+                    }
+
+                    parameterJson = cJSON_CreateObject();
+                    parameterLabel = zr_string_to_c_string((*parameterPtr)->label);
+                    if (parameterJson == NULL || parameterLabel == NULL) {
+                        cJSON_Delete(parameterJson);
+                        free(parameterLabel);
+                        continue;
+                    }
+
+                    cJSON_AddStringToObject(parameterJson, "label", parameterLabel);
+                    free(parameterLabel);
+
+                    if ((*parameterPtr)->documentation != ZR_NULL) {
+                        cJSON *documentation = serialize_markdown_content((*parameterPtr)->documentation);
+                        if (documentation != NULL) {
+                            cJSON_AddItemToObject(parameterJson, "documentation", documentation);
+                        }
+                    }
+
+                    cJSON_AddItemToArray(parameters, parameterJson);
+                }
+                cJSON_AddItemToObject(signatureJson, "parameters", parameters);
+            }
+        }
+
+        cJSON_AddItemToArray(signatures, signatureJson);
+    }
+
+    cJSON_AddItemToObject(json, "signatures", signatures);
+    cJSON_AddNumberToObject(json, "activeSignature", help->activeSignature);
+    cJSON_AddNumberToObject(json, "activeParameter", help->activeParameter);
+    return json;
+}
+
 cJSON *serialize_document_highlight(const SZrLspDocumentHighlight *highlight) {
     cJSON *json = cJSON_CreateObject();
     if (json == NULL) {
@@ -398,6 +511,10 @@ void free_hover(SZrState *state, SZrLspHover *hover) {
 
     ZrCore_Array_Free(state, &hover->contents);
     ZrCore_Memory_RawFree(state->global, hover, sizeof(SZrLspHover));
+}
+
+void free_signature_help(SZrState *state, SZrLspSignatureHelp *help) {
+    ZrLanguageServer_LspSignatureHelp_Free(state, help);
 }
 
 int parse_position(const cJSON *json, SZrLspPosition *outPosition) {

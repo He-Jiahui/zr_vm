@@ -1,5 +1,36 @@
 #include "parser_internal.h"
 
+static SZrAstNode *try_parse_prefixed_function_declaration(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrBool savedSuppressErrorOutput;
+    SZrAstNode *funcDecl;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "func")) {
+        return ZR_NULL;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    savedSuppressErrorOutput = ps->suppressErrorOutput;
+    ps->suppressErrorOutput = ZR_TRUE;
+    ps->hasError = ZR_FALSE;
+    ps->errorMessage = ZR_NULL;
+
+    funcDecl = parse_function_declaration(ps);
+    ps->suppressErrorOutput = savedSuppressErrorOutput;
+    if (funcDecl != ZR_NULL && !ps->hasError) {
+        ps->hasError = cursor.hasError;
+        ps->errorMessage = cursor.errorMessage;
+        return funcDecl;
+    }
+
+    if (funcDecl != ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, funcDecl);
+    }
+
+    restore_parser_cursor(ps, &cursor);
+    return ZR_NULL;
+}
+
 SZrAstNode *parse_block(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange endLoc;
@@ -714,6 +745,12 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
             return parse_try_catch_finally_statement(ps);
 
         default:
+            if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+                SZrAstNode *funcDecl = try_parse_prefixed_function_declaration(ps);
+                if (funcDecl != ZR_NULL) {
+                    return funcDecl;
+                }
+            }
             // 检查是否是函数声明（identifier(params) { statements} 风格）
             if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
                 // 查看下一个 token 判断是否是函数声明
@@ -1023,6 +1060,12 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             return parse_try_catch_finally_statement(ps);
 
         default:
+            if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+                SZrAstNode *funcDecl = try_parse_prefixed_function_declaration(ps);
+                if (funcDecl != ZR_NULL) {
+                    return funcDecl;
+                }
+            }
             if (token == ZR_TK_PERCENT) {
                 if (current_percent_directive_equals(ps, "compileTime")) {
                     return parse_compile_time_declaration(ps);
@@ -1060,7 +1103,8 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 } else if (nextToken == ZR_TK_IDENTIFIER || nextToken == ZR_TK_TEST) {
                     // 可能是函数声明
                     EZrToken lookahead = peek_token(ps);
-                    if (lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN) {
+                    if ((nextToken == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) ||
+                        lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN) {
                         ZrParser_Ast_Free(ps->state, decorator);
                         return parse_function_declaration(ps);
                     }
@@ -1079,14 +1123,28 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 // 查看下一个 token 判断是否是函数声明
                 EZrToken lookahead = peek_token(ps);
                 if (lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN) {
-                    // 可能是函数声明
-                    SZrAstNode *funcDecl = parse_function_declaration(ps);
-                    // 如果解析失败，直接返回 NULL（无论是否有错误）
-                    // 因为如果标识符后跟括号，它应该是函数声明，不应该回退到表达式解析
-                    if (funcDecl == ZR_NULL) {
-                        return ZR_NULL;
+                    SZrParserCursor cursor;
+                    TZrBool savedSuppressErrorOutput = ps->suppressErrorOutput;
+                    SZrAstNode *funcDecl;
+
+                    save_parser_cursor(ps, &cursor);
+                    ps->suppressErrorOutput = ZR_TRUE;
+                    ps->hasError = ZR_FALSE;
+                    ps->errorMessage = ZR_NULL;
+
+                    funcDecl = parse_function_declaration(ps);
+                    ps->suppressErrorOutput = savedSuppressErrorOutput;
+                    if (funcDecl != ZR_NULL && !ps->hasError) {
+                        ps->hasError = cursor.hasError;
+                        ps->errorMessage = cursor.errorMessage;
+                        return funcDecl;
                     }
-                    return funcDecl;
+
+                    if (funcDecl != ZR_NULL) {
+                        ZrParser_Ast_Free(ps->state, funcDecl);
+                    }
+
+                    restore_parser_cursor(ps, &cursor);
                 }
             }
             // 尝试解析为表达式语句

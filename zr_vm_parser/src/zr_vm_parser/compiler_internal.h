@@ -351,7 +351,27 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
 
 SZrString *get_type_name_from_inferred_type(SZrCompilerState *cs, const SZrInferredType *inferredType) ;
 
+SZrString *extract_generic_argument_name_string(SZrCompilerState *cs, SZrAstNode *node) ;
+
 SZrString *extract_type_name_string(SZrCompilerState *cs, SZrType *type) ;
+
+void compiler_collect_generic_parameter_info(SZrCompilerState *cs,
+                                             SZrArray *genericParameters,
+                                             SZrGenericDeclaration *genericDeclaration) ;
+void compiler_collect_parameter_passing_modes(SZrState *state,
+                                              SZrArray *parameterPassingModes,
+                                              SZrAstNodeArray *params) ;
+TZrBool compiler_parameter_is_readonly(const SZrParameter *parameter);
+void compiler_register_readonly_parameter_name(SZrCompilerState *cs,
+                                               const SZrParameter *parameter,
+                                               SZrString *parameterName);
+TZrBool compiler_expression_is_assignable_storage_location(const SZrAstNode *node);
+TZrBool compiler_validate_out_parameter_definite_assignment(SZrCompilerState *cs,
+                                                            SZrAstNodeArray *params,
+                                                            SZrAstNode *body,
+                                                            SZrFileRange fallbackLocation);
+TZrBool compiler_validate_interface_variance_rules(SZrCompilerState *cs,
+                                                   SZrAstNode *interfaceNode);
 
 TZrUInt32 calculate_type_size(SZrCompilerState *cs, SZrType *type) ;
 
@@ -383,8 +403,14 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
 
 void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
 
+void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
+
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize) ;
+
+TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
+                                            SZrFunctionTypedLocalBinding **outBindings,
+                                            TZrUInt32 *outCount);
 
 TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs);
 
@@ -401,5 +427,8 @@ void ZrParser_ToGlobalState_Register(struct SZrState *state) ;
 ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompilerState *cs,
                                                                      SZrString *moduleName,
                                                                      SZrFileRange location);
+ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerState *cs,
+                                                                  SZrAstNode *operand,
+                                                                  SZrFileRange location);
 
 #endif // ZR_VM_PARSER_COMPILER_INTERNAL_H

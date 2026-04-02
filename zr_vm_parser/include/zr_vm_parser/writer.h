@@ -14,6 +14,9 @@
 // 将编译后的函数写入二进制格式文件，符合 zr_io_conf.h 中定义的 .SOURCE 格式
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFile(SZrState *state, SZrFunction *function, const TZrChar *filename);
 
+// 将 native helper 函数指针映射为稳定的可序列化 helper id
+ZR_PARSER_API TZrUInt64 ZrParser_Writer_GetSerializableNativeHelperId(FZrNativeFunction function);
+
 // 写入明文中间文件 (.zri)
 // 将编译后的函数写入可读的明文格式文件
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZrFunction *function, const TZrChar *filename);

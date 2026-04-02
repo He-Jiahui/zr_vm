@@ -43,7 +43,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
 }
 
 // 创建测试用的SZrState
-SZrState* createTestState() {
+SZrState* createTestState(void) {
     // 创建全局状态
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState* global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
@@ -94,3 +94,4 @@ struct SZrNativeData* createTestNativeData(SZrState* state, TZrUInt32 valueCount
     
     return nativeData;
 }
+

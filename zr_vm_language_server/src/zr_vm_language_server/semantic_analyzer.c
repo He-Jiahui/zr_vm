@@ -5,6 +5,43 @@
 #include "semantic_analyzer_internal.h"
 #include "zr_vm_library/native_registry.h"
 
+#include <stdarg.h>
+
+static TZrBool semantic_source_uri_equals(SZrString *left, SZrString *right) {
+    TZrNativeString leftText;
+    TZrNativeString rightText;
+    TZrSize leftLength;
+    TZrSize rightLength;
+
+    if (left == right) {
+        return ZR_TRUE;
+    }
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (left->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        leftText = ZrCore_String_GetNativeStringShort(left);
+        leftLength = left->shortStringLength;
+    } else {
+        leftText = ZrCore_String_GetNativeString(left);
+        leftLength = left->longStringLength;
+    }
+
+    if (right->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        rightText = ZrCore_String_GetNativeStringShort(right);
+        rightLength = right->shortStringLength;
+    } else {
+        rightText = ZrCore_String_GetNativeString(right);
+        rightLength = right->longStringLength;
+    }
+
+    return leftText != ZR_NULL && rightText != ZR_NULL &&
+           leftLength == rightLength &&
+           memcmp(leftText, rightText, leftLength) == 0;
+}
+
 static void semantic_get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
     if (text == ZR_NULL || length == ZR_NULL) {
         return;
@@ -22,6 +59,415 @@ static void semantic_get_string_view(SZrString *value, TZrNativeString *text, TZ
     } else {
         *text = ZrCore_String_GetNativeString(value);
         *length = value->longStringLength;
+    }
+}
+
+static TZrBool semantic_file_range_contains_position(SZrFileRange range, SZrFileRange position) {
+    if (!semantic_source_uri_equals(range.source, position.source)) {
+        return ZR_FALSE;
+    }
+
+    if (range.start.offset > 0 && range.end.offset > 0 &&
+        position.start.offset > 0 && position.end.offset > 0) {
+        return range.start.offset <= position.start.offset && position.end.offset <= range.end.offset;
+    }
+
+    return (range.start.line < position.start.line ||
+            (range.start.line == position.start.line && range.start.column <= position.start.column)) &&
+           (position.end.line < range.end.line ||
+            (position.end.line == range.end.line && position.end.column <= range.end.column));
+}
+
+static const SZrType *semantic_find_type_info_at_position(const SZrType *typeInfo, SZrFileRange position) {
+    TZrNativeString genericNameText = ZR_NULL;
+    TZrSize genericNameLength = 0;
+
+    if (typeInfo == ZR_NULL || typeInfo->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (typeInfo->subType != ZR_NULL) {
+        const SZrType *nestedType = semantic_find_type_info_at_position(typeInfo->subType, position);
+        if (nestedType != ZR_NULL) {
+            return nestedType;
+        }
+    }
+
+    if (typeInfo->name->type == ZR_AST_GENERIC_TYPE) {
+        SZrGenericType *genericType = (SZrGenericType *)&typeInfo->name->data.genericType;
+        if (genericType->params != ZR_NULL && genericType->params->nodes != ZR_NULL) {
+            for (TZrSize index = 0; index < genericType->params->count; index++) {
+                SZrAstNode *paramNode = genericType->params->nodes[index];
+                if (paramNode != ZR_NULL && paramNode->type == ZR_AST_TYPE) {
+                    const SZrType *nestedType = semantic_find_type_info_at_position(&paramNode->data.type, position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+        }
+
+        if (genericType->name != ZR_NULL && genericType->name->name != ZR_NULL) {
+            semantic_get_string_view(genericType->name->name, &genericNameText, &genericNameLength);
+            if (genericNameText != ZR_NULL && genericNameLength > 0) {
+                if (typeInfo->name->location.start.offset > 0 && position.start.offset > 0) {
+                    TZrSize baseStart =
+                        typeInfo->name->location.start.offset > genericNameLength + 1
+                            ? typeInfo->name->location.start.offset - genericNameLength - 1
+                            : 0;
+                    if (baseStart <= position.start.offset &&
+                        position.end.offset <= typeInfo->name->location.start.offset) {
+                        return typeInfo;
+                    }
+                } else if (typeInfo->name->location.start.line == position.start.line) {
+                    TZrInt32 baseColumn = typeInfo->name->location.start.column - (TZrInt32)genericNameLength - 1;
+                    if (baseColumn <= position.start.column &&
+                        position.end.column <= typeInfo->name->location.start.column) {
+                        return typeInfo;
+                    }
+                }
+            }
+        }
+    } else if (typeInfo->name->type == ZR_AST_TUPLE_TYPE) {
+        SZrTupleType *tupleType = (SZrTupleType *)&typeInfo->name->data.tupleType;
+        if (tupleType->elements != ZR_NULL && tupleType->elements->nodes != ZR_NULL) {
+            for (TZrSize index = 0; index < tupleType->elements->count; index++) {
+                SZrAstNode *elementNode = tupleType->elements->nodes[index];
+                if (elementNode != ZR_NULL && elementNode->type == ZR_AST_TYPE) {
+                    const SZrType *nestedType = semantic_find_type_info_at_position(&elementNode->data.type, position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+        }
+    }
+
+    return semantic_file_range_contains_position(typeInfo->name->location, position) ? typeInfo : ZR_NULL;
+}
+
+static TZrBool semantic_symbol_is_type_position_candidate(EZrSymbolType type) {
+    switch (type) {
+        case ZR_SYMBOL_CLASS:
+        case ZR_SYMBOL_STRUCT:
+        case ZR_SYMBOL_INTERFACE:
+        case ZR_SYMBOL_ENUM:
+        case ZR_SYMBOL_PARAMETER:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static SZrString *semantic_extract_type_symbol_name(const SZrType *typeInfo) {
+    if (typeInfo == ZR_NULL || typeInfo->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (typeInfo->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return typeInfo->name->data.identifier.name;
+    }
+
+    if (typeInfo->name->type == ZR_AST_GENERIC_TYPE) {
+        SZrGenericType *genericType = (SZrGenericType *)&typeInfo->name->data.genericType;
+        if (genericType->name != ZR_NULL) {
+            return genericType->name->name;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrSymbol *semantic_lookup_type_symbol_at_position(SZrState *state,
+                                                          SZrSemanticAnalyzer *analyzer,
+                                                          const SZrType *typeInfo,
+                                                          SZrFileRange position) {
+    SZrString *typeName;
+    SZrSymbol *symbol;
+    SZrArray candidates;
+
+    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    typeName = semantic_extract_type_symbol_name(typeInfo);
+    if (typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, typeName, position);
+    if (symbol != ZR_NULL && semantic_symbol_is_type_position_candidate(symbol->type)) {
+        return symbol;
+    }
+
+    ZrCore_Array_Construct(&candidates);
+    if (state != ZR_NULL &&
+        ZrLanguageServer_SymbolTable_LookupAll(state, analyzer->symbolTable, typeName, ZR_NULL, &candidates)) {
+        for (TZrSize index = 0; index < candidates.length; index++) {
+            SZrSymbol **candidatePtr = (SZrSymbol **)ZrCore_Array_Get(&candidates, index);
+            if (candidatePtr != ZR_NULL &&
+                *candidatePtr != ZR_NULL &&
+                semantic_symbol_is_type_position_candidate((*candidatePtr)->type)) {
+                symbol = *candidatePtr;
+                break;
+            }
+        }
+    }
+    if (candidates.isValid) {
+        ZrCore_Array_Free(state, &candidates);
+    }
+
+    return symbol;
+}
+
+static const SZrType *semantic_find_type_node_at_position(SZrAstNode *node, SZrFileRange position) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (node->type) {
+        case ZR_AST_SCRIPT:
+            if (node->data.script.statements != ZR_NULL && node->data.script.statements->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.script.statements->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.script.statements->nodes[index], position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            return ZR_NULL;
+
+        case ZR_AST_BLOCK:
+            if (node->data.block.body != ZR_NULL && node->data.block.body->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.block.body->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.block.body->nodes[index], position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            return ZR_NULL;
+
+        case ZR_AST_VARIABLE_DECLARATION:
+            if (node->data.variableDeclaration.typeInfo != ZR_NULL) {
+                const SZrType *typeInfo =
+                        semantic_find_type_info_at_position(node->data.variableDeclaration.typeInfo, position);
+                if (typeInfo != ZR_NULL) {
+                    return typeInfo;
+                }
+            }
+            return node->data.variableDeclaration.value != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.variableDeclaration.value, position)
+                           : ZR_NULL;
+
+        case ZR_AST_FUNCTION_DECLARATION:
+            if (node->data.functionDeclaration.params != ZR_NULL && node->data.functionDeclaration.params->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.functionDeclaration.params->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.functionDeclaration.params->nodes[index],
+                                                                position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            if (node->data.functionDeclaration.returnType != ZR_NULL) {
+                const SZrType *typeInfo =
+                        semantic_find_type_info_at_position(node->data.functionDeclaration.returnType, position);
+                if (typeInfo != ZR_NULL) {
+                    return typeInfo;
+                }
+            }
+            return node->data.functionDeclaration.body != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.functionDeclaration.body, position)
+                           : ZR_NULL;
+
+        case ZR_AST_CLASS_DECLARATION:
+            if (node->data.classDeclaration.inherits != ZR_NULL && node->data.classDeclaration.inherits->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.classDeclaration.inherits->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.classDeclaration.inherits->nodes[index],
+                                                                position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            if (node->data.classDeclaration.members != ZR_NULL && node->data.classDeclaration.members->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.classDeclaration.members->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.classDeclaration.members->nodes[index],
+                                                                position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            return ZR_NULL;
+
+        case ZR_AST_CLASS_FIELD:
+            if (node->data.classField.typeInfo != ZR_NULL) {
+                const SZrType *typeInfo = semantic_find_type_info_at_position(node->data.classField.typeInfo, position);
+                if (typeInfo != ZR_NULL) {
+                    return typeInfo;
+                }
+            }
+            return node->data.classField.init != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.classField.init, position)
+                           : ZR_NULL;
+
+        case ZR_AST_CLASS_METHOD:
+            if (node->data.classMethod.params != ZR_NULL && node->data.classMethod.params->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.classMethod.params->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.classMethod.params->nodes[index], position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            if (node->data.classMethod.returnType != ZR_NULL) {
+                const SZrType *typeInfo = semantic_find_type_info_at_position(node->data.classMethod.returnType, position);
+                if (typeInfo != ZR_NULL) {
+                    return typeInfo;
+                }
+            }
+            return node->data.classMethod.body != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.classMethod.body, position)
+                           : ZR_NULL;
+
+        case ZR_AST_INTERFACE_DECLARATION:
+            if (node->data.interfaceDeclaration.inherits != ZR_NULL &&
+                node->data.interfaceDeclaration.inherits->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.interfaceDeclaration.inherits->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.interfaceDeclaration.inherits->nodes[index],
+                                                                position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            if (node->data.interfaceDeclaration.members != ZR_NULL &&
+                node->data.interfaceDeclaration.members->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.interfaceDeclaration.members->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.interfaceDeclaration.members->nodes[index],
+                                                                position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            return ZR_NULL;
+
+        case ZR_AST_INTERFACE_FIELD_DECLARATION:
+            return node->data.interfaceFieldDeclaration.typeInfo != ZR_NULL
+                           ? semantic_find_type_info_at_position(node->data.interfaceFieldDeclaration.typeInfo, position)
+                           : ZR_NULL;
+
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            if (node->data.interfaceMethodSignature.params != ZR_NULL &&
+                node->data.interfaceMethodSignature.params->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.interfaceMethodSignature.params->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.interfaceMethodSignature.params->nodes[index],
+                                                                position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            return node->data.interfaceMethodSignature.returnType != ZR_NULL
+                           ? semantic_find_type_info_at_position(node->data.interfaceMethodSignature.returnType, position)
+                           : ZR_NULL;
+
+        case ZR_AST_PARAMETER:
+            return node->data.parameter.typeInfo != ZR_NULL
+                           ? semantic_find_type_info_at_position(node->data.parameter.typeInfo, position)
+                           : ZR_NULL;
+
+        case ZR_AST_EXPRESSION_STATEMENT:
+            return node->data.expressionStatement.expr != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.expressionStatement.expr, position)
+                           : ZR_NULL;
+
+        case ZR_AST_RETURN_STATEMENT:
+            return node->data.returnStatement.expr != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.returnStatement.expr, position)
+                           : ZR_NULL;
+
+        case ZR_AST_PRIMARY_EXPRESSION:
+            if (node->data.primaryExpression.property != ZR_NULL) {
+                const SZrType *nestedType =
+                        semantic_find_type_node_at_position(node->data.primaryExpression.property, position);
+                if (nestedType != ZR_NULL) {
+                    return nestedType;
+                }
+            }
+            if (node->data.primaryExpression.members != ZR_NULL && node->data.primaryExpression.members->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.primaryExpression.members->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.primaryExpression.members->nodes[index],
+                                                                position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            return ZR_NULL;
+
+        case ZR_AST_MEMBER_EXPRESSION:
+            return node->data.memberExpression.property != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.memberExpression.property, position)
+                           : ZR_NULL;
+
+        case ZR_AST_CONSTRUCT_EXPRESSION:
+            if (node->data.constructExpression.target != ZR_NULL) {
+                const SZrType *nestedType =
+                        semantic_find_type_node_at_position(node->data.constructExpression.target, position);
+                if (nestedType != ZR_NULL) {
+                    return nestedType;
+                }
+            }
+            return ZR_NULL;
+
+        case ZR_AST_ASSIGNMENT_EXPRESSION:
+            if (node->data.assignmentExpression.left != ZR_NULL) {
+                const SZrType *nestedType =
+                        semantic_find_type_node_at_position(node->data.assignmentExpression.left, position);
+                if (nestedType != ZR_NULL) {
+                    return nestedType;
+                }
+            }
+            return node->data.assignmentExpression.right != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.assignmentExpression.right, position)
+                           : ZR_NULL;
+
+        case ZR_AST_BINARY_EXPRESSION:
+            if (node->data.binaryExpression.left != ZR_NULL) {
+                const SZrType *nestedType =
+                        semantic_find_type_node_at_position(node->data.binaryExpression.left, position);
+                if (nestedType != ZR_NULL) {
+                    return nestedType;
+                }
+            }
+            return node->data.binaryExpression.right != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.binaryExpression.right, position)
+                           : ZR_NULL;
+
+        case ZR_AST_UNARY_EXPRESSION:
+            return node->data.unaryExpression.argument != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.unaryExpression.argument, position)
+                           : ZR_NULL;
+
+        case ZR_AST_TYPE:
+            return semantic_find_type_info_at_position(&node->data.type, position);
+
+        default:
+            return ZR_NULL;
     }
 }
 
@@ -51,10 +497,554 @@ static const TZrChar *semantic_access_modifier_text(EZrAccessModifier accessModi
     }
 }
 
+static const TZrChar *semantic_parameter_passing_mode_text(EZrParameterPassingMode passingMode) {
+    switch (passingMode) {
+        case ZR_PARAMETER_PASSING_MODE_IN: return "%in";
+        case ZR_PARAMETER_PASSING_MODE_OUT: return "%out";
+        case ZR_PARAMETER_PASSING_MODE_REF: return "%ref";
+        case ZR_PARAMETER_PASSING_MODE_VALUE:
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrSize semantic_buffer_append(TZrChar *buffer,
+                                      TZrSize bufferSize,
+                                      TZrSize offset,
+                                      const TZrChar *format,
+                                      ...) {
+    va_list args;
+    TZrInt32 written;
+
+    if (buffer == ZR_NULL || bufferSize == 0 || format == ZR_NULL) {
+        return offset;
+    }
+
+    if (offset >= bufferSize) {
+        return bufferSize - 1;
+    }
+
+    va_start(args, format);
+    written = vsnprintf(buffer + offset, bufferSize - offset, format, args);
+    va_end(args);
+    if (written < 0) {
+        return offset;
+    }
+
+    if ((TZrSize)written >= bufferSize - offset) {
+        return bufferSize - 1;
+    }
+
+    return offset + (TZrSize)written;
+}
+
+static void semantic_format_type_from_ast(SZrState *state,
+                                          SZrCompilerState *compilerState,
+                                          SZrType *typeNode,
+                                          TZrChar *buffer,
+                                          TZrSize bufferSize) {
+    SZrInferredType inferredType;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (typeNode != ZR_NULL &&
+        state != ZR_NULL &&
+        compilerState != ZR_NULL &&
+        ZrParser_AstTypeToInferredType_Convert(compilerState, typeNode, &inferredType)) {
+        const TZrChar *typeText = ZrParser_TypeNameString_Get(state, &inferredType, buffer, bufferSize);
+        if (typeText != buffer && typeText != ZR_NULL) {
+            snprintf(buffer, bufferSize, "%s", typeText);
+        }
+        ZrParser_InferredType_Free(state, &inferredType);
+        return;
+    }
+
+    if (typeNode != ZR_NULL &&
+        typeNode->name != ZR_NULL &&
+        typeNode->name->type == ZR_AST_IDENTIFIER_LITERAL &&
+        typeNode->name->data.identifier.name != ZR_NULL) {
+        TZrNativeString nameText;
+        TZrSize nameLength;
+
+        semantic_get_string_view(typeNode->name->data.identifier.name, &nameText, &nameLength);
+        if (nameText != ZR_NULL && nameLength < bufferSize) {
+            memcpy(buffer, nameText, nameLength);
+            buffer[nameLength] = '\0';
+            return;
+        }
+    }
+
+    snprintf(buffer, bufferSize, "%s", "object");
+}
+
+static TZrSize semantic_append_generic_parameter_decl(SZrState *state,
+                                                      SZrCompilerState *compilerState,
+                                                      TZrChar *buffer,
+                                                      TZrSize bufferSize,
+                                                      TZrSize offset,
+                                                      SZrAstNode *paramNode) {
+    SZrParameter *parameter;
+    TZrNativeString nameText;
+    TZrSize nameLength;
+    TZrChar typeBuffer[128];
+
+    if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER || paramNode->data.parameter.name == ZR_NULL) {
+        return offset;
+    }
+
+    parameter = &paramNode->data.parameter;
+    semantic_get_string_view(parameter->name->name, &nameText, &nameLength);
+    if (parameter->genericKind == ZR_GENERIC_PARAMETER_CONST_INT) {
+        semantic_format_type_from_ast(state, compilerState, parameter->typeInfo, typeBuffer, sizeof(typeBuffer));
+        return semantic_buffer_append(buffer,
+                                      bufferSize,
+                                      offset,
+                                      "const %.*s: %s",
+                                      (int)nameLength,
+                                      nameText != ZR_NULL ? nameText : "",
+                                      typeBuffer);
+    }
+
+    if (parameter->variance == ZR_GENERIC_VARIANCE_IN) {
+        offset = semantic_buffer_append(buffer, bufferSize, offset, "in ");
+    } else if (parameter->variance == ZR_GENERIC_VARIANCE_OUT) {
+        offset = semantic_buffer_append(buffer, bufferSize, offset, "out ");
+    }
+
+    return semantic_buffer_append(buffer,
+                                  bufferSize,
+                                  offset,
+                                  "%.*s",
+                                  (int)nameLength,
+                                  nameText != ZR_NULL ? nameText : "");
+}
+
+static TZrSize semantic_append_generic_declaration(SZrState *state,
+                                                   SZrCompilerState *compilerState,
+                                                   TZrChar *buffer,
+                                                   TZrSize bufferSize,
+                                                   TZrSize offset,
+                                                   SZrGenericDeclaration *generic) {
+    if (generic == ZR_NULL || generic->params == ZR_NULL || generic->params->count == 0) {
+        return offset;
+    }
+
+    offset = semantic_buffer_append(buffer, bufferSize, offset, "<");
+    for (TZrSize index = 0; index < generic->params->count; index++) {
+        if (index > 0) {
+            offset = semantic_buffer_append(buffer, bufferSize, offset, ", ");
+        }
+        offset = semantic_append_generic_parameter_decl(state,
+                                                        compilerState,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset,
+                                                        generic->params->nodes[index]);
+    }
+    return semantic_buffer_append(buffer, bufferSize, offset, ">");
+}
+
+static TZrBool semantic_parameter_has_constraints(SZrParameter *parameter) {
+    return parameter != ZR_NULL &&
+           (parameter->genericRequiresClass ||
+            parameter->genericRequiresStruct ||
+            parameter->genericRequiresNew ||
+            (parameter->genericTypeConstraints != ZR_NULL && parameter->genericTypeConstraints->count > 0));
+}
+
+static TZrSize semantic_append_generic_constraints(SZrState *state,
+                                                   SZrCompilerState *compilerState,
+                                                   TZrChar *buffer,
+                                                   TZrSize bufferSize,
+                                                   TZrSize offset,
+                                                   SZrParameter *parameter) {
+    TZrBool firstConstraint = ZR_TRUE;
+    TZrChar typeBuffer[128];
+
+    if (!semantic_parameter_has_constraints(parameter) || parameter->name == ZR_NULL) {
+        return offset;
+    }
+
+    offset = semantic_buffer_append(buffer,
+                                    bufferSize,
+                                    offset,
+                                    " where %s: ",
+                                    semantic_string_native(parameter->name->name));
+    if (parameter->genericRequiresClass) {
+        offset = semantic_buffer_append(buffer, bufferSize, offset, "class");
+        firstConstraint = ZR_FALSE;
+    }
+    if (parameter->genericRequiresStruct) {
+        offset = semantic_buffer_append(buffer,
+                                        bufferSize,
+                                        offset,
+                                        "%sstruct",
+                                        firstConstraint ? "" : ", ");
+        firstConstraint = ZR_FALSE;
+    }
+    if (parameter->genericTypeConstraints != ZR_NULL) {
+        for (TZrSize index = 0; index < parameter->genericTypeConstraints->count; index++) {
+            SZrAstNode *constraintNode = parameter->genericTypeConstraints->nodes[index];
+            if (constraintNode == ZR_NULL || constraintNode->type != ZR_AST_TYPE) {
+                continue;
+            }
+            semantic_format_type_from_ast(state,
+                                          compilerState,
+                                          &constraintNode->data.type,
+                                          typeBuffer,
+                                          sizeof(typeBuffer));
+            offset = semantic_buffer_append(buffer,
+                                            bufferSize,
+                                            offset,
+                                            "%s%s",
+                                            firstConstraint ? "" : ", ",
+                                            typeBuffer);
+            firstConstraint = ZR_FALSE;
+        }
+    }
+    if (parameter->genericRequiresNew) {
+        offset = semantic_buffer_append(buffer,
+                                        bufferSize,
+                                        offset,
+                                        "%snew()",
+                                        firstConstraint ? "" : ", ");
+    }
+
+    return offset;
+}
+
+static TZrSize semantic_append_where_clauses(SZrState *state,
+                                             SZrCompilerState *compilerState,
+                                             TZrChar *buffer,
+                                             TZrSize bufferSize,
+                                             TZrSize offset,
+                                             SZrGenericDeclaration *generic) {
+    if (generic == ZR_NULL || generic->params == ZR_NULL) {
+        return offset;
+    }
+
+    for (TZrSize index = 0; index < generic->params->count; index++) {
+        SZrAstNode *paramNode = generic->params->nodes[index];
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+        offset = semantic_append_generic_constraints(state,
+                                                     compilerState,
+                                                     buffer,
+                                                     bufferSize,
+                                                     offset,
+                                                     &paramNode->data.parameter);
+    }
+
+    return offset;
+}
+
+static TZrSize semantic_append_inheritance_clause(SZrState *state,
+                                                  SZrCompilerState *compilerState,
+                                                  TZrChar *buffer,
+                                                  TZrSize bufferSize,
+                                                  TZrSize offset,
+                                                  SZrAstNodeArray *inherits) {
+    TZrChar typeBuffer[128];
+    TZrBool appendedAny = ZR_FALSE;
+
+    if (inherits == ZR_NULL || inherits->count == 0) {
+        return offset;
+    }
+
+    for (TZrSize index = 0; index < inherits->count; index++) {
+        SZrAstNode *inheritNode = inherits->nodes[index];
+
+        if (inheritNode == ZR_NULL || inheritNode->type != ZR_AST_TYPE) {
+            continue;
+        }
+
+        offset = semantic_buffer_append(buffer,
+                                        bufferSize,
+                                        offset,
+                                        "%s",
+                                        appendedAny ? ", " : " : ");
+        appendedAny = ZR_TRUE;
+
+        semantic_format_type_from_ast(state,
+                                      compilerState,
+                                      &inheritNode->data.type,
+                                      typeBuffer,
+                                      sizeof(typeBuffer));
+        offset = semantic_buffer_append(buffer, bufferSize, offset, "%s", typeBuffer);
+    }
+
+    return offset;
+}
+
+static TZrSize semantic_append_parameter_list(SZrState *state,
+                                              SZrCompilerState *compilerState,
+                                              TZrChar *buffer,
+                                              TZrSize bufferSize,
+                                              TZrSize offset,
+                                              SZrAstNodeArray *params) {
+    TZrChar typeBuffer[128];
+
+    offset = semantic_buffer_append(buffer, bufferSize, offset, "(");
+    if (params != ZR_NULL) {
+        for (TZrSize index = 0; index < params->count; index++) {
+            SZrAstNode *paramNode = params->nodes[index];
+            SZrParameter *parameter;
+            const TZrChar *passingModeText;
+
+            if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+                continue;
+            }
+
+            parameter = &paramNode->data.parameter;
+            if (index > 0) {
+                offset = semantic_buffer_append(buffer, bufferSize, offset, ", ");
+            }
+
+            passingModeText = semantic_parameter_passing_mode_text(parameter->passingMode);
+            if (passingModeText != ZR_NULL) {
+                offset = semantic_buffer_append(buffer, bufferSize, offset, "%s ", passingModeText);
+            }
+
+            semantic_format_type_from_ast(state, compilerState, parameter->typeInfo, typeBuffer, sizeof(typeBuffer));
+            offset = semantic_buffer_append(buffer,
+                                            bufferSize,
+                                            offset,
+                                            "%s: %s",
+                                            semantic_string_native(parameter->name != ZR_NULL ? parameter->name->name : ZR_NULL),
+                                            typeBuffer);
+        }
+    }
+
+    return semantic_buffer_append(buffer, bufferSize, offset, ")");
+}
+
+static TZrBool semantic_build_ast_signature(SZrState *state,
+                                            SZrCompilerState *compilerState,
+                                            SZrAstNode *node,
+                                            TZrChar *buffer,
+                                            TZrSize bufferSize) {
+    TZrSize offset = 0;
+    TZrChar typeBuffer[128];
+
+    if (buffer == ZR_NULL || bufferSize == 0 || node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    buffer[0] = '\0';
+    switch (node->type) {
+        case ZR_AST_FUNCTION_DECLARATION: {
+            SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
+            if (funcDecl->name == ZR_NULL || funcDecl->name->name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            offset = semantic_buffer_append(buffer,
+                                            bufferSize,
+                                            offset,
+                                            "%s",
+                                            semantic_string_native(funcDecl->name->name));
+            offset = semantic_append_generic_declaration(state,
+                                                        compilerState,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset,
+                                                        funcDecl->generic);
+            offset = semantic_append_parameter_list(state,
+                                                   compilerState,
+                                                   buffer,
+                                                   bufferSize,
+                                                   offset,
+                                                   funcDecl->params);
+            semantic_format_type_from_ast(state, compilerState, funcDecl->returnType, typeBuffer, sizeof(typeBuffer));
+            offset = semantic_buffer_append(buffer, bufferSize, offset, ": %s", typeBuffer);
+            offset = semantic_append_where_clauses(state,
+                                                   compilerState,
+                                                   buffer,
+                                                   bufferSize,
+                                                   offset,
+                                                   funcDecl->generic);
+            return ZR_TRUE;
+        }
+
+        case ZR_AST_CLASS_METHOD: {
+            SZrClassMethod *method = &node->data.classMethod;
+            if (method->name == ZR_NULL || method->name->name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            offset = semantic_buffer_append(buffer,
+                                            bufferSize,
+                                            offset,
+                                            "%s",
+                                            semantic_string_native(method->name->name));
+            offset = semantic_append_generic_declaration(state,
+                                                        compilerState,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset,
+                                                        method->generic);
+            offset = semantic_append_parameter_list(state,
+                                                   compilerState,
+                                                   buffer,
+                                                   bufferSize,
+                                                   offset,
+                                                   method->params);
+            semantic_format_type_from_ast(state, compilerState, method->returnType, typeBuffer, sizeof(typeBuffer));
+            offset = semantic_buffer_append(buffer, bufferSize, offset, ": %s", typeBuffer);
+            offset = semantic_append_where_clauses(state,
+                                                   compilerState,
+                                                   buffer,
+                                                   bufferSize,
+                                                   offset,
+                                                   method->generic);
+            return ZR_TRUE;
+        }
+
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE: {
+            SZrInterfaceMethodSignature *method = &node->data.interfaceMethodSignature;
+            if (method->name == ZR_NULL || method->name->name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            offset = semantic_buffer_append(buffer,
+                                            bufferSize,
+                                            offset,
+                                            "%s",
+                                            semantic_string_native(method->name->name));
+            offset = semantic_append_generic_declaration(state,
+                                                        compilerState,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset,
+                                                        method->generic);
+            offset = semantic_append_parameter_list(state,
+                                                   compilerState,
+                                                   buffer,
+                                                   bufferSize,
+                                                   offset,
+                                                   method->params);
+            semantic_format_type_from_ast(state, compilerState, method->returnType, typeBuffer, sizeof(typeBuffer));
+            offset = semantic_buffer_append(buffer, bufferSize, offset, ": %s", typeBuffer);
+            offset = semantic_append_where_clauses(state,
+                                                   compilerState,
+                                                   buffer,
+                                                   bufferSize,
+                                                   offset,
+                                                   method->generic);
+            return ZR_TRUE;
+        }
+
+        case ZR_AST_CLASS_DECLARATION: {
+            SZrClassDeclaration *classDecl = &node->data.classDeclaration;
+            if (classDecl->name == ZR_NULL || classDecl->name->name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            offset = semantic_buffer_append(buffer,
+                                            bufferSize,
+                                            offset,
+                                            "class %s",
+                                            semantic_string_native(classDecl->name->name));
+            offset = semantic_append_generic_declaration(state,
+                                                        compilerState,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset,
+                                                        classDecl->generic);
+            offset = semantic_append_inheritance_clause(state,
+                                                        compilerState,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset,
+                                                        classDecl->inherits);
+            offset = semantic_append_where_clauses(state,
+                                                   compilerState,
+                                                   buffer,
+                                                   bufferSize,
+                                                   offset,
+                                                   classDecl->generic);
+            return ZR_TRUE;
+        }
+
+        case ZR_AST_STRUCT_DECLARATION: {
+            SZrStructDeclaration *structDecl = &node->data.structDeclaration;
+            if (structDecl->name == ZR_NULL || structDecl->name->name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            offset = semantic_buffer_append(buffer,
+                                            bufferSize,
+                                            offset,
+                                            "struct %s",
+                                            semantic_string_native(structDecl->name->name));
+            offset = semantic_append_generic_declaration(state,
+                                                        compilerState,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset,
+                                                        structDecl->generic);
+            offset = semantic_append_inheritance_clause(state,
+                                                        compilerState,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset,
+                                                        structDecl->inherits);
+            offset = semantic_append_where_clauses(state,
+                                                   compilerState,
+                                                   buffer,
+                                                   bufferSize,
+                                                   offset,
+                                                   structDecl->generic);
+            return ZR_TRUE;
+        }
+
+        case ZR_AST_INTERFACE_DECLARATION: {
+            SZrInterfaceDeclaration *interfaceDecl = &node->data.interfaceDeclaration;
+            if (interfaceDecl->name == ZR_NULL || interfaceDecl->name->name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            offset = semantic_buffer_append(buffer,
+                                            bufferSize,
+                                            offset,
+                                            "interface %s",
+                                            semantic_string_native(interfaceDecl->name->name));
+            offset = semantic_append_generic_declaration(state,
+                                                        compilerState,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset,
+                                                        interfaceDecl->generic);
+            offset = semantic_append_inheritance_clause(state,
+                                                        compilerState,
+                                                        buffer,
+                                                        bufferSize,
+                                                        offset,
+                                                        interfaceDecl->inherits);
+            offset = semantic_append_where_clauses(state,
+                                                   compilerState,
+                                                   buffer,
+                                                   bufferSize,
+                                                   offset,
+                                                   interfaceDecl->generic);
+            return ZR_TRUE;
+        }
+
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static void semantic_build_symbol_detail(SZrState *state,
+                                         SZrCompilerState *compilerState,
                                          SZrSymbol *symbol,
                                          TZrChar *buffer,
                                          TZrSize bufferSize) {
+    TZrChar signatureBuffer[512];
     TZrChar typeBuffer[128];
     const TZrChar *typeText = semantic_symbol_kind_text(symbol != ZR_NULL ? symbol->type : ZR_SYMBOL_VARIABLE);
     const TZrChar *accessText = semantic_access_modifier_text(symbol != ZR_NULL
@@ -66,6 +1056,18 @@ static void semantic_build_symbol_detail(SZrState *state,
     }
 
     buffer[0] = '\0';
+    if (state != ZR_NULL &&
+        symbol != ZR_NULL &&
+        symbol->astNode != ZR_NULL &&
+        semantic_build_ast_signature(state,
+                                     compilerState,
+                                     symbol->astNode,
+                                     signatureBuffer,
+                                     sizeof(signatureBuffer))) {
+        snprintf(buffer, bufferSize, "%s %s", accessText, signatureBuffer);
+        return;
+    }
+
     if (state != ZR_NULL && symbol != ZR_NULL && symbol->typeInfo != ZR_NULL) {
         typeText = ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
     }
@@ -120,6 +1122,7 @@ static void semantic_append_completion_item(SZrState *state,
 }
 
 static void semantic_append_symbol_completion(SZrState *state,
+                                              SZrCompilerState *compilerState,
                                               SZrArray *result,
                                               SZrSymbol *symbol) {
     TZrNativeString nameText;
@@ -138,7 +1141,7 @@ static void semantic_append_symbol_completion(SZrState *state,
 
     memcpy(label, nameText, nameLength);
     label[nameLength] = '\0';
-    semantic_build_symbol_detail(state, symbol, detail, sizeof(detail));
+    semantic_build_symbol_detail(state, compilerState, symbol, detail, sizeof(detail));
     semantic_append_completion_item(state,
                                     result,
                                     label,
@@ -498,6 +1501,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(SZrState *state,
 SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *analyzer,
                                          SZrFileRange position) {
     SZrReference *reference;
+    const SZrType *hoverTypeInfo;
+    SZrSymbol *symbol;
 
     if (analyzer == ZR_NULL) {
         return ZR_NULL;
@@ -509,8 +1514,21 @@ SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *an
             return reference->symbol;
         }
     }
-    
-    return ZrLanguageServer_SymbolTable_FindDefinition(analyzer->symbolTable, position);
+
+    symbol = ZrLanguageServer_SymbolTable_FindDefinition(analyzer->symbolTable, position);
+    if (symbol != ZR_NULL) {
+        return symbol;
+    }
+
+    hoverTypeInfo = semantic_find_type_node_at_position(analyzer->ast, position);
+    if (hoverTypeInfo != ZR_NULL) {
+        symbol = semantic_lookup_type_symbol_at_position(analyzer->state, analyzer, hoverTypeInfo, position);
+        if (symbol != ZR_NULL) {
+            return symbol;
+        }
+    }
+
+    return ZR_NULL;
 }
 
 // 获取悬停信息
@@ -521,10 +1539,16 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
     TZrNativeString nameStr;
     TZrSize nameLen;
     TZrChar typeBuffer[128];
-    TZrChar buffer[512];
+    TZrChar buffer[1024];
     const TZrChar *kindText;
     const TZrChar *typeText;
     const TZrChar *accessText;
+    TZrChar signatureBuffer[512];
+    TZrChar resolvedTypeBuffer[128];
+    const SZrType *hoverTypeInfo = ZR_NULL;
+    SZrInferredType resolvedType;
+    const TZrChar *resolvedTypeText = ZR_NULL;
+    TZrBool hasResolvedType = ZR_FALSE;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -542,6 +1566,46 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
 
     kindText = semantic_symbol_kind_text(symbol->type);
     accessText = semantic_access_modifier_text(symbol->accessModifier);
+    hoverTypeInfo = semantic_find_type_node_at_position(analyzer->ast, position);
+    if (hoverTypeInfo != ZR_NULL &&
+        analyzer->compilerState != ZR_NULL &&
+        (symbol->type == ZR_SYMBOL_CLASS || symbol->type == ZR_SYMBOL_STRUCT || symbol->type == ZR_SYMBOL_INTERFACE)) {
+        ZrParser_InferredType_Init(state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
+        if (ZrParser_AstTypeToInferredType_Convert(analyzer->compilerState, hoverTypeInfo, &resolvedType)) {
+            resolvedTypeText = ZrParser_TypeNameString_Get(state, &resolvedType, resolvedTypeBuffer, sizeof(resolvedTypeBuffer));
+            hasResolvedType = resolvedTypeText != ZR_NULL;
+        }
+        ZrParser_InferredType_Free(state, &resolvedType);
+    }
+    if (semantic_build_ast_signature(state,
+                                     analyzer->compilerState,
+                                     symbol->astNode,
+                                     signatureBuffer,
+                                     sizeof(signatureBuffer))) {
+        if (hasResolvedType) {
+            snprintf(buffer,
+                     sizeof(buffer),
+                     "**%s**: %.*s\n\nSignature: %s\nResolved Type: %s\nAccess: %s",
+                     kindText,
+                     (int)nameLen,
+                     nameStr,
+                     signatureBuffer,
+                     resolvedTypeText,
+                     accessText);
+        } else {
+            snprintf(buffer,
+                     sizeof(buffer),
+                     "**%s**: %.*s\n\nSignature: %s\nAccess: %s",
+                     kindText,
+                     (int)nameLen,
+                     nameStr,
+                     signatureBuffer,
+                     accessText);
+        }
+        *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->selectionRange, symbol->typeInfo);
+        return *result != ZR_NULL;
+    }
+
     typeText = (symbol->typeInfo != ZR_NULL)
                ? ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer))
                : kindText;
@@ -581,7 +1645,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetCompletions(SZrState *state,
         for (TZrSize index = 0; index < visibleSymbols.length; index++) {
             SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&visibleSymbols, index);
             if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
-                semantic_append_symbol_completion(state, result, *symbolPtr);
+                semantic_append_symbol_completion(state, analyzer->compilerState, result, *symbolPtr);
             }
         }
     }

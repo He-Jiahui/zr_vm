@@ -17,6 +17,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/reflection.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -46,8 +47,6 @@ void ZrCore_MetaTable_Construct(SZrMetaTable *table) {
 static TZrInt64 meta_to_string_null(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    // self 在 base + 1
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
     // 返回值放在 base 位置
     SZrString *result = ZrCore_String_CreateFromNative(state, ZR_STRING_NULL_STRING);
     ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(result));
@@ -104,10 +103,12 @@ static TZrInt64 meta_to_string_object(SZrState *state) {
     SZrTypeValue stableSelf = *self;
     SZrObject *object = ZR_CAST_OBJECT(state, stableSelf.value.object);
     SZrString *result = ZR_NULL;
+    SZrMeta *defaultObjectMeta =
+            state->global->basicTypeObjectPrototype[ZR_VALUE_TYPE_OBJECT]->metaTable.metas[ZR_META_TO_STRING];
 
     // 尝试调用对象的 TO_STRING 元方法（递归查找）
     SZrMeta *meta = ZrCore_Object_GetMetaRecursively(state->global, object, ZR_META_TO_STRING);
-    if (meta != ZR_NULL && meta->function != ZR_NULL) {
+    if (meta != ZR_NULL && meta->function != ZR_NULL && meta != defaultObjectMeta) {
         // 如果对象有自己的 TO_STRING 元方法，调用它
         // 将 meta->function 放到栈上，self 作为参数
         ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
@@ -119,6 +120,16 @@ static TZrInt64 meta_to_string_object(SZrState *state) {
         SZrTypeValue *returnValue = ZrCore_Stack_GetValue(base);
         if (returnValue->type == ZR_VALUE_TYPE_STRING) {
             ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), returnValue);
+            state->stackTop.valuePointer = base + 1;
+            return 1;
+        }
+    }
+
+    if (ZrCore_Reflection_IsReflectionObject(state, object)) {
+        result = ZrCore_Reflection_FormatObject(state, object);
+        if (result != ZR_NULL) {
+            ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(result));
+            ZrCore_Stack_GetValue(base)->type = ZR_VALUE_TYPE_STRING;
             state->stackTop.valuePointer = base + 1;
             return 1;
         }

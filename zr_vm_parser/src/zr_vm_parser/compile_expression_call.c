@@ -258,6 +258,30 @@ void compile_import_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
 }
 
+void compile_type_query_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrTypeQueryExpression *typeQueryExpr;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (node->type != ZR_AST_TYPE_QUERY_EXPRESSION) {
+        ZrParser_Compiler_Error(cs, "Expected type query expression", node->location);
+        return;
+    }
+
+    typeQueryExpr = &node->data.typeQueryExpression;
+    if (typeQueryExpr->operand == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Type query expression requires an operand", node->location);
+        return;
+    }
+
+    if (ZrParser_Compiler_EmitTypeQueryExpression(cs, typeQueryExpr->operand, node->location) == (TZrUInt32)-1 &&
+        !cs->hasError) {
+        ZrParser_Compiler_Error(cs, "Failed to compile type query expression", node->location);
+    }
+}
+
 // 编译主表达式（属性访问链和函数调用链）
 void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -291,7 +315,7 @@ void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    currentSlot = cs->stackSlotCount - 1;
+    currentSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
     resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
     rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
     if (cs->hasError) {
@@ -320,6 +344,9 @@ void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *no
     }
 
     if (resolve_construct_target_type_name(cs, prototypeExpr->target, ZR_NULL) == ZR_NULL) {
+        if (cs->hasError) {
+            return;
+        }
         ZrParser_Compiler_Error(cs,
                                 "Prototype reference target must resolve to a registered prototype",
                                 node->location);
@@ -354,6 +381,9 @@ void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node) {
 
     typeName = resolve_construct_target_type_name(cs, constructExpr->target, &prototypeType);
     if (typeName == ZR_NULL) {
+        if (cs->hasError) {
+            return;
+        }
         ZrParser_Compiler_Error(cs,
                                 "Prototype construction target must resolve to a registered prototype",
                                 node->location);
@@ -368,15 +398,6 @@ void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node) {
     if (prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {
         ZrParser_Compiler_Error(cs, "Interface prototypes cannot be constructed", node->location);
         return;
-    }
-
-    {
-        TZrSize savedStackCount = cs->stackSlotCount;
-        compile_expression_non_tail(cs, constructExpr->target);
-        if (cs->hasError) {
-            return;
-        }
-        ZrParser_Compiler_TrimStackToCount(cs, savedStackCount);
     }
 
     op = constructExpr->isNew ? "new" : "$";

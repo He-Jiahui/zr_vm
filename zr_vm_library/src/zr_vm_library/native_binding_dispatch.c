@@ -382,7 +382,7 @@ TZrBool ZrLib_CallContext_ReadBool(const ZrLibCallContext *context, TZrSize inde
     }
 
     if (outValue != ZR_NULL) {
-        *outValue = value->value.nativeObject.nativeBool;
+        *outValue = value->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
     }
     return ZR_TRUE;
 }
@@ -609,6 +609,21 @@ const SZrTypeValue *ZrLib_Array_Get(SZrState *state, SZrObject *array, TZrSize i
     return ZrCore_Object_GetValue(state, array, &key);
 }
 
+static SZrString *native_binding_extract_open_generic_base_name(SZrState *state, const TZrChar *typeName) {
+    const TZrChar *genericStart;
+
+    if (state == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    genericStart = strchr(typeName, '<');
+    if (genericStart == ZR_NULL || genericStart == typeName) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(state, (TZrNativeString)typeName, (TZrSize)(genericStart - typeName));
+}
+
 SZrObjectPrototype *ZrLib_Type_FindPrototype(SZrState *state, const TZrChar *typeName) {
     SZrTypeValue key;
     SZrString *typeString;
@@ -628,7 +643,17 @@ SZrObjectPrototype *ZrLib_Type_FindPrototype(SZrState *state, const TZrChar *typ
     key.type = ZR_VALUE_TYPE_STRING;
     value = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, state->global->zrObject.value.object), &key);
     if (value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT) {
-        return ZR_NULL;
+        SZrString *openBaseName = native_binding_extract_open_generic_base_name(state, typeName);
+        if (openBaseName == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(openBaseName));
+        key.type = ZR_VALUE_TYPE_STRING;
+        value = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, state->global->zrObject.value.object), &key);
+        if (value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT) {
+            return ZR_NULL;
+        }
     }
 
     return (SZrObjectPrototype *)ZR_CAST_OBJECT(state, value->value.object);

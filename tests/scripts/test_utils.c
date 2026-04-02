@@ -56,7 +56,7 @@ SZrTestResult* parse_and_compile(SZrState* state, const TZrChar* source, TZrSize
     // 创建源文件名
     SZrString* sourceNameStr = ZR_NULL;
     if (sourceName != ZR_NULL) {
-        sourceNameStr = ZrCore_String_Create(state, sourceName, strlen(sourceName));
+        sourceNameStr = ZrCore_String_Create(state, (TZrNativeString)sourceName, strlen(sourceName));
     } else {
         sourceNameStr = ZrCore_String_Create(state, "test.zr", 7);
     }
@@ -109,6 +109,8 @@ void get_test_case_path(const TZrChar* fileName, TZrChar* outPath, TZrSize maxLe
 
 // 辅助函数：将AST节点序列化为JSON（简化版本）
 static cJSON* ast_node_to_json(SZrState* state, SZrAstNode* node) {
+    ZR_UNUSED_PARAMETER(state);
+
     if (node == ZR_NULL) {
         return cJSON_CreateNull();
     }

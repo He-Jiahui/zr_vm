@@ -25,12 +25,12 @@ enum {
 };
 
 static const ZrLibConstantDescriptor g_math_constants[] = {
-        {"PI", ZR_LIB_CONSTANT_KIND_FLOAT, 0, M_PI, ZR_NULL, ZR_FALSE, ZR_NULL},
-        {"TAU", ZR_LIB_CONSTANT_KIND_FLOAT, 0, M_PI * 2.0, ZR_NULL, ZR_FALSE, ZR_NULL},
-        {"E", ZR_LIB_CONSTANT_KIND_FLOAT, 0, 2.71828182845904523536, ZR_NULL, ZR_FALSE, ZR_NULL},
-        {"EPSILON", ZR_LIB_CONSTANT_KIND_FLOAT, 0, ZR_MATH_EPSILON, ZR_NULL, ZR_FALSE, ZR_NULL},
-        {"INF", ZR_LIB_CONSTANT_KIND_FLOAT, 0, INFINITY, ZR_NULL, ZR_FALSE, ZR_NULL},
-        {"NAN", ZR_LIB_CONSTANT_KIND_FLOAT, 0, NAN, ZR_NULL, ZR_FALSE, ZR_NULL},
+        {"PI", ZR_LIB_CONSTANT_KIND_FLOAT, 0, M_PI, ZR_NULL, ZR_FALSE, ZR_NULL, "float"},
+        {"TAU", ZR_LIB_CONSTANT_KIND_FLOAT, 0, M_PI * 2.0, ZR_NULL, ZR_FALSE, ZR_NULL, "float"},
+        {"E", ZR_LIB_CONSTANT_KIND_FLOAT, 0, 2.71828182845904523536, ZR_NULL, ZR_FALSE, ZR_NULL, "float"},
+        {"EPSILON", ZR_LIB_CONSTANT_KIND_FLOAT, 0, ZR_MATH_EPSILON, ZR_NULL, ZR_FALSE, ZR_NULL, "float"},
+        {"INF", ZR_LIB_CONSTANT_KIND_FLOAT, 0, INFINITY, ZR_NULL, ZR_FALSE, ZR_NULL, "float"},
+        {"NAN", ZR_LIB_CONSTANT_KIND_FLOAT, 0, NAN, ZR_NULL, ZR_FALSE, ZR_NULL, "float"},
 };
 
 static ZrLibFunctionDescriptor g_math_functions[ZR_MATH_MAX_FUNCTIONS];
@@ -147,6 +147,11 @@ static void zr_math_initialize_module_descriptor(void) {
     g_math_module_descriptor.typeHintsJson = g_math_type_hints_json;
     g_math_module_descriptor.documentation =
             "Built-in numeric algorithms, vector and matrix types, complex values, quaternions and tensors.";
+    g_math_module_descriptor.moduleLinks = ZR_NULL;
+    g_math_module_descriptor.moduleLinkCount = 0;
+    g_math_module_descriptor.moduleVersion = "1.0.0";
+    g_math_module_descriptor.minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION;
+    g_math_module_descriptor.requiredCapabilities = 0;
 
     g_math_initialized = ZR_TRUE;
 }

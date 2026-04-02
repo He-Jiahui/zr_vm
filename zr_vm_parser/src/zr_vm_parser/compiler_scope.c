@@ -168,8 +168,23 @@ void resolve_label(SZrCompilerState *cs, TZrSize labelId) {
 
 // 添加待解析的跳转（在 compiler.c 中定义，在 ZrParser_Statement_Compile.c 和 ZrParser_Expression_Compile.c 中使用）
 void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId) {
+    SZrLabel *label;
+
     if (cs == ZR_NULL || cs->hasError) {
         return;
+    }
+
+    if (labelId < cs->labels.length) {
+        label = (SZrLabel *)ZrCore_Array_Get(&cs->labels, labelId);
+        if (label != ZR_NULL && label->isResolved && instructionIndex < cs->instructions.length) {
+            TZrInstruction *jumpInst =
+                    (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, instructionIndex);
+            if (jumpInst != ZR_NULL) {
+                jumpInst->instruction.operand.operand2[0] =
+                        (TZrInt32)label->instructionIndex - (TZrInt32)instructionIndex - 1;
+            }
+            return;
+        }
     }
 
     SZrPendingJump pendingJump;

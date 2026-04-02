@@ -48,7 +48,8 @@ typedef struct {
 } while(0)
 
 #define TEST_FAIL_CUSTOM(timer, summary, reason) do { \
-    double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
+    clock_t failureTime = clock(); \
+    double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
 } while(0)
@@ -194,7 +195,7 @@ static void assert_compile_time_compile_failure(SZrState* state, const TZrChar* 
 // ==================== 编译期执行测试 ====================
 
 // 测试1: 编译期变量声明和使用
-void test_compile_time_variables(void) {
+static void test_compile_time_variables(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Variables";
     
@@ -255,7 +256,7 @@ void test_compile_time_variables(void) {
 }
 
 // 测试2: 编译期函数声明和调用
-void test_compile_time_functions(void) {
+static void test_compile_time_functions(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Functions";
     
@@ -382,7 +383,7 @@ static void test_compile_time_expressions(void) {
 }
 
 // 测试4: 编译期递归调用
-void test_compile_time_recursion(void) {
+static void test_compile_time_recursion(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Recursion";
     
@@ -447,7 +448,7 @@ void test_compile_time_recursion(void) {
 }
 
 // 测试5: 编译期语句块
-void test_compile_time_statements(void) {
+static void test_compile_time_statements(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Statement Blocks";
     
@@ -512,7 +513,7 @@ void test_compile_time_statements(void) {
 }
 
 // 测试6: 编译期数组大小验证
-void test_compile_time_array_validation(void) {
+static void test_compile_time_array_validation(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Array Size Validation";
     
@@ -574,7 +575,7 @@ void test_compile_time_array_validation(void) {
 }
 
 // 测试7: 编译期函数结果投影到后续运行时代码编译
-void test_compile_time_function_projection_to_runtime(void) {
+static void test_compile_time_function_projection_to_runtime(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Function Projection";
 
@@ -635,7 +636,7 @@ void test_compile_time_function_projection_to_runtime(void) {
 }
 
 // 测试8: %compileTime block 内声明持久注册并投影到运行时代码
-void test_compile_time_block_persistent_registration(void) {
+static void test_compile_time_block_persistent_registration(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Block Persistent Registration";
 
@@ -699,7 +700,7 @@ void test_compile_time_block_persistent_registration(void) {
 }
 
 // 测试9: 编译期函数命名参数和默认参数投影
-void test_compile_time_named_and_default_argument_projection(void) {
+static void test_compile_time_named_and_default_argument_projection(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Named Default Projection";
 
@@ -762,7 +763,7 @@ void test_compile_time_named_and_default_argument_projection(void) {
 }
 
 // 测试10: %compileTime block 内前向依赖应给出诊断并阻止编译
-void test_compile_time_block_forward_reference_diagnostic(void) {
+static void test_compile_time_block_forward_reference_diagnostic(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Block Forward Reference";
 
@@ -795,7 +796,7 @@ void test_compile_time_block_forward_reference_diagnostic(void) {
 }
 
 // 测试11: 重复声明采用最后一次覆盖策略
-void test_compile_time_duplicate_declaration_override(void) {
+static void test_compile_time_duplicate_declaration_override(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Duplicate Override";
 
@@ -847,7 +848,7 @@ void test_compile_time_duplicate_declaration_override(void) {
 }
 
 // 测试12: 编译期对象成员调用投影
-void test_compile_time_member_call_projection(void) {
+static void test_compile_time_member_call_projection(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Member Call Projection";
 
@@ -893,7 +894,7 @@ void test_compile_time_member_call_projection(void) {
 }
 
 // 测试13: import + member-call 的编译期投影
-void test_compile_time_import_member_call_projection(void) {
+static void test_compile_time_import_member_call_projection(void) {
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "helper",
@@ -955,7 +956,7 @@ void test_compile_time_import_member_call_projection(void) {
 }
 
 // 测试14: 编译期对象中包含 compile-time function ref 时禁止投影到 runtime
-void test_compile_time_projection_rejects_function_ref_leak(void) {
+static void test_compile_time_projection_rejects_function_ref_leak(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Reject Function Ref Leak";
 
@@ -990,7 +991,7 @@ void test_compile_time_projection_rejects_function_ref_leak(void) {
 }
 
 // 测试15: 更深层 import/member-call 组合的编译期投影
-void test_compile_time_import_deep_member_call_projection(void) {
+static void test_compile_time_import_deep_member_call_projection(void) {
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "helper",
@@ -1083,3 +1084,4 @@ int main(void) {
     
     return UNITY_END();
 }
+

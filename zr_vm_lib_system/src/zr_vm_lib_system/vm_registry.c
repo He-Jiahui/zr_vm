@@ -46,7 +46,9 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
              ZR_NULL,
              ZR_TRUE,
              ZR_TRUE,
-             "SystemVmState()"},
+             "SystemVmState()",
+             ZR_NULL,
+             0},
             {"SystemLoadedModuleInfo",
              ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
              kLoadedModuleInfoFields,
@@ -64,12 +66,14 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
              ZR_NULL,
              ZR_TRUE,
              ZR_TRUE,
-             "SystemLoadedModuleInfo()"},
+             "SystemLoadedModuleInfo()",
+             ZR_NULL,
+             0},
     };
     static const ZrLibFunctionDescriptor kFunctions[] = {
-            {"loadedModules", 0, 0, ZrSystem_Vm_LoadedModules, "SystemLoadedModuleInfo[]", "Return metadata for all loaded modules."},
-            {"state", 0, 0, ZrSystem_Vm_State, "SystemVmState", "Return a snapshot of VM execution state."},
-            {"callModuleExport", 3, 3, ZrSystem_Vm_CallModuleExport, "value", "Call an export from another module."},
+            {"loadedModules", 0, 0, ZrSystem_Vm_LoadedModules, "SystemLoadedModuleInfo[]", "Return metadata for all loaded modules.", ZR_NULL, 0},
+            {"state", 0, 0, ZrSystem_Vm_State, "SystemVmState", "Return a snapshot of VM execution state.", ZR_NULL, 0},
+            {"callModuleExport", 3, 3, ZrSystem_Vm_CallModuleExport, "value", "Call an export from another module.", ZR_NULL, 0},
     };
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"loadedModules", "function", "loadedModules(): SystemLoadedModuleInfo[]", "Return metadata for all loaded modules."},
@@ -97,6 +101,9 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
             kHintsJson,
             "VM inspection and module invocation helpers.",
             ZR_NULL,
+            0,
+            "1.0.0",
+            ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
             0,
     };
 

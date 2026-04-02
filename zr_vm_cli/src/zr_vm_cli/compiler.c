@@ -490,7 +490,7 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
         return ZR_FALSE;
     }
 
-    sourceName = ZrCore_String_CreateFromNative(state, record->sourcePath);
+    sourceName = ZrCore_String_CreateFromNative(state, (TZrNativeString)record->sourcePath);
     function = ZrParser_Source_Compile(state, source, sourceLength, sourceName);
     free(source);
 
@@ -531,11 +531,12 @@ static TZrBool zr_cli_module_depends_on_dirty(const SZrCliModuleCollection *coll
 }
 
 static TZrBool zr_cli_module_has_required_outputs(const SZrCliModuleRecord *record, TZrBool emitIntermediate) {
-    if (record == ZR_NULL || ZrLibrary_File_Exist(record->zroPath) != ZR_LIBRARY_FILE_IS_FILE) {
+    if (record == ZR_NULL || ZrLibrary_File_Exist((TZrNativeString)record->zroPath) != ZR_LIBRARY_FILE_IS_FILE) {
         return ZR_FALSE;
     }
 
-    if (emitIntermediate && ZrLibrary_File_Exist(record->zriPath) != ZR_LIBRARY_FILE_IS_FILE) {
+    if (emitIntermediate &&
+        ZrLibrary_File_Exist((TZrNativeString)record->zriPath) != ZR_LIBRARY_FILE_IS_FILE) {
         return ZR_FALSE;
     }
 

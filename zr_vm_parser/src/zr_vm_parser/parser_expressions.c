@@ -80,9 +80,14 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     }
 
     if (token == ZR_TK_PERCENT) {
-        SZrAstNode *node = current_percent_directive_equals(ps, "import")
-                               ? parse_reserved_import_expression(ps)
-                               : parse_percent_ownership_expression(ps);
+        SZrAstNode *node = ZR_NULL;
+        if (current_percent_directive_equals(ps, "import")) {
+            node = parse_reserved_import_expression(ps);
+        } else if (current_percent_directive_equals(ps, "type")) {
+            node = parse_reserved_type_expression(ps);
+        } else {
+            node = parse_percent_ownership_expression(ps);
+        }
         if (node == ZR_NULL) {
             return ZR_NULL;
         }

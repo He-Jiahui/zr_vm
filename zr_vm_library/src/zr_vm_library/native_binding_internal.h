@@ -85,11 +85,11 @@ typedef struct ZrLibrary_NativeRegistryState {
     TZrChar lastErrorMessage[512];
 } ZrLibrary_NativeRegistryState;
 
-static const TZrChar *kNativeEnumValueFieldName = "__zr_enumValue";
-static const TZrChar *kNativeEnumNameFieldName = "__zr_enumName";
-static const TZrChar *kNativeEnumValueTypeFieldName = "__zr_enumValueTypeName";
-static const TZrChar *kNativeAllowValueConstructionFieldName = "__zr_allowValueConstruction";
-static const TZrChar *kNativeAllowBoxedConstructionFieldName = "__zr_allowBoxedConstruction";
+#define kNativeEnumValueFieldName "__zr_enumValue"
+#define kNativeEnumNameFieldName "__zr_enumName"
+#define kNativeEnumValueTypeFieldName "__zr_enumValueTypeName"
+#define kNativeAllowValueConstructionFieldName "__zr_allowValueConstruction"
+#define kNativeAllowBoxedConstructionFieldName "__zr_allowBoxedConstruction"
 
 typedef const ZrLibModuleDescriptor *(*FZrVmGetNativeModuleV1)(void);
 

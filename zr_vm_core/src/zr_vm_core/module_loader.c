@@ -3,6 +3,7 @@
 //
 
 #include "module_internal.h"
+#include "zr_vm_core/reflection.h"
 
 static TZrBool refill_io_chunk(SZrIo *io) {
     SZrState *state;
@@ -255,6 +256,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
 
     pathHash = ZrCore_Module_CalculatePathHash(state, path);
     ZrCore_Module_SetInfo(state, module, ZR_NULL, pathHash, path);
+    ZrCore_Reflection_AttachModuleRuntimeMetadata(state, module, func);
 
     if (func != ZR_NULL) {
         ZrCore_Module_CreatePrototypesFromConstants(state, module, func);

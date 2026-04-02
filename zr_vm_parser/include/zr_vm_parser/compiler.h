@@ -76,6 +76,8 @@ typedef struct SZrCompilerState {
     // 错误处理
     TZrBool hasError;
     const TZrChar *errorMessage;
+    TZrChar *errorMessageStorage;
+    TZrSize errorMessageStorageCapacity;
     SZrFileRange errorLocation;
     TZrBool hasFatalError;                  // 是否有致命错误（阻止编译完成）
     TZrBool hasCompileTimeError;            // 是否发生过编译期错误（不能在后续语句中被吞掉）
@@ -208,6 +210,16 @@ typedef struct SZrChildFunctionNameMap {
 } SZrChildFunctionNameMap;
 
 // 编译时存储的 Prototype 信息
+typedef struct SZrTypeGenericParameterInfo {
+    SZrString *name;                    // 泛型参数名称
+    EZrGenericParameterKind genericKind; // 泛型参数类别（类型 / const int）
+    EZrGenericVariance variance;        // 方差信息（当前主要用于 interface 元数据）
+    TZrBool requiresClass;             // class 约束
+    TZrBool requiresStruct;            // struct 约束
+    TZrBool requiresNew;               // new() 约束
+    SZrArray constraintTypeNames;       // 约束类型名称数组（SZrString*）
+} SZrTypeGenericParameterInfo;
+
 typedef struct SZrTypePrototypeInfo {
     SZrString *name;                    // 类型名称
     EZrObjectPrototypeType type;        // STRUCT 或 CLASS
@@ -216,6 +228,7 @@ typedef struct SZrTypePrototypeInfo {
     SZrArray inherits;                  // 继承的类型引用（SZrString* 数组，存储类型名称字符串）
     SZrString *extendsTypeName;         // 单继承目标（如有）
     SZrArray implements;                // 实现/扩展的接口引用（SZrString* 数组）
+    SZrArray genericParameters;         // 泛型参数信息（SZrTypeGenericParameterInfo）
     SZrArray members;                   // 成员信息（字段、方法等，存储 SZrTypeMemberInfo）
     SZrString *enumValueTypeName;       // enum 底层值类型
     TZrBool allowValueConstruction;     // 是否允许 $Type(...)
@@ -248,6 +261,9 @@ typedef struct SZrTypeMemberInfo {
       TZrUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
       TZrUInt32 parameterCount;             // 参数数量
       SZrArray parameterTypes;              // 参数类型数组（SZrInferredType）
+      SZrArray genericParameters;           // 泛型参数信息（SZrTypeGenericParameterInfo）
+      SZrArray parameterPassingModes;       // 参数传递模式（EZrParameterPassingMode）
+      SZrAstNode *declarationNode;          // 声明节点（可选）
       EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
     TZrBool isMetaMethod;                 // 是否为元方法
     SZrString *returnTypeName;          // 返回类型名称（字符串表示，用于运行时类型查找）
@@ -314,6 +330,9 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode
 // 公开的低层编译入口，用于语义/HIR 相关测试和分阶段编译接线
 ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API void ZrParser_Compiler_CompileStructDeclaration(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API void ZrParser_Compiler_CompileClassDeclaration(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API void ZrParser_Compiler_CompileInterfaceDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements);
 ZR_PARSER_API void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNode *node);
 

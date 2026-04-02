@@ -74,7 +74,8 @@ typedef struct {
 } while(0)
 
 #define TEST_FAIL_CUSTOM(timer, summary, reason) do { \
-    double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
+    clock_t failureTime = clock(); \
+    double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
 } while(0)
@@ -150,7 +151,7 @@ static char* find_test_file(const char* filename) {
 // ==================== Lexer 测试 ====================
 
 // 测试字符字面量 token 识别
-void test_lexer_char_literal_token(void) {
+static void test_lexer_char_literal_token(void) {
     TEST_START("Lexer Char Literal Token Recognition");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -189,7 +190,7 @@ void test_lexer_char_literal_token(void) {
 }
 
 // 测试字符串字面量 token 识别
-void test_lexer_string_literal_token(void) {
+static void test_lexer_string_literal_token(void) {
     TEST_START("Lexer String Literal Token Recognition");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -227,7 +228,7 @@ void test_lexer_string_literal_token(void) {
     }
 }
 
-void test_lexer_integer_literal_preserves_numeric_and_raw_literal(void) {
+static void test_lexer_integer_literal_preserves_numeric_and_raw_literal(void) {
     TEST_START("Lexer Integer Literal Preserves Numeric And Raw Literal");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -268,7 +269,7 @@ void test_lexer_integer_literal_preserves_numeric_and_raw_literal(void) {
 }
 
 // 测试字符转义序列
-void test_lexer_char_escape_sequences(void) {
+static void test_lexer_char_escape_sequences(void) {
     TEST_START("Lexer Char Escape Sequences");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -320,7 +321,7 @@ void test_lexer_char_escape_sequences(void) {
 // ==================== Parser 测试 ====================
 
 // 测试字符字面量 AST 节点创建
-void test_parser_char_literal_ast(void) {
+static void test_parser_char_literal_ast(void) {
     TEST_START("Parser Char Literal AST Creation");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -368,7 +369,7 @@ void test_parser_char_literal_ast(void) {
 }
 
 // 测试类型转换表达式 AST 节点创建
-void test_parser_type_cast_ast(void) {
+static void test_parser_type_cast_ast(void) {
     TEST_START("Parser Type Cast AST Creation");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -416,7 +417,7 @@ void test_parser_type_cast_ast(void) {
 }
 
 // 测试基本类型转换解析
-void test_parser_basic_type_cast(void) {
+static void test_parser_basic_type_cast(void) {
     TEST_START("Parser Basic Type Cast Parsing");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -491,7 +492,7 @@ void test_parser_basic_type_cast(void) {
 // ==================== Compiler 测试 ====================
 
 // 测试字符字面量编译
-void test_compiler_char_literal(void) {
+static void test_compiler_char_literal(void) {
     TEST_START("Compiler Char Literal Compilation");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -541,7 +542,7 @@ void test_compiler_char_literal(void) {
 }
 
 // 测试基本类型转换编译
-void test_compiler_basic_type_cast(void) {
+static void test_compiler_basic_type_cast(void) {
     TEST_START("Compiler Basic Type Cast Compilation");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -596,7 +597,7 @@ void test_compiler_basic_type_cast(void) {
 }
 
 // 测试 struct 类型转换编译
-void test_compiler_struct_type_cast(void) {
+static void test_compiler_struct_type_cast(void) {
     TEST_START("Compiler Struct Type Cast Compilation");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -669,7 +670,7 @@ void test_compiler_struct_type_cast(void) {
 }
 
 // 测试 class 类型转换编译
-void test_compiler_class_type_cast(void) {
+static void test_compiler_class_type_cast(void) {
     TEST_START("Compiler Class Type Cast Compilation");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -744,7 +745,7 @@ void test_compiler_class_type_cast(void) {
 // ==================== Execution 测试 ====================
 
 // 测试基本类型转换执行
-void test_execution_basic_type_cast(void) {
+static void test_execution_basic_type_cast(void) {
     TEST_START("Execution Basic Type Cast");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -814,7 +815,7 @@ void test_execution_basic_type_cast(void) {
 }
 
 // 测试所有类型转换指令是否存在
-void test_type_cast_instructions_defined(void) {
+static void test_type_cast_instructions_defined(void) {
     TEST_START("Type Cast Instructions Definition");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -843,7 +844,7 @@ void test_type_cast_instructions_defined(void) {
 // ==================== 综合测试 ====================
 
 // 测试完整的字符字面量流程（lexer -> parser -> compiler）
-void test_char_literal_full_pipeline(void) {
+static void test_char_literal_full_pipeline(void) {
     TEST_START("Char Literal Full Pipeline");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -913,7 +914,7 @@ void test_char_literal_full_pipeline(void) {
 }
 
 // 测试完整的类型转换流程（parser -> compiler）
-void test_type_cast_full_pipeline(void) {
+static void test_type_cast_full_pipeline(void) {
     TEST_START("Type Cast Full Pipeline");
     SZrTestTimer timer;
     timer.startTime = clock();
@@ -1001,6 +1002,10 @@ void test_type_cast_full_pipeline(void) {
 // 主测试函数
 int main(void) {
     UNITY_BEGIN();
+    ZR_UNUSED_PARAMETER(&test_compiler_struct_type_cast);
+    ZR_UNUSED_PARAMETER(&test_compiler_class_type_cast);
+    ZR_UNUSED_PARAMETER(&test_char_literal_full_pipeline);
+    ZR_UNUSED_PARAMETER(&test_type_cast_full_pipeline);
     
     TEST_MODULE_DIVIDER();
     
@@ -1050,3 +1055,4 @@ int main(void) {
     
     return UNITY_END();
 }
+

@@ -29,7 +29,8 @@
 } while (0)
 
 #define TEST_FAIL_CUSTOM(timer, summary, reason) do { \
-    double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
+    clock_t failureTime = clock(); \
+    double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
 } while (0)
@@ -148,19 +149,19 @@ static void assert_script_case_passes(const SZrScriptRegressionCase *testCase) {
     TEST_ASSERT_TRUE(run_test_case(testCase->summary, testCase->fileName));
 }
 
-void test_basic_script_smoke(void) {
+static void test_basic_script_smoke(void) {
     assert_script_case_passes(&ZR_SCRIPT_REGRESSION_CASES[0]);
 }
 
-void test_script_classes(void) {
+static void test_script_classes(void) {
     assert_script_case_passes(&ZR_SCRIPT_REGRESSION_CASES[1]);
 }
 
-void test_script_classes_full(void) {
+static void test_script_classes_full(void) {
     assert_script_case_passes(&ZR_SCRIPT_REGRESSION_CASES[2]);
 }
 
-void test_script_regression_matrix(void) {
+static void test_script_regression_matrix(void) {
     for (TZrSize i = 0; i < sizeof(ZR_SCRIPT_REGRESSION_CASES) / sizeof(ZR_SCRIPT_REGRESSION_CASES[0]); i++) {
         assert_script_case_passes(&ZR_SCRIPT_REGRESSION_CASES[i]);
     }
@@ -191,3 +192,4 @@ int main(void) {
 
     return UNITY_END();
 }
+

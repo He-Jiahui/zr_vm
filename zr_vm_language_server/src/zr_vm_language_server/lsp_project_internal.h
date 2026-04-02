@@ -32,6 +32,12 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext 
 
 void ZrLanguageServer_LspProject_FreeImportBindings(SZrState *state, SZrArray *bindings);
 void ZrLanguageServer_LspProject_CollectImportBindings(SZrState *state, SZrAstNode *node, SZrArray *bindings);
+SZrLspImportBinding *ZrLanguageServer_LspProject_FindImportBindingByAlias(SZrArray *bindings, SZrString *aliasName);
+TZrBool ZrLanguageServer_LspProject_FindImportBindingHit(SZrAstNode *node,
+                                                         SZrArray *bindings,
+                                                         SZrFileRange position,
+                                                         SZrLspImportBinding **outBinding,
+                                                         SZrFileRange *outLocation);
 TZrBool ZrLanguageServer_LspProject_FindImportedMemberHit(SZrAstNode *node,
                                                           SZrArray *bindings,
                                                           SZrFileRange position,

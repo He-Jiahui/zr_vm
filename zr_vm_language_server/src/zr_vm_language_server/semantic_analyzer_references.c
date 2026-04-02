@@ -4,6 +4,112 @@
 
 #include "semantic_analyzer_internal.h"
 
+static SZrFileRange semantic_make_identifier_reference_range(SZrString *name, SZrFileRange fallback) {
+    const TZrChar *text = semantic_string_native(name);
+    TZrSize length;
+
+    if (text == ZR_NULL || *text == '\0') {
+        return fallback;
+    }
+
+    length = strlen(text);
+    if (length == 0) {
+        return fallback;
+    }
+
+    if (fallback.start.offset > 0) {
+        fallback.end.offset = fallback.start.offset + length;
+    }
+    if (fallback.start.line > 0) {
+        fallback.end.line = fallback.start.line;
+    }
+    if (fallback.start.column > 0) {
+        fallback.end.column = fallback.start.column + (TZrInt32)length;
+    }
+
+    return fallback;
+}
+
+static void semantic_add_type_reference(SZrState *state,
+                                        SZrSemanticAnalyzer *analyzer,
+                                        SZrString *name,
+                                        SZrFileRange location) {
+    SZrSymbol *symbol;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->referenceTracker == ZR_NULL || name == ZR_NULL) {
+        return;
+    }
+
+    symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, name, location);
+    if (symbol != ZR_NULL) {
+        ZrLanguageServer_ReferenceTracker_AddReference(state,
+                                                       analyzer->referenceTracker,
+                                                       symbol,
+                                                       location,
+                                                       ZR_REFERENCE_READ);
+    }
+}
+
+static void semantic_collect_references_from_type_info(SZrState *state,
+                                                       SZrSemanticAnalyzer *analyzer,
+                                                       const SZrType *typeInfo) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || typeInfo == ZR_NULL || typeInfo->name == ZR_NULL) {
+        return;
+    }
+
+    if (typeInfo->name->type == ZR_AST_IDENTIFIER_LITERAL &&
+        typeInfo->name->data.identifier.name != ZR_NULL) {
+        semantic_add_type_reference(state,
+                                    analyzer,
+                                    typeInfo->name->data.identifier.name,
+                                    typeInfo->name->location);
+    } else if (typeInfo->name->type == ZR_AST_GENERIC_TYPE) {
+        SZrGenericType *genericType = (SZrGenericType *)&typeInfo->name->data.genericType;
+
+        if (genericType->name != ZR_NULL && genericType->name->name != ZR_NULL) {
+            semantic_add_type_reference(state,
+                                        analyzer,
+                                        genericType->name->name,
+                                        semantic_make_identifier_reference_range(genericType->name->name,
+                                                                                 typeInfo->name->location));
+        }
+
+        if (genericType->params != ZR_NULL && genericType->params->nodes != ZR_NULL) {
+            for (TZrSize index = 0; index < genericType->params->count; index++) {
+                SZrAstNode *paramNode = genericType->params->nodes[index];
+                if (paramNode == ZR_NULL) {
+                    continue;
+                }
+
+                if (paramNode->type == ZR_AST_TYPE) {
+                    semantic_collect_references_from_type_info(state, analyzer, &paramNode->data.type);
+                } else {
+                    ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, paramNode);
+                }
+            }
+        }
+    } else if (typeInfo->name->type == ZR_AST_TUPLE_TYPE) {
+        SZrTupleType *tupleType = (SZrTupleType *)&typeInfo->name->data.tupleType;
+
+        if (tupleType->elements != ZR_NULL && tupleType->elements->nodes != ZR_NULL) {
+            for (TZrSize index = 0; index < tupleType->elements->count; index++) {
+                SZrAstNode *elementNode = tupleType->elements->nodes[index];
+                if (elementNode != ZR_NULL && elementNode->type == ZR_AST_TYPE) {
+                    semantic_collect_references_from_type_info(state, analyzer, &elementNode->data.type);
+                }
+            }
+        }
+    }
+
+    if (typeInfo->subType != ZR_NULL) {
+        semantic_collect_references_from_type_info(state, analyzer, typeInfo->subType);
+    }
+
+    if (typeInfo->arraySizeExpression != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, typeInfo->arraySizeExpression);
+    }
+}
+
 void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state, SZrSemanticAnalyzer *analyzer, SZrAstNode *node) {
     if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL) {
         return;
@@ -76,6 +182,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
         case ZR_AST_VARIABLE_DECLARATION: {
             // 变量声明：递归处理 value（表达式可能包含引用）
             SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;
+            if (varDecl->typeInfo != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, varDecl->typeInfo);
+            }
             if (varDecl->value != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, varDecl->value);
             }
@@ -84,6 +193,16 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
 
         case ZR_AST_FUNCTION_DECLARATION: {
             SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
+            if (funcDecl->params != ZR_NULL && funcDecl->params->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < funcDecl->params->count; i++) {
+                    if (funcDecl->params->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, funcDecl->params->nodes[i]);
+                    }
+                }
+            }
+            if (funcDecl->returnType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, funcDecl->returnType);
+            }
             if (funcDecl->body != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, funcDecl->body);
             }
@@ -293,6 +412,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
 
         case ZR_AST_CLASS_FIELD: {
             SZrClassField *classField = &node->data.classField;
+            if (classField->typeInfo != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, classField->typeInfo);
+            }
             if (classField->init != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, classField->init);
             }
@@ -301,6 +423,16 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
 
         case ZR_AST_CLASS_METHOD: {
             SZrClassMethod *classMethod = &node->data.classMethod;
+            if (classMethod->params != ZR_NULL && classMethod->params->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < classMethod->params->count; i++) {
+                    if (classMethod->params->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, classMethod->params->nodes[i]);
+                    }
+                }
+            }
+            if (classMethod->returnType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, classMethod->returnType);
+            }
             if (classMethod->body != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, classMethod->body);
             }
@@ -315,6 +447,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
         }
 
         case ZR_AST_PROPERTY_GET: {
+            if (node->data.propertyGet.targetType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, node->data.propertyGet.targetType);
+            }
             if (node->data.propertyGet.body != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, node->data.propertyGet.body);
             }
@@ -322,11 +457,144 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
         }
 
         case ZR_AST_PROPERTY_SET: {
+            if (node->data.propertySet.targetType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, node->data.propertySet.targetType);
+            }
             if (node->data.propertySet.body != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, node->data.propertySet.body);
             }
             break;
         }
+
+        case ZR_AST_STRUCT_DECLARATION: {
+            SZrStructDeclaration *structDecl = &node->data.structDeclaration;
+            if (structDecl->inherits != ZR_NULL && structDecl->inherits->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < structDecl->inherits->count; i++) {
+                    if (structDecl->inherits->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, structDecl->inherits->nodes[i]);
+                    }
+                }
+            }
+            if (structDecl->members != ZR_NULL && structDecl->members->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < structDecl->members->count; i++) {
+                    if (structDecl->members->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, structDecl->members->nodes[i]);
+                    }
+                }
+            }
+            break;
+        }
+
+        case ZR_AST_STRUCT_FIELD: {
+            SZrStructField *structField = &node->data.structField;
+            if (structField->typeInfo != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, structField->typeInfo);
+            }
+            if (structField->init != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, structField->init);
+            }
+            break;
+        }
+
+        case ZR_AST_STRUCT_METHOD: {
+            SZrStructMethod *structMethod = &node->data.structMethod;
+            if (structMethod->params != ZR_NULL && structMethod->params->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < structMethod->params->count; i++) {
+                    if (structMethod->params->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, structMethod->params->nodes[i]);
+                    }
+                }
+            }
+            if (structMethod->returnType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, structMethod->returnType);
+            }
+            if (structMethod->body != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, structMethod->body);
+            }
+            break;
+        }
+
+        case ZR_AST_INTERFACE_DECLARATION: {
+            SZrInterfaceDeclaration *interfaceDecl = &node->data.interfaceDeclaration;
+            if (interfaceDecl->inherits != ZR_NULL && interfaceDecl->inherits->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < interfaceDecl->inherits->count; i++) {
+                    if (interfaceDecl->inherits->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, interfaceDecl->inherits->nodes[i]);
+                    }
+                }
+            }
+            if (interfaceDecl->members != ZR_NULL && interfaceDecl->members->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < interfaceDecl->members->count; i++) {
+                    if (interfaceDecl->members->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, interfaceDecl->members->nodes[i]);
+                    }
+                }
+            }
+            break;
+        }
+
+        case ZR_AST_INTERFACE_FIELD_DECLARATION:
+            if (node->data.interfaceFieldDeclaration.typeInfo != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, node->data.interfaceFieldDeclaration.typeInfo);
+            }
+            break;
+
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            if (node->data.interfaceMethodSignature.params != ZR_NULL &&
+                node->data.interfaceMethodSignature.params->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < node->data.interfaceMethodSignature.params->count; i++) {
+                    if (node->data.interfaceMethodSignature.params->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   node->data.interfaceMethodSignature.params->nodes[i]);
+                    }
+                }
+            }
+            if (node->data.interfaceMethodSignature.returnType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, node->data.interfaceMethodSignature.returnType);
+            }
+            break;
+
+        case ZR_AST_INTERFACE_PROPERTY_SIGNATURE:
+            if (node->data.interfacePropertySignature.typeInfo != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, node->data.interfacePropertySignature.typeInfo);
+            }
+            break;
+
+        case ZR_AST_INTERFACE_META_SIGNATURE:
+            if (node->data.interfaceMetaSignature.params != ZR_NULL &&
+                node->data.interfaceMetaSignature.params->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < node->data.interfaceMetaSignature.params->count; i++) {
+                    if (node->data.interfaceMetaSignature.params->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   node->data.interfaceMetaSignature.params->nodes[i]);
+                    }
+                }
+            }
+            if (node->data.interfaceMetaSignature.returnType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, node->data.interfaceMetaSignature.returnType);
+            }
+            break;
+
+        case ZR_AST_PARAMETER:
+            if (node->data.parameter.typeInfo != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, node->data.parameter.typeInfo);
+            }
+            if (node->data.parameter.genericTypeConstraints != ZR_NULL &&
+                node->data.parameter.genericTypeConstraints->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < node->data.parameter.genericTypeConstraints->count; i++) {
+                    SZrAstNode *constraintNode = node->data.parameter.genericTypeConstraints->nodes[i];
+                    if (constraintNode != ZR_NULL && constraintNode->type == ZR_AST_TYPE) {
+                        semantic_collect_references_from_type_info(state, analyzer, &constraintNode->data.type);
+                    }
+                }
+            }
+            break;
+
+        case ZR_AST_TYPE:
+            semantic_collect_references_from_type_info(state, analyzer, &node->data.type);
+            break;
         
         default:
             // TODO: 其他节点类型暂时跳过

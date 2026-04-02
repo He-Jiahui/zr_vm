@@ -60,7 +60,11 @@ static TZrBool emit_native_function_constant_to_slot_local(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    ZrCore_Value_InitAsNativePointer(cs->state, &constantValue, ZR_CAST_PTR(nativeFunction));
+    ZrCore_Value_ResetAsNull(&constantValue);
+    constantValue.type = ZR_VALUE_TYPE_NATIVE_POINTER;
+    constantValue.value.nativeFunction = nativeFunction;
+    constantValue.isGarbageCollectable = ZR_FALSE;
+    constantValue.isNative = ZR_TRUE;
     constantIndex = add_constant(cs, &constantValue);
     inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
                                 (TZrUInt16)slot,
@@ -518,7 +522,8 @@ TZrUInt32 emit_string_constant(SZrCompilerState *cs, SZrString *value) {
 
     TZrUInt32 constantIndex = add_constant(cs, &constantValue);
     TZrUInt32 slot = allocate_stack_slot(cs);
-    TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), slot, (TZrInt32)constantIndex);
+    TZrInstruction inst =
+            create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), ZR_COMPILE_SLOT_U16(slot), (TZrInt32)constantIndex);
     emit_instruction(cs, inst);
     return slot;
 }
@@ -622,6 +627,8 @@ TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, 
 }
 
 TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs, SZrMemberExpression *memberExpr, TZrUInt32 targetSlot) {
+    SZrInferredType inferredType;
+
     if (cs == ZR_NULL || memberExpr == ZR_NULL || memberExpr->property == ZR_NULL || cs->hasError) {
         return (TZrUInt32)-1;
     }
@@ -635,6 +642,22 @@ TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs, SZrMemberExpression
         if (emit_string_constant(cs, fieldName) == (TZrUInt32)-1) {
             return (TZrUInt32)-1;
         }
+        return normalize_top_result_to_slot(cs, targetSlot);
+    }
+
+    if (!memberExpr->computed && memberExpr->property->type == ZR_AST_TYPE) {
+        ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_AstTypeToInferredType_Convert(cs, &memberExpr->property->data.type, &inferredType)) {
+            ZrParser_InferredType_Free(cs->state, &inferredType);
+            return (TZrUInt32)-1;
+        }
+
+        if (inferredType.typeName == ZR_NULL || emit_string_constant(cs, inferredType.typeName) == (TZrUInt32)-1) {
+            ZrParser_InferredType_Free(cs->state, &inferredType);
+            return (TZrUInt32)-1;
+        }
+
+        ZrParser_InferredType_Free(cs->state, &inferredType);
         return normalize_top_result_to_slot(cs, targetSlot);
     }
 
@@ -659,6 +682,8 @@ TZrBool expression_uses_dynamic_object_access(SZrAstNode *node) {
             return ZR_TRUE;
         case ZR_AST_IMPORT_EXPRESSION:
             return ZR_FALSE;
+        case ZR_AST_TYPE_QUERY_EXPRESSION:
+            return expression_uses_dynamic_object_access(node->data.typeQueryExpression.operand);
         case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION:
             return expression_uses_dynamic_object_access(node->data.prototypeReferenceExpression.target);
         case ZR_AST_CONSTRUCT_EXPRESSION:

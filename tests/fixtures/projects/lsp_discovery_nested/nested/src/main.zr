@@ -1,0 +1,3 @@
+var helper = %import("helper");
+
+return helper.value;

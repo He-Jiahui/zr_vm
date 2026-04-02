@@ -1,0 +1,8 @@
+%owned class PointSet {
+    pub @constructor() {
+    }
+}
+
+takeFromPoolTest(): %unique PointSet {
+    return %unique new PointSet();
+}

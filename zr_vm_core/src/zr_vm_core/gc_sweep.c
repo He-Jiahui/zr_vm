@@ -30,8 +30,9 @@ SZrRawObject **garbage_collector_sweep_list(SZrState *state, SZrRawObject **list
             garbage_collector_free_object(state, object);
             (*count)++;
 
-            if (objectSize <= global->garbageCollector->gcDebtSize) {
-                global->garbageCollector->gcDebtSize -= objectSize;
+            TZrMemoryOffset objectDebt = (TZrMemoryOffset)objectSize;
+            if (objectDebt <= global->garbageCollector->gcDebtSize) {
+                global->garbageCollector->gcDebtSize -= objectDebt;
             } else {
                 global->garbageCollector->gcDebtSize = 0;
             }

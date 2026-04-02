@@ -24,7 +24,7 @@ static SZrString *global_state_create_permanent_string(SZrState *state, const TZ
         return ZR_NULL;
     }
 
-    stringObject = ZrCore_String_Create(state, text, strlen(text));
+    stringObject = ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
     if (stringObject != ZR_NULL) {
         ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(stringObject));
     }

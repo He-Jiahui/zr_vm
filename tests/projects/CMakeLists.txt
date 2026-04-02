@@ -13,6 +13,7 @@ set(NATIVE_CHAIN_CALLS_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/native_chain_c
 set(NATIVE_VECTOR3_EXPORT_PROBE_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/native_vector3_export_probe/native_vector3_export_probe.zrp)
 set(NATIVE_VECTOR3_CAPTURE_PROBE_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/native_vector3_capture_probe/native_vector3_capture_probe.zrp)
 set(NATIVE_NUMERIC_PIPELINE_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/native_numeric_pipeline/native_numeric_pipeline.zrp)
+set(CONTAINER_MATRIX_PROJECT_FILE ${ZR_VM_PROJECT_FIXTURES_DIR}/container_matrix/container_matrix.zrp)
 
 add_executable(
     zr_vm_project_fixture_builder
@@ -220,4 +221,24 @@ add_test(
 set_tests_properties(zr_project_native_numeric_pipeline_result PROPERTIES
     PASS_REGULAR_EXPRESSION "214"
     FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error|\\[closure\\]|null"
+)
+
+add_test(
+    NAME zr_project_container_matrix
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${CONTAINER_MATRIX_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_container_matrix PROPERTIES
+    PASS_REGULAR_EXPRESSION "CONTAINER_MATRIX_PASS"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error|null|Function value is NULL"
+)
+
+add_test(
+    NAME zr_project_container_matrix_result
+    COMMAND $<TARGET_FILE:zr_vm_cli_executable> ${CONTAINER_MATRIX_PROJECT_FILE}
+)
+
+set_tests_properties(zr_project_container_matrix_result PROPERTIES
+    PASS_REGULAR_EXPRESSION "635"
+    FAIL_REGULAR_EXPRESSION "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error|null|Function value is NULL"
 )

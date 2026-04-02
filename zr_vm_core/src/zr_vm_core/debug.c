@@ -29,8 +29,9 @@ TZrBool ZrCore_DebugInfo_Get(struct SZrState *state, EZrDebugInfoType type, SZrD
 }
 
 void ZrCore_Debug_CallError(struct SZrState *state, struct SZrTypeValue *value) {
-    ZR_TODO_PARAMETER(state);
-    ZR_TODO_PARAMETER(value);
+    ZrCore_Debug_RunError(state,
+                          "Attempted to call non-callable value (type=%d)",
+                          value != ZR_NULL ? (int)value->type : -1);
 }
 
 TZrDebugSignal ZrCore_Debug_TraceExecution(struct SZrState *state, const TZrInstruction *programCounter) {
@@ -86,11 +87,11 @@ ZR_NO_RETURN void ZrCore_Debug_RunError(struct SZrState *state, TZrNativeString 
 
 
 void ZrCore_Debug_ErrorWhenHandlingError(struct SZrState *state) {
-    ZR_UNUSED_PARAMETER(state);
-    // 处理错误处理过程中的错误
-    // 注意：这个函数在错误处理过程中被调用，需要避免递归错误
-    // TODO: 这里暂时不实现，因为错误处理过程中的错误处理需要特殊处理
-    // 未来可以实现错误处理链或错误恢复机制
+    if (state != ZR_NULL && state->global != ZR_NULL && state->global->panicHandlingFunction != ZR_NULL) {
+        ZR_THREAD_UNLOCK(state);
+        state->global->panicHandlingFunction(state);
+    }
+    ZR_ABORT();
 }
 
 
@@ -137,12 +138,17 @@ void ZrCore_Debug_HookReturn(struct SZrState *state, struct SZrCallInfo *callInf
             SZrTypeValue *functionValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
             SZrFunction *function = (ZR_CAST_VM_CLOSURE(state, functionValue->value.object))->function;
             if (function->hasVariableArguments) {
-                totalArgumentsCount = callInfo->context.context.variableArgumentCount + function->parameterCount + 1;
+                totalArgumentsCount = (TZrUInt32)(callInfo->context.context.variableArgumentCount +
+                                                  function->parameterCount + 1);
             }
         }
         callInfo->functionBase.valuePointer += totalArgumentsCount;
-        transferStart = ZR_CAST_UINT(stackPointer - callInfo->functionBase.valuePointer);
-        ZrCore_Debug_Hook(state, ZR_DEBUG_HOOK_EVENT_RETURN, -1, transferStart, resultCount);
+        transferStart = (TZrUInt32)(stackPointer - callInfo->functionBase.valuePointer);
+        ZrCore_Debug_Hook(state,
+                          ZR_DEBUG_HOOK_EVENT_RETURN,
+                          (TZrUInt32)-1,
+                          transferStart,
+                          (TZrUInt32)resultCount);
         callInfo->functionBase.valuePointer -= totalArgumentsCount;
     }
     callInfo = callInfo->previous;
@@ -484,7 +490,7 @@ ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, st
                     (const SZrCompiledMemberInfo *) (membersData + j * sizeof(SZrCompiledMemberInfo));
 
                 TZrUInt32 memberType = memberInfo->memberType;
-                TZrUInt32 nameStringIndex = memberInfo->nameStringIndex;
+                TZrUInt32 memberNameStringIndex = memberInfo->nameStringIndex;
                 TZrUInt32 memberAccess = memberInfo->accessModifier;
                 TZrUInt32 isStatic = memberInfo->isStatic;
                 TZrUInt32 fieldTypeNameStringIndex = memberInfo->fieldTypeNameStringIndex;
@@ -498,8 +504,8 @@ ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, st
 
                 // 读取成员名称
                 TZrNativeString memberNameStr = "<unnamed>";
-                if (nameStringIndex > 0 && nameStringIndex < entryFunction->constantValueLength) {
-                    const SZrTypeValue *nameConstant = &entryFunction->constantValueList[nameStringIndex];
+                if (memberNameStringIndex > 0 && memberNameStringIndex < entryFunction->constantValueLength) {
+                    const SZrTypeValue *nameConstant = &entryFunction->constantValueList[memberNameStringIndex];
                     if (nameConstant->type == ZR_VALUE_TYPE_STRING) {
                         SZrString *memberName = ZR_CAST_STRING(state, nameConstant->value.object);
                         if (memberName != ZR_NULL) {

@@ -24,6 +24,44 @@ TZrBool consume_token(SZrParserState *ps, EZrToken token) {
 
 EZrToken peek_token(SZrParserState *ps) { return ZrParser_Lexer_Lookahead(ps->lexer); }
 
+void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor) {
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL || cursor == ZR_NULL) {
+        return;
+    }
+
+    cursor->currentPos = ps->lexer->currentPos;
+    cursor->currentChar = ps->lexer->currentChar;
+    cursor->lineNumber = ps->lexer->lineNumber;
+    cursor->lastLine = ps->lexer->lastLine;
+    cursor->token = ps->lexer->t;
+    cursor->lookahead = ps->lexer->lookahead;
+    cursor->lookaheadPos = ps->lexer->lookaheadPos;
+    cursor->lookaheadChar = ps->lexer->lookaheadChar;
+    cursor->lookaheadLine = ps->lexer->lookaheadLine;
+    cursor->lookaheadLastLine = ps->lexer->lookaheadLastLine;
+    cursor->hasError = ps->hasError;
+    cursor->errorMessage = ps->errorMessage;
+}
+
+void restore_parser_cursor(SZrParserState *ps, const SZrParserCursor *cursor) {
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL || cursor == ZR_NULL) {
+        return;
+    }
+
+    ps->lexer->currentPos = cursor->currentPos;
+    ps->lexer->currentChar = cursor->currentChar;
+    ps->lexer->lineNumber = cursor->lineNumber;
+    ps->lexer->lastLine = cursor->lastLine;
+    ps->lexer->t = cursor->token;
+    ps->lexer->lookahead = cursor->lookahead;
+    ps->lexer->lookaheadPos = cursor->lookaheadPos;
+    ps->lexer->lookaheadChar = cursor->lookaheadChar;
+    ps->lexer->lookaheadLine = cursor->lookaheadLine;
+    ps->lexer->lookaheadLastLine = cursor->lookaheadLastLine;
+    ps->hasError = cursor->hasError;
+    ps->errorMessage = cursor->errorMessage;
+}
+
 TZrBool current_identifier_equals(SZrParserState *ps, const TZrChar *text) {
     SZrString *identName;
     TZrNativeString nameStr;
@@ -426,7 +464,7 @@ void get_line_snippet(SZrParserState *ps, TZrChar *buffer, TZrSize bufferSize, T
         TZrSize needed = 20 - (lineEnd - pos);
         if (snippetStart >= needed) {
             snippetStart -= needed;
-            displayColumn += needed;
+            displayColumn += (TZrInt32)needed;
         } else {
             snippetStart = 0;
             displayColumn = column;

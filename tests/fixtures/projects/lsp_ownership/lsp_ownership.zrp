@@ -1,0 +1,6 @@
+{
+  "name": "lsp_ownership",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

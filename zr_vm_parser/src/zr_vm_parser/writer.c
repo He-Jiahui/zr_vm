@@ -9,6 +9,7 @@
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/ownership.h"
+#include "zr_vm_core/reflection.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/debug.h"
@@ -56,7 +57,7 @@ static SZrString *get_string_from_constant(SZrState *state, SZrFunction *functio
     const SZrTypeValue *constant = &function->constantValueList[index];
     if (constant->type == ZR_VALUE_TYPE_STRING && constant->value.object != ZR_NULL) {
         SZrRawObject *rawObj = constant->value.object;
-        if (rawObj->type == ZR_VALUE_TYPE_STRING) {
+        if (rawObj->type == ZR_RAW_OBJECT_TYPE_STRING) {
             return ZR_CAST_STRING(state, rawObj);
         }
     }
@@ -79,124 +80,6 @@ static void write_io_reference(SZrState *state, FILE *file, TZrUInt32 stringInde
     // referenceIndex [8] (字符串索引)
     TZrSize referenceIndex = stringIndex;
     fwrite(&referenceIndex, sizeof(TZrSize), 1, file);
-}
-
-// 辅助函数：写入成员声明（FIELD/METHOD/PROPERTY/META）
-static void write_member_declare(SZrState *state, FILE *file, const SZrCompiledMemberInfo *memberInfo, SZrFunction *function) {
-    TZrUInt32 memberType = memberInfo->memberType;
-    TZrUInt32 nameStringIndex = memberInfo->nameStringIndex;
-    
-    // 确定EZrIoMemberDeclareType
-    TZrUInt32 ioMemberType;
-    if (memberType == ZR_AST_CONSTANT_STRUCT_FIELD || memberType == ZR_AST_CONSTANT_CLASS_FIELD) {
-        ioMemberType = ZR_IO_MEMBER_DECLARE_TYPE_FIELD;
-    } else if (memberType == ZR_AST_CONSTANT_STRUCT_METHOD || memberType == ZR_AST_CONSTANT_CLASS_METHOD) {
-        ioMemberType = ZR_IO_MEMBER_DECLARE_TYPE_METHOD;
-    } else if (memberType == ZR_AST_CONSTANT_CLASS_PROPERTY) {
-        ioMemberType = ZR_IO_MEMBER_DECLARE_TYPE_PROPERTY;
-    } else if (memberType == ZR_AST_CONSTANT_STRUCT_META_FUNCTION || memberType == ZR_AST_CONSTANT_CLASS_META_FUNCTION) {
-        ioMemberType = ZR_IO_MEMBER_DECLARE_TYPE_META;
-    } else {
-        // 未知类型，跳过
-        return;
-    }
-    
-    // TYPE [4]
-    fwrite(&ioMemberType, sizeof(EZrIoMemberDeclareType), 1, file);
-    
-    // 根据类型写入不同的数据
-    switch (ioMemberType) {
-        case ZR_IO_MEMBER_DECLARE_TYPE_FIELD: {
-            // .FIELD: NAME [string]
-            SZrString *fieldName = get_string_from_constant(state, function, nameStringIndex);
-            write_string_with_length(state, file, fieldName);
-            break;
-        }
-        case ZR_IO_MEMBER_DECLARE_TYPE_METHOD: {
-            // .METHOD: NAME [string], FUNCTIONS_LENGTH [8], FUNCTIONS [.FUNCTION]
-            // 函数引用需要从childFunctionList获取
-            SZrString *methodName = get_string_from_constant(state, function, nameStringIndex);
-            write_string_with_length(state, file, methodName);
-            
-            // 从functionConstantIndex获取函数引用
-            // functionConstantIndex可能指向：
-            // 1. 常量池中的函数对象（ZR_VALUE_TYPE_FUNCTION）
-            // 2. 常量池中的引用路径（需要解析）
-            TZrUInt32 functionConstantIndex = memberInfo->functionConstantIndex;
-            TZrSize functionsLength = 0;
-            
-            if (functionConstantIndex > 0 && functionConstantIndex < function->constantValueLength) {
-                const SZrTypeValue *funcConstant = &function->constantValueList[functionConstantIndex];
-                if (funcConstant->type == ZR_VALUE_TYPE_FUNCTION && funcConstant->value.object != ZR_NULL) {
-                    // 常量池中直接存储了函数对象
-                    functionsLength = 1;
-                } else if (funcConstant->type == ZR_VALUE_TYPE_STRING) {
-                    // 可能是引用路径（序列化为字符串）
-                    // 需要解析引用路径来找到childFunctionList中的函数
-                    // TODO: 这里暂时标记为有函数引用，但实际写入需要解析路径
-                    functionsLength = 1;
-                }
-            }
-            
-            // 如果functionConstantIndex为0或无效，尝试通过方法名在childFunctionList中查找
-            if (functionsLength == 0 && methodName != ZR_NULL && function->childFunctionLength > 0) {
-                for (TZrUInt32 i = 0; i < function->childFunctionLength; i++) {
-                    SZrFunction *childFunc = &function->childFunctionList[i];
-                    if (childFunc->functionName != ZR_NULL && ZrCore_String_Equal(childFunc->functionName, methodName)) {
-                        functionsLength = 1;
-                        break;
-                    }
-                }
-            }
-            
-            fwrite(&functionsLength, sizeof(TZrSize), 1, file);
-            
-            // 写入函数引用（如果有）
-            if (functionsLength > 0) {
-                // 注意：完整的函数序列化需要递归调用write_function
-                // TODO: 这里暂时写入函数索引或占位符
-                // 实际实现需要：
-                // 1. 如果常量池中是函数对象，直接序列化
-                // 2. 如果是引用路径，解析路径找到函数后序列化
-                // 3. 如果通过方法名找到，序列化对应的childFunction
-                // TODO: 由于函数序列化比较复杂，这里暂时跳过，后续可以完善
-            }
-            break;
-        }
-        case ZR_IO_MEMBER_DECLARE_TYPE_PROPERTY: {
-            // .PROPERTY: NAME [string], PROPERTY_TYPE [4], GETTER_FUNCTION [.FUNCTION], SETTER_FUNCTION [.FUNCTION]
-            SZrString *propertyName = get_string_from_constant(state, function, nameStringIndex);
-            write_string_with_length(state, file, propertyName);
-            
-            // PROPERTY_TYPE [4] (目前设为0)
-            TZrUInt32 propertyType = 0;
-            fwrite(&propertyType, sizeof(TZrUInt32), 1, file);
-            
-            // GETTER和SETTER函数引用需要从childFunctionList获取
-            // 注意：property的getter/setter可能通过不同的机制存储
-            // TODO: 这里暂时写入空的函数占位符，因为property的getter/setter存储方式可能不同
-            // 实际实现需要：
-            // 1. 从memberInfo中获取getter/setter的函数引用索引
-            // 2. 从常量池或childFunctionList中查找对应的函数
-            // 3. 序列化函数对象
-            // TODO: 由于property的getter/setter可能使用不同的存储机制，这里暂时跳过
-            // TODO: GETTER_FUNCTION [.FUNCTION] - 跳过（需要完整的函数序列化）
-            // TODO: SETTER_FUNCTION [.FUNCTION] - 跳过（需要完整的函数序列化）
-            break;
-        }
-        case ZR_IO_MEMBER_DECLARE_TYPE_META: {
-            // .META: META_TYPE [4], FUNCTIONS_LENGTH [8], FUNCTIONS [.FUNCTION]
-            TZrUInt32 metaType = memberInfo->metaType;
-            fwrite(&metaType, sizeof(TZrUInt32), 1, file);
-            
-            // FUNCTIONS_LENGTH [8] (目前设为0，函数引用暂不支持)
-            TZrSize functionsLength = 0;
-            fwrite(&functionsLength, sizeof(TZrSize), 1, file);
-            break;
-        }
-        default:
-            break;
-    }
 }
 
 // 辅助函数：写入CLASS prototype的结构化数据
@@ -222,17 +105,13 @@ static void write_prototype_class(SZrState *state, FILE *file, const SZrCompiled
     fwrite(&genericLength, sizeof(TZrSize), 1, file);
     
     // DECLARES_LENGTH [8]
-    TZrSize declaresLength = protoInfo->membersCount;
+    // Binary metadata only needs a stable type stub here. Member bodies are
+    // restored at runtime from function->prototypeData; writing partial
+    // METHOD/PROPERTY/META payloads desynchronizes the .zro reader.
+    TZrSize declaresLength = 0;
     fwrite(&declaresLength, sizeof(TZrSize), 1, file);
-    
-    // DECLARES [.CLASS_DECLARE] [.FIELD|.PROPERTY|.METHOD|.META]
-    if (declaresLength > 0) {
-        TZrSize inheritArraySize = superClassLength * sizeof(TZrUInt32);
-        const SZrCompiledMemberInfo *members = (const SZrCompiledMemberInfo *)(data + sizeof(SZrCompiledPrototypeInfo) + inheritArraySize);
-        for (TZrUInt32 i = 0; i < declaresLength; i++) {
-            write_member_declare(state, file, &members[i], function);
-        }
-    }
+
+    ZR_UNUSED_PARAMETER(data);
 }
 
 // 辅助函数：写入STRUCT prototype的结构化数据
@@ -258,22 +137,17 @@ static void write_prototype_struct(SZrState *state, FILE *file, const SZrCompile
     fwrite(&genericLength, sizeof(TZrSize), 1, file);
     
     // DECLARES_LENGTH [8]
-    TZrSize declaresLength = protoInfo->membersCount;
+    // See write_prototype_class(): binary import metadata only consumes the
+    // type stub, while runtime reconstruction uses prototypeData.
+    TZrSize declaresLength = 0;
     fwrite(&declaresLength, sizeof(TZrSize), 1, file);
-    
-    // DECLARES [.STRUCT_DECLARE] [.FIELD|.METHOD|.META]
-    if (declaresLength > 0) {
-        TZrSize inheritArraySize = superStructLength * sizeof(TZrUInt32);
-        const SZrCompiledMemberInfo *members = (const SZrCompiledMemberInfo *)(data + sizeof(SZrCompiledPrototypeInfo) + inheritArraySize);
-        for (TZrUInt32 i = 0; i < declaresLength; i++) {
-            write_member_declare(state, file, &members[i], function);
-        }
-    }
+
+    ZR_UNUSED_PARAMETER(data);
 }
 
 static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *function, const TZrChar *defaultName);
 
-static TZrUInt64 writer_get_serializable_native_helper_id(FZrNativeFunction function) {
+ZR_PARSER_API TZrUInt64 ZrParser_Writer_GetSerializableNativeHelperId(FZrNativeFunction function) {
     if (function == ZR_NULL) {
         return ZR_IO_NATIVE_HELPER_NONE;
     }
@@ -298,6 +172,10 @@ static TZrUInt64 writer_get_serializable_native_helper_id(FZrNativeFunction func
         return ZR_IO_NATIVE_HELPER_OWNERSHIP_USING;
     }
 
+    if (function == ZrCore_Reflection_TypeOfNativeEntry) {
+        return ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF;
+    }
+
     return ZR_IO_NATIVE_HELPER_NONE;
 }
 
@@ -308,7 +186,7 @@ static void write_function_name(SZrState *state, FILE *file, SZrFunction *functi
     }
 
     if (defaultName != ZR_NULL) {
-        SZrString *fallbackName = ZrCore_String_Create(state, defaultName, strlen(defaultName));
+        SZrString *fallbackName = ZrCore_String_Create(state, (TZrNativeString)defaultName, strlen(defaultName));
         write_string_with_length(state, file, fallbackName);
         return;
     }
@@ -322,8 +200,8 @@ static void write_function_local_variables(FILE *file, SZrFunction *function) {
 
     for (TZrUInt64 i = 0; i < localLength; i++) {
         SZrFunctionLocalVariable *local = &function->localVariableList[i];
-        TZrUInt64 instructionStart = local->offsetActivate;
-        TZrUInt64 instructionEnd = local->offsetDead;
+        TZrMemoryOffset instructionStart = local->offsetActivate;
+        TZrMemoryOffset instructionEnd = local->offsetDead;
         TZrUInt64 startLineLocal = 0;
         TZrUInt64 endLineLocal = 0;
         if (function->executionLocationInfoList != ZR_NULL && function->executionLocationInfoLength > 0) {
@@ -363,8 +241,12 @@ static void write_function_local_variables(FILE *file, SZrFunction *function) {
             }
         }
 
-        fwrite(&instructionStart, sizeof(TZrUInt64), 1, file);
-        fwrite(&instructionEnd, sizeof(TZrUInt64), 1, file);
+        {
+            TZrUInt64 instructionStartValue = (TZrUInt64)instructionStart;
+            TZrUInt64 instructionEndValue = (TZrUInt64)instructionEnd;
+            fwrite(&instructionStartValue, sizeof(TZrUInt64), 1, file);
+            fwrite(&instructionEndValue, sizeof(TZrUInt64), 1, file);
+        }
         fwrite(&startLineLocal, sizeof(TZrUInt64), 1, file);
         fwrite(&endLineLocal, sizeof(TZrUInt64), 1, file);
     }
@@ -419,7 +301,7 @@ static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *c
                     if (constant->isNative) {
                         SZrClosureNative *nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, rawObj);
                         if (nativeClosure != ZR_NULL) {
-                            helperId = writer_get_serializable_native_helper_id(nativeClosure->nativeFunction);
+                            helperId = ZrParser_Writer_GetSerializableNativeHelperId(nativeClosure->nativeFunction);
                         }
                     } else {
                         SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, rawObj);
@@ -438,8 +320,8 @@ static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *c
             break;
         }
         case ZR_VALUE_TYPE_NATIVE_POINTER: {
-            FZrNativeFunction nativeFunction = ZR_CAST_PTR(constant->value.nativeObject.nativePointer);
-            startLineConst = writer_get_serializable_native_helper_id(nativeFunction);
+            FZrNativeFunction nativeFunction = constant->value.nativeFunction;
+            startLineConst = ZrParser_Writer_GetSerializableNativeHelperId(nativeFunction);
             break;
         }
         default:
@@ -506,10 +388,68 @@ static void write_function_typed_export_symbols(FILE *file, SZrState *state, SZr
     }
 }
 
+static void write_function_metadata_parameters(FILE *file,
+                                               SZrState *state,
+                                               SZrFunctionMetadataParameter *parameters,
+                                               TZrUInt32 parameterCount) {
+    TZrUInt64 count = parameterCount;
+
+    fwrite(&count, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt32 index = 0; index < parameterCount; index++) {
+        write_string_with_length(state, file, parameters[index].name);
+        write_function_typed_type_ref(file, state, &parameters[index].type);
+    }
+}
+
+static void write_function_compile_time_metadata(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 variableCount = function != ZR_NULL ? function->compileTimeVariableInfoLength : 0;
+    TZrUInt64 functionCount = function != ZR_NULL ? function->compileTimeFunctionInfoLength : 0;
+
+    fwrite(&variableCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < variableCount; index++) {
+        SZrFunctionCompileTimeVariableInfo *info = &function->compileTimeVariableInfos[index];
+        write_string_with_length(state, file, info->name);
+        write_function_typed_type_ref(file, state, &info->type);
+        fwrite(&info->lineInSourceStart, sizeof(TZrUInt32), 1, file);
+        fwrite(&info->lineInSourceEnd, sizeof(TZrUInt32), 1, file);
+    }
+
+    fwrite(&functionCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < functionCount; index++) {
+        SZrFunctionCompileTimeFunctionInfo *info = &function->compileTimeFunctionInfos[index];
+        write_string_with_length(state, file, info->name);
+        write_function_typed_type_ref(file, state, &info->returnType);
+        write_function_metadata_parameters(file, state, info->parameters, info->parameterCount);
+        fwrite(&info->lineInSourceStart, sizeof(TZrUInt32), 1, file);
+        fwrite(&info->lineInSourceEnd, sizeof(TZrUInt32), 1, file);
+    }
+}
+
+static void write_function_test_metadata(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 testCount = function != ZR_NULL ? function->testInfoLength : 0;
+
+    fwrite(&testCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < testCount; index++) {
+        SZrFunctionTestInfo *info = &function->testInfos[index];
+        TZrUInt8 hasVariableArguments = info->hasVariableArguments ? ZR_TRUE : ZR_FALSE;
+
+        write_string_with_length(state, file, info->name);
+        write_function_metadata_parameters(file, state, info->parameters, info->parameterCount);
+        fwrite(&hasVariableArguments, sizeof(TZrUInt8), 1, file);
+        fwrite(&info->lineInSourceStart, sizeof(TZrUInt32), 1, file);
+        fwrite(&info->lineInSourceEnd, sizeof(TZrUInt32), 1, file);
+    }
+}
+
 static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *function) {
     TZrUInt64 prototypesLength = 0;
     TZrUInt64 classCount = 0;
     TZrUInt64 structCount = 0;
+    TZrUInt64 prototypeBlobLength = 0;
+
+    if (function->prototypeData != ZR_NULL && function->prototypeCount > 0 && function->prototypeDataLength > 0) {
+        prototypeBlobLength = function->prototypeDataLength;
+    }
 
     if (function->prototypeData != ZR_NULL && function->prototypeCount > 0) {
         prototypesLength = function->prototypeCount;
@@ -548,6 +488,7 @@ static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *
 
     if (prototypesLength == 0 || function->prototypeData == ZR_NULL || function->prototypeDataLength == 0) {
         TZrUInt64 zero = 0;
+        fwrite(&zero, sizeof(TZrUInt64), 1, file);
         fwrite(&zero, sizeof(TZrUInt64), 1, file);
         fwrite(&zero, sizeof(TZrUInt64), 1, file);
         return;
@@ -611,6 +552,11 @@ static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *
                 remainingDataSize -= currentPrototypeSize;
             }
         }
+
+        fwrite(&prototypeBlobLength, sizeof(TZrUInt64), 1, file);
+        if (prototypeBlobLength > 0) {
+            fwrite(function->prototypeData, 1, (TZrSize)prototypeBlobLength, file);
+        }
     }
 }
 
@@ -665,6 +611,8 @@ static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *funct
 
     write_function_typed_local_bindings(file, state, function);
     write_function_typed_export_symbols(file, state, function);
+    write_function_compile_time_metadata(file, state, function);
+    write_function_test_metadata(file, state, function);
 
     write_function_prototypes(state, file, function);
 

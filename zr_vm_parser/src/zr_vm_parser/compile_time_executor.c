@@ -684,6 +684,13 @@ TZrBool evaluate_compile_time_expression_internal(SZrCompilerState *cs,
         case ZR_AST_IMPORT_EXPRESSION:
             cs->isInCompileTimeContext = oldContext;
             return ct_eval_import_expression(cs, node, result);
+        case ZR_AST_TYPE_QUERY_EXPRESSION:
+            ZrParser_CompileTime_Error(cs,
+                                       ZR_COMPILE_TIME_ERROR_ERROR,
+                                       "%type is not supported in compile-time expressions",
+                                       node->location);
+            cs->isInCompileTimeContext = oldContext;
+            return ZR_FALSE;
         case ZR_AST_CONDITIONAL_EXPRESSION: {
             SZrConditionalExpression *expr = &node->data.conditionalExpression;
             SZrTypeValue condValue;

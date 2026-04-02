@@ -9,8 +9,11 @@
 #include "unity.h"
 #include "runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
+#include "zr_vm_core/io.h"
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/reflection.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
@@ -205,6 +208,33 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
+static TZrBool function_contains_native_helper_constant(const SZrFunction *function, TZrUInt64 helperId) {
+    if (function == ZR_NULL || helperId == ZR_IO_NATIVE_HELPER_NONE || function->constantValueList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 i = 0; i < function->constantValueLength; i++) {
+        const SZrTypeValue *constant = &function->constantValueList[i];
+
+        if (constant->type == ZR_VALUE_TYPE_NATIVE_POINTER &&
+            ZrParser_Writer_GetSerializableNativeHelperId(constant->value.nativeFunction) == helperId) {
+            return ZR_TRUE;
+        }
+
+        if (constant->type == ZR_VALUE_TYPE_CLOSURE && constant->value.object != ZR_NULL && constant->isNative) {
+            const SZrRawObject *rawObject = constant->value.object;
+            if (rawObject->type == ZR_RAW_OBJECT_TYPE_CLOSURE) {
+                const SZrClosureNative *closure = (const SZrClosureNative *)rawObject;
+                if (ZrParser_Writer_GetSerializableNativeHelperId(closure->nativeFunction) == helperId) {
+                    return ZR_TRUE;
+                }
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static SZrString *get_string_constant_at(SZrState *state, const SZrFunction *function, TZrUInt32 index) {
     const SZrTypeValue *constant;
 
@@ -293,7 +323,7 @@ static const SZrCompiledMemberInfoView *find_compiled_member_by_name(SZrState *s
 }
 
 // 测试1: 函数声明参数处理
-void test_function_parameter_handling(void) {
+static void test_function_parameter_handling(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Function Parameter Handling";
@@ -547,7 +577,7 @@ void test_function_parameter_handling(void) {
 }
 
 // 测试2: 常量去重
-void test_constant_deduplication(void) {
+static void test_constant_deduplication(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Constant Deduplication";
@@ -596,7 +626,7 @@ void test_constant_deduplication(void) {
 }
 
 // 测试3: 全局对象属性访问
-void test_global_object_access(void) {
+static void test_global_object_access(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Global Object Access";
@@ -841,7 +871,7 @@ void test_global_object_access(void) {
 }
 
 // 测试4: 二元表达式类型推断
-void test_binary_expression_type_inference(void) {
+static void test_binary_expression_type_inference(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Binary Expression Type Inference";
@@ -889,7 +919,7 @@ void test_binary_expression_type_inference(void) {
 }
 
 // 测试5: 嵌套函数作用域
-void test_nested_function_scope(void) {
+static void test_nested_function_scope(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Nested Function Scope";
@@ -938,7 +968,7 @@ void test_nested_function_scope(void) {
 }
 
 // 测试6: 闭包变量捕获
-void test_closure_capture(void) {
+static void test_closure_capture(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Closure Variable Capture";
@@ -985,7 +1015,7 @@ void test_closure_capture(void) {
 }
 
 // 测试7: 复杂左值处理
-void test_complex_lvalue(void) {
+static void test_complex_lvalue(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Complex Left Value Handling";
@@ -1033,7 +1063,7 @@ void test_complex_lvalue(void) {
 }
 
 // 测试8: 外部变量分析
-void test_external_variable_analysis(void) {
+static void test_external_variable_analysis(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "External Variable Analysis";
@@ -1081,7 +1111,7 @@ void test_external_variable_analysis(void) {
 }
 
 // 测试9: foreach解构支持
-void test_foreach_destructuring(void) {
+static void test_foreach_destructuring(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Foreach Destructuring Support";
@@ -1129,7 +1159,7 @@ void test_foreach_destructuring(void) {
 }
 
 // 测试10: switch语句
-void test_switch_statement(void) {
+static void test_switch_statement(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Switch Statement";
@@ -1176,7 +1206,7 @@ void test_switch_statement(void) {
 }
 
 // 测试11: 生成器机制
-void test_generator_mechanism(void) {
+static void test_generator_mechanism(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Generator Mechanism";
@@ -1224,7 +1254,7 @@ void test_generator_mechanism(void) {
 }
 
 // 测试12: 函数调用类型推断
-void test_function_call_type_inference(void) {
+static void test_function_call_type_inference(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Function Call Type Inference";
@@ -1271,7 +1301,7 @@ void test_function_call_type_inference(void) {
 }
 
 // 测试13: 成员访问类型推断
-void test_member_access_type_inference(void) {
+static void test_member_access_type_inference(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Member Access Type Inference";
@@ -1318,7 +1348,7 @@ void test_member_access_type_inference(void) {
 }
 
 // 测试14: 类型转换指令生成
-void test_type_conversion_instructions(void) {
+static void test_type_conversion_instructions(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Type Conversion Instructions";
@@ -1366,7 +1396,7 @@ void test_type_conversion_instructions(void) {
 }
 
 // 测试15: 复合赋值运算符
-void test_compound_assignment_operators(void) {
+static void test_compound_assignment_operators(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Compound Assignment Operators";
@@ -1414,7 +1444,7 @@ void test_compound_assignment_operators(void) {
 }
 
 // 测试16: 可变参数函数
-void test_variable_arguments_function(void) {
+static void test_variable_arguments_function(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Variable Arguments Function";
@@ -1466,7 +1496,7 @@ void test_variable_arguments_function(void) {
     TEST_DIVIDER();
 }
 
-void test_template_string_compilation_emits_string_pipeline(void) {
+static void test_template_string_compilation_emits_string_pipeline(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Template String Compilation Pipeline";
@@ -1528,7 +1558,7 @@ void test_template_string_compilation_emits_string_pipeline(void) {
     TEST_DIVIDER();
 }
 
-void test_using_statement_compiles_through_frontend(void) {
+static void test_using_statement_compiles_through_frontend(void) {
     SZrTestTimer timer;
     timer.startTime = clock();
     const char *testSummary = "Using Statement Frontend Compilation";
@@ -1575,7 +1605,7 @@ void test_using_statement_compiles_through_frontend(void) {
     TEST_DIVIDER();
 }
 
-void test_field_scoped_using_metadata_serializes_into_prototype_data(void) {
+static void test_field_scoped_using_metadata_serializes_into_prototype_data(void) {
     SZrTestTimer timer;
     const char *testSummary = "Field-Scoped Using Prototype Metadata";
 
@@ -1664,7 +1694,7 @@ void test_field_scoped_using_metadata_serializes_into_prototype_data(void) {
     TEST_DIVIDER();
 }
 
-void test_static_using_field_is_rejected_by_compiler(void) {
+static void test_static_using_field_is_rejected_by_compiler(void) {
     SZrTestTimer timer;
     const char *testSummary = "Static Using Field Compile-Time Rejection";
 
@@ -1703,7 +1733,7 @@ void test_static_using_field_is_rejected_by_compiler(void) {
     TEST_DIVIDER();
 }
 
-void test_ownership_builtin_shared_expression_compiles_without_prototype_target(void) {
+static void test_ownership_builtin_shared_expression_compiles_without_prototype_target(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Builtin Shared Expression Compiles Without Prototype Target";
 
@@ -1762,7 +1792,7 @@ void test_ownership_builtin_shared_expression_compiles_without_prototype_target(
     TEST_DIVIDER();
 }
 
-void test_ownership_builtin_shared_new_wraps_constructed_result(void) {
+static void test_ownership_builtin_shared_new_wraps_constructed_result(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Builtin Shared New Wraps Constructed Result";
 
@@ -1820,7 +1850,7 @@ void test_ownership_builtin_shared_new_wraps_constructed_result(void) {
     TEST_DIVIDER();
 }
 
-void test_ownership_unique_share_runtime_moves_source_to_null(void) {
+static void test_ownership_unique_share_runtime_moves_source_to_null(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Unique Share Runtime Moves Source To Null";
 
@@ -1880,7 +1910,7 @@ void test_ownership_unique_share_runtime_moves_source_to_null(void) {
     TEST_DIVIDER();
 }
 
-void test_ownership_using_share_runtime_moves_source_to_null(void) {
+static void test_ownership_using_share_runtime_moves_source_to_null(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Using Share Runtime Moves Source To Null";
 
@@ -1939,7 +1969,7 @@ void test_ownership_using_share_runtime_moves_source_to_null(void) {
     TEST_DIVIDER();
 }
 
-void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void) {
+static void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Weak Runtime Expires To Null After Last Shared Release";
 
@@ -2000,7 +2030,7 @@ void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void)
     TEST_DIVIDER();
 }
 
-void test_function_call_argument_conversion_emits_to_float(void) {
+static void test_function_call_argument_conversion_emits_to_float(void) {
     SZrTestTimer timer;
     const char *testSummary = "Function Call Argument Conversion Emits TO_FLOAT";
     TZrUInt32 toFloatCount = 0;
@@ -2058,7 +2088,7 @@ void test_function_call_argument_conversion_emits_to_float(void) {
     TEST_DIVIDER();
 }
 
-void test_intermediate_writer_emits_type_metadata_section(void) {
+static void test_intermediate_writer_emits_type_metadata_section(void) {
     SZrTestTimer timer;
     const char *testSummary = "Intermediate Writer Emits Type Metadata Section";
 
@@ -2119,6 +2149,312 @@ void test_intermediate_writer_emits_type_metadata_section(void) {
     TEST_DIVIDER();
 }
 
+static void test_intermediate_writer_emits_compile_time_and_test_metadata(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Intermediate Writer Emits Compile Time And Test Metadata";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Intermediate writer metadata closure",
+              "Testing that .zri output includes compile-time declarations and %test metadata");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "%compileTime var MAX_SCALE: int = 8;\n"
+                "%compileTime buildBias(seed: int): int { return seed + MAX_SCALE; }\n"
+                "%test(\"vector_meta\") { return MAX_SCALE; }\n"
+                "return MAX_SCALE;";
+        const char *intermediatePath = "compiletime_metadata_intermediate_test.zri";
+        SZrString *sourceName = ZrCore_String_Create(state, "compiletime_metadata_intermediate_test.zr", 41);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        char *intermediateText;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse compile-time metadata intermediate source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile compile-time metadata intermediate source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, func, intermediatePath));
+        intermediateText = read_text_file_owned(intermediatePath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COMPILE_TIME_VARIABLES (1):"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "MAX_SCALE: int"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COMPILE_TIME_FUNCTIONS (1):"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "fn buildBias(seed: int): int"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "TESTS (1):"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "test vector_meta()"));
+
+        free(intermediateText);
+        remove(intermediatePath);
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_member_and_index_access_emit_split_opcodes(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Member And Index Access Emit Split Opcodes";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Access opcode split",
+              "Testing that dot access lowers to member opcodes while bracket access lowers to index opcodes");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "var obj = { name: 1 };\n"
+                "var a = obj.name;\n"
+                "var b = obj[\"name\"];\n"
+                "obj.name = 2;\n"
+                "obj[\"name\"] = 3;";
+        const char *intermediatePath = "access_opcode_split_test.zri";
+        SZrString *sourceName = ZrCore_String_Create(state, "access_opcode_split_test.zr", 27);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        char *intermediateText;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse split opcode source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile split opcode source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, func, intermediatePath));
+        intermediateText = read_text_file_owned(intermediatePath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "GET_MEMBER"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SET_MEMBER"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "GET_BY_INDEX"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SET_BY_INDEX"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "GETTABLE"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "SETTABLE"));
+
+        free(intermediateText);
+        remove(intermediatePath);
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_global_member_access_emits_get_member(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Global Member Access Emits GET_MEMBER";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Global member lowering",
+              "Testing that global zr member access still goes through member semantics instead of table fallback");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source = "var x = zr.Error;";
+        const char *intermediatePath = "global_member_opcode_test.zri";
+        SZrString *sourceName = ZrCore_String_Create(state, "global_member_opcode_test.zr", 27);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        char *intermediateText;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse global member source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile global member source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, func, intermediatePath));
+        intermediateText = read_text_file_owned(intermediatePath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "GET_GLOBAL"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "GET_MEMBER"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "GETTABLE"));
+
+        free(intermediateText);
+        remove(intermediatePath);
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_foreach_emits_iterator_contract_opcodes(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Foreach Emits Iterator Contract Opcodes";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Foreach lowering",
+              "Testing that foreach lowers through iterator contract opcodes instead of string member protocol names");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "foreach (item in [1, 2, 3]) {\n"
+                "    var x = item;\n"
+                "}";
+        const char *intermediatePath = "foreach_iterator_contract_test.zri";
+        SZrString *sourceName = ZrCore_String_Create(state, "foreach_iterator_contract_test.zr", 32);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        char *intermediateText;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse foreach source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile foreach source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, func, intermediatePath));
+        intermediateText = read_text_file_owned(intermediatePath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "ITER_INIT"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "ITER_MOVE_NEXT"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "ITER_CURRENT"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "getIterator"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "moveNext"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "current"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "GETTABLE"));
+
+        free(intermediateText);
+        remove(intermediatePath);
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_type_expression_compiles_to_internal_reflection_helper(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Type Expression Compiles To Internal Reflection Helper";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Type expression lowering",
+              "Testing that %type(expr) lowers to an internal native reflection helper call");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "var math = %import(\"zr.math\");\n"
+                "var reflection = %type(math);";
+        SZrString *sourceName = ZrCore_String_Create(state, "type_expression_compile_test.zr", 31);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse type expression source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile type expression source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
+        TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF));
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 // 主测试函数
 int main(void) {
     printf("\n");
@@ -2163,7 +2499,12 @@ int main(void) {
     RUN_TEST(test_member_access_type_inference);
     RUN_TEST(test_type_conversion_instructions);
     RUN_TEST(test_function_call_argument_conversion_emits_to_float);
+    RUN_TEST(test_type_expression_compiles_to_internal_reflection_helper);
     RUN_TEST(test_intermediate_writer_emits_type_metadata_section);
+    RUN_TEST(test_intermediate_writer_emits_compile_time_and_test_metadata);
+    RUN_TEST(test_member_and_index_access_emit_split_opcodes);
+    RUN_TEST(test_global_member_access_emits_get_member);
+    RUN_TEST(test_foreach_emits_iterator_contract_opcodes);
 
     // 高级功能测试模块
     printf("==========\n");
@@ -2189,3 +2530,4 @@ int main(void) {
 
     return UNITY_END();
 }
+

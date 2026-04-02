@@ -10,7 +10,7 @@
 
 const ZrLibModuleDescriptor *ZrSystem_EnvRegistry_GetModule(void) {
     static const ZrLibFunctionDescriptor kFunctions[] = {
-            {"getVariable", 1, 1, ZrSystem_Env_GetVariable, "string", "Read an environment variable by name."},
+            {"getVariable", 1, 1, ZrSystem_Env_GetVariable, "string", "Read an environment variable by name.", ZR_NULL, 0},
     };
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"getVariable", "function", "getVariable(name: string): string?", "Read an environment variable by name."},
@@ -34,6 +34,9 @@ const ZrLibModuleDescriptor *ZrSystem_EnvRegistry_GetModule(void) {
             kHintsJson,
             "Environment helpers.",
             ZR_NULL,
+            0,
+            "1.0.0",
+            ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
             0,
     };
 

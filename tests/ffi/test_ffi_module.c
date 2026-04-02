@@ -88,7 +88,7 @@ static SZrFunction *compile_source(SZrState *state, const TZrChar *source, const
         return ZR_NULL;
     }
 
-    sourceName = ZrCore_String_CreateFromNative(state, sourceNameText);
+    sourceName = ZrCore_String_CreateFromNative(state, (TZrNativeString)sourceNameText);
     if (sourceName == ZR_NULL) {
         return ZR_NULL;
     }
@@ -138,7 +138,7 @@ static const SZrTypeValue *object_field(SZrState *state, SZrObject *object, cons
         return ZR_NULL;
     }
 
-    fieldString = ZrCore_String_CreateFromNative(state, fieldName);
+    fieldString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
     if (fieldString == ZR_NULL) {
         return ZR_NULL;
     }
@@ -298,7 +298,7 @@ static void test_zr_ffi_import_exposes_known_types_and_functions(void) {
 
     TEST_ASSERT_NOT_NULL(module);
     for (index = 0; index < ZR_ARRAY_COUNT(exports); index++) {
-        SZrString *exportName = ZrCore_String_CreateFromNative(state, exports[index]);
+        SZrString *exportName = ZrCore_String_CreateFromNative(state, (TZrNativeString)exports[index]);
         TEST_ASSERT_NOT_NULL(exportName);
         TEST_ASSERT_NOT_NULL(ZrCore_Module_GetPubExport(state, module, exportName));
     }

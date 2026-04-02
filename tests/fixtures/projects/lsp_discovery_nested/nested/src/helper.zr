@@ -1,0 +1,1 @@
+pub var value = 42;

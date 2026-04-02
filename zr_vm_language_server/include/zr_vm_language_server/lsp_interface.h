@@ -56,6 +56,23 @@ typedef struct SZrLspHover {
     SZrLspRange range;                // 范围（可选）
 } SZrLspHover;
 
+typedef struct SZrLspParameterInformation {
+    SZrString *label;                 // 参数标签
+    SZrString *documentation;         // 文档（可选，markdown格式）
+} SZrLspParameterInformation;
+
+typedef struct SZrLspSignatureInformation {
+    SZrString *label;                 // 签名标签
+    SZrString *documentation;         // 文档（可选，markdown格式）
+    SZrArray parameters;              // 参数数组（SZrLspParameterInformation*）
+} SZrLspSignatureInformation;
+
+typedef struct SZrLspSignatureHelp {
+    SZrArray signatures;              // 签名数组（SZrLspSignatureInformation*）
+    TZrInt32 activeSignature;         // 当前激活的签名
+    TZrInt32 activeParameter;         // 当前激活的参数
+} SZrLspSignatureHelp;
+
 // LSP 符号信息
 typedef struct SZrLspSymbolInformation {
     SZrString *name;                  // 符号名称
@@ -115,6 +132,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                                            SZrLspPosition position,
                                            SZrLspHover **result);
 
+// 获取签名帮助
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
+                                                                     SZrLspContext *context,
+                                                                     SZrString *uri,
+                                                                     SZrLspPosition position,
+                                                                     SZrLspSignatureHelp **result);
+
 // 获取定义位置
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
                                                  SZrLspContext *context,
@@ -157,6 +181,14 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetDocumentHighlights(SZrSta
                                                           SZrLspPosition position,
                                                           SZrArray *result);
 
+// 获取完整语义 token 数据（LSP semanticTokens/full 的 data 数组）
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
+                                                                      SZrLspContext *context,
+                                                                      SZrString *uri,
+                                                                      SZrArray *result);
+ZR_LANGUAGE_SERVER_API TZrSize ZrLanguageServer_Lsp_SemanticTokenTypeCount(void);
+ZR_LANGUAGE_SERVER_API const TZrChar *ZrLanguageServer_Lsp_SemanticTokenTypeName(TZrSize index);
+
 // 预检查是否可重命名
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_PrepareRename(SZrState *state,
                                                  SZrLspContext *context,
@@ -164,6 +196,10 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_PrepareRename(SZrState *stat
                                                  SZrLspPosition position,
                                                  SZrLspRange *outRange,
                                                  SZrString **outPlaceholder);
+
+// 释放签名帮助
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspSignatureHelp_Free(SZrState *state,
+                                                                   SZrLspSignatureHelp *help);
 
 // 工具函数
 

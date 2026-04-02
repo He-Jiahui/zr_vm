@@ -10,6 +10,7 @@
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_lib_ffi/module.h"
@@ -76,11 +77,84 @@ typedef struct {
 #endif
 
 static const ZrLibMethodDescriptor kProbeReadableMethods[] = {
-        {"read", 0, 0, ZR_NULL, "int", "Read the current value.", ZR_FALSE},
+        {
+                .name = "read",
+                .minArgumentCount = 0,
+                .maxArgumentCount = 0,
+                .callback = ZR_NULL,
+                .returnTypeName = "int",
+                .documentation = "Read the current value.",
+                .isStatic = ZR_FALSE,
+                .parameters = ZR_NULL,
+                .parameterCount = 0,
+        },
 };
 
 static const ZrLibMethodDescriptor kProbeStreamReadableMethods[] = {
-        {"available", 0, 0, ZR_NULL, "int", "Return the available item count.", ZR_FALSE},
+        {
+                .name = "available",
+                .minArgumentCount = 0,
+                .maxArgumentCount = 0,
+                .callback = ZR_NULL,
+                .returnTypeName = "int",
+                .documentation = "Return the available item count.",
+                .isStatic = ZR_FALSE,
+                .parameters = ZR_NULL,
+                .parameterCount = 0,
+        },
+};
+
+static const ZrLibParameterDescriptor kProbeConfigureParameters[] = {
+        {"mode", "NativeMode", "The mode to apply."},
+};
+
+static const ZrLibMethodDescriptor kProbeDeviceMethods[] = {
+        {
+                .name = "configure",
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = ZR_NULL,
+                .returnTypeName = "NativeMode",
+                .documentation = "Apply a new device mode.",
+                .isStatic = ZR_FALSE,
+                .parameters = kProbeConfigureParameters,
+                .parameterCount = ZR_ARRAY_COUNT(kProbeConfigureParameters),
+        },
+};
+
+static const ZrLibParameterDescriptor kProbeLookupParameters[] = {
+        {"key", "K", "The lookup key."},
+};
+
+static const ZrLibMethodDescriptor kProbeLookupMethods[] = {
+        {
+                .name = "lookup",
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = ZR_NULL,
+                .returnTypeName = "V",
+                .documentation = "Resolve a value from the lookup table.",
+                .isStatic = ZR_FALSE,
+                .parameters = kProbeLookupParameters,
+                .parameterCount = ZR_ARRAY_COUNT(kProbeLookupParameters),
+        },
+};
+
+static const ZrLibParameterDescriptor kProbeCreateDeviceParameters[] = {
+        {"mode", "NativeMode", "The initial device mode."},
+};
+
+static const ZrLibFunctionDescriptor kProbeNativeFunctions[] = {
+        {
+                .name = "createDevice",
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = ZR_NULL,
+                .returnTypeName = "NativeDevice",
+                .documentation = "Create a native device.",
+                .parameters = kProbeCreateDeviceParameters,
+                .parameterCount = ZR_ARRAY_COUNT(kProbeCreateDeviceParameters),
+        },
 };
 
 static const TZrChar *kProbeDeviceImplements[] = {
@@ -96,96 +170,148 @@ static const ZrLibEnumMemberDescriptor kProbeModeMembers[] = {
         {"On", ZR_LIB_CONSTANT_KIND_INT, 1, 0.0, ZR_NULL, ZR_FALSE, "Enabled mode."},
 };
 
+static const ZrLibFieldDescriptor kProbeBoxFields[] = {
+        {"value", "T", "The boxed value."},
+};
+
+static const ZrLibMethodDescriptor kProbeBoxMethods[] = {
+        {
+                .name = "getValue",
+                .minArgumentCount = 0,
+                .maxArgumentCount = 0,
+                .callback = ZR_NULL,
+                .returnTypeName = "T",
+                .documentation = "Return the boxed value.",
+                .isStatic = ZR_FALSE,
+        },
+};
+
+static const ZrLibGenericParameterDescriptor kProbeBoxGenericParameters[] = {
+        {
+                .name = "T",
+                .documentation = "The boxed element type.",
+        },
+};
+
+static const TZrChar *kProbeLookupKeyConstraints[] = {
+        "NativeReadable",
+        "NativeStreamReadable",
+};
+
+static const ZrLibGenericParameterDescriptor kProbeLookupGenericParameters[] = {
+        {
+                .name = "K",
+                .documentation = "The lookup key type.",
+                .constraintTypeNames = kProbeLookupKeyConstraints,
+                .constraintTypeCount = ZR_ARRAY_COUNT(kProbeLookupKeyConstraints),
+        },
+        {
+                .name = "V",
+                .documentation = "The lookup value type.",
+        },
+};
+
 static const ZrLibTypeDescriptor kProbeNativeTypes[] = {
-        {"NativeReadable",
-         ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
-         ZR_NULL,
-         0,
-         kProbeReadableMethods,
-         ZR_ARRAY_COUNT(kProbeReadableMethods),
-         ZR_NULL,
-         0,
-         "Readable interface.",
-         ZR_NULL,
-         ZR_NULL,
-         0,
-         ZR_NULL,
-         0,
-         ZR_NULL,
-         ZR_FALSE,
-         ZR_FALSE,
-         "NativeReadable()"},
-        {"NativeStreamReadable",
-         ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
-         ZR_NULL,
-         0,
-         kProbeStreamReadableMethods,
-         ZR_ARRAY_COUNT(kProbeStreamReadableMethods),
-         ZR_NULL,
-         0,
-         "Stream-readable interface.",
-         "NativeReadable",
-         ZR_NULL,
-         0,
-         ZR_NULL,
-         0,
-         ZR_NULL,
-         ZR_FALSE,
-         ZR_FALSE,
-         "NativeStreamReadable()"},
-        {"NativeMode",
-         ZR_OBJECT_PROTOTYPE_TYPE_ENUM,
-         ZR_NULL,
-         0,
-         ZR_NULL,
-         0,
-         ZR_NULL,
-         0,
-         "Device mode enum.",
-         ZR_NULL,
-         ZR_NULL,
-         0,
-         kProbeModeMembers,
-         ZR_ARRAY_COUNT(kProbeModeMembers),
-         "int",
-         ZR_TRUE,
-         ZR_TRUE,
-         "NativeMode(value: int)"},
-        {"NativeDevice",
-         ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
-         kProbeDeviceFields,
-         ZR_ARRAY_COUNT(kProbeDeviceFields),
-         ZR_NULL,
-         0,
-         ZR_NULL,
-         0,
-         "Concrete device type.",
-         ZR_NULL,
-         kProbeDeviceImplements,
-         ZR_ARRAY_COUNT(kProbeDeviceImplements),
-         ZR_NULL,
-         0,
-         ZR_NULL,
-         ZR_TRUE,
-         ZR_TRUE,
-         "NativeDevice()"},
+        {
+                .name = "NativeReadable",
+                .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
+                .methods = kProbeReadableMethods,
+                .methodCount = ZR_ARRAY_COUNT(kProbeReadableMethods),
+                .documentation = "Readable interface.",
+                .allowValueConstruction = ZR_FALSE,
+                .allowBoxedConstruction = ZR_FALSE,
+                .constructorSignature = "NativeReadable()",
+                .genericParameters = ZR_NULL,
+                .genericParameterCount = 0,
+        },
+        {
+                .name = "NativeStreamReadable",
+                .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
+                .methods = kProbeStreamReadableMethods,
+                .methodCount = ZR_ARRAY_COUNT(kProbeStreamReadableMethods),
+                .documentation = "Stream-readable interface.",
+                .extendsTypeName = "NativeReadable",
+                .allowValueConstruction = ZR_FALSE,
+                .allowBoxedConstruction = ZR_FALSE,
+                .constructorSignature = "NativeStreamReadable()",
+                .genericParameters = ZR_NULL,
+                .genericParameterCount = 0,
+        },
+        {
+                .name = "NativeMode",
+                .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_ENUM,
+                .documentation = "Device mode enum.",
+                .enumMembers = kProbeModeMembers,
+                .enumMemberCount = ZR_ARRAY_COUNT(kProbeModeMembers),
+                .enumValueTypeName = "int",
+                .allowValueConstruction = ZR_TRUE,
+                .allowBoxedConstruction = ZR_TRUE,
+                .constructorSignature = "NativeMode(value: int)",
+                .genericParameters = ZR_NULL,
+                .genericParameterCount = 0,
+        },
+        {
+                .name = "NativeDevice",
+                .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                .fields = kProbeDeviceFields,
+                .fieldCount = ZR_ARRAY_COUNT(kProbeDeviceFields),
+                .methods = kProbeDeviceMethods,
+                .methodCount = ZR_ARRAY_COUNT(kProbeDeviceMethods),
+                .documentation = "Concrete device type.",
+                .implementsTypeNames = kProbeDeviceImplements,
+                .implementsTypeCount = ZR_ARRAY_COUNT(kProbeDeviceImplements),
+                .allowValueConstruction = ZR_TRUE,
+                .allowBoxedConstruction = ZR_TRUE,
+                .constructorSignature = "NativeDevice()",
+                .genericParameters = ZR_NULL,
+                .genericParameterCount = 0,
+        },
+        {
+                .name = "NativeBox",
+                .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                .fields = kProbeBoxFields,
+                .fieldCount = ZR_ARRAY_COUNT(kProbeBoxFields),
+                .methods = kProbeBoxMethods,
+                .methodCount = ZR_ARRAY_COUNT(kProbeBoxMethods),
+                .documentation = "Open generic native box type.",
+                .allowValueConstruction = ZR_TRUE,
+                .allowBoxedConstruction = ZR_TRUE,
+                .constructorSignature = "NativeBox(value: T)",
+                .genericParameters = kProbeBoxGenericParameters,
+                .genericParameterCount = ZR_ARRAY_COUNT(kProbeBoxGenericParameters),
+        },
+        {
+                .name = "NativeLookup",
+                .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                .methods = kProbeLookupMethods,
+                .methodCount = ZR_ARRAY_COUNT(kProbeLookupMethods),
+                .documentation = "Open generic native lookup type.",
+                .allowValueConstruction = ZR_TRUE,
+                .allowBoxedConstruction = ZR_TRUE,
+                .constructorSignature = "NativeLookup()",
+                .genericParameters = kProbeLookupGenericParameters,
+                .genericParameterCount = ZR_ARRAY_COUNT(kProbeLookupGenericParameters),
+        },
 };
 
 static const ZrLibModuleDescriptor kProbeNativeModuleDescriptor = {
-        ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
-        "probe.native_shapes",
-        ZR_NULL,
-        0,
-        ZR_NULL,
-        0,
-        kProbeNativeTypes,
-        ZR_ARRAY_COUNT(kProbeNativeTypes),
-        ZR_NULL,
-        0,
-        ZR_NULL,
-        "Native test module containing interface, enum and implements metadata.",
-        ZR_NULL,
-        0,
+        .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        .moduleName = "probe.native_shapes",
+        .constants = ZR_NULL,
+        .constantCount = 0,
+        .functions = kProbeNativeFunctions,
+        .functionCount = ZR_ARRAY_COUNT(kProbeNativeFunctions),
+        .types = kProbeNativeTypes,
+        .typeCount = ZR_ARRAY_COUNT(kProbeNativeTypes),
+        .typeHints = ZR_NULL,
+        .typeHintCount = 0,
+        .typeHintsJson = ZR_NULL,
+        .documentation = "Native test module containing interface, enum and implements metadata.",
+        .moduleLinks = ZR_NULL,
+        .moduleLinkCount = 0,
+        .moduleVersion = "1.0.0",
+        .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+        .requiredCapabilities = 0,
 };
 
 // 简单的测试分配器
@@ -222,6 +348,7 @@ static SZrState *create_test_state(void) {
     SZrState *mainState = global->mainThreadState;
     if (mainState) {
         ZrCore_GlobalState_InitRegistry(mainState, global);
+        ZrVmLibContainer_Register(global);
         ZrVmLibMath_Register(global);
         ZrVmLibSystem_Register(global);
         ZrVmLibFfi_Register(global);
@@ -272,6 +399,26 @@ static void destroy_test_compiler_state(SZrCompilerState *cs) {
 
     ZrParser_CompilerState_Free(cs);
     free(cs);
+}
+
+static void compile_test_top_level_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    TEST_ASSERT_NOT_NULL(cs);
+    TEST_ASSERT_NOT_NULL(node);
+
+    switch (node->type) {
+        case ZR_AST_INTERFACE_DECLARATION:
+            ZrParser_Compiler_CompileInterfaceDeclaration(cs, node);
+            break;
+        case ZR_AST_CLASS_DECLARATION:
+            ZrParser_Compiler_CompileClassDeclaration(cs, node);
+            break;
+        case ZR_AST_STRUCT_DECLARATION:
+            ZrParser_Compiler_CompileStructDeclaration(cs, node);
+            break;
+        default:
+            ZrParser_Statement_Compile(cs, node);
+            break;
+    }
 }
 
 static SZrString *create_test_string(SZrState *state, const char *value) {
@@ -453,6 +600,7 @@ static void init_test_type_prototype(SZrState *state,
     info->allowBoxedConstruction = ZR_TRUE;
     ZrCore_Array_Init(state, &info->inherits, sizeof(SZrString *), 2);
     ZrCore_Array_Init(state, &info->implements, sizeof(SZrString *), 2);
+    ZrCore_Array_Init(state, &info->genericParameters, sizeof(SZrTypeGenericParameterInfo), 2);
     ZrCore_Array_Init(state, &info->members, sizeof(SZrTypeMemberInfo), 4);
 }
 
@@ -466,6 +614,27 @@ static void register_test_type_prototype(SZrState *state,
 
     TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(state, cs->typeEnv, info->name));
     ZrCore_Array_Push(state, &cs->typePrototypes, info);
+}
+
+static const SZrTypePrototypeInfo *find_test_type_prototype(const SZrCompilerState *cs,
+                                                            const char *typeName) {
+    TZrSize index;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < cs->typePrototypes.length; index++) {
+        const SZrTypePrototypeInfo *info =
+                (const SZrTypePrototypeInfo *)ZrCore_Array_Get((SZrArray *)&cs->typePrototypes, index);
+        if (info != ZR_NULL &&
+            info->name != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeString(info->name), typeName) == 0) {
+            return info;
+        }
+    }
+
+    return ZR_NULL;
 }
 
 static void add_test_method_member(SZrState *state,
@@ -612,7 +781,7 @@ void tearDown(void) {}
 // ==================== 类型推断测试 ====================
 
 // 测试整数字面量类型推断
-void test_type_inference_integer_literal(void) {
+static void test_type_inference_integer_literal(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Integer Literal";
 
@@ -674,7 +843,7 @@ void test_type_inference_integer_literal(void) {
 }
 
 // 测试小整数字面量仍然默认推断为 int64
-void test_type_inference_small_integer_literal_defaults_to_int64(void) {
+static void test_type_inference_small_integer_literal_defaults_to_int64(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Small Integer Literal Defaults To Int64";
 
@@ -733,7 +902,7 @@ void test_type_inference_small_integer_literal_defaults_to_int64(void) {
     TEST_DIVIDER();
 }
 
-void test_compiler_state_initializes_semantic_context(void) {
+static void test_compiler_state_initializes_semantic_context(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Compiler State - Initializes Semantic Context";
 
@@ -762,7 +931,7 @@ void test_compiler_state_initializes_semantic_context(void) {
     TEST_DIVIDER();
 }
 
-void test_type_environment_registers_semantic_records(void) {
+static void test_type_environment_registers_semantic_records(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Environment - Registers Semantic Records";
     SZrInferredType intType;
@@ -822,7 +991,7 @@ void test_type_environment_registers_semantic_records(void) {
     TEST_DIVIDER();
 }
 
-void test_type_environment_registers_function_overloads(void) {
+static void test_type_environment_registers_function_overloads(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Environment - Registers Function Overloads";
     SZrInferredType intType;
@@ -876,7 +1045,7 @@ void test_type_environment_registers_function_overloads(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_resolves_best_function_overload(void) {
+static void test_type_inference_resolves_best_function_overload(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Resolves Best Function Overload";
     SZrInferredType intType;
@@ -952,7 +1121,7 @@ void test_type_inference_resolves_best_function_overload(void) {
     TEST_DIVIDER();
 }
 
-void test_convert_ast_type_registers_generic_instance_semantics(void) {
+static void test_convert_ast_type_registers_generic_instance_semantics(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Registers Generic Instance Semantics";
     const SZrSemanticTypeRecord *genericRecord;
@@ -1020,7 +1189,7 @@ void test_convert_ast_type_registers_generic_instance_semantics(void) {
     TEST_DIVIDER();
 }
 
-void test_convert_ast_type_preserves_ownership_qualifier(void) {
+static void test_convert_ast_type_preserves_ownership_qualifier(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Preserves Ownership Qualifier";
     const SZrSemanticTypeRecord *ownedRecord;
@@ -1121,7 +1290,7 @@ void test_convert_ast_type_preserves_ownership_qualifier(void) {
     TEST_DIVIDER();
 }
 
-void test_construct_expression_preserves_ownership_qualifier(void) {
+static void test_construct_expression_preserves_ownership_qualifier(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Construct Expression Preserves Ownership Qualifier";
 
@@ -1181,7 +1350,7 @@ void test_construct_expression_preserves_ownership_qualifier(void) {
     TEST_DIVIDER();
 }
 
-void test_unique_instance_only_calls_borrowed_methods(void) {
+static void test_unique_instance_only_calls_borrowed_methods(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Unique Instance Only Calls Borrowed Methods";
 
@@ -1250,7 +1419,7 @@ void test_unique_instance_only_calls_borrowed_methods(void) {
     TEST_DIVIDER();
 }
 
-void test_unique_value_is_compatible_with_borrowed_parameter(void) {
+static void test_unique_value_is_compatible_with_borrowed_parameter(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Unique Value Is Compatible With Borrowed Parameter";
 
@@ -1313,7 +1482,7 @@ void test_unique_value_is_compatible_with_borrowed_parameter(void) {
     TEST_DIVIDER();
 }
 
-void test_borrowed_value_cannot_flow_to_plain_parameter(void) {
+static void test_borrowed_value_cannot_flow_to_plain_parameter(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Borrowed Value Cannot Flow To Plain Parameter";
 
@@ -1380,7 +1549,7 @@ void test_borrowed_value_cannot_flow_to_plain_parameter(void) {
 }
 
 // 测试浮点数字面量类型推断
-void test_type_inference_float_literal(void) {
+static void test_type_inference_float_literal(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Float Literal";
 
@@ -1442,7 +1611,7 @@ void test_type_inference_float_literal(void) {
 }
 
 // 测试字符串字面量类型推断
-void test_type_inference_string_literal(void) {
+static void test_type_inference_string_literal(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - String Literal";
 
@@ -1504,7 +1673,7 @@ void test_type_inference_string_literal(void) {
 }
 
 // 测试布尔字面量类型推断
-void test_type_inference_boolean_literal(void) {
+static void test_type_inference_boolean_literal(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Boolean Literal";
 
@@ -1566,7 +1735,7 @@ void test_type_inference_boolean_literal(void) {
 }
 
 // 测试二元表达式类型推断
-void test_type_inference_binary_expression(void) {
+static void test_type_inference_binary_expression(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Binary Expression";
 
@@ -1628,7 +1797,7 @@ void test_type_inference_binary_expression(void) {
     TEST_DIVIDER();
 }
 
-void test_parser_supports_ownership_types_and_template_strings(void) {
+static void test_parser_supports_ownership_types_and_template_strings(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Parser - Ownership Types And Template Strings";
 
@@ -1705,7 +1874,7 @@ void test_parser_supports_ownership_types_and_template_strings(void) {
     TEST_DIVIDER();
 }
 
-void test_using_statement_compilation_records_cleanup_plan(void) {
+static void test_using_statement_compilation_records_cleanup_plan(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Semantic - Using Statement Cleanup Plan";
 
@@ -1766,7 +1935,7 @@ void test_using_statement_compilation_records_cleanup_plan(void) {
     TEST_DIVIDER();
 }
 
-void test_template_string_compilation_records_semantic_segments(void) {
+static void test_template_string_compilation_records_semantic_segments(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Semantic - Template String Segments";
 
@@ -1846,7 +2015,7 @@ void test_template_string_compilation_records_semantic_segments(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_template_string_literal_is_string(void) {
+static void test_type_inference_template_string_literal_is_string(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Template String Literal";
 
@@ -1897,7 +2066,7 @@ void test_type_inference_template_string_literal_is_string(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_import_native_module_keeps_module_name(void) {
+static void test_type_inference_import_native_module_keeps_module_name(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Import Native Module Keeps Module Name";
 
@@ -1946,7 +2115,61 @@ void test_type_inference_import_native_module_keeps_module_name(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_prototype_construction_returns_native_type(void) {
+static void test_type_inference_type_query_returns_reflection_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Type Query Returns Reflection Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var math = %import(\"zr.math\");\n"
+                "var reflection = %type(math);";
+        SZrString *sourceName = ZrCore_String_Create(state, "type_query_inference_test.zr", 28);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_QUERY_EXPRESSION, expr->type);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("zr.system.reflect.Type", ZrCore_String_GetNativeString(result.typeName));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_native_prototype_construction_returns_native_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Prototype Construction Returns Native Type";
 
@@ -1998,7 +2221,7 @@ void test_type_inference_native_prototype_construction_returns_native_type(void)
     TEST_DIVIDER();
 }
 
-void test_type_inference_rejects_ordinary_prototype_call(void) {
+static void test_type_inference_rejects_ordinary_prototype_call(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Rejects Ordinary Prototype Call";
 
@@ -2051,7 +2274,7 @@ void test_type_inference_rejects_ordinary_prototype_call(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_boxed_new_returns_registered_type(void) {
+static void test_type_inference_native_boxed_new_returns_registered_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Boxed New Returns Registered Type";
 
@@ -2103,7 +2326,7 @@ void test_type_inference_native_boxed_new_returns_registered_type(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_enum_construction_returns_enum_type(void) {
+static void test_type_inference_native_enum_construction_returns_enum_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Enum Construction Returns Enum Type";
 
@@ -2156,7 +2379,7 @@ void test_type_inference_native_enum_construction_returns_enum_type(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_enum_member_access_returns_enum_type(void) {
+static void test_type_inference_native_enum_member_access_returns_enum_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Enum Member Access Returns Enum Type";
 
@@ -2209,7 +2432,7 @@ void test_type_inference_native_enum_member_access_returns_enum_type(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_interface_construction_is_rejected(void) {
+static void test_type_inference_native_interface_construction_is_rejected(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Interface Construction Is Rejected";
 
@@ -2262,7 +2485,7 @@ void test_type_inference_native_interface_construction_is_rejected(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_interface_members_flow_through_implements_chain(void) {
+static void test_type_inference_native_interface_members_flow_through_implements_chain(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Interface Members Flow Through Implements Chain";
 
@@ -2316,7 +2539,7 @@ void test_type_inference_native_interface_members_flow_through_implements_chain(
     TEST_DIVIDER();
 }
 
-void test_type_inference_source_extern_function_call_uses_declared_return_type(void) {
+static void test_type_inference_source_extern_function_call_uses_declared_return_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Extern Function Call Uses Declared Return Type";
 
@@ -2346,7 +2569,7 @@ void test_type_inference_source_extern_function_call_uses_declared_return_type(v
 
         cs->currentFunction = ZrCore_Function_New(state);
         TEST_ASSERT_NOT_NULL(cs->currentFunction);
-        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
         TEST_ASSERT_FALSE(cs->hasError);
 
         TEST_ASSERT_EQUAL_INT(ZR_AST_RETURN_STATEMENT, ast->data.script.statements->nodes[1]->type);
@@ -2370,7 +2593,7 @@ void test_type_inference_source_extern_function_call_uses_declared_return_type(v
     TEST_DIVIDER();
 }
 
-void test_type_inference_source_extern_enum_member_access_returns_enum_type(void) {
+static void test_type_inference_source_extern_enum_member_access_returns_enum_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Extern Enum Member Access Returns Enum Type";
 
@@ -2430,7 +2653,7 @@ void test_type_inference_source_extern_enum_member_access_returns_enum_type(void
     TEST_DIVIDER();
 }
 
-void test_type_inference_source_extern_struct_construction_returns_struct_type(void) {
+static void test_type_inference_source_extern_struct_construction_returns_struct_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Extern Struct Construction Returns Struct Type";
 
@@ -2489,7 +2712,1413 @@ void test_type_inference_source_extern_struct_construction_returns_struct_type(v
     TEST_DIVIDER();
 }
 
-void test_type_inference_source_import_function_call_uses_exported_signature(void) {
+static void test_type_inference_native_generic_boxed_new_returns_closed_registered_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Generic Boxed New Returns Closed Registered Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var probe = %import(\"probe.native_shapes\");"
+                "new NativeBox<int>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_generic_box_new_type_test.zr", 35);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+        SZrInferredType *elementType;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_TRUE(register_probe_native_module(state));
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("NativeBox<int>", ZrCore_String_GetNativeString(result.typeName));
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)result.elementTypes.length);
+        elementType = (SZrInferredType *)ZrCore_Array_Get(&result.elementTypes, 0);
+        TEST_ASSERT_NOT_NULL(elementType);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, elementType->baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_native_generic_constraint_mismatch_is_rejected(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Generic Constraint Mismatch Is Rejected";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var probe = %import(\"probe.native_shapes\");"
+                "new NativeLookup<NativeMode, int>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_generic_constraint_type_test.zr", 39);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_TRUE(register_probe_native_module(state));
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "does not satisfy constraint"));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_class_boxed_new_returns_closed_registered_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Generic Class Boxed New Returns Closed Registered Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class Box<T> { var value: T; }\n"
+                "new Box<int>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_box_new_type_test.zr", 35);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        const SZrTypePrototypeInfo *openPrototype;
+        const SZrTypePrototypeInfo *closedPrototype;
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        openPrototype = find_test_type_prototype(cs, "Box");
+        TEST_ASSERT_NOT_NULL(openPrototype);
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)openPrototype->genericParameters.length);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Box<int>", ZrCore_String_GetNativeString(result.typeName));
+
+        closedPrototype = find_test_type_prototype(cs, "Box<int>");
+        TEST_ASSERT_NOT_NULL(closedPrototype);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_class_member_substitutes_closed_field_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Generic Class Member Substitutes Closed Field Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class Box<T> { var value: T; }\n"
+                "new Box<int>().value;";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_box_field_type_test.zr", 37);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_struct_boxed_new_returns_closed_registered_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Generic Struct Boxed New Returns Closed Registered Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "struct Pair<TLeft, TRight> { var left: TLeft; var right: TRight; }\n"
+                "new Pair<int, string>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_pair_new_type_test.zr", 36);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        const SZrTypePrototypeInfo *openPrototype;
+        const SZrTypePrototypeInfo *closedPrototype;
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        openPrototype = find_test_type_prototype(cs, "Pair");
+        TEST_ASSERT_NOT_NULL(openPrototype);
+        TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)openPrototype->genericParameters.length);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Pair<int, string>", ZrCore_String_GetNativeString(result.typeName));
+
+        closedPrototype = find_test_type_prototype(cs, "Pair<int, string>");
+        TEST_ASSERT_NOT_NULL(closedPrototype);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_const_generic_boxed_new_returns_closed_registered_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Const Generic Boxed New Returns Closed Registered Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class Matrix<T, const N: int> { var rows: Array<T>[N]; }\n"
+                "new Matrix<int, 2 + 2>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_const_generic_matrix_new_type_test.zr", 45);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        const SZrTypePrototypeInfo *openPrototype;
+        const SZrTypePrototypeInfo *closedPrototype;
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+        SZrInferredType *constArgument;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        openPrototype = find_test_type_prototype(cs, "Matrix");
+        TEST_ASSERT_NOT_NULL(openPrototype);
+        TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)openPrototype->genericParameters.length);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Matrix<int, 4>", ZrCore_String_GetNativeString(result.typeName));
+        TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)result.elementTypes.length);
+
+        constArgument = (SZrInferredType *)ZrCore_Array_Get(&result.elementTypes, 1);
+        TEST_ASSERT_NOT_NULL(constArgument);
+        TEST_ASSERT_NOT_NULL(constArgument->typeName);
+        TEST_ASSERT_EQUAL_STRING("4", ZrCore_String_GetNativeString(constArgument->typeName));
+
+        closedPrototype = find_test_type_prototype(cs, "Matrix<int, 4>");
+        TEST_ASSERT_NOT_NULL(closedPrototype);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_function_supports_explicit_arguments_and_inference(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Generic Function Supports Explicit Arguments And Inference";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "func identity<T>(value: T): T { return value; }\n"
+                "identity(1);\n"
+                "identity<string>(\"hello\");";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_function_type_test.zr", 36);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *inferredExpr = ZR_NULL;
+        SZrAstNode *explicitExpr = ZR_NULL;
+        SZrInferredType result;
+        SZrFunctionTypeInfo *functionInfo = ZR_NULL;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_LookupFunction(cs->typeEnv,
+                                                                 ast->data.script.statements->nodes[0]
+                                                                         ->data.functionDeclaration.name->name,
+                                                                 &functionInfo));
+        TEST_ASSERT_NOT_NULL(functionInfo);
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)functionInfo->genericParameters.length);
+
+        inferredExpr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        explicitExpr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(inferredExpr);
+        TEST_ASSERT_NOT_NULL(explicitExpr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, inferredExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, explicitExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_function_reports_explicit_arity_mismatch(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Generic Function Reports Explicit Arity Mismatch";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "func identity<T>(value: T): T { return value; }\n"
+                "identity<int, string>(1);";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_function_arity_diag_test.zr", 41);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Generic function 'identity': expected 1 generic argument(s), got 2"));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_function_reports_cannot_infer_type_argument(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Generic Function Reports Cannot Infer Type Argument";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "func create<T>(): T { return null; }\n"
+                "create();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_function_infer_diag_test.zr", 41);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Generic function 'create': cannot infer generic argument 'T'"));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_function_reports_type_argument_kind_mismatch(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Generic Function Reports Type Argument Kind Mismatch";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "func identity<T>(value: T): T { return value; }\n"
+                "identity<1>(1);";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_function_kind_diag_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Generic function 'identity': generic argument 'T' expects a type argument"));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_function_reports_conflicting_inference(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Generic Function Reports Conflicting Inference";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "func pick<T>(left: T, right: T): T { return left; }\n"
+                "pick(1, \"two\");";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_function_conflict_diag_test.zr", 44);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Generic function 'pick': conflicting inferences for generic argument 'T'"));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_method_supports_explicit_arguments_inference_and_receiver_closure(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Source Generic Method Supports Explicit Arguments Inference And Receiver Closure";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class Box<T> {\n"
+                "    var value: T;\n"
+                "    func echo<U>(input: U): U { return input; }\n"
+                "    func currentOr<U>(fallback: U): T { return this.value; }\n"
+                "}\n"
+                "var box = new Box<int>();\n"
+                "box.echo(\"hello\");\n"
+                "box.echo<string>(\"world\");\n"
+                "box.currentOr(\"fallback\");";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_method_type_test.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *inferredExpr = ZR_NULL;
+        SZrAstNode *explicitExpr = ZR_NULL;
+        SZrAstNode *receiverClosedExpr = ZR_NULL;
+        SZrInferredType result;
+        const SZrTypePrototypeInfo *closedPrototype;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        closedPrototype = find_test_type_prototype(cs, "Box<int>");
+        TEST_ASSERT_NOT_NULL(closedPrototype);
+
+        inferredExpr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        explicitExpr = ast->data.script.statements->nodes[3]->data.expressionStatement.expr;
+        receiverClosedExpr = ast->data.script.statements->nodes[4]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(inferredExpr);
+        TEST_ASSERT_NOT_NULL(explicitExpr);
+        TEST_ASSERT_NOT_NULL(receiverClosedExpr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, inferredExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, explicitExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, receiverClosedExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_const_generic_method_supports_explicit_arguments_and_inference(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Source Const Generic Method Supports Explicit Arguments And Inference";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class Matrix<T, const N: int> { }\n"
+                "class Box<T> {\n"
+                "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+                "}\n"
+                "var box = new Box<int>();\n"
+                "var m = new Matrix<int, 4>();\n"
+                "box.shape(m);\n"
+                "box.shape<2 + 2>(m);";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_const_generic_method_type_test.zr", 41);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *inferredExpr = ZR_NULL;
+        SZrAstNode *explicitExpr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(6, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[3]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        inferredExpr = ast->data.script.statements->nodes[4]->data.expressionStatement.expr;
+        explicitExpr = ast->data.script.statements->nodes[5]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(inferredExpr);
+        TEST_ASSERT_NOT_NULL(explicitExpr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, inferredExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Matrix<int, 4>", ZrCore_String_GetNativeString(result.typeName));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, explicitExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Matrix<int, 4>", ZrCore_String_GetNativeString(result.typeName));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_const_generic_method_reports_const_argument_kind_mismatch(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Source Const Generic Method Reports Const Argument Kind Mismatch";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class Matrix<T, const N: int> { }\n"
+                "class Box<T> {\n"
+                "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+                "}\n"
+                "var box = new Box<int>();\n"
+                "var m = new Matrix<int, 4>();\n"
+                "box.shape<string>(m);";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_const_generic_method_kind_diag_test.zr", 44);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[3]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[4]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Generic method 'shape': generic argument 'N' expects a compile-time integer"));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_parameter_passing_mode_in_rejects_reassignment(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - %in Parameter Rejects Reassignment";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "func consume(%in value: int): void {\n"
+                "    value = 1;\n"
+                "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "passing_mode_in_reassign_test.zr", 31);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Cannot assign to const parameter 'value'"));
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_parameter_passing_modes_out_and_ref_require_assignable_arguments(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - %out And %ref Require Assignable Arguments";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "func fill(%out value: int): void {\n"
+                "    value = 1;\n"
+                "}\n"
+                "func swap(%ref value: int): void {\n"
+                "}\n"
+                "fill(1);\n"
+                "swap(1);\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "passing_mode_lvalue_call_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "%out argument must be an assignable storage location"));
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[3]);
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "%ref argument must be an assignable storage location"));
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_out_parameter_requires_definite_assignment_on_all_paths(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - %out Parameter Requires Definite Assignment";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "func maybeAssign(%out value: int, flag: bool): void {\n"
+                "    if (flag) {\n"
+                "        value = 1;\n"
+                "    }\n"
+                "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "out_parameter_definite_assignment_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "%out parameter 'value' must be assigned on all control-flow paths"));
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_interface_registration_preserves_variance_and_rejects_construction(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Source Generic Interface Registration Preserves Variance And Rejects Construction";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "interface IProducer<out T> { next(): T; }\n"
+                "new IProducer<int>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_interface_type_test.zr", 37);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        const SZrTypePrototypeInfo *openPrototype;
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        openPrototype = find_test_type_prototype(cs, "IProducer");
+        TEST_ASSERT_NOT_NULL(openPrototype);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, openPrototype->type);
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)openPrototype->genericParameters.length);
+        TEST_ASSERT_FALSE(openPrototype->allowValueConstruction);
+        TEST_ASSERT_FALSE(openPrototype->allowBoxedConstruction);
+        {
+            const SZrTypeGenericParameterInfo *genericInfo =
+                    (const SZrTypeGenericParameterInfo *)ZrCore_Array_Get((SZrArray *)&openPrototype->genericParameters,
+                                                                          0);
+            TEST_ASSERT_NOT_NULL(genericInfo);
+            TEST_ASSERT_EQUAL_INT(ZR_GENERIC_VARIANCE_OUT, genericInfo->variance);
+        }
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Interfaces cannot be constructed"));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_interface_members_flow_through_inheritance_chain(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Interface Members Flow Through Inheritance Chain";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "interface Readable { read(): int; }\n"
+                "interface StreamReadable : Readable { available(): int; }\n"
+                "class Device : StreamReadable { }\n"
+                "var device: Device = null;\n"
+                "device.read();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_interface_chain_type_test.zr", 36);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[3]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[4]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_constraint_accepts_source_interface_implementation(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Source Generic Constraint Accepts Source Interface Implementation";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "interface Readable { read(): int; }\n"
+                "class Device : Readable { }\n"
+                "class Box<T> where T: Readable { var value: T; }\n"
+                "new Box<Device>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_constraint_accept_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[3]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Box<Device>", ZrCore_String_GetNativeString(result.typeName));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_constraint_mismatch_rejects_non_implementing_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Source Generic Constraint Mismatch Rejects Non Implementing Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "interface Readable { read(): int; }\n"
+                "class Box<T> where T: Readable { var value: T; }\n"
+                "new Box<int>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_constraint_reject_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "does not satisfy constraint"));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_generic_inheritance_substitutes_closed_base_member_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Source Generic Inheritance Substitutes Closed Base Member Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class Base<T> { var value: T; }\n"
+                "class Derived<T> : Base<T> { }\n"
+                "new Derived<int>().value;";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_inheritance_type_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        const SZrTypePrototypeInfo *closedPrototype;
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+
+        closedPrototype = find_test_type_prototype(cs, "Derived<int>");
+        TEST_ASSERT_NOT_NULL(closedPrototype);
+        TEST_ASSERT_TRUE(closedPrototype->inherits.length >= 1);
+        {
+            const SZrString *inheritName =
+                    *(const SZrString **)ZrCore_Array_Get((SZrArray *)&closedPrototype->inherits, 0);
+            TEST_ASSERT_NOT_NULL(inheritName);
+            TEST_ASSERT_EQUAL_STRING("Base<int>", ZrCore_String_GetNativeString(inheritName));
+        }
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_class_and_struct_constraints_are_enforced(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Class And Struct Constraints Are Enforced";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class RefType { }\n"
+                "struct ValueType { }\n"
+                "class NeedClass<T> where T: class { var value: T; }\n"
+                "class NeedStruct<T> where T: struct { var value: T; }\n"
+                "new NeedClass<RefType>();\n"
+                "new NeedStruct<ValueType>();\n"
+                "new NeedClass<ValueType>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_kind_constraint_test.zr", 30);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *successExpr1 = ZR_NULL;
+        SZrAstNode *successExpr2 = ZR_NULL;
+        SZrAstNode *failureExpr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(7, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[3]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        successExpr1 = ast->data.script.statements->nodes[4]->data.expressionStatement.expr;
+        successExpr2 = ast->data.script.statements->nodes[5]->data.expressionStatement.expr;
+        failureExpr = ast->data.script.statements->nodes[6]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(successExpr1);
+        TEST_ASSERT_NOT_NULL(successExpr2);
+        TEST_ASSERT_NOT_NULL(failureExpr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, successExpr1, &result));
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("NeedClass<RefType>", ZrCore_String_GetNativeString(result.typeName));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, successExpr2, &result));
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("NeedStruct<ValueType>", ZrCore_String_GetNativeString(result.typeName));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, failureExpr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "class constraint"));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_import_function_call_uses_exported_signature(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Import Function Call Uses Exported Signature";
 
@@ -2545,7 +4174,7 @@ void test_type_inference_source_import_function_call_uses_exported_signature(voi
     TEST_DIVIDER();
 }
 
-void test_type_inference_source_import_function_call_rejects_argument_mismatch(void) {
+static void test_type_inference_source_import_function_call_rejects_argument_mismatch(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Import Function Call Rejects Argument Mismatch";
 
@@ -2603,7 +4232,7 @@ void test_type_inference_source_import_function_call_rejects_argument_mismatch(v
     TEST_DIVIDER();
 }
 
-void test_type_inference_source_import_member_chain_uses_returned_prototype_type(void) {
+static void test_type_inference_source_import_member_chain_uses_returned_prototype_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Import Member Chain Uses Returned Prototype Type";
 
@@ -2661,7 +4290,7 @@ void test_type_inference_source_import_member_chain_uses_returned_prototype_type
     TEST_DIVIDER();
 }
 
-void test_type_inference_source_import_array_assignment_rejects_incompatible_value(void) {
+static void test_type_inference_source_import_array_assignment_rejects_incompatible_value(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Import Array Assignment Rejects Incompatible Value";
 
@@ -2719,7 +4348,7 @@ void test_type_inference_source_import_array_assignment_rejects_incompatible_val
     TEST_DIVIDER();
 }
 
-void test_type_inference_binary_import_function_call_uses_exported_signature(void) {
+static void test_type_inference_binary_import_function_call_uses_exported_signature(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Binary Import Function Call Uses Exported Signature";
 
@@ -2779,7 +4408,7 @@ void test_type_inference_binary_import_function_call_uses_exported_signature(voi
     TEST_DIVIDER();
 }
 
-void test_type_inference_binary_import_function_call_rejects_argument_mismatch(void) {
+static void test_type_inference_binary_import_function_call_rejects_argument_mismatch(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Binary Import Function Call Rejects Argument Mismatch";
 
@@ -2841,7 +4470,65 @@ void test_type_inference_binary_import_function_call_rejects_argument_mismatch(v
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_instance_method_uses_registered_return_type(void) {
+static void test_type_inference_native_method_call_rejects_registered_parameter_mismatch(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Method Call Rejects Registered Parameter Mismatch";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var probe = %import(\"probe.native_shapes\");"
+                "var device = new probe.NativeDevice();"
+                "device.configure(\"bad\");";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_probe_method_mismatch_test.zr", 36);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_TRUE(register_probe_native_module(state));
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Argument type mismatch"));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_native_instance_method_uses_registered_return_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Instance Method Uses Registered Return Type";
 
@@ -2894,7 +4581,7 @@ void test_type_inference_native_instance_method_uses_registered_return_type(void
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_struct_field_access_uses_registered_field_type(void) {
+static void test_type_inference_native_struct_field_access_uses_registered_field_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Struct Field Access Uses Registered Field Type";
 
@@ -2944,7 +4631,7 @@ void test_type_inference_native_struct_field_access_uses_registered_field_type(v
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_nested_module_method_call_returns_null(void) {
+static void test_type_inference_native_nested_module_method_call_returns_null(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Nested Module Method Call Returns Null";
 
@@ -2994,7 +4681,7 @@ void test_type_inference_native_nested_module_method_call_returns_null(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_fs_info_field_uses_registered_field_type(void) {
+static void test_type_inference_native_fs_info_field_uses_registered_field_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Fs Info Field Uses Registered Field Type";
 
@@ -3044,7 +4731,7 @@ void test_type_inference_native_fs_info_field_uses_registered_field_type(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_process_arguments_is_array(void) {
+static void test_type_inference_native_process_arguments_is_array(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Process Arguments Is Array";
 
@@ -3094,7 +4781,7 @@ void test_type_inference_native_process_arguments_is_array(void) {
     TEST_DIVIDER();
 }
 
-void test_type_inference_native_vm_loaded_modules_element_field_uses_registered_type(void) {
+static void test_type_inference_native_vm_loaded_modules_element_field_uses_registered_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Vm Loaded Modules Element Field Uses Registered Type";
 
@@ -3144,6 +4831,170 @@ void test_type_inference_native_vm_loaded_modules_element_field_uses_registered_
     TEST_DIVIDER();
 }
 
+static void test_type_inference_container_dotted_generic_new_returns_closed_registered_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Container Dotted Generic New Returns Closed Registered Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var container = %import(\"zr.container\");"
+                "new container.Array<int>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "container_dotted_generic_new_type_test.zr", 42);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Array<int>", ZrCore_String_GetNativeString(result.typeName));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_container_computed_access_uses_registered_meta_types(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Container Computed Access Uses Registered Meta Types";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var container = %import(\"zr.container\");"
+                "var xs: Array<int> = new container.Array<int>();"
+                "var map: Map<string,int> = new container.Map<string,int>();"
+                "xs[0];"
+                "map[\"answer\"];";
+        SZrString *sourceName = ZrCore_String_Create(state, "container_computed_access_type_test.zr", 39);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *arrayExpr = ZR_NULL;
+        SZrAstNode *mapExpr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        arrayExpr = ast->data.script.statements->nodes[3]->data.expressionStatement.expr;
+        mapExpr = ast->data.script.statements->nodes[4]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(arrayExpr);
+        TEST_ASSERT_NOT_NULL(mapExpr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, arrayExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, mapExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_foreach_binds_iterated_element_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Foreach Binds Iterated Element Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var container = %import(\"zr.container\");"
+                "var dynamic: Array<int> = new container.Array<int>();"
+                "var fixed = [1, 2, 3];"
+                "var sum: int = 0;"
+                "for (var item in fixed) { sum = sum + item; }"
+                "for (var entry in dynamic) { sum = sum + entry; }";
+        SZrString *sourceName = ZrCore_String_Create(state, "foreach_binding_type_test.zr", 28);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(6, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        for (TZrSize index = 0; index < ast->data.script.statements->count; index++) {
+            ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[index]);
+            TEST_ASSERT_FALSE(cs->hasError);
+        }
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // 主测试函数
 int main(void) {
     printf("\n");
@@ -3177,9 +5028,36 @@ int main(void) {
     RUN_TEST(test_type_inference_string_literal);
     RUN_TEST(test_type_inference_template_string_literal_is_string);
     RUN_TEST(test_type_inference_import_native_module_keeps_module_name);
+    RUN_TEST(test_type_inference_type_query_returns_reflection_type);
     RUN_TEST(test_type_inference_native_prototype_construction_returns_native_type);
     RUN_TEST(test_type_inference_rejects_ordinary_prototype_call);
     RUN_TEST(test_type_inference_native_boxed_new_returns_registered_type);
+    RUN_TEST(test_type_inference_native_generic_boxed_new_returns_closed_registered_type);
+    RUN_TEST(test_type_inference_native_generic_constraint_mismatch_is_rejected);
+    RUN_TEST(test_type_inference_source_generic_class_boxed_new_returns_closed_registered_type);
+    RUN_TEST(test_type_inference_source_generic_class_member_substitutes_closed_field_type);
+    RUN_TEST(test_type_inference_source_generic_struct_boxed_new_returns_closed_registered_type);
+    RUN_TEST(test_type_inference_source_const_generic_boxed_new_returns_closed_registered_type);
+    RUN_TEST(test_type_inference_source_generic_function_supports_explicit_arguments_and_inference);
+    RUN_TEST(test_type_inference_source_generic_function_reports_explicit_arity_mismatch);
+    RUN_TEST(test_type_inference_source_generic_function_reports_cannot_infer_type_argument);
+    RUN_TEST(test_type_inference_source_generic_function_reports_type_argument_kind_mismatch);
+    RUN_TEST(test_type_inference_source_generic_function_reports_conflicting_inference);
+    RUN_TEST(test_type_inference_source_generic_method_supports_explicit_arguments_inference_and_receiver_closure);
+    RUN_TEST(test_type_inference_source_const_generic_method_supports_explicit_arguments_and_inference);
+    RUN_TEST(test_type_inference_source_const_generic_method_reports_const_argument_kind_mismatch);
+    RUN_TEST(test_type_inference_parameter_passing_mode_in_rejects_reassignment);
+    RUN_TEST(test_type_inference_parameter_passing_modes_out_and_ref_require_assignable_arguments);
+    RUN_TEST(test_type_inference_out_parameter_requires_definite_assignment_on_all_paths);
+    RUN_TEST(test_type_inference_source_generic_interface_registration_preserves_variance_and_rejects_construction);
+    RUN_TEST(test_type_inference_source_interface_members_flow_through_inheritance_chain);
+    RUN_TEST(test_type_inference_source_generic_constraint_accepts_source_interface_implementation);
+    RUN_TEST(test_type_inference_source_generic_constraint_mismatch_rejects_non_implementing_type);
+    RUN_TEST(test_type_inference_source_generic_inheritance_substitutes_closed_base_member_type);
+    RUN_TEST(test_type_inference_source_class_and_struct_constraints_are_enforced);
+    RUN_TEST(test_type_inference_container_dotted_generic_new_returns_closed_registered_type);
+    RUN_TEST(test_type_inference_container_computed_access_uses_registered_meta_types);
+    RUN_TEST(test_type_inference_foreach_binds_iterated_element_type);
     RUN_TEST(test_type_inference_native_enum_construction_returns_enum_type);
     RUN_TEST(test_type_inference_native_enum_member_access_returns_enum_type);
     RUN_TEST(test_type_inference_native_interface_construction_is_rejected);
@@ -3193,6 +5071,7 @@ int main(void) {
     RUN_TEST(test_type_inference_source_import_array_assignment_rejects_incompatible_value);
     RUN_TEST(test_type_inference_binary_import_function_call_uses_exported_signature);
     RUN_TEST(test_type_inference_binary_import_function_call_rejects_argument_mismatch);
+    RUN_TEST(test_type_inference_native_method_call_rejects_registered_parameter_mismatch);
     RUN_TEST(test_type_inference_native_instance_method_uses_registered_return_type);
     RUN_TEST(test_type_inference_native_nested_module_method_call_returns_null);
     RUN_TEST(test_type_inference_native_fs_info_field_uses_registered_field_type);

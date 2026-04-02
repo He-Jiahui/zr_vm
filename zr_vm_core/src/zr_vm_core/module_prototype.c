@@ -3,6 +3,7 @@
 //
 
 #include "module_internal.h"
+#include "zr_vm_core/reflection.h"
 
 static void register_prototype_in_global_scope(SZrState *state,
                                                SZrString *typeName,
@@ -469,6 +470,7 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                             SZrTypeValue prototypeValue;
                             protoInfoData.prototype = prototype;
                             protoInfoData.needsPostCreateSetup = prototypeWasCreated;
+                            ZrCore_Reflection_AttachPrototypeRuntimeMetadata(state, prototype, module, entryFunction);
 
                             zr_module_init_object_value(
                                     state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));

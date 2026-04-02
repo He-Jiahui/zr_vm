@@ -4,6 +4,24 @@
 
 #include "execution_internal.h"
 
+static TZrBool execution_object_type_name_matches_base(SZrObject *object, const TZrChar *baseName) {
+    const TZrChar *typeName;
+    TZrSize baseLength;
+
+    if (object == ZR_NULL || object->prototype == ZR_NULL || object->prototype->name == ZR_NULL || baseName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typeName = ZrCore_String_GetNativeString(object->prototype->name);
+    if (typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    baseLength = strlen(baseName);
+    return strncmp(typeName, baseName, baseLength) == 0 &&
+           (typeName[baseLength] == '\0' || typeName[baseLength] == '<');
+}
+
 void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     SZrClosure *closure;
     SZrTypeValue *constants;
@@ -61,36 +79,28 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define SAVE_STATE(STATE, CALL_INFO)                                                                                   \
     (SAVE_PC(STATE, CALL_INFO), ((STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer))
     // MODIFIABLE: ERROR & STACK & HOOK
-#if defined(_MSC_VER)
-    // MSVC 不支持语句表达式，使用 do-while 循环
-    #define PROTECT_ESH(STATE, CALL_INFO, EXP) \
-        do { \
-            SAVE_PC(STATE, CALL_INFO); \
-            (STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer; \
-            EXP; \
-            UPDATE_BASE(CALL_INFO); \
-            UPDATE_TRAP(CALL_INFO); \
-        } while(0)
-    #define PROTECT_EH(STATE, CALL_INFO, EXP) \
-        do { \
-            SAVE_PC(STATE, CALL_INFO); \
-            EXP; \
-            UPDATE_BASE(CALL_INFO); \
-            UPDATE_TRAP(CALL_INFO); \
-        } while(0)
-    #define PROTECT_E(STATE, CALL_INFO, EXP) \
-        do { \
-            SAVE_PC(STATE, CALL_INFO); \
-            (STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer; \
-            EXP; \
-            UPDATE_BASE(CALL_INFO); \
-        } while(0)
-#else
-    // GCC/Clang 支持语句表达式
-    #define PROTECT_ESH(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP), UPDATE_BASE(CALL_INFO), UPDATE_TRAP(CALL_INFO))
-    #define PROTECT_EH(STATE, CALL_INFO, EXP) (SAVE_PC(STATE, CALL_INFO), (EXP), UPDATE_BASE(CALL_INFO), UPDATE_TRAP(CALL_INFO))
-    #define PROTECT_E(STATE, CALL_INFO, EXP) (SAVE_STATE(STATE, CALL_INFO), (EXP), UPDATE_BASE(CALL_INFO))
-#endif
+#define PROTECT_ESH(STATE, CALL_INFO, EXP)                                                                             \
+    do {                                                                                                               \
+        SAVE_PC(STATE, CALL_INFO);                                                                                     \
+        (STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer;                                        \
+        EXP;                                                                                                           \
+        UPDATE_BASE(CALL_INFO);                                                                                        \
+        UPDATE_TRAP(CALL_INFO);                                                                                        \
+    } while (0)
+#define PROTECT_EH(STATE, CALL_INFO, EXP)                                                                              \
+    do {                                                                                                               \
+        SAVE_PC(STATE, CALL_INFO);                                                                                     \
+        EXP;                                                                                                           \
+        UPDATE_BASE(CALL_INFO);                                                                                        \
+        UPDATE_TRAP(CALL_INFO);                                                                                        \
+    } while (0)
+#define PROTECT_E(STATE, CALL_INFO, EXP)                                                                               \
+    do {                                                                                                               \
+        SAVE_PC(STATE, CALL_INFO);                                                                                     \
+        (STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer;                                        \
+        EXP;                                                                                                           \
+        UPDATE_BASE(CALL_INFO);                                                                                        \
+    } while (0)
 
 #define JUMP(CALL_INFO, INSTRUCTION, OFFSET)                                                                           \
     {                                                                                                                  \
@@ -800,36 +810,42 @@ LZrReturning: {
             DONE(1);
             ZR_INSTRUCTION_LABEL(NEG) {
                 opA = &BASE(A1(instruction))->value;
-                SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_NEG);
-                if (meta != ZR_NULL && meta->function != ZR_NULL) {
-                    // 调用元方法
-                    TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-                    SZrCallInfo *savedCallInfo = state->callInfoList;
-                    PROTECT_E(state, callInfo, {
-                        TZrStackValuePointer metaBase = ZR_NULL;
-                        TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
-                                                       meta,
-                                                       opA,
-                                                       ZR_NULL,
-                                                       1,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
-                            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
-                            ZrCore_Value_Copy(state, destination, returnValue);
-                        } else {
-                            ZrCore_Value_ResetAsNull(destination);
-                        }
-                        state->stackTop.valuePointer = restoredStackTop;
-                        state->callInfoList = savedCallInfo;
-                    });
+                if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {
+                    ZR_VALUE_FAST_SET(destination, nativeInt64, -opA->value.nativeObject.nativeInt64, opA->type);
+                } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
+                    ZrCore_Value_InitAsInt(state, destination, -(TZrInt64)opA->value.nativeObject.nativeUInt64);
+                } else if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
+                    ZR_VALUE_FAST_SET(destination, nativeDouble, -opA->value.nativeObject.nativeDouble, opA->type);
                 } else {
-                    // 无元方法，返回 null
-                    ZrCore_Value_ResetAsNull(destination);
+                    SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_NEG);
+                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                        TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+                        SZrCallInfo *savedCallInfo = state->callInfoList;
+                        PROTECT_E(state, callInfo, {
+                            TZrStackValuePointer metaBase = ZR_NULL;
+                            TZrStackValuePointer restoredStackTop = savedStackTop;
+                            if (execution_invoke_meta_call(state,
+                                                           savedCallInfo,
+                                                           savedStackTop,
+                                                           savedStackTop,
+                                                           ZR_FALSE,
+                                                           meta,
+                                                           opA,
+                                                           ZR_NULL,
+                                                           1,
+                                                           &metaBase,
+                                                           &restoredStackTop)) {
+                                SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
+                                ZrCore_Value_Copy(state, destination, returnValue);
+                            } else {
+                                ZrCore_Value_ResetAsNull(destination);
+                            }
+                            state->stackTop.valuePointer = restoredStackTop;
+                            state->callInfoList = savedCallInfo;
+                        });
+                    } else {
+                        ZrCore_Value_ResetAsNull(destination);
+                    }
                 }
             }
             DONE(1);
@@ -1603,20 +1619,64 @@ LZrReturning: {
                 // 类型检查：确保 table 是对象类型或数组类型
                 if (opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY) {
                     SZrObject *tableObject = ZR_CAST_OBJECT(state, opA->value.object);
-                    const SZrTypeValue *result = ZrCore_Object_GetValue(state, tableObject, opB);
+                    SZrMeta *meta = ZR_NULL;
+                    TZrBool allowStringMeta = ZR_FALSE;
+                    TZrBool preferMeta = ZR_FALSE;
+                    const SZrTypeValue *result = ZR_NULL;
+
+                    if (opA->type == ZR_VALUE_TYPE_OBJECT && tableObject != ZR_NULL) {
+                        meta = ZrCore_Object_GetMetaRecursively(state->global, tableObject, ZR_META_GET_ITEM);
+                        allowStringMeta = execution_object_type_name_matches_base(tableObject, "Map");
+                        preferMeta = allowStringMeta ||
+                                     (execution_object_type_name_matches_base(tableObject, "Array") &&
+                                      !ZR_VALUE_IS_TYPE_STRING(opB->type));
+                    } else {
+                        meta = ZrCore_Value_GetMeta(state, opA, ZR_META_GET_ITEM);
+                        preferMeta = !ZR_VALUE_IS_TYPE_STRING(opB->type);
+                    }
+
+                    if (preferMeta &&
+                        meta != ZR_NULL &&
+                        meta->function != ZR_NULL &&
+                        (!ZR_VALUE_IS_TYPE_STRING(opB->type) || allowStringMeta)) {
+                        SZrTypeValue metaResult;
+                        if (ZrCore_Value_CallMetaMethod(state, opA, ZR_META_GET_ITEM, &metaResult, 1, opB)) {
+                            if (!ZR_VALUE_IS_TYPE_NULL(metaResult.type) || !allowStringMeta) {
+                                ZrCore_Value_Copy(state, destination, &metaResult);
+                                DONE(1);
+                            }
+                        } else if (!allowStringMeta) {
+                            ZrCore_Value_ResetAsNull(destination);
+                            DONE(1);
+                        }
+                    }
+
+                    result = ZrCore_Object_GetValue(state, tableObject, opB);
+
                     if (result == ZR_NULL &&
                         execution_try_materialize_global_prototypes(state, closure, callInfo, opA, opB)) {
                         result = ZrCore_Object_GetValue(state, tableObject, opB);
                     }
+
                     if (result != ZR_NULL) {
                         ZrCore_Value_Copy(state, destination, result);
                     } else {
-                        ZrCore_Value_ResetAsNull(destination);
+                        if (meta != ZR_NULL &&
+                            meta->function != ZR_NULL &&
+                            (!ZR_VALUE_IS_TYPE_STRING(opB->type) || allowStringMeta)) {
+                            SZrTypeValue metaResult;
+                            if (ZrCore_Value_CallMetaMethod(state, opA, ZR_META_GET_ITEM, &metaResult, 1, opB)) {
+                                ZrCore_Value_Copy(state, destination, &metaResult);
+                            } else {
+                                ZrCore_Value_ResetAsNull(destination);
+                            }
+                        } else {
+                            ZrCore_Value_ResetAsNull(destination);
+                        }
                     }
                 } else {
                     // 类型错误：table 不是对象类型
                     ZrCore_Debug_RunError(state, "GETTABLE: table must be an object or array");
-                    ZrCore_Value_ResetAsNull(destination);
                 }
             }
             DONE(1);
@@ -1625,7 +1685,32 @@ LZrReturning: {
                 opA = &BASE(A1(instruction))->value; // table object
                 opB = &BASE(B1(instruction))->value; // key
                 if (opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY) {
-                    ZrCore_Object_SetValue(state, ZR_CAST_OBJECT(state, opA->value.object), opB, destination);
+                    SZrObject *tableObject = ZR_CAST_OBJECT(state, opA->value.object);
+                    SZrMeta *meta = ZR_NULL;
+                    TZrBool allowStringMeta = ZR_FALSE;
+                    TZrBool preferMeta = ZR_FALSE;
+
+                    if (opA->type == ZR_VALUE_TYPE_OBJECT && tableObject != ZR_NULL) {
+                        meta = ZrCore_Object_GetMetaRecursively(state->global, tableObject, ZR_META_SET_ITEM);
+                        allowStringMeta = execution_object_type_name_matches_base(tableObject, "Map");
+                        preferMeta = allowStringMeta ||
+                                     (execution_object_type_name_matches_base(tableObject, "Array") &&
+                                      !ZR_VALUE_IS_TYPE_STRING(opB->type));
+                    } else {
+                        meta = ZrCore_Value_GetMeta(state, opA, ZR_META_SET_ITEM);
+                        preferMeta = !ZR_VALUE_IS_TYPE_STRING(opB->type);
+                    }
+
+                    TZrBool shouldUseMeta = preferMeta &&
+                                            meta != ZR_NULL &&
+                                            meta->function != ZR_NULL &&
+                                            (!ZR_VALUE_IS_TYPE_STRING(opB->type) || allowStringMeta);
+                    if (shouldUseMeta) {
+                        SZrTypeValue ignoredResult;
+                        ZrCore_Value_CallMetaMethod(state, opA, ZR_META_SET_ITEM, &ignoredResult, 2, opB, destination);
+                    } else {
+                        ZrCore_Object_SetValue(state, tableObject, opB, destination);
+                    }
                 } else {
                     ZrCore_Debug_RunError(state, "SETTABLE: table must be an object or array");
                 }
@@ -1642,7 +1727,7 @@ LZrReturning: {
                 // 检查条件值是否为真（支持 bool、int、非零值等）
                 TZrBool condition = ZR_FALSE;
                 if (ZR_VALUE_IS_TYPE_BOOL(condValue->type)) {
-                    condition = condValue->value.nativeObject.nativeBool;
+                    condition = condValue->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
                 } else if (ZR_VALUE_IS_TYPE_INT(condValue->type)) {
                     condition = condValue->value.nativeObject.nativeInt64 != 0;
                 } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(condValue->type)) {
@@ -1672,7 +1757,6 @@ LZrReturning: {
                 // operand1[0] (A1) = functionConstantIndex
                 // operand1[1] (B1) = closureVarCount
                 TZrSize functionConstantIndex = A1(instruction);
-                TZrSize closureVarCount = B1(instruction);
                 SZrTypeValue *functionConstant = CONST(functionConstantIndex);
                 // 从常量池获取函数对象
                 // 注意：编译器将SZrFunction*存储为ZR_VALUE_TYPE_CLOSURE类型，但value.object实际指向SZrFunction*
@@ -1775,6 +1859,7 @@ LZrReturning: {
                 }
 
                 ZrCore_Exception_Throw(state, state->currentExceptionStatus);
+                ZR_ABORT();
             }
             ZR_INSTRUCTION_LABEL(CATCH) {
                 if (state->hasCurrentException) {
@@ -1913,7 +1998,6 @@ LZrReturning: {
                 sprintf(message, "Not implemented op code:%d at offset %d\n", instruction.instruction.operationCode,
                         (int) (instructionsEnd - programCounter));
                 ZrCore_Debug_RunError(state, message);
-                ZR_ABORT();
             }
             DONE(1);
         }

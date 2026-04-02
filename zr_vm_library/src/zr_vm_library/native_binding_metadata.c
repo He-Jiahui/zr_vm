@@ -1,4 +1,5 @@
 #include "native_binding_internal.h"
+#include "zr_vm_core/reflection.h"
 
 void native_metadata_set_value_field(SZrState *state,
                                             SZrObject *object,
@@ -173,15 +174,118 @@ SZrObject *native_metadata_make_field_entry(SZrState *state, const ZrLibFieldDes
     return object;
 }
 
+static SZrObject *native_metadata_make_parameter_entry(SZrState *state, const ZrLibParameterDescriptor *descriptor) {
+    SZrObject *object;
+
+    if (state == ZR_NULL || descriptor == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = ZrLib_Object_New(state);
+    if (object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    native_metadata_set_string_field(state, object, "name", descriptor->name);
+    native_metadata_set_string_field(state, object, "typeName", descriptor->typeName);
+    native_metadata_set_string_field(state, object, "documentation", descriptor->documentation);
+    return object;
+}
+
+static SZrObject *native_metadata_make_parameter_array(SZrState *state,
+                                                       const ZrLibParameterDescriptor *parameters,
+                                                       TZrSize parameterCount) {
+    SZrObject *array;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    array = ZrLib_Array_New(state);
+    if (array == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < parameterCount; index++) {
+        SZrObject *parameterEntry = native_metadata_make_parameter_entry(state, &parameters[index]);
+        if (parameterEntry != ZR_NULL) {
+            SZrTypeValue entryValue;
+            ZrLib_Value_SetObject(state, &entryValue, parameterEntry, ZR_VALUE_TYPE_OBJECT);
+            ZrLib_Array_PushValue(state, array, &entryValue);
+        }
+    }
+
+    return array;
+}
+
+static SZrObject *native_metadata_make_generic_parameter_entry(SZrState *state,
+                                                               const ZrLibGenericParameterDescriptor *descriptor) {
+    SZrObject *object;
+    SZrObject *constraintsArray;
+    SZrTypeValue constraintsValue;
+
+    if (state == ZR_NULL || descriptor == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = ZrLib_Object_New(state);
+    constraintsArray = native_metadata_make_string_array(state,
+                                                         descriptor->constraintTypeNames,
+                                                         descriptor->constraintTypeCount);
+    if (object == ZR_NULL || constraintsArray == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    native_metadata_set_string_field(state, object, "name", descriptor->name);
+    native_metadata_set_string_field(state, object, "documentation", descriptor->documentation);
+    ZrLib_Value_SetObject(state, &constraintsValue, constraintsArray, ZR_VALUE_TYPE_ARRAY);
+    native_metadata_set_value_field(state, object, "constraints", &constraintsValue);
+    return object;
+}
+
+static SZrObject *native_metadata_make_generic_parameter_array(SZrState *state,
+                                                               const ZrLibGenericParameterDescriptor *parameters,
+                                                               TZrSize parameterCount) {
+    SZrObject *array;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    array = ZrLib_Array_New(state);
+    if (array == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < parameterCount; index++) {
+        SZrObject *parameterEntry = native_metadata_make_generic_parameter_entry(state, &parameters[index]);
+        if (parameterEntry != ZR_NULL) {
+            SZrTypeValue entryValue;
+            ZrLib_Value_SetObject(state, &entryValue, parameterEntry, ZR_VALUE_TYPE_OBJECT);
+            ZrLib_Array_PushValue(state, array, &entryValue);
+        }
+    }
+
+    return array;
+}
+
 SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodDescriptor *descriptor) {
     SZrObject *object;
+    SZrObject *parametersArray;
+    SZrTypeValue parametersValue;
+    TZrBool hasParameterMetadata;
 
     if (state == ZR_NULL || descriptor == ZR_NULL || descriptor->name == ZR_NULL) {
         return ZR_NULL;
     }
 
     object = ZrLib_Object_New(state);
-    if (object == ZR_NULL) {
+    hasParameterMetadata = descriptor->parameters != ZR_NULL ||
+                           (descriptor->minArgumentCount == 0 && descriptor->maxArgumentCount == 0);
+    parametersArray = hasParameterMetadata
+                              ? native_metadata_make_parameter_array(state, descriptor->parameters, descriptor->parameterCount)
+                              : ZR_NULL;
+    if (object == ZR_NULL || (hasParameterMetadata && parametersArray == ZR_NULL)) {
         return ZR_NULL;
     }
 
@@ -190,19 +294,32 @@ SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodD
     native_metadata_set_int_field(state, object, "minArgumentCount", descriptor->minArgumentCount);
     native_metadata_set_int_field(state, object, "maxArgumentCount", descriptor->maxArgumentCount);
     native_metadata_set_bool_field(state, object, "isStatic", descriptor->isStatic);
+    if (hasParameterMetadata) {
+        native_metadata_set_int_field(state, object, "parameterCount", (TZrInt64)descriptor->parameterCount);
+        ZrLib_Value_SetObject(state, &parametersValue, parametersArray, ZR_VALUE_TYPE_ARRAY);
+        native_metadata_set_value_field(state, object, "parameters", &parametersValue);
+    }
     return object;
 }
 
 SZrObject *native_metadata_make_meta_method_entry(SZrState *state,
                                                          const ZrLibMetaMethodDescriptor *descriptor) {
     SZrObject *object;
+    SZrObject *parametersArray;
+    SZrTypeValue parametersValue;
+    TZrBool hasParameterMetadata;
 
     if (state == ZR_NULL || descriptor == ZR_NULL || descriptor->metaType >= ZR_META_ENUM_MAX) {
         return ZR_NULL;
     }
 
     object = ZrLib_Object_New(state);
-    if (object == ZR_NULL) {
+    hasParameterMetadata = descriptor->parameters != ZR_NULL ||
+                           (descriptor->minArgumentCount == 0 && descriptor->maxArgumentCount == 0);
+    parametersArray = hasParameterMetadata
+                              ? native_metadata_make_parameter_array(state, descriptor->parameters, descriptor->parameterCount)
+                              : ZR_NULL;
+    if (object == ZR_NULL || (hasParameterMetadata && parametersArray == ZR_NULL)) {
         return ZR_NULL;
     }
 
@@ -211,18 +328,31 @@ SZrObject *native_metadata_make_meta_method_entry(SZrState *state,
     native_metadata_set_string_field(state, object, "returnTypeName", descriptor->returnTypeName);
     native_metadata_set_int_field(state, object, "minArgumentCount", descriptor->minArgumentCount);
     native_metadata_set_int_field(state, object, "maxArgumentCount", descriptor->maxArgumentCount);
+    if (hasParameterMetadata) {
+        native_metadata_set_int_field(state, object, "parameterCount", (TZrInt64)descriptor->parameterCount);
+        ZrLib_Value_SetObject(state, &parametersValue, parametersArray, ZR_VALUE_TYPE_ARRAY);
+        native_metadata_set_value_field(state, object, "parameters", &parametersValue);
+    }
     return object;
 }
 
 SZrObject *native_metadata_make_function_entry(SZrState *state, const ZrLibFunctionDescriptor *descriptor) {
     SZrObject *object;
+    SZrObject *parametersArray;
+    SZrTypeValue parametersValue;
+    TZrBool hasParameterMetadata;
 
     if (state == ZR_NULL || descriptor == ZR_NULL || descriptor->name == ZR_NULL) {
         return ZR_NULL;
     }
 
     object = ZrLib_Object_New(state);
-    if (object == ZR_NULL) {
+    hasParameterMetadata = descriptor->parameters != ZR_NULL ||
+                           (descriptor->minArgumentCount == 0 && descriptor->maxArgumentCount == 0);
+    parametersArray = hasParameterMetadata
+                              ? native_metadata_make_parameter_array(state, descriptor->parameters, descriptor->parameterCount)
+                              : ZR_NULL;
+    if (object == ZR_NULL || (hasParameterMetadata && parametersArray == ZR_NULL)) {
         return ZR_NULL;
     }
 
@@ -230,6 +360,11 @@ SZrObject *native_metadata_make_function_entry(SZrState *state, const ZrLibFunct
     native_metadata_set_string_field(state, object, "returnTypeName", descriptor->returnTypeName);
     native_metadata_set_int_field(state, object, "minArgumentCount", descriptor->minArgumentCount);
     native_metadata_set_int_field(state, object, "maxArgumentCount", descriptor->maxArgumentCount);
+    if (hasParameterMetadata) {
+        native_metadata_set_int_field(state, object, "parameterCount", (TZrInt64)descriptor->parameterCount);
+        ZrLib_Value_SetObject(state, &parametersValue, parametersArray, ZR_VALUE_TYPE_ARRAY);
+        native_metadata_set_value_field(state, object, "parameters", &parametersValue);
+    }
     return object;
 }
 
@@ -306,6 +441,7 @@ SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescr
     SZrObject *metaMethodsArray;
     SZrObject *implementsArray;
     SZrObject *enumMembersArray;
+    SZrObject *genericParametersArray;
     TZrSize index;
     SZrTypeValue arrayValue;
 
@@ -321,8 +457,11 @@ SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescr
                                                         descriptor->implementsTypeNames,
                                                         descriptor->implementsTypeCount);
     enumMembersArray = ZrLib_Array_New(state);
+    genericParametersArray = native_metadata_make_generic_parameter_array(state,
+                                                                          descriptor->genericParameters,
+                                                                          descriptor->genericParameterCount);
     if (object == ZR_NULL || fieldsArray == ZR_NULL || methodsArray == ZR_NULL || metaMethodsArray == ZR_NULL ||
-        implementsArray == ZR_NULL || enumMembersArray == ZR_NULL) {
+        implementsArray == ZR_NULL || enumMembersArray == ZR_NULL || genericParametersArray == ZR_NULL) {
         return ZR_NULL;
     }
 
@@ -380,6 +519,8 @@ SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescr
     native_metadata_set_value_field(state, object, "implements", &arrayValue);
     ZrLib_Value_SetObject(state, &arrayValue, enumMembersArray, ZR_VALUE_TYPE_ARRAY);
     native_metadata_set_value_field(state, object, "enumMembers", &arrayValue);
+    ZrLib_Value_SetObject(state, &arrayValue, genericParametersArray, ZR_VALUE_TYPE_ARRAY);
+    native_metadata_set_value_field(state, object, "genericParameters", &arrayValue);
 
     return object;
 }
@@ -868,6 +1009,7 @@ TZrBool native_registry_add_type(SZrState *state,
     }
 
     native_registry_attach_type_runtime_metadata(state, typeDescriptor, prototype);
+    ZrCore_Reflection_AttachPrototypeRuntimeMetadata(state, prototype, module, ZR_NULL);
 
     if (!native_registry_add_methods(state, registry, moduleDescriptor, typeDescriptor, prototype)) {
         return ZR_FALSE;

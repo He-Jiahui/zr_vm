@@ -44,13 +44,17 @@ TZrBool ZrMath_Quaternion_Normalized(ZrLibCallContext *context, SZrTypeValue *re
     len = sqrt(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w);
     if (len <= ZR_MATH_EPSILON) object = ZrMath_MakeQuaternion(context->state, 0.0, 0.0, 0.0, 1.0);
     else object = ZrMath_MakeQuaternion(context->state, q.x/len, q.y/len, q.z/len, q.w/len);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_Conjugate(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathQuaternion q; SZrObject *object;
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &q)) return ZR_FALSE;
     object = ZrMath_MakeQuaternion(context->state, -q.x, -q.y, -q.z, q.w);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_Inverse(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathQuaternion q; TZrFloat64 lenSq; SZrObject *object;
@@ -58,7 +62,9 @@ TZrBool ZrMath_Quaternion_Inverse(ZrLibCallContext *context, SZrTypeValue *resul
     lenSq = q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w;
     if (lenSq <= ZR_MATH_EPSILON) object = ZrMath_MakeQuaternion(context->state, 0.0, 0.0, 0.0, 1.0);
     else object = ZrMath_MakeQuaternion(context->state, -q.x/lenSq, -q.y/lenSq, -q.z/lenSq, q.w/lenSq);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_Dot(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathQuaternion lhs; ZrMathQuaternion rhs; SZrObject *other = ZR_NULL;
@@ -71,7 +77,9 @@ TZrBool ZrMath_Quaternion_Mul(ZrLibCallContext *context, SZrTypeValue *result) {
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadQuaternionObject(context->state, other, &rhs)) return ZR_FALSE;
     object = zr_math_quaternion_make_object(context->state, zr_math_quaternion_mul_value(lhs, rhs));
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_Slerp(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathQuaternion lhs; ZrMathQuaternion rhs; SZrObject *other = ZR_NULL; TZrFloat64 t = 0.0; TZrFloat64 dot; TZrFloat64 theta; TZrFloat64 s0; TZrFloat64 s1; SZrObject *object;
@@ -85,28 +93,36 @@ TZrBool ZrMath_Quaternion_Slerp(ZrLibCallContext *context, SZrTypeValue *result)
         theta = acos(dot); s0 = sin((1.0 - t) * theta) / sin(theta); s1 = sin(t * theta) / sin(theta);
         object = ZrMath_MakeQuaternion(context->state, lhs.x * s0 + rhs.x * s1, lhs.y * s0 + rhs.y * s1, lhs.z * s0 + rhs.z * s1, lhs.w * s0 + rhs.w * s1);
     }
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_MetaAdd(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathQuaternion lhs; ZrMathQuaternion rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadQuaternionObject(context->state, other, &rhs)) return ZR_FALSE;
     object = ZrMath_MakeQuaternion(context->state, lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z, lhs.w + rhs.w);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_MetaSub(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathQuaternion lhs; ZrMathQuaternion rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadQuaternionObject(context->state, other, &rhs)) return ZR_FALSE;
     object = ZrMath_MakeQuaternion(context->state, lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z, lhs.w - rhs.w);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_MetaMul(ZrLibCallContext *context, SZrTypeValue *result) { return ZrMath_Quaternion_Mul(context, result); }
 TZrBool ZrMath_Quaternion_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathQuaternion q; SZrObject *object;
     if (!ZrMath_ReadQuaternionObject(context->state, ZrMath_SelfObject(context), &q)) return ZR_FALSE;
     object = ZrMath_MakeQuaternion(context->state, -q.x, -q.y, -q.z, -q.w);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Quaternion_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathQuaternion lhs; ZrMathQuaternion rhs; SZrObject *other = ZR_NULL; TZrFloat64 dl; TZrFloat64 dr;

@@ -1,0 +1,6 @@
+{
+  "name": "lsp_discovery_outer",
+  "source": "outer_src",
+  "binary": "bin",
+  "entry": "outer"
+}

@@ -30,8 +30,16 @@ SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state
 void ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(SZrState *state,
                                                        SZrSemanticAnalyzer *analyzer,
                                                        SZrCompletionItem *item,
+                                                       SZrString *hoveredSymbolName,
+                                                       SZrString *resolvedTypeText,
                                                        const TZrChar *content,
                                                        TZrSize contentLength);
+SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
+                                                              SZrSymbol *symbol,
+                                                              const TZrChar *content,
+                                                              TZrSize contentLength);
+SZrString *ZrLanguageServer_Lsp_ParseResolvedTypeFromHoverMarkdown(SZrState *state,
+                                                                   SZrString *hoverMarkdown);
 void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag);
 SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformation(SZrState *state,
                                                                       SZrSymbol *symbol);
@@ -86,6 +94,9 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
                                                               SZrString *uri,
                                                               const TZrChar *content,
                                                               TZrSize contentLength);
+SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(SZrState *state,
+                                                                    SZrLspContext *context,
+                                                                    SZrString *uri);
 TZrBool ZrLanguageServer_Lsp_ProjectTryGetDefinition(SZrState *state,
                                                      SZrLspContext *context,
                                                      SZrString *uri,
@@ -104,5 +115,18 @@ TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrString *query,
                                                            SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_ProjectTryGetHover(SZrState *state,
+                                                SZrLspContext *context,
+                                                SZrString *uri,
+                                                SZrLspPosition position,
+                                                SZrLspHover **result);
+TZrBool ZrLanguageServer_Lsp_ProjectTryCollectImportCompletions(SZrState *state,
+                                                                SZrLspContext *context,
+                                                                SZrString *uri,
+                                                                const TZrChar *content,
+                                                                TZrSize contentLength,
+                                                                TZrSize cursorOffset,
+                                                                SZrFileRange cursorRange,
+                                                                SZrArray *result);
 
 #endif

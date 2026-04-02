@@ -15,6 +15,7 @@
 
 #include "zr_vm_core/string.h"
 #include "zr_vm_lib_ffi/module.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_library/common_state.h"
@@ -140,9 +141,12 @@ static TZrBool zr_cli_resolve_output_path(const TZrChar *rootPath,
                                           TZrSize bufferSize) {
     TZrChar normalizedModule[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar relativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize rootLength;
+    TZrSize relativeLength;
+    TZrSize extensionLength;
+    TZrSize totalLength;
     TZrSize index;
     TZrSize writeIndex = 0;
-    int written;
 
     if (rootPath == ZR_NULL || moduleName == ZR_NULL || extension == ZR_NULL || buffer == ZR_NULL || bufferSize == 0 ||
         !ZrCli_Project_NormalizeModuleName(moduleName, normalizedModule, sizeof(normalizedModule))) {
@@ -154,8 +158,20 @@ static TZrBool zr_cli_resolve_output_path(const TZrChar *rootPath,
     }
     relativePath[writeIndex] = '\0';
 
-    written = snprintf(buffer, bufferSize, "%s%c%s%s", rootPath, ZR_SEPARATOR, relativePath, extension);
-    return written > 0 && (TZrSize) written < bufferSize;
+    rootLength = strlen(rootPath);
+    relativeLength = strlen(relativePath);
+    extensionLength = strlen(extension);
+    totalLength = rootLength + 1 + relativeLength + extensionLength;
+    if (totalLength + 1 > bufferSize) {
+        return ZR_FALSE;
+    }
+
+    memcpy(buffer, rootPath, rootLength);
+    buffer[rootLength] = ZR_SEPARATOR;
+    memcpy(buffer + rootLength + 1, relativePath, relativeLength);
+    memcpy(buffer + rootLength + 1 + relativeLength, extension, extensionLength);
+    buffer[totalLength] = '\0';
+    return ZR_TRUE;
 }
 
 SZrGlobalState *ZrCli_Project_CreateBareGlobal(void) {
@@ -164,7 +180,7 @@ SZrGlobalState *ZrCli_Project_CreateBareGlobal(void) {
 }
 
 SZrGlobalState *ZrCli_Project_CreateProjectGlobal(const TZrChar *projectPath) {
-    return ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    return ZrLibrary_CommonState_CommonGlobalState_New((TZrNativeString)projectPath);
 }
 
 TZrBool ZrCli_Project_RegisterStandardModules(SZrGlobalState *global) {
@@ -173,13 +189,18 @@ TZrBool ZrCli_Project_RegisterStandardModules(SZrGlobalState *global) {
     }
 
     ZrParser_ToGlobalState_Register(global->mainThreadState);
-    return ZrVmLibMath_Register(global) && ZrVmLibSystem_Register(global) && ZrVmLibFfi_Register(global);
+    return ZrVmLibMath_Register(global) && ZrVmLibSystem_Register(global) &&
+           ZrVmLibContainer_Register(global) && ZrVmLibFfi_Register(global);
 }
 
 TZrBool ZrCli_ProjectContext_FromGlobal(SZrCliProjectContext *context,
                                         SZrGlobalState *global,
                                         const TZrChar *projectPath) {
     SZrLibrary_Project *project;
+    static const TZrChar manifestFileName[] = ".zr_cli_manifest";
+    TZrSize binaryRootLength;
+    TZrSize manifestNameLength;
+    TZrSize manifestLength;
 
     if (context == ZR_NULL || global == ZR_NULL || global->userData == ZR_NULL || projectPath == ZR_NULL) {
         return ZR_FALSE;
@@ -200,12 +221,17 @@ TZrBool ZrCli_ProjectContext_FromGlobal(SZrCliProjectContext *context,
                                            sizeof(context->entryModule))) {
         return ZR_FALSE;
     }
-    snprintf(context->manifestPath,
-             sizeof(context->manifestPath),
-             "%s%c%s",
-             context->binaryRoot,
-             ZR_SEPARATOR,
-             ".zr_cli_manifest");
+    binaryRootLength = strlen(context->binaryRoot);
+    manifestNameLength = sizeof(manifestFileName) - 1;
+    manifestLength = binaryRootLength + 1 + manifestNameLength;
+    if (manifestLength + 1 > sizeof(context->manifestPath)) {
+        return ZR_FALSE;
+    }
+
+    memcpy(context->manifestPath, context->binaryRoot, binaryRootLength);
+    context->manifestPath[binaryRootLength] = ZR_SEPARATOR;
+    memcpy(context->manifestPath + binaryRootLength + 1, manifestFileName, manifestNameLength);
+    context->manifestPath[manifestLength] = '\0';
     return ZR_TRUE;
 }
 
@@ -292,7 +318,7 @@ TZrBool ZrCli_Project_OpenFileIo(SZrState *state, const TZrChar *path, TZrBool i
         return ZR_FALSE;
     }
 
-    reader = ZrLibrary_File_OpenRead(state->global, path, isBinary);
+    reader = ZrLibrary_File_OpenRead(state->global, (TZrNativeString)path, isBinary);
     if (reader == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -557,7 +583,7 @@ TZrBool ZrCli_Project_LoadManifest(const SZrCliProjectContext *context, SZrCliIn
     }
 
     ZrCli_Project_Manifest_Init(manifest);
-    if (ZrLibrary_File_Exist(context->manifestPath) != ZR_LIBRARY_FILE_IS_FILE) {
+    if (ZrLibrary_File_Exist((TZrNativeString)context->manifestPath) != ZR_LIBRARY_FILE_IS_FILE) {
         return ZR_TRUE;
     }
 

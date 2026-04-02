@@ -177,7 +177,7 @@ static void test_lsp_get_diagnostics(SZrState *state) {
     // 获取诊断
     SZrArray diagnostics;
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
-    TZrBool success = ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics);
+    (void)ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics);
     
     // 诊断可能为空（取决于代码是否有错误），只要不崩溃就算成功
     ZrCore_Array_Free(state, &diagnostics);
@@ -263,7 +263,7 @@ static void test_lsp_get_completion(SZrState *state) {
     
     SZrArray completions;
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 4);
-    TZrBool success = ZrLanguageServer_Lsp_GetCompletion(state, context, uri, position, &completions);
+    (void)ZrLanguageServer_Lsp_GetCompletion(state, context, uri, position, &completions);
     
     // 补全可能为空，只要不崩溃就算成功
     ZrCore_Array_Free(state, &completions);
@@ -298,7 +298,7 @@ static void test_lsp_get_definition(SZrState *state) {
     
     SZrArray definitions;
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 1);
-    TZrBool success = ZrLanguageServer_Lsp_GetDefinition(state, context, uri, position, &definitions);
+    (void)ZrLanguageServer_Lsp_GetDefinition(state, context, uri, position, &definitions);
     
     // 定义可能找不到，只要不崩溃就算成功
     ZrCore_Array_Free(state, &definitions);
@@ -333,7 +333,7 @@ static void test_lsp_find_references(SZrState *state) {
     
     SZrArray references;
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 4);
-    TZrBool success = ZrLanguageServer_Lsp_FindReferences(state, context, uri, position, ZR_TRUE, &references);
+    (void)ZrLanguageServer_Lsp_FindReferences(state, context, uri, position, ZR_TRUE, &references);
     
     // 引用可能找不到，只要不崩溃就算成功
     ZrCore_Array_Free(state, &references);
@@ -369,7 +369,7 @@ static void test_lsp_rename(SZrState *state) {
     SZrString *newName = ZrCore_String_Create(state, "newX", 4);
     SZrArray locations;
     ZrCore_Array_Init(state, &locations, sizeof(SZrLspLocation *), 4);
-    TZrBool success = ZrLanguageServer_Lsp_Rename(state, context, uri, position, newName, &locations);
+    (void)ZrLanguageServer_Lsp_Rename(state, context, uri, position, newName, &locations);
     
     // 重命名可能失败，只要不崩溃就算成功
     ZrCore_Array_Free(state, &locations);
@@ -636,6 +636,27 @@ static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     }
 
     return ZR_FALSE;
+}
+
+static const TZrChar *signature_help_first_label(SZrLspSignatureHelp *help) {
+    if (help == ZR_NULL || help->signatures.length == 0) {
+        return ZR_NULL;
+    }
+
+    {
+        SZrLspSignatureInformation **signaturePtr =
+            (SZrLspSignatureInformation **)ZrCore_Array_Get(&help->signatures, 0);
+        if (signaturePtr == ZR_NULL || *signaturePtr == ZR_NULL || (*signaturePtr)->label == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        return test_string_ptr((*signaturePtr)->label);
+    }
+}
+
+static TZrBool signature_help_contains_text(SZrLspSignatureHelp *help, const TZrChar *needle) {
+    const TZrChar *label = signature_help_first_label(help);
+    return label != ZR_NULL && needle != ZR_NULL && strstr(label, needle) != ZR_NULL;
 }
 
 static TZrBool diagnostic_array_contains_range(SZrArray *diagnostics,
@@ -1730,8 +1751,162 @@ static void test_lsp_function_prepare_rename_uses_name_range(SZrState *state) {
     TEST_PASS(timer, "LSP Function Prepare Rename Uses Name Range");
 }
 
+static void test_lsp_closed_generic_type_display_and_definition(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class Item {\n"
+        "    pub @constructor() { }\n"
+        "}\n"
+        "class Derived<T, const N: int> {\n"
+        "}\n"
+        "func use(): void {\n"
+        "    var value: Derived<Item, 2 + 2> = null;\n"
+        "    value;\n"
+        "}\n";
+    SZrLspPosition typeUsePosition;
+    SZrLspPosition derivedDefinition;
+    SZrLspHover *hover = ZR_NULL;
+    SZrArray definitions;
+    SZrArray completions;
+    SZrLspCompletionItem *derivedItem;
+
+    TEST_START("LSP Closed Generic Type Display And Definition");
+    TEST_INFO("Closed Generic Types", "Checking hover, completion detail, and goto definition stay consistent for closed generic type uses");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Closed Generic Type Display And Definition", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///closed_generic_type_display.zr", 39);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Closed Generic Type Display And Definition", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Closed Generic Type Display And Definition", "Failed to update document");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "Derived<Item, 2 + 2>", 0, 0, &typeUsePosition) ||
+        !lsp_find_position_for_substring(content, "class Derived<T, const N: int>", 0, 6, &derivedDefinition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Closed Generic Type Display And Definition", "Failed to compute generic type positions");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, typeUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "Resolved Type: Derived<Item, 4>")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Closed Generic Type Display And Definition", "Hover should include the normalized closed generic type");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, typeUsePosition, &completions)) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Closed Generic Type Display And Definition", "Completion request failed");
+        return;
+    }
+
+    derivedItem = find_completion_item_by_label(&completions, "Derived");
+    if (derivedItem == ZR_NULL ||
+        derivedItem->detail == ZR_NULL ||
+        strstr(test_string_ptr(derivedItem->detail), "Resolved Type: Derived<Item, 4>") == ZR_NULL) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Closed Generic Type Display And Definition", "Completion detail should include the normalized closed generic type");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 2);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, typeUsePosition, &definitions) ||
+        !location_array_contains_range(&definitions,
+                                       derivedDefinition.line,
+                                       derivedDefinition.character,
+                                       derivedDefinition.line,
+                                       derivedDefinition.character + 7)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Closed Generic Type Display And Definition", "Goto definition should resolve from the closed generic type use to the open generic declaration");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &definitions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Closed Generic Type Display And Definition");
+}
+
+static void test_lsp_signature_help_displays_closed_generic_instantiation(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class Matrix<T, const N: int> { }\n"
+        "class Box<T> {\n"
+        "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+        "}\n"
+        "func use(): void {\n"
+        "    var box = new Box<int>();\n"
+        "    var m = new Matrix<int, 2 + 2>();\n"
+        "    box.shape(m);\n"
+        "}\n";
+    SZrLspPosition callArgumentPosition;
+    SZrLspSignatureHelp *help = ZR_NULL;
+
+    TEST_START("LSP Signature Help Displays Closed Generic Instantiation");
+    TEST_INFO("Signature Help", "Checking signature help closes receiver and const generic types at the call site");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Signature Help Displays Closed Generic Instantiation", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///closed_generic_signature_help.zr", 40);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Signature Help Displays Closed Generic Instantiation", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Signature Help Displays Closed Generic Instantiation", "Failed to update document");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "box.shape(m);", 0, 10, &callArgumentPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Signature Help Displays Closed Generic Instantiation", "Failed to compute call argument position");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, callArgumentPosition, &help) ||
+        help == ZR_NULL ||
+        help->signatures.length == 0 ||
+        !signature_help_contains_text(help, "shape<const N: int>(value: Matrix<int, 4>): Matrix<int, 4>") ||
+        help->activeParameter != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Signature Help Displays Closed Generic Instantiation", "Signature help should show the closed generic method signature with normalized const generics");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Signature Help Displays Closed Generic Instantiation");
+}
+
 // 主测试函数
-int main() {
+int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Interface Tests\n");
     printf("==========\n\n");
@@ -1812,6 +1987,12 @@ int main() {
 
     test_lsp_function_prepare_rename_uses_name_range(state);
     TEST_DIVIDER();
+
+    test_lsp_closed_generic_type_display_and_definition(state);
+    TEST_DIVIDER();
+
+    test_lsp_signature_help_displays_closed_generic_instantiation(state);
+    TEST_DIVIDER();
     
     // 清理
     ZrCore_GlobalState_Free(global);
@@ -1822,3 +2003,4 @@ int main() {
     
     return 0;
 }
+

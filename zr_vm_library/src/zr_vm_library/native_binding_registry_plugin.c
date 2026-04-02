@@ -43,6 +43,14 @@ const TZrChar *native_registry_dynamic_library_extension(void) {
 #endif
 }
 
+static FZrVmGetNativeModuleV1 native_registry_cast_module_symbol(TZrPtr symbolPointer) {
+    FZrVmGetNativeModuleV1 symbol = ZR_NULL;
+    if (symbolPointer != ZR_NULL) {
+        memcpy(&symbol, &symbolPointer, sizeof(symbol));
+    }
+    return symbol;
+}
+
 TZrBool native_registry_get_executable_directory(TZrChar *buffer, TZrSize bufferSize) {
     if (buffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
@@ -130,7 +138,7 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
         return ZR_NULL;
     }
 
-    symbol = (FZrVmGetNativeModuleV1)native_registry_find_symbol(handle, "ZrVm_GetNativeModule_v1");
+    symbol = native_registry_cast_module_symbol(native_registry_find_symbol(handle, "ZrVm_GetNativeModule_v1"));
     if (symbol == ZR_NULL) {
         native_registry_set_error(registry,
                                   ZR_LIB_NATIVE_REGISTRY_ERROR_SYMBOL,
@@ -195,18 +203,30 @@ const ZrLibModuleDescriptor *native_registry_try_plugin_directory(SZrState *stat
     TZrChar sanitizedModuleName[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar pluginFileName[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar candidatePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *extension;
+    TZrSize prefixLength;
+    TZrSize moduleNameLength;
+    TZrSize extensionLength;
+    TZrSize totalLength;
 
     if (directory == ZR_NULL || moduleName == ZR_NULL || directory[0] == '\0') {
         return ZR_NULL;
     }
 
     native_registry_sanitize_module_name(moduleName, sanitizedModuleName, sizeof(sanitizedModuleName));
-    snprintf(pluginFileName,
-             sizeof(pluginFileName),
-             "zrvm_native_%s%s",
-             sanitizedModuleName,
-             native_registry_dynamic_library_extension());
-    ZrLibrary_File_PathJoin(directory, pluginFileName, candidatePath);
+    extension = native_registry_dynamic_library_extension();
+    prefixLength = sizeof("zrvm_native_") - 1;
+    moduleNameLength = ZrCore_NativeString_Length(sanitizedModuleName);
+    extensionLength = ZrCore_NativeString_Length((TZrNativeString)extension);
+    totalLength = prefixLength + moduleNameLength + extensionLength;
+    if (totalLength + 1 > sizeof(pluginFileName)) {
+        return ZR_NULL;
+    }
+    memcpy(pluginFileName, "zrvm_native_", prefixLength);
+    memcpy(pluginFileName + prefixLength, sanitizedModuleName, moduleNameLength);
+    memcpy(pluginFileName + prefixLength + moduleNameLength, extension, extensionLength);
+    pluginFileName[totalLength] = '\0';
+    ZrLibrary_File_PathJoin((TZrNativeString)directory, pluginFileName, candidatePath);
 
     if (ZrLibrary_File_Exist(candidatePath) != ZR_LIBRARY_FILE_IS_FILE) {
         return ZR_NULL;

@@ -148,8 +148,11 @@ static TZrBool project_resolve_symbol_at_position(SZrState *state,
         return ZR_FALSE;
     }
 
-    projectIndex = ZrLanguageServer_LspProject_FindProjectForUri(context, uri);
+    projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    if (analyzer == ZR_NULL) {
+        analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    }
     if (projectIndex == ZR_NULL || analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -167,6 +170,9 @@ static TZrBool project_resolve_symbol_at_position(SZrState *state,
         }
 
         targetAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, record->uri);
+        if (targetAnalyzer == ZR_NULL) {
+            targetAnalyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, record->uri);
+        }
         targetSymbol = find_global_symbol_by_name(targetAnalyzer, hit.memberName, record->uri);
         if (targetAnalyzer == ZR_NULL || targetSymbol == ZR_NULL) {
             return ZR_FALSE;
@@ -195,6 +201,9 @@ static TZrBool project_resolve_symbol_at_position(SZrState *state,
     }
 
     targetAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, record->uri);
+    if (targetAnalyzer == ZR_NULL) {
+        targetAnalyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, record->uri);
+    }
     if (targetAnalyzer == ZR_NULL) {
         return ZR_FALSE;
     }

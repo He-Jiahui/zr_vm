@@ -4,9 +4,9 @@
 	"parameterCount":	0,
 	"hasVariableArguments":	false,
 	"stackSize":	26,
-	"instructionsLength":	14,
-	"constantValueLength":	13,
-	"localVariableLength":	12,
+	"instructionsLength":	15,
+	"constantValueLength":	14,
+	"localVariableLength":	13,
 	"constants":	[{
 			"index":	0,
 			"type":	15
@@ -45,6 +45,9 @@
 			"type":	15
 		}, {
 			"index":	12,
+			"type":	15
+		}, {
+			"index":	13,
 			"type":	0
 		}],
 	"instructions":	[{
@@ -97,10 +100,14 @@
 			"operandExtra":	11
 		}, {
 			"index":	12,
-			"opcode":	2,
+			"opcode":	75,
 			"operandExtra":	12
 		}, {
 			"index":	13,
+			"opcode":	2,
+			"operandExtra":	13
+		}, {
+			"index":	14,
 			"opcode":	70,
 			"operandExtra":	1
 		}]

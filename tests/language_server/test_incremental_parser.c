@@ -226,7 +226,7 @@ static void test_incremental_parser_remove_file(SZrState *state) {
 }
 
 // 主测试函数
-int main() {
+int main(void) {
     printf("==========\n");
     printf("Language Server - Incremental Parser Tests\n");
     printf("==========\n\n");
@@ -272,3 +272,4 @@ int main() {
     
     return 0;
 }
+

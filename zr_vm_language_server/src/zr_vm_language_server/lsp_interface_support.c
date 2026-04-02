@@ -4,6 +4,8 @@
 
 #include "lsp_interface_internal.h"
 
+#include "zr_vm_parser/type_inference.h"
+
 static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
     if (text == ZR_NULL || length == ZR_NULL) {
         return;
@@ -413,6 +415,67 @@ static TZrBool extract_leading_comment_text(const TZrChar *content,
     return ZR_FALSE;
 }
 
+SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
+                                                              SZrSymbol *symbol,
+                                                              const TZrChar *content,
+                                                              TZrSize contentLength) {
+    TZrChar commentBuffer[1024];
+
+    if (state == ZR_NULL || symbol == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (!extract_leading_comment_text(content,
+                                      contentLength,
+                                      symbol->location,
+                                      commentBuffer,
+                                      sizeof(commentBuffer))) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(state, commentBuffer, strlen(commentBuffer));
+}
+
+SZrString *ZrLanguageServer_Lsp_ParseResolvedTypeFromHoverMarkdown(SZrState *state,
+                                                                   SZrString *hoverMarkdown) {
+    TZrNativeString text;
+    TZrSize length;
+    const TZrChar *prefix = "Resolved Type: ";
+    TZrSize prefixLength = strlen(prefix);
+
+    if (state == ZR_NULL || hoverMarkdown == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    get_string_view(hoverMarkdown, &text, &length);
+    if (text == ZR_NULL || length < prefixLength) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index + prefixLength <= length; index++) {
+        TZrSize end;
+
+        if (memcmp(text + index, prefix, prefixLength) != 0) {
+            continue;
+        }
+
+        end = index + prefixLength;
+        while (end < length && text[end] != '\n' && text[end] != '\r') {
+            end++;
+        }
+
+        if (end <= index + prefixLength) {
+            return ZR_NULL;
+        }
+
+        return ZrCore_String_Create(state,
+                                    (TZrNativeString)(text + index + prefixLength),
+                                    end - index - prefixLength);
+    }
+
+    return ZR_NULL;
+}
+
 SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state,
                                                       SZrSymbol *symbol,
                                                       const TZrChar *content,
@@ -422,6 +485,7 @@ SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state
     const TZrChar *kindText;
     TZrChar commentBuffer[1024];
     TZrChar markdownBuffer[2048];
+    TZrChar typeBuffer[128];
     TZrSize used = 0;
 
     if (state == ZR_NULL || symbol == ZR_NULL || symbol->name == ZR_NULL) {
@@ -441,6 +505,15 @@ SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state
     append_buffer_slice(markdownBuffer, sizeof(markdownBuffer), &used, nameText, nameLength);
     append_buffer_text(markdownBuffer, sizeof(markdownBuffer), &used, "`");
 
+    if (symbol->typeInfo != ZR_NULL) {
+        const TZrChar *typeText =
+            ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
+        if (typeText != ZR_NULL && typeText[0] != '\0') {
+            append_buffer_text(markdownBuffer, sizeof(markdownBuffer), &used, "\n\nType: ");
+            append_buffer_text(markdownBuffer, sizeof(markdownBuffer), &used, typeText);
+        }
+    }
+
     if (extract_leading_comment_text(content,
                                      contentLength,
                                      symbol->location,
@@ -453,9 +526,52 @@ SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state
     return ZrCore_String_Create(state, markdownBuffer, strlen(markdownBuffer));
 }
 
+static SZrString *append_resolved_type_to_detail(SZrState *state,
+                                                 SZrString *detail,
+                                                 SZrString *resolvedTypeText) {
+    TZrNativeString detailText;
+    TZrNativeString resolvedText;
+    TZrSize detailLength;
+    TZrSize resolvedLength;
+    const TZrChar *prefix = "Resolved Type: ";
+    TZrSize prefixLength = strlen(prefix);
+    TZrChar buffer[512];
+    TZrSize used = 0;
+
+    if (state == ZR_NULL || resolvedTypeText == ZR_NULL) {
+        return detail;
+    }
+
+    get_string_view(detail, &detailText, &detailLength);
+    get_string_view(resolvedTypeText, &resolvedText, &resolvedLength);
+    if (resolvedText == ZR_NULL || resolvedLength == 0) {
+        return detail;
+    }
+
+    if (detailText != ZR_NULL) {
+        for (TZrSize index = 0; index + prefixLength + resolvedLength <= detailLength; index++) {
+            if (memcmp(detailText + index, prefix, prefixLength) == 0 &&
+                memcmp(detailText + index + prefixLength, resolvedText, resolvedLength) == 0) {
+                return detail;
+            }
+        }
+    }
+
+    buffer[0] = '\0';
+    if (detailText != ZR_NULL && detailLength > 0) {
+        append_buffer_slice(buffer, sizeof(buffer), &used, detailText, detailLength);
+        append_buffer_text(buffer, sizeof(buffer), &used, "\n");
+    }
+    append_buffer_text(buffer, sizeof(buffer), &used, prefix);
+    append_buffer_slice(buffer, sizeof(buffer), &used, resolvedText, resolvedLength);
+    return ZrCore_String_Create(state, buffer, strlen(buffer));
+}
+
 void ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(SZrState *state,
                                             SZrSemanticAnalyzer *analyzer,
                                             SZrCompletionItem *item,
+                                            SZrString *hoveredSymbolName,
+                                            SZrString *resolvedTypeText,
                                             const TZrChar *content,
                                             TZrSize contentLength) {
     SZrSymbol *symbol;
@@ -466,20 +582,22 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(SZrState *state,
     }
 
     symbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, item->label, ZR_NULL);
-    if (symbol == ZR_NULL) {
-        return;
-    }
-
-    if (item->detail == ZR_NULL) {
+    if (symbol != ZR_NULL && item->detail == ZR_NULL) {
         const TZrChar *kindText = symbol_type_to_display_name(symbol->type);
-        item->detail = ZrCore_String_Create(state, kindText, strlen(kindText));
+        item->detail = ZrCore_String_Create(state, (TZrNativeString)kindText, strlen(kindText));
     }
 
-    if (item->documentation == ZR_NULL) {
+    if (symbol != ZR_NULL && item->documentation == ZR_NULL) {
         item->documentation = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(state,
                                                                   symbol,
                                                                   content,
                                                                   contentLength);
+    }
+
+    if (hoveredSymbolName != ZR_NULL &&
+        resolvedTypeText != ZR_NULL &&
+        ZrLanguageServer_Lsp_StringsEqual(item->label, hoveredSymbolName)) {
+        item->detail = append_resolved_type_to_detail(state, item->detail, resolvedTypeText);
     }
 }
 
@@ -847,7 +965,9 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
         return ZR_FALSE;
     }
 
-    receiverName = ZrCore_String_Create(state, content + receiverStart, receiverLength);
+    receiverName = ZrCore_String_Create(state,
+                                        (TZrNativeString)(content + receiverStart),
+                                        receiverLength);
     if (receiverName == ZR_NULL) {
         return ZR_FALSE;
     }

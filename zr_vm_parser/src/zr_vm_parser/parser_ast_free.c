@@ -223,6 +223,8 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             if (parameter->defaultValue != ZR_NULL) {
                 ZrParser_Ast_Free(state, parameter->defaultValue);
             }
+            free_ast_node_array_with_elements(state, parameter->genericTypeConstraints);
+            free_ast_node_array_with_elements(state, parameter->decorators);
             break;
         }
         case ZR_AST_DECORATOR_EXPRESSION: {
@@ -276,6 +278,12 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
                     ZrParser_Ast_Free(state, call->args->nodes[i]);
                 }
                 ZrParser_AstNodeArray_Free(state, call->args);
+            }
+            free_ast_node_array_with_elements(state, call->genericArguments);
+            if (call->argNames != ZR_NULL) {
+                ZrCore_Array_Free(state, call->argNames);
+                ZrCore_Memory_RawFreeWithType(state->global, call->argNames, sizeof(SZrArray),
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
             }
             break;
         }
@@ -376,6 +384,7 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
                 }
                 ZrParser_AstNodeArray_Free(state, lambda->params);
             }
+            free_parameter_node_from_ptr(state, lambda->args);
             if (lambda->block != ZR_NULL) {
                 ZrParser_Ast_Free(state, lambda->block);
             }
@@ -391,6 +400,13 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
                     ZrParser_Ast_Free(state, primary->members->nodes[i]);
                 }
                 ZrParser_AstNodeArray_Free(state, primary->members);
+            }
+            break;
+        }
+        case ZR_AST_TYPE_QUERY_EXPRESSION: {
+            SZrTypeQueryExpression *typeQuery = &node->data.typeQueryExpression;
+            if (typeQuery->operand != ZR_NULL) {
+                ZrParser_Ast_Free(state, typeQuery->operand);
             }
             break;
         }

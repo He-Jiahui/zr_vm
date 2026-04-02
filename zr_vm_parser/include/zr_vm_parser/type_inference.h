@@ -13,6 +13,12 @@
 struct SZrCompilerState;
 typedef struct SZrCompilerState SZrCompilerState;
 
+typedef struct SZrResolvedCallSignature {
+    SZrInferredType returnType;
+    SZrArray parameterTypes;          // SZrInferredType
+    SZrArray parameterPassingModes;   // EZrParameterPassingMode
+} SZrResolvedCallSignature;
+
 // 类型推断函数
 
 // 从AST节点推断类型（主入口函数）
@@ -65,6 +71,7 @@ ZR_PARSER_API TZrBool ZrParser_FunctionCallCompatibility_Check(SZrCompilerState 
                                                       SZrString *funcName,
                                                       SZrFunctionCall *call,
                                                       SZrFunctionTypeInfo *funcType,
+                                                      const SZrResolvedCallSignature *resolvedSignature,
                                                       SZrFileRange location);
 
 // 解析函数调用的最佳重载
@@ -73,7 +80,8 @@ ZR_PARSER_API TZrBool ZrParser_FunctionCallOverload_Resolve(SZrCompilerState *cs
                                                    SZrString *funcName,
                                                    SZrFunctionCall *call,
                                                    SZrFileRange location,
-                                                   SZrFunctionTypeInfo **resolvedFunction);
+                                                   SZrFunctionTypeInfo **resolvedFunction,
+                                                   SZrResolvedCallSignature *resolvedSignature);
 
 // 报告类型错误
 ZR_PARSER_API void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, const SZrInferredType *expectedType, const SZrInferredType *actualType, SZrFileRange location);

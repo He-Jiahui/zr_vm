@@ -1,0 +1,79 @@
+var {Array} = %import("zr.container");
+
+pub struct Point {
+    pub var x: float;
+    pub var y: float;
+
+    pub @constructor() {
+        this.x = 0.0;
+        this.y = 0.0;
+    }
+
+    pub @constructor(x: float, y: float) {
+        this.x = x;
+        this.y = y;
+    }
+
+    pub static @add(left: Point, right: Point): Point {
+        return $Point(left.x + right.x, left.y + right.y);
+    }
+
+    pub static @sub(left: Point, right: Point): Point {
+        return $Point(left.x - right.x, left.y - right.y);
+    }
+}
+
+pub %owned class PointSet {
+    pri using var _points: %unique Array<Point> = %unique new Array<Point>();
+
+    pub @constructor(capacity: int) {
+        this._points.capacity = capacity;
+    }
+
+    %borrowed pub resize(size: int) {
+        this._points.length = size;
+    }
+
+    %borrowed pub addPoint(point: Point) {
+        this._points.add(point);
+    }
+
+    %borrowed pub insertPoint(index: int, point: Point) {
+        this._points.insert(index, point);
+    }
+
+    pub static @add_assign(left: %unique PointSet, right: %unique PointSet): %unique PointSet {
+        for (var i: int = 0; i < right._points.length; i += 1) {
+            left.addPoint(right._points[i]);
+        }
+        return left;
+    }
+
+    pub static @add(left: %borrowed PointSet, right: %borrowed PointSet): %unique PointSet {
+        var result = %unique new PointSet(0);
+        for (var i: int = 0; i < left._points.length; i += 1) {
+            result.addPoint(left._points[i]);
+        }
+        for (var i: int = 0; i < right._points.length; i += 1) {
+            result.addPoint(right._points[i]);
+        }
+        return result;
+    }
+}
+
+pub class PointSetPool {
+    pub static take(): %unique PointSet {
+        return %unique new PointSet(10);
+    }
+
+    pub static ret(pool: %unique PointSet) {
+        pool.resize(0);
+    }
+}
+
+takeFromPoolTest(p: Point): %unique PointSet {
+    var ps = PointSetPool.take();
+    ps.addPoint(p);
+    return ps;
+}
+

@@ -255,7 +255,7 @@ static SZrObject *system_fs_make_file_info(SZrState *state, const TZrChar *path)
         return ZR_NULL;
     }
 
-    existence = path != ZR_NULL ? ZrLibrary_File_Exist(path) : ZR_LIBRARY_FILE_NOT_EXIST;
+    existence = path != ZR_NULL ? ZrLibrary_File_Exist((TZrNativeString)path) : ZR_LIBRARY_FILE_NOT_EXIST;
     if (path != ZR_NULL) {
         system_fs_write_string_field(state, object, "path", path);
         system_fs_query_stat(path, &size, &modifiedMilliseconds);
@@ -309,7 +309,7 @@ TZrBool ZrSystem_Fs_PathExists(ZrLibCallContext *context, SZrTypeValue *result) 
         return ZR_FALSE;
     }
 
-    ZrLib_Value_SetBool(context->state, result, ZrLibrary_File_Exist(path) != ZR_LIBRARY_FILE_NOT_EXIST);
+    ZrLib_Value_SetBool(context->state, result, ZrLibrary_File_Exist((TZrNativeString)path) != ZR_LIBRARY_FILE_NOT_EXIST);
     return ZR_TRUE;
 }
 
@@ -324,7 +324,7 @@ TZrBool ZrSystem_Fs_IsFile(ZrLibCallContext *context, SZrTypeValue *result) {
         return ZR_FALSE;
     }
 
-    ZrLib_Value_SetBool(context->state, result, ZrLibrary_File_Exist(path) == ZR_LIBRARY_FILE_IS_FILE);
+    ZrLib_Value_SetBool(context->state, result, ZrLibrary_File_Exist((TZrNativeString)path) == ZR_LIBRARY_FILE_IS_FILE);
     return ZR_TRUE;
 }
 
@@ -339,7 +339,7 @@ TZrBool ZrSystem_Fs_IsDirectory(ZrLibCallContext *context, SZrTypeValue *result)
         return ZR_FALSE;
     }
 
-    ZrLib_Value_SetBool(context->state, result, ZrLibrary_File_Exist(path) == ZR_LIBRARY_FILE_IS_DIRECTORY);
+    ZrLib_Value_SetBool(context->state, result, ZrLibrary_File_Exist((TZrNativeString)path) == ZR_LIBRARY_FILE_IS_DIRECTORY);
     return ZR_TRUE;
 }
 

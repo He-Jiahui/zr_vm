@@ -262,7 +262,7 @@ static void test_reference_tracker_get_locations(SZrState *state) {
 }
 
 // 主测试函数
-int main() {
+int main(void) {
     printf("==========\n");
     printf("Language Server - Reference Tracker Tests\n");
     printf("==========\n\n");
@@ -305,3 +305,4 @@ int main() {
     
     return 0;
 }
+

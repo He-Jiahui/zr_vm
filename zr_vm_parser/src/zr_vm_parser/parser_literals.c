@@ -206,7 +206,7 @@ TZrBool append_template_static_segment(SZrParserState *ps, SZrAstNodeArray *segm
         return ZR_FALSE;
     }
 
-    segmentString = ZrCore_String_Create(ps->state, text, length);
+    segmentString = ZrCore_String_Create(ps->state, (TZrNativeString)text, length);
     if (segmentString == ZR_NULL) {
         return ZR_FALSE;
     }

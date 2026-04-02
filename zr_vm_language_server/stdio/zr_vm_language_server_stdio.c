@@ -122,7 +122,7 @@ SZrString *server_get_cached_uri(SZrStdioServer *server, const char *uriText) {
     }
 
     server->uriCache.items[server->uriCache.count].value =
-        ZrCore_String_Create(server->state, uriText, (TZrSize)strlen(uriText));
+        ZrCore_String_Create(server->state, (TZrNativeString)uriText, (TZrSize)strlen(uriText));
     if (server->uriCache.items[server->uriCache.count].value == ZR_NULL) {
         free(server->uriCache.items[server->uriCache.count].text);
         server->uriCache.items[server->uriCache.count].text = NULL;

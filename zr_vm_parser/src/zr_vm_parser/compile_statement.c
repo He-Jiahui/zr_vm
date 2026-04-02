@@ -19,12 +19,6 @@
 
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node);
-static SZrAstNode *try_statement_first_catch_clause(SZrTryCatchFinallyStatement *stmt) {
-    if (stmt == ZR_NULL || stmt->catchClauses == ZR_NULL || stmt->catchClauses->count == 0) {
-        return ZR_NULL;
-    }
-    return stmt->catchClauses->nodes[0];
-}
 
 static void emit_constant_to_slot_local(SZrCompilerState *cs, TZrUInt32 slot, const SZrTypeValue *value,
                                         SZrFileRange location) {
@@ -52,7 +46,7 @@ static TZrBool emit_cstring_constant_to_slot_local(SZrCompilerState *cs, TZrUInt
         return ZR_FALSE;
     }
 
-    stringValue = ZrCore_String_Create(cs->state, literal, strlen(literal));
+    stringValue = ZrCore_String_Create(cs->state, (TZrNativeString)literal, strlen(literal));
     if (stringValue == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "Failed to allocate string constant", cs->errorLocation);
         return ZR_FALSE;
@@ -324,7 +318,9 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
     if (decl->pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrString *varName = decl->pattern->data.identifier.name;
         SZrInferredType resolvedType;
+        SZrInferredType initializerType;
         TZrBool resolvedTypeInitialized = ZR_FALSE;
+        TZrBool initializerTypeInitialized = ZR_FALSE;
         TZrBool hasResolvedType = ZR_FALSE;
         if (varName == ZR_NULL) {
             ZrParser_Compiler_Error(cs, "Variable name is null", node->location);
@@ -348,12 +344,28 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             return;
         }
 
+        if (decl->typeInfo != ZR_NULL && decl->value != ZR_NULL && hasResolvedType) {
+            ZrParser_InferredType_Init(cs->state, &initializerType, ZR_VALUE_TYPE_OBJECT);
+            initializerTypeInitialized = ZR_TRUE;
+            if (!ZrParser_ExpressionType_Infer(cs, decl->value, &initializerType) ||
+                !ZrParser_AssignmentCompatibility_Check(cs, &resolvedType, &initializerType, decl->value->location)) {
+                ZrParser_InferredType_Free(cs->state, &initializerType);
+                if (resolvedTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &resolvedType);
+                }
+                return;
+            }
+        }
+
         TZrUInt32 varIndex = 0;
 
         // 如果有初始值，编译初始值表达式
         if (decl->value != ZR_NULL) {
             ZrParser_Expression_Compile(cs, decl->value);
             if (cs->hasError || cs->stackSlotCount == 0) {
+                if (initializerTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &initializerType);
+                }
                 if (resolvedTypeInitialized) {
                     ZrParser_InferredType_Free(cs->state, &resolvedType);
                 }
@@ -415,6 +427,9 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
 
         if (resolvedTypeInitialized) {
             ZrParser_InferredType_Free(cs->state, &resolvedType);
+        }
+        if (initializerTypeInitialized) {
+            ZrParser_InferredType_Free(cs->state, &initializerType);
         }
     } else if (decl->pattern->type == ZR_AST_DESTRUCTURING_OBJECT) {
         // 处理解构对象赋值：var {key1, key2, ...} = value;
@@ -486,10 +501,10 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
                 lastInst->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)) {
                 resultSlot = lastInst->instruction.operandExtra;
             } else {
-                resultSlot = cs->stackSlotCount - 1;
+                resultSlot = (TZrUInt32)(cs->stackSlotCount - 1);
             }
         } else {
-            resultSlot = cs->stackSlotCount - 1;
+            resultSlot = (TZrUInt32)(cs->stackSlotCount - 1);
         }
         resultCount = 1;
     } else {
@@ -634,7 +649,7 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 编译条件表达式
     ZrParser_Expression_Compile(cs, ifExpr->condition);
-    TZrUInt32 condSlot = cs->stackSlotCount - 1;
+    TZrUInt32 condSlot = (TZrUInt32)(cs->stackSlotCount - 1);
     
     // 创建 else 标签
     TZrSize elseLabelId = create_label(cs);

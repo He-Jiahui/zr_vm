@@ -67,6 +67,7 @@ enum EZrAstNodeType {
     ZR_AST_MEMBER_EXPRESSION,
     ZR_AST_PRIMARY_EXPRESSION,
     ZR_AST_IMPORT_EXPRESSION,
+    ZR_AST_TYPE_QUERY_EXPRESSION,
     ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION,
     ZR_AST_CONSTRUCT_EXPRESSION,
 
@@ -173,6 +174,30 @@ enum EZrOwnershipQualifier {
 
 typedef enum EZrOwnershipQualifier EZrOwnershipQualifier;
 
+enum EZrGenericParameterKind {
+    ZR_GENERIC_PARAMETER_TYPE,
+    ZR_GENERIC_PARAMETER_CONST_INT,
+};
+
+typedef enum EZrGenericParameterKind EZrGenericParameterKind;
+
+enum EZrGenericVariance {
+    ZR_GENERIC_VARIANCE_NONE,
+    ZR_GENERIC_VARIANCE_IN,
+    ZR_GENERIC_VARIANCE_OUT,
+};
+
+typedef enum EZrGenericVariance EZrGenericVariance;
+
+enum EZrParameterPassingMode {
+    ZR_PARAMETER_PASSING_MODE_VALUE,
+    ZR_PARAMETER_PASSING_MODE_IN,
+    ZR_PARAMETER_PASSING_MODE_OUT,
+    ZR_PARAMETER_PASSING_MODE_REF,
+};
+
+typedef enum EZrParameterPassingMode EZrParameterPassingMode;
+
 // 赋值操作符
 typedef struct SZrAssignmentOperator {
     const TZrChar *op; // "=", "+=", "-=", "*=", "/=", "%="
@@ -211,7 +236,7 @@ typedef struct SZrType {
 // 泛型类型
 typedef struct SZrGenericType {
     SZrIdentifier *name;
-    SZrAstNodeArray *params; // Type 数组
+    SZrAstNodeArray *params; // Type / const expression 数组
 } SZrGenericType;
 
 // 元组类型
@@ -231,6 +256,13 @@ typedef struct SZrParameter {
     SZrAstNode *defaultValue; // 可选表达式
     TZrBool isConst; // 是否为 const 参数
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
+    EZrParameterPassingMode passingMode;
+    EZrGenericParameterKind genericKind;
+    EZrGenericVariance variance;
+    SZrAstNodeArray *genericTypeConstraints; // Type 数组
+    TZrBool genericRequiresClass;
+    TZrBool genericRequiresStruct;
+    TZrBool genericRequiresNew;
 } SZrParameter;
 
 // 字面量节点结构
@@ -343,6 +375,7 @@ typedef struct SZrFunctionCall {
     SZrAstNodeArray *args;              // Expression 数组（现有）
     SZrArray *argNames;                 // 参数名数组（SZrString*），可选，与args对应，ZR_NULL表示位置参数
     TZrBool hasNamedArgs;                 // 是否有命名参数
+    SZrAstNodeArray *genericArguments;  // Type / const expression 数组（可选）
 } SZrFunctionCall;
 
 typedef struct SZrMemberExpression {
@@ -358,6 +391,10 @@ typedef struct SZrPrimaryExpression {
 typedef struct SZrImportExpression {
     SZrAstNode *modulePath; // StringLiteral
 } SZrImportExpression;
+
+typedef struct SZrTypeQueryExpression {
+    SZrAstNode *operand;
+} SZrTypeQueryExpression;
 
 typedef struct SZrPrototypeReferenceExpression {
     SZrAstNode *target;
@@ -830,6 +867,7 @@ typedef struct SZrAstNode {
         SZrMemberExpression memberExpression;
         SZrPrimaryExpression primaryExpression;
         SZrImportExpression importExpression;
+        SZrTypeQueryExpression typeQueryExpression;
         SZrPrototypeReferenceExpression prototypeReferenceExpression;
         SZrConstructExpression constructExpression;
 

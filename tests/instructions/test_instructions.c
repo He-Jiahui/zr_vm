@@ -315,6 +315,7 @@ static const char *get_instruction_name(EZrInstructionCode opcode) {
 static void print_instruction(const char *label, TZrInstruction *inst, TZrSize index) {
     EZrInstructionCode opcode = (EZrInstructionCode) inst->instruction.operationCode;
     TZrUInt16 operandExtra = inst->instruction.operandExtra;
+    ZR_UNUSED_PARAMETER(label);
 
     printf("  [%zu] ", index);
 
@@ -2520,6 +2521,7 @@ static void test_function_call(void) {
     callerInstructions[1] =
             create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 1, 0,
                                  1); // call stack[0] with params from stack[1], returnCount from stack[2]
+    ZR_UNUSED_PARAMETER(callerInstructions);
 
     // 注意：FUNCTION_CALL的格式需要根据实际指令定义调整
     // 这里简化测试，实际指令格式可能需要调整

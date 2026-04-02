@@ -341,14 +341,14 @@ TZrBool ZrCore_Constant_ResolveReference(
                                     while (pair != ZR_NULL) {
                                         // 检查键是否是字符串（模块路径）
                                         if (pair->key.type == ZR_VALUE_TYPE_STRING) {
-                                            SZrString *path = ZR_CAST_STRING(state, pair->key.value.object);
+                                            SZrString *entryPath = ZR_CAST_STRING(state, pair->key.value.object);
                                             // 检查路径是否与模块名匹配（可以是完整路径或模块名）
-                                            if (path != ZR_NULL) {
+                                            if (entryPath != ZR_NULL) {
                                                 // 比较字符串：检查路径是否包含模块名，或模块名是否匹配路径
                                                 // TODO: 这里简化处理：如果路径的哈希与模块名的哈希匹配，或路径等于模块名
                                                 // 更精确的匹配需要字符串比较
-                                                if (path == moduleName || 
-                                                    ZrCore_String_Compare(state, path, moduleName)) {
+                                                if (entryPath == moduleName ||
+                                                    ZrCore_String_Compare(state, entryPath, moduleName)) {
                                                     // 检查值是否是模块对象
                                                     if (pair->value.type == ZR_VALUE_TYPE_OBJECT) {
                                                         SZrObject *cachedObject = ZR_CAST_OBJECT(state, pair->value.value.object);

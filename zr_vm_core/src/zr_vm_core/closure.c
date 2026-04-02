@@ -17,7 +17,7 @@ SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closu
     SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, object);
     closure->closureValueCount = closureValueCount;
     if (closureValueCount > 0) {
-        ZrCore_Memory_RawSet(closure->closureValuesExtend, (TZrByte) ZR_NULL, sizeof(SZrClosureValue *) * closureValueCount);
+        ZrCore_Memory_RawSet(closure->closureValuesExtend, 0, sizeof(SZrClosureValue *) * closureValueCount);
     }
     return closure;
 }
@@ -31,7 +31,7 @@ SZrClosure *ZrCore_Closure_New(struct SZrState *state, TZrSize closureValueCount
     closure->closureValueCount = closureValueCount;
     closure->function = ZR_NULL;
     if (closureValueCount > 0) {
-        ZrCore_Memory_RawSet(closure->closureValuesExtend, (TZrByte) ZR_NULL, sizeof(SZrClosureValue *) * closureValueCount);
+        ZrCore_Memory_RawSet(closure->closureValuesExtend, 0, sizeof(SZrClosureValue *) * closureValueCount);
     }
     return closure;
 }
@@ -146,7 +146,7 @@ void ZrCore_Closure_ToBeClosedValueClosureNew(struct SZrState *state, TZrStackVa
 
 
     // extends to be closed value list
-    while (stackPointer - state->toBeClosedValueList.valuePointer > MAX_DELTA) {
+    while ((TZrSize)(stackPointer - state->toBeClosedValueList.valuePointer) > (TZrSize)MAX_DELTA) {
         state->toBeClosedValueList.valuePointer += MAX_DELTA;
         state->toBeClosedValueList.valuePointer->toBeClosedValueOffset = 0;
     }

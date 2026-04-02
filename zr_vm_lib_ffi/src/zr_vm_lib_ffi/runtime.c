@@ -115,8 +115,14 @@ TZrBool ZrFfi_Library_GetVersion(ZrLibCallContext *context, SZrTypeValue *result
         ZrLib_Value_SetNull(result);
         return ZR_TRUE;
     }
-    versionProc = (const char *(*) (void) ) zr_ffi_lookup_symbol(libraryData->libraryHandle, symbolName, errorBuffer,
-                                                                 sizeof(errorBuffer));
+    {
+        void *symbolPointer =
+                zr_ffi_lookup_symbol(libraryData->libraryHandle, symbolName, errorBuffer, sizeof(errorBuffer));
+        versionProc = ZR_NULL;
+        if (symbolPointer != ZR_NULL) {
+            memcpy(&versionProc, &symbolPointer, sizeof(versionProc));
+        }
+    }
     if (versionProc == ZR_NULL) {
         ZrLib_Value_SetNull(result);
         return ZR_TRUE;

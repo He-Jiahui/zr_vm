@@ -42,7 +42,7 @@ TZrBool ZrLibrary_File_GetDirectory(TZrNativeString path, ZR_OUT TZrNativeString
     return ZR_FALSE;
 }
 
-void ZrLibrary_File_PathJoin(TZrNativeString path1, TZrNativeString path2, ZR_OUT TZrNativeString result) {
+void ZrLibrary_File_PathJoin(const TZrChar *path1, const TZrChar *path2, ZR_OUT TZrNativeString result) {
     if (result == ZR_NULL) {
         return;
     }
@@ -50,8 +50,8 @@ void ZrLibrary_File_PathJoin(TZrNativeString path1, TZrNativeString path2, ZR_OU
         result[0] = '\0';
         return;
     }
-    TZrSize length1 = ZrCore_NativeString_Length(path1);
-    TZrSize length2 = ZrCore_NativeString_Length(path2);
+    TZrSize length1 = strlen(path1);
+    TZrSize length2 = strlen(path2);
 
     if (length1 == 0) {
         snprintf(result, ZR_LIBRARY_MAX_PATH_LENGTH, "%s", path2);
@@ -142,13 +142,14 @@ TZrBool ZrLibrary_File_SourceLoadImplementation(SZrState *state, TZrNativeString
 
 
 TZrBytePtr ZrLibrary_File_SourceReadImplementation(SZrState *state, TZrPtr reader, ZR_OUT TZrSize *size) {
+    ZR_UNUSED_PARAMETER(state);
     SZrLibrary_File_Reader *fileReader = (SZrLibrary_File_Reader *) reader;
     TZrSize readSize = fread(fileReader->buffer, 1, ZR_LIBRARY_FILE_BUFFER_SIZE, fileReader->file);
     if (readSize == 0) {
         return ZR_NULL;
     }
     *size = readSize;
-    return fileReader->buffer;
+    return (TZrBytePtr)fileReader->buffer;
 }
 
 void ZrLibrary_File_SourceCloseImplementation(SZrState *state, TZrPtr reader) {

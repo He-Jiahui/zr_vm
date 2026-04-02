@@ -7,7 +7,7 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 
-static TZrUInt64 CZrLibrary_CommonState_MemoryCounter[ZR_MEMORY_NATIVE_TYPE_ENUM_MAX] = {};
+static TZrUInt64 CZrLibrary_CommonState_MemoryCounter[ZR_MEMORY_NATIVE_TYPE_ENUM_MAX] = {0};
 TZrPtr ZrLibrary_CommonState_BuiltinAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize,
                                               TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);

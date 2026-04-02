@@ -8,7 +8,7 @@ FUNCTION: <anonymous>
   HAS_VAR_ARGS: false
   STACK_SIZE: 26
 
-CONSTANTS (13):
+CONSTANTS (14):
   [0] function
   [1] function
   [2] function
@@ -21,9 +21,10 @@ CONSTANTS (13):
   [9] function
   [10] function
   [11] function
-  [12] null
+  [12] function
+  [13] null
 
-LOCAL_VARIABLES (12):
+LOCAL_VARIABLES (13):
   [0] arithmetic_test: offset_activate=1, offset_dead=0
   [1] logical_test: offset_activate=2, offset_dead=0
   [2] comparison_test: offset_activate=3, offset_dead=0
@@ -31,16 +32,17 @@ LOCAL_VARIABLES (12):
   [4] branch_test: offset_activate=5, offset_dead=0
   [5] while_test: offset_activate=6, offset_dead=0
   [6] for_test: offset_activate=7, offset_dead=0
-  [7] function_test: offset_activate=8, offset_dead=0
-  [8] call_function_test: offset_activate=9, offset_dead=0
-  [9] variable_declaration_test: offset_activate=10, offset_dead=0
-  [10] return_test: offset_activate=11, offset_dead=0
-  [11] break_continue_test: offset_activate=12, offset_dead=0
+  [7] foreach_test: offset_activate=8, offset_dead=0
+  [8] function_test: offset_activate=9, offset_dead=0
+  [9] call_function_test: offset_activate=10, offset_dead=0
+  [10] variable_declaration_test: offset_activate=11, offset_dead=0
+  [11] return_test: offset_activate=12, offset_dead=0
+  [12] break_continue_test: offset_activate=13, offset_dead=0
 
 CLOSURE_VARIABLES (0):
 
 TYPE_METADATA:
-  LOCAL_BINDINGS (12):
+  LOCAL_BINDINGS (13):
     [0] arithmetic_test: function
     [1] logical_test: function
     [2] comparison_test: function
@@ -48,14 +50,19 @@ TYPE_METADATA:
     [4] branch_test: function
     [5] while_test: function
     [6] for_test: function
-    [7] function_test: function
-    [8] call_function_test: function
-    [9] variable_declaration_test: function
-    [10] return_test: function
-    [11] break_continue_test: function
+    [7] foreach_test: function
+    [8] function_test: function
+    [9] call_function_test: function
+    [10] variable_declaration_test: function
+    [11] return_test: function
+    [12] break_continue_test: function
   EXPORTED_SYMBOLS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (1):
+    test basicOperationsTest()
 
-INSTRUCTIONS (14):
+INSTRUCTIONS (15):
   [0] CREATE_CLOSURE (extra=0)
   [1] CREATE_CLOSURE (extra=1)
   [2] CREATE_CLOSURE (extra=2)
@@ -68,6 +75,7 @@ INSTRUCTIONS (14):
   [9] CREATE_CLOSURE (extra=9)
   [10] CREATE_CLOSURE (extra=10)
   [11] CREATE_CLOSURE (extra=11)
-  [12] GET_CONSTANT (extra=12, operand=12)
-  [13] FUNCTION_RETURN (extra=1, operand1=12, operand2=0)
+  [12] CREATE_CLOSURE (extra=12)
+  [13] GET_CONSTANT (extra=13, operand=13)
+  [14] FUNCTION_RETURN (extra=1, operand1=13, operand2=0)
 

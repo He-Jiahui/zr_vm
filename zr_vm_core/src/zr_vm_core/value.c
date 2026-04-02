@@ -36,7 +36,7 @@ void ZrCore_Value_ResetAsNull(SZrTypeValue *value) {
 }
 
 void ZrCore_Value_InitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawObject *object) {
-    EZrValueType type = object->type;
+    EZrValueType type = (EZrValueType)object->type;
     value->type = type;
     value->value.object = object;
     value->isGarbageCollectable = ZR_TRUE;
@@ -50,6 +50,7 @@ void ZrCore_Value_InitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawOb
 
 
 void ZrCore_Value_InitAsUInt(struct SZrState *state, SZrTypeValue *value, TZrUInt64 intValue) {
+    ZR_UNUSED_PARAMETER(state);
     value->type = ZR_VALUE_TYPE_UINT64;
     value->value.nativeObject.nativeUInt64 = intValue;
     value->isGarbageCollectable = ZR_FALSE;
@@ -60,6 +61,7 @@ void ZrCore_Value_InitAsUInt(struct SZrState *state, SZrTypeValue *value, TZrUIn
 }
 
 void ZrCore_Value_InitAsInt(struct SZrState *state, SZrTypeValue *value, TZrInt64 intValue) {
+    ZR_UNUSED_PARAMETER(state);
     value->type = ZR_VALUE_TYPE_INT64;
     value->value.nativeObject.nativeInt64 = intValue;
     value->isGarbageCollectable = ZR_FALSE;
@@ -70,6 +72,7 @@ void ZrCore_Value_InitAsInt(struct SZrState *state, SZrTypeValue *value, TZrInt6
 }
 
 void ZrCore_Value_InitAsFloat(struct SZrState *state, SZrTypeValue *value, TZrFloat64 floatValue) {
+    ZR_UNUSED_PARAMETER(state);
     value->type = ZR_VALUE_TYPE_DOUBLE;
     value->value.nativeObject.nativeDouble = floatValue;
     value->isGarbageCollectable = ZR_FALSE;
@@ -80,6 +83,7 @@ void ZrCore_Value_InitAsFloat(struct SZrState *state, SZrTypeValue *value, TZrFl
 }
 
 void ZrCore_Value_InitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZrPtr pointerValue) {
+    ZR_UNUSED_PARAMETER(state);
     value->type = ZR_VALUE_TYPE_NATIVE_POINTER;
     value->value.nativeObject.nativePointer = pointerValue;
     value->isGarbageCollectable = ZR_FALSE;

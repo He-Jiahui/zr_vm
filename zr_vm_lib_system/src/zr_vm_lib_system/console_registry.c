@@ -10,10 +10,10 @@
 
 const ZrLibModuleDescriptor *ZrSystem_ConsoleRegistry_GetModule(void) {
     static const ZrLibFunctionDescriptor kFunctions[] = {
-            {"print", 1, 1, ZrSystem_Console_Print, "null", "Print text to stdout without a trailing newline."},
-            {"printLine", 1, 1, ZrSystem_Console_PrintLine, "null", "Print text to stdout with a trailing newline."},
-            {"printError", 1, 1, ZrSystem_Console_PrintError, "null", "Print text to stderr without a trailing newline."},
-            {"printErrorLine", 1, 1, ZrSystem_Console_PrintErrorLine, "null", "Print text to stderr with a trailing newline."},
+            {"print", 1, 1, ZrSystem_Console_Print, "null", "Print text to stdout without a trailing newline.", ZR_NULL, 0},
+            {"printLine", 1, 1, ZrSystem_Console_PrintLine, "null", "Print text to stdout with a trailing newline.", ZR_NULL, 0},
+            {"printError", 1, 1, ZrSystem_Console_PrintError, "null", "Print text to stderr without a trailing newline.", ZR_NULL, 0},
+            {"printErrorLine", 1, 1, ZrSystem_Console_PrintErrorLine, "null", "Print text to stderr with a trailing newline.", ZR_NULL, 0},
     };
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"print", "function", "print(value: any): null", "Print text to stdout without a trailing newline."},
@@ -40,6 +40,9 @@ const ZrLibModuleDescriptor *ZrSystem_ConsoleRegistry_GetModule(void) {
             kHintsJson,
             "Console output helpers.",
             ZR_NULL,
+            0,
+            "1.0.0",
+            ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
             0,
     };
 

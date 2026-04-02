@@ -10,6 +10,11 @@
 #include "zr_vm_core/state.h"
 #include <string.h>
 
+static TZrBool object_node_map_is_ready(const SZrObject *object) {
+    return object != ZR_NULL && object->nodeMap.isValid && object->nodeMap.buckets != ZR_NULL &&
+           object->nodeMap.capacity > 0;
+}
+
 static TZrBool ensure_managed_field_capacity(SZrState *state, SZrObjectPrototype *prototype, TZrUInt32 minimumCapacity) {
     SZrManagedFieldInfo *newFields;
     TZrUInt32 newCapacity;
@@ -70,20 +75,16 @@ SZrObject *ZrCore_Object_NewCustomized(struct SZrState *state, TZrSize size, EZr
     }
     SZrRawObject *rawObject = ZrCore_RawObject_New(state, valueType, size, ZR_FALSE);
     SZrObject *object = ZR_CAST_OBJECT(state, rawObject);
-    object->prototype = ZR_NULL;
+    object->prototype = (internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY && state != ZR_NULL && state->global != ZR_NULL)
+                                ? state->global->basicTypeObjectPrototype[ZR_VALUE_TYPE_ARRAY]
+                                : ZR_NULL;
     object->internalType = internalType;
     ZrCore_HashSet_Construct(&object->nodeMap);
     return object;
 }
 
 void ZrCore_Object_Init(struct SZrState *state, SZrObject *object) {
-    SZrGlobalState *global = state->global;
-    // todo:
     ZrCore_HashSet_Init(state, &object->nodeMap, ZR_OBJECT_TABLE_INIT_SIZE_LOG2);
-
-    // CONSTRUCT OBJECT FROM PROTOTYPE
-    SZrMeta *constructor = ZrCore_Object_GetMetaRecursively(state->global, object, ZR_META_CONSTRUCTOR);
-    // todo: call constructor
 }
 
 TZrBool ZrCore_Object_CompareWithAddress(struct SZrState *state, SZrObject *object1, SZrObject *object2) {
@@ -98,6 +99,16 @@ void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZr
         ZrCore_Log_Error(state, "attempt to set value with null key");
         return;
     }
+    if (!object_node_map_is_ready(object)) {
+        if (state == ZR_NULL) {
+            return;
+        }
+        ZrCore_Object_Init(state, object);
+        if (!object_node_map_is_ready(object)) {
+            ZrCore_Log_Error(state, "failed to initialize object storage");
+            return;
+        }
+    }
     SZrHashSet *nodeMap = &object->nodeMap;
     SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, nodeMap, key);
     if (pair == ZR_NULL) {
@@ -107,12 +118,16 @@ void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZr
 }
 
 const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key) {
+    SZrHashKeyValuePair *pair = ZR_NULL;
+
     ZR_ASSERT(object != ZR_NULL);
     if (key == ZR_NULL) {
         ZrCore_Log_Error(state, "attempt to get value with null key");
         return ZR_NULL;
     }
-    SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &object->nodeMap, key);
+    if (object_node_map_is_ready(object)) {
+        pair = ZrCore_HashSet_Find(state, &object->nodeMap, key);
+    }
     if (pair != ZR_NULL) {
         return &pair->value;
     }
@@ -121,7 +136,11 @@ const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *ob
         SZrObjectPrototype *prototype = (SZrObjectPrototype *)object;
         prototype = prototype->superPrototype;
         while (prototype != ZR_NULL) {
-            pair = ZrCore_HashSet_Find(state, &prototype->super.nodeMap, key);
+            if (object_node_map_is_ready(&prototype->super)) {
+                pair = ZrCore_HashSet_Find(state, &prototype->super.nodeMap, key);
+            } else {
+                pair = ZR_NULL;
+            }
             if (pair != ZR_NULL) {
                 return &pair->value;
             }

@@ -10,10 +10,10 @@
 
 const ZrLibModuleDescriptor *ZrSystem_GcRegistry_GetModule(void) {
     static const ZrLibFunctionDescriptor kFunctions[] = {
-            {"start", 0, 0, ZrSystem_Gc_Start, "null", "Resume garbage collection."},
-            {"stop", 0, 0, ZrSystem_Gc_Stop, "null", "Pause garbage collection."},
-            {"step", 0, 0, ZrSystem_Gc_Step, "null", "Run one garbage-collection step."},
-            {"collect", 0, 0, ZrSystem_Gc_Collect, "null", "Run a full garbage collection."},
+            {"start", 0, 0, ZrSystem_Gc_Start, "null", "Resume garbage collection.", ZR_NULL, 0},
+            {"stop", 0, 0, ZrSystem_Gc_Stop, "null", "Pause garbage collection.", ZR_NULL, 0},
+            {"step", 0, 0, ZrSystem_Gc_Step, "null", "Run one garbage-collection step.", ZR_NULL, 0},
+            {"collect", 0, 0, ZrSystem_Gc_Collect, "null", "Run a full garbage collection.", ZR_NULL, 0},
     };
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"start", "function", "start(): null", "Resume garbage collection."},
@@ -40,6 +40,9 @@ const ZrLibModuleDescriptor *ZrSystem_GcRegistry_GetModule(void) {
             kHintsJson,
             "Garbage-collection controls.",
             ZR_NULL,
+            0,
+            "1.0.0",
+            ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
             0,
     };
 

@@ -379,6 +379,35 @@ SZrAstNode *create_construct_expression_node(SZrParserState *ps, SZrAstNode *tar
     return node;
 }
 
+static SZrAstNode *parse_generic_construct_target(SZrParserState *ps) {
+    SZrType *parsedType;
+    SZrAstNode *typeNode;
+    SZrFileRange typeLoc;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER || peek_token(ps) != ZR_TK_LESS_THAN) {
+        return ZR_NULL;
+    }
+
+    parsedType = parse_type(ps);
+    if (parsedType == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    typeLoc = get_current_location(ps);
+    typeNode = create_ast_node(ps, ZR_AST_TYPE, typeLoc);
+    if (typeNode == ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(ps->state->global,
+                                      parsedType,
+                                      sizeof(SZrType),
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        return ZR_NULL;
+    }
+
+    typeNode->data.type = *parsedType;
+    ZrCore_Memory_RawFreeWithType(ps->state->global, parsedType, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    return typeNode;
+}
+
 SZrAstNode *parse_prototype_path_expression(SZrParserState *ps) {
     SZrAstNode *base;
     SZrFileRange startLoc;
@@ -407,7 +436,11 @@ SZrAstNode *parse_prototype_path_expression(SZrParserState *ps) {
             return base;
         }
 
-        property = parse_identifier(ps);
+        if (peek_token(ps) == ZR_TK_LESS_THAN) {
+            property = parse_generic_construct_target(ps);
+        } else {
+            property = parse_identifier(ps);
+        }
         if (property == ZR_NULL) {
             return base;
         }
@@ -443,6 +476,8 @@ SZrAstNode *parse_prototype_reference_expression(SZrParserState *ps) {
         target = parse_expression(ps);
         expect_token(ps, ZR_TK_RPAREN);
         consume_token(ps, ZR_TK_RPAREN);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && peek_token(ps) == ZR_TK_LESS_THAN) {
+        target = parse_generic_construct_target(ps);
     } else {
         target = parse_prototype_path_expression(ps);
     }
@@ -486,6 +521,8 @@ SZrAstNode *parse_construct_expression(SZrParserState *ps,
         target = parse_expression(ps);
         expect_token(ps, ZR_TK_RPAREN);
         consume_token(ps, ZR_TK_RPAREN);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && peek_token(ps) == ZR_TK_LESS_THAN) {
+        target = parse_generic_construct_target(ps);
     } else {
         target = parse_prototype_path_expression(ps);
     }
@@ -649,6 +686,48 @@ SZrAstNode *parse_reserved_import_expression(SZrParserState *ps) {
     return node;
 }
 
+SZrAstNode *parse_reserved_type_expression(SZrParserState *ps) {
+    SZrFileRange startLoc;
+    SZrAstNode *operand;
+    SZrAstNode *node;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
+        return ZR_NULL;
+    }
+
+    startLoc = get_current_location(ps);
+    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "type")) {
+        report_error(ps, "Expected 'type' after '%'");
+        return ZR_NULL;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    expect_token(ps, ZR_TK_LPAREN);
+    if (!consume_token(ps, ZR_TK_LPAREN)) {
+        return ZR_NULL;
+    }
+
+    operand = parse_expression(ps);
+    if (operand == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    expect_token(ps, ZR_TK_RPAREN);
+    consume_token(ps, ZR_TK_RPAREN);
+
+    node = create_ast_node(ps,
+                           ZR_AST_TYPE_QUERY_EXPRESSION,
+                           ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    if (node == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, operand);
+        return ZR_NULL;
+    }
+
+    node->data.typeQueryExpression.operand = operand;
+    return node;
+}
+
 SZrAstNode *parse_owned_class_declaration(SZrParserState *ps) {
     SZrAstNode *node;
 
@@ -723,6 +802,37 @@ static SZrAstNode *parse_member_name(SZrParserState *ps) {
     return create_identifier_node_with_location(ps, name, memberLoc);
 }
 
+static SZrAstNodeArray *try_parse_explicit_generic_call_arguments(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrBool savedSuppressErrorOutput;
+    SZrAstNodeArray *genericArguments;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_LESS_THAN) {
+        return ZR_NULL;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    savedSuppressErrorOutput = ps->suppressErrorOutput;
+    ps->suppressErrorOutput = ZR_TRUE;
+    ps->hasError = ZR_FALSE;
+    ps->errorMessage = ZR_NULL;
+
+    genericArguments = parse_generic_argument_list(ps);
+    if (genericArguments == ZR_NULL || ps->lexer->t.token != ZR_TK_LPAREN) {
+        if (genericArguments != ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, genericArguments);
+        }
+        restore_parser_cursor(ps, &cursor);
+        ps->suppressErrorOutput = savedSuppressErrorOutput;
+        return ZR_NULL;
+    }
+
+    ps->suppressErrorOutput = savedSuppressErrorOutput;
+    ps->hasError = cursor.hasError;
+    ps->errorMessage = cursor.errorMessage;
+    return genericArguments;
+}
+
 SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
     SZrFileRange startLoc = base->location;
 
@@ -770,6 +880,53 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             memberNode->data.memberExpression.computed = ZR_TRUE;
 
             base = append_primary_member(ps, base, memberNode, startLoc);
+        }
+        // 显式泛型函数调用
+        else if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+            SZrAstNodeArray *genericArguments = try_parse_explicit_generic_call_arguments(ps);
+            SZrArray *argNames;
+            SZrAstNodeArray *args;
+            SZrAstNode *callNode;
+
+            if (genericArguments == ZR_NULL) {
+                break;
+            }
+
+            consume_token(ps, ZR_TK_LPAREN);
+            argNames = ZR_NULL;
+            args = parse_argument_list(ps, &argNames);
+            expect_token(ps, ZR_TK_RPAREN);
+            consume_token(ps, ZR_TK_RPAREN);
+
+            callNode = create_ast_node(ps, ZR_AST_FUNCTION_CALL, startLoc);
+            if (callNode == ZR_NULL) {
+                if (args != ZR_NULL) {
+                    ZrParser_AstNodeArray_Free(ps->state, args);
+                }
+                if (argNames != ZR_NULL) {
+                    ZrCore_Array_Free(ps->state, argNames);
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, argNames, sizeof(SZrArray),
+                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
+                free_ast_node_array_with_elements(ps->state, genericArguments);
+                return base;
+            }
+
+            callNode->data.functionCall.args = args;
+            callNode->data.functionCall.argNames = argNames;
+            callNode->data.functionCall.genericArguments = genericArguments;
+            callNode->data.functionCall.hasNamedArgs = ZR_FALSE;
+            if (argNames != ZR_NULL && argNames->length > 0) {
+                for (TZrSize i = 0; i < argNames->length; i++) {
+                    SZrString **namePtr = (SZrString **) ZrCore_Array_Get(argNames, i);
+                    if (namePtr != ZR_NULL && *namePtr != ZR_NULL) {
+                        callNode->data.functionCall.hasNamedArgs = ZR_TRUE;
+                        break;
+                    }
+                }
+            }
+
+            base = append_primary_member(ps, base, callNode, startLoc);
         }
         // 函数调用
         else if (consume_token(ps, ZR_TK_LPAREN)) {
@@ -822,6 +979,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             }
             callNode->data.functionCall.args = args;
             callNode->data.functionCall.argNames = argNames;
+            callNode->data.functionCall.genericArguments = ZR_NULL;
             // 检查是否有命名参数
             callNode->data.functionCall.hasNamedArgs = ZR_FALSE;
             if (argNames != ZR_NULL && argNames->length > 0) {
@@ -880,15 +1038,19 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
             // 1. 如果下一个token是标识符、字符串或数字，可能是对象字面量的键
             // 2. 如果下一个token是语句关键字（var, if, while等），是块表达式
             // 3. 如果下一个token是右大括号，是空对象字面量
-            EZrToken lookahead = peek_token(ps);
-            if (lookahead == ZR_TK_IDENTIFIER || lookahead == ZR_TK_STRING || lookahead == ZR_TK_INTEGER ||
-                lookahead == ZR_TK_FLOAT || lookahead == ZR_TK_RBRACE) {
+            EZrToken objectLookahead = peek_token(ps);
+            if (objectLookahead == ZR_TK_IDENTIFIER || objectLookahead == ZR_TK_STRING ||
+                objectLookahead == ZR_TK_INTEGER ||
+                objectLookahead == ZR_TK_FLOAT || objectLookahead == ZR_TK_RBRACE) {
                 // 可能是对象字面量
                 base = parse_object_literal(ps);
-            } else if (lookahead == ZR_TK_VAR || lookahead == ZR_TK_IF || lookahead == ZR_TK_WHILE ||
-                       lookahead == ZR_TK_FOR || lookahead == ZR_TK_RETURN || lookahead == ZR_TK_BREAK ||
-                       lookahead == ZR_TK_CONTINUE || lookahead == ZR_TK_THROW || lookahead == ZR_TK_TRY ||
-                       lookahead == ZR_TK_SWITCH) {
+            } else if (objectLookahead == ZR_TK_VAR || objectLookahead == ZR_TK_IF ||
+                       objectLookahead == ZR_TK_WHILE ||
+                       objectLookahead == ZR_TK_FOR || objectLookahead == ZR_TK_RETURN ||
+                       objectLookahead == ZR_TK_BREAK ||
+                       objectLookahead == ZR_TK_CONTINUE || objectLookahead == ZR_TK_THROW ||
+                       objectLookahead == ZR_TK_TRY ||
+                       objectLookahead == ZR_TK_SWITCH) {
                 // 是块表达式
                 base = parse_block(ps);
             } else {

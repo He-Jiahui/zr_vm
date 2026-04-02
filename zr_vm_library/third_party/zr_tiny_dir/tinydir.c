@@ -1,4 +1,4 @@
 //
 // Created by HeJiahui on 2025/7/27.
 //
-void unused() {}
+typedef int zr_tinydir_placeholder_t;

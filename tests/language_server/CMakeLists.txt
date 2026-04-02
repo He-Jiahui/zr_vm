@@ -35,6 +35,12 @@ set(LSP_INTERFACE_TEST_SOURCES
 
 add_executable(zr_vm_language_server_lsp_interface_test ${LSP_INTERFACE_TEST_SOURCES})
 
+set(LSP_PROJECT_FEATURE_TEST_SOURCES
+    test_lsp_project_features.c
+)
+
+add_executable(zr_vm_language_server_lsp_project_features_test ${LSP_PROJECT_FEATURE_TEST_SOURCES})
+
 find_program(NODE_EXECUTABLE node)
 
 # 包含头文件目录
@@ -59,6 +65,7 @@ target_include_directories(zr_vm_language_server_semantic_analyzer_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
     ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
     ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
 )
 
 target_include_directories(zr_vm_language_server_incremental_parser_test PRIVATE 
@@ -75,9 +82,24 @@ target_include_directories(zr_vm_language_server_lsp_interface_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zr_vm_common/include
     ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
     ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+)
+
+target_include_directories(zr_vm_language_server_lsp_project_features_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
 )
 
 target_compile_definitions(zr_vm_language_server_lsp_interface_test PRIVATE
+    ZR_VM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
+)
+
+target_compile_definitions(zr_vm_language_server_lsp_project_features_test PRIVATE
     ZR_VM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
@@ -96,7 +118,8 @@ if (BUILD_SHARED_LIB)
         zr_vm_parser_shared 
         zr_vm_core_shared
         zr_vm_lib_math_shared
-        zr_vm_lib_system_shared)
+        zr_vm_lib_system_shared
+        zr_vm_lib_container_shared)
     target_link_libraries(zr_vm_language_server_incremental_parser_test PRIVATE 
         zr_vm_language_server_shared 
         zr_vm_parser_shared 
@@ -106,7 +129,15 @@ if (BUILD_SHARED_LIB)
         zr_vm_parser_shared 
         zr_vm_core_shared
         zr_vm_lib_math_shared
-        zr_vm_lib_system_shared)
+        zr_vm_lib_system_shared
+        zr_vm_lib_container_shared)
+    target_link_libraries(zr_vm_language_server_lsp_project_features_test PRIVATE
+        zr_vm_language_server_shared
+        zr_vm_parser_shared
+        zr_vm_core_shared
+        zr_vm_lib_math_shared
+        zr_vm_lib_system_shared
+        zr_vm_lib_container_shared)
 else()
     target_link_libraries(zr_vm_language_server_symbol_table_test PRIVATE 
         zr_vm_language_server_static 
@@ -121,7 +152,8 @@ else()
         zr_vm_parser_static 
         zr_vm_core_static
         zr_vm_lib_math_static
-        zr_vm_lib_system_static)
+        zr_vm_lib_system_static
+        zr_vm_lib_container_static)
     target_link_libraries(zr_vm_language_server_incremental_parser_test PRIVATE 
         zr_vm_language_server_static 
         zr_vm_parser_static 
@@ -131,7 +163,15 @@ else()
         zr_vm_parser_static 
         zr_vm_core_static
         zr_vm_lib_math_static
-        zr_vm_lib_system_static)
+        zr_vm_lib_system_static
+        zr_vm_lib_container_static)
+    target_link_libraries(zr_vm_language_server_lsp_project_features_test PRIVATE
+        zr_vm_language_server_static
+        zr_vm_parser_static
+        zr_vm_core_static
+        zr_vm_lib_math_static
+        zr_vm_lib_system_static
+        zr_vm_lib_container_static)
 endif()
 
 # 添加测试目标
@@ -141,6 +181,7 @@ add_test(NAME language_server_reference_tracker_tests COMMAND zr_vm_language_ser
 add_test(NAME language_server_semantic_analyzer_tests COMMAND zr_vm_language_server_semantic_analyzer_test)
 add_test(NAME language_server_incremental_parser_tests COMMAND zr_vm_language_server_incremental_parser_test)
 add_test(NAME language_server_lsp_interface_tests COMMAND zr_vm_language_server_lsp_interface_test)
+add_test(NAME language_server_lsp_project_features_tests COMMAND zr_vm_language_server_lsp_project_features_test)
 
 if (NODE_EXECUTABLE AND TARGET zr_vm_language_server_stdio)
     add_test(

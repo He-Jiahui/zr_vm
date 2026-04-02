@@ -4,6 +4,39 @@
 
 #include "compiler_internal.h"
 
+static void compiler_store_error_message(SZrCompilerState *cs, const TZrChar *message) {
+    TZrSize requiredSize = 0;
+    TZrChar *newBuffer = ZR_NULL;
+
+    if (cs == ZR_NULL) {
+        return;
+    }
+
+    if (message == ZR_NULL) {
+        cs->errorMessage = ZR_NULL;
+        return;
+    }
+
+    requiredSize = strlen(message) + 1;
+    if (requiredSize > cs->errorMessageStorageCapacity) {
+        newBuffer = (TZrChar *)ZrCore_Memory_Allocate(cs->state->global,
+                                                      cs->errorMessageStorage,
+                                                      cs->errorMessageStorageCapacity,
+                                                      requiredSize,
+                                                      ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+        if (newBuffer == ZR_NULL) {
+            cs->errorMessage = "Failed to allocate compiler error message";
+            return;
+        }
+
+        cs->errorMessageStorage = newBuffer;
+        cs->errorMessageStorageCapacity = requiredSize;
+    }
+
+    memcpy(cs->errorMessageStorage, message, requiredSize);
+    cs->errorMessage = cs->errorMessageStorage;
+}
+
 void print_error_suggestion(const TZrChar *msg) {
     if (msg == ZR_NULL) {
         return;
@@ -102,9 +135,10 @@ void ZrParser_CompileTime_Error(SZrCompilerState *cs, EZrCompileTimeErrorLevel l
     // 如果是致命错误，设置错误信息
     if (level == ZR_COMPILE_TIME_ERROR_ERROR || level == ZR_COMPILE_TIME_ERROR_FATAL) {
         if (cs->errorMessage == ZR_NULL) {
-            cs->errorMessage = (level == ZR_COMPILE_TIME_ERROR_FATAL)
-                                       ? "Fatal compile-time evaluation failed"
-                                       : "Compile-time evaluation failed";
+            compiler_store_error_message(cs,
+                                         (level == ZR_COMPILE_TIME_ERROR_FATAL)
+                                                 ? "Fatal compile-time evaluation failed"
+                                                 : "Compile-time evaluation failed");
             cs->errorLocation = location;
         }
     }
@@ -120,7 +154,7 @@ void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRa
     }
 
     cs->hasError = ZR_TRUE;
-    cs->errorMessage = msg;
+    compiler_store_error_message(cs, msg);
     cs->errorLocation = location;
 
     // 输出详细的错误信息（包含行列号）

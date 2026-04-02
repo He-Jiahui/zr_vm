@@ -90,6 +90,7 @@
     "build:wasm": "node ./scripts/build-wasm-server.js",
     "sync:native": "node ./scripts/sync-native-server.js",
     "sync:wasm": "node ./scripts/sync-wasm-server.js",
+    "package:vsix": "powershell -ExecutionPolicy Bypass -File ./scripts/package-vsix.ps1",
     "test:e2e:desktop": "npm run compile && npm run build:native && node ./scripts/run-electron-smoke.js",
     "test:e2e:web": "npm run compile && npm run build:wasm && npm run sync:wasm && node ./scripts/run-web-smoke.js",
     "package": "vsce package --allow-missing-repository"

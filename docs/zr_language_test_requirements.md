@@ -112,61 +112,114 @@ var person = <k.Person> p;
 
 ## 3. 泛型测试
 
-### 3.1 静态泛型测试
+### 3.1 开放定义与闭型实例测试
 
-**优先级**: 中  
-**状态**: 待实现
-
-```zr
-class Container<T> {
-    pub var value: T;
-    
-    pub @constructor(v: T) {
-        this.value = v;
-    }
-}
-
-var c1: Container<int> = new Container<int>(42);
-var c2: Container<string> = new Container<string>("hello");
-```
-
-**测试文件**: `tests/parser/test_generic_static.zr`
-
-### 3.2 动态泛型测试
-
-**优先级**: 中  
-**状态**: 待实现
+**优先级**: 高  
+**状态**: 已实现并持续扩展
 
 ```zr
-class Container<T> {
-    pub var value: T;
-}
+class Box<T> { pub var value: T; }
+struct Pair<TLeft, TRight> { pub left: TLeft; pub right: TRight; }
+class Matrix<T, const N: int> { pub rows: Array<T>[N]; }
 
-var c = new Container();  // T 在运行时确定
-c.value = 42;
+new Box<int>();
+$Pair<int, string>();
+new Matrix<int, 2 + 2>();
 ```
 
-**测试文件**: `tests/parser/test_generic_dynamic.zr`
+**覆盖点**:
+- 源码 generic class / struct / interface 注册为 open generic definition
+- 闭型 canonical name 与 prototype 缓存
+- 嵌套泛型与 const 泛型归一化（`2 + 2 == 4`）
 
-### 3.3 泛型约束测试
+**测试文件**: `tests/parser/test_type_inference.c`
 
-**优先级**: 中  
-**状态**: 待实现
+### 3.2 泛型函数 / 方法与类型推断测试
+
+**优先级**: 高  
+**状态**: 已实现并持续扩展
 
 ```zr
-class Base {}
-class Derived: Base {}
+func identity<T>(value: T): T { return value; }
 
-class Container<T: Base> {
-    pub var value: T;
+class Box<T> {
+    func echo<U>(input: U): U { return input; }
+    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }
 }
 
-var c1: Container<Base> = new Container<Base>();
-var c2: Container<Derived> = new Container<Derived>();
-// var c3: Container<int> = new Container<int>();  // 应该报错
+identity(1);
+identity<string>("hello");
+new Box<int>().echo("hello");
+new Box<int>().shape<2 + 2>(new Matrix<int, 4>());
 ```
 
-**测试文件**: `tests/parser/test_generic_constraints.zr`
+**覆盖点**:
+- 显式类型实参与纯推断调用
+- 方法级泛型与接收者闭型联动
+- const 泛型方法的显式实参与推断闭环
+- 泛型参数个数错误、无法推断等专用诊断
+
+**测试文件**: `tests/parser/test_type_inference.c`
+
+### 3.3 约束、继承与方差测试
+
+**优先级**: 高  
+**状态**: 已实现并持续扩展
+
+```zr
+interface IProducer<out T> { next(): T; }
+interface IConsumer<in T> { accept(value: T): void; }
+
+class Base<T> { pub var value: T; }
+class Derived<T> : Base<T> where T: class, new() { }
+```
+
+**覆盖点**:
+- `where` 约束：基类 / 接口 / `class` / `struct` / `new()`
+- 泛型继承闭包与基类成员替换
+- interface `in/out` 方差保留与非法位置诊断
+- 嵌套泛型中的方差位置组合
+
+**测试文件**:
+- `tests/parser/test_type_inference.c`
+- `tests/language_server/test_semantic_analyzer.c`
+
+### 3.4 参数模式与 definite assignment 测试
+
+**优先级**: 高  
+**状态**: 已实现并持续扩展
+
+```zr
+func readOnly<T>(%in value: T): void { }
+func tryGet<T>(key: string, %out value: T): bool { value = null; return true; }
+func swap<T>(%ref left: T, %ref right: T): void { }
+```
+
+**覆盖点**:
+- `%in` 只读限制
+- `%out` / `%ref` 实参必须为可赋值左值
+- `%out` definite assignment
+- native / source / generic call 路径的 passing mode 一致性
+
+**测试文件**: `tests/parser/test_type_inference.c`
+
+### 3.5 LSP 泛型签名展示测试
+
+**优先级**: 中  
+**状态**: 已实现并持续扩展
+
+```zr
+interface Producer<out T> { next(): T; }
+class Derived<T, const N: int> : Producer<T> where T: class, new() { }
+func swap<T>(%ref value: T): T { return value; }
+```
+
+**覆盖点**:
+- hover / completion 展示 generic declaration
+- const 泛型参数、`where` 约束、继承列表、方差与 `%in/%out/%ref`
+- open definition 与 declaration signature 区分
+
+**测试文件**: `tests/language_server/test_semantic_analyzer.c`
 
 ## 4. 装饰器测试
 

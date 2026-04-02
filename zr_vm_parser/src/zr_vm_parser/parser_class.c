@@ -34,7 +34,7 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
-        generic = parse_generic_declaration(ps);
+        generic = parse_generic_declaration(ps, ZR_FALSE);
     }
 
     // 解析继承列表（可选）
@@ -71,6 +71,12 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
                 }
             }
         }
+    }
+
+    if (!parse_optional_where_clauses(ps, generic)) {
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        ZrParser_AstNodeArray_Free(ps->state, inherits);
+        return ZR_NULL;
     }
 
     // 期望左大括号
@@ -329,6 +335,10 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
     // 解析方法名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
@@ -341,7 +351,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
-        generic = parse_generic_declaration(ps);
+        generic = parse_generic_declaration(ps, ZR_FALSE);
     }
 
     // 解析参数列表
@@ -376,6 +386,14 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     SZrType *returnType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
+    }
+
+    if (!parse_optional_where_clauses(ps, generic)) {
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        if (params != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+        }
+        return ZR_NULL;
     }
 
     // 解析方法体

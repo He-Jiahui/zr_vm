@@ -47,6 +47,9 @@ static const ZrLibModuleDescriptor g_system_root_module_descriptor = {
         "System native module root that aggregates leaf submodules.",
         g_system_module_links,
         ZR_ARRAY_COUNT(g_system_module_links),
+        "1.0.0",
+        ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+        0,
 };
 
 const ZrLibModuleDescriptor *ZrVmLibSystem_GetModuleDescriptor(void) {

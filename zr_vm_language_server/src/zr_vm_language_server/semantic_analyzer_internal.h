@@ -15,6 +15,18 @@
 #include <stdio.h>
 #include <string.h>
 
+ZR_FORCE_INLINE const TZrChar *semantic_string_native(SZrString *value) {
+    if (value == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        return ZrCore_String_GetNativeStringShort(value);
+    }
+
+    return ZrCore_String_GetNativeString(value);
+}
+
 void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state,
                                                            SZrSemanticAnalyzer *analyzer,
                                                            SZrAstNode *node);

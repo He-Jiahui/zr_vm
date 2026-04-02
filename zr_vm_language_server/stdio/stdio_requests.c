@@ -228,6 +228,27 @@ static cJSON *handle_hover_request(SZrStdioServer *server, const cJSON *params) 
     return result != NULL ? result : cJSON_CreateNull();
 }
 
+static cJSON *handle_signature_help_request(SZrStdioServer *server, const cJSON *params) {
+    SZrLspPosition position;
+    const char *uriText;
+    SZrString *uri;
+    SZrLspSignatureHelp *help = ZR_NULL;
+    cJSON *result;
+
+    if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
+        return NULL;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(server->state, server->context, uri, position, &help) ||
+        help == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    result = serialize_signature_help(help);
+    free_signature_help(server->state, help);
+    return result != NULL ? result : cJSON_CreateNull();
+}
+
 static cJSON *handle_definition_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrLspPosition position;
@@ -321,7 +342,7 @@ static cJSON *handle_workspace_symbols_request(SZrStdioServer *server, const cJS
         }
     }
 
-    query = ZrCore_String_Create(server->state, queryText, (TZrSize)strlen(queryText));
+    query = ZrCore_String_Create(server->state, (TZrNativeString)queryText, (TZrSize)strlen(queryText));
     if (query == ZR_NULL) {
         return NULL;
     }
@@ -353,6 +374,72 @@ static cJSON *handle_document_highlights_request(SZrStdioServer *server, const c
     result = serialize_highlights_array(&highlights);
     free_highlights_array(server->state, &highlights);
     return result;
+}
+
+static cJSON *create_semantic_token_legend_json(void) {
+    cJSON *legend = cJSON_CreateObject();
+    cJSON *types = cJSON_CreateArray();
+    cJSON *modifiers = cJSON_CreateArray();
+
+    if (legend == NULL || types == NULL || modifiers == NULL) {
+        cJSON_Delete(legend);
+        cJSON_Delete(types);
+        cJSON_Delete(modifiers);
+        return NULL;
+    }
+
+    for (TZrSize index = 0; index < ZrLanguageServer_Lsp_SemanticTokenTypeCount(); index++) {
+        const TZrChar *typeName = ZrLanguageServer_Lsp_SemanticTokenTypeName(index);
+        if (typeName != ZR_NULL) {
+            cJSON_AddItemToArray(types, cJSON_CreateString(typeName));
+        }
+    }
+
+    cJSON_AddItemToObject(legend, "tokenTypes", types);
+    cJSON_AddItemToObject(legend, "tokenModifiers", modifiers);
+    return legend;
+}
+
+static cJSON *serialize_semantic_tokens_result(SZrArray *tokens) {
+    cJSON *result = cJSON_CreateObject();
+    cJSON *data = cJSON_CreateArray();
+
+    if (result == NULL || data == NULL) {
+        cJSON_Delete(result);
+        cJSON_Delete(data);
+        return NULL;
+    }
+
+    for (TZrSize index = 0; tokens != ZR_NULL && index < tokens->length; index++) {
+        TZrUInt32 *valuePtr = (TZrUInt32 *)ZrCore_Array_Get(tokens, index);
+        if (valuePtr != ZR_NULL) {
+            cJSON_AddItemToArray(data, cJSON_CreateNumber((double)(*valuePtr)));
+        }
+    }
+
+    cJSON_AddItemToObject(result, "data", data);
+    return result;
+}
+
+static cJSON *handle_semantic_tokens_full_request(SZrStdioServer *server, const cJSON *params) {
+    const char *uriText;
+    SZrString *uri;
+    SZrArray tokens = {0};
+    cJSON *result;
+
+    if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
+        return NULL;
+    }
+
+    ZrCore_Array_Init(server->state, &tokens, sizeof(TZrUInt32), 32);
+    if (!ZrLanguageServer_Lsp_GetSemanticTokens(server->state, server->context, uri, &tokens)) {
+        ZrCore_Array_Free(server->state, &tokens);
+        return cJSON_CreateNull();
+    }
+
+    result = serialize_semantic_tokens_result(&tokens);
+    ZrCore_Array_Free(server->state, &tokens);
+    return result != NULL ? result : cJSON_CreateNull();
 }
 
 static cJSON *handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params) {
@@ -414,7 +501,7 @@ static cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params)
         return NULL;
     }
 
-    newName = ZrCore_String_Create(server->state, newNameText, (TZrSize)strlen(newNameText));
+    newName = ZrCore_String_Create(server->state, (TZrNativeString)newNameText, (TZrSize)strlen(newNameText));
     if (newName == ZR_NULL) {
         return NULL;
     }
@@ -439,24 +526,49 @@ static cJSON *handle_initialize_request(void) {
     cJSON *capabilities = cJSON_CreateObject();
     cJSON *textDocumentSync = cJSON_CreateObject();
     cJSON *completionProvider = cJSON_CreateObject();
+    cJSON *signatureHelpProvider = cJSON_CreateObject();
     cJSON *renameProvider = cJSON_CreateObject();
     cJSON *saveOptions = cJSON_CreateObject();
     cJSON *triggerCharacters = cJSON_CreateArray();
+    cJSON *signatureTriggerCharacters = cJSON_CreateArray();
+    cJSON *semanticTokensProvider = cJSON_CreateObject();
     cJSON *serverInfo = cJSON_CreateObject();
     cJSON *workspace = cJSON_CreateObject();
     cJSON *workspaceFolders = cJSON_CreateObject();
+    cJSON *semanticLegend;
 
     if (result == NULL || capabilities == NULL || textDocumentSync == NULL ||
-        completionProvider == NULL || renameProvider == NULL || saveOptions == NULL ||
-        triggerCharacters == NULL || serverInfo == NULL || workspace == NULL ||
-        workspaceFolders == NULL) {
+        completionProvider == NULL || signatureHelpProvider == NULL || renameProvider == NULL || saveOptions == NULL ||
+        triggerCharacters == NULL || signatureTriggerCharacters == NULL || semanticTokensProvider == NULL ||
+        serverInfo == NULL || workspace == NULL || workspaceFolders == NULL) {
         cJSON_Delete(result);
         cJSON_Delete(capabilities);
         cJSON_Delete(textDocumentSync);
         cJSON_Delete(completionProvider);
+        cJSON_Delete(signatureHelpProvider);
         cJSON_Delete(renameProvider);
         cJSON_Delete(saveOptions);
         cJSON_Delete(triggerCharacters);
+        cJSON_Delete(signatureTriggerCharacters);
+        cJSON_Delete(semanticTokensProvider);
+        cJSON_Delete(serverInfo);
+        cJSON_Delete(workspace);
+        cJSON_Delete(workspaceFolders);
+        return NULL;
+    }
+
+    semanticLegend = create_semantic_token_legend_json();
+    if (semanticLegend == NULL) {
+        cJSON_Delete(result);
+        cJSON_Delete(capabilities);
+        cJSON_Delete(textDocumentSync);
+        cJSON_Delete(completionProvider);
+        cJSON_Delete(signatureHelpProvider);
+        cJSON_Delete(renameProvider);
+        cJSON_Delete(saveOptions);
+        cJSON_Delete(triggerCharacters);
+        cJSON_Delete(signatureTriggerCharacters);
+        cJSON_Delete(semanticTokensProvider);
         cJSON_Delete(serverInfo);
         cJSON_Delete(workspace);
         cJSON_Delete(workspaceFolders);
@@ -472,18 +584,25 @@ static cJSON *handle_initialize_request(void) {
     cJSON_AddItemToArray(triggerCharacters, cJSON_CreateString(":"));
     cJSON_AddBoolToObject(completionProvider, "resolveProvider", 0);
     cJSON_AddItemToObject(completionProvider, "triggerCharacters", triggerCharacters);
+    cJSON_AddItemToArray(signatureTriggerCharacters, cJSON_CreateString("("));
+    cJSON_AddItemToArray(signatureTriggerCharacters, cJSON_CreateString(","));
+    cJSON_AddItemToObject(signatureHelpProvider, "triggerCharacters", signatureTriggerCharacters);
 
     cJSON_AddBoolToObject(renameProvider, "prepareProvider", 1);
 
     cJSON_AddItemToObject(capabilities, "textDocumentSync", textDocumentSync);
     cJSON_AddItemToObject(capabilities, "completionProvider", completionProvider);
     cJSON_AddBoolToObject(capabilities, "hoverProvider", 1);
+    cJSON_AddItemToObject(capabilities, "signatureHelpProvider", signatureHelpProvider);
     cJSON_AddBoolToObject(capabilities, "definitionProvider", 1);
     cJSON_AddBoolToObject(capabilities, "referencesProvider", 1);
     cJSON_AddItemToObject(capabilities, "renameProvider", renameProvider);
     cJSON_AddBoolToObject(capabilities, "documentSymbolProvider", 1);
     cJSON_AddBoolToObject(capabilities, "workspaceSymbolProvider", 1);
     cJSON_AddBoolToObject(capabilities, "documentHighlightProvider", 1);
+    cJSON_AddItemToObject(semanticTokensProvider, "legend", semanticLegend);
+    cJSON_AddBoolToObject(semanticTokensProvider, "full", 1);
+    cJSON_AddItemToObject(capabilities, "semanticTokensProvider", semanticTokensProvider);
     cJSON_AddBoolToObject(workspaceFolders, "supported", 1);
     cJSON_AddBoolToObject(workspaceFolders, "changeNotifications", 1);
     cJSON_AddItemToObject(workspace, "workspaceFolders", workspaceFolders);
@@ -523,6 +642,8 @@ void handle_request_message(SZrStdioServer *server,
         result = handle_completion_request(server, params);
     } else if (strcmp(method, "textDocument/hover") == 0) {
         result = handle_hover_request(server, params);
+    } else if (strcmp(method, "textDocument/signatureHelp") == 0) {
+        result = handle_signature_help_request(server, params);
     } else if (strcmp(method, "textDocument/definition") == 0) {
         result = handle_definition_request(server, params);
     } else if (strcmp(method, "textDocument/references") == 0) {
@@ -533,6 +654,8 @@ void handle_request_message(SZrStdioServer *server,
         result = handle_workspace_symbols_request(server, params);
     } else if (strcmp(method, "textDocument/documentHighlight") == 0) {
         result = handle_document_highlights_request(server, params);
+    } else if (strcmp(method, "textDocument/semanticTokens/full") == 0) {
+        result = handle_semantic_tokens_full_request(server, params);
     } else if (strcmp(method, "textDocument/prepareRename") == 0) {
         result = handle_prepare_rename_request(server, params);
     } else if (strcmp(method, "textDocument/rename") == 0) {

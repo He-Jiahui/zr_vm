@@ -237,6 +237,14 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 退出函数作用域
     exit_scope(cs);
+    if (!cs->hasError) {
+        TZrUInt32 typedLocalBindingCount = 0;
+        if (!compiler_build_typed_local_bindings(cs, &cs->currentFunction->typedLocalBindings, &typedLocalBindingCount)) {
+            ZrParser_Compiler_Error(cs, "Failed to build typed local metadata for test declaration", node->location);
+        } else {
+            cs->currentFunction->typedLocalBindingLength = typedLocalBindingCount;
+        }
+    }
 
     if (cs->hasError) {
         if (cs->currentFunction != ZR_NULL) {

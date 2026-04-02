@@ -172,7 +172,7 @@ void ZrCore_Stack_SetRawObjectValue(struct SZrState *state, SZrTypeValueOnStack 
 }
 
 
-void ZrCore_Stack_CopyValue(SZrState *state, SZrTypeValueOnStack *destination, SZrTypeValue *source) {
+void ZrCore_Stack_CopyValue(SZrState *state, SZrTypeValueOnStack *destination, const SZrTypeValue *source) {
     SZrTypeValue *destinationValue = ZrCore_Stack_GetValue(destination);
     ZrCore_Value_Copy(state, destinationValue, source);
 }

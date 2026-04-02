@@ -94,6 +94,36 @@ typedef struct SZrFunctionTypedExportSymbol {
     SZrFunctionTypedTypeRef *parameterTypes;
 } SZrFunctionTypedExportSymbol;
 
+typedef struct SZrFunctionMetadataParameter {
+    struct SZrString *name;
+    SZrFunctionTypedTypeRef type;
+} SZrFunctionMetadataParameter;
+
+typedef struct SZrFunctionCompileTimeVariableInfo {
+    struct SZrString *name;
+    SZrFunctionTypedTypeRef type;
+    TZrUInt32 lineInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+} SZrFunctionCompileTimeVariableInfo;
+
+typedef struct SZrFunctionCompileTimeFunctionInfo {
+    struct SZrString *name;
+    SZrFunctionTypedTypeRef returnType;
+    TZrUInt32 parameterCount;
+    SZrFunctionMetadataParameter *parameters;
+    TZrUInt32 lineInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+} SZrFunctionCompileTimeFunctionInfo;
+
+typedef struct SZrFunctionTestInfo {
+    struct SZrString *name;
+    TZrUInt32 parameterCount;
+    SZrFunctionMetadataParameter *parameters;
+    TZrBool hasVariableArguments;
+    TZrUInt32 lineInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+} SZrFunctionTestInfo;
+
 struct ZR_STRUCT_ALIGN SZrFunction {
     SZrRawObject super;
     TZrUInt16 parameterCount;
@@ -141,6 +171,12 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 typedLocalBindingLength;
     SZrFunctionTypedExportSymbol *typedExportedSymbols;
     TZrUInt32 typedExportedSymbolLength;
+    SZrFunctionCompileTimeVariableInfo *compileTimeVariableInfos;
+    TZrUInt32 compileTimeVariableInfoLength;
+    SZrFunctionCompileTimeFunctionInfo *compileTimeFunctionInfos;
+    TZrUInt32 compileTimeFunctionInfoLength;
+    SZrFunctionTestInfo *testInfos;
+    TZrUInt32 testInfoLength;
     
     // prototype数据存储（从常量池迁移）
     TZrByte *prototypeData;                           // prototype 二进制数据（序列化后的 SZrCompiledPrototypeInfo 数组）

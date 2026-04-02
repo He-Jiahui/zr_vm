@@ -89,10 +89,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
                         allocate_local_var(cs, paramName);
                         parameterCount++;
                         
-                        // 如果是 const 参数，记录到 constParameters 数组
-                        if (param->isConst) {
-                            ZrCore_Array_Push(cs->state, &cs->constParameters, &paramName);
-                        }
+                        compiler_register_readonly_parameter_name(cs, param, paramName);
                         
                         // 注册参数类型到类型环境
                         if (cs->typeEnv != ZR_NULL) {
@@ -124,6 +121,9 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     
     if (body != ZR_NULL) {
         ZrParser_Statement_Compile(cs, body);
+        if (!cs->hasError) {
+            compiler_validate_out_parameter_definite_assignment(cs, params, body, node->location);
+        }
     }
     
     // 如果没有显式返回，添加隐式返回
@@ -164,6 +164,14 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     
     // 退出函数作用域
     exit_scope(cs);
+    if (!cs->hasError) {
+        TZrUInt32 typedLocalBindingCount = 0;
+        if (!compiler_build_typed_local_bindings(cs, &cs->currentFunction->typedLocalBindings, &typedLocalBindingCount)) {
+            ZrParser_Compiler_Error(cs, "Failed to build typed local metadata for meta function", node->location);
+        } else {
+            cs->currentFunction->typedLocalBindingLength = typedLocalBindingCount;
+        }
+    }
     
     // 检查是否有编译错误
     if (cs->hasError) {

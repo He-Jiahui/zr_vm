@@ -580,7 +580,6 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                         SZrString *fieldName = interfaceField->name->name;
                                                         // 在类中查找对应的字段
                                                         if (classDecl->members != ZR_NULL) {
-                                                            TZrBool found = ZR_FALSE;
                                                             for (TZrSize k = 0; k < classDecl->members->count; k++) {
                                                                 SZrAstNode *classMember = classDecl->members->nodes[k];
                                                                 if (classMember != ZR_NULL && 
@@ -588,7 +587,6 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                                     SZrClassField *classField = &classMember->data.classField;
                                                                     if (classField->name != ZR_NULL && 
                                                                         ZrCore_String_Equal(classField->name->name, fieldName)) {
-                                                                        found = ZR_TRUE;
                                                                         // 检查类字段是否也是 const
                                                                         if (!classField->isConst) {
                                                                             TZrChar errorMsg[256];
@@ -742,6 +740,35 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                        (TZrInt32)memberIndex);
                     }
                 }
+            }
+            break;
+        }
+
+        case ZR_AST_INTERFACE_DECLARATION: {
+            SZrInterfaceDeclaration *interfaceDecl = &node->data.interfaceDeclaration;
+            SZrSymbol *symbol = ZR_NULL;
+            SZrString *name = interfaceDecl->name != ZR_NULL ? interfaceDecl->name->name : ZR_NULL;
+
+            if (name != ZR_NULL) {
+                ZrLanguageServer_SymbolTable_AddSymbolEx(state,
+                                                         analyzer->symbolTable,
+                                                         ZR_SYMBOL_INTERFACE,
+                                                         name,
+                                                         node->location,
+                                                         ZR_NULL,
+                                                         interfaceDecl->accessModifier,
+                                                         node,
+                                                         &symbol);
+                if (analyzer->compilerState != ZR_NULL &&
+                    analyzer->compilerState->typeEnv != ZR_NULL) {
+                    ZrParser_TypeEnvironment_RegisterType(state, analyzer->compilerState->typeEnv, name);
+                }
+                ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
+                                                                          symbol,
+                                                                          ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                                                                          ZR_NULL,
+                                                                          ZR_SEMANTIC_TYPE_KIND_REFERENCE);
+                ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
             }
             break;
         }

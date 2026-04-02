@@ -1,0 +1,792 @@
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "zr_vm_language_server.h"
+#include "zr_vm_core/callback.h"
+#include "zr_vm_core/global.h"
+#include "zr_vm_core/hash_set.h"
+#include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
+#include "zr_vm_core/value.h"
+#include "zr_vm_parser/location.h"
+#include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_library/file.h"
+
+typedef struct SZrTestTimer {
+    clock_t startTime;
+    clock_t endTime;
+} SZrTestTimer;
+
+#define TEST_START(summary) do { \
+    timer.startTime = clock(); \
+    printf("Unit Test - %s\n", summary); \
+    fflush(stdout); \
+} while (0)
+
+#define TEST_INFO(summary, details) do { \
+    printf("Testing %s:\n %s\n", summary, details); \
+    fflush(stdout); \
+} while (0)
+
+#define TEST_PASS(timer, summary) do { \
+    timer.endTime = clock(); \
+    printf("Pass - Cost Time:%.3fms - %s\n", \
+           ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0, \
+           summary); \
+    fflush(stdout); \
+} while (0)
+
+#define TEST_FAIL(timer, summary, reason) do { \
+    timer.endTime = clock(); \
+    printf("Fail - Cost Time:%.3fms - %s:\n %s\n", \
+           ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0, \
+           summary, \
+           reason); \
+    fflush(stdout); \
+} while (0)
+
+#define TEST_DIVIDER() do { \
+    printf("----------\n"); \
+    fflush(stdout); \
+} while (0)
+
+/* Added ahead of the implementation for TDD. */
+extern TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
+                                                      SZrLspContext *context,
+                                                      SZrString *uri,
+                                                      SZrArray *result);
+extern TZrSize ZrLanguageServer_Lsp_SemanticTokenTypeCount(void);
+extern const TZrChar *ZrLanguageServer_Lsp_SemanticTokenTypeName(TZrSize index);
+
+static TZrPtr test_allocator(TZrPtr userData,
+                             TZrPtr pointer,
+                             TZrSize originalSize,
+                             TZrSize newSize,
+                             TZrInt64 flag) {
+    ZR_UNUSED_PARAMETER(userData);
+    ZR_UNUSED_PARAMETER(flag);
+
+    if (newSize == 0) {
+        if (pointer != ZR_NULL &&
+            (TZrPtr)pointer >= (TZrPtr)0x1000 &&
+            originalSize > 0 &&
+            originalSize < 1024 * 1024 * 1024) {
+            free(pointer);
+        }
+        return ZR_NULL;
+    }
+
+    if (pointer == ZR_NULL) {
+        return malloc(newSize);
+    }
+
+    if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
+        originalSize > 0 &&
+        originalSize < 1024 * 1024 * 1024) {
+        return realloc(pointer, newSize);
+    }
+
+    return malloc(newSize);
+}
+
+static const TZrChar *test_string_ptr(SZrString *value) {
+    if (value == ZR_NULL) {
+        return "<null>";
+    }
+
+    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        return ZrCore_String_GetNativeStringShort(value);
+    }
+
+    return ZrCore_String_GetNativeString(value);
+}
+
+static TZrBool build_fixture_native_path(const TZrChar *relativePath,
+                                         TZrChar *buffer,
+                                         TZrSize bufferSize) {
+    TZrInt32 written;
+
+    if (relativePath == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    written = snprintf(buffer,
+                       bufferSize,
+                       "%s%c%s",
+                       ZR_VM_SOURCE_ROOT,
+                       ZR_SEPARATOR,
+                       relativePath);
+    return written > 0 && (TZrSize)written < bufferSize;
+}
+
+static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength) {
+    FILE *file;
+    TZrChar *buffer;
+    long size;
+    size_t readSize;
+
+    if (outLength != ZR_NULL) {
+        *outLength = 0;
+    }
+    if (path == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    file = fopen(path, "rb");
+    if (file == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    size = ftell(file);
+    if (size < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    buffer = (TZrChar *)malloc((size_t)size + 1);
+    if (buffer == ZR_NULL) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    readSize = fread(buffer, 1, (size_t)size, file);
+    fclose(file);
+    if (readSize != (size_t)size) {
+        free(buffer);
+        return ZR_NULL;
+    }
+
+    buffer[readSize] = '\0';
+    if (outLength != ZR_NULL) {
+        *outLength = (TZrSize)readSize;
+    }
+    return buffer;
+}
+
+static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrChar *path) {
+    TZrChar buffer[ZR_LIBRARY_MAX_PATH_LENGTH * 2];
+    TZrSize pathLength;
+    TZrSize writeIndex = 0;
+
+    if (state == ZR_NULL || path == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pathLength = strlen(path);
+    if (pathLength + 16 >= sizeof(buffer)) {
+        return ZR_NULL;
+    }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    memcpy(buffer, "file:///", 8);
+    writeIndex = 8;
+#else
+    memcpy(buffer, "file://", 7);
+    writeIndex = 7;
+#endif
+
+    for (TZrSize index = 0; index < pathLength && writeIndex + 1 < sizeof(buffer); index++) {
+        buffer[writeIndex++] = path[index] == '\\' ? '/' : path[index];
+    }
+
+    buffer[writeIndex] = '\0';
+    return ZrCore_String_Create(state, buffer, writeIndex);
+}
+
+static TZrBool lsp_find_position_for_substring(const TZrChar *content,
+                                               const TZrChar *needle,
+                                               TZrSize occurrence,
+                                               TZrInt32 extraCharacterOffset,
+                                               SZrLspPosition *outPosition) {
+    const TZrChar *match;
+    TZrSize currentOccurrence = 0;
+    TZrInt32 line = 0;
+    TZrInt32 character = 0;
+    const TZrChar *cursor = content;
+
+    if (content == ZR_NULL || needle == ZR_NULL || outPosition == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    match = strstr(content, needle);
+    while (match != ZR_NULL && currentOccurrence < occurrence) {
+        match = strstr(match + 1, needle);
+        currentOccurrence++;
+    }
+
+    if (match == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    while (cursor < match) {
+        if (*cursor == '\n') {
+            line++;
+            character = 0;
+        } else {
+            character++;
+        }
+        cursor++;
+    }
+
+    outPosition->line = line;
+    outPosition->character = character + extraCharacterOffset;
+    return ZR_TRUE;
+}
+
+static TZrBool location_array_contains_uri_and_range(SZrArray *locations,
+                                                     SZrString *uri,
+                                                     TZrInt32 startLine,
+                                                     TZrInt32 startCharacter,
+                                                     TZrInt32 endLine,
+                                                     TZrInt32 endCharacter) {
+    if (locations == ZR_NULL || uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < locations->length; index++) {
+        SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, index);
+        SZrLspLocation *location;
+
+        if (locationPtr == ZR_NULL || *locationPtr == ZR_NULL) {
+            continue;
+        }
+
+        location = *locationPtr;
+        if (location->uri != ZR_NULL &&
+            strcmp(test_string_ptr(location->uri), test_string_ptr(uri)) == 0 &&
+            location->range.start.line == startLine &&
+            location->range.start.character == startCharacter &&
+            location->range.end.line == endLine &&
+            location->range.end.character == endCharacter) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool completion_array_contains_label(SZrArray *completions, const TZrChar *label) {
+    if (completions == ZR_NULL || label == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < completions->length; index++) {
+        SZrLspCompletionItem **itemPtr =
+            (SZrLspCompletionItem **)ZrCore_Array_Get(completions, index);
+        if (itemPtr != ZR_NULL && *itemPtr != ZR_NULL &&
+            (*itemPtr)->label != ZR_NULL &&
+            strcmp(test_string_ptr((*itemPtr)->label), label) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
+    if (hover == ZR_NULL || needle == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < hover->contents.length; index++) {
+        SZrString **contentPtr = (SZrString **)ZrCore_Array_Get(&hover->contents, index);
+        if (contentPtr != ZR_NULL && *contentPtr != ZR_NULL &&
+            strstr(test_string_ptr(*contentPtr), needle) != ZR_NULL) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool symbol_array_contains_name(SZrArray *symbols, const TZrChar *needle) {
+    if (symbols == ZR_NULL || needle == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < symbols->length; index++) {
+        SZrLspSymbolInformation **symbolPtr =
+            (SZrLspSymbolInformation **)ZrCore_Array_Get(symbols, index);
+        if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL &&
+            (*symbolPtr)->name != ZR_NULL &&
+            strcmp(test_string_ptr((*symbolPtr)->name), needle) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrInt32 semantic_token_type_index(const TZrChar *typeName) {
+    if (typeName == ZR_NULL) {
+        return -1;
+    }
+
+    for (TZrSize index = 0; index < ZrLanguageServer_Lsp_SemanticTokenTypeCount(); index++) {
+        const TZrChar *candidate = ZrLanguageServer_Lsp_SemanticTokenTypeName(index);
+        if (candidate != ZR_NULL && strcmp(candidate, typeName) == 0) {
+            return (TZrInt32)index;
+        }
+    }
+
+    return -1;
+}
+
+static TZrBool semantic_tokens_contain(SZrArray *data,
+                                       TZrInt32 line,
+                                       TZrInt32 character,
+                                       TZrInt32 length,
+                                       const TZrChar *typeName) {
+    TZrUInt32 currentLine = 0;
+    TZrUInt32 currentCharacter = 0;
+    TZrInt32 typeIndex = semantic_token_type_index(typeName);
+
+    if (data == ZR_NULL || typeIndex < 0) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index + 4 < data->length; index += 5) {
+        TZrUInt32 *deltaLinePtr = (TZrUInt32 *)ZrCore_Array_Get(data, index);
+        TZrUInt32 *deltaStartPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 1);
+        TZrUInt32 *lengthPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 2);
+        TZrUInt32 *typePtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 3);
+
+        if (deltaLinePtr == ZR_NULL || deltaStartPtr == ZR_NULL || lengthPtr == ZR_NULL || typePtr == ZR_NULL) {
+            continue;
+        }
+
+        currentLine += *deltaLinePtr;
+        if (*deltaLinePtr == 0) {
+            currentCharacter += *deltaStartPtr;
+        } else {
+            currentCharacter = *deltaStartPtr;
+        }
+
+        if ((TZrInt32)currentLine == line &&
+            (TZrInt32)currentCharacter == character &&
+            (TZrInt32)(*lengthPtr) == length &&
+            (TZrInt32)(*typePtr) == typeIndex) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void test_lsp_auto_discovers_project_from_source_file(SZrState *state);
+static void test_lsp_uses_nearest_ancestor_project(SZrState *state);
+static void test_lsp_ambiguous_project_directory_stays_standalone(SZrState *state);
+static void test_lsp_native_imports_and_ownership_display(SZrState *state);
+static void test_lsp_semantic_tokens_cover_keywords_and_symbols(SZrState *state);
+
+static void test_lsp_auto_discovers_project_from_source_file(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar greetPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize mainLength = 0;
+    TZrChar *mainContent;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *greetUri = ZR_NULL;
+    SZrLspPosition memberUsage;
+    SZrLspPosition aliasUsage;
+    SZrArray definitions;
+    SZrArray completions;
+    SZrArray workspaceSymbols;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP Auto Discovers Project From Source File");
+    TEST_INFO("Project Discovery", "Opening only a .zr source file should bind the nearest ancestor .zrp");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/import_basic/src/main.zr", mainPath, sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/import_basic/src/greet.zr", greetPath, sizeof(greetPath))) {
+        TEST_FAIL(timer, "LSP Auto Discovers Project From Source File", "Failed to build fixture paths");
+        return;
+    }
+
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (mainContent == ZR_NULL || context == ZR_NULL) {
+        free(mainContent);
+        TEST_FAIL(timer, "LSP Auto Discovers Project From Source File", "Failed to prepare test state");
+        return;
+    }
+
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    greetUri = create_file_uri_from_native_path(state, greetPath);
+    if (mainUri == ZR_NULL || greetUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
+        !lsp_find_position_for_substring(mainContent, "greet()", 0, 0, &memberUsage) ||
+        !lsp_find_position_for_substring(mainContent, "greetModule.greet", 0, 0, &aliasUsage)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Auto Discovers Project From Source File", "Failed to open main source or compute positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, memberUsage, &definitions) ||
+        !location_array_contains_uri_and_range(&definitions, greetUri, 0, 8, 0, 13)) {
+        free(mainContent);
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Auto Discovers Project From Source File", "Imported member definition should resolve without explicitly opening the project file");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, aliasUsage, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "module <greet>")) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Auto Discovers Project From Source File", "Import alias hover should display a module type");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state,
+                                            context,
+                                            mainUri,
+                                            (SZrLspPosition){0, 23},
+                                            &completions) ||
+        !completion_array_contains_label(&completions, "greet")) {
+        free(mainContent);
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Auto Discovers Project From Source File", "Module alias completion should list exported members from the imported module");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &workspaceSymbols, sizeof(SZrLspSymbolInformation *), 8);
+    if (!ZrLanguageServer_Lsp_GetWorkspaceSymbols(state,
+                                                  context,
+                                                  ZrCore_String_Create(state, "greet", 5),
+                                                  &workspaceSymbols) ||
+        !symbol_array_contains_name(&workspaceSymbols, "greet")) {
+        free(mainContent);
+        ZrCore_Array_Free(state, &workspaceSymbols);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Auto Discovers Project From Source File", "Workspace symbols should include imported exports after auto-discovery");
+        return;
+    }
+
+    free(mainContent);
+    ZrCore_Array_Free(state, &workspaceSymbols);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Auto Discovers Project From Source File");
+}
+
+static void test_lsp_uses_nearest_ancestor_project(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar helperPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize mainLength = 0;
+    TZrChar *mainContent;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *helperUri = ZR_NULL;
+    SZrLspPosition memberUsage;
+    SZrArray definitions;
+
+    TEST_START("LSP Uses Nearest Ancestor Project");
+    TEST_INFO("Nearest Ancestor", "Nested source files should bind to the closest ancestor .zrp");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/lsp_discovery_nested/nested/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/lsp_discovery_nested/nested/src/helper.zr",
+                                   helperPath,
+                                   sizeof(helperPath))) {
+        TEST_FAIL(timer, "LSP Uses Nearest Ancestor Project", "Failed to build fixture paths");
+        return;
+    }
+
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (mainContent == ZR_NULL || context == ZR_NULL) {
+        free(mainContent);
+        TEST_FAIL(timer, "LSP Uses Nearest Ancestor Project", "Failed to prepare test state");
+        return;
+    }
+
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    helperUri = create_file_uri_from_native_path(state, helperPath);
+    if (mainUri == ZR_NULL || helperUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
+        !lsp_find_position_for_substring(mainContent, "value;", 0, 0, &memberUsage)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Uses Nearest Ancestor Project", "Failed to open nested main source");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, memberUsage, &definitions) ||
+        !location_array_contains_uri_and_range(&definitions, helperUri, 0, 8, 0, 13)) {
+        free(mainContent);
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Uses Nearest Ancestor Project", "Definition should resolve against the nested project instead of an outer ancestor project");
+        return;
+    }
+
+    free(mainContent);
+    ZrCore_Array_Free(state, &definitions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Uses Nearest Ancestor Project");
+}
+
+static void test_lsp_ambiguous_project_directory_stays_standalone(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize mainLength = 0;
+    TZrChar *mainContent;
+    SZrString *mainUri = ZR_NULL;
+    SZrLspPosition memberUsage;
+    SZrArray definitions;
+
+    TEST_START("LSP Ambiguous Project Directory Stays Standalone");
+    TEST_INFO("Ambiguous Discovery", "Multiple .zrp files in the same directory should not auto-bind a project");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/lsp_discovery_ambiguous/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath))) {
+        TEST_FAIL(timer, "LSP Ambiguous Project Directory Stays Standalone", "Failed to build fixture path");
+        return;
+    }
+
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (mainContent == ZR_NULL || context == ZR_NULL) {
+        free(mainContent);
+        TEST_FAIL(timer, "LSP Ambiguous Project Directory Stays Standalone", "Failed to prepare test state");
+        return;
+    }
+
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    if (mainUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
+        !lsp_find_position_for_substring(mainContent, "value;", 0, 0, &memberUsage)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Ambiguous Project Directory Stays Standalone", "Failed to open ambiguous source");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, memberUsage, &definitions) &&
+        definitions.length > 0) {
+        free(mainContent);
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Ambiguous Project Directory Stays Standalone", "Ambiguous project discovery should not pick a definition target");
+        return;
+    }
+
+    free(mainContent);
+    ZrCore_Array_Free(state, &definitions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Ambiguous Project Directory Stays Standalone");
+}
+
+static void test_lsp_native_imports_and_ownership_display(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    const TZrChar *nativeContent =
+        "var system = %import(\"zr.system\");\n"
+        "system.console;\n";
+    SZrString *nativeUri;
+    SZrLspPosition aliasPosition;
+    SZrArray completions;
+    SZrLspHover *hover = ZR_NULL;
+    TZrChar mathPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize mathLength = 0;
+    TZrChar *mathContent;
+    SZrString *mathUri = ZR_NULL;
+    SZrLspPosition functionPosition;
+    SZrLspHover *ownershipHover = ZR_NULL;
+
+    TEST_START("LSP Native Imports And Ownership Display");
+    TEST_INFO("Native Imports / Ownership", "Native module members should expose typed hover/completion and ownership-aware type strings");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    nativeUri = ZrCore_String_Create(state,
+                                     "file:///native_imports.zr",
+                                     strlen("file:///native_imports.zr"));
+    if (context == ZR_NULL || nativeUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state,
+                                            context,
+                                            nativeUri,
+                                            nativeContent,
+                                            strlen(nativeContent),
+                                            1) ||
+        !lsp_find_position_for_substring(nativeContent, "system.console", 0, 0, &aliasPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Native Imports And Ownership Display", "Failed to prepare native import source");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, nativeUri, aliasPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "module <zr.system>")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Native Imports And Ownership Display", "Native import alias hover should display the module type");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state,
+                                            context,
+                                            nativeUri,
+                                            (SZrLspPosition){1, 7},
+                                            &completions) ||
+        !completion_array_contains_label(&completions, "console")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Native Imports And Ownership Display", "Native module completion should list linked module members");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    if (!build_fixture_native_path("tests/fixtures/projects/lsp_ownership/src/main.zr", mathPath, sizeof(mathPath))) {
+        TEST_FAIL(timer, "LSP Native Imports And Ownership Display", "Failed to build ownership fixture path");
+        return;
+    }
+
+    mathContent = read_fixture_text_file(mathPath, &mathLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (mathContent == ZR_NULL || context == ZR_NULL) {
+        free(mathContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Native Imports And Ownership Display", "Failed to prepare ownership fixture");
+        return;
+    }
+
+    mathUri = create_file_uri_from_native_path(state, mathPath);
+    if (mathUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mathUri, mathContent, mathLength, 1) ||
+        !lsp_find_position_for_substring(mathContent, "takeFromPoolTest", 0, 0, &functionPosition)) {
+        free(mathContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Native Imports And Ownership Display", "Failed to open ownership fixture");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mathUri, functionPosition, &ownershipHover) ||
+        ownershipHover == ZR_NULL ||
+        !hover_contains_text(ownershipHover, "%unique PointSet")) {
+        free(mathContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Native Imports And Ownership Display", "Hover should preserve ownership qualifiers in type display");
+        return;
+    }
+
+    free(mathContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Native Imports And Ownership Display");
+}
+
+static void test_lsp_semantic_tokens_cover_keywords_and_symbols(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "class Foo {\n"
+        "    %borrowed pub work(arg: int) {\n"
+        "        system.console.print(\"x\");\n"
+        "    }\n"
+        "}\n";
+    SZrString *uri;
+    SZrArray tokens;
+
+    TEST_START("LSP Semantic Tokens Cover Keywords And Symbols");
+    TEST_INFO("Semantic Tokens", "Semantic tokens should classify keywords, namespaces, types, and methods");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state,
+                               "file:///semantic_tokens.zr",
+                               strlen("file:///semantic_tokens.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Semantic Tokens Cover Keywords And Symbols", "Failed to prepare semantic token source");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 32);
+    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||
+        !semantic_tokens_contain(&tokens, 0, 13, 7, "keyword") ||
+        !semantic_tokens_contain(&tokens, 1, 6, 3, "class") ||
+        !semantic_tokens_contain(&tokens, 2, 4, 9, "keyword") ||
+        !semantic_tokens_contain(&tokens, 3, 8, 6, "namespace") ||
+        !semantic_tokens_contain(&tokens, 3, 23, 5, "method")) {
+        ZrCore_Array_Free(state, &tokens);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Semantic Tokens Cover Keywords And Symbols", "Expected semantic token coverage for %import, ownership, class names, module aliases, and methods");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &tokens);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Tokens Cover Keywords And Symbols");
+}
+
+int main(void) {
+    SZrCallbackGlobal callbacks = {0};
+    SZrGlobalState *global;
+    SZrState *state;
+
+    printf("==========\n");
+    printf("Language Server - Project Feature Tests\n");
+    printf("==========\n\n");
+
+    global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
+    if (global == ZR_NULL) {
+        printf("Fail - Failed to create global state\n");
+        return 1;
+    }
+
+    state = global->mainThreadState;
+    if (state == ZR_NULL) {
+        ZrCore_GlobalState_Free(global);
+        printf("Fail - Failed to get main thread state\n");
+        return 1;
+    }
+
+    ZrCore_GlobalState_InitRegistry(state, global);
+
+    test_lsp_auto_discovers_project_from_source_file(state);
+    TEST_DIVIDER();
+
+    test_lsp_uses_nearest_ancestor_project(state);
+    TEST_DIVIDER();
+
+    test_lsp_ambiguous_project_directory_stays_standalone(state);
+    TEST_DIVIDER();
+
+    test_lsp_native_imports_and_ownership_display(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_tokens_cover_keywords_and_symbols(state);
+    TEST_DIVIDER();
+
+    ZrCore_GlobalState_Free(global);
+
+    printf("\n==========\n");
+    printf("All Project Feature Tests Completed\n");
+    printf("==========\n");
+    return 0;
+}
+

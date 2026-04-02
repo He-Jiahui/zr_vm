@@ -6,8 +6,15 @@
 #include "zr_vm_library/file.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+#include <windows.h>
+#else
+#include <dirent.h>
+#endif
 
 static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
     if (text == ZR_NULL || length == ZR_NULL) {
@@ -387,6 +394,8 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectByProjectUri(SZrLspCo
 
 SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext *context, SZrString *uri) {
     TZrChar pathBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
+    SZrLspProjectIndex *bestProject = ZR_NULL;
+    TZrSize bestRootLength = 0;
 
     if (context == ZR_NULL || uri == ZR_NULL) {
         return ZR_NULL;
@@ -408,13 +417,26 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext 
     for (TZrSize index = 0; index < context->projectIndexes.length; index++) {
         SZrLspProjectIndex **projectPtr =
             (SZrLspProjectIndex **)ZrCore_Array_Get(&context->projectIndexes, index);
-        if (projectPtr != ZR_NULL && *projectPtr != ZR_NULL &&
-            native_path_is_within_directory(pathBuffer, get_string_text((*projectPtr)->sourceRootPath))) {
-            return *projectPtr;
+        const TZrChar *sourceRoot;
+        TZrSize sourceRootLength;
+
+        if (projectPtr == ZR_NULL || *projectPtr == ZR_NULL) {
+            continue;
+        }
+
+        sourceRoot = get_string_text((*projectPtr)->sourceRootPath);
+        if (!native_path_is_within_directory(pathBuffer, sourceRoot)) {
+            continue;
+        }
+
+        sourceRootLength = sourceRoot != ZR_NULL ? strlen(sourceRoot) : 0;
+        if (bestProject == ZR_NULL || sourceRootLength > bestRootLength) {
+            bestProject = *projectPtr;
+            bestRootLength = sourceRootLength;
         }
     }
 
-    return ZR_NULL;
+    return bestProject;
 }
 
 static void project_index_free(SZrState *state, SZrLspProjectIndex *projectIndex) {
@@ -479,6 +501,177 @@ static SZrLspProjectIndex *project_index_new_from_document(SZrState *state,
     projectIndex->sourceRootPath = ZrCore_String_Create(state, sourceRootPath, strlen(sourceRootPath));
     ZrCore_Array_Init(state, &projectIndex->files, sizeof(SZrLspProjectFileRecord *), 4);
     return projectIndex;
+}
+
+static SZrLspProjectIndex *project_index_new_from_path(SZrState *state, const TZrChar *projectPath) {
+    TZrNativeString jsonBuffer;
+    SZrString *projectUri;
+    SZrLspProjectIndex *projectIndex;
+    TZrSize contentLength;
+
+    if (state == ZR_NULL || projectPath == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    jsonBuffer = ZrLibrary_File_ReadAll(state->global, (TZrNativeString)projectPath);
+    if (jsonBuffer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    contentLength = strlen(jsonBuffer);
+    projectUri = native_path_to_file_uri(state, projectPath);
+    projectIndex = projectUri != ZR_NULL
+                   ? project_index_new_from_document(state, projectUri, jsonBuffer, contentLength)
+                   : ZR_NULL;
+    ZrCore_Memory_RawFreeWithType(state->global,
+                                  jsonBuffer,
+                                  contentLength + 1,
+                                  ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    return projectIndex;
+}
+
+static TZrBool path_get_parent_directory_in_place(TZrChar *path) {
+    TZrSize length;
+
+    if (path == ZR_NULL || path[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    length = strlen(path);
+    while (length > 1 && (path[length - 1] == '/' || path[length - 1] == '\\')) {
+#ifdef ZR_VM_PLATFORM_IS_WIN
+        if (length == 3 && isalpha((unsigned char)path[0]) && path[1] == ':') {
+            break;
+        }
+#endif
+        path[--length] = '\0';
+    }
+
+    while (length > 0 && path[length - 1] != '/' && path[length - 1] != '\\') {
+        length--;
+    }
+
+    if (length == 0) {
+        return ZR_FALSE;
+    }
+
+    if (length == 1) {
+        path[1] = '\0';
+        return ZR_TRUE;
+    }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    if (length == 3 && isalpha((unsigned char)path[0]) && path[1] == ':') {
+        path[3] = '\0';
+        return ZR_TRUE;
+    }
+#endif
+
+    path[length - 1] = '\0';
+    return ZR_TRUE;
+}
+
+static TZrSize directory_count_project_files(const TZrChar *directory,
+                                             TZrChar *firstProjectPath,
+                                             TZrSize bufferSize) {
+    TZrSize count = 0;
+
+    if (directory == ZR_NULL) {
+        return 0;
+    }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    TZrChar pattern[ZR_LIBRARY_MAX_PATH_LENGTH];
+    WIN32_FIND_DATAA findData;
+    HANDLE handle;
+
+    ZrLibrary_File_PathJoin(directory, "*.zrp", pattern);
+    handle = FindFirstFileA(pattern, &findData);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+
+    do {
+        if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+            continue;
+        }
+
+        count++;
+        if (count == 1 && firstProjectPath != ZR_NULL && bufferSize > 0) {
+            ZrLibrary_File_PathJoin(directory, findData.cFileName, firstProjectPath);
+        }
+    } while (FindNextFileA(handle, &findData) != 0);
+
+    FindClose(handle);
+#else
+    DIR *dir = opendir(directory);
+    struct dirent *entry;
+
+    if (dir == ZR_NULL) {
+        return 0;
+    }
+
+    while ((entry = readdir(dir)) != ZR_NULL) {
+        TZrSize nameLength;
+
+        if (entry->d_name[0] == '\0') {
+            continue;
+        }
+
+        nameLength = strlen(entry->d_name);
+        if (nameLength < 4 || strcmp(entry->d_name + nameLength - 4, ".zrp") != 0) {
+            continue;
+        }
+
+        count++;
+        if (count == 1 && firstProjectPath != ZR_NULL && bufferSize > 0) {
+            ZrLibrary_File_PathJoin((TZrNativeString)directory, entry->d_name, firstProjectPath);
+        }
+    }
+
+    closedir(dir);
+#endif
+
+    return count;
+}
+
+static TZrBool discover_project_path_for_uri(SZrString *uri,
+                                             TZrChar *projectPath,
+                                             TZrSize projectPathSize,
+                                             TZrBool *outAmbiguous) {
+    TZrChar currentPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar currentDirectory[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize projectCount;
+
+    if (projectPath != ZR_NULL && projectPathSize > 0) {
+        projectPath[0] = '\0';
+    }
+    if (outAmbiguous != ZR_NULL) {
+        *outAmbiguous = ZR_FALSE;
+    }
+
+    if (!lsp_uri_to_native_path(uri, currentPath, sizeof(currentPath)) ||
+        !ZrLibrary_File_GetDirectory(currentPath, currentDirectory)) {
+        return ZR_FALSE;
+    }
+
+    while (currentDirectory[0] != '\0') {
+        projectCount = directory_count_project_files(currentDirectory, projectPath, projectPathSize);
+        if (projectCount == 1) {
+            return ZR_TRUE;
+        }
+        if (projectCount > 1) {
+            if (outAmbiguous != ZR_NULL) {
+                *outAmbiguous = ZR_TRUE;
+            }
+            return ZR_FALSE;
+        }
+        if (!path_get_parent_directory_in_place(currentDirectory)) {
+            break;
+        }
+    }
+
+    return ZR_FALSE;
 }
 
 static TZrBool project_register_loaded_document(SZrState *state,
@@ -621,6 +814,48 @@ static TZrBool project_load_imports_from_uri(SZrState *state,
     return ZR_TRUE;
 }
 
+SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(SZrState *state,
+                                                                    SZrLspContext *context,
+                                                                    SZrString *uri) {
+    TZrChar projectPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrBool ambiguous = ZR_FALSE;
+    SZrLspProjectIndex *projectIndex;
+    TZrSize existingIndex;
+    SZrString *projectUri;
+
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    projectIndex = ZrLanguageServer_LspProject_FindProjectForUri(context, uri);
+    if (projectIndex != ZR_NULL) {
+        return projectIndex;
+    }
+
+    if (!discover_project_path_for_uri(uri, projectPath, sizeof(projectPath), &ambiguous) || ambiguous) {
+        return ZR_NULL;
+    }
+
+    projectUri = native_path_to_file_uri(state, projectPath);
+    if (projectUri != ZR_NULL) {
+        projectIndex = ZrLanguageServer_LspProject_FindProjectByProjectUri(context,
+                                                                           projectUri,
+                                                                           &existingIndex);
+        if (projectIndex != ZR_NULL) {
+            return projectIndex;
+        }
+    }
+
+    projectIndex = project_index_new_from_path(state, projectPath);
+    if (projectIndex == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Array_Push(state, &context->projectIndexes, &projectIndex);
+    project_ensure_module_loaded(state, context, projectIndex, projectIndex->project->entry);
+    return projectIndex;
+}
+
 void ZrLanguageServer_Lsp_ProjectIndexes_Free(SZrState *state, SZrLspContext *context) {
     if (state == ZR_NULL || context == ZR_NULL || !context->projectIndexes.isValid) {
         return;
@@ -672,7 +907,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
         return project_ensure_module_loaded(state, context, projectIndex, projectIndex->project->entry);
     }
 
-    projectIndex = ZrLanguageServer_LspProject_FindProjectForUri(context, uri);
+    projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     if (projectIndex == ZR_NULL) {
         return ZR_TRUE;
     }

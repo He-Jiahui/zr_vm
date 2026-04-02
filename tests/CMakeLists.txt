@@ -75,6 +75,7 @@ function(zr_vm_link_parser_core_plus_library target_name)
                 zr_vm_library_shared
                 zr_vm_lib_math_shared
                 zr_vm_lib_system_shared
+                zr_vm_lib_container_shared
                 zr_vm_lib_ffi_shared
         )
     else ()
@@ -84,6 +85,7 @@ function(zr_vm_link_parser_core_plus_library target_name)
                 zr_vm_library_static
                 zr_vm_lib_math_static
                 zr_vm_lib_system_static
+                zr_vm_lib_container_static
                 zr_vm_lib_ffi_static
         )
     endif ()
@@ -178,6 +180,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_type_inference_test)
 
@@ -265,6 +268,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_module_system_test)
 
@@ -313,6 +317,39 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     )
     zr_vm_link_parser_core(zr_vm_artifact_golden_test)
     zr_link_third_party_for_target(zr_vm_artifact_golden_test "zr_c_json")
+
+    zr_vm_add_unity_test_target(
+            zr_vm_container_runtime_test
+            ${CMAKE_SOURCE_DIR}/tests/container/test_container_runtime.c
+            ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_container_metadata_test
+            ${CMAKE_SOURCE_DIR}/tests/container/test_container_metadata.c
+            ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_container_type_inference_test
+            ${CMAKE_SOURCE_DIR}/tests/container/test_container_type_inference.c
+            ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
+    )
+
+    foreach (container_target
+            zr_vm_container_runtime_test
+            zr_vm_container_metadata_test
+            zr_vm_container_type_inference_test)
+        target_include_directories(${container_target} PRIVATE
+                ${CMAKE_SOURCE_DIR}/tests/container
+                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+        )
+        zr_vm_link_parser_core_plus_library(${container_target})
+    endforeach ()
 endif ()
 
 if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static) AND
@@ -338,17 +375,23 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             zr_vm_language_server_lsp_interface_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_interface.c
     )
+    zr_vm_add_support_target(
+            zr_vm_language_server_lsp_project_features_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_project_features.c
+    )
 
     foreach (language_server_target
             zr_vm_language_server_symbol_table_test
             zr_vm_language_server_reference_tracker_test
             zr_vm_language_server_semantic_analyzer_test
             zr_vm_language_server_incremental_parser_test
-            zr_vm_language_server_lsp_interface_test)
+            zr_vm_language_server_lsp_interface_test
+            zr_vm_language_server_lsp_project_features_test)
         target_include_directories(${language_server_target} PRIVATE
                 ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
         )
         zr_vm_link_language_server(${language_server_target})
     endforeach ()
@@ -364,8 +407,16 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
+    target_include_directories(zr_vm_language_server_lsp_project_features_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
 
     target_compile_definitions(zr_vm_language_server_lsp_interface_test PRIVATE
+            ZR_VM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
+    )
+    target_compile_definitions(zr_vm_language_server_lsp_project_features_test PRIVATE
             ZR_VM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
     )
 
@@ -373,9 +424,15 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
         target_link_libraries(zr_vm_language_server_semantic_analyzer_test PRIVATE
                 zr_vm_library_shared
                 zr_vm_lib_math_shared
+                zr_vm_lib_container_shared
                 zr_vm_lib_system_shared
         )
         target_link_libraries(zr_vm_language_server_lsp_interface_test PRIVATE
+                zr_vm_library_shared
+                zr_vm_lib_math_shared
+                zr_vm_lib_system_shared
+        )
+        target_link_libraries(zr_vm_language_server_lsp_project_features_test PRIVATE
                 zr_vm_library_shared
                 zr_vm_lib_math_shared
                 zr_vm_lib_system_shared
@@ -384,9 +441,15 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
         target_link_libraries(zr_vm_language_server_semantic_analyzer_test PRIVATE
                 zr_vm_library_static
                 zr_vm_lib_math_static
+                zr_vm_lib_container_static
                 zr_vm_lib_system_static
         )
         target_link_libraries(zr_vm_language_server_lsp_interface_test PRIVATE
+                zr_vm_library_static
+                zr_vm_lib_math_static
+                zr_vm_lib_system_static
+        )
+        target_link_libraries(zr_vm_language_server_lsp_project_features_test PRIVATE
                 zr_vm_library_static
                 zr_vm_lib_math_static
                 zr_vm_lib_system_static
@@ -519,14 +582,32 @@ if (TARGET zr_vm_parser_test AND
     )
 endif ()
 
+set(container_executables "")
+if (TARGET zr_vm_container_runtime_test AND
+        TARGET zr_vm_container_metadata_test AND
+        TARGET zr_vm_container_type_inference_test)
+    set(container_executables
+            "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_metadata_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>"
+    )
+    add_test(
+            NAME containers
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=containers"
+            "-DEXECUTABLES=${container_executables}"
+            "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
 set(language_server_executables "")
 if (TARGET zr_vm_language_server_symbol_table_test AND
         TARGET zr_vm_language_server_reference_tracker_test AND
         TARGET zr_vm_language_server_semantic_analyzer_test AND
         TARGET zr_vm_language_server_incremental_parser_test AND
-        TARGET zr_vm_language_server_lsp_interface_test)
+        TARGET zr_vm_language_server_lsp_interface_test AND
+        TARGET zr_vm_language_server_lsp_project_features_test)
     set(language_server_executables
-            "$<TARGET_FILE:zr_vm_language_server_symbol_table_test>;$<TARGET_FILE:zr_vm_language_server_reference_tracker_test>;$<TARGET_FILE:zr_vm_language_server_semantic_analyzer_test>;$<TARGET_FILE:zr_vm_language_server_incremental_parser_test>;$<TARGET_FILE:zr_vm_language_server_lsp_interface_test>"
+            "$<TARGET_FILE:zr_vm_language_server_symbol_table_test>;$<TARGET_FILE:zr_vm_language_server_reference_tracker_test>;$<TARGET_FILE:zr_vm_language_server_semantic_analyzer_test>;$<TARGET_FILE:zr_vm_language_server_incremental_parser_test>;$<TARGET_FILE:zr_vm_language_server_lsp_interface_test>;$<TARGET_FILE:zr_vm_language_server_lsp_project_features_test>"
     )
     add_test(
             NAME language_server

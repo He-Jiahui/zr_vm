@@ -8,19 +8,19 @@
 const ZrLibTypeDescriptor *ZrMath_ComplexRegistry_GetType(void) {
     static const ZrLibFieldDescriptor kFields[] = {{"real","float",ZR_NULL},{"imag","float",ZR_NULL}};
     static const ZrLibMethodDescriptor kMethods[] = {
-            {"magnitude",0,0,ZrMath_Complex_Magnitude,"float",ZR_NULL,ZR_FALSE},
-            {"phase",0,0,ZrMath_Complex_Phase,"float",ZR_NULL,ZR_FALSE},
-            {"conjugate",0,0,ZrMath_Complex_Conjugate,"Complex",ZR_NULL,ZR_FALSE},
-            {"normalized",0,0,ZrMath_Complex_Normalized,"Complex",ZR_NULL,ZR_FALSE},
+            {"magnitude",0,0,ZrMath_Complex_Magnitude,"float",ZR_NULL,ZR_FALSE,ZR_NULL,0},
+            {"phase",0,0,ZrMath_Complex_Phase,"float",ZR_NULL,ZR_FALSE,ZR_NULL,0},
+            {"conjugate",0,0,ZrMath_Complex_Conjugate,"Complex",ZR_NULL,ZR_FALSE,ZR_NULL,0},
+            {"normalized",0,0,ZrMath_Complex_Normalized,"Complex",ZR_NULL,ZR_FALSE,ZR_NULL,0},
     };
     static const ZrLibMetaMethodDescriptor kMeta[] = {
-            {ZR_META_CONSTRUCTOR,2,2,ZrMath_Complex_Construct,"Complex",ZR_NULL},
-            {ZR_META_ADD,1,1,ZrMath_Complex_MetaAdd,"Complex",ZR_NULL},
-            {ZR_META_SUB,1,1,ZrMath_Complex_MetaSub,"Complex",ZR_NULL},
-            {ZR_META_MUL,1,1,ZrMath_Complex_MetaMul,"Complex",ZR_NULL},
-            {ZR_META_NEG,0,0,ZrMath_Complex_MetaNeg,"Complex",ZR_NULL},
-            {ZR_META_COMPARE,1,1,ZrMath_Complex_MetaCompare,"int",ZR_NULL},
-            {ZR_META_TO_STRING,0,0,ZrMath_Complex_MetaToString,"string",ZR_NULL},
+            {ZR_META_CONSTRUCTOR,2,2,ZrMath_Complex_Construct,"Complex",ZR_NULL,ZR_NULL,0},
+            {ZR_META_ADD,1,1,ZrMath_Complex_MetaAdd,"Complex",ZR_NULL,ZR_NULL,0},
+            {ZR_META_SUB,1,1,ZrMath_Complex_MetaSub,"Complex",ZR_NULL,ZR_NULL,0},
+            {ZR_META_MUL,1,1,ZrMath_Complex_MetaMul,"Complex",ZR_NULL,ZR_NULL,0},
+            {ZR_META_NEG,0,0,ZrMath_Complex_MetaNeg,"Complex",ZR_NULL,ZR_NULL,0},
+            {ZR_META_COMPARE,1,1,ZrMath_Complex_MetaCompare,"int",ZR_NULL,ZR_NULL,0},
+            {ZR_META_TO_STRING,0,0,ZrMath_Complex_MetaToString,"string",ZR_NULL,ZR_NULL,0},
     };
     static const ZrLibTypeDescriptor kType = {"Complex", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, kFields, ZR_ARRAY_COUNT(kFields),
                                               kMethods, ZR_ARRAY_COUNT(kMethods), kMeta, ZR_ARRAY_COUNT(kMeta),
@@ -33,7 +33,9 @@ const ZrLibTypeDescriptor *ZrMath_ComplexRegistry_GetType(void) {
                                               ZR_NULL,
                                               ZR_TRUE,
                                               ZR_TRUE,
-                                              "Complex(real: float, imag: float)"};
+                                              "Complex(real: float, imag: float)",
+                                              ZR_NULL,
+                                              0};
     return &kType;
 }
 

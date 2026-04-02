@@ -50,7 +50,7 @@ static void exception_set_object_field_cstring(SZrState *state,
         return;
     }
 
-    fieldString = ZrCore_String_CreateFromNative(state, fieldName);
+    fieldString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
     if (fieldString == ZR_NULL) {
         return;
     }
@@ -70,7 +70,7 @@ static const SZrTypeValue *exception_get_object_field_cstring(SZrState *state,
         return ZR_NULL;
     }
 
-    fieldString = ZrCore_String_CreateFromNative(state, fieldName);
+    fieldString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
     if (fieldString == ZR_NULL) {
         return ZR_NULL;
     }
@@ -144,7 +144,7 @@ static SZrObjectPrototype *exception_lookup_prototype_cstring(SZrState *state, c
         return ZR_NULL;
     }
 
-    typeString = ZrCore_String_CreateFromNative(state, typeName);
+    typeString = ZrCore_String_CreateFromNative(state, (TZrNativeString)typeName);
     if (typeString == ZR_NULL) {
         return ZR_NULL;
     }
@@ -458,6 +458,10 @@ EZrThreadStatus ZrCore_Exception_TryRun(SZrState *state, FZrTryFunction tryFunct
     return exceptionLongJump.status;
 }
 
+static void exception_throw_on_state(SZrState *state, EZrThreadStatus errorCode) {
+    ZrCore_Exception_Throw(state, errorCode);
+}
+
 void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
     if (state->exceptionRecoverPoint != ZR_NULL) {
         state->exceptionRecoverPoint->status = errorCode;
@@ -475,7 +479,7 @@ void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
             state->global->mainThreadState->currentException = state->currentException;
             state->global->mainThreadState->currentExceptionStatus = state->currentExceptionStatus;
             state->global->mainThreadState->hasCurrentException = state->hasCurrentException;
-            ZrCore_Exception_Throw(state->global->mainThreadState, errorCode);
+            exception_throw_on_state(state->global->mainThreadState, errorCode);
         }
     }
 

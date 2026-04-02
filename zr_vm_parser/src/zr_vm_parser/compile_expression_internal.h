@@ -9,6 +9,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/ownership.h"
+#include "zr_vm_core/reflection.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_common/zr_instruction_conf.h"
@@ -17,12 +18,21 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifndef ZR_COMPILE_SLOT_U32
+#define ZR_COMPILE_SLOT_U32(value) ((TZrUInt32)(value))
+#endif
+
+#ifndef ZR_COMPILE_SLOT_U16
+#define ZR_COMPILE_SLOT_U16(value) ((TZrUInt16)(value))
+#endif
+
 void compile_template_string_literal(SZrCompilerState *cs, SZrAstNode *node);
 void compile_literal(SZrCompilerState *cs, SZrAstNode *node);
 void compile_identifier(SZrCompilerState *cs, SZrAstNode *node);
 void compile_function_call(SZrCompilerState *cs, SZrAstNode *node);
 void compile_member_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_import_expression(SZrCompilerState *cs, SZrAstNode *node);
+void compile_type_query_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node);

@@ -10,6 +10,7 @@
 #include "zr_vm_core/log.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/meta.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -28,7 +29,7 @@ TZrStackValuePointer ZrCore_Function_CheckStack(struct SZrState *state, TZrSize 
 }
 
 SZrFunction *ZrCore_Function_New(struct SZrState *state) {
-    SZrRawObject *newObject = ZrCore_RawObject_New(state, ZR_RAW_OBJECT_TYPE_FUNCTION, sizeof(SZrFunction), ZR_FALSE);
+    SZrRawObject *newObject = ZrCore_RawObject_New(state, ZR_VALUE_TYPE_FUNCTION, sizeof(SZrFunction), ZR_FALSE);
     SZrFunction *function = ZR_CAST_FUNCTION(state, newObject);
     function->constantValueList = ZR_NULL;
     function->constantValueLength = 0;
@@ -58,6 +59,12 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->typedLocalBindingLength = 0;
     function->typedExportedSymbols = ZR_NULL;
     function->typedExportedSymbolLength = 0;
+    function->compileTimeVariableInfos = ZR_NULL;
+    function->compileTimeVariableInfoLength = 0;
+    function->compileTimeFunctionInfos = ZR_NULL;
+    function->compileTimeFunctionInfoLength = 0;
+    function->testInfos = ZR_NULL;
+    function->testInfoLength = 0;
     function->functionName = ZR_NULL;  // 函数名，匿名函数为 ZR_NULL
     function->prototypeData = ZR_NULL;
     function->prototypeDataLength = 0;
@@ -116,6 +123,42 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
         ZrCore_Memory_RawFreeWithType(global,
                                       function->typedLocalBindings,
                                       sizeof(SZrFunctionTypedLocalBinding) * function->typedLocalBindingLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->compileTimeFunctionInfos != ZR_NULL && function->compileTimeFunctionInfoLength > 0) {
+        for (TZrUInt32 i = 0; i < function->compileTimeFunctionInfoLength; i++) {
+            SZrFunctionCompileTimeFunctionInfo *info = &function->compileTimeFunctionInfos[i];
+            if (info->parameters != ZR_NULL && info->parameterCount > 0) {
+                ZrCore_Memory_RawFreeWithType(global,
+                                              info->parameters,
+                                              sizeof(SZrFunctionMetadataParameter) * info->parameterCount,
+                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+        }
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->compileTimeFunctionInfos,
+                                      sizeof(SZrFunctionCompileTimeFunctionInfo) * function->compileTimeFunctionInfoLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->compileTimeVariableInfos != ZR_NULL && function->compileTimeVariableInfoLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->compileTimeVariableInfos,
+                                      sizeof(SZrFunctionCompileTimeVariableInfo) * function->compileTimeVariableInfoLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->testInfos != ZR_NULL && function->testInfoLength > 0) {
+        for (TZrUInt32 i = 0; i < function->testInfoLength; i++) {
+            SZrFunctionTestInfo *info = &function->testInfos[i];
+            if (info->parameters != ZR_NULL && info->parameterCount > 0) {
+                ZrCore_Memory_RawFreeWithType(global,
+                                              info->parameters,
+                                              sizeof(SZrFunctionMetadataParameter) * info->parameterCount,
+                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+        }
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->testInfos,
+                                      sizeof(SZrFunctionTestInfo) * function->testInfoLength,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     if (function->prototypeData != ZR_NULL && function->prototypeDataLength > 0) {
@@ -339,7 +382,7 @@ static ZR_FORCE_INLINE TZrSize function_pre_call_native(struct SZrState *state, 
     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
     if (ZR_UNLIKELY(state->debugHookSignal & ZR_DEBUG_HOOK_MASK_CALL)) {
         TZrInt32 argumentsCount = ZR_CAST_INT(state->stackTop.valuePointer - stackPointer);
-        ZrCore_Debug_Hook(state, ZR_DEBUG_HOOK_EVENT_CALL, -1, 1, argumentsCount);
+        ZrCore_Debug_Hook(state, ZR_DEBUG_HOOK_EVENT_CALL, (TZrUInt32)-1, 1, (TZrUInt32)argumentsCount);
     }
     ZR_THREAD_UNLOCK(state);
     returnCount = function(state);

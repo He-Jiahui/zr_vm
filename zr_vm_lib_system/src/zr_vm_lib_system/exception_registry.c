@@ -21,7 +21,7 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
             {"instructionOffset", "int", "Instruction offset inside the function."},
     };
     static const ZrLibMetaMethodDescriptor kExceptionConstructors[] = {
-            {ZR_META_CONSTRUCTOR, 0, 1, ZrSystem_Exception_Constructor, "null", "Initialize an exception instance."},
+            {ZR_META_CONSTRUCTOR, 0, 1, ZrSystem_Exception_Constructor, "null", "Initialize an exception instance.", ZR_NULL, 0},
     };
     static const ZrLibTypeDescriptor kTypes[] = {
             {"Error",
@@ -41,7 +41,9 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
              ZR_NULL,
              ZR_TRUE,
              ZR_TRUE,
-             "Error(message?: any)"},
+             "Error(message?: any)",
+             ZR_NULL,
+             0},
             {"StackFrame",
              ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
              kStackFrameFields,
@@ -59,7 +61,9 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
              ZR_NULL,
              ZR_TRUE,
              ZR_TRUE,
-             "StackFrame()"},
+             "StackFrame()",
+             ZR_NULL,
+             0},
             {"RuntimeError",
              ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
              kErrorFields,
@@ -77,7 +81,9 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
              ZR_NULL,
              ZR_TRUE,
              ZR_TRUE,
-             "RuntimeError(message?: any)"},
+             "RuntimeError(message?: any)",
+             ZR_NULL,
+             0},
             {"TypeError",
              ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
              kErrorFields,
@@ -95,7 +101,9 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
              ZR_NULL,
              ZR_TRUE,
              ZR_TRUE,
-             "TypeError(message?: any)"},
+             "TypeError(message?: any)",
+             ZR_NULL,
+             0},
             {"MemoryError",
              ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
              kErrorFields,
@@ -113,7 +121,9 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
              ZR_NULL,
              ZR_TRUE,
              ZR_TRUE,
-             "MemoryError(message?: any)"},
+             "MemoryError(message?: any)",
+             ZR_NULL,
+             0},
             {"ExceptionError",
              ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
              kErrorFields,
@@ -131,7 +141,9 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
              ZR_NULL,
              ZR_TRUE,
              ZR_TRUE,
-             "ExceptionError(message?: any)"},
+             "ExceptionError(message?: any)",
+             ZR_NULL,
+             0},
     };
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"registerUnhandledException",
@@ -139,7 +151,9 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
              1,
              ZrSystem_Exception_RegisterUnhandledException,
              "null",
-             "Register a single global unhandled exception observer."},
+             "Register a single global unhandled exception observer.",
+             ZR_NULL,
+             0},
     };
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"registerUnhandledException",
@@ -175,6 +189,9 @@ const ZrLibModuleDescriptor *ZrSystem_ExceptionRegistry_GetModule(void) {
             kHintsJson,
             "Exception hierarchy and unhandled exception hooks.",
             ZR_NULL,
+            0,
+            "1.0.0",
+            ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
             0,
     };
 

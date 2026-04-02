@@ -29,12 +29,18 @@ typedef struct {
     fflush(stdout); \
 } while(0)
 
+#ifdef TEST_PASS
+#undef TEST_PASS
+#endif
 #define TEST_PASS(timer, summary) do { \
     double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Pass - Cost Time:%.3fms - %s\n", elapsed, summary); \
     fflush(stdout); \
 } while(0)
 
+#ifdef TEST_FAIL
+#undef TEST_FAIL
+#endif
 #define TEST_FAIL(timer, summary, reason) do { \
     double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
@@ -61,7 +67,7 @@ void tearDown(void) {
 }
 
 // 测试基础类型
-void test_basic_types(void) {
+static void test_basic_types(void) {
     SZrTestTimer timer;
     const char* testSummary = "Basic Type Definitions";
     
@@ -83,7 +89,7 @@ void test_basic_types(void) {
 }
 
 // 测试GC状态宏
-void test_gc_status_macros(void) {
+static void test_gc_status_macros(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Status Macros";
     
@@ -96,9 +102,6 @@ void test_gc_status_macros(void) {
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
     TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
-    
-    SZrGlobalState* global = state->global;
-    SZrGarbageCollector* gc = global->garbageCollector;
     
     TEST_INFO("Test object creation", 
               "Creating test object with type ZR_VALUE_TYPE_OBJECT");
@@ -144,7 +147,7 @@ void test_gc_status_macros(void) {
 }
 
 // 测试GC函数
-void test_gc_functions(void) {
+static void test_gc_functions(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Core Functions";
     
@@ -193,7 +196,7 @@ void test_gc_functions(void) {
 }
 
 // 测试边界条件
-void test_boundary_conditions(void) {
+static void test_boundary_conditions(void) {
     SZrTestTimer timer;
     const char* testSummary = "Boundary Conditions and Overflow Protection";
     
@@ -232,7 +235,6 @@ void test_boundary_conditions(void) {
     
     TEST_INFO("Overflow protection", 
               "Testing that debt size does not exceed ZR_MAX_MEMORY_OFFSET when adding maximum value");
-    TZrMemoryOffset beforeOverflow = global->garbageCollector->gcDebtSize;
     // 添加一个会导致溢出的值
     ZrCore_GarbageCollector_AddDebtSpace(global, ZR_MAX_MEMORY_OFFSET);
     TZrMemoryOffset afterOverflow = global->garbageCollector->gcDebtSize;
@@ -247,7 +249,7 @@ void test_boundary_conditions(void) {
 }
 
 // 测试GC清除阶段
-void test_gc_sweep_phase(void) {
+static void test_gc_sweep_phase(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Sweep Phase";
     
@@ -293,7 +295,7 @@ void test_gc_sweep_phase(void) {
 }
 
 // 测试GC标记遍历
-void test_gc_mark_traversal(void) {
+static void test_gc_mark_traversal(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Mark Traversal";
     
@@ -333,7 +335,7 @@ void test_gc_mark_traversal(void) {
 }
 
 // 测试GC根对象标记
-void test_gc_root_marking(void) {
+static void test_gc_root_marking(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Root Object Marking";
     
@@ -363,7 +365,7 @@ void test_gc_root_marking(void) {
             prototypeCount++;
         }
     }
-    // 验证数组存在（元表可能为NULL，这是正常的）
+    TEST_ASSERT_TRUE(prototypeCount > 0);
     
     destroyTestState(state);
     
@@ -373,7 +375,7 @@ void test_gc_root_marking(void) {
 }
 
 // 测试GC状态机控制
-void test_gc_state_machine(void) {
+static void test_gc_state_machine(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC State Machine Control";
     
@@ -412,7 +414,7 @@ void test_gc_state_machine(void) {
 }
 
 // 测试分代GC
-void test_gc_generational(void) {
+static void test_gc_generational(void) {
     SZrTestTimer timer;
     const char* testSummary = "Generational GC";
     
@@ -457,7 +459,7 @@ void test_gc_generational(void) {
 }
 
 // 测试Native Data处理
-void test_gc_native_data(void) {
+static void test_gc_native_data(void) {
     SZrTestTimer timer;
     const char* testSummary = "Native Data Processing";
     
@@ -501,7 +503,7 @@ void test_gc_native_data(void) {
 }
 
 // 测试GC完整回收
-void test_gc_full_collection(void) {
+static void test_gc_full_collection(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Full Collection";
     
@@ -539,7 +541,7 @@ void test_gc_full_collection(void) {
 }
 
 // 测试GC单步执行
-void test_gc_step(void) {
+static void test_gc_step(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Step Execution";
     
@@ -577,7 +579,7 @@ void test_gc_step(void) {
 }
 
 // 测试GC屏障
-void test_gc_barrier(void) {
+static void test_gc_barrier(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Barrier Mechanism";
     
@@ -619,7 +621,7 @@ void test_gc_barrier(void) {
     TEST_DIVIDER();
 }
 
-void test_gc_pause_budget_consumes_multiple_incremental_steps(void) {
+static void test_gc_pause_budget_consumes_multiple_incremental_steps(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Pause Budget Consumes Multiple Incremental Steps";
 
@@ -667,7 +669,7 @@ void test_gc_pause_budget_consumes_multiple_incremental_steps(void) {
     TEST_DIVIDER();
 }
 
-void test_gc_sweep_slice_budget_limits_single_step_sweep(void) {
+static void test_gc_sweep_slice_budget_limits_single_step_sweep(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Sweep Slice Budget Limits Single Step Sweep";
 
@@ -719,7 +721,7 @@ void test_gc_sweep_slice_budget_limits_single_step_sweep(void) {
     TEST_DIVIDER();
 }
 
-void test_gc_ignore_registry_and_phase_metadata(void) {
+static void test_gc_ignore_registry_and_phase_metadata(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Ignore Registry And Phase Metadata";
 
@@ -790,7 +792,7 @@ void test_gc_ignore_registry_and_phase_metadata(void) {
     TEST_DIVIDER();
 }
 
-void test_gc_barrier_unignores_escaped_object(void) {
+static void test_gc_barrier_unignores_escaped_object(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Barrier Unignores Escaped Object";
 
@@ -836,7 +838,7 @@ void test_gc_barrier_unignores_escaped_object(void) {
     TEST_DIVIDER();
 }
 
-void test_ownership_shared_refcount_and_weak_null_on_release(void) {
+static void test_ownership_shared_refcount_and_weak_null_on_release(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Shared Refcount And Weak Null On Release";
 
@@ -892,7 +894,7 @@ void test_ownership_shared_refcount_and_weak_null_on_release(void) {
     TEST_DIVIDER();
 }
 
-void test_ownership_unique_can_return_to_gc_control(void) {
+static void test_ownership_unique_can_return_to_gc_control(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Unique Can Return To GC Control";
 
@@ -931,7 +933,7 @@ void test_ownership_unique_can_return_to_gc_control(void) {
     TEST_DIVIDER();
 }
 
-void test_ownership_weak_expires_when_returned_object_is_released(void) {
+static void test_ownership_weak_expires_when_returned_object_is_released(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Weak Expires When Returned Object Is Released";
 
@@ -1029,3 +1031,4 @@ int main(void) {
     
     return UNITY_END();
 }
+

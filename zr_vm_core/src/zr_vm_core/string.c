@@ -533,7 +533,7 @@ SZrString *ZrCore_String_FromNumber(struct SZrState *state, struct SZrTypeValue 
             ZR_ASSERT(ZR_FALSE);
         } break;
     }
-    string = ZrCore_String_CreateFromNative(state, nativeString);
+    string = ZrCore_String_Create(state, nativeString, length);
     ZrCore_Memory_RawFreeWithType(global, nativeString, ZR_NUMBER_TO_STRING_LENGTH_MAX, ZR_MEMORY_NATIVE_TYPE_STRING);
     return string;
 }

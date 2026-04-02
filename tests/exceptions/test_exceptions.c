@@ -130,7 +130,7 @@ static TZrBool compile_source_to_function(SZrState *state,
         return ZR_FALSE;
     }
 
-    sourceName = ZrCore_String_Create(state, sourceNameLiteral, strlen(sourceNameLiteral));
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceNameLiteral, strlen(sourceNameLiteral));
     if (sourceName == ZR_NULL) {
         return ZR_FALSE;
     }

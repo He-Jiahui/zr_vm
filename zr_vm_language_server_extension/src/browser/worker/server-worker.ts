@@ -15,6 +15,8 @@ import {
     type Location,
     type Position,
     type Range,
+    type SemanticTokens,
+    type SemanticTokensLegend,
     type TextDocumentContentChangeEvent,
     type WorkspaceEdit,
 } from 'vscode-languageserver/browser';
@@ -39,6 +41,22 @@ const connection = createConnection(
 );
 const bridge = new ZrWasmBridge();
 const documents = new Map<string, ManagedDocument>();
+const semanticTokenLegend: SemanticTokensLegend = {
+    tokenTypes: [
+        'namespace',
+        'class',
+        'struct',
+        'interface',
+        'enum',
+        'function',
+        'method',
+        'property',
+        'variable',
+        'parameter',
+        'keyword',
+    ],
+    tokenModifiers: [],
+};
 
 let shutdownRequested = false;
 let serverBaseUrl = '';
@@ -76,6 +94,10 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
             documentSymbolProvider: true,
             workspaceSymbolProvider: true,
             documentHighlightProvider: true,
+            semanticTokensProvider: {
+                legend: semanticTokenLegend,
+                full: true,
+            },
         },
         serverInfo: {
             name: 'zr_vm_language_server_wasm',
@@ -183,6 +205,11 @@ connection.onWorkspaceSymbol(async ({ query }) => {
 connection.onDocumentHighlight(async ({ textDocument, position }) => {
     const response = await bridge.getDocumentHighlights(textDocument.uri, position.line, position.character);
     return responseData<DocumentHighlight[]>(response, []);
+});
+
+connection.onRequest('textDocument/semanticTokens/full', async ({ textDocument }) => {
+    const response = await bridge.getSemanticTokens(textDocument.uri);
+    return responseData<SemanticTokens | null>(response, null);
 });
 
 connection.onPrepareRename(async ({ textDocument, position }) => {

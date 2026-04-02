@@ -30,7 +30,9 @@ TZrBool ZrMath_Vector4_Normalized(ZrLibCallContext *context, SZrTypeValue *resul
     length = sqrt(ZrMath_Dot((TZrFloat64 *)&value, (TZrFloat64 *)&value, 4));
     object = length <= ZR_MATH_EPSILON ? ZrMath_MakeVector4(context->state, 0.0, 0.0, 0.0, 0.0)
                                        : ZrMath_MakeVector4(context->state, value.x / length, value.y / length, value.z / length, value.w / length);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Vector4_Dot(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector4 lhs; ZrMathVector4 rhs; SZrObject *other = ZR_NULL;
@@ -50,27 +52,35 @@ TZrBool ZrMath_Vector4_Lerp(ZrLibCallContext *context, SZrTypeValue *result) {
     if (!ZrMath_ReadVector4Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector4Object(context->state, other, &rhs) || !ZrLib_CallContext_ReadFloat(context, 1, &factor)) return ZR_FALSE;
     object = ZrMath_MakeVector4(context->state, lhs.x + (rhs.x - lhs.x) * factor, lhs.y + (rhs.y - lhs.y) * factor, lhs.z + (rhs.z - lhs.z) * factor, lhs.w + (rhs.w - lhs.w) * factor);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Vector4_MetaAdd(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector4 lhs; ZrMathVector4 rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadVector4Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector4Object(context->state, other, &rhs)) return ZR_FALSE;
     object = ZrMath_MakeVector4(context->state, lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z, lhs.w + rhs.w);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Vector4_MetaSub(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector4 lhs; ZrMathVector4 rhs; SZrObject *other = ZR_NULL; SZrObject *object;
     if (!ZrMath_ReadVector4Object(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector4Object(context->state, other, &rhs)) return ZR_FALSE;
     object = ZrMath_MakeVector4(context->state, lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z, lhs.w - rhs.w);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Vector4_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector4 value; SZrObject *object;
     if (!ZrMath_ReadVector4Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     object = ZrMath_MakeVector4(context->state, -value.x, -value.y, -value.z, -value.w);
-    if (object == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (object == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 TZrBool ZrMath_Vector4_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathVector4 lhs; ZrMathVector4 rhs; SZrObject *other = ZR_NULL; TZrFloat64 dl; TZrFloat64 dr;

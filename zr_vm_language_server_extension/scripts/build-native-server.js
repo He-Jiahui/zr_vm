@@ -15,15 +15,110 @@ if (!fs.existsSync(buildDir)) {
     process.exit(1);
 }
 
+function findVsDevCmd() {
+    const candidates = [];
+    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    const vswhere = path.join(programFilesX86, 'Microsoft Visual Studio', 'Installer', 'vswhere.exe');
+
+    if (process.env.VSDEVCMD_PATH) {
+        candidates.push(process.env.VSDEVCMD_PATH);
+    }
+
+    candidates.push(
+        'D:\\Tools\\VS\\Common7\\Tools\\VsDevCmd.bat',
+        'C:\\Program Files\\Microsoft Visual Studio\\2026\\Community\\Common7\\Tools\\VsDevCmd.bat',
+        'C:\\Program Files\\Microsoft Visual Studio\\2026\\Professional\\Common7\\Tools\\VsDevCmd.bat',
+        'C:\\Program Files\\Microsoft Visual Studio\\2026\\Enterprise\\Common7\\Tools\\VsDevCmd.bat',
+        'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\Tools\\VsDevCmd.bat',
+        'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\Common7\\Tools\\VsDevCmd.bat',
+        'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat',
+    );
+
+    for (const candidate of candidates) {
+        if (candidate && fs.existsSync(candidate)) {
+            return path.resolve(candidate);
+        }
+    }
+
+    if (fs.existsSync(vswhere)) {
+        const result = spawnSync(vswhere, [
+            '-latest',
+            '-products',
+            '*',
+            '-requires',
+            'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+            '-find',
+            'Common7\\Tools\\VsDevCmd.bat',
+        ], {
+            cwd: repositoryRoot,
+            encoding: 'utf8',
+        });
+        if (result.status === 0) {
+            const resolved = String(result.stdout || '')
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .find((line) => line.length > 0 && fs.existsSync(line));
+            if (resolved) {
+                return resolved;
+            }
+        }
+    }
+
+    return null;
+}
+
+function importVsDevCmdEnvironment() {
+    const vsDevCmdPath = findVsDevCmd();
+    const arch = process.env.ZR_VS_ARCH || 'x64';
+    const hostArch = process.env.ZR_VS_HOST_ARCH || arch;
+
+    if (!vsDevCmdPath) {
+        console.error('Could not locate VsDevCmd.bat. Set VSDEVCMD_PATH or launch from a Visual Studio developer shell.');
+        process.exit(1);
+    }
+
+    const result = spawnSync('cmd.exe', [
+        '/d',
+        '/c',
+        `call "${vsDevCmdPath}" -no_logo -arch=${arch} -host_arch=${hostArch} >nul && set`,
+    ], {
+        cwd: repositoryRoot,
+        encoding: 'utf8',
+        windowsVerbatimArguments: true,
+    });
+
+    if (result.status !== 0) {
+        process.stderr.write(result.stderr || '');
+        console.error(`Failed to import Visual Studio environment from ${vsDevCmdPath}`);
+        process.exit(result.status ?? 1);
+    }
+
+    const importedEnv = { ...process.env };
+    for (const line of String(result.stdout || '').split(/\r?\n/)) {
+        const separator = line.indexOf('=');
+        if (separator <= 0) {
+            continue;
+        }
+
+        importedEnv[line.slice(0, separator)] = line.slice(separator + 1);
+    }
+
+    return importedEnv;
+}
+
 const args = ['--build', buildDir];
 if (process.platform === 'win32') {
     args.push('--config', buildConfig);
 }
 args.push('--target', target, '--parallel', jobs);
 
+const env = process.platform === 'win32' && !process.env.VSCMD_VER
+    ? importVsDevCmdEnvironment()
+    : process.env;
 const result = spawnSync('cmake', args, {
     cwd: repositoryRoot,
     stdio: 'inherit',
+    env,
 });
 
 if (result.status !== 0) {

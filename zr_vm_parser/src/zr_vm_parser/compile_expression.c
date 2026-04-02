@@ -27,24 +27,39 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     } else {
         // 其他一元操作符：先编译操作数
         compile_expression_non_tail(cs, arg);
-        TZrUInt32 argSlot = cs->stackSlotCount - 1;
+        TZrUInt32 argSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
         
         if (strcmp(op, "!") == 0) {
             // 逻辑非
-            TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(LOGICAL_NOT), destSlot, (TZrUInt16)argSlot, 0);
+            TZrInstruction inst = create_instruction_2(
+                    ZR_INSTRUCTION_ENUM(LOGICAL_NOT),
+                    ZR_COMPILE_SLOT_U16(destSlot),
+                    ZR_COMPILE_SLOT_U16(argSlot),
+                    0);
             emit_instruction(cs, inst);
         } else if (strcmp(op, "~") == 0) {
             // 位非
-            TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(BITWISE_NOT), destSlot, (TZrUInt16)argSlot, 0);
+            TZrInstruction inst = create_instruction_2(
+                    ZR_INSTRUCTION_ENUM(BITWISE_NOT),
+                    ZR_COMPILE_SLOT_U16(destSlot),
+                    ZR_COMPILE_SLOT_U16(argSlot),
+                    0);
             emit_instruction(cs, inst);
         } else if (strcmp(op, "-") == 0) {
             // 取负
-            TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(NEG), destSlot, (TZrUInt16)argSlot, 0);
+            TZrInstruction inst = create_instruction_2(
+                    ZR_INSTRUCTION_ENUM(NEG),
+                    ZR_COMPILE_SLOT_U16(destSlot),
+                    ZR_COMPILE_SLOT_U16(argSlot),
+                    0);
             emit_instruction(cs, inst);
         } else if (strcmp(op, "+") == 0) {
             // 正号：直接使用操作数（不需要额外指令）
             // 将结果复制到目标槽位
-            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_STACK), destSlot, (TZrInt32)argSlot);
+            TZrInstruction inst = create_instruction_1(
+                    ZR_INSTRUCTION_ENUM(GET_STACK),
+                    ZR_COMPILE_SLOT_U16(destSlot),
+                    (TZrInt32)argSlot);
             emit_instruction(cs, inst);
         } else {
             ZrParser_Compiler_Error(cs, "Unknown unary operator", node->location);
@@ -78,7 +93,7 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
     // 先编译要转换的表达式
     compile_expression_non_tail(cs, expression);
     
-    TZrUInt32 srcSlot = cs->stackSlotCount - 1;
+    TZrUInt32 srcSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
     TZrUInt32 destSlot = allocate_stack_slot(cs);
     
     // 根据目标类型生成相应的转换指令
@@ -216,11 +231,11 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 编译左操作数
     compile_expression_non_tail(cs, left);
-    TZrUInt32 leftSlot = cs->stackSlotCount - 1;
+    TZrUInt32 leftSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
     
     // 编译右操作数
     compile_expression_non_tail(cs, right);
-    TZrUInt32 rightSlot = cs->stackSlotCount - 1;
+    TZrUInt32 rightSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
     
     // 如果需要类型转换，插入转换指令
     // 注意：对于比较操作，需要保留 leftType 和 rightType 用于选择正确的比较指令
@@ -460,7 +475,11 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
-    TZrInstruction inst = create_instruction_2(opcode, destSlot, (TZrUInt16)leftSlot, (TZrUInt16)rightSlot);
+    TZrInstruction inst = create_instruction_2(
+            opcode,
+            ZR_COMPILE_SLOT_U16(destSlot),
+            ZR_COMPILE_SLOT_U16(leftSlot),
+            ZR_COMPILE_SLOT_U16(rightSlot));
     emit_instruction(cs, inst);
     
     // 清理类型信息
@@ -528,7 +547,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     
     // 编译右值
     ZrParser_Expression_Compile(cs, right);
-    TZrUInt32 rightSlot = cs->stackSlotCount - 1;
+    TZrUInt32 rightSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
     if (!cs->hasError && assignmentConversionOpcode != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
         emit_type_conversion(cs, rightSlot, rightSlot, assignmentConversionOpcode);
     }
@@ -574,7 +593,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
             } else {
                 // 复合赋值：先读取左值，执行运算，再赋值
                 TZrUInt32 leftSlot = allocate_stack_slot(cs);
-                TZrInstruction getInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_STACK), leftSlot, (TZrInt32)localVarIndex);
+                TZrInstruction getInst = create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(GET_STACK),
+                        ZR_COMPILE_SLOT_U16(leftSlot),
+                        (TZrInt32)localVarIndex);
                 emit_instruction(cs, getInst);
                 
                 // 执行运算
@@ -592,7 +614,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 }
                 
                 TZrUInt32 resultSlot = allocate_stack_slot(cs);
-                TZrInstruction opInst = create_instruction_2(opcode, resultSlot, (TZrUInt16)leftSlot, (TZrUInt16)rightSlot);
+                TZrInstruction opInst = create_instruction_2(
+                        opcode,
+                        ZR_COMPILE_SLOT_U16(resultSlot),
+                        ZR_COMPILE_SLOT_U16(leftSlot),
+                        ZR_COMPILE_SLOT_U16(rightSlot));
                 emit_instruction(cs, opInst);
                 
                 // 赋值
@@ -646,7 +672,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                     }
                     
                     TZrUInt32 resultSlot = allocate_stack_slot(cs);
-                    TZrInstruction opInst = create_instruction_2(opcode, resultSlot, (TZrUInt16)leftSlot, (TZrUInt16)rightSlot);
+                    TZrInstruction opInst = create_instruction_2(
+                            opcode,
+                            ZR_COMPILE_SLOT_U16(resultSlot),
+                            ZR_COMPILE_SLOT_U16(leftSlot),
+                            ZR_COMPILE_SLOT_U16(rightSlot));
                     emit_instruction(cs, opInst);
                     
                     // 写入闭包变量
@@ -701,7 +731,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 }
                 
                 TZrUInt32 resultSlot = allocate_stack_slot(cs);
-                TZrInstruction opInst = create_instruction_2(opcode, resultSlot, (TZrUInt16)leftSlot, (TZrUInt16)rightSlot);
+                TZrInstruction opInst = create_instruction_2(
+                        opcode,
+                        ZR_COMPILE_SLOT_U16(resultSlot),
+                        ZR_COMPILE_SLOT_U16(leftSlot),
+                        ZR_COMPILE_SLOT_U16(rightSlot));
                 emit_instruction(cs, opInst);
                 
                 // 写入全局变量（使用 SET_TABLE）
@@ -737,7 +771,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                     // 先编译基础属性（对象）
                     if (primary->property != ZR_NULL) {
                         ZrParser_Expression_Compile(cs, primary->property);
-                        TZrUInt32 objSlot = cs->stackSlotCount - 1;
+                        TZrUInt32 objSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
                         
                         // 处理成员访问链，获取最后一个成员访问的键
                         SZrMemberExpression *memberExpr = &lastMember->data.memberExpression;
@@ -748,7 +782,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                             TZrBool rootIsTypeReference = ZR_FALSE;
                             resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
 
-                            if (memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+                            if (!memberExpr->computed && memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
                                 SZrString *fieldName = memberExpr->property->data.identifier.name;
                                 if (fieldName != ZR_NULL && !cs->isInConstructor) {
                                     // 查找类型定义，检查字段是否是 const
@@ -829,7 +863,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                 }
                                 
                                 TZrUInt32 resultSlot = allocate_stack_slot(cs);
-                                TZrInstruction opInst = create_instruction_2(opcode, resultSlot, (TZrUInt16)leftValueSlot, (TZrUInt16)rightSlot);
+                                TZrInstruction opInst = create_instruction_2(
+                                        opcode,
+                                        ZR_COMPILE_SLOT_U16(resultSlot),
+                                        ZR_COMPILE_SLOT_U16(leftValueSlot),
+                                        ZR_COMPILE_SLOT_U16(rightSlot));
                                 emit_instruction(cs, opInst);
                                 
                                 // 使用 SETTABLE 写入结果
@@ -871,7 +909,7 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 编译左操作数
     compile_expression_non_tail(cs, left);
-    TZrUInt32 leftSlot = cs->stackSlotCount - 1;
+    TZrUInt32 leftSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
     
     // 分配结果槽位
     TZrUInt32 destSlot = allocate_stack_slot(cs);
@@ -894,7 +932,7 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
         
         // 编译右操作数
         compile_expression_non_tail(cs, right);
-        TZrUInt32 rightSlot = cs->stackSlotCount - 1;
+        TZrUInt32 rightSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
         
         // 将右操作数复制到结果槽位
         TZrInstruction copyRightInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)destSlot, (TZrInt32)rightSlot);
@@ -926,7 +964,7 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
         // 左操作数为false，需要计算右操作数
         // 编译右操作数
         compile_expression_non_tail(cs, right);
-        TZrUInt32 rightSlot = cs->stackSlotCount - 1;
+        TZrUInt32 rightSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
         
         // 将右操作数复制到结果槽位
         TZrInstruction copyRightInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)destSlot, (TZrInt32)rightSlot);
@@ -957,7 +995,7 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     
     // 编译条件
     compile_expression_non_tail(cs, test);
-    TZrUInt32 testSlot = cs->stackSlotCount - 1;
+    TZrUInt32 testSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
     
     // 创建 else 和 end 标签
     TZrSize elseLabelId = create_label(cs);
@@ -1051,6 +1089,10 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
         case ZR_AST_IMPORT_EXPRESSION:
             compile_import_expression(cs, node);
             break;
+
+        case ZR_AST_TYPE_QUERY_EXPRESSION:
+            compile_type_query_expression(cs, node);
+            break;
         
         case ZR_AST_MEMBER_EXPRESSION:
             compile_member_expression(cs, node);
@@ -1134,6 +1176,7 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
                     case ZR_AST_ENUM_MEMBER: typeName = "ENUM_MEMBER"; break;
                     case ZR_AST_MODULE_DECLARATION: typeName = "MODULE_DECLARATION"; break;
                     case ZR_AST_IMPORT_EXPRESSION: typeName = "IMPORT_EXPRESSION"; break;
+                    case ZR_AST_TYPE_QUERY_EXPRESSION: typeName = "TYPE_QUERY_EXPRESSION"; break;
                     case ZR_AST_SCRIPT: typeName = "SCRIPT"; break;
                     default: break;
                 }

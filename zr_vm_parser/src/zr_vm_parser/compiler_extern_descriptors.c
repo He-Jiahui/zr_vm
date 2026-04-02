@@ -388,8 +388,8 @@ TZrBool extern_compiler_build_signature_descriptor_value(SZrCompilerState *cs,
     SZrTypeValue signatureValue;
     SZrTypeValue returnTypeValue;
     SZrString *callconvName;
-    ZrExternCompilerTempRoot signatureRoot;
-    ZrExternCompilerTempRoot parametersRoot;
+    ZrExternCompilerTempRoot signatureRoot = {0};
+    ZrExternCompilerTempRoot parametersRoot = {0};
 
     if (cs == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
@@ -549,8 +549,8 @@ TZrBool extern_compiler_build_struct_descriptor_value(SZrCompilerState *cs,
     SZrTypeValue fieldsValue;
     TZrInt64 packValue = 0;
     TZrInt64 alignValue = 0;
-    ZrExternCompilerTempRoot structRoot;
-    ZrExternCompilerTempRoot fieldsRoot;
+    ZrExternCompilerTempRoot structRoot = {0};
+    ZrExternCompilerTempRoot fieldsRoot = {0};
 
     if (cs == ZR_NULL || declarationNode == ZR_NULL || declarationNode->type != ZR_AST_STRUCT_DECLARATION ||
         outValue == ZR_NULL) {
@@ -688,8 +688,8 @@ TZrBool extern_compiler_build_enum_descriptor_value(SZrCompilerState *cs,
     SZrTypeValue membersValue;
     SZrTypeValue underlyingValue;
     TZrInt64 nextAutoValue = 0;
-    ZrExternCompilerTempRoot enumRoot;
-    ZrExternCompilerTempRoot membersRoot;
+    ZrExternCompilerTempRoot enumRoot = {0};
+    ZrExternCompilerTempRoot membersRoot = {0};
 
     if (cs == ZR_NULL || declarationNode == ZR_NULL || declarationNode->type != ZR_AST_ENUM_DECLARATION ||
         outValue == ZR_NULL) {

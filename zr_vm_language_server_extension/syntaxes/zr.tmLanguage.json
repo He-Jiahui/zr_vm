@@ -41,12 +41,16 @@
     "keywords": {
       "patterns": [
         {
+          "name": "keyword.control.directive.zr",
+          "match": "%(module|import|test|unique|shared|weak|borrowed)\\b"
+        },
+        {
           "name": "keyword.control.zr",
           "match": "\\b(if|else|switch|case|default|while|for|break|continue|return|try|catch|finally|throw)\\b"
         },
         {
           "name": "keyword.other.zr",
-          "match": "\\b(module|struct|class|interface|enum|intermediate|var|const|static|pub|pri|pro|new|super|in|out|get|set|test)\\b"
+          "match": "\\b(using|module|struct|class|interface|enum|intermediate|var|const|static|pub|pri|pro|new|super|in|out|get|set|test)\\b"
         },
         {
           "name": "constant.language.zr",
@@ -142,6 +146,14 @@
     },
     "functions": {
       "patterns": [
+        {
+          "name": "entity.name.namespace.zr",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*(?=\\.)\\b"
+        },
+        {
+          "name": "variable.other.member.zr",
+          "match": "(?<=\\.)\\b[a-z_][a-zA-Z0-9_]*\\b"
+        },
         {
           "name": "entity.name.function.zr",
           "match": "\\b[a-z_][a-zA-Z0-9_]*(?=\\s*\\()"

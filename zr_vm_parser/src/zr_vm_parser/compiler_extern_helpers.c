@@ -56,7 +56,7 @@ TZrBool extern_compiler_make_string_value(SZrCompilerState *cs, const TZrChar *t
         return ZR_FALSE;
     }
 
-    stringObject = ZrCore_String_CreateFromNative(cs->state, text);
+    stringObject = ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)text);
     if (stringObject == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -167,7 +167,7 @@ TZrBool extern_compiler_set_object_field(SZrCompilerState *cs,
         valueRootActive = extern_compiler_temp_root_set_value(&valueRoot, value);
     }
 
-    fieldString = ZrCore_String_CreateFromNative(cs->state, fieldName);
+    fieldString = ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)fieldName);
     if (fieldString == ZR_NULL) {
         if (valueRootActive) {
             extern_compiler_temp_root_end(&valueRoot);

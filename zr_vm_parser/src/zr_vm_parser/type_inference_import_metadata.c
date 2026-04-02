@@ -100,6 +100,7 @@ static void import_type_prototype_init(SZrState *state,
     info->allowBoxedConstruction = info->allowValueConstruction;
     ZrCore_Array_Init(state, &info->inherits, sizeof(SZrString *), 2);
     ZrCore_Array_Init(state, &info->implements, sizeof(SZrString *), 2);
+    ZrCore_Array_Init(state, &info->genericParameters, sizeof(SZrTypeGenericParameterInfo), 2);
     ZrCore_Array_Init(state, &info->members, sizeof(SZrTypeMemberInfo), 4);
 }
 
@@ -228,7 +229,7 @@ static SZrString *primitive_type_name(SZrCompilerState *cs, EZrValueType baseTyp
             break;
     }
 
-    return ZrCore_String_CreateFromNative(cs->state, name);
+    return ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)name);
 }
 
 static SZrString *typed_type_ref_to_type_name(SZrCompilerState *cs, const SZrFunctionTypedTypeRef *typeRef) {

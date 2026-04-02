@@ -3,6 +3,30 @@
 //
 
 #include "compiler_internal.h"
+#include "compile_expression_internal.h"
+#include "zr_vm_core/reflection.h"
+
+static void compiler_free_collected_generic_parameters(SZrState *state, SZrArray *genericParameters) {
+    if (state == ZR_NULL || genericParameters == ZR_NULL ||
+        !genericParameters->isValid || genericParameters->head == ZR_NULL ||
+        genericParameters->capacity == 0 || genericParameters->elementSize == 0) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < genericParameters->length; index++) {
+        SZrTypeGenericParameterInfo *genericInfo =
+                (SZrTypeGenericParameterInfo *)ZrCore_Array_Get(genericParameters, index);
+        if (genericInfo != ZR_NULL &&
+            genericInfo->constraintTypeNames.isValid &&
+            genericInfo->constraintTypeNames.head != ZR_NULL &&
+            genericInfo->constraintTypeNames.capacity > 0 &&
+            genericInfo->constraintTypeNames.elementSize > 0) {
+            ZrCore_Array_Free(state, &genericInfo->constraintTypeNames);
+        }
+    }
+
+    ZrCore_Array_Free(state, genericParameters);
+}
 
 SZrString *extract_simple_type_name_from_type_node(SZrAstNode *typeNode) {
     if (typeNode == ZR_NULL || typeNode->type != ZR_AST_TYPE) {
@@ -67,11 +91,18 @@ void emit_string_constant_to_slot(SZrCompilerState *cs, TZrUInt32 slot, SZrStrin
 void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDeclaration *funcDecl) {
     SZrInferredType returnType;
     SZrArray paramTypes;
+    SZrArray genericParameters;
+    SZrArray parameterPassingModes;
 
     if (cs == ZR_NULL || funcDecl == ZR_NULL || cs->typeEnv == ZR_NULL ||
         funcDecl->name == ZR_NULL || funcDecl->name->name == ZR_NULL || cs->hasError) {
         return;
     }
+
+    ZrCore_Array_Construct(&genericParameters);
+    ZrCore_Array_Construct(&parameterPassingModes);
+    compiler_collect_generic_parameter_info(cs, &genericParameters, funcDecl->generic);
+    compiler_collect_parameter_passing_modes(cs->state, &parameterPassingModes, funcDecl->params);
 
     if (funcDecl->returnType != ZR_NULL) {
         if (ZrParser_AstTypeToInferredType_Convert(cs, funcDecl->returnType, &returnType)) {
@@ -94,7 +125,14 @@ void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDe
                     }
                 }
             }
-            ZrParser_TypeEnvironment_RegisterFunction(cs->state, cs->typeEnv, funcDecl->name->name, &returnType, &paramTypes);
+            ZrParser_TypeEnvironment_RegisterFunctionEx(cs->state,
+                                                        cs->typeEnv,
+                                                        funcDecl->name->name,
+                                                        &returnType,
+                                                        &paramTypes,
+                                                        &genericParameters,
+                                                        &parameterPassingModes,
+                                                        funcDecl->name != ZR_NULL ? cs->currentFunctionNode : ZR_NULL);
             ZrParser_InferredType_Free(cs->state, &returnType);
             for (TZrSize i = 0; i < paramTypes.length; i++) {
                 SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get(&paramTypes, i);
@@ -103,6 +141,10 @@ void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDe
                 }
             }
             ZrCore_Array_Free(cs->state, &paramTypes);
+            compiler_free_collected_generic_parameters(cs->state, &genericParameters);
+            if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
+                ZrCore_Array_Free(cs->state, &parameterPassingModes);
+            }
         }
     } else {
         ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_OBJECT);
@@ -125,7 +167,14 @@ void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDe
                 }
             }
         }
-        ZrParser_TypeEnvironment_RegisterFunction(cs->state, cs->typeEnv, funcDecl->name->name, &returnType, &paramTypes);
+        ZrParser_TypeEnvironment_RegisterFunctionEx(cs->state,
+                                                    cs->typeEnv,
+                                                    funcDecl->name->name,
+                                                    &returnType,
+                                                    &paramTypes,
+                                                    &genericParameters,
+                                                    &parameterPassingModes,
+                                                    funcDecl->name != ZR_NULL ? cs->currentFunctionNode : ZR_NULL);
         ZrParser_InferredType_Free(cs->state, &returnType);
         for (TZrSize i = 0; i < paramTypes.length; i++) {
             SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get(&paramTypes, i);
@@ -134,6 +183,10 @@ void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDe
             }
         }
         ZrCore_Array_Free(cs->state, &paramTypes);
+        compiler_free_collected_generic_parameters(cs->state, &genericParameters);
+        if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
+            ZrCore_Array_Free(cs->state, &parameterPassingModes);
+        }
     }
 }
 
@@ -169,11 +222,15 @@ void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
                                                                   SZrExternFunctionDeclaration *functionDecl) {
     SZrInferredType returnType;
     SZrArray paramTypes;
+    SZrArray parameterPassingModes;
 
     if (cs == ZR_NULL || env == ZR_NULL || functionDecl == ZR_NULL ||
         functionDecl->name == ZR_NULL || functionDecl->name->name == ZR_NULL) {
         return;
     }
+
+    ZrCore_Array_Construct(&parameterPassingModes);
+    compiler_collect_parameter_passing_modes(cs->state, &parameterPassingModes, functionDecl->params);
 
     if (functionDecl->returnType != ZR_NULL) {
         if (!ZrParser_AstTypeToInferredType_Convert(cs, functionDecl->returnType, &returnType)) {
@@ -206,7 +263,14 @@ void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
         }
     }
 
-    ZrParser_TypeEnvironment_RegisterFunction(cs->state, env, functionDecl->name->name, &returnType, &paramTypes);
+    ZrParser_TypeEnvironment_RegisterFunctionEx(cs->state,
+                                                env,
+                                                functionDecl->name->name,
+                                                &returnType,
+                                                &paramTypes,
+                                                ZR_NULL,
+                                                &parameterPassingModes,
+                                                ZR_NULL);
 
     ZrParser_InferredType_Free(cs->state, &returnType);
     for (TZrSize i = 0; i < paramTypes.length; i++) {
@@ -216,6 +280,9 @@ void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
         }
     }
     ZrCore_Array_Free(cs->state, &paramTypes);
+    if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
+        ZrCore_Array_Free(cs->state, &parameterPassingModes);
+    }
 }
 
 TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name) {
@@ -328,6 +395,46 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompiler
 
     argumentSlot = allocate_stack_slot(cs);
     emit_string_constant_to_slot(cs, argumentSlot, moduleName);
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                          (TZrUInt16)functionSlot,
+                                          (TZrUInt16)functionSlot,
+                                          1));
+    ZrParser_Compiler_TrimStackToSlot(cs, functionSlot);
+    return functionSlot;
+}
+
+ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerState *cs,
+                                                                  SZrAstNode *operand,
+                                                                  SZrFileRange location) {
+    SZrClosureNative *typeQueryClosure;
+    SZrTypeValue typeQueryCallable;
+    TZrUInt32 functionSlot;
+    TZrUInt32 argumentSlot;
+
+    if (cs == ZR_NULL || operand == ZR_NULL || cs->hasError) {
+        return (TZrUInt32)-1;
+    }
+
+    typeQueryClosure = ZrCore_ClosureNative_New(cs->state, 0);
+    if (typeQueryClosure == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "failed to create internal reflection callable", location);
+        return (TZrUInt32)-1;
+    }
+    typeQueryClosure->nativeFunction = ZrCore_Reflection_TypeOfNativeEntry;
+    ZrCore_RawObject_MarkAsPermanent(cs->state, ZR_CAST_RAW_OBJECT_AS_SUPER(typeQueryClosure));
+
+    ZrCore_Value_InitAsRawObject(cs->state, &typeQueryCallable, ZR_CAST_RAW_OBJECT_AS_SUPER(typeQueryClosure));
+    typeQueryCallable.isNative = ZR_TRUE;
+
+    functionSlot = allocate_stack_slot(cs);
+    emit_constant_to_slot(cs, functionSlot, &typeQueryCallable);
+
+    argumentSlot = allocate_stack_slot(cs);
+    if (compile_expression_into_slot(cs, operand, argumentSlot) == (TZrUInt32)-1 || cs->hasError) {
+        return (TZrUInt32)-1;
+    }
 
     emit_instruction(cs,
                      create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),

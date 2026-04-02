@@ -53,7 +53,8 @@ typedef struct {
 
 #define TEST_FAIL_CUSTOM(timer, summary, reason)                                                                       \
     do {                                                                                                               \
-        double elapsed = ((double) (timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0;                       \
+        clock_t failureTime = clock();                                                                                 \
+        double elapsed = ((double) (failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0;                        \
         printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason);                                      \
         fflush(stdout);                                                                                                \
     } while (0)
@@ -744,7 +745,7 @@ void tearDown(void) {}
 // ==================== CREATE_OBJECT 指令测试 ====================
 
 // 测试 CREATE_OBJECT 指令执行
-void test_execute_create_object(void) {
+static void test_execute_create_object(void) {
     SZrTestTimer timer;
     const char *testSummary = "CREATE_OBJECT Instruction Execution";
 
@@ -814,7 +815,7 @@ void test_execute_create_object(void) {
 }
 
 // 测试 CREATE_OBJECT 带属性
-void test_execute_create_object_with_properties(void) {
+static void test_execute_create_object_with_properties(void) {
     SZrTestTimer timer;
     const char *testSummary = "CREATE_OBJECT With Properties Execution";
 
@@ -890,7 +891,7 @@ void test_execute_create_object_with_properties(void) {
 // ==================== CREATE_ARRAY 指令测试 ====================
 
 // 测试 CREATE_ARRAY 指令执行
-void test_execute_create_array(void) {
+static void test_execute_create_array(void) {
     SZrTestTimer timer;
     const char *testSummary = "CREATE_ARRAY Instruction Execution";
 
@@ -960,7 +961,7 @@ void test_execute_create_array(void) {
 }
 
 // 测试 CREATE_ARRAY 带元素
-void test_execute_create_array_with_elements(void) {
+static void test_execute_create_array_with_elements(void) {
     SZrTestTimer timer;
     const char *testSummary = "CREATE_ARRAY With Elements Execution";
 
@@ -1036,7 +1037,7 @@ void test_execute_create_array_with_elements(void) {
 // ==================== 控制流指令测试 (JUMP, JUMP_IF) ====================
 
 // 测试 JUMP_IF 指令（通过 if 语句）
-void test_execute_jump_if_instruction(void) {
+static void test_execute_jump_if_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "JUMP_IF Instruction (If Statement)";
 
@@ -1109,7 +1110,7 @@ void test_execute_jump_if_instruction(void) {
 }
 
 // 测试 JUMP 指令（通过 while 循环）
-void test_execute_jump_instruction(void) {
+static void test_execute_jump_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "JUMP Instruction (While Loop)";
 
@@ -1185,7 +1186,7 @@ void test_execute_jump_instruction(void) {
 // ==================== 算术运算指令测试 ====================
 
 // 测试 ADD_INT 指令
-void test_execute_add_int_instruction(void) {
+static void test_execute_add_int_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "ADD_INT Instruction";
 
@@ -1269,7 +1270,7 @@ void test_execute_add_int_instruction(void) {
 }
 
 // 测试 SUB_INT 指令
-void test_execute_sub_int_instruction(void) {
+static void test_execute_sub_int_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "SUB_INT Instruction";
 
@@ -1353,7 +1354,7 @@ void test_execute_sub_int_instruction(void) {
 }
 
 // 测试 MUL_SIGNED 指令
-void test_execute_mul_signed_instruction(void) {
+static void test_execute_mul_signed_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "MUL_SIGNED Instruction";
 
@@ -1439,7 +1440,7 @@ void test_execute_mul_signed_instruction(void) {
 // ==================== 逻辑运算指令测试 ====================
 
 // 测试 LOGICAL_AND 指令（使用二进制表达式，因为 && 在二进制表达式中处理）
-void test_execute_logical_and_instruction(void) {
+static void test_execute_logical_and_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "LOGICAL_AND Instruction";
 
@@ -1527,7 +1528,7 @@ void test_execute_logical_and_instruction(void) {
 }
 
 // 测试 LOGICAL_EQUAL 指令
-void test_execute_logical_equal_instruction(void) {
+static void test_execute_logical_equal_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "LOGICAL_EQUAL Instruction";
 
@@ -1597,7 +1598,7 @@ void test_execute_logical_equal_instruction(void) {
 
     // 验证结果值为 true (1 == 1)
     if (result.type == ZR_VALUE_TYPE_BOOL) {
-        TZrBool value = result.value.nativeObject.nativeBool;
+        TZrBool value = result.value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
         TEST_ASSERT_TRUE(value == ZR_TRUE);
         printf("Test Result: ");
         print_test_result(state, &result);
@@ -1612,7 +1613,7 @@ void test_execute_logical_equal_instruction(void) {
 // ==================== GETTABLE/SETTABLE 指令测试 ====================
 
 // 测试 SETTABLE 指令（对象属性设置，在对象字面量中使用）
-void test_execute_settable_instruction(void) {
+static void test_execute_settable_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "SETTABLE Instruction (Object Property Setting)";
 
@@ -1685,7 +1686,7 @@ void test_execute_settable_instruction(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_object_literal_with_complex_property_values(void) {
+static void test_execute_object_literal_with_complex_property_values(void) {
     SZrTestTimer timer;
     const char *testSummary = "Object Literal Return With Complex Property Values";
     SZrTypeValue result;
@@ -1758,7 +1759,7 @@ void test_execute_object_literal_with_complex_property_values(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_string_concat_variable_lifetimes(void) {
+static void test_execute_string_concat_variable_lifetimes(void) {
     SZrTestTimer timer;
     const char *testSummary = "String Concat Variable Lifetimes";
     SZrTypeValue result;
@@ -1838,7 +1839,7 @@ void test_execute_string_concat_variable_lifetimes(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_string_concat_with_dynamic_member_number(void) {
+static void test_execute_string_concat_with_dynamic_member_number(void) {
     SZrTestTimer timer;
     const char *testSummary = "String Concat With Dynamic Member Number";
     SZrTypeValue result;
@@ -1890,7 +1891,7 @@ void test_execute_string_concat_with_dynamic_member_number(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_function_helper_restores_base_after_stack_grow(void) {
+static void test_execute_function_helper_restores_base_after_stack_grow(void) {
     SZrTestTimer timer;
     const char *testSummary = "Function Helper Restores Base After Stack Grow";
     SZrState *state;
@@ -1930,7 +1931,7 @@ void test_execute_function_helper_restores_base_after_stack_grow(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_function_stack_anchor_restores_base_after_stack_grow(void) {
+static void test_execute_function_stack_anchor_restores_base_after_stack_grow(void) {
     SZrTestTimer timer;
     const char *testSummary = "Function Stack Anchor Restores Base After Stack Grow";
     SZrState *state;
@@ -1973,7 +1974,7 @@ void test_execute_function_stack_anchor_restores_base_after_stack_grow(void) {
 }
 
 // 测试 DIV_SIGNED 指令
-void test_execute_div_signed_instruction(void) {
+static void test_execute_div_signed_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "DIV_SIGNED Instruction";
 
@@ -2057,7 +2058,7 @@ void test_execute_div_signed_instruction(void) {
 }
 
 // 测试 LOGICAL_NOT 指令
-void test_execute_logical_not_instruction(void) {
+static void test_execute_logical_not_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "LOGICAL_NOT Instruction";
 
@@ -2128,7 +2129,7 @@ void test_execute_logical_not_instruction(void) {
 
     // 验证结果值为 false (!true)
     if (result.type == ZR_VALUE_TYPE_BOOL) {
-        TZrBool value = result.value.nativeObject.nativeBool;
+        TZrBool value = result.value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
         TEST_ASSERT_TRUE(value == ZR_FALSE);
         printf("Test Result: ");
         print_test_result(state, &result);
@@ -2140,7 +2141,7 @@ void test_execute_logical_not_instruction(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_template_string_instruction(void) {
+static void test_execute_template_string_instruction(void) {
     SZrTestTimer timer;
     const char *testSummary = "Template String Execution";
     TZrBool hasAddString = ZR_FALSE;
@@ -2212,7 +2213,7 @@ void test_execute_template_string_instruction(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_using_statement_passthrough(void) {
+static void test_execute_using_statement_passthrough(void) {
     SZrTestTimer timer;
     const char *testSummary = "Using Statement Execution Passthrough";
 
@@ -2264,7 +2265,7 @@ void test_execute_using_statement_passthrough(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_using_statement_invokes_close_meta(void) {
+static void test_execute_using_statement_invokes_close_meta(void) {
     SZrTestTimer timer;
     const char *testSummary = "Using Statement Invokes Close Meta";
     TZrBool hasMarkToBeClosed = ZR_FALSE;
@@ -2341,7 +2342,7 @@ void test_execute_using_statement_invokes_close_meta(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_using_declaration_invokes_close_meta(void) {
+static void test_execute_using_declaration_invokes_close_meta(void) {
     SZrTestTimer timer;
     const char *testSummary = "Using Declaration Invokes Close Meta";
 
@@ -2401,7 +2402,7 @@ void test_execute_using_declaration_invokes_close_meta(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_nested_using_return_invokes_all_close_meta(void) {
+static void test_execute_nested_using_return_invokes_all_close_meta(void) {
     SZrTestTimer timer;
     const char *testSummary = "Nested Using Return Invokes All Close Meta";
     TZrUInt32 markToBeClosedCount = 0;
@@ -2468,7 +2469,7 @@ void test_execute_nested_using_return_invokes_all_close_meta(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_source_import_typed_call_runtime_result(void) {
+static void test_execute_source_import_typed_call_runtime_result(void) {
     SZrTestTimer timer;
     const char *testSummary = "Source Import Typed Call Runtime Result";
     const char *moduleSource = "add(lhs: float, rhs: float): float { return lhs + rhs; }";
@@ -2514,7 +2515,7 @@ void test_execute_source_import_typed_call_runtime_result(void) {
     TEST_DIVIDER();
 }
 
-void test_execute_binary_import_typed_call_runtime_result(void) {
+static void test_execute_binary_import_typed_call_runtime_result(void) {
     SZrTestTimer timer;
     const char *testSummary = "Binary Import Typed Call Runtime Result";
     const char *moduleSource = "add(lhs: float, rhs: float): float { return lhs + rhs; }";

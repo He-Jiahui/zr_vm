@@ -43,7 +43,8 @@ typedef struct {
 
 #define TEST_FAIL_CUSTOM(timer, summary, reason)                                                                       \
     do {                                                                                                               \
-        double elapsed = ((double) (timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0;                       \
+        clock_t failureTime = clock();                                                                                 \
+        double elapsed = ((double) (failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0;                        \
         printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason);                                      \
         fflush(stdout);                                                                                                \
     } while (0)

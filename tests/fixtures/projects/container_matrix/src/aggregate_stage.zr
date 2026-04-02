@@ -1,0 +1,47 @@
+var container = %import("zr.container");
+
+aggregateAndChecksumImpl(uniquePairs) {
+    var buckets = new container.Map<string, Array<int>>();
+    var oddLoSum = 0;
+    var oddHiSum = 0;
+    var evenSum = 0;
+    var uniqueCount = 0;
+
+    for (var pair in uniquePairs) {
+        var bucket = buckets[pair.second];
+        if (bucket == null) {
+            bucket = new container.Array<int>();
+            buckets[pair.second] = bucket;
+        }
+        bucket.add(<int> pair.first);
+    }
+
+    var oddLo: Array<int> = buckets["odd_lo"];
+    var oddHi: Array<int> = buckets["odd_hi"];
+    var even: Array<int> = buckets["even"];
+
+    if (oddLo != null) {
+        uniqueCount = uniqueCount + oddLo.length;
+        for (var item in oddLo) {
+            oddLoSum = oddLoSum + <int> item;
+        }
+    }
+
+    if (oddHi != null) {
+        uniqueCount = uniqueCount + oddHi.length;
+        for (var item in oddHi) {
+            oddHiSum = oddHiSum + <int> item;
+        }
+    }
+
+    if (even != null) {
+        uniqueCount = uniqueCount + even.length;
+        for (var item in even) {
+            evenSum = evenSum + <int> item;
+        }
+    }
+
+    return evenSum * 100 + oddHiSum * 10 + oddLoSum + uniqueCount;
+}
+
+pub var aggregateAndChecksum = aggregateAndChecksumImpl;

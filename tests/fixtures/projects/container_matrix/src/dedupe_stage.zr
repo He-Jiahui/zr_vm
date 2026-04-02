@@ -1,0 +1,14 @@
+var container = %import("zr.container");
+
+drainUniqueImpl(queue) {
+    var seen = new container.Set<Pair<int, string>>();
+
+    while (queue.count > 0) {
+        var task = queue.removeFirst();
+        seen.add(new container.Pair<int, string>(<int> task.second, <string> task.first));
+    }
+
+    return seen;
+}
+
+pub var drainUnique = drainUniqueImpl;

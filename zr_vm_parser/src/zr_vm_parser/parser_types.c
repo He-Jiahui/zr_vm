@@ -1,5 +1,32 @@
 #include "parser_internal.h"
 
+static SZrAstNode *create_type_node_from_type_info(SZrParserState *ps, SZrType *type, SZrFileRange location) {
+    SZrAstNode *typeNode;
+
+    if (ps == ZR_NULL || type == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    typeNode = create_ast_node(ps, ZR_AST_TYPE, location);
+    if (typeNode == ZR_NULL) {
+        free_type_info(ps->state, type);
+        ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        return ZR_NULL;
+    }
+
+    typeNode->data.type = *type;
+    ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    return typeNode;
+}
+
+static TZrBool token_can_start_type_argument(EZrToken token) {
+    return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST || token == ZR_TK_LBRACKET || token == ZR_TK_PERCENT;
+}
+
+static TZrBool is_generic_argument_terminator(EZrToken token) {
+    return token == ZR_TK_COMMA || token == ZR_TK_GREATER_THAN || token == ZR_TK_RIGHT_SHIFT;
+}
+
 static SZrAstNodeArray *parse_type_list(SZrParserState *ps) {
     SZrAstNodeArray *types = ZrParser_AstNodeArray_New(ps->state, 4);
     if (types == ZR_NULL) {
@@ -9,10 +36,8 @@ static SZrAstNodeArray *parse_type_list(SZrParserState *ps) {
     {
         SZrType *first = parse_type(ps);
         if (first != ZR_NULL) {
-            SZrAstNode *firstNode = create_ast_node(ps, ZR_AST_TYPE, get_current_location(ps));
+            SZrAstNode *firstNode = create_type_node_from_type_info(ps, first, get_current_location(ps));
             if (firstNode != ZR_NULL) {
-                firstNode->data.type = *first;
-                ZrCore_Memory_RawFreeWithType(ps->state->global, first, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 ZrParser_AstNodeArray_Add(ps->state, types, firstNode);
             }
         }
@@ -21,10 +46,8 @@ static SZrAstNodeArray *parse_type_list(SZrParserState *ps) {
     while (consume_token(ps, ZR_TK_COMMA)) {
         SZrType *type = parse_type(ps);
         if (type != ZR_NULL) {
-            SZrAstNode *typeNode = create_ast_node(ps, ZR_AST_TYPE, get_current_location(ps));
+            SZrAstNode *typeNode = create_type_node_from_type_info(ps, type, get_current_location(ps));
             if (typeNode != ZR_NULL) {
-                typeNode->data.type = *type;
-                ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 ZrParser_AstNodeArray_Add(ps->state, types, typeNode);
             }
         } else {
@@ -35,6 +58,82 @@ static SZrAstNodeArray *parse_type_list(SZrParserState *ps) {
     return types;
 }
 
+static SZrAstNode *parse_generic_argument_node(SZrParserState *ps) {
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (token_can_start_type_argument(ps->lexer->t.token)) {
+        SZrParserCursor cursor;
+        SZrType *type;
+
+        save_parser_cursor(ps, &cursor);
+        type = parse_type(ps);
+        if (type != ZR_NULL && is_generic_argument_terminator(ps->lexer->t.token)) {
+            return create_type_node_from_type_info(ps, type, get_current_location(ps));
+        }
+
+        if (type != ZR_NULL) {
+            free_type_info(ps->state, type);
+            ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        }
+        restore_parser_cursor(ps, &cursor);
+    }
+
+    return parse_additive_expression(ps);
+}
+
+SZrAstNodeArray *parse_generic_argument_list(SZrParserState *ps) {
+    SZrAstNodeArray *params;
+
+    expect_token(ps, ZR_TK_LESS_THAN);
+    ZrParser_Lexer_Next(ps->lexer);
+
+    params = ZrParser_AstNodeArray_New(ps->state, 4);
+    if (params == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_GREATER_THAN) {
+        report_error(ps, "Generic argument list cannot be empty");
+        ZrParser_AstNodeArray_Free(ps->state, params);
+        return ZR_NULL;
+    }
+
+    {
+        SZrAstNode *first = parse_generic_argument_node(ps);
+        if (first == ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+            return ZR_NULL;
+        }
+        ZrParser_AstNodeArray_Add(ps->state, params, first);
+    }
+
+    while (consume_token(ps, ZR_TK_COMMA)) {
+        SZrAstNode *param;
+        if (ps->lexer->t.token == ZR_TK_GREATER_THAN) {
+            break;
+        }
+
+        param = parse_generic_argument_node(ps);
+        if (param == ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+            return ZR_NULL;
+        }
+        ZrParser_AstNodeArray_Add(ps->state, params, param);
+    }
+
+    if (!consume_type_closing_angle(ps)) {
+        expect_token(ps, ZR_TK_GREATER_THAN);
+        if (!consume_token(ps, ZR_TK_GREATER_THAN)) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+            return ZR_NULL;
+        }
+    }
+
+    return params;
+}
+
 SZrAstNode *parse_generic_type(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNode *nameNode = parse_identifier(ps);
@@ -42,17 +141,9 @@ SZrAstNode *parse_generic_type(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    expect_token(ps, ZR_TK_LESS_THAN);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    SZrAstNodeArray *params = parse_type_list(ps);
+    SZrAstNodeArray *params = parse_generic_argument_list(ps);
     if (params == ZR_NULL) {
         return ZR_NULL;
-    }
-
-    if (!consume_type_closing_angle(ps)) {
-        expect_token(ps, ZR_TK_GREATER_THAN);
-        ZrParser_Lexer_Next(ps->lexer);
     }
 
     SZrFileRange endLoc = get_current_location(ps);
@@ -414,38 +505,227 @@ TZrBool parse_array_size_constraint(SZrParserState *ps, SZrType *type) {
 
 // 解析泛型声明
 
-SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps) {
+static SZrAstNode *parse_generic_parameter(SZrParserState *ps, TZrBool allowVariance) {
+    SZrAstNode *nameNode = ZR_NULL;
+    SZrAstNode *node;
+    SZrFileRange startLoc = get_current_location(ps);
+    EZrGenericVariance variance = ZR_GENERIC_VARIANCE_NONE;
+    EZrGenericParameterKind kind = ZR_GENERIC_PARAMETER_TYPE;
+    SZrType *typeInfo = ZR_NULL;
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_IN || ps->lexer->t.token == ZR_TK_OUT) {
+        variance = ps->lexer->t.token == ZR_TK_IN ? ZR_GENERIC_VARIANCE_IN : ZR_GENERIC_VARIANCE_OUT;
+        if (!allowVariance) {
+            report_error(ps, "Variance is only allowed on interface generic parameters");
+        }
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        kind = ZR_GENERIC_PARAMETER_CONST_INT;
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    nameNode = parse_identifier(ps);
+    if (nameNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (kind == ZR_GENERIC_PARAMETER_CONST_INT) {
+        expect_token(ps, ZR_TK_COLON);
+        if (!consume_token(ps, ZR_TK_COLON)) {
+            ZrParser_Ast_Free(ps->state, nameNode);
+            return ZR_NULL;
+        }
+        typeInfo = parse_type_no_generic(ps);
+        if (typeInfo == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, nameNode);
+            return ZR_NULL;
+        }
+    }
+
+    node = create_ast_node(ps, ZR_AST_PARAMETER, startLoc);
+    if (node == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, nameNode);
+        free_owned_type(ps->state, typeInfo);
+        return ZR_NULL;
+    }
+
+    node->data.parameter.name = &nameNode->data.identifier;
+    node->data.parameter.typeInfo = typeInfo;
+    node->data.parameter.defaultValue = ZR_NULL;
+    node->data.parameter.isConst = ZR_FALSE;
+    node->data.parameter.decorators = ZR_NULL;
+    node->data.parameter.passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+    node->data.parameter.genericKind = kind;
+    node->data.parameter.variance = variance;
+    node->data.parameter.genericTypeConstraints = ZR_NULL;
+    node->data.parameter.genericRequiresClass = ZR_FALSE;
+    node->data.parameter.genericRequiresStruct = ZR_FALSE;
+    node->data.parameter.genericRequiresNew = ZR_FALSE;
+    return node;
+}
+
+static SZrParameter *find_generic_parameter_by_name(SZrParserState *ps,
+                                                    SZrGenericDeclaration *generic,
+                                                    SZrString *name) {
+    TZrSize index;
+
+    if (ps == ZR_NULL || generic == ZR_NULL || generic->params == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < generic->params->count; index++) {
+        SZrAstNode *node = generic->params->nodes[index];
+        if (node == ZR_NULL || node->type != ZR_AST_PARAMETER || node->data.parameter.name == ZR_NULL) {
+            continue;
+        }
+
+        if (ZrCore_String_Compare(ps->state, node->data.parameter.name->name, name)) {
+            return &node->data.parameter;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool ensure_generic_constraint_array(SZrParserState *ps, SZrParameter *parameter) {
+    if (parameter == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (parameter->genericTypeConstraints == ZR_NULL) {
+        parameter->genericTypeConstraints = ZrParser_AstNodeArray_New(ps->state, 2);
+    }
+
+    return parameter->genericTypeConstraints != ZR_NULL;
+}
+
+TZrBool parse_optional_where_clauses(SZrParserState *ps, SZrGenericDeclaration *generic) {
+    while (ps != ZR_NULL && ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "where")) {
+        SZrAstNode *nameNode;
+        SZrParameter *parameter;
+
+        ZrParser_Lexer_Next(ps->lexer);
+        nameNode = parse_identifier(ps);
+        if (nameNode == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        parameter = generic != ZR_NULL ? find_generic_parameter_by_name(ps, generic, nameNode->data.identifier.name)
+                                       : ZR_NULL;
+        if (parameter == ZR_NULL) {
+            report_error(ps, "Unknown generic parameter in where clause");
+        }
+
+        expect_token(ps, ZR_TK_COLON);
+        if (!consume_token(ps, ZR_TK_COLON)) {
+            ZrParser_Ast_Free(ps->state, nameNode);
+            return ZR_FALSE;
+        }
+
+        while (ZR_TRUE) {
+            if (ps->lexer->t.token == ZR_TK_CLASS) {
+                if (parameter != ZR_NULL) {
+                    parameter->genericRequiresClass = ZR_TRUE;
+                }
+                ZrParser_Lexer_Next(ps->lexer);
+            } else if (ps->lexer->t.token == ZR_TK_STRUCT) {
+                if (parameter != ZR_NULL) {
+                    parameter->genericRequiresStruct = ZR_TRUE;
+                }
+                ZrParser_Lexer_Next(ps->lexer);
+            } else if (ps->lexer->t.token == ZR_TK_NEW) {
+                if (parameter != ZR_NULL) {
+                    parameter->genericRequiresNew = ZR_TRUE;
+                }
+                ZrParser_Lexer_Next(ps->lexer);
+                expect_token(ps, ZR_TK_LPAREN);
+                consume_token(ps, ZR_TK_LPAREN);
+                expect_token(ps, ZR_TK_RPAREN);
+                consume_token(ps, ZR_TK_RPAREN);
+            } else {
+                SZrType *constraintType = parse_type(ps);
+                SZrAstNode *constraintNode;
+
+                if (constraintType == ZR_NULL) {
+                    ZrParser_Ast_Free(ps->state, nameNode);
+                    return ZR_FALSE;
+                }
+
+                constraintNode = create_type_node_from_type_info(ps, constraintType, get_current_location(ps));
+                if (constraintNode == ZR_NULL) {
+                    ZrParser_Ast_Free(ps->state, nameNode);
+                    return ZR_FALSE;
+                }
+
+                if (parameter != ZR_NULL && ensure_generic_constraint_array(ps, parameter)) {
+                    ZrParser_AstNodeArray_Add(ps->state, parameter->genericTypeConstraints, constraintNode);
+                } else {
+                    ZrParser_Ast_Free(ps->state, constraintNode);
+                }
+            }
+
+            if (!consume_token(ps, ZR_TK_COMMA)) {
+                break;
+            }
+        }
+
+        ZrParser_Ast_Free(ps->state, nameNode);
+    }
+
+    return ZR_TRUE;
+}
+
+SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps, TZrBool allowVariance) {
+    SZrAstNodeArray *params;
+    SZrGenericDeclaration *generic;
+
     expect_token(ps, ZR_TK_LESS_THAN);
     ZrParser_Lexer_Next(ps->lexer);
 
-    SZrAstNodeArray *params = ZrParser_AstNodeArray_New(ps->state, 4);
+    params = ZrParser_AstNodeArray_New(ps->state, 4);
     if (params == ZR_NULL) {
         return ZR_NULL;
     }
 
-    // 至少需要一个参数
-    SZrAstNode *first = parse_parameter(ps);
-    if (first != ZR_NULL) {
+    {
+        SZrAstNode *first = parse_generic_parameter(ps, allowVariance);
+        if (first == ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+            return ZR_NULL;
+        }
         ZrParser_AstNodeArray_Add(ps->state, params, first);
     }
 
     while (consume_token(ps, ZR_TK_COMMA)) {
+        SZrAstNode *param;
         if (ps->lexer->t.token == ZR_TK_GREATER_THAN) {
             break;
         }
-        SZrAstNode *param = parse_parameter(ps);
-        if (param != ZR_NULL) {
-            ZrParser_AstNodeArray_Add(ps->state, params, param);
-        } else {
-            break;
+
+        param = parse_generic_parameter(ps, allowVariance);
+        if (param == ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+            return ZR_NULL;
+        }
+        ZrParser_AstNodeArray_Add(ps->state, params, param);
+    }
+
+    if (!consume_type_closing_angle(ps)) {
+        expect_token(ps, ZR_TK_GREATER_THAN);
+        if (!consume_token(ps, ZR_TK_GREATER_THAN)) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+            return ZR_NULL;
         }
     }
 
-    expect_token(ps, ZR_TK_GREATER_THAN);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    SZrGenericDeclaration *generic = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrGenericDeclaration),
-                                                                     ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    generic = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrGenericDeclaration),
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
     if (generic == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, params);
         return ZR_NULL;
@@ -622,12 +902,30 @@ EZrAccessModifier parse_access_modifier(SZrParserState *ps) {
 SZrAstNode *parse_parameter(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNodeArray *decorators = parse_leading_decorators(ps);
+    EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
 
     // 检查是否是可变参数 (...name: type)
     TZrBool isVariadic = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_PARAMS) {
         isVariadic = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        ZrParser_Lexer_Next(ps->lexer);
+        if (ps->lexer->t.token == ZR_TK_IN) {
+            passingMode = ZR_PARAMETER_PASSING_MODE_IN;
+            ZrParser_Lexer_Next(ps->lexer);
+        } else if (ps->lexer->t.token == ZR_TK_OUT) {
+            passingMode = ZR_PARAMETER_PASSING_MODE_OUT;
+            ZrParser_Lexer_Next(ps->lexer);
+        } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "ref")) {
+            passingMode = ZR_PARAMETER_PASSING_MODE_REF;
+            ZrParser_Lexer_Next(ps->lexer);
+        } else {
+            report_error(ps, "Expected 'in', 'out' or 'ref' after '%'");
+            return ZR_NULL;
+        }
     }
 
     // 解析 const 关键字（可选）
@@ -656,6 +954,9 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     SZrAstNode *defaultValue = ZR_NULL;
     if (!isVariadic && consume_token(ps, ZR_TK_EQUALS)) {
         defaultValue = parse_expression(ps);
+        if (passingMode == ZR_PARAMETER_PASSING_MODE_OUT) {
+            report_error(ps, "%out parameter cannot have a default value");
+        }
     }
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_PARAMETER, startLoc);
@@ -671,6 +972,13 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     node->data.parameter.defaultValue = defaultValue;
     node->data.parameter.isConst = isConst;
     node->data.parameter.decorators = decorators;
+    node->data.parameter.passingMode = passingMode;
+    node->data.parameter.genericKind = ZR_GENERIC_PARAMETER_TYPE;
+    node->data.parameter.variance = ZR_GENERIC_VARIANCE_NONE;
+    node->data.parameter.genericTypeConstraints = ZR_NULL;
+    node->data.parameter.genericRequiresClass = ZR_FALSE;
+    node->data.parameter.genericRequiresStruct = ZR_FALSE;
+    node->data.parameter.genericRequiresNew = ZR_FALSE;
     return node;
 }
 

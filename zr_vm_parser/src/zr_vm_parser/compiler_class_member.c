@@ -215,9 +215,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
                     allocate_local_var(cs, paramName);
                     parameterCount++;
 
-                    if (param->isConst) {
-                        ZrCore_Array_Push(cs->state, &cs->constParameters, &paramName);
-                    }
+                    compiler_register_readonly_parameter_name(cs, param, paramName);
 
                     if (cs->typeEnv != ZR_NULL) {
                         SZrInferredType paramType;
@@ -263,6 +261,9 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
 
     if (body != ZR_NULL) {
         ZrParser_Statement_Compile(cs, body);
+        if (!cs->hasError) {
+            compiler_validate_out_parameter_definite_assignment(cs, params, body, node->location);
+        }
     }
 
     if (!cs->hasError) {
@@ -297,6 +298,14 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     }
 
     exit_scope(cs);
+    if (!cs->hasError) {
+        TZrUInt32 typedLocalBindingCount = 0;
+        if (!compiler_build_typed_local_bindings(cs, &cs->currentFunction->typedLocalBindings, &typedLocalBindingCount)) {
+            ZrParser_Compiler_Error(cs, "Failed to build typed local metadata for class member", node->location);
+        } else {
+            cs->currentFunction->typedLocalBindingLength = typedLocalBindingCount;
+        }
+    }
 
     if (cs->hasError) {
         if (cs->currentFunction != ZR_NULL) {

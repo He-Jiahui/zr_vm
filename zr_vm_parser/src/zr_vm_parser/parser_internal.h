@@ -12,11 +12,30 @@
 #include <stdio.h>
 #include <string.h>
 
+typedef struct SZrParserCursor {
+    TZrSize currentPos;
+    TZrInt32 currentChar;
+    TZrInt32 lineNumber;
+    TZrInt32 lastLine;
+    SZrToken token;
+    SZrToken lookahead;
+    TZrSize lookaheadPos;
+    TZrInt32 lookaheadChar;
+    TZrInt32 lookaheadLine;
+    TZrInt32 lookaheadLastLine;
+    TZrBool hasError;
+    const TZrChar *errorMessage;
+} SZrParserCursor;
+
 void expect_token(SZrParserState *ps, EZrToken expected);
 
 TZrBool consume_token(SZrParserState *ps, EZrToken token);
 
 EZrToken peek_token(SZrParserState *ps);
+
+void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor);
+
+void restore_parser_cursor(SZrParserState *ps, const SZrParserCursor *cursor);
 
 TZrBool current_identifier_equals(SZrParserState *ps, const TZrChar *text);
 
@@ -139,6 +158,8 @@ SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps);
 
 SZrAstNode *parse_reserved_import_expression(SZrParserState *ps);
 
+SZrAstNode *parse_reserved_type_expression(SZrParserState *ps);
+
 SZrAstNode *parse_owned_class_declaration(SZrParserState *ps);
 
 SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base);
@@ -175,6 +196,8 @@ SZrAstNode *parse_expression(SZrParserState *ps);
 
 SZrAstNode *parse_generic_type(SZrParserState *ps);
 
+SZrAstNodeArray *parse_generic_argument_list(SZrParserState *ps);
+
 SZrAstNode *parse_tuple_type(SZrParserState *ps);
 
 SZrType *parse_type(SZrParserState *ps);
@@ -183,7 +206,9 @@ SZrType *parse_type_no_generic(SZrParserState *ps);
 
 TZrBool parse_array_size_constraint(SZrParserState *ps, SZrType *type);
 
-SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps);
+SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps, TZrBool allowVariance);
+
+TZrBool parse_optional_where_clauses(SZrParserState *ps, SZrGenericDeclaration *generic);
 
 SZrAstNode *parse_meta_identifier(SZrParserState *ps);
 

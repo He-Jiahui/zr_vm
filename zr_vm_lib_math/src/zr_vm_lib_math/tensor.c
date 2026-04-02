@@ -29,7 +29,9 @@ TZrBool ZrMath_Tensor_Clone(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathTensorStorage storage; SZrObject *tensor;
     if (!ZrMath_TensorGetStorage(context->state, ZrMath_SelfObject(context), &storage)) return ZR_FALSE;
     tensor = ZrMath_TensorMake(context->state, zr_math_tensor_copy_array(context->state, storage.shape), zr_math_tensor_copy_array(context->state, storage.data));
-    if (tensor == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, tensor, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (tensor == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, tensor, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 
 TZrBool ZrMath_Tensor_Reshape(ZrLibCallContext *context, SZrTypeValue *result) {
@@ -37,7 +39,9 @@ TZrBool ZrMath_Tensor_Reshape(ZrLibCallContext *context, SZrTypeValue *result) {
     if (!ZrMath_TensorGetStorage(context->state, ZrMath_SelfObject(context), &storage) || !ZrLib_CallContext_ReadArray(context, 0, &shape)) return ZR_FALSE;
     if (ZrMath_TensorTotalSize(context->state, shape) != storage.size) return ZR_FALSE;
     tensor = ZrMath_TensorMake(context->state, zr_math_tensor_copy_array(context->state, shape), zr_math_tensor_copy_array(context->state, storage.data));
-    if (tensor == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, tensor, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE;
+    if (tensor == ZR_NULL) return ZR_FALSE;
+    ZrLib_Value_SetObject(context->state, result, tensor, ZR_VALUE_TYPE_OBJECT);
+    return ZR_TRUE;
 }
 
 TZrBool ZrMath_Tensor_Fill(ZrLibCallContext *context, SZrTypeValue *result) {

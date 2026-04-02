@@ -1,0 +1,6 @@
+{
+  "name": "lsp_discovery_ambiguous_beta",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

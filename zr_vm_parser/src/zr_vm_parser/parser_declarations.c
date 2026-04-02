@@ -152,6 +152,10 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         }
     }
 
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
     // 解析函数名（不需要function关键字，直接是标识符）
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
@@ -164,7 +168,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     // 解析泛型声明（可选）
     SZrGenericDeclaration *generic = ZR_NULL;
     if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
-        generic = parse_generic_declaration(ps);
+        generic = parse_generic_declaration(ps, ZR_FALSE);
     }
 
     // 解析参数列表
@@ -219,6 +223,14 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     SZrType *returnType = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
+    }
+
+    if (!parse_optional_where_clauses(ps, generic)) {
+        if (params != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+        }
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        return ZR_NULL;
     }
 
     // 解析函数体
