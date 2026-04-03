@@ -26,9 +26,9 @@ void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, con
         return;
     }
     
-    static TZrChar errorMsg[512];
-    static TZrChar expectedTypeStr[128];
-    static TZrChar actualTypeStr[128];
+    static TZrChar errorMsg[ZR_PARSER_TEXT_BUFFER_LENGTH];
+    static TZrChar expectedTypeStr[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    static TZrChar actualTypeStr[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
     
     const TZrChar *expectedName = "unknown";
     const TZrChar *actualName = "unknown";
@@ -429,8 +429,8 @@ static SZrString *build_array_type_name_string(SZrState *state,
                                                const SZrInferredType *elementType,
                                                TZrBool hasFixedSize,
                                                TZrSize fixedSize) {
-    TZrChar elementBuffer[128];
-    TZrChar nameBuffer[160];
+    TZrChar elementBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    TZrChar nameBuffer[ZR_PARSER_DETAIL_BUFFER_LENGTH];
     const TZrChar *elementName;
     TZrInt32 written;
 
@@ -1060,6 +1060,7 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
             } else {
                 ZrParser_InferredType_Free(cs->state, &namedType);
                 ZrParser_InferredType_InitFull(cs->state, &namedType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, typeName);
+                namedType.ownershipQualifier = astType->ownershipQualifier;
                 if (cs->semanticContext != ZR_NULL) {
                     ZrParser_Semantic_RegisterNamedType(cs->semanticContext,
                                                         typeName,
@@ -1137,6 +1138,7 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
             namedType.typeName = canonicalName;
         }
 
+        namedType.ownershipQualifier = astType->ownershipQualifier;
         if (cs->semanticContext != ZR_NULL) {
             ZrParser_Semantic_RegisterNamedType(cs->semanticContext,
                                                 genericType->name->name,
@@ -1284,7 +1286,7 @@ TZrBool ZrParser_LiteralRange_Check(SZrCompilerState *cs, SZrAstNode *literalNod
         get_type_range(targetType->baseType, &minValue, &maxValue);
         
         if (literalValue < minValue || literalValue > maxValue) {
-            static TZrChar errorMsg[256];
+            static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
             snprintf(errorMsg, sizeof(errorMsg),
                     "Integer literal %lld is out of range for type (expected range: %lld to %lld)",
                     (long long)literalValue, (long long)minValue, (long long)maxValue);
@@ -1295,7 +1297,7 @@ TZrBool ZrParser_LiteralRange_Check(SZrCompilerState *cs, SZrAstNode *literalNod
         // 检查用户定义的范围约束
         if (targetType->hasRangeConstraint) {
             if (literalValue < targetType->minValue || literalValue > targetType->maxValue) {
-                static TZrChar errorMsg[256];
+                static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
                 snprintf(errorMsg, sizeof(errorMsg),
                         "Integer literal %lld is out of range constraint (expected range: %lld to %lld)",
                         (long long)literalValue, (long long)targetType->minValue, (long long)targetType->maxValue);
@@ -1337,7 +1339,7 @@ TZrBool ZrParser_ArrayIndexBounds_Check(SZrCompilerState *cs, SZrAstNode *indexE
         TZrInt64 indexValue = indexExpr->data.integerLiteral.value;
         
         if (indexValue < 0) {
-            static TZrChar errorMsg[128];
+            static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
             snprintf(errorMsg, sizeof(errorMsg),
                     "Array index %lld is negative", (long long)indexValue);
             ZrParser_TypeError_Report(cs, errorMsg, arrayType, ZR_NULL, location);
@@ -1347,7 +1349,7 @@ TZrBool ZrParser_ArrayIndexBounds_Check(SZrCompilerState *cs, SZrAstNode *indexE
         // 如果数组有固定大小，检查索引是否越界
         if (arrayType->hasArraySizeConstraint && arrayType->arrayFixedSize > 0) {
             if ((TZrSize)indexValue >= arrayType->arrayFixedSize) {
-                static TZrChar errorMsg[256];
+                static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
                 snprintf(errorMsg, sizeof(errorMsg),
                         "Array index %lld is out of bounds (array size: %zu)",
                         (long long)indexValue, arrayType->arrayFixedSize);

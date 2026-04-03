@@ -1,0 +1,1231 @@
+{
+  "domain": "oop_inheritance_descriptors",
+  "summary": "Reference matrix for class, interface, inheritance, descriptor, and reflection behavior.",
+  "cases": [
+    {
+      "id": "oop-class-inheritance-pass",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "inheritance",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/test_language.js",
+      "upstream_intent": "Basic class inheritance must remain a stable baseline.",
+      "zr_decision": "adopt",
+      "zr_contract": "Derived types inherit base members through explicit prototype or type metadata.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "derived classes access inherited members correctly",
+      "assertions": [
+        "type metadata records the base relationship",
+        "runtime resolves inherited members through the prototype chain",
+        "project fixture observes inherited behavior"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "derived classes access inherited members correctly"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-property-descriptor-pass",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "descriptors",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_property.py",
+      "upstream_intent": "Property descriptors need a positive baseline before negative precedence cases.",
+      "zr_decision": "adopt",
+      "zr_contract": "Property descriptors expose getter and setter behavior through member descriptors.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "property accessors behave through descriptor metadata",
+      "assertions": [
+        "descriptor metadata records getter and setter presence",
+        "runtime invokes the descriptor path",
+        "artifact preserves property member descriptors"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "property accessors behave through descriptor metadata"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-missing-super-member-fail",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "super_calls",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_descr.py",
+      "upstream_intent": "Broken super lookups require deterministic diagnostics.",
+      "zr_decision": "adopt",
+      "zr_contract": "Invalid super-member references fail as descriptor or inheritance diagnostics.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "invalid super access fails deterministically",
+      "assertions": [
+        "diagnostic names the missing inherited member",
+        "runtime never falls back to unrelated prototype names",
+        "artifact omits a bogus bound member"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "invalid super access fails deterministically"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-nonvirtual-binding-fail",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "method_binding",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/jdk/javadoc/doclet/testProperty/TestProperty.java",
+      "upstream_intent": "Incorrect binding of instance and static methods should be caught early.",
+      "zr_decision": "adapt",
+      "zr_contract": "Method binding validates receiver kind and member descriptor kind before execution.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "invalid method binding fails with member-kind diagnostics",
+      "assertions": [
+        "descriptor kind is explicit in metadata",
+        "runtime rejects the wrong receiver kind",
+        "artifact preserves the bound-member form"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "invalid method binding fails with member-kind diagnostics"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-field-layout-boundary",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "field_layout",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/jdk/javadoc/doclet/testProperty/TestProperty.java",
+      "upstream_intent": "Inheritance changes often regress field layout or metadata ordering.",
+      "zr_decision": "adapt",
+      "zr_contract": "Field layout remains stable across inheritance depth and descriptor insertion.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "field offsets and reflection order remain stable",
+      "assertions": [
+        "reflection reports fields in documented order",
+        "runtime field reads respect the stored layout",
+        "artifact keeps the field metadata order"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "field offsets and reflection order remain stable"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "reflection reports fields in documented order",
+            "artifact keeps the field metadata order"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-static-vs-instance-boundary",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "member_binding",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Objects/descrobject.c",
+      "upstream_intent": "Static and instance member boundaries need explicit coverage.",
+      "zr_decision": "adopt",
+      "zr_contract": "Static members and instance members stay distinct descriptor kinds with different receiver requirements.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "static and instance access behave differently and predictably",
+      "assertions": [
+        "descriptor metadata records the static flag",
+        "instance lookup does not fall back to static access",
+        "artifact preserves descriptor kind"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "static and instance access behave differently and predictably"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-descriptor-method-binding-combination",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "descriptors",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_descr.py",
+      "upstream_intent": "Descriptors and method binding interact in subtle ways that need combined coverage.",
+      "zr_decision": "adapt",
+      "zr_contract": "Descriptor binding and method binding compose through one member resolution path.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "descriptor-provided methods bind with the expected receiver",
+      "assertions": [
+        "member resolution records one descriptor path",
+        "runtime receiver binding is explicit",
+        "artifact preserves descriptor and bound-method metadata"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "descriptor-provided methods bind with the expected receiver"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-reflection-constructor-combination",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "reflection",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/quickjs.c",
+      "upstream_intent": "Reflection and construction metadata need a combined roundtrip case.",
+      "zr_decision": "adapt",
+      "zr_contract": "Reflection exposes constructor and inheritance metadata without using type-name heuristics.",
+      "layer_targets": [
+        "semantic/compiler",
+        "artifact",
+        "module/project"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "reflection and construction metadata remain aligned",
+      "assertions": [
+        "reflection exposes constructor signatures",
+        "artifact reload keeps the same metadata",
+        "project fixture observes the same type identity"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "reflection and construction metadata remain aligned"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-super-call-chain-regression",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "super_calls",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_descr.py",
+      "upstream_intent": "Super-call behavior often regresses when method lookup changes.",
+      "zr_decision": "adopt",
+      "zr_contract": "Super calls keep explicit owner and receiver metadata so that overriding remains stable.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "super calls remain stable across descriptor refactors",
+      "assertions": [
+        "compiler records the owner type for super",
+        "runtime dispatches to the intended base method",
+        "project fixture observes expected override behavior"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "super calls remain stable across descriptor refactors"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-property-reflection-regression",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "reflection",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_property.py",
+      "upstream_intent": "Property metadata should remain visible after artifact or reflection refactors.",
+      "zr_decision": "adopt",
+      "zr_contract": "Reflection retains property descriptor metadata across source and binary paths.",
+      "layer_targets": [
+        "artifact",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "reflection preserves property metadata after reload",
+      "assertions": [
+        "artifact records property member kinds",
+        "runtime reflection shows getter and setter metadata",
+        "project fixture sees the same reflected shape"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "reflection preserves property metadata after reload"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-python-dunder-descriptor-name-reject",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "surface_divergence",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Objects/descrobject.c",
+      "upstream_intent": "Python dunder conventions are not the same as ZR member contracts.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR does not use Python special method names as a hidden descriptor protocol in compiler or runtime core.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "dunder names alone do not enable descriptor semantics",
+      "assertions": [
+        "compiler queries descriptor metadata instead of string names",
+        "runtime does not branch on dunder spellings",
+        "artifact preserves explicit descriptor kinds only"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "dunder names alone do not enable descriptor semantics"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "oop-javascript-prototype-write-fallback-reject",
+      "domain": "oop_inheritance_descriptors",
+      "feature_group": "surface_divergence",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/quickjs.c",
+      "upstream_intent": "JavaScript-style prototype write fallback should not leak into ZR field semantics accidentally.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR does not silently route instance field writes through prototype-name fallback rules.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "instance writes do not mutate prototype members through name-based fallback",
+      "assertions": [
+        "runtime write path stays on explicit member descriptors",
+        "prototype mutation requires an explicit target",
+        "project fixture observes separate instance and prototype state"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "descriptor_dispatch",
+        "shape_guard",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "instance writes do not mutate prototype members through name-based fallback"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "descriptor_dispatch",
+            "shape_guard",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    }
+  ]
+}

@@ -171,6 +171,7 @@ SZrObject *native_metadata_make_field_entry(SZrState *state, const ZrLibFieldDes
 
     native_metadata_set_string_field(state, object, "name", descriptor->name);
     native_metadata_set_string_field(state, object, "typeName", descriptor->typeName);
+    native_metadata_set_int_field(state, object, "contractRole", (TZrInt64)descriptor->contractRole);
     return object;
 }
 
@@ -294,6 +295,7 @@ SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodD
     native_metadata_set_int_field(state, object, "minArgumentCount", descriptor->minArgumentCount);
     native_metadata_set_int_field(state, object, "maxArgumentCount", descriptor->maxArgumentCount);
     native_metadata_set_bool_field(state, object, "isStatic", descriptor->isStatic);
+    native_metadata_set_int_field(state, object, "contractRole", (TZrInt64)descriptor->contractRole);
     if (hasParameterMetadata) {
         native_metadata_set_int_field(state, object, "parameterCount", (TZrInt64)descriptor->parameterCount);
         ZrLib_Value_SetObject(state, &parametersValue, parametersArray, ZR_VALUE_TYPE_ARRAY);
@@ -471,6 +473,7 @@ SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescr
     native_metadata_set_string_field(state, object, "enumValueTypeName", descriptor->enumValueTypeName);
     native_metadata_set_bool_field(state, object, "allowValueConstruction", native_descriptor_allows_value_construction(descriptor));
     native_metadata_set_bool_field(state, object, "allowBoxedConstruction", native_descriptor_allows_boxed_construction(descriptor));
+    native_metadata_set_int_field(state, object, "protocolMask", (TZrInt64)descriptor->protocolMask);
     native_metadata_set_string_field(state, object, "constructorSignature", descriptor->constructorSignature);
 
     for (index = 0; index < descriptor->fieldCount; index++) {
@@ -687,6 +690,7 @@ TZrBool native_registry_add_function(SZrState *state,
                                             ZR_LIB_RESOLVED_BINDING_FUNCTION,
                                             moduleDescriptor,
                                             ZR_NULL,
+                                            ZR_NULL,
                                             functionDescriptor,
                                             &value)) {
         return ZR_FALSE;
@@ -729,6 +733,85 @@ TZrBool native_registry_add_module_link(SZrState *state,
     return ZR_TRUE;
 }
 
+static void native_registry_add_protocol_mask(SZrObjectPrototype *prototype, TZrUInt64 protocolMask) {
+    if (prototype == ZR_NULL || protocolMask == 0) {
+        return;
+    }
+
+    for (EZrProtocolId protocolId = (EZrProtocolId)(ZR_PROTOCOL_ID_NONE + 1);
+         protocolId <= ZR_PROTOCOL_ID_ARRAY_LIKE;
+         protocolId = (EZrProtocolId)(protocolId + 1)) {
+        if ((protocolMask & ZR_PROTOCOL_BIT(protocolId)) != 0) {
+            ZrCore_ObjectPrototype_AddProtocol(prototype, protocolId);
+        }
+    }
+}
+
+static void native_registry_add_declared_protocols(SZrObjectPrototype *prototype,
+                                                   const ZrLibTypeDescriptor *typeDescriptor) {
+    if (prototype == ZR_NULL || typeDescriptor == ZR_NULL) {
+        return;
+    }
+    native_registry_add_protocol_mask(prototype, typeDescriptor->protocolMask);
+}
+
+static void native_registry_add_field_descriptors(SZrState *state,
+                                                  SZrObjectPrototype *prototype,
+                                                  const ZrLibTypeDescriptor *typeDescriptor) {
+    TZrSize index;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || typeDescriptor == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < typeDescriptor->fieldCount; index++) {
+        const ZrLibFieldDescriptor *fieldDescriptor = &typeDescriptor->fields[index];
+        SZrString *fieldName;
+        SZrMemberDescriptor descriptor;
+
+        if (fieldDescriptor->name == ZR_NULL) {
+            continue;
+        }
+
+        fieldName = native_binding_create_string(state, fieldDescriptor->name);
+        if (fieldName == ZR_NULL) {
+            continue;
+        }
+
+        ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
+        descriptor.name = fieldName;
+        descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_FIELD;
+        descriptor.isWritable = ZR_TRUE;
+        ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
+
+        if (fieldDescriptor->contractRole == ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD) {
+            prototype->iteratorContract.currentMemberName = fieldName;
+        }
+    }
+}
+
+static void native_registry_bind_standard_method_contract(SZrObjectPrototype *prototype,
+                                                          const ZrLibMethodDescriptor *methodDescriptor,
+                                                          SZrFunction *function) {
+    if (prototype == ZR_NULL || methodDescriptor == ZR_NULL || methodDescriptor->name == ZR_NULL || function == ZR_NULL) {
+        return;
+    }
+
+    switch ((EZrMemberContractRole)methodDescriptor->contractRole) {
+        case ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT:
+            prototype->iterableContract.iterInitFunction = function;
+            break;
+        case ZR_MEMBER_CONTRACT_ROLE_ITERATOR_MOVE_NEXT:
+            prototype->iteratorContract.moveNextFunction = function;
+            break;
+        case ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_METHOD:
+            prototype->iteratorContract.currentFunction = function;
+            break;
+        default:
+            break;
+    }
+}
+
 TZrBool native_registry_add_methods(SZrState *state,
                                            ZrLibrary_NativeRegistryState *registry,
                                            const ZrLibModuleDescriptor *moduleDescriptor,
@@ -756,6 +839,7 @@ TZrBool native_registry_add_methods(SZrState *state,
                                                 ZR_LIB_RESOLVED_BINDING_METHOD,
                                                 moduleDescriptor,
                                                 typeDescriptor,
+                                                prototype,
                                                 methodDescriptor,
                                                 &methodValue)) {
             return ZR_FALSE;
@@ -765,6 +849,21 @@ TZrBool native_registry_add_methods(SZrState *state,
         if (methodName == ZR_NULL) {
             return ZR_FALSE;
         }
+
+        {
+            SZrMemberDescriptor descriptor;
+            ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
+            descriptor.name = methodName;
+            descriptor.kind = methodDescriptor->isStatic ? ZR_MEMBER_DESCRIPTOR_KIND_STATIC_MEMBER
+                                                         : ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
+            descriptor.isStatic = methodDescriptor->isStatic;
+            descriptor.isWritable = ZR_FALSE;
+            ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
+        }
+
+        native_registry_bind_standard_method_contract(prototype,
+                                                      methodDescriptor,
+                                                      ZR_CAST(SZrFunction *, methodValue.value.object));
 
         ZrCore_Value_InitAsRawObject(state, &methodKey, ZR_CAST_RAW_OBJECT_AS_SUPER(methodName));
         methodKey.type = ZR_VALUE_TYPE_STRING;
@@ -786,6 +885,7 @@ TZrBool native_registry_add_methods(SZrState *state,
                                                 ZR_LIB_RESOLVED_BINDING_META_METHOD,
                                                 moduleDescriptor,
                                                 typeDescriptor,
+                                                prototype,
                                                 metaDescriptor,
                                                 &metaValue)) {
             return ZR_FALSE;
@@ -795,6 +895,12 @@ TZrBool native_registry_add_methods(SZrState *state,
                                        prototype,
                                        metaDescriptor->metaType,
                                        (SZrFunction *)metaValue.value.object);
+
+        if (metaDescriptor->metaType == ZR_META_GET_ITEM) {
+            prototype->indexContract.getByIndexFunction = (SZrFunction *)metaValue.value.object;
+        } else if (metaDescriptor->metaType == ZR_META_SET_ITEM) {
+            prototype->indexContract.setByIndexFunction = (SZrFunction *)metaValue.value.object;
+        }
 
         if (metaDescriptor->metaType == ZR_META_CONSTRUCTOR) {
             constructorName = native_binding_create_string(state, "__constructor");
@@ -1009,6 +1115,8 @@ TZrBool native_registry_add_type(SZrState *state,
     }
 
     native_registry_attach_type_runtime_metadata(state, typeDescriptor, prototype);
+    native_registry_add_declared_protocols(prototype, typeDescriptor);
+    native_registry_add_field_descriptors(state, prototype, typeDescriptor);
     ZrCore_Reflection_AttachPrototypeRuntimeMetadata(state, prototype, module, ZR_NULL);
 
     if (!native_registry_add_methods(state, registry, moduleDescriptor, typeDescriptor, prototype)) {

@@ -1,0 +1,5 @@
+%module "reference.expressions.missing_conditional_branch";
+
+%test("missing_conditional_branch") {
+    return true ? 10 : ;
+}

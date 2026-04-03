@@ -587,7 +587,7 @@ const char* wasm_ZrLspGetDiagnostics(void* context, const char* uri, int uriLen)
     }
     
     SZrArray diagnostics;
-    ZrCore_Array_Init(g_wasm_state, &diagnostics, sizeof(SZrLspDiagnostic*), 8);
+    ZrCore_Array_Init(g_wasm_state, &diagnostics, sizeof(SZrLspDiagnostic*), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     
     TZrBool result = ZrLanguageServer_Lsp_GetDiagnostics(g_wasm_state, (SZrLspContext*)context, uriStr, &diagnostics);
     
@@ -630,7 +630,7 @@ const char* wasm_ZrLspGetCompletion(void* context, const char* uri, int uriLen,
     position.character = character;
     
     SZrArray completions;
-    ZrCore_Array_Init(g_wasm_state, &completions, sizeof(SZrLspCompletionItem*), 8);
+    ZrCore_Array_Init(g_wasm_state, &completions, sizeof(SZrLspCompletionItem*), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     
     TZrBool result = ZrLanguageServer_Lsp_GetCompletion(g_wasm_state, (SZrLspContext*)context, 
                                       uriStr, position, &completions);
@@ -754,7 +754,7 @@ const char* wasm_ZrLspFindReferences(void* context, const char* uri, int uriLen,
     position.character = character;
     
     SZrArray locations;
-    ZrCore_Array_Init(g_wasm_state, &locations, sizeof(SZrLspLocation*), 8);
+    ZrCore_Array_Init(g_wasm_state, &locations, sizeof(SZrLspLocation*), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     
     TZrBool result = ZrLanguageServer_Lsp_FindReferences(g_wasm_state, (SZrLspContext*)context, 
                                       uriStr, position, includeDeclaration != 0, &locations);
@@ -800,7 +800,7 @@ const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
     position.character = character;
     
     SZrArray locations;
-    ZrCore_Array_Init(g_wasm_state, &locations, sizeof(SZrLspLocation*), 8);
+    ZrCore_Array_Init(g_wasm_state, &locations, sizeof(SZrLspLocation*), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     
     TZrBool result = ZrLanguageServer_Lsp_Rename(g_wasm_state, (SZrLspContext*)context, 
                               uriStr, position, newNameStr, &locations);
@@ -839,7 +839,7 @@ const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uri
     }
 
     SZrArray symbols;
-    ZrCore_Array_Init(g_wasm_state, &symbols, sizeof(SZrLspSymbolInformation*), 8);
+    ZrCore_Array_Init(g_wasm_state, &symbols, sizeof(SZrLspSymbolInformation*), ZR_LSP_ARRAY_INITIAL_CAPACITY);
 
     if (ZrLanguageServer_Lsp_GetDocumentSymbols(g_wasm_state, (SZrLspContext*)context, uriStr, &symbols)) {
         cJSON *data = serialize_symbol_array(g_wasm_state, &symbols);
@@ -874,7 +874,7 @@ const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int 
     }
 
     SZrArray symbols;
-    ZrCore_Array_Init(g_wasm_state, &symbols, sizeof(SZrLspSymbolInformation*), 8);
+    ZrCore_Array_Init(g_wasm_state, &symbols, sizeof(SZrLspSymbolInformation*), ZR_LSP_ARRAY_INITIAL_CAPACITY);
 
     if (ZrLanguageServer_Lsp_GetWorkspaceSymbols(g_wasm_state, (SZrLspContext*)context, queryStr, &symbols)) {
         cJSON *data = serialize_symbol_array(g_wasm_state, &symbols);
@@ -914,7 +914,7 @@ const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int 
     position.character = character;
 
     SZrArray highlights;
-    ZrCore_Array_Init(g_wasm_state, &highlights, sizeof(SZrLspDocumentHighlight*), 8);
+    ZrCore_Array_Init(g_wasm_state, &highlights, sizeof(SZrLspDocumentHighlight*), ZR_LSP_ARRAY_INITIAL_CAPACITY);
 
     if (ZrLanguageServer_Lsp_GetDocumentHighlights(
             g_wasm_state,
@@ -954,7 +954,7 @@ const char* wasm_ZrLspGetSemanticTokens(void* context, const char* uri, int uriL
     }
 
     SZrArray tokens;
-    ZrCore_Array_Init(g_wasm_state, &tokens, sizeof(TZrUInt32), 32);
+    ZrCore_Array_Init(g_wasm_state, &tokens, sizeof(TZrUInt32), ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
 
     if (ZrLanguageServer_Lsp_GetSemanticTokens(g_wasm_state, (SZrLspContext*)context, uriStr, &tokens)) {
         cJSON *data = serialize_semantic_tokens(&tokens);

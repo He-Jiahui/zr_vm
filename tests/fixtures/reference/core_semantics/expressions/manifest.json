@@ -1,0 +1,54 @@
+{
+  "feature_group": "expressions",
+  "phase_note": "Phase 1 inventories expression precedents and reserves deeper operator, closure, and interpolation stress tests for follow-up slices.",
+  "cases": [
+    {
+      "id": "expressions-lua-calls-evaluation-order",
+      "upstream_language": "lua",
+      "upstream_path": "lua/testes/calls.lua",
+      "upstream_focus": "Function-call expressions exercise argument evaluation shape, arity behavior, and nested expression execution.",
+      "zr_decision": "ZR expression tests should expand from simple arithmetic into nested call expressions with observable ordering and arity-sensitive behavior.",
+      "expected_outcome": "future-expression-fixtures-cover-call-ordering"
+    },
+    {
+      "id": "expressions-lua-closure-capture",
+      "upstream_language": "lua",
+      "upstream_path": "lua/testes/closure.lua",
+      "upstream_focus": "Closures validate expression capture, nested scope lookup, and delayed execution semantics.",
+      "zr_decision": "ZR expression coverage must include nested closures and captured locals, not only top-level immediate expressions.",
+      "expected_outcome": "future-expression-fixtures-cover-closure-capture"
+    },
+    {
+      "id": "expressions-quickjs-language-operators",
+      "upstream_language": "quickjs",
+      "upstream_path": "lua/QuickJS-master/tests/test_language.js",
+      "upstream_focus": "Operator precedence, conditional evaluation, and member-access expressions need an executable regression baseline.",
+      "zr_decision": "ZR should validate precedence and member-chain evaluation using runnable fixtures instead of parser-only samples.",
+      "expected_outcome": "expression-runtime-baselines-planned"
+    },
+    {
+      "id": "expressions-cpython-grammar-comprehension",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_grammar.py",
+      "upstream_focus": "Grammar-level expression coverage needs breadth across nesting forms and boundary syntax, not just one or two happy paths.",
+      "zr_decision": "ZR expression manifests will drive broader parser fixtures for nesting, precedence, and mixed expression forms.",
+      "expected_outcome": "grammar-breadth-captured-in-matrix"
+    },
+    {
+      "id": "expressions-cpython-fstring-embedded-boundaries",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_fstring.py",
+      "upstream_focus": "Embedded expression regions stress parse boundaries where literal and expression grammars interleave.",
+      "zr_decision": "ZR will keep interpolation-like or embedded-expression work separate from plain string parsing but inside the same expression inventory.",
+      "expected_outcome": "embedded-expression-boundaries-planned"
+    },
+    {
+      "id": "expressions-rust-format-parse-boundaries",
+      "upstream_language": "rust",
+      "upstream_path": "lua/rust/tests/ui/macros/format-parse-errors.rs",
+      "upstream_focus": "Expression parsing at macro-like boundaries needs explicit negative tests for bad argument forms and recovery.",
+      "zr_decision": "ZR should add future negative expression fixtures that assert clean failure when expression lists and named arguments are malformed.",
+      "expected_outcome": "negative-expression-boundary-fixtures-planned"
+    }
+  ]
+}

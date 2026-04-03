@@ -1,0 +1,6 @@
+%module "reference.construct.prototype_misuse";
+
+%test("prototype_misuse") {
+    var bad = $(int)(1);
+    return bad;
+}

@@ -21,6 +21,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_common/zr_meta_conf.h"
+#include "zr_vm_common/zr_runtime_limits_conf.h"
 #include "zr_vm_common/zr_string_conf.h"
 #include "xxHash/xxhash.h"
 
@@ -31,6 +32,7 @@ typedef struct {
     SZrString *typeName;
     EZrObjectPrototypeType prototypeType;
     EZrAccessModifier accessModifier;
+    TZrUInt64 protocolMask;
     SZrArray inheritTypeNames;
     const SZrCompiledMemberInfo *members;
     TZrUInt32 membersCount;

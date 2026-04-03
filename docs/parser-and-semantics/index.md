@@ -35,6 +35,25 @@ doc_type: category-index
   - `%extern("lib") decl` 与 `%extern("lib") { decls }` 源级 FFI 语法
   - extern function / struct / enum / delegate 的 declaration metadata 和 lowering 规则
   - `compileTimeTypeEnv` 与真正 compile-time callable 的边界
+- `dynamic-iteration-semir-execbc-aot.md`
+  - dynamic foreach 在 `SemIR -> ExecBC -> AOT` 三层中的职责边界
+  - `DYN_ITER_INIT` / `DYN_ITER_MOVE_NEXT` 的稳定 runtime contract
+  - `SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE` 的 quickening 约束
+- `dynamic-meta-tail-call-semir-execbc-aot.md`
+  - `META_CALL`、`DYN_TAIL_CALL`、`META_TAIL_CALL` 的稳定语义边界
+  - tail-call site 上 dynamic/meta dispatch 不再退化成普通 `FUNCTION_TAIL_CALL`
+  - 安全条件下的真实 `callInfo` frame reuse 与异常 / `%using` 回退边界
+  - AOT backend 继续只依赖共享的 `FUNCTION_PRECALL` runtime contract
+- `call-site-quickening-meta-access-semir-aot.md`
+  - 零参数 call-site superinstruction、cached `META_CALL/DYN_CALL`、以及 cached tail-call 的 ExecBC quickening 边界
+  - property getter/setter 现在直接落成 ExecBC `META_GET` / `META_SET`，并保持同名 `SemIR` / AOT 契约
+  - meta access 与 cached dynamic/meta call site 现在都带显式 `CALLSITE_CACHE_TABLE`，并使用固定 2-slot PIC
+  - child function 的 `.zri`/AOT metadata 会递归输出，constant function/closure 会重绑到 quickened child function tree
+  - quickened ExecBC 与稳定语义层继续解耦
+- `ownership-upgrade-release-semir-aot.md`
+  - `%upgrade` / `%release` 的 parser、ExecBC、SemIR、AOT 契约
+  - weak 升级与显式 owner release 的生命周期边界
+  - 当前 local-binding only 的 `%release` 约束
 - `field-scoped-using.md`
   - `class`/`struct` 字段级 `using var` 语法
   - `static using` 非法诊断
@@ -43,5 +62,9 @@ doc_type: category-index
 ## 阅读顺序
 
 1. 先看 `ffi-extern-declarations.md`，了解 `%extern` 语法、descriptor schema 和 `zr.ffi` lowering 路径。
-2. 再看 `field-scoped-using.md`，了解字段生命周期语义。
-3. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+2. 再看 `dynamic-iteration-semir-execbc-aot.md`，了解动态迭代在 SemIR、ExecBC quickening 与 AOT 契约之间的边界。
+3. 然后看 `dynamic-meta-tail-call-semir-execbc-aot.md`，了解 dynamic/meta 调用在 tail-site 上的稳定语义契约。
+4. 再看 `call-site-quickening-meta-access-semir-aot.md`，了解 zero-arg/cached call-site quickening、meta access PIC、以及 child artifact 对齐规则。
+5. 再看 `ownership-upgrade-release-semir-aot.md`，了解 weak upgrade 和显式 owner release 的稳定语义边界。
+6. 最后看 `field-scoped-using.md`，了解字段生命周期语义。
+7. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

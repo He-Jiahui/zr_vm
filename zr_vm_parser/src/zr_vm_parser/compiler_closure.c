@@ -346,7 +346,7 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
     
     // 1. 收集所有标识符引用
     SZrArray identifierNames;
-    ZrCore_Array_Init(cs->state, &identifierNames, sizeof(SZrString *), 16);
+    ZrCore_Array_Init(cs->state, &identifierNames, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
     collect_identifiers_from_node(cs, node, &identifierNames);
     
     // 2. 检查每个标识符是否是外部变量

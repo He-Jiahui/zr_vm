@@ -8,7 +8,7 @@
 #include "zr_vm_library/conf.h"
 
 
-#define ZR_LIBRARY_BINARY_FILE_EXT ".zro"
+#define ZR_LIBRARY_BINARY_FILE_EXT ZR_VM_BINARY_MODULE_FILE_EXTENSION
 
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrString *file;

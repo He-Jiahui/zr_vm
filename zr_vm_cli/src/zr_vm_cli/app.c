@@ -4,12 +4,13 @@
 #include "zr_vm_cli/compiler.h"
 #include "zr_vm_cli/repl.h"
 #include "zr_vm_cli/runtime.h"
+#include "zr_vm_cli/conf.h"
 
 #include <stdio.h>
 
 int ZrCli_App_Run(int argc, char **argv) {
     SZrCliCommand command;
-    TZrChar error[512];
+    TZrChar error[ZR_CLI_ERROR_BUFFER_LENGTH];
 
     if (!ZrCli_Command_Parse(argc, argv, &command, error, sizeof(error))) {
         fprintf(stderr, "%s\n", error);

@@ -145,6 +145,14 @@ TZrBool ZrTests_Path_GetProjectFile(const TZrChar *projectName,
                                 relativePath);
 }
 
+TZrBool ZrTests_Path_GetRepoDoc(const TZrChar *relativePath, TZrChar *outPath, TZrSize maxLen) {
+    if (relativePath == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return zr_tests_format_path(outPath, maxLen, "%s/../docs/%s", ZR_VM_TESTS_SOURCE_DIR, relativePath);
+}
+
 TZrBool ZrTests_Path_GetGoldenArtifact(const TZrChar *subDir,
                                        const TZrChar *baseName,
                                        const TZrChar *extension,

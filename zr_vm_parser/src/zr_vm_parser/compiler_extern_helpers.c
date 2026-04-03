@@ -5,7 +5,7 @@
 #include "compiler_internal.h"
 
 SZrString *create_hidden_extern_local_name(SZrCompilerState *cs, const TZrChar *prefix) {
-    TZrChar buffer[96];
+    TZrChar buffer[ZR_PARSER_GENERATED_NAME_BUFFER_LENGTH];
     int length;
 
     if (cs == ZR_NULL || cs->state == ZR_NULL || prefix == ZR_NULL) {

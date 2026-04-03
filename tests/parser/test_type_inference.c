@@ -162,7 +162,7 @@ static const TZrChar *kProbeDeviceImplements[] = {
 };
 
 static const ZrLibFieldDescriptor kProbeDeviceFields[] = {
-        {"mode", "NativeMode", "The current device mode."},
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("mode", "NativeMode", "The current device mode."),
 };
 
 static const ZrLibEnumMemberDescriptor kProbeModeMembers[] = {
@@ -171,7 +171,7 @@ static const ZrLibEnumMemberDescriptor kProbeModeMembers[] = {
 };
 
 static const ZrLibFieldDescriptor kProbeBoxFields[] = {
-        {"value", "T", "The boxed value."},
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("value", "T", "The boxed value."),
 };
 
 static const ZrLibMethodDescriptor kProbeBoxMethods[] = {
@@ -391,10 +391,22 @@ static SZrCompilerState *create_test_compiler_state(SZrState *state) {
     return cs;
 }
 
+void enter_scope(SZrCompilerState *cs);
+
 // 销毁测试用的编译器状态
 static void destroy_test_compiler_state(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
         return;
+    }
+
+    if (cs->topLevelFunction != ZR_NULL && cs->topLevelFunction != cs->currentFunction) {
+        ZrCore_Function_Free(cs->state, cs->topLevelFunction);
+        cs->topLevelFunction = ZR_NULL;
+    }
+
+    if (cs->currentFunction != ZR_NULL) {
+        ZrCore_Function_Free(cs->state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
     }
 
     ZrParser_CompilerState_Free(cs);
@@ -404,6 +416,16 @@ static void destroy_test_compiler_state(SZrCompilerState *cs) {
 static void compile_test_top_level_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TEST_ASSERT_NOT_NULL(cs);
     TEST_ASSERT_NOT_NULL(node);
+
+    if (cs->currentFunction == ZR_NULL) {
+        cs->currentFunction = ZrCore_Function_New(cs->state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+    }
+
+    cs->isScriptLevel = ZR_TRUE;
+    if (cs->scopeStack.length == 0) {
+        enter_scope(cs);
+    }
 
     switch (node->type) {
         case ZR_AST_INTERFACE_DECLARATION:

@@ -4,6 +4,7 @@
 
 #include "module_internal.h"
 #include "zr_vm_core/reflection.h"
+#include <string.h>
 
 static void register_prototype_in_global_scope(SZrState *state,
                                                SZrString *typeName,
@@ -115,6 +116,74 @@ static SZrFunction *get_function_from_constant(SZrState *state, const SZrTypeVal
     }
 
     return ZR_CAST_FUNCTION(state, rawObject);
+}
+
+static void module_prototype_apply_protocol_mask(SZrObjectPrototype *prototype, TZrUInt64 protocolMask) {
+    if (prototype == ZR_NULL || protocolMask == 0) {
+        return;
+    }
+
+    for (EZrProtocolId protocolId = (EZrProtocolId)(ZR_PROTOCOL_ID_NONE + 1);
+         protocolId <= ZR_PROTOCOL_ID_ARRAY_LIKE;
+         protocolId = (EZrProtocolId)(protocolId + 1)) {
+        if ((protocolMask & ZR_PROTOCOL_BIT(protocolId)) != 0) {
+            ZrCore_ObjectPrototype_AddProtocol(prototype, protocolId);
+        }
+    }
+}
+
+static void module_prototype_add_runtime_descriptor(SZrState *state,
+                                                    SZrObjectPrototype *prototype,
+                                                    SZrString *memberName,
+                                                    const SZrCompiledMemberInfo *member,
+                                                    SZrFunction *function) {
+    SZrMemberDescriptor descriptor;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL || member == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
+    descriptor.name = memberName;
+    descriptor.isStatic = member->isStatic ? ZR_TRUE : ZR_FALSE;
+    descriptor.isWritable = member->isConst ? ZR_FALSE : ZR_TRUE;
+    descriptor.contractRole = member->contractRole;
+
+    switch (member->memberType) {
+        case ZR_AST_CONSTANT_STRUCT_FIELD:
+        case ZR_AST_CONSTANT_CLASS_FIELD:
+            descriptor.kind = descriptor.isStatic ? ZR_MEMBER_DESCRIPTOR_KIND_STATIC_MEMBER
+                                                  : ZR_MEMBER_DESCRIPTOR_KIND_FIELD;
+            break;
+        case ZR_AST_CONSTANT_STRUCT_METHOD:
+        case ZR_AST_CONSTANT_CLASS_METHOD:
+            descriptor.kind = descriptor.isStatic ? ZR_MEMBER_DESCRIPTOR_KIND_STATIC_MEMBER
+                                                  : ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
+            break;
+        default:
+            return;
+    }
+
+    ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
+
+    if (function != ZR_NULL && !descriptor.isStatic) {
+        switch ((EZrMemberContractRole)member->contractRole) {
+            case ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT:
+                prototype->iterableContract.iterInitFunction = function;
+                break;
+            case ZR_MEMBER_CONTRACT_ROLE_ITERATOR_MOVE_NEXT:
+                prototype->iteratorContract.moveNextFunction = function;
+                break;
+            case ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_METHOD:
+                prototype->iteratorContract.currentFunction = function;
+                break;
+            default:
+                break;
+        }
+    } else if (!descriptor.isStatic &&
+               member->contractRole == ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD) {
+        prototype->iteratorContract.currentMemberName = memberName;
+    }
 }
 
 static SZrObjectPrototype *find_prototype_by_name(SZrState *state,
@@ -351,6 +420,7 @@ static TZrBool parse_compiled_prototype_info(SZrState *state,
 
     protoInfo->prototypeType = (EZrObjectPrototypeType)type;
     protoInfo->accessModifier = (EZrAccessModifier)accessModifier;
+    protoInfo->protocolMask = protoInfoHeader->protocolMask;
     protoInfo->prototype = ZR_NULL;
     protoInfo->membersCount = membersCount;
     protoInfo->needsPostCreateSetup = ZR_FALSE;
@@ -440,7 +510,11 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                 protoInfoData.typeName = ZR_NULL;
                 protoInfoData.prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
                 protoInfoData.accessModifier = ZR_ACCESS_CONSTANT_PRIVATE;
-                ZrCore_Array_Init(state, &protoInfoData.inheritTypeNames, sizeof(SZrString *), 4);
+                protoInfoData.protocolMask = 0;
+                ZrCore_Array_Init(state,
+                                  &protoInfoData.inheritTypeNames,
+                                  sizeof(SZrString *),
+                                  ZR_RUNTIME_PROTOTYPE_INHERIT_INITIAL_CAPACITY);
                 protoInfoData.members = ZR_NULL;
                 protoInfoData.membersCount = 0;
 
@@ -526,6 +600,8 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
             }
         }
 
+        module_prototype_apply_protocol_mask(protoInfo->prototype, protoInfo->protocolMask);
+
         if (protoInfo->members != ZR_NULL && entryFunction->constantValueList != ZR_NULL) {
             for (TZrUInt32 memberIndex = 0; memberIndex < protoInfo->membersCount; memberIndex++) {
                 const SZrCompiledMemberInfo *member = &protoInfo->members[memberIndex];
@@ -547,6 +623,11 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
 
                         if (member->memberType == ZR_AST_CONSTANT_STRUCT_FIELD ||
                             member->memberType == ZR_AST_CONSTANT_CLASS_FIELD) {
+                            module_prototype_add_runtime_descriptor(state,
+                                                                    protoInfo->prototype,
+                                                                    memberName,
+                                                                    member,
+                                                                    ZR_NULL);
                             if (protoInfo->prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
                                 member->memberType == ZR_AST_CONSTANT_STRUCT_FIELD) {
                                 ZrCore_StructPrototype_AddField(state,
@@ -584,6 +665,11 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                             if (member->isMetaMethod) {
                                 ZrCore_ObjectPrototype_AddMeta(
                                         state, protoInfo->prototype, (EZrMetaType)member->metaType, function);
+                                if (member->metaType == ZR_META_GET_ITEM) {
+                                    protoInfo->prototype->indexContract.getByIndexFunction = function;
+                                } else if (member->metaType == ZR_META_SET_ITEM) {
+                                    protoInfo->prototype->indexContract.setByIndexFunction = function;
+                                }
                                 if (member->metaType == ZR_META_CONSTRUCTOR) {
                                     SZrString *constructorName =
                                             ZrCore_String_CreateFromNative(state, "__constructor");
@@ -602,6 +688,12 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                                 }
                                 continue;
                             }
+
+                            module_prototype_add_runtime_descriptor(state,
+                                                                    protoInfo->prototype,
+                                                                    memberName,
+                                                                    member,
+                                                                    function);
 
                             {
                                 SZrTypeValue methodValue;

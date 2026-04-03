@@ -9,6 +9,8 @@
 // 列表扩容的百分比 不得小于100
 #define ZR_ARRAY_INCREASEMENT_MULTIPLIER_PERCENT 200
 
+#define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
+
 // 数组结构体
 // 注意：SZrArray 并非是 SZrObject，它们是两个独立的类型
 // - SZrArray 是一个独立的 C 结构体，用于存储动态数组数据

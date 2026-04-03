@@ -6,23 +6,23 @@ static void semantic_context_init_arrays(SZrSemanticContext *context) {
     ZrCore_Array_Init(context->state,
                 &context->types,
                 sizeof(SZrSemanticTypeRecord),
-                8);
+                ZR_PARSER_INITIAL_CAPACITY_SMALL);
     ZrCore_Array_Init(context->state,
                 &context->symbols,
                 sizeof(SZrSemanticSymbolRecord),
-                8);
+                ZR_PARSER_INITIAL_CAPACITY_SMALL);
     ZrCore_Array_Init(context->state,
                 &context->overloadSets,
                 sizeof(SZrSemanticOverloadSetRecord),
-                4);
+                ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(context->state,
                 &context->cleanupPlan,
                 sizeof(SZrDeterministicCleanupStep),
-                8);
+                ZR_PARSER_INITIAL_CAPACITY_SMALL);
     ZrCore_Array_Init(context->state,
                 &context->templateSegments,
                 sizeof(SZrTemplateSegment),
-                8);
+                ZR_PARSER_INITIAL_CAPACITY_SMALL);
 }
 
 SZrSemanticContext *ZrParser_SemanticContext_New(SZrState *state) {
@@ -279,7 +279,7 @@ TZrOverloadSetId ZrParser_Semantic_GetOrCreateOverloadSet(SZrSemanticContext *co
 
     record.id = ZrParser_Semantic_ReserveOverloadSetId(context);
     record.name = name;
-    ZrCore_Array_Init(context->state, &record.members, sizeof(TZrSymbolId), 4);
+    ZrCore_Array_Init(context->state, &record.members, sizeof(TZrSymbolId), ZR_PARSER_INITIAL_CAPACITY_TINY);
 
     ZrCore_Array_Push(context->state, &context->overloadSets, &record);
     return record.id;

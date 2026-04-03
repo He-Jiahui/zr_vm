@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "zr_vm_cli/conf.h"
 #include "zr_vm_cli/project.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
@@ -19,7 +20,7 @@ typedef struct SZrCliModuleRecord {
     TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar zroPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar zriPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar sourceHash[32];
+    TZrChar sourceHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
     SZrCliStringList imports;
     TZrBool dirty;
 } SZrCliModuleRecord;
@@ -98,7 +99,8 @@ static SZrCliModuleRecord *zr_cli_append_module(SZrCliModuleCollection *collecti
     }
 
     if (collection->count == collection->capacity) {
-        newCapacity = collection->capacity == 0 ? 8 : collection->capacity * 2;
+        newCapacity = collection->capacity == 0 ? ZR_CLI_COLLECTION_INITIAL_CAPACITY
+                                                : collection->capacity * ZR_CLI_COLLECTION_GROWTH_FACTOR;
         newRecords = (SZrCliModuleRecord *) realloc(collection->records, newCapacity * sizeof(*newRecords));
         if (newRecords == ZR_NULL) {
             return ZR_NULL;
@@ -121,7 +123,8 @@ static TZrBool zr_cli_manifest_append_entry(SZrCliIncrementalManifest *manifest,
     }
 
     if (manifest->count == manifest->capacity) {
-        newCapacity = manifest->capacity == 0 ? 8 : manifest->capacity * 2;
+        newCapacity = manifest->capacity == 0 ? ZR_CLI_COLLECTION_INITIAL_CAPACITY
+                                              : manifest->capacity * ZR_CLI_COLLECTION_GROWTH_FACTOR;
         newEntries = (SZrCliManifestEntry *) realloc(manifest->entries, newCapacity * sizeof(*newEntries));
         if (newEntries == ZR_NULL) {
             return ZR_FALSE;
@@ -578,7 +581,7 @@ int ZrCli_Compiler_CompileProject(const SZrCliCommand *command) {
     SZrCliIncrementalManifest previousManifest;
     SZrCliIncrementalManifest nextManifest;
     SZrCliCompileSummary summary = {0};
-    TZrChar error[512];
+    TZrChar error[ZR_CLI_ERROR_BUFFER_LENGTH];
     TZrBool success = ZR_TRUE;
 
     if (command == ZR_NULL || command->projectPath == ZR_NULL) {

@@ -26,9 +26,18 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     ZrCore_Array_Construct(&registry->moduleRecords);
     ZrCore_Array_Construct(&registry->bindingEntries);
     ZrCore_Array_Construct(&registry->pluginHandles);
-    ZrCore_Array_Init(state, &registry->moduleRecords, sizeof(ZrLibRegisteredModuleRecord), 8);
-    ZrCore_Array_Init(state, &registry->bindingEntries, sizeof(ZrLibBindingEntry), 64);
-    ZrCore_Array_Init(state, &registry->pluginHandles, sizeof(void *), 4);
+    ZrCore_Array_Init(state,
+                      &registry->moduleRecords,
+                      sizeof(ZrLibRegisteredModuleRecord),
+                      ZR_LIBRARY_NATIVE_MODULE_RECORDS_INITIAL_CAPACITY);
+    ZrCore_Array_Init(state,
+                      &registry->bindingEntries,
+                      sizeof(ZrLibBindingEntry),
+                      ZR_LIBRARY_NATIVE_BINDING_ENTRIES_INITIAL_CAPACITY);
+    ZrCore_Array_Init(state,
+                      &registry->pluginHandles,
+                      sizeof(void *),
+                      ZR_LIBRARY_NATIVE_PLUGIN_HANDLES_INITIAL_CAPACITY);
     native_registry_clear_error(registry);
 
     ZrCore_GlobalState_SetNativeModuleLoader(global, native_registry_loader, registry);

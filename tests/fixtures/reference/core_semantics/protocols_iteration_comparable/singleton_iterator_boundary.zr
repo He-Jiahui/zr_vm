@@ -1,0 +1,12 @@
+var items: int[1] = [9];
+var score = 0;
+
+for (var item in items) {
+    score = score + item;
+}
+
+for (var item in items) {
+    score = score + item * 10;
+}
+
+return score;

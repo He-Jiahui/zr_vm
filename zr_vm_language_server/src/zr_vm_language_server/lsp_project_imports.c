@@ -1027,7 +1027,7 @@ static TZrBool append_lsp_location(SZrState *state, SZrArray *result, SZrString 
     }
 
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 4);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
 
     location = (SZrLspLocation *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspLocation));

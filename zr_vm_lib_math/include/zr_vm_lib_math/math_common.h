@@ -16,13 +16,6 @@
 #include <stdarg.h>
 #include <string.h>
 
-#if !defined(M_PI)
-#define M_PI 3.14159265358979323846
-#endif
-
-#define ZR_MATH_EPSILON 1.0e-9
-#define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
-
 typedef struct ZrMathVector2 {
     TZrFloat64 x;
     TZrFloat64 y;
@@ -73,11 +66,10 @@ void ZrMath_WriteBoolField(SZrState *state, SZrObject *object, const TZrChar *fi
 
 SZrObject *ZrMath_SelfObject(ZrLibCallContext *context);
 TZrBool ZrMath_ObjectTypeEquals(SZrState *state, SZrObject *object, const TZrChar *typeName);
-SZrObject *ZrMath_ResolveConstructTarget(ZrLibCallContext *context, const TZrChar *typeName);
+SZrObject *ZrMath_ResolveConstructTarget(ZrLibCallContext *context);
 TZrBool ZrMath_FinishConstructObject(ZrLibCallContext *context, SZrTypeValue *result, SZrObject *object);
 TZrBool ZrMath_ConstructFloatObject(ZrLibCallContext *context,
                                     SZrTypeValue *result,
-                                    const TZrChar *typeName,
                                     const TZrChar *const *fieldNames,
                                     const TZrFloat64 *fieldValues,
                                     TZrSize fieldCount);

@@ -1,0 +1,4 @@
+%module "reference_hidden_import";
+%test("hidden import api") {
+    return zr.import("zr.system");
+}

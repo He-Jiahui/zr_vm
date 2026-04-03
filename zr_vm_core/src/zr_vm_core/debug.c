@@ -10,6 +10,7 @@
 #include "zr_vm_common/zr_debug_conf.h"
 #include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
+#include "zr_vm_common/zr_runtime_limits_conf.h"
 #include "zr_vm_common/zr_string_conf.h"
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/exception.h"
@@ -42,7 +43,7 @@ TZrDebugSignal ZrCore_Debug_TraceExecution(struct SZrState *state, const TZrInst
 }
 
 ZR_NO_RETURN void ZrCore_Debug_RunError(struct SZrState *state, TZrNativeString format, ...) {
-    TZrChar errorBuffer[1024];
+    TZrChar errorBuffer[ZR_RUNTIME_ERROR_BUFFER_LENGTH];
     TZrNativeString errorMessage;
     va_list args;
 
@@ -80,6 +81,12 @@ ZR_NO_RETURN void ZrCore_Debug_RunError(struct SZrState *state, TZrNativeString 
     errorValue->isNative = ZR_FALSE;
     state->stackTop.valuePointer++;
 
+    // 运行时错误必须先规范化为 Error/RuntimeError 对象，这样 VM catch 路径才能稳定读取
+    // message/exception/stacks，而不是拿到一个裸字符串 payload。
+    if (!ZrCore_Exception_NormalizeStatus(state, ZR_THREAD_STATUS_RUNTIME_ERROR)) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_EXCEPTION_ERROR);
+    }
+
     // 运行时错误统一进入 VM 异常链路；是否 panic 由未捕获边界决定。
     ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
     ZR_ABORT();
@@ -113,7 +120,7 @@ void ZrCore_Debug_Hook(struct SZrState *state, EZrDebugHookEvent event, TZrUInt3
             callInfo->yieldContext.transferCount = transferCount;
         }
         if (ZR_CALL_INFO_IS_VM(callInfo) && state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
-            state->stackTop.valuePointer = state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_MIN;
+            state->stackTop.valuePointer = state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_RESERVED_MIN;
         }
         state->allowDebugHook = ZR_FALSE;
         callInfo->callStatus |= mask;

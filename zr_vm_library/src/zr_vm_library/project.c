@@ -125,10 +125,14 @@ static TZrBool library_project_normalize_module_path(TZrNativeString modulePath,
         return ZR_FALSE;
     }
 
-    if (length >= 4 && strcmp(modulePath + length - 4, ".zro") == 0) {
-        length -= 4;
-    } else if (length >= 3 && strcmp(modulePath + length - 3, ".zr") == 0) {
-        length -= 3;
+    if (length >= ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH &&
+        strcmp(modulePath + length - ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH,
+               ZR_VM_BINARY_MODULE_FILE_EXTENSION) == 0) {
+        length -= ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH;
+    } else if (length >= ZR_VM_SOURCE_MODULE_FILE_EXTENSION_LENGTH &&
+               strcmp(modulePath + length - ZR_VM_SOURCE_MODULE_FILE_EXTENSION_LENGTH,
+                      ZR_VM_SOURCE_MODULE_FILE_EXTENSION) == 0) {
+        length -= ZR_VM_SOURCE_MODULE_FILE_EXTENSION_LENGTH;
     }
 
     if (length == 0 || length >= ZR_LIBRARY_MAX_PATH_LENGTH) {
@@ -172,14 +176,17 @@ static TZrBool library_project_resolve_module_file(const SZrLibrary_Project *pro
 
 static TZrBool library_project_resolve_source_path(const SZrLibrary_Project *project, TZrNativeString modulePath,
                                                  TZrChar *resolvedPath) {
-    return library_project_resolve_module_file(project, ZrCore_String_GetNativeString(project->source), modulePath, ".zr",
+    return library_project_resolve_module_file(project,
+                                               ZrCore_String_GetNativeString(project->source),
+                                               modulePath,
+                                               ZR_VM_SOURCE_MODULE_FILE_EXTENSION,
                                                resolvedPath);
 }
 
 static TZrBool library_project_resolve_binary_path(const SZrLibrary_Project *project, TZrNativeString modulePath,
                                                  TZrChar *resolvedPath) {
     return library_project_resolve_module_file(project, ZrCore_String_GetNativeString(project->binary), modulePath,
-                                               ZR_LIBRARY_BINARY_FILE_EXT, resolvedPath);
+                                               ZR_VM_BINARY_MODULE_FILE_EXTENSION, resolvedPath);
 }
 
 static TZrBool library_project_load_resolved_file(SZrState *state, TZrNativeString filePath, TZrBool isBinary, SZrIo *io) {

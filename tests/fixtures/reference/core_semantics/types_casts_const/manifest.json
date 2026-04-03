@@ -1,0 +1,1208 @@
+{
+  "domain": "types_casts_const",
+  "summary": "Reference matrix for type casts, prototype misuse, and const assignment rules.",
+  "cases": [
+    {
+      "id": "types-explicit-int-float-cast-pass",
+      "domain": "types_casts_const",
+      "feature_group": "explicit_casts",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/tools/javac/diags/examples/CantAssignToFinal.java",
+      "upstream_intent": "Explicit conversions should succeed when the target surface allows them.",
+      "zr_decision": "adapt",
+      "zr_contract": "Explicit casts are the public surface for numeric conversion and do not rely on implicit narrowing.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "supported explicit casts compile and execute",
+      "assertions": [
+        "AST encodes an explicit cast node",
+        "compiler records the target type",
+        "runtime result matches converted value"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "supported explicit casts compile and execute"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-prototype-value-cast-pass",
+      "domain": "types_casts_const",
+      "feature_group": "prototype_casts",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_syntax.py",
+      "upstream_intent": "Type-directed construction and casting need a positive baseline for supported prototype paths.",
+      "zr_decision": "adapt",
+      "zr_contract": "Supported prototype-backed casts use explicit type identity rather than name-based fallbacks.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "supported prototype or value casts preserve target identity",
+      "assertions": [
+        "target type metadata is recorded",
+        "no stringly type-name fallback is used",
+        "runtime type reflection reports the target type"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "supported prototype or value casts preserve target identity"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-const-local-reassign-fail",
+      "domain": "types_casts_const",
+      "feature_group": "const_assignment",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/borrowck/assign-imm-local-twice.rs",
+      "upstream_intent": "Immutable locals reject reassignment deterministically.",
+      "zr_decision": "adopt",
+      "zr_contract": "Const locals cannot be assigned after initialization.",
+      "layer_targets": [
+        "semantic/compiler",
+        "artifact",
+        "module/project"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "compile fails with const.reassign diagnostic",
+      "assertions": [
+        "diagnostic names the immutable binding",
+        "artifact is not emitted for the failing function",
+        "project compile path rejects the same write"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "compile fails with const.reassign diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-new-on-nonconstructable-fail",
+      "domain": "types_casts_const",
+      "feature_group": "construction_diagnostics",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/tools/javac/diags/examples/CantAssignToFinal.java",
+      "upstream_intent": "Misusing construction syntax should fail as a type rule, not later at runtime.",
+      "zr_decision": "adopt",
+      "zr_contract": "`new` and related construction forms require a constructable target type or prototype.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "compile fails with construction.nonconstructable diagnostic",
+      "assertions": [
+        "diagnostic category is stable",
+        "type checker reports the target identity",
+        "artifact text omits a constructor path"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "compile fails with construction.nonconstructable diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-explicit-narrowing-boundary",
+      "domain": "types_casts_const",
+      "feature_group": "explicit_casts",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/array-slice-vec/array_const_index-0.rs",
+      "upstream_intent": "Numeric narrowing needs explicit boundary tests near truncation limits.",
+      "zr_decision": "adapt",
+      "zr_contract": "Narrowing conversions require explicit casts and expose deterministic boundary behavior.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "boundary numeric casts behave consistently at min and max values",
+      "assertions": [
+        "boundary values are enumerated explicitly",
+        "overflow or truncation rules are stable",
+        "artifact records the explicit cast op"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "runtime_contract",
+        "probe_summary"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "boundary numeric casts behave consistently at min and max values"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "runtime_contract",
+            "probe_summary"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-const-parameter-boundary",
+      "domain": "types_casts_const",
+      "feature_group": "const_assignment",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/tools/javac/diags/examples/FinalParamCantBeAssigned.java",
+      "upstream_intent": "Immutable parameter rules should align with the same diagnostic family as const locals.",
+      "zr_decision": "adopt",
+      "zr_contract": "Const parameters share the same immutable-assignment diagnostic model as const locals.",
+      "layer_targets": [
+        "semantic/compiler",
+        "module/project",
+        "artifact"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "const parameter writes fail with the same stable category as const locals",
+      "assertions": [
+        "diagnostic family is shared across local and parameter bindings",
+        "project compile path reproduces the same rule",
+        "artifact generation stops before code emission"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "const parameter writes fail with the same stable category as const locals"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-cast-inside-default-expression-combination",
+      "domain": "types_casts_const",
+      "feature_group": "default_expression_types",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_syntax.py",
+      "upstream_intent": "Cast semantics and default expressions need a combined regression point.",
+      "zr_decision": "adapt",
+      "zr_contract": "Explicit casts inside default expressions are type-checked before call lowering.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "default expressions containing casts preserve type correctness and runtime value",
+      "assertions": [
+        "default expression AST retains the cast node",
+        "compiler type-checks the default eagerly",
+        "runtime call result matches the defaulted cast value"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "default expressions containing casts preserve type correctness and runtime value"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-module-type-cast-combination",
+      "domain": "types_casts_const",
+      "feature_group": "imported_types",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/custom-modifiers-inheritance.cs",
+      "upstream_intent": "Imported type identities should behave the same as local types under explicit casts.",
+      "zr_decision": "adapt",
+      "zr_contract": "Imported types participate in explicit casts through stable metadata rather than textual coincidence.",
+      "layer_targets": [
+        "semantic/compiler",
+        "module/project",
+        "artifact"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "casts against imported types use recovered type metadata consistently",
+      "assertions": [
+        "imported type metadata roundtrips into the compiler",
+        "project fixture compiles through module boundaries",
+        "artifact records the imported target type"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "casts against imported types use recovered type metadata consistently"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-prototype-misuse-regression",
+      "domain": "types_casts_const",
+      "feature_group": "construction_diagnostics",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_syntax.py",
+      "upstream_intent": "Prototype misuse often regresses when new construction forms are added.",
+      "zr_decision": "adopt",
+      "zr_contract": "Prototype misuse is rejected before runtime and never falls back to a dynamic map or member lookup path.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "prototype misuse remains a compile-time failure after constructor refactors",
+      "assertions": [
+        "compiler reports prototype identity in the error",
+        "runtime never sees a bogus constructor call",
+        "artifact omits fallback lookup ops"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "prototype misuse remains a compile-time failure after constructor refactors"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-const-field-write-regression",
+      "domain": "types_casts_const",
+      "feature_group": "const_assignment",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/borrowck/assign-imm-local-twice.rs",
+      "upstream_intent": "Field-level immutability should not drift away from local-binding immutability.",
+      "zr_decision": "adapt",
+      "zr_contract": "Const field writes fail with the same immutable-write family when the field contract marks them immutable.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "immutable field writes keep a stable failure contract",
+      "assertions": [
+        "field metadata marks immutability explicitly",
+        "runtime never applies a hidden mutable write",
+        "project fixture reproduces the same failure"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "immutable field writes keep a stable failure contract"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-implicit-narrowing-reject",
+      "domain": "types_casts_const",
+      "feature_group": "surface_divergence",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/tools/javac/diags/examples/CantAssignToFinal.java",
+      "upstream_intent": "Strongly typed references prefer explicit narrowing over silent coercion.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR does not allow silent narrowing conversions where the language contract requires an explicit cast.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "implicit narrowing attempts fail with a targeted type diagnostic",
+      "assertions": [
+        "diagnostic suggests an explicit cast",
+        "runtime is never reached for the bad assignment",
+        "artifact omits an implicit conversion op"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "implicit narrowing attempts fail with a targeted type diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "types-cpython-truthy-cast-reject",
+      "domain": "types_casts_const",
+      "feature_group": "surface_divergence",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_syntax.py",
+      "upstream_intent": "Dynamic truthiness does not imply universal cast permissiveness in ZR.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR does not auto-import Python-style truthiness or arbitrary object-to-bool casting without an explicit contract.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "object-to-bool coercion without an explicit contract is rejected",
+      "assertions": [
+        "type checker demands an explicit supported conversion",
+        "runtime contract remains explicit and typed",
+        "project fixture diagnostics match the same rule"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "typed_ssa",
+        "deopt_map",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "object-to-bool coercion without an explicit contract is rejected"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "TYPE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "typed_ssa",
+            "deopt_map",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    }
+  ]
+}

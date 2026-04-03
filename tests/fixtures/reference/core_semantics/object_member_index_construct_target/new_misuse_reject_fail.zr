@@ -1,0 +1,6 @@
+%module "reference.construct.new_misuse";
+
+%test("new_misuse") {
+    var bad = new int(1);
+    return bad;
+}

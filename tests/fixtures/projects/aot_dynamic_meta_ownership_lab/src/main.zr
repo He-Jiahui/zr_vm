@@ -1,0 +1,52 @@
+var system = %import("zr.system");
+var container = %import("zr.container");
+
+class Meter {
+    pri var raw: int = 0;
+
+    pub @constructor(start: int) {
+        this.raw = start;
+    }
+
+    pub get value: int {
+        return this.raw + 1;
+    }
+
+    pub set value(next: int) {
+        this.raw = next + 2;
+    }
+
+    pub @call(delta: int): int {
+        this.value = this.value + delta;
+        return this.value;
+    }
+}
+
+func apply(fn, value: int): int {
+    return fn(value);
+}
+
+var meter = new Meter(4);
+var first = meter.value;
+meter.value = 6;
+var second = meter.value;
+var third = apply(meter, 3);
+
+var owner = %using new Meter(10);
+var shared = %shared(owner);
+var weak = %weak(shared);
+var alias = %upgrade(weak);
+var releasedShared = %release(shared);
+var releasedAlias = %release(alias);
+var after = %upgrade(weak);
+
+var pair = new container.Pair<int, int>(first, second);
+var total = pair.first + pair.second + third;
+
+if (owner == null && releasedShared == null && releasedAlias == null && after == null) {
+    system.console.printLine("AOT_DYNAMIC_META_OWNERSHIP_LAB_PASS");
+    system.console.printLine(total);
+    return total;
+}
+
+return -1;

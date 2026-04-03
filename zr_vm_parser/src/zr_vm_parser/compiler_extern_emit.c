@@ -8,20 +8,22 @@ TZrBool extern_compiler_emit_get_member_to_slot(SZrCompilerState *cs,
                                                        TZrUInt32 destSlot,
                                                        TZrUInt32 objectSlot,
                                                        SZrString *memberName) {
-    TZrUInt32 keySlot;
+    TZrUInt32 memberId;
 
     if (cs == ZR_NULL || memberName == ZR_NULL || cs->hasError) {
         return ZR_FALSE;
     }
 
-    keySlot = allocate_stack_slot(cs);
-    emit_string_constant_to_slot(cs, keySlot, memberName);
+    memberId = compiler_get_or_add_member_entry(cs, memberName);
+    if (memberId == (TZrUInt32)-1) {
+        return ZR_FALSE;
+    }
+
     emit_instruction(cs,
-                     create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE),
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
                                           (TZrUInt16)destSlot,
                                           (TZrUInt16)objectSlot,
-                                          (TZrUInt16)keySlot));
-    ZrParser_Compiler_TrimStackToSlot(cs, destSlot);
+                                          (TZrUInt16)memberId));
     return ZR_TRUE;
 }
 

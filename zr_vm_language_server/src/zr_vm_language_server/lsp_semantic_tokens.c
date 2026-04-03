@@ -799,13 +799,16 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
     }
 
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(TZrUInt32), 32);
+        ZrCore_Array_Init(state, result, sizeof(TZrUInt32), ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
     } else {
         ZrCore_Array_Empty(result);
     }
 
-    ZrCore_Array_Init(state, &entries, sizeof(SZrLspSemanticTokenEntry), 32);
-    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), 4);
+    ZrCore_Array_Init(state,
+                      &entries,
+                      sizeof(SZrLspSemanticTokenEntry),
+                      ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
 
     if (analyzer != ZR_NULL && analyzer->ast != ZR_NULL) {
         ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);

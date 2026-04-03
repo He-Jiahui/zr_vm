@@ -1,0 +1,1244 @@
+{
+  "domain": "object_member_index_construct_target",
+  "summary": "Reference matrix for GET_MEMBER, GET_BY_INDEX, property accessors, and construct-target identity.",
+  "cases": [
+    {
+      "id": "object-instance-field-member-pass",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "member_lookup",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Objects/typeobject.c",
+      "upstream_intent": "Ordinary instance member lookup should remain the default object path.",
+      "zr_decision": "adopt",
+      "zr_contract": "Instance fields resolve through member descriptors before prototype traversal.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "instance field member access succeeds through GET_MEMBER",
+      "assertions": [
+        "lowering emits GET_MEMBER not GET_BY_INDEX",
+        "runtime resolves the instance field first",
+        "artifact metadata records the member token"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "instance field member access succeeds through GET_MEMBER"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-member-vs-string-index-split",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "member_vs_index",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/library/core/src/ops/index.rs",
+      "upstream_intent": "Member syntax and indexing syntax represent different contracts.",
+      "zr_decision": "adopt",
+      "zr_contract": "`x.y` resolves by member id and `x[\"y\"]` resolves by index contract, with no fallback between them.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "member and string index access return distinct results when contracts differ",
+      "assertions": [
+        "parser lowers dot and bracket syntax to different op families",
+        "runtime keeps member and index contracts separate",
+        "result proves the two lookups are independent"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "member and string index access return distinct results when contracts differ"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-missing-member-vs-missing-key",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "error_model",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/events.lua",
+      "upstream_intent": "Missing member and missing key errors need separate contracts.",
+      "zr_decision": "adopt",
+      "zr_contract": "Missing members raise member-resolution errors while index misses follow the index contract miss semantics.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "missing member and missing index miss produce distinct observable outcomes",
+      "assertions": [
+        "member miss is not reported as a map miss",
+        "index miss follows the concrete index contract",
+        "project fixture distinguishes the two cases"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "missing member and missing index miss produce distinct observable outcomes"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-construct-target-mismatch-fail",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "construct_target",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Objects/abstract.c",
+      "upstream_intent": "Constructor reuse decisions should depend on target identity, not name coincidence.",
+      "zr_decision": "adopt",
+      "zr_contract": "Construct-target mismatch fails when the requested target prototype identity does not match the constructor contract.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "construct-target mismatch fails without name-based fallback",
+      "assertions": [
+        "runtime compares prototype identity directly",
+        "diagnostic names construct-target mismatch",
+        "artifact omits legacy name-based branches"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "construct-target mismatch fails without name-based fallback"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-array-map-plain-index-split",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "index_contracts",
+      "upstream_language": "lua",
+      "upstream_file": "lua/src/lvm.c",
+      "upstream_intent": "Different builtins can share a common index contract while keeping different miss semantics.",
+      "zr_decision": "adopt",
+      "zr_contract": "Array, map, and plain dynamic object index through the same contract family with type-specific implementations.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "array, map, and plain object indexing diverge only by contract implementation, not by name checks",
+      "assertions": [
+        "shared index contract entry points are used",
+        "array out-of-range and map miss stay distinguishable",
+        "stress loop reuses the same runtime path"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "array, map, and plain object indexing diverge only by contract implementation, not by name checks"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-static-member-boundary",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "static_members",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Objects/descrobject.c",
+      "upstream_intent": "Static members are visible only through the correct receiver identity.",
+      "zr_decision": "adapt",
+      "zr_contract": "Static members resolve only when the receiver is the type or prototype object, never an arbitrary instance.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "static member lookup succeeds only for the correct receiver identity",
+      "assertions": [
+        "compiler records static-member access explicitly",
+        "instance access does not reuse the static path",
+        "artifact keeps the member descriptor kind"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "static member lookup succeeds only for the correct receiver identity"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-property-getter-setter-precedence",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "property_accessors",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_property.py",
+      "upstream_intent": "Properties need a stable precedence relative to fields and prototype members.",
+      "zr_decision": "adopt",
+      "zr_contract": "Getters and setters resolve before writable fields according to the member contract order.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "getter and setter precedence remains stable relative to fields",
+      "assertions": [
+        "descriptor lookup order is explicit",
+        "runtime invokes accessors before fallback field writes",
+        "artifact records accessor member descriptors"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "getter and setter precedence remains stable relative to fields"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "descriptor lookup order is explicit"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-prototype-inherited-member-chain",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "prototype_traversal",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/quickjs.c",
+      "upstream_intent": "Prototype traversal is a combined lookup and binding problem.",
+      "zr_decision": "adapt",
+      "zr_contract": "Prototype inherited members remain visible through the member contract without collapsing into index lookup.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "inherited members resolve correctly through chained prototype traversal",
+      "assertions": [
+        "prototype walk remains a member operation",
+        "bound method identity stays stable",
+        "project fixture observes inherited access"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "inherited members resolve correctly through chained prototype traversal"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-construct-target-identity",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "construct_target",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/quickjs.c",
+      "upstream_intent": "Derived construction should preserve the requested target identity across constructor reuse.",
+      "zr_decision": "adopt",
+      "zr_contract": "Constructors receive an explicit construct-target prototype identity.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "derived construction preserves construct-target identity across refactors",
+      "assertions": [
+        "CallContext records owner and construct target separately",
+        "runtime creates the requested target prototype",
+        "project fixture inspects the constructed type identity"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "derived construction preserves construct-target identity across refactors"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-binary-reload-member-metadata",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "artifact_roundtrip",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Objects/typeobject.c",
+      "upstream_intent": "Member metadata must survive import and artifact reload boundaries.",
+      "zr_decision": "adopt",
+      "zr_contract": "Binary artifacts preserve member tokens, descriptor kinds, and construct-target metadata.",
+      "layer_targets": [
+        "artifact",
+        "module/project",
+        "runtime"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "member metadata survives .zri/.zro roundtrip and binary import",
+      "assertions": [
+        "artifact text names GET_MEMBER tokens",
+        "binary reload restores descriptor metadata",
+        "runtime behavior after reload matches source compilation"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "member metadata survives .zri/.zro roundtrip and binary import"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-string-key-does-not-fall-back-to-member",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "member_vs_index",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/events.lua",
+      "upstream_intent": "Dynamic runtimes often blur string keys and members unless the VM contract forbids it.",
+      "zr_decision": "reject",
+      "zr_contract": "String keys in `GET_BY_INDEX` do not secretly become member lookups.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "string-key indexing never falls back to GET_MEMBER",
+      "assertions": [
+        "runtime path stays in index dispatch",
+        "artifact lacks a name-based fallback branch",
+        "observed result differs from member lookup when contracts differ"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "string-key indexing never falls back to GET_MEMBER"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "object-member-does-not-fall-back-to-index",
+      "domain": "object_member_index_construct_target",
+      "feature_group": "member_vs_index",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/library/core/src/ops/index.rs",
+      "upstream_intent": "Dot syntax should never silently behave like an indexer just because a string key exists.",
+      "zr_decision": "reject",
+      "zr_contract": "`GET_MEMBER` never degrades into index lookup for a missing member name.",
+      "layer_targets": [
+        "parser",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "missing member access fails as a member-resolution error instead of indexing with a string key",
+      "assertions": [
+        "lowering remains GET_MEMBER",
+        "runtime reports a member error",
+        "project fixture confirms there is no fallback path"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "shape_guard",
+        "member_index_split",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "missing member access fails as a member-resolution error instead of indexing with a string key"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "shape_guard",
+            "member_index_split",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    }
+  ]
+}

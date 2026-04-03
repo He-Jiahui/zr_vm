@@ -499,7 +499,10 @@ static SZrLspProjectIndex *project_index_new_from_document(SZrState *state,
     projectIndex->projectFilePath = ZrCore_String_Create(state, projectPath, strlen(projectPath));
     projectIndex->projectRootPath = create_string_from_const_text(state, get_string_text(project->directory));
     projectIndex->sourceRootPath = ZrCore_String_Create(state, sourceRootPath, strlen(sourceRootPath));
-    ZrCore_Array_Init(state, &projectIndex->files, sizeof(SZrLspProjectFileRecord *), 4);
+    ZrCore_Array_Init(state,
+                      &projectIndex->files,
+                      sizeof(SZrLspProjectFileRecord *),
+                      ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     return projectIndex;
 }
 
@@ -800,7 +803,7 @@ static TZrBool project_load_imports_from_uri(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), 4);
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
     for (TZrSize index = 0; index < bindings.length; index++) {
         SZrLspImportBinding **bindingPtr =
@@ -934,7 +937,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
     }
 
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspSymbolInformation *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
     for (TZrSize projectIndex = 0; projectIndex < context->projectIndexes.length; projectIndex++) {

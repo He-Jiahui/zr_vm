@@ -21,9 +21,12 @@
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/ownership.h"
+#include "zr_vm_core/reflection.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_object_conf.h"
+#include "zr_vm_common/zr_runtime_limits_conf.h"
 #include "zr_vm_common/zr_string_conf.h"
 
 typedef enum EZrExecutionNumericFallbackOp {
@@ -108,6 +111,48 @@ TZrBool convert_to_enum(SZrState *state,
                         SZrTypeValue *destination);
 
 TZrSize close_scope_cleanup_registrations(SZrState *state, TZrSize cleanupCount);
+TZrBool execution_prepare_meta_call_target(SZrState *state, TZrStackValuePointer stackPointer);
+TZrBool execution_meta_get_member(SZrState *state,
+                                  SZrTypeValue *receiver,
+                                  SZrString *memberName,
+                                  SZrTypeValue *result);
+const SZrFunctionCallSiteCacheEntry *execution_get_callsite_cache_entry(SZrFunction *function,
+                                                                        TZrUInt16 cacheIndex,
+                                                                        EZrFunctionCallSiteCacheKind expectedKind);
+TZrBool execution_prepare_meta_call_target_cached(SZrState *state,
+                                                  SZrFunction *function,
+                                                  TZrUInt16 cacheIndex,
+                                                  TZrStackValuePointer stackPointer,
+                                                  EZrFunctionCallSiteCacheKind expectedKind);
+TZrBool execution_try_prepare_dyn_call_target_cached(SZrState *state,
+                                                     SZrFunction *function,
+                                                     TZrUInt16 cacheIndex,
+                                                     TZrStackValuePointer stackPointer,
+                                                     EZrFunctionCallSiteCacheKind expectedKind);
+TZrBool execution_meta_get_cached_member(SZrState *state,
+                                         SZrFunction *function,
+                                         TZrUInt16 cacheIndex,
+                                         SZrTypeValue *receiver,
+                                         SZrTypeValue *result);
+TZrBool execution_meta_get_cached_static_member(SZrState *state,
+                                                SZrFunction *function,
+                                                TZrUInt16 cacheIndex,
+                                                SZrTypeValue *receiver,
+                                                SZrTypeValue *result);
+TZrBool execution_meta_set_member(SZrState *state,
+                                  SZrTypeValue *receiverAndResult,
+                                  SZrString *memberName,
+                                  const SZrTypeValue *assignedValue);
+TZrBool execution_meta_set_cached_member(SZrState *state,
+                                         SZrFunction *function,
+                                         TZrUInt16 cacheIndex,
+                                         SZrTypeValue *receiverAndResult,
+                                         const SZrTypeValue *assignedValue);
+TZrBool execution_meta_set_cached_static_member(SZrState *state,
+                                                SZrFunction *function,
+                                                TZrUInt16 cacheIndex,
+                                                SZrTypeValue *receiverAndResult,
+                                                const SZrTypeValue *assignedValue);
 TZrBool execution_invoke_meta_call(SZrState *state,
                                    SZrCallInfo *savedCallInfo,
                                    TZrStackValuePointer savedStackTop,
@@ -124,11 +169,15 @@ TZrBool execution_push_exception_handler(SZrState *state, SZrCallInfo *callInfo,
 SZrVmExceptionHandlerState *execution_find_handler_state(SZrState *state,
                                                          SZrCallInfo *callInfo,
                                                          TZrUInt32 handlerIndex);
+TZrBool execution_has_exception_handler_for_callinfo(SZrState *state, SZrCallInfo *callInfo);
 const SZrFunctionExceptionHandlerInfo *execution_lookup_exception_handler_info(
         SZrState *state,
         const SZrVmExceptionHandlerState *handlerState,
         SZrFunction **outFunction);
 void execution_pop_exception_handler(SZrState *state, SZrVmExceptionHandlerState *handlerState);
+TZrBool execution_try_reuse_tail_call_frame(SZrState *state,
+                                            SZrCallInfo *callInfo,
+                                            TZrStackValuePointer functionPointer);
 
 TZrBool execution_jump_to_instruction_offset(SZrState *state,
                                              SZrCallInfo **ioCallInfo,

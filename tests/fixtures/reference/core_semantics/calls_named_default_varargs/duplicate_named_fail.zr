@@ -1,0 +1,7 @@
+%module "reference_calls";
+sum(a: int, b: int, c: int): int {
+    return a + b + c;
+}
+%test("duplicate named") {
+    return sum(1, b: 2, b: 3);
+}

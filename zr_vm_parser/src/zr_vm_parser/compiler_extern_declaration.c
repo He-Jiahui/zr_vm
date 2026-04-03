@@ -41,9 +41,9 @@ void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode 
     info.isImportedNative = ZR_FALSE;
     info.allowValueConstruction = ZR_TRUE;
     info.allowBoxedConstruction = ZR_TRUE;
-    ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 2);
-    ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 2);
-    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), 8);
+    ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
 
     if (structDecl->members != ZR_NULL) {
         for (TZrSize index = 0; index < structDecl->members->count; index++) {
@@ -115,7 +115,7 @@ void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *d
     info.allowBoxedConstruction = ZR_TRUE;
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 1);
     ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 1);
-    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), 4);
+    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
 
     if (enumDecl->baseType != ZR_NULL) {
         underlyingName = extract_type_name_string(cs, enumDecl->baseType);

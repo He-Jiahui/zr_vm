@@ -111,11 +111,13 @@ void ZrParser_CompileTime_Error(SZrCompilerState *cs, EZrCompileTimeErrorLevel l
         case ZR_COMPILE_TIME_ERROR_ERROR:
             levelStr = "ERROR";
             cs->hasError = ZR_TRUE;
+            cs->hadRecoverableError = ZR_TRUE;
             cs->hasCompileTimeError = ZR_TRUE;
             break;
         case ZR_COMPILE_TIME_ERROR_FATAL:
             levelStr = "FATAL";
             cs->hasError = ZR_TRUE;
+            cs->hadRecoverableError = ZR_TRUE;
             cs->hasCompileTimeError = ZR_TRUE;
             break;
     }
@@ -154,6 +156,7 @@ void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRa
     }
 
     cs->hasError = ZR_TRUE;
+    cs->hadRecoverableError = ZR_TRUE;
     compiler_store_error_message(cs, msg);
     cs->errorLocation = location;
 

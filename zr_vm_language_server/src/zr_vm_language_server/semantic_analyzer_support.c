@@ -91,13 +91,13 @@ void ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(SZrState 
 
 // 辅助函数：递归计算 AST 节点的哈希值
 static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
-    if (node == ZR_NULL || depth > 32) { // 限制递归深度避免栈溢出
+    if (node == ZR_NULL || depth > ZR_LSP_AST_RECURSION_MAX_DEPTH) { // 限制递归深度避免栈溢出
         return 0;
     }
     
     TZrUInt64 hash = (TZrUInt64)node->type;
-    hash = hash * 31 + (TZrUInt64)node->location.start.offset;
-    hash = hash * 31 + (TZrUInt64)node->location.end.offset;
+    hash = hash * ZR_LSP_HASH_MULTIPLIER + (TZrUInt64)node->location.start.offset;
+    hash = hash * ZR_LSP_HASH_MULTIPLIER + (TZrUInt64)node->location.end.offset;
     
     // 根据节点类型访问不同的子节点
     switch (node->type) {
@@ -105,11 +105,11 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
             SZrScript *script = &node->data.script;
             if (script->statements != ZR_NULL && script->statements->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < script->statements->count; i++) {
-                    hash = hash * 31 + compute_node_hash_recursive(script->statements->nodes[i], depth + 1);
+                    hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(script->statements->nodes[i], depth + 1);
                 }
             }
             if (script->moduleName != ZR_NULL) {
-                hash = hash * 31 + compute_node_hash_recursive(script->moduleName, depth + 1);
+                hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(script->moduleName, depth + 1);
             }
             break;
         }
@@ -118,7 +118,7 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
             SZrBlock *block = &node->data.block;
             if (block->body != ZR_NULL && block->body->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < block->body->count; i++) {
-                    hash = hash * 31 + compute_node_hash_recursive(block->body->nodes[i], depth + 1);
+                    hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(block->body->nodes[i], depth + 1);
                 }
             }
             break;
@@ -126,29 +126,29 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
         
         case ZR_AST_BINARY_EXPRESSION: {
             SZrBinaryExpression *binExpr = &node->data.binaryExpression;
-            hash = hash * 31 + compute_node_hash_recursive(binExpr->left, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(binExpr->right, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(binExpr->left, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(binExpr->right, depth + 1);
             break;
         }
         
         case ZR_AST_UNARY_EXPRESSION: {
             SZrUnaryExpression *unaryExpr = &node->data.unaryExpression;
-            hash = hash * 31 + compute_node_hash_recursive(unaryExpr->argument, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(unaryExpr->argument, depth + 1);
             break;
         }
         
         case ZR_AST_ASSIGNMENT_EXPRESSION: {
             SZrAssignmentExpression *assignExpr = &node->data.assignmentExpression;
-            hash = hash * 31 + compute_node_hash_recursive(assignExpr->left, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(assignExpr->right, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(assignExpr->left, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(assignExpr->right, depth + 1);
             break;
         }
         
         case ZR_AST_CONDITIONAL_EXPRESSION: {
             SZrConditionalExpression *condExpr = &node->data.conditionalExpression;
-            hash = hash * 31 + compute_node_hash_recursive(condExpr->test, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(condExpr->consequent, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(condExpr->alternate, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(condExpr->test, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(condExpr->consequent, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(condExpr->alternate, depth + 1);
             break;
         }
         
@@ -156,7 +156,7 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
             SZrFunctionCall *funcCall = &node->data.functionCall;
             if (funcCall->args != ZR_NULL && funcCall->args->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < funcCall->args->count; i++) {
-                    hash = hash * 31 + compute_node_hash_recursive(funcCall->args->nodes[i], depth + 1);
+                    hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(funcCall->args->nodes[i], depth + 1);
                 }
             }
             break;
@@ -164,10 +164,10 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
         
         case ZR_AST_PRIMARY_EXPRESSION: {
             SZrPrimaryExpression *primaryExpr = &node->data.primaryExpression;
-            hash = hash * 31 + compute_node_hash_recursive(primaryExpr->property, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(primaryExpr->property, depth + 1);
             if (primaryExpr->members != ZR_NULL && primaryExpr->members->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < primaryExpr->members->count; i++) {
-                    hash = hash * 31 + compute_node_hash_recursive(primaryExpr->members->nodes[i], depth + 1);
+                    hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(primaryExpr->members->nodes[i], depth + 1);
                 }
             }
             break;
@@ -175,8 +175,8 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
         
         case ZR_AST_VARIABLE_DECLARATION: {
             SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;
-            hash = hash * 31 + compute_node_hash_recursive(varDecl->pattern, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(varDecl->value, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(varDecl->pattern, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(varDecl->value, depth + 1);
             break;
         }
         
@@ -184,10 +184,10 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
             SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
             if (funcDecl->params != ZR_NULL && funcDecl->params->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < funcDecl->params->count; i++) {
-                    hash = hash * 31 + compute_node_hash_recursive(funcDecl->params->nodes[i], depth + 1);
+                    hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(funcDecl->params->nodes[i], depth + 1);
                 }
             }
-            hash = hash * 31 + compute_node_hash_recursive(funcDecl->body, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(funcDecl->body, depth + 1);
             break;
         }
         
@@ -195,7 +195,7 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
             SZrArrayLiteral *arrayLit = &node->data.arrayLiteral;
             if (arrayLit->elements != ZR_NULL && arrayLit->elements->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < arrayLit->elements->count; i++) {
-                    hash = hash * 31 + compute_node_hash_recursive(arrayLit->elements->nodes[i], depth + 1);
+                    hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(arrayLit->elements->nodes[i], depth + 1);
                 }
             }
             break;
@@ -205,7 +205,7 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
             SZrObjectLiteral *objLit = &node->data.objectLiteral;
             if (objLit->properties != ZR_NULL && objLit->properties->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < objLit->properties->count; i++) {
-                    hash = hash * 31 + compute_node_hash_recursive(objLit->properties->nodes[i], depth + 1);
+                    hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(objLit->properties->nodes[i], depth + 1);
                 }
             }
             break;
@@ -213,25 +213,25 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
         
         case ZR_AST_IF_EXPRESSION: {
             SZrIfExpression *ifExpr = &node->data.ifExpression;
-            hash = hash * 31 + compute_node_hash_recursive(ifExpr->condition, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(ifExpr->thenExpr, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(ifExpr->elseExpr, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(ifExpr->condition, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(ifExpr->thenExpr, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(ifExpr->elseExpr, depth + 1);
             break;
         }
         
         case ZR_AST_WHILE_LOOP: {
             SZrWhileLoop *whileLoop = &node->data.whileLoop;
-            hash = hash * 31 + compute_node_hash_recursive(whileLoop->cond, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(whileLoop->block, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(whileLoop->cond, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(whileLoop->block, depth + 1);
             break;
         }
         
         case ZR_AST_FOR_LOOP: {
             SZrForLoop *forLoop = &node->data.forLoop;
-            hash = hash * 31 + compute_node_hash_recursive(forLoop->init, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(forLoop->cond, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(forLoop->step, depth + 1);
-            hash = hash * 31 + compute_node_hash_recursive(forLoop->block, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(forLoop->init, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(forLoop->cond, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(forLoop->step, depth + 1);
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(forLoop->block, depth + 1);
             break;
         }
         
@@ -239,7 +239,7 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
             SZrClassDeclaration *classDecl = &node->data.classDeclaration;
             if (classDecl->members != ZR_NULL && classDecl->members->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < classDecl->members->count; i++) {
-                    hash = hash * 31 + compute_node_hash_recursive(classDecl->members->nodes[i], depth + 1);
+                    hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(classDecl->members->nodes[i], depth + 1);
                 }
             }
             break;
@@ -249,7 +249,7 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
             SZrStructDeclaration *structDecl = &node->data.structDeclaration;
             if (structDecl->members != ZR_NULL && structDecl->members->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < structDecl->members->count; i++) {
-                    hash = hash * 31 + compute_node_hash_recursive(structDecl->members->nodes[i], depth + 1);
+                    hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(structDecl->members->nodes[i], depth + 1);
                 }
             }
             break;

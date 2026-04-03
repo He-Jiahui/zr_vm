@@ -19,6 +19,8 @@ TZrBool ZrTests_Path_GetProjectFile(const TZrChar *projectName,
                                     TZrChar *outPath,
                                     TZrSize maxLen);
 
+TZrBool ZrTests_Path_GetRepoDoc(const TZrChar *relativePath, TZrChar *outPath, TZrSize maxLen);
+
 TZrBool ZrTests_Path_GetGoldenArtifact(const TZrChar *subDir,
                                        const TZrChar *baseName,
                                        const TZrChar *extension,

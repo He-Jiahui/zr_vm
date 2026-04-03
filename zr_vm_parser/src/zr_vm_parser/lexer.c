@@ -11,7 +11,6 @@
 #include <ctype.h>
 #include <string.h>
 
-#define ZR_LEXER_BUFFER_INIT_SIZE 256
 #define ZR_LEXER_EOZ (-1)
 
 // Token 信息结构（合并关键字表和名称表）
@@ -184,7 +183,7 @@ static TZrInt32 next_char(SZrLexState *ls) {
 // 辅助函数：保存字符到缓冲区
 static void save_char(SZrLexState *ls, TZrChar c) {
     if (ls->bufferLength + 1 >= ls->bufferSize) {
-        TZrSize newSize = ls->bufferSize * 2;
+        TZrSize newSize = ls->bufferSize * ZR_PARSER_DYNAMIC_CAPACITY_GROWTH_FACTOR;
         TZrChar *newBuffer = ZrCore_Memory_RawMallocWithType(ls->state->global, newSize, ZR_MEMORY_NATIVE_TYPE_STRING);
         if (ls->buffer) {
             memcpy(newBuffer, ls->buffer, ls->bufferLength);
@@ -830,6 +829,8 @@ void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source
     ls->lineNumber = 1;
     ls->lastLine = 1;
     ls->sourceName = sourceName;
+    ls->currentTokenHadError = ZR_FALSE;
+    ls->currentTokenErrorMessage = ZR_NULL;
     ls->buffer = ZR_NULL;
     ls->bufferSize = 0;
     ls->bufferLength = 0;
@@ -842,13 +843,17 @@ void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source
     ls->lookaheadLastLine = 1;
 
     // 分配初始缓冲区
-    ls->bufferSize = ZR_LEXER_BUFFER_INIT_SIZE;
+    ls->bufferSize = ZR_PARSER_LEXER_BUFFER_INITIAL_SIZE;
     ls->buffer = ZrCore_Memory_RawMallocWithType(state->global, ls->bufferSize, ZR_MEMORY_NATIVE_TYPE_STRING);
     ls->buffer[0] = '\0';
 
     // 初始化 token
     ls->t.token = ZR_TK_EOS;
+    ls->t.hasLexError = ZR_FALSE;
+    ls->t.lexErrorMessage = ZR_NULL;
     ls->lookahead.token = ZR_TK_EOS;
+    ls->lookahead.hasLexError = ZR_FALSE;
+    ls->lookahead.lexErrorMessage = ZR_NULL;
 
     // 读取第一个字符
     next_char(ls);
@@ -872,8 +877,12 @@ void ZrParser_Lexer_Next(SZrLexState *ls) {
     } else {
         TZrSemInfo seminfo;
         memset(&seminfo, 0, sizeof(seminfo));
+        ls->currentTokenHadError = ZR_FALSE;
+        ls->currentTokenErrorMessage = ZR_NULL;
         ls->t.token = llex(ls, &seminfo);
         ls->t.seminfo = seminfo;
+        ls->t.hasLexError = ls->currentTokenHadError;
+        ls->t.lexErrorMessage = ls->currentTokenErrorMessage;
     }
 }
 
@@ -890,8 +899,12 @@ EZrToken ZrParser_Lexer_Lookahead(SZrLexState *ls) {
         // 读取下一个 token
         TZrSemInfo seminfo;
         memset(&seminfo, 0, sizeof(seminfo));
+        ls->currentTokenHadError = ZR_FALSE;
+        ls->currentTokenErrorMessage = ZR_NULL;
         ls->lookahead.token = llex(ls, &seminfo);
         ls->lookahead.seminfo = seminfo;
+        ls->lookahead.hasLexError = ls->currentTokenHadError;
+        ls->lookahead.lexErrorMessage = ls->currentTokenErrorMessage;
 
         // 保存下一个 token 的位置（当使用缓存的 lookahead 时，需要恢复到这个位置）
         ls->lookaheadPos = ls->currentPos;
@@ -1010,6 +1023,11 @@ void ZrParser_Lexer_SyntaxError(SZrLexState *ls, const TZrChar *msg) {
         return;
     }
 
+    if (!ls->currentTokenHadError) {
+        ls->currentTokenHadError = ZR_TRUE;
+        ls->currentTokenErrorMessage = msg;
+    }
+
     // 获取文件名
     const TZrChar *fileName = "<unknown>";
     if (ls->sourceName != ZR_NULL) {
@@ -1023,7 +1041,7 @@ void ZrParser_Lexer_SyntaxError(SZrLexState *ls, const TZrChar *msg) {
     TZrInt32 column = calculate_column(ls);
 
     // 获取代码片段
-    TZrChar snippet[128];
+    TZrChar snippet[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
     TZrInt32 displayColumn = 1;
     get_line_snippet_lexer(ls, snippet, sizeof(snippet), &displayColumn);
 

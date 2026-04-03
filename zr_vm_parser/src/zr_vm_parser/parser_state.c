@@ -4,7 +4,7 @@ void expect_token(SZrParserState *ps, EZrToken expected) {
     if (ps->lexer->t.token != expected) {
         const TZrChar *expectedStr = ZrParser_Lexer_TokenToString(ps->lexer, expected);
         const TZrChar *actualStr = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
-        TZrChar errorMsg[256];
+        TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
         snprintf(errorMsg, sizeof(errorMsg), "期望 '%s'，但遇到 '%s'", expectedStr, actualStr);
         report_error_with_token(ps, errorMsg, ps->lexer->t.token);
     }
@@ -166,11 +166,11 @@ void skip_legacy_import_call(SZrParserState *ps) {
 }
 
 SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrChar *directiveName) {
-    TZrChar buffer[1024];
+    TZrChar buffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
     TZrSize length = 0;
     SZrFileRange startLoc;
     SZrString *pathString;
-    TZrChar errorMsg[256];
+    TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
 
     if (ps == ZR_NULL) {
         return ZR_NULL;
@@ -233,7 +233,7 @@ SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrCha
 }
 
 SZrAstNode *parse_normalized_module_path(SZrParserState *ps, const TZrChar *directiveName) {
-    TZrChar errorMsg[256];
+    TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
 
     if (ps == ZR_NULL) {
         return ZR_NULL;
@@ -539,7 +539,7 @@ void report_error_with_token(SZrParserState *ps, const TZrChar *msg, EZrToken to
         }
 
         // 获取代码片段
-        TZrChar snippet[128];
+        TZrChar snippet[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
         TZrInt32 displayColumn = 1;
         get_line_snippet(ps, snippet, sizeof(snippet), &displayColumn);
 

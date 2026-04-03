@@ -67,6 +67,33 @@ static void global_state_register_named_prototype(SZrState *state,
     global_state_register_zr_member(state, zrObject, ZrCore_String_GetNativeString(prototype->name), &prototypeValue);
 }
 
+static void global_state_register_builtin_array_members(SZrState *state, SZrGlobalState *global) {
+    SZrObjectPrototype *arrayPrototype;
+    SZrString *lengthName;
+    SZrMemberDescriptor descriptor;
+
+    if (state == ZR_NULL || global == ZR_NULL) {
+        return;
+    }
+
+    arrayPrototype = global->basicTypeObjectPrototype[ZR_VALUE_TYPE_ARRAY];
+    if (arrayPrototype == ZR_NULL) {
+        return;
+    }
+
+    lengthName = global_state_create_permanent_string(state, "length");
+    if (lengthName == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
+    descriptor.name = lengthName;
+    descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY;
+    descriptor.contractRole = ZR_MEMBER_CONTRACT_ROLE_INDEX_LENGTH;
+    ZrCore_ObjectPrototype_AddMemberDescriptor(state, arrayPrototype, &descriptor);
+    ZrCore_ObjectPrototype_AddProtocol(arrayPrototype, ZR_PROTOCOL_ID_ARRAY_LIKE);
+}
+
 static void global_state_init_builtin_exception_types(SZrState *state, SZrGlobalState *global, SZrObject *zrObject) {
     SZrObjectPrototype *errorPrototype;
     SZrStructPrototype *stackFramePrototype;
@@ -198,12 +225,25 @@ static void global_state_init_basic_type_object_prototypes(SZrState *state, SZrG
         SZrObjectPrototype *prototype = (SZrObjectPrototype *)objectBase;
         
         // 初始化哈希集（ZrCore_Object_NewCustomized 只调用了 Construct，需要调用 Init）
-        ZrCore_HashSet_Init(state, &prototype->super.nodeMap, ZR_OBJECT_TABLE_INIT_SIZE_LOG2);
+        ZrCore_HashSet_Init(state, &prototype->super.nodeMap, ZR_OBJECT_TABLE_INITIAL_SIZE_LOG2);
         
         // 初始化 ObjectPrototype 特定字段
         prototype->name = ZR_NULL;
         prototype->type = ZR_OBJECT_PROTOTYPE_TYPE_NATIVE;
         prototype->superPrototype = ZR_NULL;
+        prototype->memberDescriptors = ZR_NULL;
+        prototype->memberDescriptorCount = 0;
+        prototype->memberDescriptorCapacity = 0;
+        memset(&prototype->indexContract, 0, sizeof(prototype->indexContract));
+        memset(&prototype->iterableContract, 0, sizeof(prototype->iterableContract));
+        memset(&prototype->iteratorContract, 0, sizeof(prototype->iteratorContract));
+        prototype->protocolMask = 0;
+        prototype->dynamicMemberCapable = ZR_FALSE;
+        prototype->reserved0 = 0;
+        prototype->reserved1 = 0;
+        prototype->managedFields = ZR_NULL;
+        prototype->managedFieldCount = 0;
+        prototype->managedFieldCapacity = 0;
         
         // 初始化 metaTable
         ZrCore_MetaTable_Construct(&prototype->metaTable);
@@ -244,6 +284,7 @@ void ZrCore_GlobalState_InitRegistry(SZrState *state, SZrGlobalState *global) {
 
     // 初始化基本类型对象原型
     global_state_init_basic_type_object_prototypes(state, global);
+    global_state_register_builtin_array_members(state, global);
     global_state_init_builtin_exception_types(state, global, zrObject);
     
     // 将 zr 对象添加到全局状态（TODO: 需要确认如何访问全局作用域）

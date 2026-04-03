@@ -1,0 +1,6 @@
+{
+  "name": "aot_eh_tail_gc_stress",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

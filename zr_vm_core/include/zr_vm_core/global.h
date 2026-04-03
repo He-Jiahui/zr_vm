@@ -13,13 +13,10 @@
 
 /**
  * 全局API字符串缓存配置参数
- * ZR_GLOBAL_API_STR_CACHE_N 定义主缓存桶数量（质数以优化散列）
- * ZR_GLOBAL_API_STR_CACHE_M 定义每个桶的二级缓存深度
+ * ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT 定义主缓存桶数量（质数以优化散列）
+ * ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH 定义每个桶的二级缓存深度
  * 这组参数共同控制字符串缓存的存储结构和性能特性
  */
-#define ZR_GLOBAL_API_STR_CACHE_N 193
-#define ZR_GLOBAL_API_STR_CACHE_M 2
-
 // from string.h
 struct SZrStringTable;
 
@@ -40,13 +37,6 @@ typedef struct SZrObjectModule *(*FZrNativeModuleLoader)(struct SZrState *state,
                                                          struct SZrString *moduleName,
                                                          TZrPtr userData);
 
-#if !defined(ZR_STRING_TABLE_INIT_SIZE_LOG2)
-#define ZR_STRING_TABLE_INIT_SIZE_LOG2 12 // 2^12 = 4KB
-#endif
-
-#if !defined(ZR_OBJECT_TABLE_INIT_SIZE_LOG2)
-#define ZR_OBJECT_TABLE_INIT_SIZE_LOG2 2 // 2^2 = 4B
-#endif
 struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Memory
     FZrAllocator allocator;
@@ -68,7 +58,8 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // String Table
     struct SZrStringTable *stringTable;
     // FOR API STRING CACHE
-    struct SZrString *stringHashApiCache[ZR_GLOBAL_API_STR_CACHE_N][ZR_GLOBAL_API_STR_CACHE_M];
+    struct SZrString *stringHashApiCache[ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT]
+                                        [ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH];
     struct SZrString *metaFunctionName[ZR_META_ENUM_MAX];
 
     // Global Module Registry

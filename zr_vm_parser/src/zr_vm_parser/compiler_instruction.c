@@ -229,7 +229,60 @@ TZrUInt32 add_constant(SZrCompilerState *cs, SZrTypeValue *value) {
     return index;
 }
 
-#define ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH 64
+TZrUInt32 compiler_get_or_add_member_entry_with_flags(SZrCompilerState *cs,
+                                                      SZrString *memberName,
+                                                      TZrUInt8 flags) {
+    SZrFunction *function;
+    SZrFunctionMemberEntry *newEntries;
+    TZrSize newCount;
+    TZrSize copyBytes;
+
+    if (cs == ZR_NULL || cs->currentFunction == ZR_NULL || memberName == ZR_NULL) {
+        return (TZrUInt32)-1;
+    }
+
+    function = cs->currentFunction;
+    for (TZrUInt32 index = 0; index < function->memberEntryLength; index++) {
+        SZrFunctionMemberEntry *entry = &function->memberEntries[index];
+        if (entry->entryKind == ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL &&
+            entry->symbol != ZR_NULL &&
+            entry->reserved0 == flags &&
+            ZrCore_String_Equal(entry->symbol, memberName)) {
+            return index;
+        }
+    }
+
+    newCount = (TZrSize)function->memberEntryLength + 1;
+    newEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+            cs->state->global,
+            sizeof(SZrFunctionMemberEntry) * newCount,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (newEntries == ZR_NULL) {
+        return (TZrUInt32)-1;
+    }
+
+    copyBytes = sizeof(SZrFunctionMemberEntry) * function->memberEntryLength;
+    if (function->memberEntries != ZR_NULL && copyBytes > 0) {
+        memcpy(newEntries, function->memberEntries, copyBytes);
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      function->memberEntries,
+                                      sizeof(SZrFunctionMemberEntry) * function->memberEntryLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+
+    memset(&newEntries[newCount - 1], 0, sizeof(SZrFunctionMemberEntry));
+    newEntries[newCount - 1].symbol = memberName;
+    newEntries[newCount - 1].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+    newEntries[newCount - 1].reserved0 = flags;
+
+    function->memberEntries = newEntries;
+    function->memberEntryLength = (TZrUInt32)newCount;
+    return (TZrUInt32)(newCount - 1);
+}
+
+TZrUInt32 compiler_get_or_add_member_entry(SZrCompilerState *cs, SZrString *memberName) {
+    return compiler_get_or_add_member_entry_with_flags(cs, memberName, 0);
+}
 
 TZrBool compiler_value_is_compile_time_function_pointer(SZrCompilerState *cs, const SZrTypeValue *value) {
     TZrPtr pointerValue;
@@ -263,7 +316,7 @@ TZrBool compiler_is_runtime_safe_compile_time_value_internal(SZrCompilerState *c
         return ZR_FALSE;
     }
 
-    if (depth > ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH) {
+    if (depth > ZR_PARSER_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH) {
         return ZR_FALSE;
     }
 
@@ -285,7 +338,7 @@ TZrBool compiler_is_runtime_safe_compile_time_value_internal(SZrCompilerState *c
                 }
             }
 
-            if (visitedCount >= ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH) {
+            if (visitedCount >= ZR_PARSER_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH) {
                 return ZR_FALSE;
             }
 
@@ -317,14 +370,14 @@ TZrBool compiler_is_runtime_safe_compile_time_value_internal(SZrCompilerState *c
 ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateRuntimeProjectionValue(SZrCompilerState *cs,
                                                              const SZrTypeValue *value,
                                                              SZrFileRange location) {
-    SZrRawObject *visitedObjects[ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH];
+    SZrRawObject *visitedObjects[ZR_PARSER_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH];
     const TZrChar *message;
 
     if (cs == ZR_NULL || value == ZR_NULL || cs->hasError) {
         return ZR_FALSE;
     }
 
-    for (TZrSize i = 0; i < ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH; i++) {
+    for (TZrSize i = 0; i < ZR_PARSER_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH; i++) {
         visitedObjects[i] = ZR_NULL;
     }
 

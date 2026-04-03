@@ -66,8 +66,6 @@ SZrAstNode *parse_script(SZrParserState *ps) {
 
     TZrSize stmtCount = 0;
     TZrSize errorCount = 0;
-    const TZrSize MAX_CONSECUTIVE_ERRORS = 10; // 最多连续错误次数
-
     while (ps->lexer->t.token != ZR_TK_EOS) {
         // 保存错误状态
         ZR_UNUSED_PARAMETER(ps->hasError);
@@ -90,7 +88,7 @@ SZrAstNode *parse_script(SZrParserState *ps) {
                 // printf("  Parser error at statement %zu (已在上方显示详细信息)\n", stmtCount);
 
                 // 如果连续错误太多，停止解析
-                if (errorCount >= MAX_CONSECUTIVE_ERRORS) {
+                if (errorCount >= ZR_PARSER_MAX_CONSECUTIVE_ERRORS) {
                     if (!ps->suppressErrorOutput) {
                         fprintf(stderr, "  Too many consecutive errors (%zu), stopping parse\n", errorCount);
                     }
@@ -100,8 +98,7 @@ SZrAstNode *parse_script(SZrParserState *ps) {
                 // 尝试错误恢复：跳过到下一个可能的语句开始位置
                 // 跳过当前 token 直到遇到分号、换行或语句开始关键字
                 TZrSize skipCount = 0;
-                const TZrSize MAX_SKIP_TOKENS = 100; // 最多跳过 100 个 token
-                while (ps->lexer->t.token != ZR_TK_EOS && skipCount < MAX_SKIP_TOKENS) {
+                while (ps->lexer->t.token != ZR_TK_EOS && skipCount < ZR_PARSER_MAX_RECOVERY_SKIP_TOKENS) {
                     EZrToken token = ps->lexer->t.token;
                     // 如果遇到分号，跳过它并继续
                     if (token == ZR_TK_SEMICOLON) {

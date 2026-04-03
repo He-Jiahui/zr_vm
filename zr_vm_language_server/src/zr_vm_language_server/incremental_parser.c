@@ -87,7 +87,10 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
     fileVersion->lastContentHash = ZR_NULL;
     fileVersion->lastContentHashLength = 0;
     fileVersion->hasIncrementalInfo = ZR_FALSE;
-    ZrCore_Array_Init(state, &fileVersion->parserDiagnostics, sizeof(SZrDiagnostic *), 4);
+    ZrCore_Array_Init(state,
+                      &fileVersion->parserDiagnostics,
+                      sizeof(SZrDiagnostic *),
+                      ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     
     // 复制内容
     fileVersion->content = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, contentLength + 1);
@@ -190,7 +193,7 @@ SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     parser->uriToFileMap.capacity = 0;
     parser->uriToFileMap.resizeThreshold = 0;
     parser->uriToFileMap.isValid = ZR_FALSE;
-    ZrCore_HashSet_Init(state, &parser->uriToFileMap, 4); // capacityLog2 = 4 (16 buckets)
+    ZrCore_HashSet_Init(state, &parser->uriToFileMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
     parser->parserState = ZR_NULL; // 延迟初始化
     parser->enableIncrementalParse = ZR_TRUE; // 默认启用增量解析
     parser->enableContentHash = ZR_TRUE; // 默认启用内容哈希
@@ -294,11 +297,11 @@ static void compute_content_hash(SZrState *state, const TZrChar *content, TZrSiz
     // TODO: 简化实现：使用简单的哈希算法
     TZrUInt64 hashValue = 0;
     for (TZrSize i = 0; i < length; i++) {
-        hashValue = hashValue * 31 + (TZrUInt8)content[i];
+        hashValue = hashValue * ZR_LSP_HASH_MULTIPLIER + (TZrUInt8)content[i];
     }
     
     // 转换为字符串
-    TZrChar hashStr[32];
+    TZrChar hashStr[ZR_LSP_SHORT_TEXT_BUFFER_LENGTH];
     snprintf(hashStr, sizeof(hashStr), "%llx", (unsigned long long)hashValue);
     TZrSize len = strlen(hashStr);
     

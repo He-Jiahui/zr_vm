@@ -29,6 +29,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/writer.h"
+#include "test_support.h"
 
 // Unity 测试宏扩展 - 添加缺失的 UINT64 不等断言
 #ifndef TEST_ASSERT_NOT_EQUAL_UINT64
@@ -38,6 +39,153 @@
 #ifndef ZR_ARRAY_COUNT
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
+
+static const TZrChar *kProbeCounterStateField = "__probe_counter_state";
+
+static void probe_set_int_field(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrInt64 value) {
+    SZrTypeValue fieldValue;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return;
+    }
+
+    ZrLib_Value_SetInt(state, &fieldValue, value);
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
+}
+
+static void probe_set_null_field(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
+    SZrTypeValue fieldValue;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return;
+    }
+
+    ZrLib_Value_SetNull(&fieldValue);
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
+}
+
+static TZrBool probe_get_self_object(const ZrLibCallContext *context, SZrObject **outObject) {
+    SZrTypeValue *selfValue;
+
+    if (outObject != ZR_NULL) {
+        *outObject = ZR_NULL;
+    }
+
+    if (context == ZR_NULL || outObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    selfValue = ZrLib_CallContext_Self(context);
+    if (selfValue == ZR_NULL ||
+        (selfValue->type != ZR_VALUE_TYPE_OBJECT && selfValue->type != ZR_VALUE_TYPE_ARRAY) ||
+        selfValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outObject = ZR_CAST_OBJECT(context->state, selfValue->value.object);
+    return *outObject != ZR_NULL;
+}
+
+static TZrBool probe_get_int_field(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrInt64 *outValue) {
+    const SZrTypeValue *fieldValue;
+
+    if (outValue != ZR_NULL) {
+        *outValue = 0;
+    }
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fieldValue = ZrLib_Object_GetFieldCString(state, object, fieldName);
+    if (fieldValue == ZR_NULL || !ZR_VALUE_IS_TYPE_INT(fieldValue->type)) {
+        return ZR_FALSE;
+    }
+
+    *outValue = fieldValue->value.nativeObject.nativeInt64;
+    return ZR_TRUE;
+}
+
+static TZrBool probe_native_create_counter_iterable(ZrLibCallContext *context, SZrTypeValue *result) {
+    ZrLibTempValueRoot root;
+    SZrObject *iterable;
+
+    if (context == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLib_CallContext_BeginTempValueRoot(context, &root)) {
+        return ZR_FALSE;
+    }
+
+    iterable = ZrLib_Type_NewInstance(context->state, "NativeCounterIterable");
+    if (iterable == ZR_NULL || !ZrLib_TempValueRoot_SetObject(&root, iterable, ZR_VALUE_TYPE_OBJECT)) {
+        ZrLib_TempValueRoot_End(&root);
+        return ZR_FALSE;
+    }
+
+    probe_set_int_field(context->state, iterable, kProbeCounterStateField, 0);
+    ZrCore_Value_Copy(context->state, result, ZrLib_TempValueRoot_Value(&root));
+    ZrLib_TempValueRoot_End(&root);
+    return ZR_TRUE;
+}
+
+static TZrBool probe_native_counter_get_iterator(ZrLibCallContext *context, SZrTypeValue *result) {
+    ZrLibTempValueRoot root;
+    SZrObject *iterator;
+
+    if (context == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLib_CallContext_BeginTempValueRoot(context, &root)) {
+        return ZR_FALSE;
+    }
+
+    iterator = ZrLib_Type_NewInstance(context->state, "NativeCounterIterator");
+    if (iterator == ZR_NULL || !ZrLib_TempValueRoot_SetObject(&root, iterator, ZR_VALUE_TYPE_OBJECT)) {
+        ZrLib_TempValueRoot_End(&root);
+        return ZR_FALSE;
+    }
+
+    probe_set_int_field(context->state, iterator, kProbeCounterStateField, -1);
+    probe_set_null_field(context->state, iterator, "current");
+    ZrCore_Value_Copy(context->state, result, ZrLib_TempValueRoot_Value(&root));
+    ZrLib_TempValueRoot_End(&root);
+    return ZR_TRUE;
+}
+
+static TZrBool probe_native_counter_iterator_move_next(ZrLibCallContext *context, SZrTypeValue *result) {
+    SZrObject *iterator = ZR_NULL;
+    TZrInt64 index = -1;
+
+    if (context == ZR_NULL || result == ZR_NULL || !probe_get_self_object(context, &iterator)) {
+        return ZR_FALSE;
+    }
+
+    probe_get_int_field(context->state, iterator, kProbeCounterStateField, &index);
+    index += 1;
+    probe_set_int_field(context->state, iterator, kProbeCounterStateField, index);
+
+    switch (index) {
+        case 0:
+            probe_set_int_field(context->state, iterator, "current", 4);
+            ZrLib_Value_SetBool(context->state, result, ZR_TRUE);
+            return ZR_TRUE;
+        case 1:
+            probe_set_int_field(context->state, iterator, "current", 6);
+            ZrLib_Value_SetBool(context->state, result, ZR_TRUE);
+            return ZR_TRUE;
+        case 2:
+            probe_set_int_field(context->state, iterator, "current", 9);
+            ZrLib_Value_SetBool(context->state, result, ZR_TRUE);
+            return ZR_TRUE;
+        default:
+            probe_set_null_field(context->state, iterator, "current");
+            ZrLib_Value_SetBool(context->state, result, ZR_FALSE);
+            return ZR_TRUE;
+    }
+}
 
 static const ZrLibMethodDescriptor kProbeReadableMethods[] = {
         {
@@ -50,6 +198,7 @@ static const ZrLibMethodDescriptor kProbeReadableMethods[] = {
                 .isStatic = ZR_FALSE,
                 .parameters = ZR_NULL,
                 .parameterCount = 0,
+                .contractRole = 0,
         },
 };
 
@@ -64,6 +213,7 @@ static const ZrLibMethodDescriptor kProbeStreamReadableMethods[] = {
                 .isStatic = ZR_FALSE,
                 .parameters = ZR_NULL,
                 .parameterCount = 0,
+                .contractRole = 0,
         },
 };
 
@@ -82,6 +232,7 @@ static const ZrLibMethodDescriptor kProbeDeviceMethods[] = {
                 .isStatic = ZR_FALSE,
                 .parameters = kProbeConfigureParameters,
                 .parameterCount = ZR_ARRAY_COUNT(kProbeConfigureParameters),
+                .contractRole = 0,
         },
 };
 
@@ -100,6 +251,7 @@ static const ZrLibMethodDescriptor kProbeLookupMethods[] = {
                 .isStatic = ZR_FALSE,
                 .parameters = kProbeLookupParameters,
                 .parameterCount = ZR_ARRAY_COUNT(kProbeLookupParameters),
+                .contractRole = 0,
         },
 };
 
@@ -118,14 +270,32 @@ static const ZrLibFunctionDescriptor kProbeNativeFunctions[] = {
                 .parameters = kProbeCreateDeviceParameters,
                 .parameterCount = ZR_ARRAY_COUNT(kProbeCreateDeviceParameters),
         },
+        {
+                .name = "createCounterIterable",
+                .minArgumentCount = 0,
+                .maxArgumentCount = 0,
+                .callback = probe_native_create_counter_iterable,
+                .returnTypeName = "NativeCounterIterable",
+                .documentation = "Create a native iterable value.",
+                .parameters = ZR_NULL,
+                .parameterCount = 0,
+        },
 };
 
 static const TZrChar *kProbeDeviceImplements[] = {
         "NativeStreamReadable",
 };
 
+static const TZrChar *kProbeCounterIterableImplements[] = {
+        "Iterable<int>",
+};
+
+static const TZrChar *kProbeCounterIteratorImplements[] = {
+        "Iterator<int>",
+};
+
 static const ZrLibFieldDescriptor kProbeDeviceFields[] = {
-        {"mode", "NativeMode", "The current device mode."},
+        {"mode", "NativeMode", "The current device mode.", 0},
 };
 
 static const ZrLibEnumMemberDescriptor kProbeModeMembers[] = {
@@ -134,7 +304,11 @@ static const ZrLibEnumMemberDescriptor kProbeModeMembers[] = {
 };
 
 static const ZrLibFieldDescriptor kProbeBoxFields[] = {
-        {"value", "T", "The boxed value."},
+        {"value", "T", "The boxed value.", 0},
+};
+
+static const ZrLibFieldDescriptor kProbeCounterIteratorFields[] = {
+        {"current", "int", "The current counter value.", ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD},
 };
 
 static const ZrLibMethodDescriptor kProbeBoxMethods[] = {
@@ -146,6 +320,39 @@ static const ZrLibMethodDescriptor kProbeBoxMethods[] = {
                 .returnTypeName = "T",
                 .documentation = "Return the boxed value.",
                 .isStatic = ZR_FALSE,
+                .parameters = ZR_NULL,
+                .parameterCount = 0,
+                .contractRole = 0,
+        },
+};
+
+static const ZrLibMethodDescriptor kProbeCounterIterableMethods[] = {
+        {
+                .name = "getIterator",
+                .minArgumentCount = 0,
+                .maxArgumentCount = 0,
+                .callback = probe_native_counter_get_iterator,
+                .returnTypeName = "NativeCounterIterator",
+                .documentation = "Create a contract-driven counter iterator.",
+                .isStatic = ZR_FALSE,
+                .parameters = ZR_NULL,
+                .parameterCount = 0,
+                .contractRole = ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT,
+        },
+};
+
+static const ZrLibMethodDescriptor kProbeCounterIteratorMethods[] = {
+        {
+                .name = "moveNext",
+                .minArgumentCount = 0,
+                .maxArgumentCount = 0,
+                .callback = probe_native_counter_iterator_move_next,
+                .returnTypeName = "bool",
+                .documentation = "Advance the contract-driven counter iterator.",
+                .isStatic = ZR_FALSE,
+                .parameters = ZR_NULL,
+                .parameterCount = 0,
+                .contractRole = ZR_MEMBER_CONTRACT_ROLE_ITERATOR_MOVE_NEXT,
         },
 };
 
@@ -186,6 +393,7 @@ static const ZrLibTypeDescriptor kProbeNativeTypes[] = {
                 .constructorSignature = "NativeReadable()",
                 .genericParameters = ZR_NULL,
                 .genericParameterCount = 0,
+                .protocolMask = 0,
         },
         {
                 .name = "NativeStreamReadable",
@@ -199,6 +407,7 @@ static const ZrLibTypeDescriptor kProbeNativeTypes[] = {
                 .constructorSignature = "NativeStreamReadable()",
                 .genericParameters = ZR_NULL,
                 .genericParameterCount = 0,
+                .protocolMask = 0,
         },
         {
                 .name = "NativeMode",
@@ -212,6 +421,7 @@ static const ZrLibTypeDescriptor kProbeNativeTypes[] = {
                 .constructorSignature = "NativeMode(value: int)",
                 .genericParameters = ZR_NULL,
                 .genericParameterCount = 0,
+                .protocolMask = 0,
         },
         {
                 .name = "NativeDevice",
@@ -228,6 +438,39 @@ static const ZrLibTypeDescriptor kProbeNativeTypes[] = {
                 .constructorSignature = "NativeDevice()",
                 .genericParameters = ZR_NULL,
                 .genericParameterCount = 0,
+                .protocolMask = 0,
+        },
+        {
+                .name = "NativeCounterIterable",
+                .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                .methods = kProbeCounterIterableMethods,
+                .methodCount = ZR_ARRAY_COUNT(kProbeCounterIterableMethods),
+                .documentation = "Native iterable type backed by explicit iterable contracts.",
+                .implementsTypeNames = kProbeCounterIterableImplements,
+                .implementsTypeCount = ZR_ARRAY_COUNT(kProbeCounterIterableImplements),
+                .allowValueConstruction = ZR_TRUE,
+                .allowBoxedConstruction = ZR_TRUE,
+                .constructorSignature = "NativeCounterIterable()",
+                .genericParameters = ZR_NULL,
+                .genericParameterCount = 0,
+                .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE),
+        },
+        {
+                .name = "NativeCounterIterator",
+                .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                .fields = kProbeCounterIteratorFields,
+                .fieldCount = ZR_ARRAY_COUNT(kProbeCounterIteratorFields),
+                .methods = kProbeCounterIteratorMethods,
+                .methodCount = ZR_ARRAY_COUNT(kProbeCounterIteratorMethods),
+                .documentation = "Native iterator type backed by explicit iterator contracts.",
+                .implementsTypeNames = kProbeCounterIteratorImplements,
+                .implementsTypeCount = ZR_ARRAY_COUNT(kProbeCounterIteratorImplements),
+                .allowValueConstruction = ZR_TRUE,
+                .allowBoxedConstruction = ZR_TRUE,
+                .constructorSignature = "NativeCounterIterator()",
+                .genericParameters = ZR_NULL,
+                .genericParameterCount = 0,
+                .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERATOR),
         },
         {
                 .name = "NativeBox",
@@ -242,6 +485,7 @@ static const ZrLibTypeDescriptor kProbeNativeTypes[] = {
                 .constructorSignature = "NativeBox(value: T)",
                 .genericParameters = kProbeBoxGenericParameters,
                 .genericParameterCount = ZR_ARRAY_COUNT(kProbeBoxGenericParameters),
+                .protocolMask = 0,
         },
         {
                 .name = "NativeLookup",
@@ -254,6 +498,7 @@ static const ZrLibTypeDescriptor kProbeNativeTypes[] = {
                 .constructorSignature = "NativeLookup()",
                 .genericParameters = kProbeLookupGenericParameters,
                 .genericParameterCount = ZR_ARRAY_COUNT(kProbeLookupGenericParameters),
+                .protocolMask = 0,
         },
 };
 
@@ -725,6 +970,25 @@ static SZrObject *find_named_entry_in_array(SZrState *state,
     return ZR_NULL;
 }
 
+static const SZrTypeValue *find_string_entry_in_array(SZrState *state, SZrObject *array, const TZrChar *expectedValue) {
+    TZrSize index;
+
+    if (state == ZR_NULL || array == ZR_NULL || expectedValue == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < get_array_length(array); index++) {
+        const SZrTypeValue *entryValue = get_array_entry_value(state, array, index);
+        if (entryValue != ZR_NULL &&
+            entryValue->type == ZR_VALUE_TYPE_STRING &&
+            string_equals_cstring(ZR_CAST_STRING(state, entryValue->value.object), expectedValue)) {
+            return entryValue;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static SZrObjectPrototype *get_module_exported_prototype(SZrState *state,
                                                          SZrObjectModule *module,
                                                          const TZrChar *typeName) {
@@ -804,6 +1068,95 @@ static TZrBool lookup_struct_field_offset(SZrState *state,
 
     *outOffset = pair->value.value.nativeObject.nativeUInt64;
     return ZR_TRUE;
+}
+
+static char *read_reference_file(const TZrChar *relativePath, TZrSize *size) {
+    return ZrTests_Reference_ReadFixture(relativePath, size);
+}
+
+typedef struct {
+    TZrBool reported;
+    SZrFileRange location;
+    EZrToken token;
+    char message[256];
+} SZrCapturedParserDiagnostic;
+
+static void clear_parser_diagnostic(SZrCapturedParserDiagnostic *diagnostic) {
+    if (diagnostic == ZR_NULL) {
+        return;
+    }
+
+    memset(diagnostic, 0, sizeof(*diagnostic));
+}
+
+static void capture_parser_error(TZrPtr userData,
+                                 const SZrFileRange *location,
+                                 const TZrChar *message,
+                                 EZrToken token) {
+    SZrCapturedParserDiagnostic *diagnostic = (SZrCapturedParserDiagnostic *)userData;
+
+    if (diagnostic == ZR_NULL || diagnostic->reported) {
+        return;
+    }
+
+    diagnostic->reported = ZR_TRUE;
+    diagnostic->token = token;
+    if (location != ZR_NULL) {
+        diagnostic->location = *location;
+    }
+    if (message != ZR_NULL) {
+        snprintf(diagnostic->message, sizeof(diagnostic->message), "%s", message);
+    }
+}
+
+static SZrAstNode *parse_reference_source_with_diagnostic(SZrState *state,
+                                                          const char *source,
+                                                          size_t sourceLength,
+                                                          const char *sourceNameText,
+                                                          SZrCapturedParserDiagnostic *diagnostic) {
+    SZrParserState parserState;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+
+    clear_parser_diagnostic(diagnostic);
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ZrParser_State_Init(&parserState, state, source, sourceLength, sourceName);
+    parserState.errorCallback = capture_parser_error;
+    parserState.errorUserData = diagnostic;
+    parserState.suppressErrorOutput = ZR_TRUE;
+
+    ast = ZrParser_ParseWithState(&parserState);
+    if (diagnostic != ZR_NULL &&
+        !diagnostic->reported &&
+        parserState.hasError &&
+        parserState.errorMessage != ZR_NULL) {
+        diagnostic->reported = ZR_TRUE;
+        snprintf(diagnostic->message, sizeof(diagnostic->message), "%s", parserState.errorMessage);
+    }
+    ZrParser_State_Free(&parserState);
+    return ast;
+}
+
+static TZrSize count_substring_occurrences(const TZrChar *text, const TZrChar *needle) {
+    TZrSize count = 0;
+    const TZrChar *cursor;
+    TZrSize needleLength;
+
+    if (text == ZR_NULL || needle == ZR_NULL || needle[0] == '\0') {
+        return 0;
+    }
+
+    needleLength = strlen(needle);
+    cursor = text;
+    while ((cursor = strstr(cursor, needle)) != ZR_NULL) {
+        count += 1;
+        cursor += needleLength;
+    }
+
+    return count;
 }
 
 // 测试初始化和清理
@@ -2124,7 +2477,7 @@ static void test_native_module_info_exposes_enum_and_interface_descriptors(void)
 
         typesArray = ZR_CAST_OBJECT(state, typesValue->value.object);
         TEST_ASSERT_NOT_NULL(typesArray);
-        TEST_ASSERT_EQUAL_UINT64(6, get_array_length(typesArray));
+        TEST_ASSERT_EQUAL_UINT64(8, get_array_length(typesArray));
 
         readableEntry = find_named_entry_in_array(state, typesArray, "name", "NativeReadable");
         streamReadableEntry = find_named_entry_in_array(state, typesArray, "name", "NativeStreamReadable");
@@ -3852,6 +4205,562 @@ static void test_native_registry_rejects_unsupported_capabilities(void) {
     TEST_DIVIDER();
 }
 
+static void test_reference_protocols_native_iterable_fixture_uses_registered_contracts(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reference Protocols Native Iterable Fixture Uses Registered Contracts";
+    SZrState *state = ZR_NULL;
+    TZrSize manifestSize = 0;
+    TZrSize sourceSize = 0;
+    char *manifestText = ZR_NULL;
+    char *source = ZR_NULL;
+    SZrObjectModule *module = ZR_NULL;
+    const SZrTypeValue *moduleInfoValue = ZR_NULL;
+    const SZrTypeValue *typesValue = ZR_NULL;
+    SZrObject *moduleInfo = ZR_NULL;
+    SZrObject *typesArray = ZR_NULL;
+    SZrObject *iterableEntry = ZR_NULL;
+    SZrObject *iteratorEntry = ZR_NULL;
+    const SZrTypeValue *protocolMaskValue = ZR_NULL;
+    const SZrTypeValue *implementsValue = ZR_NULL;
+    const SZrTypeValue *methodsValue = ZR_NULL;
+    const SZrTypeValue *fieldsValue = ZR_NULL;
+    SZrObject *implementsArray = ZR_NULL;
+    SZrObject *methodsArray = ZR_NULL;
+    SZrObject *fieldsArray = ZR_NULL;
+    SZrObject *getIteratorEntry = ZR_NULL;
+    SZrObject *moveNextEntry = ZR_NULL;
+    SZrObject *currentFieldEntry = ZR_NULL;
+    const SZrTypeValue *contractRoleValue = ZR_NULL;
+    SZrObjectPrototype *iterablePrototype = ZR_NULL;
+    SZrObjectPrototype *iteratorPrototype = ZR_NULL;
+    SZrString *sourceName = ZR_NULL;
+    SZrFunction *entryFunction = ZR_NULL;
+    TZrInt64 result = 0;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(register_probe_native_module(state));
+
+    manifestText = read_reference_file("core_semantics/protocols_iteration_comparable/manifest.json", &manifestSize);
+    TEST_ASSERT_NOT_NULL(manifestText);
+    TEST_ASSERT_TRUE(manifestSize > 0);
+    TEST_ASSERT_NOT_NULL(strstr(manifestText, "protocols-native-iterable-pass"));
+
+    module = import_native_module(state, "probe.native_shapes");
+    TEST_ASSERT_NOT_NULL(module);
+
+    moduleInfoValue = get_module_export_value(state, module, ZR_NATIVE_MODULE_INFO_EXPORT_NAME);
+    TEST_ASSERT_NOT_NULL(moduleInfoValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, moduleInfoValue->type);
+
+    moduleInfo = ZR_CAST_OBJECT(state, moduleInfoValue->value.object);
+    TEST_ASSERT_NOT_NULL(moduleInfo);
+
+    typesValue = get_object_field_value(state, moduleInfo, "types");
+    TEST_ASSERT_NOT_NULL(typesValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, typesValue->type);
+    typesArray = ZR_CAST_OBJECT(state, typesValue->value.object);
+    TEST_ASSERT_NOT_NULL(typesArray);
+
+    iterableEntry = find_named_entry_in_array(state, typesArray, "name", "NativeCounterIterable");
+    iteratorEntry = find_named_entry_in_array(state, typesArray, "name", "NativeCounterIterator");
+    TEST_ASSERT_NOT_NULL(iterableEntry);
+    TEST_ASSERT_NOT_NULL(iteratorEntry);
+
+    protocolMaskValue = get_object_field_value(state, iterableEntry, "protocolMask");
+    TEST_ASSERT_NOT_NULL(protocolMaskValue);
+    TEST_ASSERT_TRUE((((TZrUInt64)protocolMaskValue->value.nativeObject.nativeInt64) &
+                      ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)) != 0);
+
+    protocolMaskValue = get_object_field_value(state, iteratorEntry, "protocolMask");
+    TEST_ASSERT_NOT_NULL(protocolMaskValue);
+    TEST_ASSERT_TRUE((((TZrUInt64)protocolMaskValue->value.nativeObject.nativeInt64) &
+                      ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERATOR)) != 0);
+
+    implementsValue = get_object_field_value(state, iterableEntry, "implements");
+    TEST_ASSERT_NOT_NULL(implementsValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, implementsValue->type);
+    implementsArray = ZR_CAST_OBJECT(state, implementsValue->value.object);
+    TEST_ASSERT_NOT_NULL(implementsArray);
+    TEST_ASSERT_NOT_NULL(find_string_entry_in_array(state, implementsArray, "Iterable<int>"));
+
+    implementsValue = get_object_field_value(state, iteratorEntry, "implements");
+    TEST_ASSERT_NOT_NULL(implementsValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, implementsValue->type);
+    implementsArray = ZR_CAST_OBJECT(state, implementsValue->value.object);
+    TEST_ASSERT_NOT_NULL(implementsArray);
+    TEST_ASSERT_NOT_NULL(find_string_entry_in_array(state, implementsArray, "Iterator<int>"));
+
+    methodsValue = get_object_field_value(state, iterableEntry, "methods");
+    TEST_ASSERT_NOT_NULL(methodsValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, methodsValue->type);
+    methodsArray = ZR_CAST_OBJECT(state, methodsValue->value.object);
+    TEST_ASSERT_NOT_NULL(methodsArray);
+    getIteratorEntry = find_named_entry_in_array(state, methodsArray, "name", "getIterator");
+    TEST_ASSERT_NOT_NULL(getIteratorEntry);
+    contractRoleValue = get_object_field_value(state, getIteratorEntry, "contractRole");
+    TEST_ASSERT_NOT_NULL(contractRoleValue);
+    TEST_ASSERT_EQUAL_INT64(ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT, contractRoleValue->value.nativeObject.nativeInt64);
+
+    methodsValue = get_object_field_value(state, iteratorEntry, "methods");
+    TEST_ASSERT_NOT_NULL(methodsValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, methodsValue->type);
+    methodsArray = ZR_CAST_OBJECT(state, methodsValue->value.object);
+    TEST_ASSERT_NOT_NULL(methodsArray);
+    moveNextEntry = find_named_entry_in_array(state, methodsArray, "name", "moveNext");
+    TEST_ASSERT_NOT_NULL(moveNextEntry);
+    contractRoleValue = get_object_field_value(state, moveNextEntry, "contractRole");
+    TEST_ASSERT_NOT_NULL(contractRoleValue);
+    TEST_ASSERT_EQUAL_INT64(ZR_MEMBER_CONTRACT_ROLE_ITERATOR_MOVE_NEXT,
+                            contractRoleValue->value.nativeObject.nativeInt64);
+
+    fieldsValue = get_object_field_value(state, iteratorEntry, "fields");
+    TEST_ASSERT_NOT_NULL(fieldsValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, fieldsValue->type);
+    fieldsArray = ZR_CAST_OBJECT(state, fieldsValue->value.object);
+    TEST_ASSERT_NOT_NULL(fieldsArray);
+    currentFieldEntry = find_named_entry_in_array(state, fieldsArray, "name", "current");
+    TEST_ASSERT_NOT_NULL(currentFieldEntry);
+    contractRoleValue = get_object_field_value(state, currentFieldEntry, "contractRole");
+    TEST_ASSERT_NOT_NULL(contractRoleValue);
+    TEST_ASSERT_EQUAL_INT64(ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD,
+                            contractRoleValue->value.nativeObject.nativeInt64);
+
+    iterablePrototype = get_module_exported_prototype(state, module, "NativeCounterIterable");
+    iteratorPrototype = get_module_exported_prototype(state, module, "NativeCounterIterator");
+    TEST_ASSERT_NOT_NULL(iterablePrototype);
+    TEST_ASSERT_NOT_NULL(iteratorPrototype);
+    TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_ImplementsProtocol(iterablePrototype, ZR_PROTOCOL_ID_ITERABLE));
+    TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_ImplementsProtocol(iteratorPrototype, ZR_PROTOCOL_ID_ITERATOR));
+
+    source = read_reference_file("core_semantics/protocols_iteration_comparable/native_iterable_pass.zr", &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceSize > 0);
+
+    sourceName = ZrCore_String_Create(state, "reference_native_iterable_pass.zr", 33);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    entryFunction = ZrParser_Source_Compile(state, source, sourceSize, sourceName);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(469, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
+    free(manifestText);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_reference_import_manifest_and_native_member_chain_fixture(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reference Import Manifest And Native Member Chain Fixture";
+    SZrState *state = ZR_NULL;
+    TZrSize manifestSize = 0;
+    TZrSize sourceSize = 0;
+    char *manifestText = ZR_NULL;
+    char *source = ZR_NULL;
+    SZrString *sourceName = ZR_NULL;
+    SZrFunction *entryFunction = ZR_NULL;
+    TZrInt64 result = 0;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    manifestText = read_reference_file("core_semantics/imports/manifest.json", &manifestSize);
+    TEST_ASSERT_NOT_NULL(manifestText);
+    TEST_ASSERT_NOT_NULL(strstr(manifestText, "\"feature_group\""));
+    TEST_ASSERT_NOT_NULL(strstr(manifestText, "\"imports\""));
+    TEST_ASSERT_TRUE(count_substring_occurrences(manifestText, "\"id\"") >= 6);
+    TEST_ASSERT_TRUE(count_substring_occurrences(manifestText, "\"zr_decision\"") >= 6);
+
+    source = read_reference_file("core_semantics/imports/native_root_member_chain_pass.zr", &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+
+    sourceName = ZrCore_String_Create(state, "reference_native_root_member_chain_pass.zr", 42);
+    entryFunction = ZrParser_Source_Compile(state, source, sourceSize, sourceName);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
+    free(manifestText);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_reference_modules_manifest_duplicate_import_and_hidden_api_cases(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reference Modules Manifest Duplicate Import And Hidden API Cases";
+    SZrState *state = ZR_NULL;
+    TZrSize manifestSize = 0;
+    char *manifestText = ZR_NULL;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    manifestText = read_reference_file("core_semantics/modules_imports_artifacts/manifest.json", &manifestSize);
+    TEST_ASSERT_NOT_NULL(manifestText);
+    TEST_ASSERT_NOT_NULL(strstr(manifestText, "modules-duplicate-import-identity"));
+    TEST_ASSERT_NOT_NULL(strstr(manifestText, "modules-hidden-internal-import-api-reject"));
+    TEST_ASSERT_TRUE(count_substring_occurrences(manifestText, "\"module/project\"") >= 6);
+
+    {
+        SZrString *modulePath = ZrCore_String_Create(state, "zr.system", 9);
+        SZrObjectModule *firstImport = ZR_NULL;
+        SZrObjectModule *cachedImport = ZR_NULL;
+
+        TEST_ASSERT_NOT_NULL(modulePath);
+
+        for (TZrSize index = 0; index < 16; index++) {
+            cachedImport = ZrCore_Module_ImportByPath(state, modulePath);
+            TEST_ASSERT_NOT_NULL(cachedImport);
+            if (index == 0) {
+                firstImport = cachedImport;
+            } else {
+                TEST_ASSERT_EQUAL_PTR(firstImport, cachedImport);
+            }
+        }
+    }
+
+    TEST_ASSERT_NULL(get_zr_global_value(state, "import"));
+
+    free(manifestText);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_reference_hidden_internal_import_api_fixture_is_rejected(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reference Hidden Internal Import API Fixture Is Rejected";
+    SZrState *state = ZR_NULL;
+    TZrSize sourceSize = 0;
+    char *source = ZR_NULL;
+    SZrAstNode *ast = ZR_NULL;
+    SZrCapturedParserDiagnostic diagnostic;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/modules_imports_artifacts/hidden_internal_import_api_reject.zr",
+                                 &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+
+    ast = parse_reference_source_with_diagnostic(state,
+                                                 source,
+                                                 sourceSize,
+                                                 "reference_hidden_internal_import_api_reject.zr",
+                                                 &diagnostic);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(diagnostic.reported);
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy import() syntax is not supported; use %import"));
+    TEST_ASSERT_EQUAL_INT(3, diagnostic.location.start.line);
+
+    ZrParser_Ast_Free(state, ast);
+    free(source);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_reference_source_and_binary_import_forms_share_logical_identity(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reference Source And Binary Import Forms Share Logical Identity";
+    SZrState *state = ZR_NULL;
+    TZrSize sourceSize = 0;
+    char *moduleSource = ZR_NULL;
+    TZrByte *binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0;
+    const TZrChar *binaryPath = "reference_same_identity_fixture.zro";
+    SZrModuleFixtureSource fixture = {0};
+    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
+    TZrSize previousFixtureCount = g_module_fixture_source_count;
+    SZrString *modulePath = ZR_NULL;
+    SZrObjectModule *sourceModule = ZR_NULL;
+    SZrObjectModule *cachedBinaryModule = ZR_NULL;
+    const SZrTypeValue *markerValue = ZR_NULL;
+    TZrUInt64 expectedPathHash = 0;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    moduleSource = read_reference_file("core_semantics/modules_imports_artifacts/source_binary_same_logical_path_module.zr",
+                                       &sourceSize);
+    TEST_ASSERT_NOT_NULL(moduleSource);
+
+    binaryBytes = build_module_binary_fixture(state, moduleSource, binaryPath, &binaryLength);
+    TEST_ASSERT_NOT_NULL(binaryBytes);
+    TEST_ASSERT_TRUE(binaryLength > 0);
+
+    fixture.path = "reference.same_identity";
+    fixture.source = moduleSource;
+    fixture.bytes = ZR_NULL;
+    fixture.length = 0;
+    fixture.isBinary = ZR_FALSE;
+
+    g_module_fixture_sources = &fixture;
+    g_module_fixture_source_count = 1;
+    state->global->sourceLoader = module_fixture_source_loader;
+
+    modulePath = ZrCore_String_Create(state,
+                                      "reference.same_identity",
+                                      strlen("reference.same_identity"));
+    TEST_ASSERT_NOT_NULL(modulePath);
+    expectedPathHash = ZrCore_Module_CalculatePathHash(state, modulePath);
+
+    sourceModule = ZrCore_Module_ImportByPath(state, modulePath);
+    TEST_ASSERT_NOT_NULL(sourceModule);
+    TEST_ASSERT_TRUE(string_equals_cstring(sourceModule->fullPath, "reference.same_identity"));
+    TEST_ASSERT_EQUAL_UINT64(expectedPathHash, sourceModule->pathHash);
+
+    markerValue = get_object_field_value(state, &sourceModule->super, "marker");
+    TEST_ASSERT_NOT_NULL(markerValue);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(markerValue->type));
+    TEST_ASSERT_EQUAL_INT64(11, markerValue->value.nativeObject.nativeInt64);
+
+    fixture.source = ZR_NULL;
+    fixture.bytes = binaryBytes;
+    fixture.length = binaryLength;
+    fixture.isBinary = ZR_TRUE;
+
+    cachedBinaryModule = ZrCore_Module_ImportByPath(state, modulePath);
+    TEST_ASSERT_NOT_NULL(cachedBinaryModule);
+    TEST_ASSERT_EQUAL_PTR(sourceModule, cachedBinaryModule);
+    TEST_ASSERT_TRUE(string_equals_cstring(cachedBinaryModule->fullPath, "reference.same_identity"));
+    TEST_ASSERT_EQUAL_UINT64(expectedPathHash, cachedBinaryModule->pathHash);
+
+    markerValue = get_object_field_value(state, &cachedBinaryModule->super, "marker");
+    TEST_ASSERT_NOT_NULL(markerValue);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(markerValue->type));
+    TEST_ASSERT_EQUAL_INT64(11, markerValue->value.nativeObject.nativeInt64);
+
+    state->global->sourceLoader = ZR_NULL;
+    g_module_fixture_sources = previousFixtures;
+    g_module_fixture_source_count = previousFixtureCount;
+    free(binaryBytes);
+    free(moduleSource);
+    remove(binaryPath);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_reference_binary_module_metadata_roundtrip_fixture(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reference Binary Module Metadata Roundtrip Fixture";
+    SZrState *state = ZR_NULL;
+    TZrSize moduleSourceSize = 0;
+    TZrSize importSourceSize = 0;
+    char *moduleSource = ZR_NULL;
+    char *importSource = ZR_NULL;
+    const TZrChar *intermediatePath = "reference_binary_metadata_roundtrip_fixture.zri";
+    const TZrChar *binaryPath = "reference_binary_metadata_roundtrip_fixture.zro";
+    SZrString *moduleSourceName = ZR_NULL;
+    SZrString *importSourceName = ZR_NULL;
+    SZrFunction *moduleFunction = ZR_NULL;
+    SZrFunction *entryFunction = ZR_NULL;
+    char *intermediateText = ZR_NULL;
+    TZrSize intermediateSize = 0;
+    TZrByte *binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0;
+    SZrModuleFixtureSource fixture = {0};
+    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
+    TZrSize previousFixtureCount = g_module_fixture_source_count;
+    SZrTypeValue result;
+    SZrObject *reflectionObject = ZR_NULL;
+    const SZrTypeValue *testsValue = ZR_NULL;
+    const SZrTypeValue *compileTimeValue = ZR_NULL;
+    const SZrTypeValue *compileTimeVariablesValue = ZR_NULL;
+    const SZrTypeValue *compileTimeFunctionsValue = ZR_NULL;
+    SZrObject *testsArray = ZR_NULL;
+    SZrObject *compileTimeObject = ZR_NULL;
+    SZrObject *testInfo = ZR_NULL;
+    SZrObject *compileTimeVariable = ZR_NULL;
+    SZrObject *compileTimeFunction = ZR_NULL;
+    const SZrTypeValue *testNameValue = ZR_NULL;
+    const SZrTypeValue *variableNameValue = ZR_NULL;
+    const SZrTypeValue *variableTypeValue = ZR_NULL;
+    const SZrTypeValue *functionNameValue = ZR_NULL;
+    const SZrTypeValue *functionReturnTypeValue = ZR_NULL;
+    const SZrTypeValue *functionParametersValue = ZR_NULL;
+    SZrObject *functionParameters = ZR_NULL;
+    SZrObject *firstParameter = ZR_NULL;
+    const SZrTypeValue *parameterNameValue = ZR_NULL;
+    const SZrTypeValue *parameterTypeValue = ZR_NULL;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    moduleSource = read_reference_file("core_semantics/modules_imports_artifacts/binary_metadata_roundtrip_module.zr",
+                                       &moduleSourceSize);
+    importSource = read_reference_file("core_semantics/modules_imports_artifacts/binary_metadata_roundtrip_import.zr",
+                                       &importSourceSize);
+    TEST_ASSERT_NOT_NULL(moduleSource);
+    TEST_ASSERT_NOT_NULL(importSource);
+
+    moduleSourceName = ZrCore_String_Create(state,
+                                            "reference_binary_metadata_roundtrip_module.zr",
+                                            strlen("reference_binary_metadata_roundtrip_module.zr"));
+    TEST_ASSERT_NOT_NULL(moduleSourceName);
+    moduleFunction = ZrParser_Source_Compile(state, moduleSource, moduleSourceSize, moduleSourceName);
+    TEST_ASSERT_NOT_NULL(moduleFunction);
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, moduleFunction, intermediatePath));
+    intermediateText = ZrTests_ReadTextFile(intermediatePath, &intermediateSize);
+    TEST_ASSERT_NOT_NULL(intermediateText);
+    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COMPILE_TIME_VARIABLES (1):"));
+    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "MAX_SCALE: int"));
+    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COMPILE_TIME_FUNCTIONS (1):"));
+    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "fn buildBias(seed: int): int"));
+    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "TESTS (1):"));
+    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "test binary_meta()"));
+
+    binaryBytes = build_module_binary_fixture(state, moduleSource, binaryPath, &binaryLength);
+    TEST_ASSERT_NOT_NULL(binaryBytes);
+    TEST_ASSERT_TRUE(binaryLength > 0);
+
+    fixture.path = "reference.binary_meta";
+    fixture.source = ZR_NULL;
+    fixture.bytes = binaryBytes;
+    fixture.length = binaryLength;
+    fixture.isBinary = ZR_TRUE;
+
+    g_module_fixture_sources = &fixture;
+    g_module_fixture_source_count = 1;
+    state->global->sourceLoader = module_fixture_source_loader;
+
+    importSourceName = ZrCore_String_Create(state,
+                                            "reference_binary_metadata_roundtrip_import.zr",
+                                            strlen("reference_binary_metadata_roundtrip_import.zr"));
+    TEST_ASSERT_NOT_NULL(importSourceName);
+    entryFunction = ZrParser_Source_Compile(state, importSource, importSourceSize, importSourceName);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
+
+    reflectionObject = ZR_CAST_OBJECT(state, result.value.object);
+    TEST_ASSERT_NOT_NULL(reflectionObject);
+
+    testsValue = get_object_field_value(state, reflectionObject, "tests");
+    compileTimeValue = get_object_field_value(state, reflectionObject, "compileTime");
+    TEST_ASSERT_NOT_NULL(testsValue);
+    TEST_ASSERT_NOT_NULL(compileTimeValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, testsValue->type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, compileTimeValue->type);
+
+    testsArray = ZR_CAST_OBJECT(state, testsValue->value.object);
+    compileTimeObject = ZR_CAST_OBJECT(state, compileTimeValue->value.object);
+    TEST_ASSERT_NOT_NULL(testsArray);
+    TEST_ASSERT_NOT_NULL(compileTimeObject);
+    TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(testsArray));
+
+    testInfo = get_array_entry_object(state, testsArray, 0);
+    TEST_ASSERT_NOT_NULL(testInfo);
+    testNameValue = get_object_field_value(state, testInfo, "name");
+    TEST_ASSERT_NOT_NULL(testNameValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, testNameValue->type);
+    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, testNameValue->value.object), "binary_meta"));
+
+    compileTimeVariablesValue = get_object_field_value(state, compileTimeObject, "variables");
+    compileTimeFunctionsValue = get_object_field_value(state, compileTimeObject, "functions");
+    TEST_ASSERT_NOT_NULL(compileTimeVariablesValue);
+    TEST_ASSERT_NOT_NULL(compileTimeFunctionsValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, compileTimeVariablesValue->type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, compileTimeFunctionsValue->type);
+    TEST_ASSERT_EQUAL_UINT32(1,
+                             (TZrUInt32)get_array_length(ZR_CAST_OBJECT(state,
+                                                                        compileTimeVariablesValue->value.object)));
+    TEST_ASSERT_EQUAL_UINT32(1,
+                             (TZrUInt32)get_array_length(ZR_CAST_OBJECT(state,
+                                                                        compileTimeFunctionsValue->value.object)));
+
+    compileTimeVariable = get_array_entry_object(state,
+                                                 ZR_CAST_OBJECT(state, compileTimeVariablesValue->value.object),
+                                                 0);
+    compileTimeFunction = get_array_entry_object(state,
+                                                 ZR_CAST_OBJECT(state, compileTimeFunctionsValue->value.object),
+                                                 0);
+    TEST_ASSERT_NOT_NULL(compileTimeVariable);
+    TEST_ASSERT_NOT_NULL(compileTimeFunction);
+
+    variableNameValue = get_object_field_value(state, compileTimeVariable, "name");
+    variableTypeValue = get_object_field_value(state, compileTimeVariable, "typeName");
+    TEST_ASSERT_NOT_NULL(variableNameValue);
+    TEST_ASSERT_NOT_NULL(variableTypeValue);
+    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, variableNameValue->value.object), "MAX_SCALE"));
+    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, variableTypeValue->value.object), "int"));
+
+    functionNameValue = get_object_field_value(state, compileTimeFunction, "name");
+    functionReturnTypeValue = get_object_field_value(state, compileTimeFunction, "returnTypeName");
+    functionParametersValue = get_object_field_value(state, compileTimeFunction, "parameters");
+    TEST_ASSERT_NOT_NULL(functionNameValue);
+    TEST_ASSERT_NOT_NULL(functionReturnTypeValue);
+    TEST_ASSERT_NOT_NULL(functionParametersValue);
+    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, functionNameValue->value.object), "buildBias"));
+    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, functionReturnTypeValue->value.object), "int"));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, functionParametersValue->type);
+
+    functionParameters = ZR_CAST_OBJECT(state, functionParametersValue->value.object);
+    TEST_ASSERT_NOT_NULL(functionParameters);
+    TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(functionParameters));
+    firstParameter = get_array_entry_object(state, functionParameters, 0);
+    TEST_ASSERT_NOT_NULL(firstParameter);
+    parameterNameValue = get_object_field_value(state, firstParameter, "name");
+    parameterTypeValue = get_object_field_value(state, firstParameter, "typeName");
+    TEST_ASSERT_NOT_NULL(parameterNameValue);
+    TEST_ASSERT_NOT_NULL(parameterTypeValue);
+    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, parameterNameValue->value.object), "seed"));
+    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, parameterTypeValue->value.object), "int"));
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrCore_Function_Free(state, moduleFunction);
+    state->global->sourceLoader = ZR_NULL;
+    g_module_fixture_sources = previousFixtures;
+    g_module_fixture_source_count = previousFixtureCount;
+    free(intermediateText);
+    free(binaryBytes);
+    free(importSource);
+    free(moduleSource);
+    remove(intermediatePath);
+    remove(binaryPath);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 // ==================== 主函数 ====================
 
 int main(void) {
@@ -3983,6 +4892,16 @@ int main(void) {
 
     // 36. native registry 拒绝未支持 capability
     RUN_TEST(test_native_registry_rejects_unsupported_capabilities);
+
+    // 37. reference protocols fixture uses native iterable contracts
+    RUN_TEST(test_reference_protocols_native_iterable_fixture_uses_registered_contracts);
+
+    // 38. reference import matrix 与 native member-chain fixture
+    RUN_TEST(test_reference_import_manifest_and_native_member_chain_fixture);
+    RUN_TEST(test_reference_modules_manifest_duplicate_import_and_hidden_api_cases);
+    RUN_TEST(test_reference_hidden_internal_import_api_fixture_is_rejected);
+    RUN_TEST(test_reference_source_and_binary_import_forms_share_logical_identity);
+    RUN_TEST(test_reference_binary_module_metadata_roundtrip_fixture);
 
     return UNITY_END();
 }

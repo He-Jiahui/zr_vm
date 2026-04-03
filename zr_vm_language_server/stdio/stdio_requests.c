@@ -431,7 +431,7 @@ static cJSON *handle_semantic_tokens_full_request(SZrStdioServer *server, const 
         return NULL;
     }
 
-    ZrCore_Array_Init(server->state, &tokens, sizeof(TZrUInt32), 32);
+    ZrCore_Array_Init(server->state, &tokens, sizeof(TZrUInt32), ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetSemanticTokens(server->state, server->context, uri, &tokens)) {
         ZrCore_Array_Free(server->state, &tokens);
         return cJSON_CreateNull();
@@ -661,12 +661,12 @@ void handle_request_message(SZrStdioServer *server,
     } else if (strcmp(method, "textDocument/rename") == 0) {
         result = handle_rename_request(server, params);
     } else {
-        send_error_response(id, -32601, "Method not found");
+        send_error_response(id, ZR_LSP_JSON_RPC_METHOD_NOT_FOUND_CODE, "Method not found");
         return;
     }
 
     if (result == NULL) {
-        send_error_response(id, -32602, "Invalid params");
+        send_error_response(id, ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid params");
     } else {
         send_result_response(id, result);
     }

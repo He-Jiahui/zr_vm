@@ -59,6 +59,12 @@ TZrBool dump_intermediate_to_file(SZrState* state, SZrFunction* function, const 
 // 输出二进制文件（.zro）
 TZrBool dump_binary_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath);
 
+// 输出 AOT C 文本工件
+TZrBool dump_aot_c_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath);
+
+// 输出 AOT LLVM 文本工件
+TZrBool dump_aot_llvm_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath);
+
 // 输出运行状态到文件（文本和JSON）
 TZrBool dump_runtime_state(SZrState* state, const TZrChar* basePath);
 

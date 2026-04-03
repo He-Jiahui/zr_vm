@@ -360,13 +360,13 @@ void ZrCore_StringTable_Init(SZrState *state) {
     SZrGlobalState *global = state->global;
     SZrStringTable *stringTable = global->stringTable;
     // stringTable
-    ZrCore_HashSet_Init(state, &stringTable->stringHashSet, ZR_STRING_TABLE_INIT_SIZE_LOG2);
+    ZrCore_HashSet_Init(state, &stringTable->stringHashSet, ZR_STRING_TABLE_INITIAL_SIZE_LOG2);
     // this is the first string we created
     global->memoryErrorMessage = ZR_STRING_LITERAL(state, ZR_ERROR_MESSAGE_NOT_ENOUGH_MEMORY);
     ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->memoryErrorMessage));
     // fill api cache with valid string
-    for (TZrSize i = 0; i < ZR_GLOBAL_API_STR_CACHE_N; i++) {
-        for (TZrSize j = 0; j < ZR_GLOBAL_API_STR_CACHE_M; j++) {
+    for (TZrSize i = 0; i < ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT; i++) {
+        for (TZrSize j = 0; j < ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH; j++) {
             global->stringHashApiCache[i][j] = global->memoryErrorMessage;
         }
     }
@@ -454,15 +454,15 @@ SZrString *ZrCore_String_Create(SZrState *state, TZrNativeString string, TZrSize
 
 SZrString *ZrCore_String_CreateTryHitCache(SZrState *state, TZrNativeString string) {
     SZrGlobalState *global = state->global;
-    TZrUInt64 addressHash = ZR_CAST_UINT64(string) % ZR_GLOBAL_API_STR_CACHE_N;
+    TZrUInt64 addressHash = ZR_CAST_UINT64(string) % ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT;
     SZrString **apiCache = global->stringHashApiCache[addressHash];
-    for (TZrSize i = 0; i < ZR_GLOBAL_API_STR_CACHE_M; i++) {
+    for (TZrSize i = 0; i < ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH; i++) {
         if (ZrCore_NativeString_Compare(ZR_CAST_STRING_TO_NATIVE(apiCache[i]), string) == 0) {
             return apiCache[i];
         }
     }
     // replace cache
-    for (TZrSize i = ZR_GLOBAL_API_STR_CACHE_M - 1; i > 0; i--) {
+    for (TZrSize i = ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH - 1; i > 0; i--) {
         apiCache[i] = apiCache[i - 1];
     }
     apiCache[0] = ZrCore_String_Create(state, string, ZrCore_NativeString_Length(string));

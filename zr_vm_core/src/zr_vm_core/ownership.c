@@ -289,6 +289,44 @@ TZrBool ZrCore_Ownership_InitUniqueValue(struct SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrCore_Ownership_UniqueValue(struct SZrState *state,
+                                     SZrTypeValue *destination,
+                                     SZrTypeValue *source) {
+    if (state == ZR_NULL || destination == ZR_NULL || source == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ownership_prepare_destination(state, destination);
+    if (ZR_VALUE_IS_TYPE_NULL(source->type)) {
+        return ZR_TRUE;
+    }
+
+    if (!ownership_value_has_object(source) || source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE) {
+        ownership_reset_value_storage(destination);
+        return ZR_FALSE;
+    }
+
+    if (!ZrCore_Ownership_InitUniqueValue(state, destination, source->value.object)) {
+        ownership_reset_value_storage(destination);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Ownership_UsingValue(struct SZrState *state,
+                                    SZrTypeValue *destination,
+                                    SZrTypeValue *source) {
+    if (!ZrCore_Ownership_UniqueValue(state, destination, source)) {
+        return ZR_FALSE;
+    }
+
+    if (destination != ZR_NULL && destination->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE) {
+        destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_USING;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrCore_Ownership_ShareValue(struct SZrState *state,
                                     SZrTypeValue *destination,
                                     SZrTypeValue *source) {
@@ -376,6 +414,43 @@ TZrBool ZrCore_Ownership_WeakValue(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Ownership_UpgradeValue(struct SZrState *state,
+                                      SZrTypeValue *destination,
+                                      SZrTypeValue *source) {
+    SZrOwnershipControl *control;
+
+    if (state == ZR_NULL || destination == ZR_NULL || source == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ownership_prepare_destination(state, destination)) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_NULL(source->type)) {
+        return ZR_TRUE;
+    }
+
+    if (!ownership_value_has_object(source) || source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_WEAK) {
+        ownership_reset_value_storage(destination);
+        return ZR_FALSE;
+    }
+
+    control = source->ownershipControl;
+    if (control == ZR_NULL || control->object == ZR_NULL || control->strongRefCount == 0) {
+        ownership_reset_value_storage(destination);
+        return ZR_TRUE;
+    }
+
+    control->strongRefCount++;
+    ownership_set_value_from_object(destination,
+                                    control->object,
+                                    ZR_OWNERSHIP_VALUE_KIND_SHARED,
+                                    control);
     ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
     return ZR_TRUE;
 }
@@ -571,11 +646,8 @@ TZrInt64 ZrCore_Ownership_NativeUnique(struct SZrState *state) {
         return 0;
     }
 
-    ownership_prepare_destination(state, result);
-    if (ownership_value_has_object(arg) && arg->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE) {
-        if (!ZrCore_Ownership_InitUniqueValue(state, result, arg->value.object)) {
-            ownership_reset_value_storage(result);
-        }
+    if (!ZrCore_Ownership_UniqueValue(state, result, arg)) {
+        ownership_reset_value_storage(result);
     }
     state->stackTop.valuePointer = state->callInfoList->functionBase.valuePointer + 1;
     return 1;
@@ -614,5 +686,16 @@ TZrInt64 ZrCore_Ownership_NativeWeak(struct SZrState *state) {
 }
 
 TZrInt64 ZrCore_Ownership_NativeUsing(struct SZrState *state) {
-    return ZrCore_Ownership_NativeUnique(state);
+    SZrTypeValue *result;
+    SZrTypeValue *arg;
+
+    if (!ownership_native_get_argument(state, &result, &arg)) {
+        return 0;
+    }
+
+    if (!ZrCore_Ownership_UsingValue(state, result, arg)) {
+        ownership_reset_value_storage(result);
+    }
+    state->stackTop.valuePointer = state->callInfoList->functionBase.valuePointer + 1;
+    return 1;
 }

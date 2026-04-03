@@ -3,11 +3,94 @@ var fixed = %import("fixed_input");
 var queueStage = %import("queue_stage");
 var dedupeStage = %import("dedupe_stage");
 var aggregateStage = %import("aggregate_stage");
+var container = %import("zr.container");
 
-var fixedValues = fixed.buildFixedInput();
-var queue = queueStage.buildQueue(fixedValues);
-var uniquePairs = dedupeStage.drainUnique(queue);
-var checksum = aggregateStage.aggregateAndChecksum(uniquePairs);
+labelFor(value: int) {
+    if (value % 2 == 0) {
+        return "even";
+    }
+    if (value > 2) {
+        return "odd_hi";
+    }
+    return "odd_lo";
+}
 
+if (queueStage.queueExpected != 313248) {
+    return -10;
+}
+if (dedupeStage.dedupeExpected != 4631) {
+    return -20;
+}
+if (aggregateStage.aggregateExpected != 633) {
+    return -30;
+}
+
+var queue = new container.LinkedList<Pair<string, int>>();
+var seen = new container.Set<Pair<int, string>>();
+var buckets = new container.Map<string, Array<int>>();
+
+for (var item in fixed.fixedValues) {
+    var numeric = <int> item;
+    queue.addLast(new container.Pair<string, int>(labelFor(numeric), numeric));
+}
+
+while (queue.count > 0) {
+    var head = queue.first;
+    var task = head.value;
+    var next = head.next;
+    if (next != null) {
+        next.previous = null;
+        queue.first = next;
+    } else {
+        queue.first = null;
+        queue.last = null;
+    }
+    head.next = null;
+    head.previous = null;
+    queue.count = queue.count - 1;
+    seen.add(new container.Pair<int, string>(<int> task.second, <string> task.first));
+}
+
+for (var pair in seen) {
+    var label = <string> pair.second;
+    var value = <int> pair.first;
+    var bucket = buckets[label];
+    if (bucket == null) {
+        bucket = new container.Array<int>();
+        buckets[label] = bucket;
+    }
+    bucket.add(value);
+}
+
+var oddLo: Array<int> = buckets["odd_lo"];
+var oddHi: Array<int> = buckets["odd_hi"];
+var even: Array<int> = buckets["even"];
+var oddLoSum = 0;
+var oddHiSum = 0;
+var evenSum = 0;
+var uniqueCount = 0;
+
+if (oddLo != null) {
+    for (var item in oddLo) {
+        oddLoSum = oddLoSum + <int> item;
+        uniqueCount = uniqueCount + 1;
+    }
+}
+
+if (oddHi != null) {
+    for (var item in oddHi) {
+        oddHiSum = oddHiSum + <int> item;
+        uniqueCount = uniqueCount + 1;
+    }
+}
+
+if (even != null) {
+    for (var item in even) {
+        evenSum = evenSum + <int> item;
+        uniqueCount = uniqueCount + 1;
+    }
+}
+
+var checksum = evenSum * 100 + oddHiSum * 10 + oddLoSum + uniqueCount;
 system.console.printLine("CONTAINER_MATRIX_PASS");
 return checksum;

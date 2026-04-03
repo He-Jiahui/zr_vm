@@ -106,7 +106,7 @@ void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDe
 
     if (funcDecl->returnType != ZR_NULL) {
         if (ZrParser_AstTypeToInferredType_Convert(cs, funcDecl->returnType, &returnType)) {
-            ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), 8);
+            ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), ZR_PARSER_INITIAL_CAPACITY_SMALL);
             if (funcDecl->params != ZR_NULL) {
                 for (TZrSize i = 0; i < funcDecl->params->count; i++) {
                     SZrAstNode *paramNode = funcDecl->params->nodes[i];
@@ -148,7 +148,7 @@ void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDe
         }
     } else {
         ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_OBJECT);
-        ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), 8);
+        ZrCore_Array_Init(cs->state, &paramTypes, sizeof(SZrInferredType), ZR_PARSER_INITIAL_CAPACITY_SMALL);
         if (funcDecl->params != ZR_NULL) {
             for (TZrSize i = 0; i < funcDecl->params->count; i++) {
                 SZrAstNode *paramNode = funcDecl->params->nodes[i];
@@ -187,6 +187,377 @@ void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDe
         if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
             ZrCore_Array_Free(cs->state, &parameterPassingModes);
         }
+    }
+}
+
+static TZrBool compiler_try_infer_expression_type_soft(SZrCompilerState *cs,
+                                                       SZrAstNode *expr,
+                                                       SZrInferredType *result) {
+    TZrBool savedHasError;
+    TZrBool savedHadRecoverableError;
+    TZrBool savedHasFatalError;
+    TZrBool savedHasCompileTimeError;
+    SZrFileRange savedErrorLocation;
+    const TZrChar *savedErrorMessage;
+
+    if (cs == ZR_NULL || expr == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    savedHasError = cs->hasError;
+    savedHadRecoverableError = cs->hadRecoverableError;
+    savedHasFatalError = cs->hasFatalError;
+    savedHasCompileTimeError = cs->hasCompileTimeError;
+    savedErrorLocation = cs->errorLocation;
+    savedErrorMessage = cs->errorMessage;
+
+    cs->hasError = ZR_FALSE;
+    cs->hadRecoverableError = ZR_FALSE;
+    cs->hasFatalError = ZR_FALSE;
+
+    if (ZrParser_ExpressionType_Infer(cs, expr, result)) {
+        return ZR_TRUE;
+    }
+
+    cs->hasError = savedHasError;
+    cs->hadRecoverableError = savedHadRecoverableError;
+    cs->hasFatalError = savedHasFatalError;
+    cs->hasCompileTimeError = savedHasCompileTimeError;
+    cs->errorLocation = savedErrorLocation;
+    cs->errorMessage = savedErrorMessage;
+    return ZR_FALSE;
+}
+
+static void compiler_merge_callable_return_type(SZrCompilerState *cs,
+                                                const SZrInferredType *candidateType,
+                                                TZrBool *hasReturnType,
+                                                SZrInferredType *accumulatedType) {
+    SZrInferredType mergedType;
+
+    if (cs == ZR_NULL || candidateType == ZR_NULL || hasReturnType == ZR_NULL || accumulatedType == ZR_NULL) {
+        return;
+    }
+
+    if (!*hasReturnType) {
+        ZrParser_InferredType_Copy(cs->state, accumulatedType, candidateType);
+        *hasReturnType = ZR_TRUE;
+        return;
+    }
+
+    if (ZrParser_InferredType_Equal(accumulatedType, candidateType)) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &mergedType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_InferredType_GetCommonType(cs->state, &mergedType, accumulatedType, candidateType)) {
+        ZrParser_InferredType_Free(cs->state, accumulatedType);
+        ZrParser_InferredType_Copy(cs->state, accumulatedType, &mergedType);
+    } else {
+        ZrParser_InferredType_Free(cs->state, accumulatedType);
+        ZrParser_InferredType_Init(cs->state, accumulatedType, ZR_VALUE_TYPE_OBJECT);
+    }
+    ZrParser_InferredType_Free(cs->state, &mergedType);
+}
+
+static void compiler_collect_function_like_return_type(SZrCompilerState *cs,
+                                                       SZrAstNode *node,
+                                                       TZrBool *hasReturnType,
+                                                       SZrInferredType *accumulatedType) {
+    if (cs == ZR_NULL || node == ZR_NULL || hasReturnType == ZR_NULL || accumulatedType == ZR_NULL) {
+        return;
+    }
+
+    switch (node->type) {
+        case ZR_AST_BLOCK: {
+            SZrBlock *block = &node->data.block;
+            if (block->body == ZR_NULL) {
+                return;
+            }
+
+            for (TZrSize index = 0; index < block->body->count; index++) {
+                compiler_collect_function_like_return_type(cs,
+                                                           block->body->nodes[index],
+                                                           hasReturnType,
+                                                           accumulatedType);
+                if (cs->hasError) {
+                    return;
+                }
+            }
+            return;
+        }
+
+        case ZR_AST_RETURN_STATEMENT: {
+            SZrReturnStatement *returnStatement = &node->data.returnStatement;
+            SZrInferredType candidateType;
+
+            ZrParser_InferredType_Init(cs->state, &candidateType, ZR_VALUE_TYPE_NULL);
+            if (returnStatement->expr != ZR_NULL &&
+                !compiler_try_infer_expression_type_soft(cs, returnStatement->expr, &candidateType)) {
+                ZrParser_InferredType_Free(cs->state, &candidateType);
+                ZrParser_InferredType_Init(cs->state, &candidateType, ZR_VALUE_TYPE_OBJECT);
+            }
+
+            compiler_merge_callable_return_type(cs, &candidateType, hasReturnType, accumulatedType);
+            ZrParser_InferredType_Free(cs->state, &candidateType);
+            return;
+        }
+
+        case ZR_AST_IF_EXPRESSION: {
+            SZrIfExpression *ifExpression = &node->data.ifExpression;
+            compiler_collect_function_like_return_type(cs,
+                                                       ifExpression->thenExpr,
+                                                       hasReturnType,
+                                                       accumulatedType);
+            if (cs->hasError) {
+                return;
+            }
+            compiler_collect_function_like_return_type(cs,
+                                                       ifExpression->elseExpr,
+                                                       hasReturnType,
+                                                       accumulatedType);
+            return;
+        }
+
+        case ZR_AST_WHILE_LOOP:
+            compiler_collect_function_like_return_type(cs,
+                                                       node->data.whileLoop.block,
+                                                       hasReturnType,
+                                                       accumulatedType);
+            return;
+
+        case ZR_AST_FOR_LOOP:
+            compiler_collect_function_like_return_type(cs,
+                                                       node->data.forLoop.block,
+                                                       hasReturnType,
+                                                       accumulatedType);
+            return;
+
+        case ZR_AST_FOREACH_LOOP:
+            compiler_collect_function_like_return_type(cs,
+                                                       node->data.foreachLoop.block,
+                                                       hasReturnType,
+                                                       accumulatedType);
+            return;
+
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT: {
+            SZrTryCatchFinallyStatement *tryStatement = &node->data.tryCatchFinallyStatement;
+            compiler_collect_function_like_return_type(cs,
+                                                       tryStatement->block,
+                                                       hasReturnType,
+                                                       accumulatedType);
+            if (cs->hasError) {
+                return;
+            }
+
+            if (tryStatement->catchClauses != ZR_NULL) {
+                for (TZrSize index = 0; index < tryStatement->catchClauses->count; index++) {
+                    SZrAstNode *catchNode = tryStatement->catchClauses->nodes[index];
+                    if (catchNode == ZR_NULL || catchNode->type != ZR_AST_CATCH_CLAUSE) {
+                        continue;
+                    }
+
+                    compiler_collect_function_like_return_type(cs,
+                                                               catchNode->data.catchClause.block,
+                                                               hasReturnType,
+                                                               accumulatedType);
+                    if (cs->hasError) {
+                        return;
+                    }
+                }
+            }
+
+            compiler_collect_function_like_return_type(cs,
+                                                       tryStatement->finallyBlock,
+                                                       hasReturnType,
+                                                       accumulatedType);
+            return;
+        }
+
+        case ZR_AST_FUNCTION_DECLARATION:
+        case ZR_AST_LAMBDA_EXPRESSION:
+        case ZR_AST_CLASS_DECLARATION:
+        case ZR_AST_STRUCT_DECLARATION:
+        case ZR_AST_INTERFACE_DECLARATION:
+        case ZR_AST_TEST_DECLARATION:
+            return;
+
+        default:
+            return;
+    }
+}
+
+static void compiler_collect_callable_parameter_types(SZrCompilerState *cs,
+                                                      SZrAstNodeArray *params,
+                                                      SZrArray *paramTypes) {
+    if (cs == ZR_NULL || paramTypes == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Array_Construct(paramTypes);
+    if (params == ZR_NULL || params->count == 0) {
+        return;
+    }
+
+    ZrCore_Array_Init(cs->state, paramTypes, sizeof(SZrInferredType), params->count);
+    for (TZrSize index = 0; index < params->count; index++) {
+        SZrAstNode *paramNode = params->nodes[index];
+        SZrInferredType paramType;
+
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        if (paramNode->data.parameter.typeInfo != ZR_NULL &&
+            ZrParser_AstTypeToInferredType_Convert(cs, paramNode->data.parameter.typeInfo, &paramType)) {
+            ZrCore_Array_Push(cs->state, paramTypes, &paramType);
+            continue;
+        }
+
+        ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+        ZrCore_Array_Push(cs->state, paramTypes, &paramType);
+    }
+}
+
+static void compiler_register_lambda_callable_binding(SZrCompilerState *cs,
+                                                      SZrString *name,
+                                                      SZrLambdaExpression *lambda) {
+    SZrTypeEnvironment *savedEnv;
+    SZrTypeEnvironment *lambdaEnv;
+    SZrInferredType returnType;
+    SZrArray paramTypes;
+    SZrArray parameterPassingModes;
+    TZrBool hasReturnType = ZR_FALSE;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || name == ZR_NULL || lambda == ZR_NULL) {
+        return;
+    }
+
+    lambdaEnv = ZrParser_TypeEnvironment_New(cs->state);
+    if (lambdaEnv == ZR_NULL) {
+        return;
+    }
+
+    lambdaEnv->parent = cs->typeEnv;
+    lambdaEnv->semanticContext = cs->typeEnv->semanticContext;
+    savedEnv = cs->typeEnv;
+    cs->typeEnv = lambdaEnv;
+
+    if (lambda->params != ZR_NULL) {
+        for (TZrSize index = 0; index < lambda->params->count; index++) {
+            SZrAstNode *paramNode = lambda->params->nodes[index];
+            SZrParameter *parameter;
+            SZrInferredType paramType;
+
+            if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+                continue;
+            }
+
+            parameter = &paramNode->data.parameter;
+            if (parameter->name == ZR_NULL || parameter->name->name == ZR_NULL) {
+                continue;
+            }
+
+            if (parameter->typeInfo != ZR_NULL &&
+                ZrParser_AstTypeToInferredType_Convert(cs, parameter->typeInfo, &paramType)) {
+                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, parameter->name->name, &paramType);
+                ZrParser_InferredType_Free(cs->state, &paramType);
+                continue;
+            }
+
+            ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+            ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, parameter->name->name, &paramType);
+            ZrParser_InferredType_Free(cs->state, &paramType);
+        }
+    }
+
+    ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_NULL);
+    compiler_collect_function_like_return_type(cs, lambda->block, &hasReturnType, &returnType);
+    if (!hasReturnType) {
+        ZrParser_InferredType_Free(cs->state, &returnType);
+        ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_NULL);
+    }
+
+    compiler_collect_callable_parameter_types(cs, lambda->params, &paramTypes);
+    ZrCore_Array_Construct(&parameterPassingModes);
+    compiler_collect_parameter_passing_modes(cs->state, &parameterPassingModes, lambda->params);
+
+    ZrParser_TypeEnvironment_RegisterFunctionEx(cs->state,
+                                                savedEnv,
+                                                name,
+                                                &returnType,
+                                                &paramTypes,
+                                                ZR_NULL,
+                                                &parameterPassingModes,
+                                                ZR_NULL);
+
+    if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
+        ZrCore_Array_Free(cs->state, &parameterPassingModes);
+    }
+    if (paramTypes.isValid && paramTypes.head != ZR_NULL) {
+        for (TZrSize index = 0; index < paramTypes.length; index++) {
+            SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get(&paramTypes, index);
+            if (paramType != ZR_NULL) {
+                ZrParser_InferredType_Free(cs->state, paramType);
+            }
+        }
+        ZrCore_Array_Free(cs->state, &paramTypes);
+    }
+    ZrParser_InferredType_Free(cs->state, &returnType);
+
+    cs->typeEnv = savedEnv;
+    ZrParser_TypeEnvironment_Free(cs->state, lambdaEnv);
+}
+
+static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
+                                                          SZrString *name,
+                                                          SZrString *sourceName) {
+    SZrArray candidates;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || name == ZR_NULL || sourceName == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Array_Construct(&candidates);
+    if (!ZrParser_TypeEnvironment_LookupFunctions(cs->state, cs->typeEnv, sourceName, &candidates)) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < candidates.length; index++) {
+        SZrFunctionTypeInfo **candidatePtr =
+                (SZrFunctionTypeInfo **)ZrCore_Array_Get(&candidates, index);
+        if (candidatePtr == ZR_NULL || *candidatePtr == ZR_NULL) {
+            continue;
+        }
+
+        ZrParser_TypeEnvironment_RegisterFunctionEx(cs->state,
+                                                    cs->typeEnv,
+                                                    name,
+                                                    &(*candidatePtr)->returnType,
+                                                    &(*candidatePtr)->paramTypes,
+                                                    &(*candidatePtr)->genericParameters,
+                                                    &(*candidatePtr)->parameterPassingModes,
+                                                    (*candidatePtr)->declarationNode);
+    }
+
+    if (candidates.isValid && candidates.head != ZR_NULL) {
+        ZrCore_Array_Free(cs->state, &candidates);
+    }
+}
+
+void compiler_register_callable_value_binding(SZrCompilerState *cs,
+                                              SZrString *name,
+                                              SZrAstNode *valueNode) {
+    if (cs == ZR_NULL || name == ZR_NULL || valueNode == ZR_NULL || cs->typeEnv == ZR_NULL) {
+        return;
+    }
+
+    if (valueNode->type == ZR_AST_LAMBDA_EXPRESSION) {
+        compiler_register_lambda_callable_binding(cs, name, &valueNode->data.lambdaExpression);
+        return;
+    }
+
+    if (valueNode->type == ZR_AST_IDENTIFIER_LITERAL && valueNode->data.identifier.name != ZR_NULL) {
+        compiler_register_identifier_callable_binding(cs, name, valueNode->data.identifier.name);
     }
 }
 
@@ -349,21 +720,27 @@ void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNo
 }
 
 TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) {
+    TZrUInt32 globalSlot;
+    TZrUInt32 memberId;
+
     if (cs == ZR_NULL || name == ZR_NULL || cs->hasError) {
         return (TZrUInt32)-1;
     }
 
-    TZrUInt32 globalSlot = allocate_stack_slot(cs);
+    globalSlot = allocate_stack_slot(cs);
     TZrInstruction getGlobalInst = create_instruction_0(ZR_INSTRUCTION_ENUM(GET_GLOBAL), (TZrUInt16)globalSlot);
     emit_instruction(cs, getGlobalInst);
 
-    TZrUInt32 keySlot = allocate_stack_slot(cs);
-    emit_string_constant_to_slot(cs, keySlot, name);
+    memberId = compiler_get_or_add_member_entry(cs, name);
+    if (memberId == (TZrUInt32)-1) {
+        return (TZrUInt32)-1;
+    }
 
-    TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TZrUInt16)globalSlot,
-                                                       (TZrUInt16)globalSlot, (TZrUInt16)keySlot);
-    emit_instruction(cs, getTableInst);
-    ZrParser_Compiler_TrimStackToSlot(cs, globalSlot);
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                                          (TZrUInt16)globalSlot,
+                                          (TZrUInt16)globalSlot,
+                                          (TZrUInt16)memberId));
     return globalSlot;
 }
 
@@ -408,28 +785,11 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompiler
 ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerState *cs,
                                                                   SZrAstNode *operand,
                                                                   SZrFileRange location) {
-    SZrClosureNative *typeQueryClosure;
-    SZrTypeValue typeQueryCallable;
-    TZrUInt32 functionSlot;
     TZrUInt32 argumentSlot;
 
     if (cs == ZR_NULL || operand == ZR_NULL || cs->hasError) {
         return (TZrUInt32)-1;
     }
-
-    typeQueryClosure = ZrCore_ClosureNative_New(cs->state, 0);
-    if (typeQueryClosure == ZR_NULL) {
-        ZrParser_Compiler_Error(cs, "failed to create internal reflection callable", location);
-        return (TZrUInt32)-1;
-    }
-    typeQueryClosure->nativeFunction = ZrCore_Reflection_TypeOfNativeEntry;
-    ZrCore_RawObject_MarkAsPermanent(cs->state, ZR_CAST_RAW_OBJECT_AS_SUPER(typeQueryClosure));
-
-    ZrCore_Value_InitAsRawObject(cs->state, &typeQueryCallable, ZR_CAST_RAW_OBJECT_AS_SUPER(typeQueryClosure));
-    typeQueryCallable.isNative = ZR_TRUE;
-
-    functionSlot = allocate_stack_slot(cs);
-    emit_constant_to_slot(cs, functionSlot, &typeQueryCallable);
 
     argumentSlot = allocate_stack_slot(cs);
     if (compile_expression_into_slot(cs, operand, argumentSlot) == (TZrUInt32)-1 || cs->hasError) {
@@ -437,11 +797,12 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerSta
     }
 
     emit_instruction(cs,
-                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
-                                          (TZrUInt16)functionSlot,
-                                          (TZrUInt16)functionSlot,
-                                          1));
-    ZrParser_Compiler_TrimStackToSlot(cs, functionSlot);
-    return functionSlot;
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(TYPEOF),
+                                          (TZrUInt16)argumentSlot,
+                                          (TZrUInt16)argumentSlot,
+                                          0));
+    ZrParser_Compiler_TrimStackToSlot(cs, argumentSlot);
+    ZR_UNUSED_PARAMETER(location);
+    return argumentSlot;
 }
 

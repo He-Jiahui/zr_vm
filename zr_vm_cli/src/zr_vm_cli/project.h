@@ -3,6 +3,7 @@
 
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/io.h"
+#include "zr_vm_cli/conf.h"
 #include "zr_vm_library/conf.h"
 
 typedef struct SZrCliProjectContext {
@@ -22,7 +23,7 @@ typedef struct SZrCliStringList {
 
 typedef struct SZrCliManifestEntry {
     TZrChar moduleName[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar sourceHash[32];
+    TZrChar sourceHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
     TZrChar zroPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar zriPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     SZrCliStringList imports;
@@ -34,8 +35,6 @@ typedef struct SZrCliIncrementalManifest {
     TZrSize count;
     TZrSize capacity;
 } SZrCliIncrementalManifest;
-
-#define ZR_CLI_MANIFEST_VERSION 1u
 
 SZrGlobalState *ZrCli_Project_CreateBareGlobal(void);
 SZrGlobalState *ZrCli_Project_CreateProjectGlobal(const TZrChar *projectPath);

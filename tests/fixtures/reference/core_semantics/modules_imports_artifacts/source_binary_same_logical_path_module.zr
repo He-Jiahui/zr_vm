@@ -1,0 +1,5 @@
+%module "reference.same_identity";
+
+%compileTime var SOURCE_SEED: int = 7;
+
+pub var marker: int = SOURCE_SEED + 4;

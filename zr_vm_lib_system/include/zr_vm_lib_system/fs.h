@@ -5,7 +5,7 @@
 #ifndef ZR_VM_LIB_SYSTEM_FS_H
 #define ZR_VM_LIB_SYSTEM_FS_H
 
-#include "zr_vm_library.h"
+#include "zr_vm_lib_system/conf.h"
 
 TZrBool ZrSystem_Fs_CurrentDirectory(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrSystem_Fs_ChangeCurrentDirectory(ZrLibCallContext *context, SZrTypeValue *result);

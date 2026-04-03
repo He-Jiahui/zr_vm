@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#include "zr_vm_common.h"
+#include "zr_vm_cli/conf.h"
 
 typedef enum EZrCliMode {
     ZR_CLI_MODE_HELP = 0,

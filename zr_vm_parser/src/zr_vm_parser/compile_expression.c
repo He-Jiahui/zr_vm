@@ -558,7 +558,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
         
         // 检查是否是 const 函数参数
         if (is_const_variable(cs, name, &cs->constParameters)) {
-            TZrChar errorMsg[256];
+            TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
             TZrNativeString nameStr = ZrCore_String_GetNativeStringShort(name);
             if (nameStr != ZR_NULL) {
                 snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const parameter '%s'", nameStr);
@@ -571,7 +571,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
         
         // 检查是否是 const 局部变量
         if (is_const_variable(cs, name, &cs->constLocalVars)) {
-            TZrChar errorMsg[256];
+            TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
             TZrNativeString nameStr = ZrCore_String_GetNativeStringShort(name);
             if (nameStr != ZR_NULL) {
                 snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const variable '%s' after declaration", nameStr);
@@ -694,26 +694,18 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 return;
             }
             
-            // 尝试作为全局变量访问（使用 SET_TABLE）
+            // 尝试作为全局变量访问（使用 GET_GLOBAL + SET_MEMBER）
             // 1. 获取全局对象（zr 对象）
             TZrUInt32 globalSlot = allocate_stack_slot(cs);
             TZrInstruction getGlobalInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_GLOBAL), (TZrUInt16)globalSlot, 0);
             emit_instruction(cs, getGlobalInst);
-            
-            // 2. 将变量名转换为字符串常量并压入栈
-            SZrTypeValue nameValue;
-            ZrCore_Value_InitAsRawObject(cs->state, &nameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(name));
-            nameValue.type = ZR_VALUE_TYPE_STRING;
-            TZrUInt32 nameConstantIndex = add_constant(cs, &nameValue);
-            TZrUInt32 keySlot = allocate_stack_slot(cs);
-            TZrInstruction getKeyInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16)keySlot, (TZrInt32)nameConstantIndex);
-            emit_instruction(cs, getKeyInst);
+            TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, name);
             
             // 对于复合赋值，需要先读取值，执行运算，再写入
             if (strcmp(op, "=") != 0) {
                 // 读取全局变量值
                 TZrUInt32 leftSlot = allocate_stack_slot(cs);
-                TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TZrUInt16)leftSlot, (TZrUInt16)globalSlot, (TZrUInt16)keySlot);
+                TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER), (TZrUInt16)leftSlot, (TZrUInt16)globalSlot, (TZrUInt16)memberId);
                 emit_instruction(cs, getTableInst);
                 
                 // 执行运算
@@ -738,22 +730,18 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                         ZR_COMPILE_SLOT_U16(rightSlot));
                 emit_instruction(cs, opInst);
                 
-                // 写入全局变量（使用 SET_TABLE）
-                // SET_TABLE 格式: operandExtra = destSlot, operand1[0] = tableSlot, operand1[1] = keySlot
-                TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TZrUInt16)resultSlot, (TZrUInt16)globalSlot, (TZrUInt16)keySlot);
+                TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER), (TZrUInt16)resultSlot, (TZrUInt16)globalSlot, (TZrUInt16)memberId);
                 emit_instruction(cs, setTableInst);
                 
                 // 释放临时栈槽
-                ZrParser_Compiler_TrimStackBy(cs, 3); // leftSlot, resultSlot, globalSlot, keySlot (但 resultSlot 会被保留)
+                ZrParser_Compiler_TrimStackBy(cs, 2); // leftSlot, globalSlot (resultSlot 会被保留)
             } else {
-                // 简单赋值：直接使用 SET_TABLE
-                // SET_TABLE 格式: operandExtra = destSlot, operand1[0] = tableSlot, operand1[1] = keySlot
-                TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TZrUInt16)rightSlot, (TZrUInt16)globalSlot, (TZrUInt16)keySlot);
+                TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER), (TZrUInt16)rightSlot, (TZrUInt16)globalSlot, (TZrUInt16)memberId);
                 emit_instruction(cs, setTableInst);
                 update_identifier_assignment_type_environment(cs, name, right);
                 
                 // 释放临时栈槽
-                ZrParser_Compiler_TrimStackBy(cs, 2); // globalSlot 和 keySlot
+                ZrParser_Compiler_TrimStackBy(cs, 1); // globalSlot
             }
         }
     } else {
@@ -776,40 +764,61 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                         // 处理成员访问链，获取最后一个成员访问的键
                         SZrMemberExpression *memberExpr = &lastMember->data.memberExpression;
                         if (memberExpr->property != ZR_NULL) {
-                            // 检查成员字段是否是 const
-                            // 如果字段是 const 且当前不在构造函数中，报告错误
                             SZrString *rootTypeName = ZR_NULL;
                             TZrBool rootIsTypeReference = ZR_FALSE;
+                            TZrBool targetsThis = ZR_FALSE;
                             resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
+
+                            if (primary->property != ZR_NULL &&
+                                primary->property->type == ZR_AST_IDENTIFIER_LITERAL &&
+                                primary->property->data.identifier.name != ZR_NULL) {
+                                TZrNativeString objNameStr =
+                                        ZrCore_String_GetNativeStringShort(primary->property->data.identifier.name);
+                                targetsThis = objNameStr != ZR_NULL && strcmp(objNameStr, "this") == 0;
+                            }
 
                             if (!memberExpr->computed && memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
                                 SZrString *fieldName = memberExpr->property->data.identifier.name;
-                                if (fieldName != ZR_NULL && !cs->isInConstructor) {
-                                    // 查找类型定义，检查字段是否是 const
-                                    // 尝试从 primary->property 推断类型（如果是 this）
-                                    if (primary->property != ZR_NULL && 
-                                        primary->property->type == ZR_AST_IDENTIFIER_LITERAL) {
-                                        SZrString *objName = primary->property->data.identifier.name;
-                                        if (objName != ZR_NULL) {
-                                            TZrNativeString objNameStr = ZrCore_String_GetNativeStringShort(objName);
-                                            if (objNameStr != ZR_NULL && strcmp(objNameStr, "this") == 0) {
-                                                // 这是 this.field 的赋值
-                                                // 使用当前类型名称查找字段是否是 const
-                                                if (cs->currentTypeName != ZR_NULL) {
-                                                    if (find_type_member_is_const(cs, cs->currentTypeName, fieldName)) {
-                                                        TZrChar errorMsg[256];
-                                                        TZrNativeString fieldNameStr = ZrCore_String_GetNativeStringShort(fieldName);
-                                                        if (fieldNameStr != ZR_NULL) {
-                                                            snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const field '%s' outside constructor", fieldNameStr);
-                                                        } else {
-                                                            snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const field outside constructor");
-                                                        }
-                                                        ZrParser_Compiler_Error(cs, errorMsg, node->location);
-                                                        return;
-                                                    }
-                                                }
-                                            }
+                                if (fieldName != ZR_NULL && rootTypeName != ZR_NULL &&
+                                    find_type_member_is_const(cs, rootTypeName, fieldName)) {
+                                    TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
+                                    TZrNativeString fieldNameStr = ZrCore_String_GetNativeStringShort(fieldName);
+
+                                    if (rootIsTypeReference) {
+                                        if (fieldNameStr != ZR_NULL) {
+                                            snprintf(errorMsg,
+                                                     sizeof(errorMsg),
+                                                     "Cannot assign to const static field '%s'",
+                                                     fieldNameStr);
+                                        } else {
+                                            snprintf(errorMsg,
+                                                     sizeof(errorMsg),
+                                                     "Cannot assign to const static field");
                                         }
+                                        ZrParser_Compiler_Error(cs, errorMsg, node->location);
+                                        return;
+                                    }
+
+                                    if (!targetsThis || !cs->isInConstructor) {
+                                        if (fieldNameStr != ZR_NULL) {
+                                            snprintf(errorMsg,
+                                                     sizeof(errorMsg),
+                                                     "Cannot assign to const field '%s' outside constructor",
+                                                     fieldNameStr);
+                                        } else {
+                                            snprintf(errorMsg,
+                                                     sizeof(errorMsg),
+                                                     "Cannot assign to const field outside constructor");
+                                        }
+                                        ZrParser_Compiler_Error(cs, errorMsg, node->location);
+                                        return;
+                                    }
+
+                                    if (!compiler_record_constructor_const_field_assignment(cs,
+                                                                                           fieldName,
+                                                                                           op,
+                                                                                           node->location)) {
+                                        return;
                                     }
                                 }
 
@@ -831,55 +840,153 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                 }
                             }
                             
-                            TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, objSlot + 1);
-                            if (keySlot == (TZrUInt32)-1) {
+                            if (!memberExpr->computed) {
+                                SZrString *memberSymbol = resolve_member_expression_symbol(cs, memberExpr);
+                                SZrTypeMemberInfo *typeMember =
+                                        (rootTypeName != ZR_NULL && memberSymbol != ZR_NULL)
+                                                ? find_compiler_type_member(cs, rootTypeName, memberSymbol)
+                                                : ZR_NULL;
+                                TZrBool declaredCurrentTypeField =
+                                        (typeMember == ZR_NULL && rootTypeName != ZR_NULL && memberSymbol != ZR_NULL)
+                                                ? find_current_type_field_metadata(cs,
+                                                                                   rootTypeName,
+                                                                                   memberSymbol,
+                                                                                   ZR_NULL,
+                                                                                   ZR_NULL)
+                                                : ZR_FALSE;
+
+                                if (typeMember != ZR_NULL || declaredCurrentTypeField) {
+                                    TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, memberSymbol);
+
+                                    if (memberId == (TZrUInt32)-1) {
+                                        ZrParser_Compiler_Error(cs, "Failed to register assignment member symbol", node->location);
+                                        return;
+                                    }
+
+                                    if (strcmp(op, "=") == 0) {
+                                        TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER), (TZrUInt16)rightSlot, (TZrUInt16)objSlot, (TZrUInt16)memberId);
+                                        emit_instruction(cs, setTableInst);
+                                    } else {
+                                        TZrUInt32 leftValueSlot = allocate_stack_slot(cs);
+                                        TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER), (TZrUInt16)leftValueSlot, (TZrUInt16)objSlot, (TZrUInt16)memberId);
+                                        emit_instruction(cs, getTableInst);
+
+                                        EZrInstructionCode opcode = ZR_INSTRUCTION_ENUM(ADD_INT);
+                                        if (strcmp(op, "+=") == 0) {
+                                            opcode = ZR_INSTRUCTION_ENUM(ADD_INT);
+                                        } else if (strcmp(op, "-=") == 0) {
+                                            opcode = ZR_INSTRUCTION_ENUM(SUB_INT);
+                                        } else if (strcmp(op, "*=") == 0) {
+                                            opcode = ZR_INSTRUCTION_ENUM(MUL_SIGNED);
+                                        } else if (strcmp(op, "/=") == 0) {
+                                            opcode = ZR_INSTRUCTION_ENUM(DIV_SIGNED);
+                                        } else if (strcmp(op, "%=") == 0) {
+                                            opcode = ZR_INSTRUCTION_ENUM(MOD_SIGNED);
+                                        }
+
+                                        TZrUInt32 resultSlot = allocate_stack_slot(cs);
+                                        TZrInstruction opInst = create_instruction_2(
+                                                opcode,
+                                                ZR_COMPILE_SLOT_U16(resultSlot),
+                                                ZR_COMPILE_SLOT_U16(leftValueSlot),
+                                                ZR_COMPILE_SLOT_U16(rightSlot));
+                                        emit_instruction(cs, opInst);
+
+                                        TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER), (TZrUInt16)resultSlot, (TZrUInt16)objSlot, (TZrUInt16)memberId);
+                                        emit_instruction(cs, setTableInst);
+
+                                        ZrParser_Compiler_TrimStackBy(cs, 2); // leftValueSlot 和 resultSlot
+                                    }
+                                } else {
+                                    TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, objSlot + 1);
+                                    if (keySlot == (TZrUInt32)-1) {
+                                        return;
+                                    }
+
+                                    if (strcmp(op, "=") == 0) {
+                                        TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), (TZrUInt16)rightSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
+                                        emit_instruction(cs, setTableInst);
+                                    } else {
+                                        TZrUInt32 leftValueSlot = allocate_stack_slot(cs);
+                                        TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX), (TZrUInt16)leftValueSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
+                                        emit_instruction(cs, getTableInst);
+
+                                        EZrInstructionCode opcode = ZR_INSTRUCTION_ENUM(ADD_INT);
+                                        if (strcmp(op, "+=") == 0) {
+                                            opcode = ZR_INSTRUCTION_ENUM(ADD_INT);
+                                        } else if (strcmp(op, "-=") == 0) {
+                                            opcode = ZR_INSTRUCTION_ENUM(SUB_INT);
+                                        } else if (strcmp(op, "*=") == 0) {
+                                            opcode = ZR_INSTRUCTION_ENUM(MUL_SIGNED);
+                                        } else if (strcmp(op, "/=") == 0) {
+                                            opcode = ZR_INSTRUCTION_ENUM(DIV_SIGNED);
+                                        } else if (strcmp(op, "%=") == 0) {
+                                            opcode = ZR_INSTRUCTION_ENUM(MOD_SIGNED);
+                                        }
+
+                                        TZrUInt32 resultSlot = allocate_stack_slot(cs);
+                                        TZrInstruction opInst = create_instruction_2(
+                                                opcode,
+                                                ZR_COMPILE_SLOT_U16(resultSlot),
+                                                ZR_COMPILE_SLOT_U16(leftValueSlot),
+                                                ZR_COMPILE_SLOT_U16(rightSlot));
+                                        emit_instruction(cs, opInst);
+
+                                        TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), (TZrUInt16)resultSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
+                                        emit_instruction(cs, setTableInst);
+
+                                        ZrParser_Compiler_TrimStackBy(cs, 2); // leftValueSlot 和 resultSlot
+                                    }
+
+                                    ZrParser_Compiler_TrimStackBy(cs, 1); // keySlot
+                                }
+                            } else {
+                                TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, objSlot + 1);
+                                if (keySlot == (TZrUInt32)-1) {
+                                    return;
+                                }
+
+                                if (strcmp(op, "=") == 0) {
+                                    TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), (TZrUInt16)rightSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
+                                    emit_instruction(cs, setTableInst);
+                                } else {
+                                    TZrUInt32 leftValueSlot = allocate_stack_slot(cs);
+                                    TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX), (TZrUInt16)leftValueSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
+                                    emit_instruction(cs, getTableInst);
+                                    
+                                    EZrInstructionCode opcode = ZR_INSTRUCTION_ENUM(ADD_INT);
+                                    if (strcmp(op, "+=") == 0) {
+                                        opcode = ZR_INSTRUCTION_ENUM(ADD_INT);
+                                    } else if (strcmp(op, "-=") == 0) {
+                                        opcode = ZR_INSTRUCTION_ENUM(SUB_INT);
+                                    } else if (strcmp(op, "*=") == 0) {
+                                        opcode = ZR_INSTRUCTION_ENUM(MUL_SIGNED);
+                                    } else if (strcmp(op, "/=") == 0) {
+                                        opcode = ZR_INSTRUCTION_ENUM(DIV_SIGNED);
+                                    } else if (strcmp(op, "%=") == 0) {
+                                        opcode = ZR_INSTRUCTION_ENUM(MOD_SIGNED);
+                                    }
+                                    
+                                    TZrUInt32 resultSlot = allocate_stack_slot(cs);
+                                    TZrInstruction opInst = create_instruction_2(
+                                            opcode,
+                                            ZR_COMPILE_SLOT_U16(resultSlot),
+                                            ZR_COMPILE_SLOT_U16(leftValueSlot),
+                                            ZR_COMPILE_SLOT_U16(rightSlot));
+                                    emit_instruction(cs, opInst);
+                                    
+                                    TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), (TZrUInt16)resultSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
+                                    emit_instruction(cs, setTableInst);
+                                    
+                                    ZrParser_Compiler_TrimStackBy(cs, 2); // leftValueSlot 和 resultSlot
+                                }
+
+                                ZrParser_Compiler_TrimStackBy(cs, 2); // objSlot 和 keySlot
                                 return;
                             }
                             
-                            // 使用 SETTABLE 设置对象属性
-                            // SETTABLE 格式: operandExtra = valueSlot, operand1[0] = tableSlot, operand1[1] = keySlot
-                            if (strcmp(op, "=") == 0) {
-                                // 简单赋值
-                                TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TZrUInt16)rightSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
-                                emit_instruction(cs, setTableInst);
-                            } else {
-                                // 复合赋值：先读取，执行运算，再写入
-                                TZrUInt32 leftValueSlot = allocate_stack_slot(cs);
-                                TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TZrUInt16)leftValueSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
-                                emit_instruction(cs, getTableInst);
-                                
-                                // 执行运算
-                                EZrInstructionCode opcode = ZR_INSTRUCTION_ENUM(ADD_INT);
-                                if (strcmp(op, "+=") == 0) {
-                                    opcode = ZR_INSTRUCTION_ENUM(ADD_INT);
-                                } else if (strcmp(op, "-=") == 0) {
-                                    opcode = ZR_INSTRUCTION_ENUM(SUB_INT);
-                                } else if (strcmp(op, "*=") == 0) {
-                                    opcode = ZR_INSTRUCTION_ENUM(MUL_SIGNED);
-                                } else if (strcmp(op, "/=") == 0) {
-                                    opcode = ZR_INSTRUCTION_ENUM(DIV_SIGNED);
-                                } else if (strcmp(op, "%=") == 0) {
-                                    opcode = ZR_INSTRUCTION_ENUM(MOD_SIGNED);
-                                }
-                                
-                                TZrUInt32 resultSlot = allocate_stack_slot(cs);
-                                TZrInstruction opInst = create_instruction_2(
-                                        opcode,
-                                        ZR_COMPILE_SLOT_U16(resultSlot),
-                                        ZR_COMPILE_SLOT_U16(leftValueSlot),
-                                        ZR_COMPILE_SLOT_U16(rightSlot));
-                                emit_instruction(cs, opInst);
-                                
-                                // 使用 SETTABLE 写入结果
-                                TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TZrUInt16)resultSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
-                                emit_instruction(cs, setTableInst);
-                                
-                                // 释放临时栈槽
-                                ZrParser_Compiler_TrimStackBy(cs, 2); // leftValueSlot 和 resultSlot
-                            }
-                            
                             // 释放临时栈槽
-                            ZrParser_Compiler_TrimStackBy(cs, 2); // objSlot 和 keySlot
+                            ZrParser_Compiler_TrimStackBy(cs, 1); // objSlot
                             return;
                         }
                     }
@@ -980,6 +1087,8 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
 
 // 编译条件表达式（三元运算符）
 static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    TZrUInt32 resultSlot;
+
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
@@ -996,6 +1105,7 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     // 编译条件
     compile_expression_non_tail(cs, test);
     TZrUInt32 testSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+    resultSlot = allocate_stack_slot(cs);
     
     // 创建 else 和 end 标签
     TZrSize elseLabelId = create_label(cs);
@@ -1008,7 +1118,9 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     add_pending_jump(cs, jumpIfIndex, elseLabelId);
     
     // 编译 then 分支
-    compile_expression_non_tail(cs, consequent);
+    if (compile_expression_into_slot(cs, consequent, resultSlot) == (TZrUInt32)-1) {
+        return;
+    }
     
     // JUMP -> end
     TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
@@ -1020,10 +1132,13 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     resolve_label(cs, elseLabelId);
     
     // 编译 else 分支
-    compile_expression_non_tail(cs, alternate);
+    if (compile_expression_into_slot(cs, alternate, resultSlot) == (TZrUInt32)-1) {
+        return;
+    }
     
     // 解析 end 标签
     resolve_label(cs, endLabelId);
+    collapse_stack_to_slot(cs, resultSlot);
 }
 
 // 在脚本 AST 中查找函数声明
@@ -1154,7 +1269,7 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
                 ZrParser_Compiler_Error(cs, "Destructuring pattern cannot be used as expression", node->location);
             } else {
                 // 创建详细的错误消息，包含类型名称和位置信息
-                static TZrChar errorMsg[256];
+                static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
                 const TZrChar *typeName = "UNKNOWN";
                 switch (node->type) {
                     case ZR_AST_INTERFACE_METHOD_SIGNATURE: typeName = "INTERFACE_METHOD_SIGNATURE"; break;

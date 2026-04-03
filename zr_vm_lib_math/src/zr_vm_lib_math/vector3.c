@@ -13,7 +13,7 @@ TZrBool ZrMath_Vector3_Construct(ZrLibCallContext *context, SZrTypeValue *result
     values[0] = x;
     values[1] = y;
     values[2] = z;
-    return ZrMath_ConstructFloatObject(context, result, "Vector3", kFields, values, ZR_ARRAY_COUNT(kFields));
+    return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 
 TZrBool ZrMath_Vector3_Length(ZrLibCallContext *context, SZrTypeValue *result) {

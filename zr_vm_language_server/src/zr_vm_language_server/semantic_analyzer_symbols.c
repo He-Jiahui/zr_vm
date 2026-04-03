@@ -589,7 +589,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                                         ZrCore_String_Equal(classField->name->name, fieldName)) {
                                                                         // 检查类字段是否也是 const
                                                                         if (!classField->isConst) {
-                                                                            TZrChar errorMsg[256];
+                                                                            TZrChar errorMsg[ZR_LSP_TEXT_BUFFER_LENGTH];
                                                                             TZrNativeString fieldNameStr = ZrCore_String_GetNativeStringShort(fieldName);
                                                                             if (fieldNameStr != ZR_NULL) {
                                                                                 snprintf(errorMsg, sizeof(errorMsg), 

@@ -71,7 +71,7 @@ TZrBool ZrMath_Matrix3x3_Construct(ZrLibCallContext *context, SZrTypeValue *resu
         }
     }
 
-    return ZrMath_ConstructFloatObject(context, result, "Matrix3x3", kFields, values, ZR_ARRAY_COUNT(kFields));
+    return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 
 TZrBool ZrMath_Matrix3x3_Identity(ZrLibCallContext *context, SZrTypeValue *result) {

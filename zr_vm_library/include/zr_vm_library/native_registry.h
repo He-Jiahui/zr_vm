@@ -7,8 +7,6 @@
 
 #include "zr_vm_library/native_binding.h"
 
-#define ZR_VM_NATIVE_PLUGIN_ABI_VERSION 1U
-
 typedef enum EZrLibNativeModuleRegistrationKind {
     ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_BUILTIN = 0,
     ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_DESCRIPTOR_PLUGIN = 1

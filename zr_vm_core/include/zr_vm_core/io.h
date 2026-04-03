@@ -148,6 +148,56 @@ typedef struct SZrIoFunctionTestInfo {
     TZrUInt32 lineInSourceEnd;
 } SZrIoFunctionTestInfo;
 
+typedef struct SZrIoFunctionMemberEntry {
+    struct SZrString *symbol;
+    TZrUInt8 entryKind;
+    TZrUInt8 reserved0;
+    TZrUInt16 reserved1;
+    TZrUInt32 prototypeIndex;
+    TZrUInt32 descriptorIndex;
+} SZrIoFunctionMemberEntry;
+
+typedef struct SZrIoSemIrOwnershipEntry {
+    TZrUInt32 state;
+} SZrIoSemIrOwnershipEntry;
+
+typedef struct SZrIoSemIrEffectEntry {
+    TZrUInt32 kind;
+    TZrUInt32 instructionIndex;
+    TZrUInt32 ownershipInputIndex;
+    TZrUInt32 ownershipOutputIndex;
+} SZrIoSemIrEffectEntry;
+
+typedef struct SZrIoSemIrBlockEntry {
+    TZrUInt32 blockId;
+    TZrUInt32 firstInstructionIndex;
+    TZrUInt32 instructionCount;
+} SZrIoSemIrBlockEntry;
+
+typedef struct SZrIoSemIrInstruction {
+    TZrUInt32 opcode;
+    TZrUInt32 execInstructionIndex;
+    TZrUInt32 typeTableIndex;
+    TZrUInt32 effectTableIndex;
+    TZrUInt32 destinationSlot;
+    TZrUInt32 operand0;
+    TZrUInt32 operand1;
+    TZrUInt32 deoptId;
+} SZrIoSemIrInstruction;
+
+typedef struct SZrIoSemIrDeoptEntry {
+    TZrUInt32 deoptId;
+    TZrUInt32 execInstructionIndex;
+} SZrIoSemIrDeoptEntry;
+
+typedef struct SZrIoFunctionCallSiteCacheEntry {
+    TZrUInt32 kind;
+    TZrUInt32 instructionIndex;
+    TZrUInt32 memberEntryIndex;
+    TZrUInt32 deoptId;
+    TZrUInt32 argumentCount;
+} SZrIoFunctionCallSiteCacheEntry;
+
 struct SZrIoFunction;
 
 struct SZrIoFunctionClosure {
@@ -216,6 +266,22 @@ struct SZrIoFunction {
     SZrIoFunctionCompileTimeFunctionInfo *compileTimeFunctionInfos;
     TZrSize testInfosLength;
     SZrIoFunctionTestInfo *testInfos;
+    TZrSize memberEntriesLength;
+    SZrIoFunctionMemberEntry *memberEntries;
+    TZrSize semIrTypeTableLength;
+    SZrIoFunctionTypedTypeRef *semIrTypeTable;
+    TZrSize semIrOwnershipTableLength;
+    SZrIoSemIrOwnershipEntry *semIrOwnershipTable;
+    TZrSize semIrEffectTableLength;
+    SZrIoSemIrEffectEntry *semIrEffectTable;
+    TZrSize semIrBlockTableLength;
+    SZrIoSemIrBlockEntry *semIrBlockTable;
+    TZrSize semIrInstructionLength;
+    SZrIoSemIrInstruction *semIrInstructions;
+    TZrSize semIrDeoptTableLength;
+    SZrIoSemIrDeoptEntry *semIrDeoptTable;
+    TZrSize callSiteCacheLength;
+    SZrIoFunctionCallSiteCacheEntry *callSiteCaches;
     TZrSize prototypesLength;                // prototype 数量
     TZrSize classesLength;
     SZrIoClass *classes;                      // class prototype 数组（如果 type 是 CLASS）

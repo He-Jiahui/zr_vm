@@ -61,10 +61,12 @@ ZR_FORCE_INLINE TZrSize ZrCore_NativeString_Length(TZrNativeString string) { ret
 
 ZR_FORCE_INLINE TZrChar *ZrCore_NativeString_CharFind(TZrNativeString string, TZrChar ch) { return strchr(string, ch); }
 
-ZR_FORCE_INLINE TZrSize ZrCore_NativeString_Span(TZrNativeString string, TZrChar *charset) { return strspn(string, charset); }
+ZR_FORCE_INLINE TZrSize ZrCore_NativeString_Span(TZrNativeString string, TZrChar *charset) {
+    return strspn(string, charset);
+}
 
 ZR_FORCE_INLINE TZrSize ZrCore_NativeString_Concat(TZrNativeString string1, TZrNativeString string2,
-                                             ZR_OUT TZrNativeString result) {
+                                                   ZR_OUT TZrNativeString result) {
     TZrSize length1 = ZrCore_NativeString_Length(string1);
     TZrSize length2 = ZrCore_NativeString_Length(string2);
     TZrSize length = length1 + length2;
@@ -139,7 +141,8 @@ ZR_FORCE_INLINE TZrNativeString ZrCore_String_GetNativeString(const SZrString *s
 ZR_CORE_API TZrBool ZrCore_String_Equal(SZrString *string1, SZrString *string2);
 
 // for hash table comparison
-ZR_FORCE_INLINE TZrBool ZrCore_String_Compare(struct SZrState *state, const SZrString *string1, const SZrString *string2) {
+ZR_FORCE_INLINE TZrBool ZrCore_String_Compare(struct SZrState *state, const SZrString *string1,
+                                              const SZrString *string2) {
     ZR_UNUSED_PARAMETER(state);
     return ZrCore_String_Equal((SZrString *) string1, (SZrString *) string2);
 }

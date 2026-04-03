@@ -88,7 +88,7 @@ void send_notification(const char *method, cJSON *params) {
 }
 
 char *read_message_payload(size_t *outLength) {
-    char headerLine[1024];
+    char headerLine[ZR_LSP_STDIO_HEADER_BUFFER_LENGTH];
     size_t contentLength = 0;
     int sawHeader = 0;
 

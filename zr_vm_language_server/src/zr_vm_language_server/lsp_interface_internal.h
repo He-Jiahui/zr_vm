@@ -40,6 +40,12 @@ SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
                                                               TZrSize contentLength);
 SZrString *ZrLanguageServer_Lsp_ParseResolvedTypeFromHoverMarkdown(SZrState *state,
                                                                    SZrString *hoverMarkdown);
+SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *state,
+                                                                    SZrSemanticAnalyzer *analyzer,
+                                                                    SZrAstNode *ast,
+                                                                    const TZrChar *content,
+                                                                    TZrSize contentLength,
+                                                                    TZrSize cursorOffset);
 void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag);
 SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformation(SZrState *state,
                                                                       SZrSymbol *symbol);

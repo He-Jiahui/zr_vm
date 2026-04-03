@@ -7,6 +7,7 @@
 
 #include "zr_vm_library/conf.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_common/zr_contract_conf.h"
 
 struct ZrLibModuleDescriptor;
 struct ZrLibTypeDescriptor;
@@ -15,8 +16,6 @@ struct ZrLibMethodDescriptor;
 struct ZrLibMetaMethodDescriptor;
 struct ZrLibEnumMemberDescriptor;
 struct SZrCallInfo;
-
-#define ZR_VM_NATIVE_RUNTIME_ABI_VERSION 1U
 
 typedef enum EZrLibModuleCapability {
     ZR_LIB_MODULE_CAPABILITY_NONE = 0,
@@ -52,6 +51,7 @@ typedef struct ZrLibFieldDescriptor {
     const TZrChar *name;
     const TZrChar *typeName;
     const TZrChar *documentation;
+    TZrUInt32 contractRole;
 } ZrLibFieldDescriptor;
 
 typedef struct ZrLibParameterDescriptor {
@@ -90,6 +90,8 @@ typedef struct ZrLibCallContext {
     const struct ZrLibFunctionDescriptor *functionDescriptor;
     const struct ZrLibMethodDescriptor *methodDescriptor;
     const struct ZrLibMetaMethodDescriptor *metaMethodDescriptor;
+    struct SZrObjectPrototype *ownerPrototype;
+    struct SZrObjectPrototype *constructTargetPrototype;
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argumentBase;
     TZrSize argumentCount;
@@ -129,6 +131,7 @@ typedef struct ZrLibMethodDescriptor {
     TZrBool isStatic;
     const ZrLibParameterDescriptor *parameters;
     TZrSize parameterCount;
+    TZrUInt32 contractRole;
 } ZrLibMethodDescriptor;
 
 typedef struct ZrLibMetaMethodDescriptor {
@@ -180,7 +183,95 @@ typedef struct ZrLibTypeDescriptor {
     const TZrChar *constructorSignature;
     const ZrLibGenericParameterDescriptor *genericParameters;
     TZrSize genericParameterCount;
+    TZrUInt64 protocolMask;
 } ZrLibTypeDescriptor;
+
+#define ZR_LIB_FIELD_DESCRIPTOR_INIT(NAME, TYPE_NAME, DOCUMENTATION)                                                  \
+    {(NAME), (TYPE_NAME), (DOCUMENTATION), 0U}
+
+#define ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(NAME, TYPE_NAME, DOCUMENTATION, CONTRACT_ROLE)                              \
+    {(NAME), (TYPE_NAME), (DOCUMENTATION), (CONTRACT_ROLE)}
+
+#define ZR_LIB_METHOD_DESCRIPTOR_INIT(NAME, MIN_ARGUMENT_COUNT, MAX_ARGUMENT_COUNT, CALLBACK, RETURN_TYPE_NAME,       \
+                                      DOCUMENTATION, IS_STATIC, PARAMETERS, PARAMETER_COUNT)                          \
+    {(NAME),                                                                                                          \
+     (MIN_ARGUMENT_COUNT),                                                                                            \
+     (MAX_ARGUMENT_COUNT),                                                                                            \
+     (CALLBACK),                                                                                                      \
+     (RETURN_TYPE_NAME),                                                                                              \
+     (DOCUMENTATION),                                                                                                 \
+     (IS_STATIC),                                                                                                     \
+     (PARAMETERS),                                                                                                    \
+     (PARAMETER_COUNT),                                                                                               \
+     0U}
+
+#define ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT(NAME, MIN_ARGUMENT_COUNT, MAX_ARGUMENT_COUNT, CALLBACK, RETURN_TYPE_NAME,  \
+                                           DOCUMENTATION, IS_STATIC, PARAMETERS, PARAMETER_COUNT, CONTRACT_ROLE)      \
+    {(NAME),                                                                                                          \
+     (MIN_ARGUMENT_COUNT),                                                                                            \
+     (MAX_ARGUMENT_COUNT),                                                                                            \
+     (CALLBACK),                                                                                                      \
+     (RETURN_TYPE_NAME),                                                                                              \
+     (DOCUMENTATION),                                                                                                 \
+     (IS_STATIC),                                                                                                     \
+     (PARAMETERS),                                                                                                    \
+     (PARAMETER_COUNT),                                                                                               \
+     (CONTRACT_ROLE)}
+
+#define ZR_LIB_TYPE_DESCRIPTOR_INIT(NAME, PROTOTYPE_TYPE, FIELDS, FIELD_COUNT, METHODS, METHOD_COUNT, META_METHODS,  \
+                                    META_METHOD_COUNT, DOCUMENTATION, EXTENDS_TYPE_NAME, IMPLEMENTS_TYPE_NAMES,       \
+                                    IMPLEMENTS_TYPE_COUNT, ENUM_MEMBERS, ENUM_MEMBER_COUNT, ENUM_VALUE_TYPE_NAME,    \
+                                    ALLOW_VALUE_CONSTRUCTION, ALLOW_BOXED_CONSTRUCTION, CONSTRUCTOR_SIGNATURE,        \
+                                    GENERIC_PARAMETERS, GENERIC_PARAMETER_COUNT)                                      \
+    {(NAME),                                                                                                          \
+     (PROTOTYPE_TYPE),                                                                                                \
+     (FIELDS),                                                                                                        \
+     (FIELD_COUNT),                                                                                                   \
+     (METHODS),                                                                                                       \
+     (METHOD_COUNT),                                                                                                  \
+     (META_METHODS),                                                                                                  \
+     (META_METHOD_COUNT),                                                                                             \
+     (DOCUMENTATION),                                                                                                 \
+     (EXTENDS_TYPE_NAME),                                                                                             \
+     (IMPLEMENTS_TYPE_NAMES),                                                                                         \
+     (IMPLEMENTS_TYPE_COUNT),                                                                                         \
+     (ENUM_MEMBERS),                                                                                                  \
+     (ENUM_MEMBER_COUNT),                                                                                             \
+     (ENUM_VALUE_TYPE_NAME),                                                                                          \
+     (ALLOW_VALUE_CONSTRUCTION),                                                                                      \
+     (ALLOW_BOXED_CONSTRUCTION),                                                                                      \
+     (CONSTRUCTOR_SIGNATURE),                                                                                         \
+     (GENERIC_PARAMETERS),                                                                                            \
+     (GENERIC_PARAMETER_COUNT),                                                                                       \
+     (TZrUInt64)0}
+
+#define ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT(NAME, PROTOTYPE_TYPE, FIELDS, FIELD_COUNT, METHODS, METHOD_COUNT,       \
+                                             META_METHODS, META_METHOD_COUNT, DOCUMENTATION, EXTENDS_TYPE_NAME,       \
+                                             IMPLEMENTS_TYPE_NAMES, IMPLEMENTS_TYPE_COUNT, ENUM_MEMBERS,              \
+                                             ENUM_MEMBER_COUNT, ENUM_VALUE_TYPE_NAME, ALLOW_VALUE_CONSTRUCTION,       \
+                                             ALLOW_BOXED_CONSTRUCTION, CONSTRUCTOR_SIGNATURE, GENERIC_PARAMETERS,     \
+                                             GENERIC_PARAMETER_COUNT, PROTOCOL_MASK)                                  \
+    {(NAME),                                                                                                          \
+     (PROTOTYPE_TYPE),                                                                                                \
+     (FIELDS),                                                                                                        \
+     (FIELD_COUNT),                                                                                                   \
+     (METHODS),                                                                                                       \
+     (METHOD_COUNT),                                                                                                  \
+     (META_METHODS),                                                                                                  \
+     (META_METHOD_COUNT),                                                                                             \
+     (DOCUMENTATION),                                                                                                 \
+     (EXTENDS_TYPE_NAME),                                                                                             \
+     (IMPLEMENTS_TYPE_NAMES),                                                                                         \
+     (IMPLEMENTS_TYPE_COUNT),                                                                                         \
+     (ENUM_MEMBERS),                                                                                                  \
+     (ENUM_MEMBER_COUNT),                                                                                             \
+     (ENUM_VALUE_TYPE_NAME),                                                                                          \
+     (ALLOW_VALUE_CONSTRUCTION),                                                                                      \
+     (ALLOW_BOXED_CONSTRUCTION),                                                                                      \
+     (CONSTRUCTOR_SIGNATURE),                                                                                         \
+     (GENERIC_PARAMETERS),                                                                                            \
+     (GENERIC_PARAMETER_COUNT),                                                                                       \
+     (PROTOCOL_MASK)}
 
 typedef struct ZrLibModuleDescriptor {
     TZrUInt32 abiVersion;
@@ -205,6 +296,8 @@ typedef struct ZrLibModuleDescriptor {
 ZR_LIBRARY_API TZrSize ZrLib_CallContext_ArgumentCount(const ZrLibCallContext *context);
 ZR_LIBRARY_API SZrTypeValue *ZrLib_CallContext_Self(const ZrLibCallContext *context);
 ZR_LIBRARY_API SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSize index);
+ZR_LIBRARY_API struct SZrObjectPrototype *ZrLib_CallContext_OwnerPrototype(const ZrLibCallContext *context);
+ZR_LIBRARY_API struct SZrObjectPrototype *ZrLib_CallContext_GetConstructTargetPrototype(const ZrLibCallContext *context);
 ZR_LIBRARY_API TZrBool ZrLib_CallContext_CheckArity(const ZrLibCallContext *context,
                                                     TZrSize minArgumentCount,
                                                     TZrSize maxArgumentCount);
@@ -270,6 +363,7 @@ ZR_LIBRARY_API TZrSize ZrLib_Array_Length(SZrObject *array);
 ZR_LIBRARY_API const SZrTypeValue *ZrLib_Array_Get(SZrState *state, SZrObject *array, TZrSize index);
 
 ZR_LIBRARY_API SZrObject *ZrLib_Type_NewInstance(SZrState *state, const TZrChar *typeName);
+ZR_LIBRARY_API SZrObject *ZrLib_Type_NewInstanceWithPrototype(SZrState *state, SZrObjectPrototype *prototype);
 ZR_LIBRARY_API SZrObjectPrototype *ZrLib_Type_FindPrototype(SZrState *state, const TZrChar *typeName);
 
 ZR_LIBRARY_API SZrObjectModule *ZrLib_Module_GetLoaded(SZrState *state, const TZrChar *moduleName);

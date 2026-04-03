@@ -25,19 +25,19 @@ CONSTANTS (14):
   [13] null
 
 LOCAL_VARIABLES (13):
-  [0] arithmetic_test: offset_activate=1, offset_dead=0
-  [1] logical_test: offset_activate=2, offset_dead=0
-  [2] comparison_test: offset_activate=3, offset_dead=0
-  [3] bitwise_test: offset_activate=4, offset_dead=0
-  [4] branch_test: offset_activate=5, offset_dead=0
-  [5] while_test: offset_activate=6, offset_dead=0
-  [6] for_test: offset_activate=7, offset_dead=0
-  [7] foreach_test: offset_activate=8, offset_dead=0
-  [8] function_test: offset_activate=9, offset_dead=0
-  [9] call_function_test: offset_activate=10, offset_dead=0
-  [10] variable_declaration_test: offset_activate=11, offset_dead=0
-  [11] return_test: offset_activate=12, offset_dead=0
-  [12] break_continue_test: offset_activate=13, offset_dead=0
+  [0] arithmetic_test: offset_activate=1, offset_dead=13
+  [1] logical_test: offset_activate=2, offset_dead=13
+  [2] comparison_test: offset_activate=3, offset_dead=13
+  [3] bitwise_test: offset_activate=4, offset_dead=13
+  [4] branch_test: offset_activate=5, offset_dead=13
+  [5] while_test: offset_activate=6, offset_dead=13
+  [6] for_test: offset_activate=7, offset_dead=13
+  [7] foreach_test: offset_activate=8, offset_dead=13
+  [8] function_test: offset_activate=9, offset_dead=13
+  [9] call_function_test: offset_activate=10, offset_dead=13
+  [10] variable_declaration_test: offset_activate=11, offset_dead=13
+  [11] return_test: offset_activate=12, offset_dead=13
+  [12] break_continue_test: offset_activate=13, offset_dead=13
 
 CLOSURE_VARIABLES (0):
 
@@ -61,6 +61,22 @@ TYPE_METADATA:
   COMPILE_TIME_FUNCTIONS (0):
   TESTS (1):
     test basicOperationsTest()
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
 
 INSTRUCTIONS (15):
   [0] CREATE_CLOSURE (extra=0)

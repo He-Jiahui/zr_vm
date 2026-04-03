@@ -1,0 +1,22 @@
+//
+// Shared path-length and artifact extension constants.
+//
+
+#ifndef ZR_PATH_CONF_H
+#define ZR_PATH_CONF_H
+
+#include "zr_vm_common/zr_common_conf.h"
+
+#define ZR_VM_PATH_LENGTH_MAX 4096U
+#define ZR_VM_POSIX_DIRECTORY_CREATE_MODE 0755
+
+#define ZR_VM_SOURCE_MODULE_FILE_EXTENSION ".zr"
+#define ZR_VM_SOURCE_MODULE_FILE_EXTENSION_LENGTH 3U
+
+#define ZR_VM_BINARY_MODULE_FILE_EXTENSION ".zro"
+#define ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH 4U
+
+#define ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION ".zri"
+#define ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION_LENGTH 4U
+
+#endif // ZR_PATH_CONF_H

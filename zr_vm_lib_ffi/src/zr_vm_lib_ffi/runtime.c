@@ -3,7 +3,7 @@
 TZrBool ZrFfi_LoadLibrary(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrString *pathString = ZR_NULL;
     const char *pathText = ZR_NULL;
-    char errorBuffer[256] = {0};
+    char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
     void *libraryHandle;
     ZrFfiLibraryData *libraryData;
     SZrObject *libraryObject;
@@ -44,7 +44,7 @@ TZrBool ZrFfi_LoadLibrary(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 TZrBool ZrFfi_SizeOf(ZrLibCallContext *context, SZrTypeValue *result) {
-    char errorBuffer[256] = {0};
+    char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
     ZrFfiTypeLayout *type = zr_ffi_parse_type_descriptor(context->state, ZrLib_CallContext_Argument(context, 0),
                                                          errorBuffer, sizeof(errorBuffer));
     if (type == ZR_NULL) {
@@ -57,7 +57,7 @@ TZrBool ZrFfi_SizeOf(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 TZrBool ZrFfi_AlignOf(ZrLibCallContext *context, SZrTypeValue *result) {
-    char errorBuffer[256] = {0};
+    char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
     ZrFfiTypeLayout *type = zr_ffi_parse_type_descriptor(context->state, ZrLib_CallContext_Argument(context, 0),
                                                          errorBuffer, sizeof(errorBuffer));
     if (type == ZR_NULL) {
@@ -100,7 +100,7 @@ TZrBool ZrFfi_Library_GetVersion(ZrLibCallContext *context, SZrTypeValue *result
     const char *symbolName = "zr_ffi_version_string";
     SZrString *symbolNameString = ZR_NULL;
     const char *(*versionProc)(void);
-    char errorBuffer[256] = {0};
+    char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
 
     if (selfObject == ZR_NULL || libraryData == ZR_NULL || libraryData->base.kind != ZR_FFI_HANDLE_LIBRARY) {
         return ZR_FALSE;
@@ -148,7 +148,7 @@ TZrBool ZrFfi_CreateCallback(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrFfiSignature *signature;
     ZrFfiCallbackData *callbackData;
     SZrObject *callbackObject;
-    char errorBuffer[256] = {0};
+    char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
 
     if (!ZrLib_CallContext_ReadObject(context, 0, &signatureObject) ||
         !ZrLib_CallContext_ReadFunction(context, 1, &callbackValue) || signatureObject == ZR_NULL ||
@@ -209,7 +209,7 @@ TZrBool ZrFfi_CreateCallback(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 TZrBool ZrFfi_NullPointer(ZrLibCallContext *context, SZrTypeValue *result) {
-    char errorBuffer[256] = {0};
+    char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
     ZrFfiTypeLayout *type = zr_ffi_parse_type_descriptor(context->state, ZrLib_CallContext_Argument(context, 0),
                                                          errorBuffer, sizeof(errorBuffer));
     ZrFfiPointerData *pointerData;
@@ -260,7 +260,7 @@ TZrBool ZrFfi_Library_GetSymbol(ZrLibCallContext *context, SZrTypeValue *result)
     ZrFfiSymbolData *symbolData;
     SZrObject *symbolObject;
     SZrTypeValue ownerValue;
-    char errorBuffer[256] = {0};
+    char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
     void *symbolAddress;
 
     if (selfObject == ZR_NULL || libraryData == ZR_NULL || libraryData->base.kind != ZR_FFI_HANDLE_LIBRARY) {
@@ -339,7 +339,7 @@ TZrBool ZrFfi_Pointer_As(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrFfiPointerData *newPointerData;
     SZrObject *pointerObject;
     const SZrTypeValue *ownerValue;
-    char errorBuffer[256] = {0};
+    char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
 
     if (selfObject == ZR_NULL || pointerData == ZR_NULL || pointerData->base.kind != ZR_FFI_HANDLE_POINTER) {
         return ZR_FALSE;
@@ -392,7 +392,7 @@ TZrBool ZrFfi_Pointer_Read(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *selfObject = zr_ffi_get_self_object(context);
     ZrFfiPointerData *pointerData = (ZrFfiPointerData *) zr_ffi_get_handle_data(context->state, selfObject);
     ZrFfiTypeLayout *type;
-    char errorBuffer[256] = {0};
+    char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
     if (selfObject == ZR_NULL || pointerData == ZR_NULL || pointerData->base.kind != ZR_FFI_HANDLE_POINTER) {
         return ZR_FALSE;
     }
@@ -641,7 +641,7 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
     ZrFfiLibraryData *libraryData;
     TZrSize argumentCount;
     TZrSize index;
-    char errorBuffer[256] = {0};
+    char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
 #if ZR_VM_HAS_LIBFFI
     ZrFfiMarshalledValue *marshalledValues = ZR_NULL;
     void **ffiArguments = ZR_NULL;

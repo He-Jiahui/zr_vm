@@ -1,0 +1,11 @@
+%module "reference.calls";
+
+accumulate(a: int, b: int = 10, c: int = 20, d: int = 30): int {
+    return a + b + c + d;
+}
+
+%test("named_defaults_and_reorder") {
+    var left = accumulate(5, d: 40);
+    var right = accumulate(c: 3, a: 10, d: 30, b: 10);
+    return left + right;
+}

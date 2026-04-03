@@ -188,7 +188,7 @@ static void semantic_validate_extern_callable_decorators(SZrState *state,
                                                "zr.ffi.charset requires one of: utf8, utf16, ansi");
             }
         } else {
-            TZrChar buffer[128];
+            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
             snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on %s", leafName, targetName);
             semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
         }
@@ -223,7 +223,7 @@ static void semantic_validate_extern_struct_decorators(SZrState *state,
             semantic_add_invalid_decorator(state, analyzer, decoratorNode,
                                            "zr.ffi.pack/align require a single integer argument");
         } else {
-            TZrChar buffer[128];
+            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
             snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on extern struct declarations", leafName);
             semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
         }
@@ -257,7 +257,7 @@ static void semantic_validate_extern_struct_field_decorators(SZrState *state,
             semantic_add_invalid_decorator(state, analyzer, decoratorNode,
                                            "zr.ffi.offset requires a single integer argument");
         } else {
-            TZrChar buffer[128];
+            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
             snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on extern struct fields", leafName);
             semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
         }
@@ -292,7 +292,7 @@ static void semantic_validate_extern_enum_decorators(SZrState *state,
             semantic_add_invalid_decorator(state, analyzer, decoratorNode,
                                            "zr.ffi.underlying requires a single string argument");
         } else {
-            TZrChar buffer[128];
+            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
             snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on extern enum declarations", leafName);
             semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
         }
@@ -326,7 +326,7 @@ static void semantic_validate_extern_enum_member_decorators(SZrState *state,
             semantic_add_invalid_decorator(state, analyzer, decoratorNode,
                                            "zr.ffi.value requires a single integer argument");
         } else {
-            TZrChar buffer[128];
+            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
             snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on extern enum members", leafName);
             semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
         }
@@ -369,7 +369,7 @@ static void semantic_validate_extern_parameter_decorators(SZrState *state,
                 directionCount++;
             }
         } else {
-            TZrChar buffer[128];
+            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
             snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on extern parameters", leafName);
             semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
         }
@@ -488,7 +488,7 @@ static void semantic_add_invalid_variance_diagnostic(SZrState *state,
                                                      const TZrChar *context,
                                                      TZrBool nestedUsage,
                                                      SZrFileRange location) {
-    TZrChar buffer[256];
+    TZrChar buffer[ZR_LSP_TEXT_BUFFER_LENGTH];
     const TZrChar *nameText = semantic_string_native(parameterName);
 
     if (state == ZR_NULL || analyzer == ZR_NULL || parameterName == ZR_NULL || context == ZR_NULL) {

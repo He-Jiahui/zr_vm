@@ -276,7 +276,7 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
 
         collector->gcLastStepWork = totalWork;
         if (collector->gcLastStepWork > 0 && collector->gcDebtSize > 0) {
-            TZrMemoryOffset workBytes = (TZrMemoryOffset)collector->gcLastStepWork * ZR_WORK_TO_MEM;
+            TZrMemoryOffset workBytes = (TZrMemoryOffset)collector->gcLastStepWork * ZR_GC_WORK_TO_MEMORY_BYTES;
             ZrCore_GarbageCollector_AddDebtSpace(global, -workBytes);
         }
     }

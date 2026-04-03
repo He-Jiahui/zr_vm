@@ -363,6 +363,7 @@ TZrBool native_binding_make_callable_value(SZrState *state,
                                                   EZrLibResolvedBindingKind bindingKind,
                                                   const ZrLibModuleDescriptor *moduleDescriptor,
                                                   const ZrLibTypeDescriptor *typeDescriptor,
+                                                  SZrObjectPrototype *ownerPrototype,
                                                   const void *descriptor,
                                                   SZrTypeValue *value) {
     SZrClosureNative *closure;
@@ -384,6 +385,7 @@ TZrBool native_binding_make_callable_value(SZrState *state,
     entry.bindingKind = bindingKind;
     entry.moduleDescriptor = moduleDescriptor;
     entry.typeDescriptor = typeDescriptor;
+    entry.ownerPrototype = ownerPrototype;
     switch (bindingKind) {
         case ZR_LIB_RESOLVED_BINDING_FUNCTION:
             entry.descriptor.functionDescriptor = (const ZrLibFunctionDescriptor *)descriptor;

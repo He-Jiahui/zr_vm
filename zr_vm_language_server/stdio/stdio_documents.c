@@ -134,7 +134,10 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
         return;
     }
 
-    ZrCore_Array_Init(server->state, &diagnostics, sizeof(SZrLspDiagnostic *), 8);
+    ZrCore_Array_Init(server->state,
+                      &diagnostics,
+                      sizeof(SZrLspDiagnostic *),
+                      ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetDiagnostics(server->state, server->context, uri, &diagnostics)) {
         ZrCore_Array_Free(server->state, &diagnostics);
         return;

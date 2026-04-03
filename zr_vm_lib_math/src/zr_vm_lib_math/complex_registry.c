@@ -6,12 +6,19 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 const ZrLibTypeDescriptor *ZrMath_ComplexRegistry_GetType(void) {
-    static const ZrLibFieldDescriptor kFields[] = {{"real","float",ZR_NULL},{"imag","float",ZR_NULL}};
+    static const ZrLibFieldDescriptor kFields[] = {
+            ZR_LIB_FIELD_DESCRIPTOR_INIT("real", "float", ZR_NULL),
+            ZR_LIB_FIELD_DESCRIPTOR_INIT("imag", "float", ZR_NULL),
+    };
     static const ZrLibMethodDescriptor kMethods[] = {
-            {"magnitude",0,0,ZrMath_Complex_Magnitude,"float",ZR_NULL,ZR_FALSE,ZR_NULL,0},
-            {"phase",0,0,ZrMath_Complex_Phase,"float",ZR_NULL,ZR_FALSE,ZR_NULL,0},
-            {"conjugate",0,0,ZrMath_Complex_Conjugate,"Complex",ZR_NULL,ZR_FALSE,ZR_NULL,0},
-            {"normalized",0,0,ZrMath_Complex_Normalized,"Complex",ZR_NULL,ZR_FALSE,ZR_NULL,0},
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("magnitude", 0, 0, ZrMath_Complex_Magnitude, "float", ZR_NULL, ZR_FALSE,
+                                          ZR_NULL, 0),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("phase", 0, 0, ZrMath_Complex_Phase, "float", ZR_NULL, ZR_FALSE, ZR_NULL,
+                                          0),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("conjugate", 0, 0, ZrMath_Complex_Conjugate, "Complex", ZR_NULL, ZR_FALSE,
+                                          ZR_NULL, 0),
+            ZR_LIB_METHOD_DESCRIPTOR_INIT("normalized", 0, 0, ZrMath_Complex_Normalized, "Complex", ZR_NULL,
+                                          ZR_FALSE, ZR_NULL, 0),
     };
     static const ZrLibMetaMethodDescriptor kMeta[] = {
             {ZR_META_CONSTRUCTOR,2,2,ZrMath_Complex_Construct,"Complex",ZR_NULL,ZR_NULL,0},
@@ -22,20 +29,27 @@ const ZrLibTypeDescriptor *ZrMath_ComplexRegistry_GetType(void) {
             {ZR_META_COMPARE,1,1,ZrMath_Complex_MetaCompare,"int",ZR_NULL,ZR_NULL,0},
             {ZR_META_TO_STRING,0,0,ZrMath_Complex_MetaToString,"string",ZR_NULL,ZR_NULL,0},
     };
-    static const ZrLibTypeDescriptor kType = {"Complex", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, kFields, ZR_ARRAY_COUNT(kFields),
-                                              kMethods, ZR_ARRAY_COUNT(kMethods), kMeta, ZR_ARRAY_COUNT(kMeta),
-                                              "Complex number value type.",
-                                              ZR_NULL,
-                                              ZR_NULL,
-                                              0,
-                                              ZR_NULL,
-                                              0,
-                                              ZR_NULL,
-                                              ZR_TRUE,
-                                              ZR_TRUE,
-                                              "Complex(real: float, imag: float)",
-                                              ZR_NULL,
-                                              0};
+    static const ZrLibTypeDescriptor kType = ZR_LIB_TYPE_DESCRIPTOR_INIT(
+            "Complex",
+            ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
+            kFields,
+            ZR_ARRAY_COUNT(kFields),
+            kMethods,
+            ZR_ARRAY_COUNT(kMethods),
+            kMeta,
+            ZR_ARRAY_COUNT(kMeta),
+            "Complex number value type.",
+            ZR_NULL,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            ZR_TRUE,
+            ZR_TRUE,
+            "Complex(real: float, imag: float)",
+            ZR_NULL,
+            0);
     return &kType;
 }
 

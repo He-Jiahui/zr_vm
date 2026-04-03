@@ -98,7 +98,8 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
         SZrAstNode *node = parse_construct_expression(ps,
                                                       get_current_location(ps),
                                                       ZR_OWNERSHIP_QUALIFIER_NONE,
-                                                      ZR_FALSE);
+                                                      ZR_FALSE,
+                                                      ZR_OWNERSHIP_BUILTIN_KIND_NONE);
         if (node == ZR_NULL) {
             return ZR_NULL;
         }

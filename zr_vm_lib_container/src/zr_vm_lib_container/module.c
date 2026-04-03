@@ -7,6 +7,7 @@
 #include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/debug.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
@@ -15,29 +16,74 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifndef ZR_ARRAY_COUNT
-#define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
-#endif
-
 static const TZrChar *kContainerItemsField = "__zr_items";
 static const TZrChar *kContainerEntriesField = "__zr_entries";
 static const TZrChar *kContainerSourceField = "__zr_source";
 static const TZrChar *kContainerIndexField = "__zr_index";
 static const TZrChar *kContainerNextNodeField = "__zr_nextNode";
 
-static TZrBool zr_container_type_name_matches_base(const TZrChar *actualName, const TZrChar *baseName) {
-    TZrSize baseLength;
+static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state);
+static TZrInt64 zr_container_linked_list_iterator_move_next_native(SZrState *state);
 
-    if (actualName == ZR_NULL || baseName == ZR_NULL) {
-        return ZR_FALSE;
+static SZrObjectPrototype *zr_container_iterator_runtime_prototype(SZrState *state,
+                                                                   FZrNativeFunction moveNextFunction) {
+    static SZrObjectPrototype *arrayIteratorPrototype = ZR_NULL;
+    static SZrObjectPrototype *linkedIteratorPrototype = ZR_NULL;
+    static SZrString *currentMemberName = ZR_NULL;
+    SZrObjectPrototype **slot;
+
+    if (state == ZR_NULL || moveNextFunction == ZR_NULL) {
+        return ZR_NULL;
     }
 
-    if (strcmp(actualName, baseName) == 0) {
-        return ZR_TRUE;
+    if (moveNextFunction == zr_container_array_iterator_move_next_native) {
+        slot = &arrayIteratorPrototype;
+    } else if (moveNextFunction == zr_container_linked_list_iterator_move_next_native) {
+        slot = &linkedIteratorPrototype;
+    } else {
+        return ZR_NULL;
     }
 
-    baseLength = strlen(baseName);
-    return strncmp(actualName, baseName, baseLength) == 0 && actualName[baseLength] == '<';
+    if (*slot == ZR_NULL) {
+        SZrString *prototypeName;
+        SZrClosureNative *closure;
+        SZrIteratorContract contract;
+
+        prototypeName = ZrCore_String_CreateFromNative(state,
+                                                       moveNextFunction == zr_container_array_iterator_move_next_native
+                                                               ? "__zr_container_array_iterator"
+                                                               : "__zr_container_linked_iterator");
+        if (prototypeName == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        if (currentMemberName == ZR_NULL) {
+            currentMemberName = ZrCore_String_CreateFromNative(state, "current");
+            if (currentMemberName == ZR_NULL) {
+                return ZR_NULL;
+            }
+        }
+
+        *slot = ZrCore_ObjectPrototype_New(state, prototypeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        if (*slot == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        closure = ZrCore_ClosureNative_New(state, 0);
+        if (closure == ZR_NULL) {
+            return ZR_NULL;
+        }
+        closure->nativeFunction = moveNextFunction;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+
+        memset(&contract, 0, sizeof(contract));
+        contract.moveNextFunction = ZR_CAST(SZrFunction *, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+        contract.currentMemberName = currentMemberName;
+        ZrCore_ObjectPrototype_SetIteratorContract(*slot, &contract);
+        ZrCore_ObjectPrototype_AddProtocol(*slot, ZR_PROTOCOL_ID_ITERATOR);
+    }
+
+    return *slot;
 }
 
 static SZrObject *zr_container_self_object(ZrLibCallContext *context) {
@@ -48,30 +94,29 @@ static SZrObject *zr_container_self_object(ZrLibCallContext *context) {
     return ZR_CAST_OBJECT(context->state, selfValue->value.object);
 }
 
-static TZrBool zr_container_object_type_equals(SZrObject *object, const TZrChar *typeName) {
-    const TZrChar *nativeName;
-
-    if (object == ZR_NULL || object->prototype == ZR_NULL || object->prototype->name == ZR_NULL || typeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    nativeName = ZrCore_String_GetNativeString(object->prototype->name);
-    return zr_container_type_name_matches_base(nativeName, typeName);
+static TZrBool zr_container_object_is_owner_instance(const ZrLibCallContext *context, SZrObject *object) {
+    SZrObjectPrototype *ownerPrototype = ZrLib_CallContext_OwnerPrototype(context);
+    return ownerPrototype != ZR_NULL && object != ZR_NULL && ZrCore_Object_IsInstanceOfPrototype(object, ownerPrototype);
 }
 
-static SZrObject *zr_container_resolve_construct_target(ZrLibCallContext *context, const TZrChar *typeName) {
+static SZrObject *zr_container_resolve_construct_target(ZrLibCallContext *context) {
     SZrObject *self;
+    SZrObjectPrototype *targetPrototype;
 
-    if (context == ZR_NULL || context->state == ZR_NULL || typeName == ZR_NULL) {
+    if (context == ZR_NULL || context->state == ZR_NULL) {
         return ZR_NULL;
     }
 
     self = zr_container_self_object(context);
-    if (self != ZR_NULL && zr_container_object_type_equals(self, typeName)) {
+    if (self != ZR_NULL && zr_container_object_is_owner_instance(context, self)) {
         return self;
     }
 
-    return ZrLib_Type_NewInstance(context->state, typeName);
+    targetPrototype = ZrLib_CallContext_GetConstructTargetPrototype(context);
+    if (targetPrototype == ZR_NULL) {
+        targetPrototype = ZrLib_CallContext_OwnerPrototype(context);
+    }
+    return ZrLib_Type_NewInstanceWithPrototype(context->state, targetPrototype);
 }
 
 static EZrValueType zr_container_value_type_for_object(SZrObject *object) {
@@ -511,10 +556,10 @@ static TZrBool zr_container_array_ensure_capacity(SZrState *state, SZrObject *ar
     }
 
     if (capacity <= 0) {
-        capacity = 4;
+        capacity = ZR_CONTAINER_SEQUENCE_INITIAL_CAPACITY;
     }
     while ((TZrSize)capacity < requiredLength) {
-        capacity *= 2;
+        capacity *= ZR_CONTAINER_SEQUENCE_GROWTH_FACTOR;
     }
     zr_container_set_int_field(state, arrayObject, "capacity", capacity);
     return ZR_TRUE;
@@ -527,24 +572,24 @@ static SZrObject *zr_container_iterator_make(SZrState *state,
                                              SZrObject *nextNode,
                                              FZrNativeFunction moveNextFunction) {
     SZrObject *iterator;
-    SZrClosureNative *closure;
-    SZrTypeValue moveNextValue;
+    SZrObjectPrototype *iteratorPrototype;
     SZrTypeValue sourceValue;
 
     if (state == ZR_NULL || moveNextFunction == ZR_NULL) {
         return ZR_NULL;
     }
 
-    iterator = ZrLib_Object_New(state);
-    closure = ZrCore_ClosureNative_New(state, 0);
-    if (iterator == ZR_NULL || closure == ZR_NULL) {
+    iteratorPrototype = zr_container_iterator_runtime_prototype(state, moveNextFunction);
+    if (iteratorPrototype == ZR_NULL) {
         return ZR_NULL;
     }
 
-    closure->nativeFunction = moveNextFunction;
-    ZrCore_Value_InitAsRawObject(state, &moveNextValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    moveNextValue.isNative = ZR_TRUE;
-    ZrLib_Object_SetFieldCString(state, iterator, "moveNext", &moveNextValue);
+    iterator = ZrCore_Object_New(state, iteratorPrototype);
+    if (iterator == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrCore_Object_Init(state, iterator);
+
     zr_container_set_null_field(state, iterator, "current");
     if (source != ZR_NULL) {
         ZrLib_Value_SetObject(state, &sourceValue, source, sourceType);
@@ -650,7 +695,7 @@ static TZrBool zr_container_pair_constructor(ZrLibCallContext *context, SZrTypeV
         return ZR_FALSE;
     }
 
-    pair = zr_container_resolve_construct_target(context, "Pair");
+    pair = zr_container_resolve_construct_target(context);
     if (pair == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -685,7 +730,7 @@ static TZrBool zr_container_pair_equals(ZrLibCallContext *context, SZrTypeValue 
     }
 
     other = ZR_CAST_OBJECT(context->state, otherValue->value.object);
-    if (!zr_container_object_type_equals(other, "Pair")) {
+    if (!zr_container_object_is_owner_instance(context, other)) {
         ZrLib_Value_SetBool(context->state, result, ZR_FALSE);
         return ZR_TRUE;
     }
@@ -740,12 +785,15 @@ static TZrBool zr_container_pair_hash_code(ZrLibCallContext *context, SZrTypeVal
 
     firstHash = zr_container_value_hash(context->state, zr_container_get_field_value(context->state, self, "first"));
     secondHash = zr_container_value_hash(context->state, zr_container_get_field_value(context->state, self, "second"));
-    ZrLib_Value_SetInt(context->state, result, (TZrInt64)((firstHash * 16777619ULL) ^ (secondHash + 31ULL)));
+    ZrLib_Value_SetInt(context->state,
+                       result,
+                       (TZrInt64)((firstHash * ZR_CONTAINER_HASH_MIX_PRIME) ^
+                                  (secondHash + ZR_CONTAINER_HASH_MIX_OFFSET)));
     return ZR_TRUE;
 }
 
 static TZrBool zr_container_array_constructor(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *arrayObject = zr_container_resolve_construct_target(context, "Array");
+    SZrObject *arrayObject = zr_container_resolve_construct_target(context);
     TZrInt64 capacity = 0;
     SZrObject *items;
 
@@ -996,7 +1044,7 @@ static TZrBool zr_container_array_set_item(ZrLibCallContext *context, SZrTypeVal
 }
 
 static TZrBool zr_container_map_constructor(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *self = zr_container_resolve_construct_target(context, "Map");
+    SZrObject *self = zr_container_resolve_construct_target(context);
     SZrObject *entries = ZrLib_Array_New(context->state);
 
     if (self == ZR_NULL || entries == ZR_NULL) {
@@ -1146,7 +1194,7 @@ static TZrBool zr_container_map_set_item(ZrLibCallContext *context, SZrTypeValue
 }
 
 static TZrBool zr_container_set_constructor(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *self = zr_container_resolve_construct_target(context, "Set");
+    SZrObject *self = zr_container_resolve_construct_target(context);
     SZrObject *entries = ZrLib_Array_New(context->state);
 
     if (self == ZR_NULL || entries == ZR_NULL) {
@@ -1250,7 +1298,7 @@ static TZrBool zr_container_set_get_iterator(ZrLibCallContext *context, SZrTypeV
 }
 
 static TZrBool zr_container_linked_node_constructor(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *node = zr_container_resolve_construct_target(context, "LinkedNode");
+    SZrObject *node = zr_container_resolve_construct_target(context);
     if (node == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1293,7 +1341,7 @@ static void zr_container_linked_list_unlink_node(SZrState *state, SZrObject *lis
 }
 
 static TZrBool zr_container_linked_list_constructor(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *self = zr_container_resolve_construct_target(context, "LinkedList");
+    SZrObject *self = zr_container_resolve_construct_target(context);
     if (self == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1502,37 +1550,54 @@ static const ZrLibGenericParameterDescriptor kSetGenericParameters[] = {
         {"T", ZR_NULL, kSetValueConstraints, ZR_ARRAY_COUNT(kSetValueConstraints)},
 };
 
-static const ZrLibFieldDescriptor kIteratorFields[] = {{"current", "T", ZR_NULL}};
+static const ZrLibFieldDescriptor kIteratorFields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT("current", "T", ZR_NULL, ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD),
+};
 static const ZrLibMethodDescriptor kIteratorMethods[] = {
-        {"moveNext", 0, 0, ZR_NULL, "bool", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("moveNext", 0, 0, ZR_NULL, "bool", ZR_NULL, ZR_FALSE, ZR_NULL, 0,
+                                           ZR_MEMBER_CONTRACT_ROLE_ITERATOR_MOVE_NEXT),
 };
 static const ZrLibMethodDescriptor kIterableMethods[] = {
-        {"getIterator", 0, 0, ZR_NULL, "Iterator<T>", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, ZR_NULL, "Iterator<T>", ZR_NULL, ZR_FALSE, ZR_NULL,
+                                           0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
-static const ZrLibFieldDescriptor kArrayLikeFields[] = {{"length", "int", ZR_NULL}};
+static const ZrLibFieldDescriptor kArrayLikeFields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("length", "int", ZR_NULL),
+};
 static const ZrLibMetaMethodDescriptor kArrayLikeMetaMethods[] = {
         {ZR_META_GET_ITEM, 1, 1, ZR_NULL, "T", ZR_NULL, kArrayIndexParameter, ZR_ARRAY_COUNT(kArrayIndexParameter)},
         {ZR_META_SET_ITEM, 2, 2, ZR_NULL, "T", ZR_NULL, kArrayInsertParameters, ZR_ARRAY_COUNT(kArrayInsertParameters)},
 };
 static const ZrLibMethodDescriptor kEquatableMethods[] = {
-        {"equals", 1, 1, ZR_NULL, "bool", ZR_NULL, ZR_FALSE, kSetValueParameter, ZR_ARRAY_COUNT(kSetValueParameter)},
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("equals", 1, 1, ZR_NULL, "bool", ZR_NULL, ZR_FALSE, kSetValueParameter,
+                                      ZR_ARRAY_COUNT(kSetValueParameter)),
 };
 static const ZrLibMethodDescriptor kComparableMethods[] = {
-        {"compareTo", 1, 1, ZR_NULL, "int", ZR_NULL, ZR_FALSE, kSetValueParameter, ZR_ARRAY_COUNT(kSetValueParameter)},
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("compareTo", 1, 1, ZR_NULL, "int", ZR_NULL, ZR_FALSE, kSetValueParameter,
+                                      ZR_ARRAY_COUNT(kSetValueParameter)),
 };
 static const ZrLibMethodDescriptor kHashableMethods[] = {
-        {"hashCode", 0, 0, ZR_NULL, "int", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("hashCode", 0, 0, ZR_NULL, "int", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
 };
 
-static const ZrLibFieldDescriptor kArrayFields[] = {{"length", "int", ZR_NULL}, {"capacity", "int", ZR_NULL}};
+static const ZrLibFieldDescriptor kArrayFields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("length", "int", ZR_NULL),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("capacity", "int", ZR_NULL),
+};
 static const ZrLibMethodDescriptor kArrayMethods[] = {
-        {"add", 1, 1, zr_container_array_add, "null", ZR_NULL, ZR_FALSE, kArrayValueParameter, ZR_ARRAY_COUNT(kArrayValueParameter)},
-        {"insert", 2, 2, zr_container_array_insert, "null", ZR_NULL, ZR_FALSE, kArrayInsertParameters, ZR_ARRAY_COUNT(kArrayInsertParameters)},
-        {"removeAt", 1, 1, zr_container_array_remove_at, "null", ZR_NULL, ZR_FALSE, kArrayIndexParameter, ZR_ARRAY_COUNT(kArrayIndexParameter)},
-        {"clear", 0, 0, zr_container_array_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
-        {"contains", 1, 1, zr_container_array_contains, "bool", ZR_NULL, ZR_FALSE, kArrayValueParameter, ZR_ARRAY_COUNT(kArrayValueParameter)},
-        {"indexOf", 1, 1, zr_container_array_index_of, "int", ZR_NULL, ZR_FALSE, kArrayValueParameter, ZR_ARRAY_COUNT(kArrayValueParameter)},
-        {"getIterator", 0, 0, zr_container_array_get_iterator, "Iterator<T>", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("add", 1, 1, zr_container_array_add, "null", ZR_NULL, ZR_FALSE,
+                                      kArrayValueParameter, ZR_ARRAY_COUNT(kArrayValueParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("insert", 2, 2, zr_container_array_insert, "null", ZR_NULL, ZR_FALSE,
+                                      kArrayInsertParameters, ZR_ARRAY_COUNT(kArrayInsertParameters)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("removeAt", 1, 1, zr_container_array_remove_at, "null", ZR_NULL, ZR_FALSE,
+                                      kArrayIndexParameter, ZR_ARRAY_COUNT(kArrayIndexParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("clear", 0, 0, zr_container_array_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("contains", 1, 1, zr_container_array_contains, "bool", ZR_NULL, ZR_FALSE,
+                                      kArrayValueParameter, ZR_ARRAY_COUNT(kArrayValueParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("indexOf", 1, 1, zr_container_array_index_of, "int", ZR_NULL, ZR_FALSE,
+                                      kArrayValueParameter, ZR_ARRAY_COUNT(kArrayValueParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_array_get_iterator, "Iterator<T>", ZR_NULL,
+                                           ZR_FALSE, ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibMetaMethodDescriptor kArrayMetaMethods[] = {
         {ZR_META_CONSTRUCTOR, 0, 1, zr_container_array_constructor, "Array<T>", ZR_NULL, kArrayIndexParameter, 1},
@@ -1540,12 +1605,17 @@ static const ZrLibMetaMethodDescriptor kArrayMetaMethods[] = {
         {ZR_META_SET_ITEM, 2, 2, zr_container_array_set_item, "T", ZR_NULL, kArrayInsertParameters, ZR_ARRAY_COUNT(kArrayInsertParameters)},
 };
 
-static const ZrLibFieldDescriptor kMapFields[] = {{"count", "int", ZR_NULL}};
+static const ZrLibFieldDescriptor kMapFields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("count", "int", ZR_NULL),
+};
 static const ZrLibMethodDescriptor kMapMethods[] = {
-        {"containsKey", 1, 1, zr_container_map_contains_key, "bool", ZR_NULL, ZR_FALSE, kMapKeyParameter, ZR_ARRAY_COUNT(kMapKeyParameter)},
-        {"remove", 1, 1, zr_container_map_remove, "bool", ZR_NULL, ZR_FALSE, kMapKeyParameter, ZR_ARRAY_COUNT(kMapKeyParameter)},
-        {"clear", 0, 0, zr_container_map_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
-        {"getIterator", 0, 0, zr_container_map_get_iterator, "Iterator<Pair<K,V>>", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("containsKey", 1, 1, zr_container_map_contains_key, "bool", ZR_NULL, ZR_FALSE,
+                                      kMapKeyParameter, ZR_ARRAY_COUNT(kMapKeyParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("remove", 1, 1, zr_container_map_remove, "bool", ZR_NULL, ZR_FALSE,
+                                      kMapKeyParameter, ZR_ARRAY_COUNT(kMapKeyParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("clear", 0, 0, zr_container_map_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_map_get_iterator, "Iterator<Pair<K,V>>",
+                                           ZR_NULL, ZR_FALSE, ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibMetaMethodDescriptor kMapMetaMethods[] = {
         {ZR_META_CONSTRUCTOR, 0, 0, zr_container_map_constructor, "Map<K,V>", ZR_NULL, ZR_NULL, 0},
@@ -1553,23 +1623,35 @@ static const ZrLibMetaMethodDescriptor kMapMetaMethods[] = {
         {ZR_META_SET_ITEM, 2, 2, zr_container_map_set_item, "V", ZR_NULL, kMapSetItemParameters, ZR_ARRAY_COUNT(kMapSetItemParameters)},
 };
 
-static const ZrLibFieldDescriptor kSetFields[] = {{"count", "int", ZR_NULL}};
+static const ZrLibFieldDescriptor kSetFields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("count", "int", ZR_NULL),
+};
 static const ZrLibMethodDescriptor kSetMethods[] = {
-        {"add", 1, 1, zr_container_set_add, "bool", ZR_NULL, ZR_FALSE, kSetValueParameter, ZR_ARRAY_COUNT(kSetValueParameter)},
-        {"contains", 1, 1, zr_container_set_contains, "bool", ZR_NULL, ZR_FALSE, kSetValueParameter, ZR_ARRAY_COUNT(kSetValueParameter)},
-        {"remove", 1, 1, zr_container_set_remove, "bool", ZR_NULL, ZR_FALSE, kSetValueParameter, ZR_ARRAY_COUNT(kSetValueParameter)},
-        {"clear", 0, 0, zr_container_set_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
-        {"getIterator", 0, 0, zr_container_set_get_iterator, "Iterator<T>", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("add", 1, 1, zr_container_set_add, "bool", ZR_NULL, ZR_FALSE,
+                                      kSetValueParameter, ZR_ARRAY_COUNT(kSetValueParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("contains", 1, 1, zr_container_set_contains, "bool", ZR_NULL, ZR_FALSE,
+                                      kSetValueParameter, ZR_ARRAY_COUNT(kSetValueParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("remove", 1, 1, zr_container_set_remove, "bool", ZR_NULL, ZR_FALSE,
+                                      kSetValueParameter, ZR_ARRAY_COUNT(kSetValueParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("clear", 0, 0, zr_container_set_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_set_get_iterator, "Iterator<T>", ZR_NULL,
+                                           ZR_FALSE, ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibMetaMethodDescriptor kSetMetaMethods[] = {
         {ZR_META_CONSTRUCTOR, 0, 0, zr_container_set_constructor, "Set<T>", ZR_NULL, ZR_NULL, 0},
 };
 
-static const ZrLibFieldDescriptor kPairFields[] = {{"first", "K", ZR_NULL}, {"second", "V", ZR_NULL}};
+static const ZrLibFieldDescriptor kPairFields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("first", "K", ZR_NULL),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("second", "V", ZR_NULL),
+};
 static const ZrLibMethodDescriptor kPairMethods[] = {
-        {"equals", 1, 1, zr_container_pair_equals, "bool", ZR_NULL, ZR_FALSE, kPairOtherParameter, ZR_ARRAY_COUNT(kPairOtherParameter)},
-        {"compareTo", 1, 1, zr_container_pair_compare, "int", ZR_NULL, ZR_FALSE, kPairOtherParameter, ZR_ARRAY_COUNT(kPairOtherParameter)},
-        {"hashCode", 0, 0, zr_container_pair_hash_code, "int", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("equals", 1, 1, zr_container_pair_equals, "bool", ZR_NULL, ZR_FALSE,
+                                      kPairOtherParameter, ZR_ARRAY_COUNT(kPairOtherParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("compareTo", 1, 1, zr_container_pair_compare, "int", ZR_NULL, ZR_FALSE,
+                                      kPairOtherParameter, ZR_ARRAY_COUNT(kPairOtherParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("hashCode", 0, 0, zr_container_pair_hash_code, "int", ZR_NULL, ZR_FALSE, ZR_NULL,
+                                      0),
 };
 static const ZrLibMetaMethodDescriptor kPairMetaMethods[] = {
         {ZR_META_CONSTRUCTOR, 0, 2, zr_container_pair_constructor, "Pair<K,V>", ZR_NULL, kPairParameters, ZR_ARRAY_COUNT(kPairParameters)},
@@ -1577,45 +1659,52 @@ static const ZrLibMetaMethodDescriptor kPairMetaMethods[] = {
 };
 
 static const ZrLibFieldDescriptor kLinkedListFields[] = {
-        {"count", "int", ZR_NULL},
-        {"first", "LinkedNode<T>", ZR_NULL},
-        {"last", "LinkedNode<T>", ZR_NULL},
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("count", "int", ZR_NULL),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("first", "LinkedNode<T>", ZR_NULL),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("last", "LinkedNode<T>", ZR_NULL),
 };
 static const ZrLibMethodDescriptor kLinkedListMethods[] = {
-        {"addFirst", 1, 1, zr_container_linked_list_add_first, "LinkedNode<T>", ZR_NULL, ZR_FALSE, kLinkedNodeValueParameter, ZR_ARRAY_COUNT(kLinkedNodeValueParameter)},
-        {"addLast", 1, 1, zr_container_linked_list_add_last, "LinkedNode<T>", ZR_NULL, ZR_FALSE, kLinkedNodeValueParameter, ZR_ARRAY_COUNT(kLinkedNodeValueParameter)},
-        {"removeFirst", 0, 0, zr_container_linked_list_remove_first, "T", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
-        {"removeLast", 0, 0, zr_container_linked_list_remove_last, "T", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
-        {"remove", 1, 1, zr_container_linked_list_remove, "bool", ZR_NULL, ZR_FALSE, kLinkedNodeValueParameter, ZR_ARRAY_COUNT(kLinkedNodeValueParameter)},
-        {"clear", 0, 0, zr_container_linked_list_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
-        {"getIterator", 0, 0, zr_container_linked_list_get_iterator, "Iterator<T>", ZR_NULL, ZR_FALSE, ZR_NULL, 0},
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("addFirst", 1, 1, zr_container_linked_list_add_first, "LinkedNode<T>", ZR_NULL,
+                                      ZR_FALSE, kLinkedNodeValueParameter, ZR_ARRAY_COUNT(kLinkedNodeValueParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("addLast", 1, 1, zr_container_linked_list_add_last, "LinkedNode<T>", ZR_NULL,
+                                      ZR_FALSE, kLinkedNodeValueParameter, ZR_ARRAY_COUNT(kLinkedNodeValueParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("removeFirst", 0, 0, zr_container_linked_list_remove_first, "T", ZR_NULL,
+                                      ZR_FALSE, ZR_NULL, 0),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("removeLast", 0, 0, zr_container_linked_list_remove_last, "T", ZR_NULL, ZR_FALSE,
+                                      ZR_NULL, 0),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("remove", 1, 1, zr_container_linked_list_remove, "bool", ZR_NULL, ZR_FALSE,
+                                      kLinkedNodeValueParameter, ZR_ARRAY_COUNT(kLinkedNodeValueParameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("clear", 0, 0, zr_container_linked_list_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL,
+                                      0),
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_linked_list_get_iterator, "Iterator<T>",
+                                           ZR_NULL, ZR_FALSE, ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibMetaMethodDescriptor kLinkedListMetaMethods[] = {
         {ZR_META_CONSTRUCTOR, 0, 0, zr_container_linked_list_constructor, "LinkedList<T>", ZR_NULL, ZR_NULL, 0},
 };
 
 static const ZrLibFieldDescriptor kLinkedNodeFields[] = {
-        {"value", "T", ZR_NULL},
-        {"next", "LinkedNode<T>", ZR_NULL},
-        {"previous", "LinkedNode<T>", ZR_NULL},
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("value", "T", ZR_NULL),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("next", "LinkedNode<T>", ZR_NULL),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("previous", "LinkedNode<T>", ZR_NULL),
 };
 static const ZrLibMetaMethodDescriptor kLinkedNodeMetaMethods[] = {
         {ZR_META_CONSTRUCTOR, 0, 1, zr_container_linked_node_constructor, "LinkedNode<T>", ZR_NULL, kLinkedNodeValueParameter, ZR_ARRAY_COUNT(kLinkedNodeValueParameter)},
 };
 
 static const ZrLibTypeDescriptor g_container_types[] = {
-        {"Iterable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kIterableMethods, ZR_ARRAY_COUNT(kIterableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Iterable<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT)},
-        {"Iterator", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, kIteratorFields, ZR_ARRAY_COUNT(kIteratorFields), kIteratorMethods, ZR_ARRAY_COUNT(kIteratorMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Iterator<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT)},
-        {"ArrayLike", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, kArrayLikeFields, ZR_ARRAY_COUNT(kArrayLikeFields), ZR_NULL, 0, kArrayLikeMetaMethods, ZR_ARRAY_COUNT(kArrayLikeMetaMethods), ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "ArrayLike<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT)},
-        {"Equatable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kEquatableMethods, ZR_ARRAY_COUNT(kEquatableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Equatable<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT)},
-        {"Comparable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kComparableMethods, ZR_ARRAY_COUNT(kComparableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Comparable<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT)},
-        {"Hashable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kHashableMethods, ZR_ARRAY_COUNT(kHashableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Hashable()", ZR_NULL, 0},
-        {"Array", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kArrayFields, ZR_ARRAY_COUNT(kArrayFields), kArrayMethods, ZR_ARRAY_COUNT(kArrayMethods), kArrayMetaMethods, ZR_ARRAY_COUNT(kArrayMetaMethods), ZR_NULL, ZR_NULL, kArrayImplements, ZR_ARRAY_COUNT(kArrayImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Array<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT)},
-        {"Map", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kMapFields, ZR_ARRAY_COUNT(kMapFields), kMapMethods, ZR_ARRAY_COUNT(kMapMethods), kMapMetaMethods, ZR_ARRAY_COUNT(kMapMetaMethods), ZR_NULL, ZR_NULL, kMapImplements, ZR_ARRAY_COUNT(kMapImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Map<K,V>()", kMapGenericParameters, ZR_ARRAY_COUNT(kMapGenericParameters)},
-        {"Set", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kSetFields, ZR_ARRAY_COUNT(kSetFields), kSetMethods, ZR_ARRAY_COUNT(kSetMethods), kSetMetaMethods, ZR_ARRAY_COUNT(kSetMetaMethods), ZR_NULL, ZR_NULL, kSetImplements, ZR_ARRAY_COUNT(kSetImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Set<T>()", kSetGenericParameters, ZR_ARRAY_COUNT(kSetGenericParameters)},
-        {"Pair", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, kPairFields, ZR_ARRAY_COUNT(kPairFields), kPairMethods, ZR_ARRAY_COUNT(kPairMethods), kPairMetaMethods, ZR_ARRAY_COUNT(kPairMetaMethods), ZR_NULL, ZR_NULL, kPairImplements, ZR_ARRAY_COUNT(kPairImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Pair<K,V>(first: K, second: V)", kGenericKV, ZR_ARRAY_COUNT(kGenericKV)},
-        {"LinkedList", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kLinkedListFields, ZR_ARRAY_COUNT(kLinkedListFields), kLinkedListMethods, ZR_ARRAY_COUNT(kLinkedListMethods), kLinkedListMetaMethods, ZR_ARRAY_COUNT(kLinkedListMetaMethods), ZR_NULL, ZR_NULL, kLinkedListImplements, ZR_ARRAY_COUNT(kLinkedListImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "LinkedList<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT)},
-        {"LinkedNode", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kLinkedNodeFields, ZR_ARRAY_COUNT(kLinkedNodeFields), ZR_NULL, 0, kLinkedNodeMetaMethods, ZR_ARRAY_COUNT(kLinkedNodeMetaMethods), ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "LinkedNode<T>(value: T)", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT)},
+        {"Iterable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kIterableMethods, ZR_ARRAY_COUNT(kIterableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Iterable<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
+        {"Iterator", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, kIteratorFields, ZR_ARRAY_COUNT(kIteratorFields), kIteratorMethods, ZR_ARRAY_COUNT(kIteratorMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Iterator<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
+        {"ArrayLike", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, kArrayLikeFields, ZR_ARRAY_COUNT(kArrayLikeFields), ZR_NULL, 0, kArrayLikeMetaMethods, ZR_ARRAY_COUNT(kArrayLikeMetaMethods), ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "ArrayLike<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
+        {"Equatable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kEquatableMethods, ZR_ARRAY_COUNT(kEquatableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Equatable<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
+        {"Comparable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kComparableMethods, ZR_ARRAY_COUNT(kComparableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Comparable<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
+        {"Hashable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kHashableMethods, ZR_ARRAY_COUNT(kHashableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Hashable()", ZR_NULL, 0, 0},
+        {"Array", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kArrayFields, ZR_ARRAY_COUNT(kArrayFields), kArrayMethods, ZR_ARRAY_COUNT(kArrayMethods), kArrayMetaMethods, ZR_ARRAY_COUNT(kArrayMetaMethods), ZR_NULL, ZR_NULL, kArrayImplements, ZR_ARRAY_COUNT(kArrayImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Array<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ARRAY_LIKE) | ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},
+        {"Map", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kMapFields, ZR_ARRAY_COUNT(kMapFields), kMapMethods, ZR_ARRAY_COUNT(kMapMethods), kMapMetaMethods, ZR_ARRAY_COUNT(kMapMetaMethods), ZR_NULL, ZR_NULL, kMapImplements, ZR_ARRAY_COUNT(kMapImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Map<K,V>()", kMapGenericParameters, ZR_ARRAY_COUNT(kMapGenericParameters), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},
+        {"Set", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kSetFields, ZR_ARRAY_COUNT(kSetFields), kSetMethods, ZR_ARRAY_COUNT(kSetMethods), kSetMetaMethods, ZR_ARRAY_COUNT(kSetMetaMethods), ZR_NULL, ZR_NULL, kSetImplements, ZR_ARRAY_COUNT(kSetImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Set<T>()", kSetGenericParameters, ZR_ARRAY_COUNT(kSetGenericParameters), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},
+        {"Pair", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, kPairFields, ZR_ARRAY_COUNT(kPairFields), kPairMethods, ZR_ARRAY_COUNT(kPairMethods), kPairMetaMethods, ZR_ARRAY_COUNT(kPairMetaMethods), ZR_NULL, ZR_NULL, kPairImplements, ZR_ARRAY_COUNT(kPairImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Pair<K,V>(first: K, second: V)", kGenericKV, ZR_ARRAY_COUNT(kGenericKV), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_EQUATABLE) | ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_COMPARABLE) | ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_HASHABLE)},
+        {"LinkedList", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kLinkedListFields, ZR_ARRAY_COUNT(kLinkedListFields), kLinkedListMethods, ZR_ARRAY_COUNT(kLinkedListMethods), kLinkedListMetaMethods, ZR_ARRAY_COUNT(kLinkedListMetaMethods), ZR_NULL, ZR_NULL, kLinkedListImplements, ZR_ARRAY_COUNT(kLinkedListImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "LinkedList<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},
+        {"LinkedNode", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kLinkedNodeFields, ZR_ARRAY_COUNT(kLinkedNodeFields), ZR_NULL, 0, kLinkedNodeMetaMethods, ZR_ARRAY_COUNT(kLinkedNodeMetaMethods), ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "LinkedNode<T>(value: T)", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
 };
 
 static const ZrLibModuleDescriptor g_container_module_descriptor = {

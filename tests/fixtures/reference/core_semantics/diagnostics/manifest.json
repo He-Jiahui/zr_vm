@@ -1,0 +1,54 @@
+{
+  "feature_group": "diagnostics",
+  "phase_note": "Phase 1 uses manifests to force every future semantic slice to carry explicit upstream error precedents, not only success-path examples.",
+  "cases": [
+    {
+      "id": "diagnostics-lua-structured-parser-errors",
+      "upstream_language": "lua",
+      "upstream_path": "lua/testes/errors.lua",
+      "upstream_focus": "Negative tests should assert structured parser failures with source locations instead of vague generic exceptions.",
+      "zr_decision": "ZR reference alignment treats negative coverage as mandatory first-class work, starting with parser and compiler failures.",
+      "expected_outcome": "negative-cases-required-in-every-theme"
+    },
+    {
+      "id": "diagnostics-cpython-eof-specificity",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_eof.py",
+      "upstream_focus": "EOF diagnostics should stay specific enough to distinguish literal termination problems from other parse failures.",
+      "zr_decision": "ZR keeps an explicit unclosed-string fixture rather than hiding it behind broader parser smoke tests.",
+      "expected_outcome": "literal-eof-diagnostic-fixture-added"
+    },
+    {
+      "id": "diagnostics-cpython-syntax-target-errors",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_syntax.py",
+      "upstream_focus": "Assignment and malformed-expression diagnostics need fine-grained error categories, not one catch-all message.",
+      "zr_decision": "ZR compiler tests should keep target-specific failures such as const reassignment isolated in dedicated fixtures.",
+      "expected_outcome": "target-specific-compile-failures-tracked"
+    },
+    {
+      "id": "diagnostics-rust-format-parse-errors",
+      "upstream_language": "rust",
+      "upstream_path": "lua/rust/tests/ui/macros/format-parse-errors.rs",
+      "upstream_focus": "Bad argument forms deserve intentional recovery tests so diagnostics remain actionable at the boundary between parsing and semantic checks.",
+      "zr_decision": "ZR will grow additional negative call fixtures from this manifest instead of treating named-argument misuse as unspecified behavior.",
+      "expected_outcome": "call-diagnostic-expansion-planned"
+    },
+    {
+      "id": "diagnostics-jdk-import-inaccessible",
+      "upstream_language": "jdk",
+      "upstream_path": "lua/jdk/test/langtools/tools/javac/importscope/ImportInaccessible.java",
+      "upstream_focus": "Import diagnostics need scope-aware failures when a referenced member exists but is not legally accessible.",
+      "zr_decision": "ZR import follow-up work should distinguish not-found, duplicate, and inaccessible module/member cases.",
+      "expected_outcome": "import-diagnostic-taxonomy-inventoried"
+    },
+    {
+      "id": "diagnostics-jdk-final-assignment",
+      "upstream_language": "jdk",
+      "upstream_path": "lua/jdk/test/langtools/tools/javac/diags/examples/CantAssignToFinal.java",
+      "upstream_focus": "Immutable-write failures should be compiler diagnostics with a stable category, not a runtime side effect.",
+      "zr_decision": "ZR phase 1 adds a compile-fail const-reassignment fixture as the first concrete immutability diagnostic baseline.",
+      "expected_outcome": "const-diagnostic-fixture-added"
+    }
+  ]
+}

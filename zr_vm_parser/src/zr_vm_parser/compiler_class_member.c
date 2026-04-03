@@ -17,12 +17,19 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     TZrBool isConstructor = ZR_FALSE;
     SZrString *manualParamName = ZR_NULL;
     SZrType *manualParamType = ZR_NULL;
+    SZrStructMethod *structMethod = ZR_NULL;
+    SZrStructMetaFunction *structMetaFunc = ZR_NULL;
 
     if (node->type == ZR_AST_CLASS_METHOD) {
         SZrClassMethod *method = &node->data.classMethod;
         params = method->params;
         body = method->body;
         functionName = method->name != ZR_NULL ? method->name->name : ZR_NULL;
+    } else if (node->type == ZR_AST_STRUCT_METHOD) {
+        structMethod = &node->data.structMethod;
+        params = structMethod->params;
+        body = structMethod->body;
+        functionName = structMethod->name != ZR_NULL ? structMethod->name->name : ZR_NULL;
     } else if (node->type == ZR_AST_CLASS_META_FUNCTION) {
         SZrClassMetaFunction *metaFunc = &node->data.classMetaFunction;
         params = metaFunc->params;
@@ -30,6 +37,17 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         functionName = metaFunc->meta != ZR_NULL ? metaFunc->meta->name : ZR_NULL;
         if (metaFunc->meta != ZR_NULL) {
             TZrNativeString metaName = ZrCore_String_GetNativeStringShort(metaFunc->meta->name);
+            if (metaName != ZR_NULL && strcmp(metaName, "constructor") == 0) {
+                isConstructor = ZR_TRUE;
+            }
+        }
+    } else if (node->type == ZR_AST_STRUCT_META_FUNCTION) {
+        structMetaFunc = &node->data.structMetaFunction;
+        params = structMetaFunc->params;
+        body = structMetaFunc->body;
+        functionName = structMetaFunc->meta != ZR_NULL ? structMetaFunc->meta->name : ZR_NULL;
+        if (structMetaFunc->meta != ZR_NULL) {
+            TZrNativeString metaName = ZrCore_String_GetNativeStringShort(structMetaFunc->meta->name);
             if (metaName != ZR_NULL && strcmp(metaName, "constructor") == 0) {
                 isConstructor = ZR_TRUE;
             }
@@ -62,7 +80,9 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
             return ZR_NULL;
         }
     } else {
-        ZrParser_Compiler_Error(cs, "Expected class method, class property or class meta function", node->location);
+        ZrParser_Compiler_Error(cs,
+                                "Expected type member function, property or meta function",
+                                node->location);
         return ZR_NULL;
     }
 
@@ -158,12 +178,17 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     cs->currentFunctionNode = node;
     cs->constLocalVars.length = 0;
     cs->constParameters.length = 0;
+    compiler_end_constructor_const_field_tracking(cs);
+    if (isConstructor) {
+        compiler_begin_constructor_const_field_tracking(cs);
+    }
 
     cs->currentFunction = ZrCore_Function_New(cs->state);
     if (cs->currentFunction == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "Failed to create class member function object", node->location);
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = oldFunctionNode;
+        compiler_end_constructor_const_field_tracking(cs);
         return ZR_NULL;
     }
 
@@ -261,9 +286,15 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
 
     if (body != ZR_NULL) {
         ZrParser_Statement_Compile(cs, body);
-        if (!cs->hasError) {
-            compiler_validate_out_parameter_definite_assignment(cs, params, body, node->location);
-        }
+    }
+
+    if (!cs->hasError && isConstructor &&
+        !compiler_validate_constructor_const_field_initialization(cs, body, node->location)) {
+        cs->hasError = ZR_TRUE;
+    }
+
+    if (!cs->hasError && body != ZR_NULL) {
+        compiler_validate_out_parameter_definite_assignment(cs, params, body, node->location);
     }
 
     if (!cs->hasError) {
@@ -348,6 +379,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = 0;
         cs->constParameters.length = 0;
+        compiler_end_constructor_const_field_tracking(cs);
         return ZR_NULL;
     }
 
@@ -442,6 +474,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = 0;
     cs->constParameters.length = 0;
+    compiler_end_constructor_const_field_tracking(cs);
 
     if (outParameterCount != ZR_NULL) {
         *outParameterCount = parameterCount;

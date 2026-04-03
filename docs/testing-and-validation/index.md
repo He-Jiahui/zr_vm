@@ -1,0 +1,54 @@
+---
+related_code:
+  - tests/parser/test_char_and_type_cast.c
+  - tests/function/test_named_arguments.c
+  - tests/module/test_module_system.c
+  - docs/zr_language_specification.md
+  - docs/zr_language_test_requirements.md
+implementation_files:
+  - tests/parser/test_char_and_type_cast.c
+  - tests/function/test_named_arguments.c
+  - tests/module/test_module_system.c
+plan_sources:
+  - user: 2026-04-03 实现 ZR 核心语义外部对齐第一阶段
+  - docs/zr_language_specification.md
+  - docs/zr_language_test_requirements.md
+tests:
+  - tests/parser/test_char_and_type_cast.c
+  - tests/function/test_named_arguments.c
+  - tests/module/test_module_system.c
+  - tests/fixtures/reference/core_semantics/literals/manifest.json
+  - tests/fixtures/reference/core_semantics/expressions/manifest.json
+  - tests/fixtures/reference/core_semantics/imports/manifest.json
+  - tests/fixtures/reference/core_semantics/calls/manifest.json
+  - tests/fixtures/reference/core_semantics/casts-and-const/manifest.json
+  - tests/fixtures/reference/core_semantics/diagnostics/manifest.json
+doc_type: category-index
+---
+
+# Testing And Validation
+
+本目录记录 `zr_vm` 用来校对语言语义、补全边界测试、以及把外部参考语言测试资产映射到 ZR 自身回归体系的方法。
+
+## 当前主题
+
+- `core-semantics-reference-alignment.md`
+  - 6 个核心语义主题的 reference manifest 结构
+  - 第一阶段新增的 4 个 fixture 及其期望结果
+  - 现有三个测试入口如何消费这些资产
+  - 为什么当前切片先落“外部证据清单 + 最小可运行基线”
+- `../reference-alignment/full-stack-test-matrix.md`
+  - 10 个固定语义域的全栈主矩阵
+  - `tests/fixtures/reference/core_semantics/` 下的新 manifest 合同
+  - 120 条首轮 case 的配额、helper 与 executable 映射
+  - 首轮 30 条高风险优先 case 清单
+  - `L0` / `L1` / `L2` / `L3` / `L4` 五层 AOT 矩阵
+  - `smoke/core/stress` 三档过滤与 `executed_via` / `require_aot_path` 合同
+
+## 阅读顺序
+
+1. 先看 `core-semantics-reference-alignment.md`，了解 reference manifests、fixture 组织方式和本阶段覆盖边界。
+2. 再看 `../reference-alignment/full-stack-test-matrix.md`，确认当前已经升级到 10 个固定语义域、120 条首轮 inventory，以及新的 AOT 分层矩阵。
+3. 再沿 frontmatter 的 `tests` 字段定位具体 C 测试、manifest 和 fixture 文件。
+4. 需要跑快速回归时优先走 `smoke/core/stress` 过滤，而不是再平行新开一套 AOT 测试目录。
+5. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。

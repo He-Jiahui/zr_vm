@@ -55,10 +55,6 @@ typedef uintptr_t ZrFfiAbiUnsignedSlot;
 typedef intptr_t ZrFfiAbiSignedSlot;
 #endif
 
-#ifndef ZR_ARRAY_COUNT
-#define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
-#endif
-
 #define ZR_FFI_HIDDEN_HANDLE_FIELD "__zr_ffi_handle"
 #define ZR_FFI_HIDDEN_OWNER_FIELD "__zr_ffi_owner"
 #define ZR_FFI_HIDDEN_CALLBACK_FIELD "__zr_ffi_callback"
@@ -201,7 +197,7 @@ typedef struct ZrFfiCallbackData {
     ZrFfiSignature *signature;
     TZrBool closed;
     ZrFfiErrorCode lastError;
-    char lastErrorMessage[256];
+    char lastErrorMessage[ZR_FFI_ERROR_BUFFER_LENGTH];
 #if ZR_VM_HAS_LIBFFI
     ffi_closure *closure;
 #endif

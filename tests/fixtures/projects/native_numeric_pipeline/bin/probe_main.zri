@@ -1,0 +1,209 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 4
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 2
+
+CONSTANTS (18):
+  [0] native closure
+  [1] string: "probe_callbacks"
+  [2] null
+  [3] string: "lin_alg"
+  [4] string: "projectVectorsImpl"
+  [5] string: "object"
+  [6] string: "projectVectors"
+  [7] string: "signal"
+  [8] string: "mixSignalImpl"
+  [9] string: "mixSignal"
+  [10] string: "tensor_pipeline"
+  [11] string: "runTensorPassImpl"
+  [12] string: "runTensorPass"
+  [13] string: "scaleValue"
+  [14] string: "runProbeImpl"
+  [15] string: "summarizeProbeImpl"
+  [16] string: "runProbe"
+  [17] string: "summarizeProbe"
+
+LOCAL_VARIABLES (1):
+  [0] probe: offset_activate=4, offset_dead=8
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (1):
+    [0] probe: probe_callbacks
+  EXPORTED_SYMBOLS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+EH_TABLE (0):
+
+PROTOTYPES (4):
+// ========== PROTOTYPES FROM DATA (count: 4) ==========
+// --- Prototype 1 ---
+module lin_alg {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "projectVectorsImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "projectVectors",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+module signal {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "mixSignalImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "mixSignal",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
+module tensor_pipeline {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "runTensorPassImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "runTensorPass",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "object"
+    }
+  ]
+}
+
+// --- Prototype 4 ---
+module probe_callbacks {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "scaleValue",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "runProbeImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "summarizeProbeImpl",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "runProbe",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "summarizeProbe",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (8):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=1)
+  [2] FUNCTION_CALL (extra=0, operand1=0, operand2=1)
+  [3] GET_CONSTANT (extra=1, operand=2)
+  [4] GET_STACK (extra=1, operand=0)
+  [5] GET_MEMBER (extra=1, operand1=1, operand2=0)
+  [6] FUNCTION_TAIL_CALL (extra=1, operand1=1, operand2=0)
+  [7] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+

@@ -70,7 +70,7 @@ TZrSize garbage_collector_get_object_base_size(SZrState *state, SZrRawObject *ob
         return 0;
     }
 
-    if ((TZrPtr)object < (TZrPtr)0x1000) {
+    if ((TZrPtr)object < (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
         return 0;
     }
 
@@ -97,8 +97,10 @@ TZrSize garbage_collector_get_object_base_size(SZrState *state, SZrRawObject *ob
             return sizeof(SZrString);
         }
         case ZR_RAW_OBJECT_TYPE_BUFFER:
-        case ZR_RAW_OBJECT_TYPE_ARRAY:
             return sizeof(SZrArray);
+        case ZR_RAW_OBJECT_TYPE_ARRAY:
+            // Runtime arrays are object-backed (SZrObject + nodeMap), not standalone SZrArray headers.
+            return sizeof(SZrObject);
         case ZR_RAW_OBJECT_TYPE_CLOSURE: {
             if (state != ZR_NULL) {
                 if (object->isNative) {
@@ -148,7 +150,7 @@ void garbage_collector_free_object(SZrState *state, SZrRawObject *object) {
         return;
     }
 
-    if ((TZrPtr)object < (TZrPtr)0x1000) {
+    if ((TZrPtr)object < (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
         return;
     }
 
@@ -218,7 +220,7 @@ TZrBool ZrCore_RawObject_IsUnreferenced(SZrState *state, SZrRawObject *object) {
         return ZR_TRUE;
     }
 
-    if ((TZrPtr)object < (TZrPtr)0x1000) {
+    if ((TZrPtr)object < (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
         return ZR_TRUE;
     }
 

@@ -99,10 +99,17 @@ TZrUInt32 emit_property_setter_call(SZrCompilerState *cs,
 TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs,
                                        SZrMemberExpression *memberExpr,
                                        TZrUInt32 targetSlot);
+SZrString *resolve_member_expression_symbol(SZrCompilerState *cs,
+                                            SZrMemberExpression *memberExpr);
 TZrBool expression_uses_dynamic_object_access(SZrAstNode *node);
 
 SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeName);
 TZrBool find_type_member_is_const(SZrCompilerState *cs, SZrString *typeName, SZrString *memberName);
+TZrBool find_current_type_field_metadata(SZrCompilerState *cs,
+                                                SZrString *typeName,
+                                                SZrString *memberName,
+                                                TZrBool *outIsConst,
+                                                TZrBool *outIsStatic);
 SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName);
 SZrTypeMemberInfo *find_compiler_type_member(SZrCompilerState *cs,
                                              SZrString *typeName,

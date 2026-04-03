@@ -22,9 +22,9 @@ struct SZrObjectModule *ZrCore_Module_Create(SZrState *state) {
     module->pathHash = 0;
     module->fullPath = ZR_NULL;
 
-    ZrCore_HashSet_Init(state, &module->super.nodeMap, ZR_OBJECT_TABLE_INIT_SIZE_LOG2);
+    ZrCore_HashSet_Init(state, &module->super.nodeMap, ZR_OBJECT_TABLE_INITIAL_SIZE_LOG2);
     ZrCore_HashSet_Construct(&module->proNodeMap);
-    ZrCore_HashSet_Init(state, &module->proNodeMap, ZR_OBJECT_TABLE_INIT_SIZE_LOG2);
+    ZrCore_HashSet_Init(state, &module->proNodeMap, ZR_OBJECT_TABLE_INITIAL_SIZE_LOG2);
     return module;
 }
 

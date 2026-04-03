@@ -1,0 +1,54 @@
+{
+  "feature_group": "calls",
+  "phase_note": "Phase 1 adds a runnable named-argument and default-value baseline while the manifest inventories duplicate-name, ordering, and vararg precedents.",
+  "cases": [
+    {
+      "id": "calls-cpython-extcall-duplicate-keyword",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_extcall.py",
+      "upstream_focus": "Named-call syntax must reject duplicated keyword delivery and mixed unpacking collisions.",
+      "zr_decision": "ZR named arguments are accepted only when each parameter name is bound at most once across positional, named, and future spread forms.",
+      "expected_outcome": "duplicate-named-arguments-rejected"
+    },
+    {
+      "id": "calls-cpython-keywordonly-defaults",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_keywordonlyarg.py",
+      "upstream_focus": "Defaults and required named-only parameters need both positive and negative coverage.",
+      "zr_decision": "ZR defaults are applied only to omitted parameters, and later tests should add missing-required-name diagnostics.",
+      "expected_outcome": "defaults-and-required-named-cases-in-matrix"
+    },
+    {
+      "id": "calls-cpython-call-kwargs-order",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_call.py",
+      "upstream_focus": "Call behavior needs stable handling for unexpected names, keyword ordering, and keyword-capable vs keyword-forbidden callables.",
+      "zr_decision": "ZR should preserve the explicit source order of named arguments while resolving them against parameter names, not by textual coincidence alone.",
+      "expected_outcome": "named-order-and-diagnostics-planned"
+    },
+    {
+      "id": "calls-rust-named-argument-ordering-errors",
+      "upstream_language": "rust",
+      "upstream_path": "lua/rust/tests/ui/fmt/ifmt-bad-arg.rs",
+      "upstream_focus": "Once named arguments appear, ordering mistakes and unused names need dedicated diagnostics rather than generic parse failures.",
+      "zr_decision": "ZR later tests should reject positional-after-named and unused or unknown named arguments with targeted compiler errors.",
+      "expected_outcome": "ordering-and-unused-name-diagnostics-planned"
+    },
+    {
+      "id": "calls-mono-params-array-baseline",
+      "upstream_language": "mono",
+      "upstream_path": "lua/mono-6.12.0.199/mono/tests/params.cs",
+      "upstream_focus": "Call coverage should include flexible arity entry points rather than assuming every callable has a fixed positional shape.",
+      "zr_decision": "ZR keeps vararg-style and named/default semantics as separate test themes so later broadening does not distort the current callable contract.",
+      "expected_outcome": "vararg-and-default-cases-kept-separate"
+    },
+    {
+      "id": "calls-lua-general-call-baseline",
+      "upstream_language": "lua",
+      "upstream_path": "lua/testes/calls.lua",
+      "upstream_focus": "General call semantics need a broad executable baseline to catch regressions in argument passing and nested invocation shape.",
+      "zr_decision": "ZR phase 1 adds a concrete named/default fixture that returns a stable value and will expand from this baseline.",
+      "expected_outcome": "named-default-fixture-added"
+    }
+  ]
+}

@@ -174,6 +174,18 @@ enum EZrOwnershipQualifier {
 
 typedef enum EZrOwnershipQualifier EZrOwnershipQualifier;
 
+enum EZrOwnershipBuiltinKind {
+    ZR_OWNERSHIP_BUILTIN_KIND_NONE = 0,
+    ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE,
+    ZR_OWNERSHIP_BUILTIN_KIND_SHARED,
+    ZR_OWNERSHIP_BUILTIN_KIND_WEAK,
+    ZR_OWNERSHIP_BUILTIN_KIND_USING,
+    ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE,
+    ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
+};
+
+typedef enum EZrOwnershipBuiltinKind EZrOwnershipBuiltinKind;
+
 enum EZrGenericParameterKind {
     ZR_GENERIC_PARAMETER_TYPE,
     ZR_GENERIC_PARAMETER_CONST_INT,
@@ -406,6 +418,7 @@ typedef struct SZrConstructExpression {
     EZrOwnershipQualifier ownershipQualifier;
     TZrBool isUsing;
     TZrBool isNew;
+    EZrOwnershipBuiltinKind builtinKind;
 } SZrConstructExpression;
 
 // 字面量表达式

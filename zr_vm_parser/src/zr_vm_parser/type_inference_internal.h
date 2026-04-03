@@ -15,25 +15,25 @@ typedef enum EZrGenericCallResolveStatus {
 } EZrGenericCallResolveStatus;
 
 const TZrChar *get_base_type_name(EZrValueType baseType);
-void free_inferred_type_array(SZrState *state, SZrArray *types);
+ZR_PARSER_API void free_inferred_type_array(SZrState *state, SZrArray *types);
 TZrBool zr_string_equals_cstr(SZrString *value, const TZrChar *literal);
-SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
+ZR_PARSER_API SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 SZrTypeMemberInfo *find_compiler_type_member_inference(SZrCompilerState *cs,
                                                        SZrString *typeName,
                                                        SZrString *memberName);
 TZrBool type_name_is_module_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
-TZrBool inferred_type_from_type_name(SZrCompilerState *cs, SZrString *typeName, SZrInferredType *result);
+ZR_PARSER_API TZrBool inferred_type_from_type_name(SZrCompilerState *cs, SZrString *typeName, SZrInferredType *result);
 TZrBool inferred_type_try_map_primitive_name(const TZrNativeString nameStr,
                                              TZrSize nameLen,
                                              EZrValueType *outBaseType);
-TZrBool try_parse_generic_instance_type_name(SZrState *state,
-                                             SZrString *typeName,
-                                             SZrString **outBaseName,
-                                             SZrArray *outArgumentTypeNames);
-TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *typeName);
-SZrString *build_generic_instance_name(SZrState *state,
-                                       SZrString *baseName,
-                                       const SZrArray *typeArguments);
+ZR_PARSER_API TZrBool try_parse_generic_instance_type_name(SZrState *state,
+                                                           SZrString *typeName,
+                                                           SZrString **outBaseName,
+                                                           SZrArray *outArgumentTypeNames);
+ZR_PARSER_API TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *typeName);
+ZR_PARSER_API SZrString *build_generic_instance_name(SZrState *state,
+                                                     SZrString *baseName,
+                                                     const SZrArray *typeArguments);
 TZrBool infer_function_call_argument_types_for_candidate(SZrCompilerState *cs,
                                                          SZrTypeEnvironment *env,
                                                          SZrString *funcName,
@@ -46,7 +46,7 @@ TZrBool validate_call_argument_passing_modes(SZrCompilerState *cs,
                                              const SZrArray *parameterTypes,
                                              SZrFunctionCall *call,
                                              const SZrArray *argTypes);
-void free_resolved_call_signature(SZrState *state, SZrResolvedCallSignature *signature);
+ZR_PARSER_API void free_resolved_call_signature(SZrState *state, SZrResolvedCallSignature *signature);
 EZrGenericCallResolveStatus resolve_generic_function_call_signature_detailed(
         SZrCompilerState *cs,
         SZrTypeEnvironment *env,
@@ -60,7 +60,7 @@ TZrBool resolve_generic_function_call_signature(SZrCompilerState *cs,
                                                 const SZrFunctionTypeInfo *funcType,
                                                 SZrFunctionCall *call,
                                                 SZrResolvedCallSignature *signature);
-EZrGenericCallResolveStatus resolve_generic_member_call_signature_detailed(
+ZR_PARSER_API EZrGenericCallResolveStatus resolve_generic_member_call_signature_detailed(
         SZrCompilerState *cs,
         const SZrTypeMemberInfo *memberInfo,
         SZrFunctionCall *call,
@@ -71,13 +71,13 @@ TZrBool resolve_generic_member_call_signature(SZrCompilerState *cs,
                                               const SZrTypeMemberInfo *memberInfo,
                                               SZrFunctionCall *call,
                                               SZrResolvedCallSignature *signature);
-TZrBool resolve_best_function_overload(SZrCompilerState *cs,
-                                       SZrTypeEnvironment *env,
-                                       SZrString *funcName,
-                                       SZrFunctionCall *call,
-                                       SZrFileRange location,
-                                       SZrFunctionTypeInfo **resolvedFunction,
-                                       SZrResolvedCallSignature *resolvedSignature);
+ZR_PARSER_API TZrBool resolve_best_function_overload(SZrCompilerState *cs,
+                                                     SZrTypeEnvironment *env,
+                                                     SZrString *funcName,
+                                                     SZrFunctionCall *call,
+                                                     SZrFileRange location,
+                                                     SZrFunctionTypeInfo **resolvedFunction,
+                                                     SZrResolvedCallSignature *resolvedSignature);
 TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
                                            SZrAstNode *node,
                                            SZrTypePrototypeInfo **outPrototype,
@@ -88,6 +88,9 @@ TZrBool infer_prototype_reference_type(SZrCompilerState *cs,
 TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                                         SZrAstNode *node,
                                         SZrInferredType *result);
+TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
+                                                         const SZrInferredType *iterableType,
+                                                         SZrInferredType *outType);
 const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQualifier);
 SZrString *extract_imported_module_name(SZrFunctionCall *call);
 TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);

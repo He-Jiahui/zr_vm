@@ -39,7 +39,7 @@ static TZrBytePtr read_all_import_bytes(SZrState *state, SZrIo *io, TZrSize *out
     }
 
     global = state->global;
-    capacity = io->remained > 0 ? io->remained : 4096;
+    capacity = io->remained > 0 ? io->remained : ZR_VM_READ_ALL_IO_FALLBACK_CAPACITY;
     buffer = (TZrBytePtr)ZrCore_Memory_RawMallocWithType(global, capacity + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
     if (buffer == ZR_NULL) {
         return ZR_NULL;
@@ -98,10 +98,13 @@ static void import_type_prototype_init(SZrState *state,
     info->allowValueConstruction = type != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE &&
                                    type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
     info->allowBoxedConstruction = info->allowValueConstruction;
-    ZrCore_Array_Init(state, &info->inherits, sizeof(SZrString *), 2);
-    ZrCore_Array_Init(state, &info->implements, sizeof(SZrString *), 2);
-    ZrCore_Array_Init(state, &info->genericParameters, sizeof(SZrTypeGenericParameterInfo), 2);
-    ZrCore_Array_Init(state, &info->members, sizeof(SZrTypeMemberInfo), 4);
+    ZrCore_Array_Init(state, &info->inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(state, &info->implements, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(state,
+                      &info->genericParameters,
+                      sizeof(SZrTypeGenericParameterInfo),
+                      ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(state, &info->members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
 }
 
 static TZrBool import_prototype_has_member(SZrTypePrototypeInfo *info, SZrString *memberName) {

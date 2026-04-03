@@ -45,8 +45,8 @@ static TZrSize signature_range_span(SZrFileRange range) {
         return range.end.offset - range.start.offset;
     }
 
-    return ((TZrSize)range.end.line * 4096 + (TZrSize)range.end.column) -
-           ((TZrSize)range.start.line * 4096 + (TZrSize)range.start.column);
+    return ((TZrSize)range.end.line * ZR_LSP_SIGNATURE_RANGE_PACK_BASE + (TZrSize)range.end.column) -
+           ((TZrSize)range.start.line * ZR_LSP_SIGNATURE_RANGE_PACK_BASE + (TZrSize)range.start.column);
 }
 
 static TZrSize signature_call_context_span(SZrAstNode *callNode) {
@@ -263,7 +263,7 @@ static void signature_append_generic_parameter_decl(SZrState *state,
                                                     TZrChar *buffer,
                                                     TZrSize bufferSize,
                                                     TZrSize *offset) {
-    TZrChar typeBuffer[128];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
 
     ZR_UNUSED_PARAMETER(state);
 
@@ -328,7 +328,7 @@ static void signature_append_where_clauses(SZrState *state,
                                            TZrChar *buffer,
                                            TZrSize bufferSize,
                                            TZrSize *offset) {
-    TZrChar typeBuffer[128];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
 
     ZR_UNUSED_PARAMETER(state);
 
@@ -413,7 +413,7 @@ static void signature_append_parameter_label(SZrState *state,
                                              TZrSize *offset) {
     SZrParameter *parameter;
     const TZrChar *passingModeText;
-    TZrChar typeBuffer[128];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
 
     if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
         return;
@@ -449,7 +449,7 @@ static TZrBool signature_build_label_from_method(SZrState *state,
     SZrAstNode *declarationNode;
     SZrGenericDeclaration *genericDecl = ZR_NULL;
     SZrAstNodeArray *params = ZR_NULL;
-    TZrChar typeBuffer[128];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
     TZrSize offset = 0;
 
     if (buffer == ZR_NULL || bufferSize == 0 || memberInfo == ZR_NULL) {
@@ -518,7 +518,7 @@ static TZrBool signature_build_label_from_function(SZrState *state,
     SZrAstNode *declarationNode;
     SZrGenericDeclaration *genericDecl = ZR_NULL;
     SZrAstNodeArray *params = ZR_NULL;
-    TZrChar typeBuffer[128];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
     TZrSize offset = 0;
 
     if (buffer == ZR_NULL || bufferSize == 0 || funcType == ZR_NULL) {
@@ -1192,7 +1192,7 @@ static TZrBool signature_build_specialized_type_name(SZrCompilerState *compilerS
                                                      SZrString **outTypeName) {
     SZrInferredType unresolvedType;
     SZrInferredType resolvedType;
-    TZrChar buffer[256];
+    TZrChar buffer[ZR_LSP_TEXT_BUFFER_LENGTH];
     const TZrChar *displayText;
 
     if (outTypeName != ZR_NULL) {
@@ -1232,7 +1232,8 @@ static SZrTypeMemberInfo *signature_find_member_recursive(SZrCompilerState *comp
                                                           SZrTypePrototypeInfo *prototype,
                                                           SZrString *memberName,
                                                           TZrUInt32 depth) {
-    if (compilerState == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL || depth > 32) {
+    if (compilerState == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL ||
+        depth > ZR_LSP_AST_RECURSION_MAX_DEPTH) {
         return ZR_NULL;
     }
 
@@ -1515,7 +1516,7 @@ static TZrBool signature_collect_parameter_passing_modes_from_ast(SZrState *stat
 
 static SZrString *signature_create_type_name_from_ast_type(SZrCompilerState *compilerState, SZrType *typeInfo) {
     SZrInferredType inferredType;
-    TZrChar buffer[256];
+    TZrChar buffer[ZR_LSP_TEXT_BUFFER_LENGTH];
     const TZrChar *displayText;
     SZrString *result = ZR_NULL;
 
@@ -1979,7 +1980,7 @@ static TZrBool signature_bind_explicit_generic_argument(SZrCompilerState *compil
                                                         SZrAstNode *argumentNode,
                                                         SZrInferredType *result) {
     SZrTypeValue evaluatedValue;
-    TZrChar integerBuffer[64];
+    TZrChar integerBuffer[ZR_LSP_INTEGER_BUFFER_LENGTH];
 
     if (compilerState == ZR_NULL || parameterInfo == ZR_NULL || argumentNode == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -2222,7 +2223,7 @@ static TZrBool signature_populate_help_from_label(SZrState *state,
             SZrLspParameterInformation *parameterInfo;
             SZrInferredType *resolvedType = ZR_NULL;
             EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
-            TZrChar buffer[256];
+            TZrChar buffer[ZR_LSP_TEXT_BUFFER_LENGTH];
             TZrSize offset = 0;
 
             if (resolvedSignature != ZR_NULL && index < resolvedSignature->parameterTypes.length) {
@@ -2270,7 +2271,7 @@ static TZrBool signature_resolve_function_help(SZrState *state,
     SZrResolvedCallSignature resolvedSignature;
     SZrPrimaryExpression *primary;
     SZrFunctionCall *call;
-    TZrChar labelBuffer[512];
+    TZrChar labelBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
     TZrBool resolved = ZR_FALSE;
 
     if (state == ZR_NULL || compilerState == ZR_NULL || context == ZR_NULL || context->primaryNode == ZR_NULL ||
@@ -2346,7 +2347,7 @@ static TZrBool signature_resolve_method_help(SZrState *state,
     SZrTypeMemberInfo *memberInfo;
     SZrMemberExpression *memberExpr;
     SZrResolvedCallSignature resolvedSignature;
-    TZrChar labelBuffer[512];
+    TZrChar labelBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
 
     if (state == ZR_NULL || analyzer == ZR_NULL || compilerState == ZR_NULL || context == ZR_NULL ||
         context->primaryNode == ZR_NULL || context->callNode == ZR_NULL || context->callMemberIndex == 0 ||

@@ -1,0 +1,1255 @@
+{
+  "domain": "exceptions_gc_native_stress",
+  "summary": "Reference matrix for exceptions, GC interaction, native callback pressure, and long-running stress cases.",
+  "cases": [
+    {
+      "id": "exceptions-throw-catch-finally-pass",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "exception_flow",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_exceptions.py",
+      "upstream_intent": "Structured exception flow needs a happy-path baseline that includes finally behavior.",
+      "zr_decision": "adopt",
+      "zr_contract": "Throw, catch, and finally follow one explicit unwind contract.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "throw or catch or finally flow executes with stable control transfer",
+      "assertions": [
+        "runtime unwind visits finally exactly once",
+        "exception object shape is stable",
+        "project fixture observes the expected return or error"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "throw or catch or finally flow executes with stable control transfer"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-structured-error-pass",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "exception_objects",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/quickjs.c",
+      "upstream_intent": "Exceptions should carry structured metadata instead of only raw strings.",
+      "zr_decision": "adapt",
+      "zr_contract": "Exception values retain structured fields such as type, message, and source location.",
+      "layer_targets": [
+        "runtime",
+        "artifact",
+        "module/project"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "raised errors expose stable structured fields",
+      "assertions": [
+        "runtime exception object includes expected fields",
+        "artifact preserves structured error metadata where relevant",
+        "project fixture can inspect the structured error"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "raised errors expose stable structured fields"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-unhandled-error-negative",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "exception_flow",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_exceptions.py",
+      "upstream_intent": "Unhandled exceptions need a stable externally visible contract.",
+      "zr_decision": "adopt",
+      "zr_contract": "Unhandled exceptions surface as structured runtime failures without corrupting thread state.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "unhandled exception leaves a stable error report and resettable runtime state",
+      "assertions": [
+        "runtime prints or returns a structured unhandled error",
+        "thread state resets predictably after reporting",
+        "stress repeated unhandled errors do not corrupt future calls"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "unhandled exception leaves a stable error report and resettable runtime state"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-native-callback-reentry-negative",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "native_callbacks",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/appdomain-unload-exception.cs",
+      "upstream_intent": "Native callback re-entry around exceptions is a high-risk runtime path.",
+      "zr_decision": "adapt",
+      "zr_contract": "Native callback re-entry preserves exception ownership and unwinding invariants.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "invalid or unsafe native callback re-entry fails deterministically",
+      "assertions": [
+        "runtime reports the re-entry failure explicitly",
+        "native handle ownership remains valid after failure",
+        "stress repeated failures stay deterministic"
+      ],
+      "stress_class": "full",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "invalid or unsafe native callback re-entry fails deterministically"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-deep-stack-boundary",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "stack_depth",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/errors.lua",
+      "upstream_intent": "Deep stacks and recursion expose exception-unwind limits.",
+      "zr_decision": "adapt",
+      "zr_contract": "Deep exception stacks either unwind successfully or fail with a stable stack-depth diagnostic.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "deep exception stacks keep deterministic unwind behavior",
+      "assertions": [
+        "stack-depth limit or successful unwind is explicit",
+        "runtime does not corrupt call frames",
+        "stress deep recursion remains deterministic"
+      ],
+      "stress_class": "full",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "deep exception stacks keep deterministic unwind behavior"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-long-loop-boundary",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "loop_pressure",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/gc.lua",
+      "upstream_intent": "Long-running loops should not destabilize exception or GC contracts.",
+      "zr_decision": "adapt",
+      "zr_contract": "Long loops preserve exception and GC invariants across repeated iterations.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "long loop execution remains stable under periodic checks or exceptions",
+      "assertions": [
+        "loop count or checkpoint behavior is stable",
+        "GC pressure does not corrupt live values",
+        "stress run completes without runtime corruption"
+      ],
+      "stress_class": "full",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "long loop execution remains stable under periodic checks or exceptions"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-cleanup-on-throw",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "exception_cleanup",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/critical-finalizers.cs",
+      "upstream_intent": "Throwing through cleanup scopes needs explicit lifetime validation.",
+      "zr_decision": "adopt",
+      "zr_contract": "Throws crossing cleanup scopes run cleanup deterministically before propagating the exception.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "cleanup executes before exception propagation completes",
+      "assertions": [
+        "cleanup count and order are asserted",
+        "exception propagation still reaches the handler or boundary",
+        "project fixture exposes the same cleanup order"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "cleanup executes before exception propagation completes"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "cleanup count and order are asserted",
+            "project fixture exposes the same cleanup order"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-gc-with-active-owned-native-object",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "gc_native_interaction",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/critical-finalizers.cs",
+      "upstream_intent": "GC while native or owned objects are live is a high-risk pressure path.",
+      "zr_decision": "adapt",
+      "zr_contract": "GC respects active owned or native object liveness and finalization contracts during exception-capable execution.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "GC during live owned or native object use preserves liveness and cleanup invariants",
+      "assertions": [
+        "live handles remain reachable through GC",
+        "cleanup does not run early",
+        "stress repeated GC with active objects stays stable"
+      ],
+      "stress_class": "full",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "GC during live owned or native object use preserves liveness and cleanup invariants"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "cleanup does not run early"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-repeated-import-unload-regression",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "module_lifetime",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/tests/test_cyclic_import.js",
+      "upstream_intent": "Repeated import or unload cycles can regress exception and GC invariants together.",
+      "zr_decision": "adapt",
+      "zr_contract": "Repeated import or unload under exception pressure preserves module and handle integrity.",
+      "layer_targets": [
+        "module/project",
+        "runtime",
+        "stress"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "repeated import or unload cycles do not leak exception state or native handles",
+      "assertions": [
+        "module cache remains coherent",
+        "error state resets between cycles",
+        "stress run does not leak handles"
+      ],
+      "stress_class": "full",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "repeated import or unload cycles do not leak exception state or native handles"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-repeated-throw-catch-regression",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "exception_flow",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_exceptions.py",
+      "upstream_intent": "Repeated throw and catch loops often uncover hidden state leaks.",
+      "zr_decision": "adopt",
+      "zr_contract": "Repeated exception cycles preserve handler state, stack state, and object cleanup.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "repeated throw or catch loops remain stable",
+      "assertions": [
+        "handler stack depth returns to baseline",
+        "exception objects are not retained unexpectedly",
+        "stress repetition produces consistent results"
+      ],
+      "stress_class": "full",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "repeated throw or catch loops remain stable"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-no-name-based-finalizer-trigger-divergence",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "gc_native_interaction",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/critical-finalizers.cs",
+      "upstream_intent": "Finalization should not depend on magic method names in VM core.",
+      "zr_decision": "reject",
+      "zr_contract": "Finalizer and cleanup participation come from explicit contracts, not name-based runtime checks.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "cleanup is not enabled by matching a magic finalizer name alone",
+      "assertions": [
+        "runtime registers cleanup through explicit metadata",
+        "artifact preserves cleanup metadata instead of magic names",
+        "semantic checks do not branch on type names"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "cleanup is not enabled by matching a magic finalizer name alone"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "runtime registers cleanup through explicit metadata",
+            "artifact preserves cleanup metadata instead of magic names"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "exceptions-no-silent-exception-swallow-divergence",
+      "domain": "exceptions_gc_native_stress",
+      "feature_group": "exception_flow",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/quickjs.c",
+      "upstream_intent": "Reference runtimes sometimes permit host-specific swallowing paths that ZR should reject.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR does not silently swallow runtime exceptions in shared execution paths without an explicit handler contract.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "exceptions remain visible unless a documented handler consumes them",
+      "assertions": [
+        "runtime reports unhandled exceptions explicitly",
+        "project fixture sees the same propagation behavior",
+        "artifact or diagnostics preserve handler metadata"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "eh_unwind",
+        "gc_map",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "exceptions remain visible unless a documented handler consumes them"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "EH_TABLE",
+            "GC_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "eh_unwind",
+            "gc_map",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    }
+  ]
+}

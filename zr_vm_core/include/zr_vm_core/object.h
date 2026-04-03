@@ -9,9 +9,59 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_common/zr_contract_conf.h"
 struct SZrState;
 struct SZrGlobalState;
 struct SZrObjectPrototype;
+struct SZrFunction;
+
+typedef enum EZrProtocolId {
+    ZR_PROTOCOL_ID_NONE = 0,
+    ZR_PROTOCOL_ID_EQUATABLE = 1,
+    ZR_PROTOCOL_ID_HASHABLE = 2,
+    ZR_PROTOCOL_ID_COMPARABLE = 3,
+    ZR_PROTOCOL_ID_ITERABLE = 4,
+    ZR_PROTOCOL_ID_ITERATOR = 5,
+    ZR_PROTOCOL_ID_ARRAY_LIKE = 6
+} EZrProtocolId;
+
+#define ZR_PROTOCOL_BIT(PROTOCOL_ID) (1ull << (TZrUInt64)(PROTOCOL_ID))
+
+typedef enum EZrMemberDescriptorKind {
+    ZR_MEMBER_DESCRIPTOR_KIND_FIELD = 0,
+    ZR_MEMBER_DESCRIPTOR_KIND_METHOD = 1,
+    ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY = 2,
+    ZR_MEMBER_DESCRIPTOR_KIND_STATIC_MEMBER = 3
+} EZrMemberDescriptorKind;
+
+typedef struct SZrMemberDescriptor {
+    struct SZrString *name;
+    EZrMemberDescriptorKind kind;
+    TZrBool isStatic;
+    TZrBool isWritable;
+    TZrBool isDynamicWrite;
+    TZrUInt8 reserved0;
+    struct SZrFunction *getterFunction;
+    struct SZrFunction *setterFunction;
+    TZrUInt32 contractRole;
+} SZrMemberDescriptor;
+
+typedef struct SZrIndexContract {
+    struct SZrFunction *getByIndexFunction;
+    struct SZrFunction *setByIndexFunction;
+    struct SZrFunction *containsKeyFunction;
+    struct SZrFunction *getLengthFunction;
+} SZrIndexContract;
+
+typedef struct SZrIterableContract {
+    struct SZrFunction *iterInitFunction;
+} SZrIterableContract;
+
+typedef struct SZrIteratorContract {
+    struct SZrFunction *moveNextFunction;
+    struct SZrFunction *currentFunction;
+    struct SZrString *currentMemberName;
+} SZrIteratorContract;
 
 enum EZrObjectInternalType {
     ZR_OBJECT_INTERNAL_TYPE_OBJECT,
@@ -34,6 +84,7 @@ struct ZR_STRUCT_ALIGN SZrObject {
     SZrHashSet nodeMap;
 
     EZrObjectInternalType internalType;
+    TZrUInt32 memberVersion;
 
     // SZrRawObject *gcList;
 };
@@ -56,6 +107,16 @@ struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     EZrObjectPrototypeType type;
     struct SZrMetaTable metaTable;
     struct SZrObjectPrototype *superPrototype;
+    SZrMemberDescriptor *memberDescriptors;
+    TZrUInt32 memberDescriptorCount;
+    TZrUInt32 memberDescriptorCapacity;
+    SZrIndexContract indexContract;
+    SZrIterableContract iterableContract;
+    SZrIteratorContract iteratorContract;
+    TZrUInt64 protocolMask;
+    TZrBool dynamicMemberCapable;
+    TZrUInt8 reserved0;
+    TZrUInt16 reserved1;
     SZrManagedFieldInfo *managedFields;
     TZrUInt32 managedFieldCount;
     TZrUInt32 managedFieldCapacity;
@@ -105,6 +166,68 @@ ZR_CORE_API void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *objec
 
 ZR_CORE_API const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key);
 
+ZR_CORE_API const SZrMemberDescriptor *ZrCore_ObjectPrototype_FindMemberDescriptor(SZrObjectPrototype *prototype,
+                                                                                    struct SZrString *memberName,
+                                                                                    TZrBool includeInherited);
+
+ZR_CORE_API TZrBool ZrCore_ObjectPrototype_AddMemberDescriptor(struct SZrState *state,
+                                                               SZrObjectPrototype *prototype,
+                                                               const SZrMemberDescriptor *descriptor);
+
+ZR_CORE_API TZrBool ZrCore_Object_GetMember(struct SZrState *state,
+                                            SZrTypeValue *receiver,
+                                            struct SZrString *memberName,
+                                            SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_SetMember(struct SZrState *state,
+                                            SZrTypeValue *receiver,
+                                            struct SZrString *memberName,
+                                            const SZrTypeValue *value);
+
+ZR_CORE_API TZrBool ZrCore_Object_InvokeMember(struct SZrState *state,
+                                               SZrTypeValue *receiver,
+                                               struct SZrString *memberName,
+                                               const SZrTypeValue *arguments,
+                                               TZrSize argumentCount,
+                                               SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_ResolveMemberCallable(struct SZrState *state,
+                                                        SZrTypeValue *receiver,
+                                                        struct SZrString *memberName,
+                                                        struct SZrObjectPrototype **outOwnerPrototype,
+                                                        struct SZrFunction **outFunction,
+                                                        TZrBool *outIsStatic);
+
+ZR_CORE_API TZrBool ZrCore_Object_InvokeResolvedFunction(struct SZrState *state,
+                                                         struct SZrFunction *function,
+                                                         TZrBool isStatic,
+                                                         SZrTypeValue *receiver,
+                                                         const SZrTypeValue *arguments,
+                                                         TZrSize argumentCount,
+                                                         SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
+                                             SZrTypeValue *receiver,
+                                             const SZrTypeValue *key,
+                                             SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
+                                             SZrTypeValue *receiver,
+                                             const SZrTypeValue *key,
+                                             const SZrTypeValue *value);
+
+ZR_CORE_API TZrBool ZrCore_Object_IterInit(struct SZrState *state,
+                                           SZrTypeValue *iterableValue,
+                                           SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_IterMoveNext(struct SZrState *state,
+                                               SZrTypeValue *iteratorValue,
+                                               SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_IterCurrent(struct SZrState *state,
+                                              SZrTypeValue *iteratorValue,
+                                              SZrTypeValue *result);
+
 // Prototype 创建和管理函数
 ZR_CORE_API SZrObjectPrototype *ZrCore_ObjectPrototype_New(struct SZrState *state, SZrString *name, EZrObjectPrototypeType type);
 
@@ -127,5 +250,20 @@ ZR_CORE_API void ZrCore_ObjectPrototype_AddManagedField(struct SZrState *state,
                                                   TZrBool callsClose,
                                                   TZrBool callsDestructor,
                                                   TZrUInt32 declarationOrder);
+
+ZR_CORE_API void ZrCore_ObjectPrototype_SetIndexContract(SZrObjectPrototype *prototype,
+                                                         const SZrIndexContract *contract);
+
+ZR_CORE_API void ZrCore_ObjectPrototype_SetIterableContract(SZrObjectPrototype *prototype,
+                                                            const SZrIterableContract *contract);
+
+ZR_CORE_API void ZrCore_ObjectPrototype_SetIteratorContract(SZrObjectPrototype *prototype,
+                                                            const SZrIteratorContract *contract);
+
+ZR_CORE_API void ZrCore_ObjectPrototype_AddProtocol(SZrObjectPrototype *prototype, EZrProtocolId protocolId);
+
+ZR_CORE_API TZrBool ZrCore_ObjectPrototype_ImplementsProtocol(SZrObjectPrototype *prototype, EZrProtocolId protocolId);
+
+ZR_CORE_API TZrBool ZrCore_Object_IsInstanceOfPrototype(SZrObject *object, SZrObjectPrototype *prototype);
 
 #endif // ZR_VM_CORE_OBJECT_H

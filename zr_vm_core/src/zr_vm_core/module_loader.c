@@ -39,7 +39,7 @@ static TZrBytePtr read_all_from_io(SZrState *state, SZrIo *io, TZrSize *outSize)
     }
 
     global = state->global;
-    capacity = (io->remained > 0) ? io->remained : 4096;
+    capacity = (io->remained > 0) ? io->remained : ZR_VM_READ_ALL_IO_FALLBACK_CAPACITY;
     buffer = (TZrBytePtr)ZrCore_Memory_RawMallocWithType(global, capacity + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
     if (buffer == ZR_NULL) {
         return ZR_NULL;

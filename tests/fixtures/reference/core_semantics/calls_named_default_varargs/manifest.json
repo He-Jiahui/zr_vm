@@ -1,0 +1,1201 @@
+{
+  "domain": "calls_named_default_varargs",
+  "summary": "Reference matrix for positional, named, default, varargs, and overload-call contracts.",
+  "cases": [
+    {
+      "id": "calls-named-default-reorder-pass",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "named_and_default",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_call.py",
+      "upstream_intent": "Named arguments and defaults should compose while preserving parameter identity.",
+      "zr_decision": "adopt",
+      "zr_contract": "Named arguments may reorder explicitly named parameters while omitted parameters consume defaults.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "named reordering with defaults executes and returns the expected value",
+      "assertions": [
+        "argument binding table maps each name once",
+        "compiled call metadata records defaults and names",
+        "runtime result matches the expected sum"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "named reordering with defaults executes and returns the expected value"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-named-positional-mix-pass",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "mixed_call_surface",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/params.cs",
+      "upstream_intent": "Mixed positional and named calls need a positive baseline before negative diagnostics are tightened.",
+      "zr_decision": "adapt",
+      "zr_contract": "Positional arguments may precede named arguments when each parameter is bound once and in a supported order.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "mixed positional and named arguments compile and execute",
+      "assertions": [
+        "parameter order is preserved in call metadata",
+        "compiler reports no duplicate binding",
+        "runtime result matches expected mapping"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "mixed positional and named arguments compile and execute"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "parameter order is preserved in call metadata"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-duplicate-named-fail",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "named_diagnostics",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_extcall.py",
+      "upstream_intent": "A parameter name may not be bound twice across positional and named forms.",
+      "zr_decision": "adopt",
+      "zr_contract": "Duplicate parameter binding is a compiler error even when the second binding uses a named argument.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "compile fails with call.duplicate_named diagnostic",
+      "assertions": [
+        "diagnostic names the duplicate parameter",
+        "call metadata is not emitted",
+        "artifact text omits a callable body for the failing test"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "compile fails with call.duplicate_named diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-unexpected-named-fail",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "named_diagnostics",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_call.py",
+      "upstream_intent": "Unknown keyword arguments should fail as call-shape errors, not as runtime misses.",
+      "zr_decision": "adopt",
+      "zr_contract": "Unexpected named arguments are rejected during compilation or call-shape checking.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "compile fails with call.unknown_named diagnostic",
+      "assertions": [
+        "diagnostic lists the unexpected name",
+        "compiler does not silently spill the name into varargs",
+        "artifact does not contain a runtime name-fallback branch"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "compile fails with call.unknown_named diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-varargs-arity-boundary",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "varargs",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/params.cs",
+      "upstream_intent": "Varargs should cover zero, one, and many tail arguments consistently.",
+      "zr_decision": "adapt",
+      "zr_contract": "Vararg collection has explicit minimum and maximum fixed-parameter boundaries before the variadic tail begins.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "zero-tail and many-tail vararg calls keep a stable argument layout",
+      "assertions": [
+        "fixed arity parameters stay distinct from the vararg slice",
+        "runtime vararg length is asserted",
+        "type inference preserves the tail element type"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape",
+        "runtime_contract",
+        "probe_summary"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "zero-tail and many-tail vararg calls keep a stable argument layout"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape",
+            "runtime_contract",
+            "probe_summary"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-default-arity-boundary",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "default_parameters",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/jdk/javadoc/tool/varArgs/VarArgsTest.java",
+      "upstream_intent": "Default handling needs explicit coverage at the boundary between omitted and provided arguments.",
+      "zr_decision": "adapt",
+      "zr_contract": "Defaults apply only to omitted parameters and never overwrite an explicitly supplied value.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "call sites at the default boundary preserve supplied values and fill omitted slots only",
+      "assertions": [
+        "default slots are recorded explicitly",
+        "runtime receives supplied arguments unchanged",
+        "artifact text distinguishes omitted and explicit operands"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "call sites at the default boundary preserve supplied values and fill omitted slots only"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-positional-named-default-combination",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "mixed_call_surface",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_call.py",
+      "upstream_intent": "Real call sites combine positional binding, defaults, and later named overrides.",
+      "zr_decision": "adopt",
+      "zr_contract": "Mixed calls compose positional prefix binding with default fill-in and explicit named overrides without duplicate binding.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "mixed call surfaces compile and run with stable parameter mapping",
+      "assertions": [
+        "parameter binding record shows one source per parameter",
+        "module fixture can call the same function across files",
+        "runtime result matches expected binding"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "mixed call surfaces compile and run with stable parameter mapping"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-overload-default-varargs-combination",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "overload_selection",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/params.cs",
+      "upstream_intent": "Overload resolution interacting with defaults and varargs needs distinct coverage.",
+      "zr_decision": "adapt",
+      "zr_contract": "Overload selection resolves against the explicit call shape before any dynamic fallback is considered.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "selected overload remains stable when defaults and varargs are both available",
+      "assertions": [
+        "chosen overload signature is recorded",
+        "artifact shows one concrete call target",
+        "runtime result proves the chosen overload"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "selected overload remains stable when defaults and varargs are both available"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-positional-after-named-fail",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "call_order_diagnostics",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_extcall.py",
+      "upstream_intent": "Positional arguments after named arguments are a classic stable diagnostic boundary.",
+      "zr_decision": "adopt",
+      "zr_contract": "Once named binding begins, later positional arguments are rejected by call-shape checking.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "artifact"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "compile fails with call.positional_after_named diagnostic",
+      "assertions": [
+        "diagnostic family stays stable",
+        "argument ordering is printed or recoverable",
+        "no runtime fallback path is emitted"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "compile fails with call.positional_after_named diagnostic"
+          ],
+          "cleanup_trace": [
+            "argument ordering is printed or recoverable"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-overload-ambiguity-fail",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "overload_selection",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/jdk/javadoc/tool/varArgs/VarArgsTest.java",
+      "upstream_intent": "Ambiguous call shapes should fail deterministically rather than depending on registration order.",
+      "zr_decision": "adopt",
+      "zr_contract": "Ambiguous overload resolution is a deterministic compiler error with no load-order dependence.",
+      "layer_targets": [
+        "semantic/compiler",
+        "module/project",
+        "artifact"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "compile fails with call.overload_ambiguous diagnostic",
+      "assertions": [
+        "diagnostic category is stable",
+        "project compile path reproduces the same ambiguity",
+        "artifact omits a selected target"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "compile fails with call.overload_ambiguous diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-keyword-only-after-star-reject",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "surface_divergence",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_call.py",
+      "upstream_intent": "Python keyword-only separator syntax is not automatically part of ZR.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR does not inherit Python's bare-star keyword-only separator unless the language surface defines it explicitly.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "module/project"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "Python-specific keyword-only syntax is rejected explicitly",
+      "assertions": [
+        "parser rejects the separator token pattern",
+        "diagnostic names the unsupported form",
+        "project compile path rejects the same surface"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "Python-specific keyword-only syntax is rejected explicitly"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "calls-lua-table-call-sugar-reject",
+      "domain": "calls_named_default_varargs",
+      "feature_group": "surface_divergence",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/calls.lua",
+      "upstream_intent": "Lua call sugar should not leak into ZR callable syntax.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR callable syntax does not auto-adopt Lua's table or string call sugar.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "Lua-only call sugar is rejected before lowering",
+      "assertions": [
+        "parser emits a targeted unsupported-syntax diagnostic",
+        "compiler never lowers the form as a normal call",
+        "runtime tests remain unchanged because the call never compiles"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "call_lowering",
+        "callsite_shape",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "Lua-only call sugar is rejected before lowering"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "call_lowering",
+            "callsite_shape",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    }
+  ]
+}

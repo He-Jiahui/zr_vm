@@ -47,6 +47,7 @@ typedef struct {
         double elapsed = ((double) (failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0;                        \
         printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason);                                      \
         fflush(stdout);                                                                                                \
+        TEST_FAIL_MESSAGE(reason);                                                                                     \
     } while (0)
 
 #define TEST_DIVIDER()                                                                                                 \
@@ -433,7 +434,7 @@ static void test_const_function_parameter(void) {
     }
     
     const char *source = 
-        "function process(const data: int) {\n"
+        "func process(const data: int) {\n"
         "    return data;\n"
         "}";
     SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_parameter.zr");
@@ -464,7 +465,7 @@ static void test_const_parameter_modification_error(void) {
     }
     
     const char *source = 
-        "function process(const data: int) {\n"
+        "func process(const data: int) {\n"
         "    data = 2;\n"
         "    return data;\n"
         "}";
@@ -600,7 +601,7 @@ static void test_const_interface_implementation_mismatch_error(void) {
     destroy_test_state(state);
 }
 
-// 测试 14: const 字段在构造函数中多次赋值（应该允许）
+// 测试 14: const 字段在构造函数中多次赋值（应报错）
 static void test_const_field_multiple_assignment_in_constructor(void) {
     TEST_START("Const Field Multiple Assignment in Constructor");
     SZrTestTimer timer;
@@ -617,15 +618,18 @@ static void test_const_field_multiple_assignment_in_constructor(void) {
         "    pub const id: int;\n"
         "    pub @constructor() {\n"
         "        this.id = 1;\n"
-        "        this.id = 2;  // 允许多次赋值，最后一次有效\n"
+        "        this.id = 2;\n"
         "    }\n"
         "}";
     SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_multiple_assign.zr");
-    SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TZrBool hasError = ZR_FALSE;
+    SZrFunction *func = compile_source_and_check_error(state, source, strlen(source), sourceName, &hasError);
     
-    if (func == ZR_NULL) {
+    if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Field Multiple Assignment in Constructor", "Failed to compile const field multiple assignment");
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Multiple Assignment in Constructor",
+                         "Expected compilation error but compilation succeeded");
         destroy_test_state(state);
         return;
     }
@@ -649,14 +653,16 @@ static void test_const_local_variable_uninitialized_error(void) {
     
     const char *source = "var const a: int;";  // 未初始化
     SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_uninitialized.zr");
-    SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TZrBool hasError = ZR_FALSE;
+    SZrFunction *func = compile_source_and_check_error(state, source, strlen(source), sourceName, &hasError);
     
-    // 应该编译失败（const 局部变量必须在声明时赋值）
-    // 注意：这个测试可能根据实际实现有所不同
-    // 如果编译器允许未初始化的 const 变量，这个测试需要调整
-    if (func != ZR_NULL) {
-        // 如果编译成功，说明允许未初始化（需要根据实际需求调整）
-        // 这里暂时标记为通过，因为不同实现可能有不同行为
+    if (!hasError || func != ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Local Variable Uninitialized Error",
+                         "Expected compilation error but compilation succeeded");
+        destroy_test_state(state);
+        return;
     }
     
     timer.endTime = clock();
@@ -664,38 +670,490 @@ static void test_const_local_variable_uninitialized_error(void) {
     destroy_test_state(state);
 }
 
-// 测试 16: const 成员字段未在构造函数中初始化（应报错）
-static void test_const_field_uninitialized_in_constructor_error(void) {
-    TEST_START("Const Field Uninitialized in Constructor Error");
+// 测试 16: constructor 可以初始化声明在后面的 const 字段
+static void test_const_field_declared_after_constructor_initializes_successfully(void) {
+    TEST_START("Const Field Declared After Constructor Initializes Successfully");
     SZrTestTimer timer;
     timer.startTime = clock();
     
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
-        TEST_FAIL_CUSTOM(timer, "Const Field Uninitialized in Constructor Error", "Failed to create test state");
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Declared After Constructor Initializes Successfully",
+                         "Failed to create test state");
         return;
     }
     
     const char *source = 
         "class MyClass {\n"
-        "    pub const id: int;  // 未初始化\n"
         "    pub @constructor() {\n"
-        "        // 没有初始化 id\n"
+        "        this.id = 1;\n"
         "    }\n"
+        "    pub const id: int;\n"
         "}";
-    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_uninit.zr");
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_decl_order.zr");
     SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
     
-    // 应该编译失败（const 字段必须在构造函数中赋值）
-    // 注意：这个检查可能需要在语义分析器中实现
-    // 如果编译器允许未初始化的 const 字段，这个测试需要调整
-    if (func != ZR_NULL) {
-        // 如果编译成功，说明允许未初始化（需要根据实际需求调整）
-        // 这里暂时标记为通过，因为不同实现可能有不同行为
+    if (func == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Declared After Constructor Initializes Successfully",
+                         "Failed to compile constructor initialization for const field declared later");
+        destroy_test_state(state);
+        return;
     }
     
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, "Const Field Uninitialized in Constructor Error");
+    TEST_PASS_CUSTOM(timer, "Const Field Declared After Constructor Initializes Successfully");
+    destroy_test_state(state);
+}
+
+// 测试 17: const 成员字段未在构造函数中初始化（应报错）
+static void test_const_field_missing_constructor_initialization_error(void) {
+    TEST_START("Const Field Missing Constructor Initialization Error");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+    
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Missing Constructor Initialization Error",
+                         "Failed to create test state");
+        return;
+    }
+    
+    const char *source = 
+        "class MyClass {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor() {\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_uninit.zr");
+    TZrBool hasError = ZR_FALSE;
+    SZrFunction *func = compile_source_and_check_error(state, source, strlen(source), sourceName, &hasError);
+    
+    if (!hasError || func != ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Missing Constructor Initialization Error",
+                         "Expected compilation error but compilation succeeded");
+        destroy_test_state(state);
+        return;
+    }
+    
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Field Missing Constructor Initialization Error");
+    destroy_test_state(state);
+}
+
+// 测试 18: const 字段不允许在构造函数中使用复合赋值
+static void test_const_field_compound_assignment_in_constructor_error(void) {
+    TEST_START("Const Field Compound Assignment in Constructor Error");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+    
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Compound Assignment in Constructor Error",
+                         "Failed to create test state");
+        return;
+    }
+    
+    const char *source =
+        "class MyClass {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor() {\n"
+        "        this.id += 1;\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_compound.zr");
+    TZrBool hasError = ZR_FALSE;
+    SZrFunction *func = compile_source_and_check_error(state, source, strlen(source), sourceName, &hasError);
+    
+    if (!hasError || func != ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Compound Assignment in Constructor Error",
+                         "Expected compilation error but compilation succeeded");
+        destroy_test_state(state);
+        return;
+    }
+    
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Field Compound Assignment in Constructor Error");
+    destroy_test_state(state);
+}
+
+// 测试 19: if/else 两个分支各初始化一次 const 字段（应成功）
+static void test_const_field_initialized_once_per_branch_success(void) {
+    TEST_START("Const Field Initialized Once Per Branch Success");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Initialized Once Per Branch Success",
+                         "Failed to create test state");
+        return;
+    }
+
+    const char *source =
+        "class MyClass {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor(flag: int) {\n"
+        "        if (flag == 1) {\n"
+        "            this.id = 1;\n"
+        "        } else {\n"
+        "            this.id = 2;\n"
+        "        }\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_branch_success.zr");
+    SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+
+    if (func == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Initialized Once Per Branch Success",
+                         "Failed to compile constructor with one const-field initialization per branch");
+        destroy_test_state(state);
+        return;
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Field Initialized Once Per Branch Success");
+    destroy_test_state(state);
+}
+
+// 测试 20: if 单臂分支初始化 const 字段，缺少 else（应报错）
+static void test_const_field_missing_branch_initialization_error(void) {
+    TEST_START("Const Field Missing Branch Initialization Error");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Missing Branch Initialization Error",
+                         "Failed to create test state");
+        return;
+    }
+
+    const char *source =
+        "class MyClass {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor(flag: int) {\n"
+        "        if (flag == 1) {\n"
+        "            this.id = 1;\n"
+        "        }\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_branch_missing.zr");
+    TZrBool hasError = ZR_FALSE;
+    SZrFunction *func = compile_source_and_check_error(state, source, strlen(source), sourceName, &hasError);
+
+    if (!hasError || func != ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Missing Branch Initialization Error",
+                         "Expected compilation error but compilation succeeded");
+        destroy_test_state(state);
+        return;
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Field Missing Branch Initialization Error");
+    destroy_test_state(state);
+}
+
+// 测试 21: 提前 return 导致 const 字段未在所有返回路径初始化（应报错）
+static void test_const_field_early_return_before_initialization_error(void) {
+    TEST_START("Const Field Early Return Before Initialization Error");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Early Return Before Initialization Error",
+                         "Failed to create test state");
+        return;
+    }
+
+    const char *source =
+        "class MyClass {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor(flag: int) {\n"
+        "        if (flag == 1) {\n"
+        "            return;\n"
+        "        }\n"
+        "        this.id = 1;\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_early_return.zr");
+    TZrBool hasError = ZR_FALSE;
+    SZrFunction *func = compile_source_and_check_error(state, source, strlen(source), sourceName, &hasError);
+
+    if (!hasError || func != ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Early Return Before Initialization Error",
+                         "Expected compilation error but compilation succeeded");
+        destroy_test_state(state);
+        return;
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Field Early Return Before Initialization Error");
+    destroy_test_state(state);
+}
+
+// 测试 22: struct 的 if/else 两个分支各初始化一次 const 字段（应成功）
+static void test_const_struct_field_initialized_once_per_branch_success(void) {
+    TEST_START("Const Struct Field Initialized Once Per Branch Success");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Struct Field Initialized Once Per Branch Success",
+                         "Failed to create test state");
+        return;
+    }
+
+    const char *source =
+        "struct MyStruct {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor(flag: int) {\n"
+        "        if (flag == 1) {\n"
+        "            this.id = 1;\n"
+        "        } else {\n"
+        "            this.id = 2;\n"
+        "        }\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_struct_field_branch_success.zr");
+    SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+
+    if (func == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Struct Field Initialized Once Per Branch Success",
+                         "Failed to compile struct constructor with one const-field initialization per branch");
+        destroy_test_state(state);
+        return;
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Struct Field Initialized Once Per Branch Success");
+    destroy_test_state(state);
+}
+
+// 测试 23: else-if 链的每条继续路径都初始化 const 字段（应成功）
+static void test_const_field_initialized_once_across_else_if_chain_success(void) {
+    TEST_START("Const Field Initialized Once Across Else-If Chain Success");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Initialized Once Across Else-If Chain Success",
+                         "Failed to create test state");
+        return;
+    }
+
+    const char *source =
+        "class MyClass {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor(flag: int) {\n"
+        "        if (flag == 1) {\n"
+        "            this.id = 1;\n"
+        "        } else if (flag == 2) {\n"
+        "            this.id = 2;\n"
+        "        } else {\n"
+        "            this.id = 3;\n"
+        "        }\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_else_if_success.zr");
+    SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+
+    if (func == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Initialized Once Across Else-If Chain Success",
+                         "Failed to compile constructor with full else-if initialization coverage");
+        destroy_test_state(state);
+        return;
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Field Initialized Once Across Else-If Chain Success");
+    destroy_test_state(state);
+}
+
+// 测试 24: switch 所有 case/default 路径各初始化一次 const 字段（应成功）
+static void test_const_field_switch_paths_initialized_once_success(void) {
+    TEST_START("Const Field Switch Paths Initialized Once Success");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Switch Paths Initialized Once Success",
+                         "Failed to create test state");
+        return;
+    }
+
+    const char *source =
+        "class MyClass {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor(flag: int) {\n"
+        "        switch (flag) {\n"
+        "            (1) { this.id = 1; }\n"
+        "            (2) { this.id = 2; }\n"
+        "            () { this.id = 3; }\n"
+        "        }\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_switch_success.zr");
+    SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+
+    if (func == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Switch Paths Initialized Once Success",
+                         "Failed to compile constructor with switch-based const initialization");
+        destroy_test_state(state);
+        return;
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Field Switch Paths Initialized Once Success");
+    destroy_test_state(state);
+}
+
+// 测试 25: switch 缺少 default 时 const 字段不能视为所有路径已初始化（应报错）
+static void test_const_field_switch_missing_default_initialization_error(void) {
+    TEST_START("Const Field Switch Missing Default Initialization Error");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Switch Missing Default Initialization Error",
+                         "Failed to create test state");
+        return;
+    }
+
+    const char *source =
+        "class MyClass {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor(flag: int) {\n"
+        "        switch (flag) {\n"
+        "            (1) { this.id = 1; }\n"
+        "            (2) { this.id = 2; }\n"
+        "        }\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_switch_missing_default.zr");
+    TZrBool hasError = ZR_FALSE;
+    SZrFunction *func = compile_source_and_check_error(state, source, strlen(source), sourceName, &hasError);
+
+    if (!hasError || func != ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Switch Missing Default Initialization Error",
+                         "Expected compilation error but compilation succeeded");
+        destroy_test_state(state);
+        return;
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Field Switch Missing Default Initialization Error");
+    destroy_test_state(state);
+}
+
+// 测试 26: ternary 两个分支各初始化一次 const 字段（应成功）
+static void test_const_field_ternary_branches_initialized_once_success(void) {
+    TEST_START("Const Field Ternary Branches Initialized Once Success");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Ternary Branches Initialized Once Success",
+                         "Failed to create test state");
+        return;
+    }
+
+    const char *source =
+        "class MyClass {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor(flag: int) {\n"
+        "        flag == 1 ? (this.id = 1) : (this.id = 2);\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_ternary_success.zr");
+    SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+
+    if (func == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Ternary Branches Initialized Once Success",
+                         "Failed to compile constructor with ternary-based const initialization");
+        destroy_test_state(state);
+        return;
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Field Ternary Branches Initialized Once Success");
+    destroy_test_state(state);
+}
+
+// 测试 27: ternary 只有一个分支初始化 const 字段（应报错）
+static void test_const_field_ternary_missing_branch_initialization_error(void) {
+    TEST_START("Const Field Ternary Missing Branch Initialization Error");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Ternary Missing Branch Initialization Error",
+                         "Failed to create test state");
+        return;
+    }
+
+    const char *source =
+        "class MyClass {\n"
+        "    pub const id: int;\n"
+        "    pub @constructor(flag: int) {\n"
+        "        flag == 1 ? (this.id = 1) : 2;\n"
+        "    }\n"
+        "}";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_field_ternary_missing_branch.zr");
+    TZrBool hasError = ZR_FALSE;
+    SZrFunction *func = compile_source_and_check_error(state, source, strlen(source), sourceName, &hasError);
+
+    if (!hasError || func != ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer,
+                         "Const Field Ternary Missing Branch Initialization Error",
+                         "Expected compilation error but compilation succeeded");
+        destroy_test_state(state);
+        return;
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Const Field Ternary Missing Branch Initialization Error");
     destroy_test_state(state);
 }
 
@@ -752,7 +1210,40 @@ int main(void) {
     RUN_TEST(test_const_local_variable_uninitialized_error);
     TEST_DIVIDER();
     
-    RUN_TEST(test_const_field_uninitialized_in_constructor_error);
+    RUN_TEST(test_const_field_declared_after_constructor_initializes_successfully);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_field_missing_constructor_initialization_error);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_field_compound_assignment_in_constructor_error);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_field_initialized_once_per_branch_success);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_field_missing_branch_initialization_error);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_field_early_return_before_initialization_error);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_struct_field_initialized_once_per_branch_success);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_field_initialized_once_across_else_if_chain_success);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_field_switch_paths_initialized_once_success);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_field_switch_missing_default_initialization_error);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_field_ternary_branches_initialized_once_success);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_const_field_ternary_missing_branch_initialization_error);
     TEST_DIVIDER();
     
     return UNITY_END();

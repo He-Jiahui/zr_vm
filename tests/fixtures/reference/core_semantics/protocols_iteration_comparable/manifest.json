@@ -1,0 +1,1214 @@
+{
+  "domain": "protocols_iteration_comparable",
+  "summary": "Reference matrix for iterable, iterator, comparable, equatable, and hashable contracts.",
+  "cases": [
+    {
+      "id": "protocols-foreach-contract-lowering",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "iterable_contracts",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/src/java.base/share/classes/java/lang/Iterable.java",
+      "upstream_intent": "Foreach should target a stable iterable contract instead of string protocol names.",
+      "zr_decision": "adopt",
+      "zr_contract": "Foreach lowers to iterable and iterator contracts rather than named member lookups.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "foreach lowers to iterator contract ops and executes over a supported iterable",
+      "assertions": [
+        "lowering emits iterable contract operations",
+        "type inference binds the element type",
+        "runtime iteration returns the expected sequence"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "foreach lowers to iterator contract ops and executes over a supported iterable"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-native-iterable-pass",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "native_iterables",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/array-enumerator-ifaces.2.cs",
+      "upstream_intent": "Native iterable types need the same contract-driven path as source-defined iterables.",
+      "zr_decision": "adapt",
+      "zr_contract": "Native iterables participate through registered protocol conformance records.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "native iterable values satisfy foreach and protocol checks",
+      "assertions": [
+        "protocol conformance metadata is explicit",
+        "runtime iterator path is the same shared contract dispatch",
+        "project fixture sees the expected items"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "native iterable values satisfy foreach and protocol checks"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-missing-iterable-contract-fail",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "iterable_contracts",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/src/java.base/share/classes/java/lang/Iterable.java",
+      "upstream_intent": "Foreach should fail clearly when the receiver is not iterable.",
+      "zr_decision": "adopt",
+      "zr_contract": "Types without iterable conformance are rejected before foreach lowering or execution.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "compile fails with iterable.missing_contract diagnostic",
+      "assertions": [
+        "diagnostic names the iterable protocol",
+        "compiler does not emit stringly member probes",
+        "artifact omits iterator contract ops"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "compile fails with iterable.missing_contract diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-missing-iterator-contract-fail",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "iterator_contracts",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_iter.py",
+      "upstream_intent": "Supplying an iterable that does not produce a valid iterator should fail deterministically.",
+      "zr_decision": "adopt",
+      "zr_contract": "Iterable conformance must produce an iterator that itself satisfies the iterator contract.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "invalid iterator provider fails with iterator.missing_contract diagnostic",
+      "assertions": [
+        "conformance failure identifies iterator contract mismatch",
+        "runtime does not fall back to name-based methods",
+        "artifact keeps explicit iterator op names"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "invalid iterator provider fails with iterator.missing_contract diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-empty-iterator-boundary",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "iterator_boundaries",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/library/core/src/iter/traits/iterator.rs",
+      "upstream_intent": "Empty iteration needs a dedicated boundary case rather than assuming the loop body never runs.",
+      "zr_decision": "adopt",
+      "zr_contract": "Empty iterators initialize and terminate cleanly without exposing invalid current values.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "empty foreach completes without body execution or invalid current access",
+      "assertions": [
+        "init and move-next contract calls are both observable",
+        "loop body execution count is zero",
+        "stress loop over repeated empty iterators remains stable"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "empty foreach completes without body execution or invalid current access"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-singleton-iterator-boundary",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "iterator_boundaries",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/library/core/src/iter/traits/iterator.rs",
+      "upstream_intent": "Single-item iteration catches off-by-one mistakes in iterator state machines.",
+      "zr_decision": "adopt",
+      "zr_contract": "Singleton iterators yield exactly one current element and terminate on the next move.",
+      "layer_targets": [
+        "runtime",
+        "semantic/compiler",
+        "stress"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "singleton foreach yields one item exactly once",
+      "assertions": [
+        "move-next true/false sequence is stable",
+        "current is read only when valid",
+        "repeated singleton iteration remains stable under stress"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "probe_summary",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "singleton foreach yields one item exactly once"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "probe_summary",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-iterator-invalidation",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "iterator_mutation",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_iter.py",
+      "upstream_intent": "Mutating an iterated collection needs a defined invalidation contract.",
+      "zr_decision": "adapt",
+      "zr_contract": "Iterator invalidation is explicit and does not depend on collection type names.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "stress"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "mid-iteration invalidation follows the documented iterator contract",
+      "assertions": [
+        "runtime detects the invalidation through iterator state not type-name checks",
+        "error or termination behavior is stable",
+        "stress case repeats invalidation safely"
+      ],
+      "stress_class": "full",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "probe_summary",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "mid-iteration invalidation follows the documented iterator contract"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "probe_summary",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-arraylike-indexable-combination",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "protocol_composition",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/library/core/src/ops/index.rs",
+      "upstream_intent": "Array-like and indexable abilities overlap but remain separate protocols.",
+      "zr_decision": "adapt",
+      "zr_contract": "ArrayLike, Iterable, and indexable abilities compose through explicit protocol records.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "one type can satisfy iteration and indexing without conflating the two contracts",
+      "assertions": [
+        "type inference binds the correct protocol arguments",
+        "runtime keeps iteration and indexing on separate dispatch paths",
+        "project fixture exercises both abilities"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "one type can satisfy iteration and indexing without conflating the two contracts"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-comparable-hashable-consistency",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "comparable_hashable",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/src/java.base/share/classes/java/lang/Comparable.java",
+      "upstream_intent": "Comparable, equals, and hash semantics require explicit alignment tests.",
+      "zr_decision": "adapt",
+      "zr_contract": "Comparable, Equatable, and Hashable conformance stays explicit and can be rejected when inconsistent.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "compare, equality, and hash behavior remain mutually coherent where the contract requires it",
+      "assertions": [
+        "conformance metadata names each protocol explicitly",
+        "runtime comparisons and hashes align for accepted cases",
+        "project fixture proves stable set or map behavior"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "compare, equality, and hash behavior remain mutually coherent where the contract requires it"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-nested-foreach-regression",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "nested_iteration",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_iter.py",
+      "upstream_intent": "Nested foreach is a common regression surface for iterator state reuse bugs.",
+      "zr_decision": "adopt",
+      "zr_contract": "Nested iteration allocates independent iterator state and keeps element binding stable.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "nested foreach loops keep independent iterator state",
+      "assertions": [
+        "outer and inner iterators do not alias state",
+        "runtime element bindings remain correct",
+        "stress run with nested loops stays stable"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "nested foreach loops keep independent iterator state"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-name-based-getIterator-reject",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "surface_divergence",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/quickjs.c",
+      "upstream_intent": "String protocol names are a tempting shortcut that should be rejected in ZR core semantics.",
+      "zr_decision": "reject",
+      "zr_contract": "Foreach does not depend on member names such as getIterator, moveNext, or current.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "string-named iterator methods alone do not satisfy foreach",
+      "assertions": [
+        "compiler queries protocol ids rather than strings",
+        "runtime contract dispatch does not look up member names",
+        "artifact retains iterator op contracts explicitly"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "string-named iterator methods alone do not satisfy foreach"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "protocols-equals-compareTo-inconsistency-reject",
+      "domain": "protocols_iteration_comparable",
+      "feature_group": "comparable_hashable",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/src/java.base/share/classes/java/lang/Comparable.java",
+      "upstream_intent": "Some combinations of compareTo and equals are accepted by reference languages but are intentionally rejected or constrained elsewhere.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR may reject or flag protocol conformance records that violate its comparable-hashable consistency rules.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "inconsistent comparable and equality contracts are rejected or diagnosed explicitly",
+      "assertions": [
+        "conformance check reports the protocol mismatch",
+        "runtime containers do not silently accept inconsistent ordering",
+        "project fixture exposes the same rejection"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "iter_contract_dispatch",
+        "deopt_map",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "inconsistent comparable and equality contracts are rejected or diagnosed explicitly"
+          ],
+          "cleanup_trace": [
+            "runtime containers do not silently accept inconsistent ordering"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "iter_contract_dispatch",
+            "deopt_map",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    }
+  ]
+}

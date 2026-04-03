@@ -17,6 +17,7 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_common/zr_runtime_limits_conf.h"
 
 void ZrCore_Value_Barrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value) {
     if (!value->isGarbageCollectable) {
@@ -64,6 +65,17 @@ void ZrCore_Value_InitAsInt(struct SZrState *state, SZrTypeValue *value, TZrInt6
     ZR_UNUSED_PARAMETER(state);
     value->type = ZR_VALUE_TYPE_INT64;
     value->value.nativeObject.nativeInt64 = intValue;
+    value->isGarbageCollectable = ZR_FALSE;
+    value->isNative = ZR_TRUE;
+    value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+    value->ownershipControl = ZR_NULL;
+    value->ownershipWeakRef = ZR_NULL;
+}
+
+void ZrCore_Value_InitAsBool(struct SZrState *state, SZrTypeValue *value, TZrBool boolValue) {
+    ZR_UNUSED_PARAMETER(state);
+    value->type = ZR_VALUE_TYPE_BOOL;
+    value->value.nativeObject.nativeBool = boolValue ? ZR_TRUE : ZR_FALSE;
     value->isGarbageCollectable = ZR_FALSE;
     value->isNative = ZR_TRUE;
     value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
@@ -337,7 +349,7 @@ SZrString *ZrCore_Value_ConvertToString(struct SZrState *state, SZrTypeValue *va
         case ZR_VALUE_TYPE_OBJECT: {
             // 如果元方法调用失败，返回默认字符串
             SZrObject *object = ZR_CAST_OBJECT(state, stableValue.value.object);
-            char buffer[64];
+            char buffer[ZR_RUNTIME_SMALL_TEXT_BUFFER_LENGTH];
             snprintf(buffer, sizeof(buffer), "[object type=%d]", (int) object->internalType);
             return ZrCore_String_CreateFromNative(state, buffer);
         } break;

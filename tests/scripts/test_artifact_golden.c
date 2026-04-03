@@ -29,7 +29,8 @@ static TZrBool is_text_artifact_extension(const TZrChar* extension) {
     }
 
     return strcmp(extension, ".zrs") == 0 || strcmp(extension, ".zri") == 0 ||
-           strcmp(extension, ".zrs.json") == 0 || strcmp(extension, ".zri.json") == 0;
+           strcmp(extension, ".zrs.json") == 0 || strcmp(extension, ".zri.json") == 0 ||
+           strcmp(extension, ".c") == 0 || strcmp(extension, ".ll") == 0;
 }
 
 static TZrBool normalize_text_newlines(const TZrBytePtr buffer,
@@ -175,10 +176,14 @@ static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
     TEST_ASSERT_TRUE(dump_ast_to_file(state, result->ast, testCase->baseName));
     TEST_ASSERT_TRUE(dump_intermediate_to_file(state, result->function, testCase->baseName));
     TEST_ASSERT_TRUE(dump_binary_to_file(state, result->function, testCase->baseName));
+    TEST_ASSERT_TRUE(dump_aot_c_to_file(state, result->function, testCase->baseName));
+    TEST_ASSERT_TRUE(dump_aot_llvm_to_file(state, result->function, testCase->baseName));
 
     assert_file_matches_golden(testCase->baseName, "ast", ".zrs");
     assert_file_matches_golden(testCase->baseName, "intermediate", ".zri");
     assert_file_matches_golden(testCase->baseName, "binary", ".zro");
+    assert_file_matches_golden(testCase->baseName, "aot_c", ".c");
+    assert_file_matches_golden(testCase->baseName, "aot_llvm", ".ll");
     assert_file_matches_golden_if_present(testCase->baseName, "ast", ".zrs.json");
     assert_file_matches_golden_if_present(testCase->baseName, "intermediate", ".zri.json");
 

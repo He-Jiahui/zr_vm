@@ -313,6 +313,184 @@ static void io_read_function_test_infos(SZrIo *io,
     }
 }
 
+static void io_read_function_member_entries(SZrIo *io,
+                                            SZrIoFunctionMemberEntry *entries,
+                                            TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        entries[index].symbol = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, entries[index].entryKind, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, entries[index].reserved0, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, entries[index].reserved1, TZrUInt16);
+        ZR_IO_READ_NATIVE_TYPE(io, entries[index].prototypeIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, entries[index].descriptorIndex, TZrUInt32);
+    }
+}
+
+static void io_read_function_semir_type_table(SZrIo *io,
+                                              SZrIoFunctionTypedTypeRef *typeTable,
+                                              TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        io_read_function_typed_type_ref(io, &typeTable[index]);
+    }
+}
+
+static void io_read_function_semir_ownership_table(SZrIo *io,
+                                                   SZrIoSemIrOwnershipEntry *ownershipTable,
+                                                   TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        ZR_IO_READ_NATIVE_TYPE(io, ownershipTable[index].state, TZrUInt32);
+    }
+}
+
+static void io_read_function_semir_effect_table(SZrIo *io,
+                                                SZrIoSemIrEffectEntry *effectTable,
+                                                TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        ZR_IO_READ_NATIVE_TYPE(io, effectTable[index].kind, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, effectTable[index].instructionIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, effectTable[index].ownershipInputIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, effectTable[index].ownershipOutputIndex, TZrUInt32);
+    }
+}
+
+static void io_read_function_semir_block_table(SZrIo *io,
+                                               SZrIoSemIrBlockEntry *blockTable,
+                                               TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        ZR_IO_READ_NATIVE_TYPE(io, blockTable[index].blockId, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, blockTable[index].firstInstructionIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, blockTable[index].instructionCount, TZrUInt32);
+    }
+}
+
+static void io_read_function_semir_instruction_table(SZrIo *io,
+                                                     SZrIoSemIrInstruction *instructionTable,
+                                                     TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        ZR_IO_READ_NATIVE_TYPE(io, instructionTable[index].opcode, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, instructionTable[index].execInstructionIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, instructionTable[index].typeTableIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, instructionTable[index].effectTableIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, instructionTable[index].destinationSlot, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, instructionTable[index].operand0, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, instructionTable[index].operand1, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, instructionTable[index].deoptId, TZrUInt32);
+    }
+}
+
+static void io_read_function_semir_deopt_table(SZrIo *io,
+                                               SZrIoSemIrDeoptEntry *deoptTable,
+                                               TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        ZR_IO_READ_NATIVE_TYPE(io, deoptTable[index].deoptId, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, deoptTable[index].execInstructionIndex, TZrUInt32);
+    }
+}
+
+static void io_read_function_callsite_cache_table(SZrIo *io,
+                                                  SZrIoFunctionCallSiteCacheEntry *cacheTable,
+                                                  TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        ZR_IO_READ_NATIVE_TYPE(io, cacheTable[index].kind, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, cacheTable[index].instructionIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, cacheTable[index].memberEntryIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, cacheTable[index].deoptId, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, cacheTable[index].argumentCount, TZrUInt32);
+    }
+}
+
+static void io_read_function_semir_metadata(SZrIo *io, SZrIoFunction *function) {
+    SZrGlobalState *global;
+
+    if (io == ZR_NULL || function == ZR_NULL || io->state == ZR_NULL || io->state->global == ZR_NULL) {
+        return;
+    }
+
+    global = io->state->global;
+    ZR_IO_READ_NATIVE_TYPE(io, function->semIrTypeTableLength, TZrSize);
+    if (function->semIrTypeTableLength > 0) {
+        function->semIrTypeTable = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                            sizeof(SZrIoFunctionTypedTypeRef) *
+                                                                    function->semIrTypeTableLength);
+        if (function->semIrTypeTable != ZR_NULL) {
+            io_read_function_semir_type_table(io, function->semIrTypeTable, function->semIrTypeTableLength);
+        }
+    }
+
+    ZR_IO_READ_NATIVE_TYPE(io, function->semIrOwnershipTableLength, TZrSize);
+    if (function->semIrOwnershipTableLength > 0) {
+        function->semIrOwnershipTable = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                                 sizeof(SZrIoSemIrOwnershipEntry) *
+                                                                         function->semIrOwnershipTableLength);
+        if (function->semIrOwnershipTable != ZR_NULL) {
+            io_read_function_semir_ownership_table(io,
+                                                   function->semIrOwnershipTable,
+                                                   function->semIrOwnershipTableLength);
+        }
+    }
+
+    ZR_IO_READ_NATIVE_TYPE(io, function->semIrEffectTableLength, TZrSize);
+    if (function->semIrEffectTableLength > 0) {
+        function->semIrEffectTable = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                              sizeof(SZrIoSemIrEffectEntry) *
+                                                                      function->semIrEffectTableLength);
+        if (function->semIrEffectTable != ZR_NULL) {
+            io_read_function_semir_effect_table(io, function->semIrEffectTable, function->semIrEffectTableLength);
+        }
+    }
+
+    ZR_IO_READ_NATIVE_TYPE(io, function->semIrBlockTableLength, TZrSize);
+    if (function->semIrBlockTableLength > 0) {
+        function->semIrBlockTable = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                             sizeof(SZrIoSemIrBlockEntry) *
+                                                                     function->semIrBlockTableLength);
+        if (function->semIrBlockTable != ZR_NULL) {
+            io_read_function_semir_block_table(io, function->semIrBlockTable, function->semIrBlockTableLength);
+        }
+    }
+
+    ZR_IO_READ_NATIVE_TYPE(io, function->semIrInstructionLength, TZrSize);
+    if (function->semIrInstructionLength > 0) {
+        function->semIrInstructions = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                               sizeof(SZrIoSemIrInstruction) *
+                                                                       function->semIrInstructionLength);
+        if (function->semIrInstructions != ZR_NULL) {
+            io_read_function_semir_instruction_table(io,
+                                                     function->semIrInstructions,
+                                                     function->semIrInstructionLength);
+        }
+    }
+
+    ZR_IO_READ_NATIVE_TYPE(io, function->semIrDeoptTableLength, TZrSize);
+    if (function->semIrDeoptTableLength > 0) {
+        function->semIrDeoptTable = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                             sizeof(SZrIoSemIrDeoptEntry) *
+                                                                     function->semIrDeoptTableLength);
+        if (function->semIrDeoptTable != ZR_NULL) {
+            io_read_function_semir_deopt_table(io, function->semIrDeoptTable, function->semIrDeoptTableLength);
+        }
+    }
+}
+
+static void io_read_function_callsite_cache_metadata(SZrIo *io, SZrIoFunction *function) {
+    SZrGlobalState *global;
+
+    if (io == ZR_NULL || function == ZR_NULL || io->state == ZR_NULL || io->state->global == ZR_NULL) {
+        return;
+    }
+
+    global = io->state->global;
+    ZR_IO_READ_NATIVE_TYPE(io, function->callSiteCacheLength, TZrSize);
+    if (function->callSiteCacheLength > 0) {
+        function->callSiteCaches = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                            sizeof(SZrIoFunctionCallSiteCacheEntry) *
+                                                                    function->callSiteCacheLength);
+        if (function->callSiteCaches != ZR_NULL) {
+            io_read_function_callsite_cache_table(io, function->callSiteCaches, function->callSiteCacheLength);
+        }
+    }
+}
+
 static void io_read_classes(SZrIo *io, SZrIoClass *classes, TZrSize count);
 static void io_read_structs(SZrIo *io, SZrIoStruct *structs, TZrSize count);
 
@@ -409,6 +587,22 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->compileTimeFunctionInfos = ZR_NULL;
         function->testInfosLength = 0;
         function->testInfos = ZR_NULL;
+        function->memberEntriesLength = 0;
+        function->memberEntries = ZR_NULL;
+        function->semIrTypeTableLength = 0;
+        function->semIrTypeTable = ZR_NULL;
+        function->semIrOwnershipTableLength = 0;
+        function->semIrOwnershipTable = ZR_NULL;
+        function->semIrEffectTableLength = 0;
+        function->semIrEffectTable = ZR_NULL;
+        function->semIrBlockTableLength = 0;
+        function->semIrBlockTable = ZR_NULL;
+        function->semIrInstructionLength = 0;
+        function->semIrInstructions = ZR_NULL;
+        function->semIrDeoptTableLength = 0;
+        function->semIrDeoptTable = ZR_NULL;
+        function->callSiteCacheLength = 0;
+        function->callSiteCaches = ZR_NULL;
         if (io->sourceVersionPatch >= 2) {
             ZR_IO_READ_NATIVE_TYPE(io, function->compileTimeVariableInfosLength, TZrSize);
             if (function->compileTimeVariableInfosLength > 0) {
@@ -442,6 +636,23 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
                     io_read_function_test_infos(io, function->testInfos, function->testInfosLength);
                 }
             }
+        }
+        if (io->sourceVersionPatch >= 5) {
+            ZR_IO_READ_NATIVE_TYPE(io, function->memberEntriesLength, TZrSize);
+            if (function->memberEntriesLength > 0) {
+                function->memberEntries =
+                        ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                 sizeof(SZrIoFunctionMemberEntry) * function->memberEntriesLength);
+                if (function->memberEntries != ZR_NULL) {
+                    io_read_function_member_entries(io, function->memberEntries, function->memberEntriesLength);
+                }
+            }
+        }
+        if (io->sourceVersionPatch >= 4) {
+            io_read_function_semir_metadata(io, function);
+        }
+        if (io->sourceVersionPatch >= 7) {
+            io_read_function_callsite_cache_metadata(io, function);
         }
         // 读取PROTOTYPES_LENGTH和PROTOTYPES（结构化格式）
         ZR_IO_READ_NATIVE_TYPE(io, function->prototypesLength, TZrSize);

@@ -383,7 +383,9 @@ static void write_function_typed_export_symbols(FILE *file, SZrState *state, SZr
         write_function_typed_type_ref(file, state, &symbol->valueType);
         fwrite(&parameterCount, sizeof(TZrUInt64), 1, file);
         for (TZrUInt64 paramIndex = 0; paramIndex < parameterCount; paramIndex++) {
-            write_function_typed_type_ref(file, state, &symbol->parameterTypes[paramIndex]);
+            const SZrFunctionTypedTypeRef *parameterType =
+                    symbol->parameterTypes != ZR_NULL ? &symbol->parameterTypes[paramIndex] : ZR_NULL;
+            write_function_typed_type_ref(file, state, parameterType);
         }
     }
 }
@@ -438,6 +440,92 @@ static void write_function_test_metadata(FILE *file, SZrState *state, SZrFunctio
         fwrite(&hasVariableArguments, sizeof(TZrUInt8), 1, file);
         fwrite(&info->lineInSourceStart, sizeof(TZrUInt32), 1, file);
         fwrite(&info->lineInSourceEnd, sizeof(TZrUInt32), 1, file);
+    }
+}
+
+static void write_function_member_entries(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 memberCount = function != ZR_NULL ? function->memberEntryLength : 0;
+
+    fwrite(&memberCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < memberCount; index++) {
+        const SZrFunctionMemberEntry *entry = &function->memberEntries[index];
+
+        write_string_with_length(state, file, entry->symbol);
+        fwrite(&entry->entryKind, sizeof(TZrUInt8), 1, file);
+        fwrite(&entry->reserved0, sizeof(TZrUInt8), 1, file);
+        fwrite(&entry->reserved1, sizeof(TZrUInt16), 1, file);
+        fwrite(&entry->prototypeIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->descriptorIndex, sizeof(TZrUInt32), 1, file);
+    }
+}
+
+static void write_function_semir_metadata(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 typeCount = function != ZR_NULL ? function->semIrTypeTableLength : 0;
+    TZrUInt64 ownershipCount = function != ZR_NULL ? function->semIrOwnershipTableLength : 0;
+    TZrUInt64 effectCount = function != ZR_NULL ? function->semIrEffectTableLength : 0;
+    TZrUInt64 blockCount = function != ZR_NULL ? function->semIrBlockTableLength : 0;
+    TZrUInt64 instructionCount = function != ZR_NULL ? function->semIrInstructionLength : 0;
+    TZrUInt64 deoptCount = function != ZR_NULL ? function->semIrDeoptTableLength : 0;
+
+    fwrite(&typeCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < typeCount; index++) {
+        write_function_typed_type_ref(file, state, &function->semIrTypeTable[index]);
+    }
+
+    fwrite(&ownershipCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < ownershipCount; index++) {
+        fwrite(&function->semIrOwnershipTable[index].state, sizeof(TZrUInt32), 1, file);
+    }
+
+    fwrite(&effectCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < effectCount; index++) {
+        SZrSemIrEffectEntry *entry = &function->semIrEffectTable[index];
+        fwrite(&entry->kind, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->instructionIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->ownershipInputIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->ownershipOutputIndex, sizeof(TZrUInt32), 1, file);
+    }
+
+    fwrite(&blockCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < blockCount; index++) {
+        SZrSemIrBlockEntry *entry = &function->semIrBlockTable[index];
+        fwrite(&entry->blockId, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->firstInstructionIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->instructionCount, sizeof(TZrUInt32), 1, file);
+    }
+
+    fwrite(&instructionCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < instructionCount; index++) {
+        SZrSemIrInstruction *entry = &function->semIrInstructions[index];
+        fwrite(&entry->opcode, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->execInstructionIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->typeTableIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->effectTableIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->destinationSlot, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->operand0, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->operand1, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->deoptId, sizeof(TZrUInt32), 1, file);
+    }
+
+    fwrite(&deoptCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < deoptCount; index++) {
+        SZrSemIrDeoptEntry *entry = &function->semIrDeoptTable[index];
+        fwrite(&entry->deoptId, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->execInstructionIndex, sizeof(TZrUInt32), 1, file);
+    }
+}
+
+static void write_function_callsite_cache_metadata(FILE *file, SZrFunction *function) {
+    TZrUInt64 cacheCount = function != ZR_NULL ? function->callSiteCacheLength : 0;
+
+    fwrite(&cacheCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < cacheCount; index++) {
+        const SZrFunctionCallSiteCacheEntry *entry = &function->callSiteCaches[index];
+        fwrite(&entry->kind, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->instructionIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->memberEntryIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->deoptId, sizeof(TZrUInt32), 1, file);
+        fwrite(&entry->argumentCount, sizeof(TZrUInt32), 1, file);
     }
 }
 
@@ -613,6 +701,9 @@ static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *funct
     write_function_typed_export_symbols(file, state, function);
     write_function_compile_time_metadata(file, state, function);
     write_function_test_metadata(file, state, function);
+    write_function_member_entries(file, state, function);
+    write_function_semir_metadata(file, state, function);
+    write_function_callsite_cache_metadata(file, function);
 
     write_function_prototypes(state, file, function);
 

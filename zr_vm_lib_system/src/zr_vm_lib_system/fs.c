@@ -24,8 +24,6 @@
 #include <unistd.h>
 #endif
 
-#define ZR_SYSTEM_FS_PATH_MAX 4096
-
 static void system_fs_write_int_field(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrInt64 value) {
     SZrTypeValue fieldValue;
 
@@ -97,7 +95,7 @@ static int system_fs_create_directory_native(const TZrChar *path) {
 #if defined(ZR_PLATFORM_WIN)
     return _mkdir(path);
 #else
-    return mkdir(path, 0755);
+    return mkdir(path, ZR_SYSTEM_FS_DIRECTORY_MODE);
 #endif
 }
 

@@ -645,9 +645,12 @@ SZrTypeEnvironment *ZrParser_TypeEnvironment_New(SZrState *state) {
         return ZR_NULL;
     }
     
-    ZrCore_Array_Init(state, &env->variableTypes, sizeof(SZrTypeBinding), 8);
-    ZrCore_Array_Init(state, &env->functionReturnTypes, sizeof(SZrFunctionTypeInfo *), 8);
-    ZrCore_Array_Init(state, &env->typeNames, sizeof(SZrString *), 8);
+    ZrCore_Array_Init(state, &env->variableTypes, sizeof(SZrTypeBinding), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &env->functionReturnTypes,
+                      sizeof(SZrFunctionTypeInfo *),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state, &env->typeNames, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     env->parent = ZR_NULL;
     env->semanticContext = ZR_NULL;
     
@@ -890,7 +893,7 @@ TZrBool ZrParser_TypeEnvironment_LookupFunctions(SZrState *state, SZrTypeEnviron
         return ZR_FALSE;
     }
 
-    ZrCore_Array_Init(state, results, sizeof(SZrFunctionTypeInfo *), 4);
+    ZrCore_Array_Init(state, results, sizeof(SZrFunctionTypeInfo *), ZR_PARSER_INITIAL_CAPACITY_TINY);
 
     currentEnv = env;
     while (currentEnv != ZR_NULL) {

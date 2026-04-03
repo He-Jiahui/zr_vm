@@ -125,6 +125,8 @@ typedef struct TZrSemInfo {
 typedef struct SZrToken {
     EZrToken token;
     TZrSemInfo seminfo;
+    TZrBool hasLexError;
+    const TZrChar *lexErrorMessage;
 } SZrToken;
 
 // 词法分析器状态
@@ -144,6 +146,8 @@ typedef struct SZrLexState {
     TZrInt32 lookaheadLine;       // 下一个 token 的行号
     TZrInt32 lookaheadLastLine;   // 下一个 token 的上一个 token 的行号
     SZrString *sourceName;      // 源文件名
+    TZrBool currentTokenHadError;
+    const TZrChar *currentTokenErrorMessage;
     // 缓冲区用于存储 token 文本
     TZrChar *buffer;
     TZrSize bufferSize;

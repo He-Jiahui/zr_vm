@@ -589,7 +589,7 @@ static TZrSize semantic_append_generic_parameter_decl(SZrState *state,
     SZrParameter *parameter;
     TZrNativeString nameText;
     TZrSize nameLength;
-    TZrChar typeBuffer[128];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
 
     if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER || paramNode->data.parameter.name == ZR_NULL) {
         return offset;
@@ -662,7 +662,7 @@ static TZrSize semantic_append_generic_constraints(SZrState *state,
                                                    TZrSize offset,
                                                    SZrParameter *parameter) {
     TZrBool firstConstraint = ZR_TRUE;
-    TZrChar typeBuffer[128];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
 
     if (!semantic_parameter_has_constraints(parameter) || parameter->name == ZR_NULL) {
         return offset;
@@ -748,7 +748,7 @@ static TZrSize semantic_append_inheritance_clause(SZrState *state,
                                                   TZrSize bufferSize,
                                                   TZrSize offset,
                                                   SZrAstNodeArray *inherits) {
-    TZrChar typeBuffer[128];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
     TZrBool appendedAny = ZR_FALSE;
 
     if (inherits == ZR_NULL || inherits->count == 0) {
@@ -786,7 +786,7 @@ static TZrSize semantic_append_parameter_list(SZrState *state,
                                               TZrSize bufferSize,
                                               TZrSize offset,
                                               SZrAstNodeArray *params) {
-    TZrChar typeBuffer[128];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
 
     offset = semantic_buffer_append(buffer, bufferSize, offset, "(");
     if (params != ZR_NULL) {
@@ -828,7 +828,7 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
                                             TZrChar *buffer,
                                             TZrSize bufferSize) {
     TZrSize offset = 0;
-    TZrChar typeBuffer[128];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
 
     if (buffer == ZR_NULL || bufferSize == 0 || node == ZR_NULL) {
         return ZR_FALSE;
@@ -1044,8 +1044,8 @@ static void semantic_build_symbol_detail(SZrState *state,
                                          SZrSymbol *symbol,
                                          TZrChar *buffer,
                                          TZrSize bufferSize) {
-    TZrChar signatureBuffer[512];
-    TZrChar typeBuffer[128];
+    TZrChar signatureBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
     const TZrChar *typeText = semantic_symbol_kind_text(symbol != ZR_NULL ? symbol->type : ZR_SYMBOL_VARIABLE);
     const TZrChar *accessText = semantic_access_modifier_text(symbol != ZR_NULL
                                                               ? symbol->accessModifier
@@ -1127,8 +1127,8 @@ static void semantic_append_symbol_completion(SZrState *state,
                                               SZrSymbol *symbol) {
     TZrNativeString nameText;
     TZrSize nameLength;
-    TZrChar label[256];
-    TZrChar detail[160];
+    TZrChar label[ZR_LSP_TEXT_BUFFER_LENGTH];
+    TZrChar detail[ZR_LSP_COMPLETION_DETAIL_BUFFER_LENGTH];
 
     if (state == ZR_NULL || result == ZR_NULL || symbol == ZR_NULL || symbol->name == ZR_NULL) {
         return;
@@ -1181,7 +1181,7 @@ static void semantic_append_native_module_descriptor_completions(SZrState *state
 
     for (TZrSize index = 0; index < descriptor->functionCount; index++) {
         const ZrLibFunctionDescriptor *functionDescriptor = &descriptor->functions[index];
-        TZrChar detail[192];
+        TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
 
         if (functionDescriptor->name == ZR_NULL) {
             continue;
@@ -1198,7 +1198,7 @@ static void semantic_append_native_module_descriptor_completions(SZrState *state
     for (TZrSize index = 0; index < descriptor->typeCount; index++) {
         const ZrLibTypeDescriptor *typeDescriptor = &descriptor->types[index];
         const TZrChar *kind;
-        TZrChar detail[192];
+        TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
 
         if (typeDescriptor->name == ZR_NULL) {
             continue;
@@ -1210,7 +1210,7 @@ static void semantic_append_native_module_descriptor_completions(SZrState *state
 
         for (TZrSize methodIndex = 0; methodIndex < typeDescriptor->methodCount; methodIndex++) {
             const ZrLibMethodDescriptor *methodDescriptor = &typeDescriptor->methods[methodIndex];
-            TZrChar methodDetail[192];
+            TZrChar methodDetail[ZR_LSP_DETAIL_BUFFER_LENGTH];
 
             if (methodDescriptor->name == ZR_NULL) {
                 continue;
@@ -1244,7 +1244,7 @@ static void semantic_append_imported_module_completions(SZrState *state,
     const ZrLibModuleDescriptor *descriptor;
     TZrNativeString moduleText;
     TZrSize moduleLength;
-    TZrChar moduleName[256];
+    TZrChar moduleName[ZR_LSP_TEXT_BUFFER_LENGTH];
 
     if (state == ZR_NULL || node == ZR_NULL || result == ZR_NULL) {
         return;
@@ -1338,15 +1338,21 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
         return ZR_NULL;
     }
     
-    ZrCore_Array_Init(state, &analyzer->diagnostics, sizeof(SZrDiagnostic *), 8);
+    ZrCore_Array_Init(state, &analyzer->diagnostics, sizeof(SZrDiagnostic *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     
     // 创建缓存
     analyzer->cache = (SZrAnalysisCache *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrAnalysisCache));
     if (analyzer->cache != ZR_NULL) {
         analyzer->cache->isValid = ZR_FALSE;
         analyzer->cache->astHash = 0;
-        ZrCore_Array_Init(state, &analyzer->cache->cachedDiagnostics, sizeof(SZrDiagnostic *), 8);
-        ZrCore_Array_Init(state, &analyzer->cache->cachedSymbols, sizeof(SZrSymbol *), 8);
+        ZrCore_Array_Init(state,
+                          &analyzer->cache->cachedDiagnostics,
+                          sizeof(SZrDiagnostic *),
+                          ZR_LSP_ARRAY_INITIAL_CAPACITY);
+        ZrCore_Array_Init(state,
+                          &analyzer->cache->cachedSymbols,
+                          sizeof(SZrSymbol *),
+                          ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
     
     return analyzer;
@@ -1538,13 +1544,13 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
                                      SZrHoverInfo **result) {
     TZrNativeString nameStr;
     TZrSize nameLen;
-    TZrChar typeBuffer[128];
-    TZrChar buffer[1024];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+    TZrChar buffer[ZR_LSP_HOVER_BUFFER_LENGTH];
     const TZrChar *kindText;
     const TZrChar *typeText;
     const TZrChar *accessText;
-    TZrChar signatureBuffer[512];
-    TZrChar resolvedTypeBuffer[128];
+    TZrChar signatureBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+    TZrChar resolvedTypeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
     const SZrType *hoverTypeInfo = ZR_NULL;
     SZrInferredType resolvedType;
     const TZrChar *resolvedTypeText = ZR_NULL;
@@ -1634,7 +1640,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetCompletions(SZrState *state,
     }
     
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrCompletionItem *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrCompletionItem *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
     ZrCore_Array_Construct(&visibleSymbols);

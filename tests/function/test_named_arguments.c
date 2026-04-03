@@ -18,6 +18,8 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/type_inference.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
@@ -70,6 +72,221 @@ static void destroy_test_state(SZrState* state) {
     ZrTests_State_Destroy(state);
 }
 
+static char* read_reference_file(const char* relativePath, size_t* outSize) {
+    return ZrTests_Reference_ReadFixture(relativePath, outSize);
+}
+
+static void compile_reference_top_level_statement(SZrCompilerState* compilerState, SZrAstNode* node) {
+    TEST_ASSERT_NOT_NULL(compilerState);
+    TEST_ASSERT_NOT_NULL(node);
+
+    switch (node->type) {
+        case ZR_AST_INTERFACE_DECLARATION:
+            ZrParser_Compiler_CompileInterfaceDeclaration(compilerState, node);
+            break;
+        case ZR_AST_CLASS_DECLARATION:
+            ZrParser_Compiler_CompileClassDeclaration(compilerState, node);
+            break;
+        case ZR_AST_STRUCT_DECLARATION:
+            ZrParser_Compiler_CompileStructDeclaration(compilerState, node);
+            break;
+        default:
+            ZrParser_Statement_Compile(compilerState, node);
+            break;
+    }
+}
+
+typedef struct {
+    TZrBool reported;
+    SZrFileRange location;
+    EZrToken token;
+    char message[256];
+} SZrCapturedParserDiagnostic;
+
+typedef struct {
+    TZrBool reported;
+    SZrFileRange location;
+    char message[256];
+} SZrCapturedCompilerDiagnostic;
+
+static void clear_parser_diagnostic(SZrCapturedParserDiagnostic* diagnostic) {
+    if (diagnostic == ZR_NULL) {
+        return;
+    }
+
+    memset(diagnostic, 0, sizeof(*diagnostic));
+}
+
+static void clear_compiler_diagnostic(SZrCapturedCompilerDiagnostic* diagnostic) {
+    if (diagnostic == ZR_NULL) {
+        return;
+    }
+
+    memset(diagnostic, 0, sizeof(*diagnostic));
+}
+
+static void capture_parser_error(TZrPtr userData,
+                                 const SZrFileRange* location,
+                                 const TZrChar* message,
+                                 EZrToken token) {
+    SZrCapturedParserDiagnostic* diagnostic = (SZrCapturedParserDiagnostic*)userData;
+
+    if (diagnostic == ZR_NULL) {
+        return;
+    }
+
+    if (!diagnostic->reported) {
+        diagnostic->reported = ZR_TRUE;
+        diagnostic->token = token;
+        if (location != ZR_NULL) {
+            diagnostic->location = *location;
+        }
+        if (message != ZR_NULL) {
+            snprintf(diagnostic->message, sizeof(diagnostic->message), "%s", message);
+        }
+    }
+}
+
+static SZrAstNode* parse_reference_source_with_diagnostic(SZrState* state,
+                                                          const char* source,
+                                                          size_t sourceLength,
+                                                          const char* sourceNameText,
+                                                          SZrCapturedParserDiagnostic* diagnostic) {
+    SZrParserState parserState;
+    SZrString* sourceName;
+    SZrAstNode* ast;
+
+    clear_parser_diagnostic(diagnostic);
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ZrParser_State_Init(&parserState, state, source, sourceLength, sourceName);
+    parserState.errorCallback = capture_parser_error;
+    parserState.errorUserData = diagnostic;
+    parserState.suppressErrorOutput = ZR_TRUE;
+
+    ast = ZrParser_ParseWithState(&parserState);
+    if (diagnostic != ZR_NULL && !diagnostic->reported && parserState.hasError && parserState.errorMessage != ZR_NULL) {
+        diagnostic->reported = ZR_TRUE;
+        snprintf(diagnostic->message, sizeof(diagnostic->message), "%s", parserState.errorMessage);
+    }
+    ZrParser_State_Free(&parserState);
+    return ast;
+}
+
+static TZrBool find_reference_test_call(SZrAstNode* ast,
+                                        SZrFunctionCall** outCall,
+                                        SZrAstNodeArray** outParams) {
+    SZrAstNode* functionNode;
+    SZrAstNode* testNode;
+    SZrAstNode* returnNode;
+    SZrAstNode* expr;
+    SZrAstNode* callNode;
+
+    if (outCall != ZR_NULL) {
+        *outCall = ZR_NULL;
+    }
+    if (outParams != ZR_NULL) {
+        *outParams = ZR_NULL;
+    }
+
+    if (ast == ZR_NULL ||
+        ast->type != ZR_AST_SCRIPT ||
+        ast->data.script.statements == ZR_NULL ||
+        ast->data.script.statements->count < 2) {
+        return ZR_FALSE;
+    }
+
+    functionNode = ast->data.script.statements->nodes[0];
+    testNode = ast->data.script.statements->nodes[1];
+    if (functionNode == ZR_NULL || functionNode->type != ZR_AST_FUNCTION_DECLARATION ||
+        testNode == ZR_NULL || testNode->type != ZR_AST_TEST_DECLARATION ||
+        testNode->data.testDeclaration.body == ZR_NULL ||
+        testNode->data.testDeclaration.body->type != ZR_AST_BLOCK ||
+        testNode->data.testDeclaration.body->data.block.body == ZR_NULL ||
+        testNode->data.testDeclaration.body->data.block.body->count == 0) {
+        return ZR_FALSE;
+    }
+
+    returnNode = testNode->data.testDeclaration.body->data.block.body->nodes[0];
+    if (returnNode == ZR_NULL || returnNode->type != ZR_AST_RETURN_STATEMENT || returnNode->data.returnStatement.expr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    expr = returnNode->data.returnStatement.expr;
+    if (expr->type != ZR_AST_PRIMARY_EXPRESSION ||
+        expr->data.primaryExpression.members == ZR_NULL ||
+        expr->data.primaryExpression.members->count == 0) {
+        return ZR_FALSE;
+    }
+
+    callNode = expr->data.primaryExpression.members->nodes[0];
+    if (callNode == ZR_NULL || callNode->type != ZR_AST_FUNCTION_CALL) {
+        return ZR_FALSE;
+    }
+
+    if (outCall != ZR_NULL) {
+        *outCall = &callNode->data.functionCall;
+    }
+    if (outParams != ZR_NULL) {
+        *outParams = functionNode->data.functionDeclaration.params;
+    }
+
+    return ZR_TRUE;
+}
+
+static SZrAstNode* find_reference_test_return_expression(SZrAstNode* ast) {
+    SZrAstNode* testNode;
+    SZrAstNode* returnNode;
+
+    if (ast == ZR_NULL ||
+        ast->type != ZR_AST_SCRIPT ||
+        ast->data.script.statements == ZR_NULL ||
+        ast->data.script.statements->count == 0) {
+        return ZR_NULL;
+    }
+
+    testNode = ast->data.script.statements->nodes[ast->data.script.statements->count - 1];
+    if (testNode == ZR_NULL ||
+        testNode->type != ZR_AST_TEST_DECLARATION ||
+        testNode->data.testDeclaration.body == ZR_NULL ||
+        testNode->data.testDeclaration.body->type != ZR_AST_BLOCK ||
+        testNode->data.testDeclaration.body->data.block.body == ZR_NULL ||
+        testNode->data.testDeclaration.body->data.block.body->count == 0) {
+        return ZR_NULL;
+    }
+
+    returnNode = testNode->data.testDeclaration.body->data.block.body->nodes[0];
+    if (returnNode == ZR_NULL ||
+        returnNode->type != ZR_AST_RETURN_STATEMENT ||
+        returnNode->data.returnStatement.expr == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return returnNode->data.returnStatement.expr;
+}
+
+static void match_named_arguments_capture_diagnostic(SZrState* state,
+                                                     SZrFunctionCall* call,
+                                                     SZrAstNodeArray* paramList,
+                                                     SZrCapturedCompilerDiagnostic* diagnostic) {
+    SZrCompilerState compilerState;
+
+    clear_compiler_diagnostic(diagnostic);
+
+    ZrParser_CompilerState_Init(&compilerState, state);
+    (void)ZrParser_Compiler_MatchNamedArguments(&compilerState, call, paramList);
+
+    if (compilerState.errorMessage != ZR_NULL) {
+        diagnostic->reported = ZR_TRUE;
+        diagnostic->location = compilerState.errorLocation;
+        snprintf(diagnostic->message, sizeof(diagnostic->message), "%s", compilerState.errorMessage);
+    }
+
+    ZrParser_CompilerState_Free(&compilerState);
+}
+
 static TZrBool execute_test_function(SZrState* state, SZrFunction* testFunc, TZrInt64 expectedValue, const TZrChar* testName) {
     TZrInt64 actualValue = 0;
 
@@ -84,6 +301,239 @@ static TZrBool execute_test_function(SZrState* state, SZrFunction* testFunc, TZr
     }
 
     return ZR_TRUE;
+}
+
+static void test_reference_named_arguments_fixture_executes(void) {
+    SZrTestTimer timer;
+    const TZrChar* testSummary = "Reference Named Arguments Fixture Executes";
+    SZrState* state = ZR_NULL;
+    SZrString* sourceName = ZR_NULL;
+    SZrAstNode* ast = ZR_NULL;
+    SZrCompileResult compileResult;
+    TZrSize sourceLength = 0;
+    char* source = ZR_NULL;
+
+    memset(&compileResult, 0, sizeof(compileResult));
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/calls/named_arguments_defaults_pass.zr", &sourceLength);
+    TEST_ASSERT_NOT_NULL(source);
+
+    sourceName = ZrCore_String_Create(state, "reference_named_arguments_defaults_pass.zr", 42);
+    ast = ZrParser_Parse(state, source, sourceLength, sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+    TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 128, testSummary));
+
+    ZrParser_CompileResult_Free(state, &compileResult);
+    ZrParser_Ast_Free(state, ast);
+    free(source);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_reference_duplicate_named_argument_fixture_is_rejected(void) {
+    SZrTestTimer timer;
+    const TZrChar* testSummary = "Reference Duplicate Named Argument Fixture Is Rejected";
+    SZrState* state = ZR_NULL;
+    size_t sourceLength = 0;
+    char* source = ZR_NULL;
+    SZrAstNode* ast = ZR_NULL;
+    SZrFunctionCall* call = ZR_NULL;
+    SZrAstNodeArray* paramList = ZR_NULL;
+    SZrCapturedCompilerDiagnostic diagnostic;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/calls_named_default_varargs/duplicate_named_fail.zr", &sourceLength);
+    TEST_ASSERT_NOT_NULL(source);
+
+    ast = parse_reference_source_with_diagnostic(state,
+                                                 source,
+                                                 sourceLength,
+                                                 "reference_duplicate_named_fail.zr",
+                                                 ZR_NULL);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(find_reference_test_call(ast, &call, &paramList));
+
+    match_named_arguments_capture_diagnostic(state, call, paramList, &diagnostic);
+    TEST_ASSERT_TRUE(diagnostic.reported);
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Duplicate argument name"));
+    TEST_ASSERT_EQUAL_INT(6, diagnostic.location.start.line);
+
+    ZrParser_Ast_Free(state, ast);
+    free(source);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_reference_unexpected_named_argument_fixture_is_rejected(void) {
+    SZrTestTimer timer;
+    const TZrChar* testSummary = "Reference Unexpected Named Argument Fixture Is Rejected";
+    SZrState* state = ZR_NULL;
+    size_t sourceLength = 0;
+    char* source = ZR_NULL;
+    SZrAstNode* ast = ZR_NULL;
+    SZrFunctionCall* call = ZR_NULL;
+    SZrAstNodeArray* paramList = ZR_NULL;
+    SZrCapturedCompilerDiagnostic diagnostic;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/calls_named_default_varargs/unexpected_named_fail.zr", &sourceLength);
+    TEST_ASSERT_NOT_NULL(source);
+
+    ast = parse_reference_source_with_diagnostic(state,
+                                                 source,
+                                                 sourceLength,
+                                                 "reference_unexpected_named_fail.zr",
+                                                 ZR_NULL);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(find_reference_test_call(ast, &call, &paramList));
+
+    match_named_arguments_capture_diagnostic(state, call, paramList, &diagnostic);
+    TEST_ASSERT_TRUE(diagnostic.reported);
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Unknown argument name"));
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "d"));
+    TEST_ASSERT_EQUAL_INT(6, diagnostic.location.start.line);
+
+    ZrParser_Ast_Free(state, ast);
+    free(source);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_reference_positional_after_named_argument_fixture_is_rejected(void) {
+    SZrTestTimer timer;
+    const TZrChar* testSummary = "Reference Positional After Named Argument Fixture Is Rejected";
+    SZrState* state = ZR_NULL;
+    size_t sourceLength = 0;
+    char* source = ZR_NULL;
+    SZrAstNode* ast = ZR_NULL;
+    SZrCapturedParserDiagnostic diagnostic;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/calls_named_default_varargs/positional_after_named_fail.zr",
+                                 &sourceLength);
+    TEST_ASSERT_NOT_NULL(source);
+
+    ast = parse_reference_source_with_diagnostic(state,
+                                                 source,
+                                                 sourceLength,
+                                                 "reference_positional_after_named_fail.zr",
+                                                 &diagnostic);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(diagnostic.reported);
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Positional arguments cannot come after named arguments"));
+    TEST_ASSERT_EQUAL_INT(6, diagnostic.location.start.line);
+
+    ZrParser_Ast_Free(state, ast);
+    free(source);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_reference_overload_ambiguity_fixture_is_rejected(void) {
+    SZrTestTimer timer;
+    const TZrChar* testSummary = "Reference Overload Ambiguity Fixture Is Rejected";
+    SZrState* state = ZR_NULL;
+    size_t sourceLength = 0;
+    char* source = ZR_NULL;
+    SZrAstNode* ast = ZR_NULL;
+    SZrAstNode* expr = ZR_NULL;
+    SZrCompilerState compilerState;
+    SZrInferredType result;
+    SZrArray candidates;
+    SZrString* functionName = ZR_NULL;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/calls_named_default_varargs/overload_ambiguity_fail.zr",
+                                 &sourceLength);
+    TEST_ASSERT_NOT_NULL(source);
+
+    ast = parse_reference_source_with_diagnostic(state,
+                                                 source,
+                                                 sourceLength,
+                                                 "reference_overload_ambiguity_fail.zr",
+                                                 ZR_NULL);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_TRUE(ast->data.script.statements->count >= 3);
+
+    ZrParser_CompilerState_Init(&compilerState, state);
+    compilerState.scriptAst = ast;
+    compilerState.currentFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(compilerState.currentFunction);
+
+    compile_reference_top_level_statement(&compilerState, ast->data.script.statements->nodes[0]);
+    TEST_ASSERT_FALSE(compilerState.hasError);
+    compile_reference_top_level_statement(&compilerState, ast->data.script.statements->nodes[1]);
+    TEST_ASSERT_FALSE(compilerState.hasError);
+
+    functionName = ZrCore_String_Create(state, "pick", 4);
+    TEST_ASSERT_NOT_NULL(functionName);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_LookupFunctions(state, compilerState.typeEnv, functionName, &candidates));
+    TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)candidates.length);
+    ZrCore_Array_Free(state, &candidates);
+
+    expr = find_reference_test_return_expression(ast);
+    TEST_ASSERT_NOT_NULL(expr);
+
+    ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(&compilerState, expr, &result));
+    TEST_ASSERT_TRUE(compilerState.hasError);
+    TEST_ASSERT_NOT_NULL(compilerState.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(compilerState.errorMessage, "Ambiguous overload"));
+    TEST_ASSERT_NOT_NULL(strstr(compilerState.errorMessage, "pick"));
+    TEST_ASSERT_EQUAL_INT(10, compilerState.errorLocation.start.line);
+    ZrParser_InferredType_Free(state, &result);
+
+    ZrCore_Function_Free(state, compilerState.currentFunction);
+    compilerState.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compilerState);
+    ZrParser_Ast_Free(state, ast);
+    free(source);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
 }
 
 // 测试初始化和清理
@@ -419,6 +869,11 @@ int main(void) {
     RUN_TEST(test_named_arguments_with_defaults);
     RUN_TEST(test_named_arguments_order_independent);
     RUN_TEST(test_named_arguments_complex);
+    RUN_TEST(test_reference_named_arguments_fixture_executes);
+    RUN_TEST(test_reference_duplicate_named_argument_fixture_is_rejected);
+    RUN_TEST(test_reference_unexpected_named_argument_fixture_is_rejected);
+    RUN_TEST(test_reference_positional_after_named_argument_fixture_is_rejected);
+    RUN_TEST(test_reference_overload_ambiguity_fixture_is_rejected);
     
     return UNITY_END();
 }

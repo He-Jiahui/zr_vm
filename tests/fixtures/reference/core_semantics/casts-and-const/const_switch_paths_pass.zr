@@ -1,0 +1,11 @@
+class FixtureConstSwitch {
+    pub const id: int;
+
+    pub @constructor(flag: int) {
+        switch (flag) {
+            (1) { this.id = 1; }
+            (2) { this.id = 2; }
+            () { this.id = 3; }
+        }
+    }
+}

@@ -39,7 +39,7 @@ TZrBool ZrMath_Matrix4x4_Construct(ZrLibCallContext *context, SZrTypeValue *resu
     TZrFloat64 values[16]; TZrSize i;
     if (ZrLib_CallContext_ArgumentCount(context) == 0) zr_math_matrix4_identity(values);
     else { if (ZrLib_CallContext_ArgumentCount(context) != 16) { ZrLib_CallContext_RaiseArityError(context, 0, 16); return ZR_FALSE; } for (i = 0; i < 16; i++) if (!ZrLib_CallContext_ReadFloat(context, i, &values[i])) return ZR_FALSE; }
-    return ZrMath_ConstructFloatObject(context, result, "Matrix4x4", kFields, values, ZR_ARRAY_COUNT(kFields));
+    return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 TZrBool ZrMath_Matrix4x4_Identity(ZrLibCallContext *context, SZrTypeValue *result) { TZrFloat64 m[16]; SZrObject *o; zr_math_matrix4_identity(m); o = ZrMath_MakeMatrix4x4(context->state, m); if (o == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, o, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE; }
 TZrBool ZrMath_Matrix4x4_Transpose(ZrLibCallContext *context, SZrTypeValue *result) { TZrFloat64 m[16], t[16]; TZrSize r, c; SZrObject *o; if (!ZrMath_ReadMatrix4Object(context->state, ZrMath_SelfObject(context), m)) return ZR_FALSE; for (r = 0; r < 4; r++) for (c = 0; c < 4; c++) t[r * 4 + c] = m[c * 4 + r]; o = ZrMath_MakeMatrix4x4(context->state, t); if (o == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, o, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE; }

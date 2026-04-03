@@ -1,0 +1,1183 @@
+{
+  "domain": "expressions_precedence_chains",
+  "summary": "Reference matrix for precedence, chaining, interpolation, and compound-expression rules.",
+  "cases": [
+    {
+      "id": "expressions-precedence-arithmetic-call-pass",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "precedence",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/tests/test_language.js",
+      "upstream_intent": "Operator precedence should remain stable when arithmetic appears inside larger expressions.",
+      "zr_decision": "adopt",
+      "zr_contract": "Arithmetic precedence is preserved before call lowering and before member-chain binding.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "expression result matches precedence table",
+      "assertions": [
+        "AST nesting matches operator precedence",
+        "compiled opcode order preserves grouping",
+        "runtime value matches expected result"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "expression result matches precedence table"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "compiled opcode order preserves grouping"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-member-call-chain-pass",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "chain_lowering",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/calls.lua",
+      "upstream_intent": "Member access, call, and index chaining require an observable evaluation order contract.",
+      "zr_decision": "adapt",
+      "zr_contract": "Member, call, and index chains lower left-to-right without hidden regrouping.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "mixed member-call-index chains execute in the expected order",
+      "assertions": [
+        "AST preserves left-associated chain nodes",
+        "lowered instructions keep chain order",
+        "runtime side effects show left-to-right evaluation"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "mixed member-call-index chains execute in the expected order"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "lowered instructions keep chain order"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-malformed-chain-after-call",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "chain_diagnostics",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_grammar.py",
+      "upstream_intent": "Malformed chains should fail as syntax errors instead of drifting into unrelated parse states.",
+      "zr_decision": "adopt",
+      "zr_contract": "Invalid tokens after a call or member separator produce targeted expression diagnostics.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "broken chain syntax fails with expression.chain diagnostic",
+      "assertions": [
+        "diagnostic points at the separator context",
+        "AST is not partially reinterpreted as a different construct",
+        "artifact generation is skipped"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "broken chain syntax fails with expression.chain diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-missing-operand-after-conditional",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "conditional_diagnostics",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_syntax.py",
+      "upstream_intent": "Nested conditional syntax needs dedicated negative coverage.",
+      "zr_decision": "adapt",
+      "zr_contract": "Missing operands in conditional expressions fail in parsing before lowering.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "conditional expression with a missing branch is rejected",
+      "assertions": [
+        "diagnostic family names the conditional expression",
+        "line and column isolate the missing branch site",
+        "no fallback null operand is synthesized"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "conditional expression with a missing branch is rejected"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-nested-conditional-boundary",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "nested_conditionals",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_grammar.py",
+      "upstream_intent": "Deeply nested conditional expressions need explicit associativity boundaries.",
+      "zr_decision": "adopt",
+      "zr_contract": "Nested conditional expressions retain deterministic associativity and branch grouping.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "nested conditionals parse and execute with stable grouping",
+      "assertions": [
+        "AST nesting depth is asserted",
+        "branch expressions remain distinct nodes",
+        "runtime result matches the expected branch"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order",
+        "runtime_contract",
+        "probe_summary"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "nested conditionals parse and execute with stable grouping"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order",
+            "runtime_contract",
+            "probe_summary"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-template-interpolation-boundary",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "interpolation_boundaries",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/tests/test_language.js",
+      "upstream_intent": "Embedded expressions must not leak delimiters or precedence outside interpolation regions.",
+      "zr_decision": "adapt",
+      "zr_contract": "Interpolation boundaries isolate embedded expressions while still honoring normal precedence inside the embedded region.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "interpolation with nested expressions preserves inner precedence and outer literal slices",
+      "assertions": [
+        "literal and expression segments remain separate",
+        "embedded AST honors normal precedence rules",
+        "runtime string result is stable"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "interpolation with nested expressions preserves inner precedence and outer literal slices"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-member-index-call-chain-combination",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "mixed_chains",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/closure.lua",
+      "upstream_intent": "Mixed chains combine lookup, call, and closure capture pressures in the same expression.",
+      "zr_decision": "adapt",
+      "zr_contract": "Member, index, and call links compose without forcing one syntax family to masquerade as another.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "mixed chains keep separate member and index semantics while remaining executable",
+      "assertions": [
+        "member and index nodes stay distinct in AST",
+        "compiled instructions use the correct op families",
+        "runtime result preserves both lookup paths"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "mixed chains keep separate member and index semantics while remaining executable"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-compound-assign-chain-combination",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "compound_assignment",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/tests/test_language.js",
+      "upstream_intent": "Compound assignment interacting with chains needs its own lowering coverage.",
+      "zr_decision": "adopt",
+      "zr_contract": "Compound assignment respects chain resolution order and does not duplicate receiver evaluation.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "compound assignment over a chained receiver updates exactly one target",
+      "assertions": [
+        "receiver side effect happens once",
+        "opcode sequence preserves read-modify-write shape",
+        "runtime value reflects a single update"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "compound assignment over a chained receiver updates exactly one target"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-closure-capture-chain-regression",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "closure_capture",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/closure.lua",
+      "upstream_intent": "Expression refactors often regress closure capture and chain ordering together.",
+      "zr_decision": "adapt",
+      "zr_contract": "Captured locals referenced inside chained expressions retain lexical binding and evaluation order.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "captured local reads inside chains remain stable across compiler refactors",
+      "assertions": [
+        "captured slot binding is stable",
+        "lowered chain still references the captured local",
+        "runtime result reflects lexical capture"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "captured local reads inside chains remain stable across compiler refactors"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-call-order-regression",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "evaluation_order",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/tests/test_closure.js",
+      "upstream_intent": "Evaluation order regressions are hard to spot without dedicated side-effectful chains.",
+      "zr_decision": "adopt",
+      "zr_contract": "Argument and receiver evaluation order stays deterministic for chained calls.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "side effects in chained calls preserve stable ordering",
+      "assertions": [
+        "compiled argument evaluation order is fixed",
+        "artifact text shows the expected call sequence",
+        "runtime side effects match the expected log"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "side effects in chained calls preserve stable ordering"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "compiled argument evaluation order is fixed"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-lua-long-call-syntax-reject",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "surface_divergence",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/calls.lua",
+      "upstream_intent": "Lua-specific call sugar should not be imported accidentally through chain lowering.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR does not accept Lua table-call or string-call sugar outside its explicit syntax.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "module/project"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "Lua-only call sugar is rejected as unsupported syntax",
+      "assertions": [
+        "diagnostic points at the sugar form",
+        "parser does not reinterpret the construct as a normal call",
+        "project compile path rejects it identically"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "Lua-only call sugar is rejected as unsupported syntax"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "expressions-python-comparison-chain-reject",
+      "domain": "expressions_precedence_chains",
+      "feature_group": "surface_divergence",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_grammar.py",
+      "upstream_intent": "Python comparison chaining has distinct semantics that should not leak into ZR.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR comparison operators do not auto-chain into Python-style multi-comparison semantics.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "comparison chaining is either rejected or parsed as ordinary binary grouping according to ZR rules",
+      "assertions": [
+        "grammar does not create implicit comparison-chain nodes",
+        "compiler keeps binary comparison semantics only",
+        "runtime or diagnostics match the documented ZR rule"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "semir_contract",
+        "eval_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "comparison chaining is either rejected or parsed as ordinary binary grouping according to ZR rules"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "BLOCK_GRAPH"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "semir_contract",
+            "eval_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    }
+  ]
+}

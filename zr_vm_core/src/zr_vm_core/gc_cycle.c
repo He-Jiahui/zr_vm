@@ -7,7 +7,7 @@
 void garbage_collector_run_until_state(SZrState *state, EZrGarbageCollectRunningStatus targetState) {
     SZrGlobalState *global = state->global;
     TZrSize iterationCount = 0;
-    const TZrSize maxIterations = 10000;
+    const TZrSize maxIterations = ZR_GC_RUN_UNTIL_STATE_ITERATION_LIMIT;
 
     while (global->garbageCollector->gcRunningStatus != targetState) {
         if (++iterationCount > maxIterations) {
@@ -46,7 +46,7 @@ TZrSize garbage_collector_run_generational_full(SZrState *state) {
     SZrGlobalState *global = state->global;
     TZrSize work = 0;
     TZrSize sweepIterationCount = 0;
-    const TZrSize maxSweepIterations = 10000;
+    const TZrSize maxSweepIterations = ZR_GC_GENERATIONAL_FULL_SWEEP_ITERATION_LIMIT;
     SZrRawObject **previousSweeper = ZR_NULL;
     SZrRawObject *object;
 
@@ -73,7 +73,7 @@ TZrSize garbage_collector_run_generational_full(SZrState *state) {
 
     garbage_collector_check_sizes(state, global);
     while (global->garbageCollector->waitToReleaseObjectList != ZR_NULL) {
-        garbage_collector_run_a_few_finalizers(state, ZR_GC_FIN_MAX);
+        garbage_collector_run_a_few_finalizers(state, ZR_GC_FINALIZER_BATCH_MAX);
     }
 
     object = global->garbageCollector->gcObjectList;
@@ -158,12 +158,13 @@ int garbage_collector_sweep_step(SZrState *state,
 
     if (collector->gcObjectListSweeper) {
         TZrMemoryOffset olddebt = global->garbageCollector->gcDebtSize;
+        TZrUInt64 maxSweepSliceBudget = (TZrUInt64)ZR_GC_SWEEP_SLICE_BUDGET_MAX;
         int count;
 
         sweepBudget = (collector->gcSweepSliceBudget == 0)
                               ? 1
-                              : (collector->gcSweepSliceBudget > ZR_GC_SWEEP_MAX
-                                         ? ZR_GC_SWEEP_MAX
+                              : (collector->gcSweepSliceBudget > maxSweepSliceBudget
+                                         ? (int)maxSweepSliceBudget
                                          : (int)collector->gcSweepSliceBudget);
         collector->gcObjectListSweeper =
                 garbage_collector_sweep_list(state, collector->gcObjectListSweeper, sweepBudget, &count);
@@ -227,7 +228,7 @@ TZrSize garbage_collector_single_step(SZrState *state) {
             if (global->garbageCollector->waitToReleaseObjectList &&
                 !global->garbageCollector->isImmediateGcFlag) {
                 global->garbageCollector->stopImmediateGcFlag = 0;
-                work = garbage_collector_run_a_few_finalizers(state, ZR_GC_FIN_MAX);
+                work = garbage_collector_run_a_few_finalizers(state, ZR_GC_FINALIZER_BATCH_MAX);
             } else {
                 global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
                 work = 0;

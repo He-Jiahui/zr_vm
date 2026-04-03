@@ -1,0 +1,10 @@
+var items: int[3] = [1, 2, 3];
+var total = 0;
+
+for (var left in items) {
+    for (var right in items) {
+        total = total + left * 10 + right;
+    }
+}
+
+return total;

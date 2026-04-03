@@ -1,0 +1,19 @@
+probe(obj) {
+    try {
+        var value = obj.missing;
+        return -100;
+    } catch (e) {
+        if (e.message == "GET_MEMBER: missing member 'missing'") {
+            return 7;
+        }
+        return -200;
+    }
+}
+
+var obj = {};
+
+if (obj["missing"] != null) {
+    return -1;
+}
+
+return probe(obj);

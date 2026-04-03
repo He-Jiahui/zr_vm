@@ -23,13 +23,6 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
-#define ZR_WORK_TO_MEM 1024
-#define ZR_GC_SWEEP_MAX 100
-#define ZR_GC_DEFAULT_PAUSE_BUDGET 64
-#define ZR_GC_DEFAULT_SWEEP_SLICE_BUDGET 32
-#define ZR_GC_FIN_MAX 10
-#define ZR_GC_FINALIZE_COST 50
-
 TZrBool garbage_collector_ignore_registry_contains(SZrGarbageCollector *collector, SZrRawObject *object);
 TZrBool garbage_collector_ensure_ignore_registry_capacity(SZrGlobalState *global, TZrSize minCapacity);
 TZrSize garbage_collector_get_object_base_size(SZrState *state, SZrRawObject *object);

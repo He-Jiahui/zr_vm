@@ -284,6 +284,28 @@ TZrBool dump_binary_to_file(SZrState* state, SZrFunction* function, const TZrCha
     return ZrParser_Writer_WriteBinaryFile(state, function, binaryPath);
 }
 
+TZrBool dump_aot_c_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath) {
+    TZrChar aotPath[1024];
+
+    if (state == ZR_NULL || function == ZR_NULL || basePath == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    get_output_path(basePath, "aot_c", ".c", aotPath, sizeof(aotPath));
+    return ZrParser_Writer_WriteAotCFile(state, function, aotPath);
+}
+
+TZrBool dump_aot_llvm_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath) {
+    TZrChar aotPath[1024];
+
+    if (state == ZR_NULL || function == ZR_NULL || basePath == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    get_output_path(basePath, "aot_llvm", ".ll", aotPath, sizeof(aotPath));
+    return ZrParser_Writer_WriteAotLlvmFile(state, function, aotPath);
+}
+
 // 输出运行状态到文件（文本和JSON）
 TZrBool dump_runtime_state(SZrState* state, const TZrChar* basePath) {
     if (state == ZR_NULL || basePath == ZR_NULL) {

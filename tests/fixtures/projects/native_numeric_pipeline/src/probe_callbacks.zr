@@ -24,12 +24,13 @@ runProbeImpl() {
     system.console.printLine("probe:loadedModules");
     var state = system.vm.state();
     system.console.printLine("probe:vmState");
+    var checksum = exportedValue + signalInfo.magnitude + tensorInfo.sum + tensorInfo.mean + state.loadedModuleCount;
     system.gc.stop();
     system.gc.step();
     system.gc.start();
     system.gc.collect();
     system.console.printErrorLine("probe:stderr");
-    return exportedValue + signalInfo.magnitude + tensorInfo.sum + tensorInfo.mean + state.loadedModuleCount + modules.length;
+    return checksum;
 }
 
 summarizeProbeImpl(value: float) {

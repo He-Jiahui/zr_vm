@@ -13,8 +13,13 @@ struct SZrObjectPrototype;
 struct SZrObjectModule;
 struct SZrFunction;
 struct SZrString;
+struct SZrTypeValue;
 
 ZR_CORE_API TZrInt64 ZrCore_Reflection_TypeOfNativeEntry(struct SZrState *state);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_TypeOfValue(struct SZrState *state,
+                                                  const struct SZrTypeValue *targetValue,
+                                                  struct SZrTypeValue *result);
 
 ZR_CORE_API TZrBool ZrCore_Reflection_IsReflectionObject(struct SZrState *state, struct SZrObject *object);
 

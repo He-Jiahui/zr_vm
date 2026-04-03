@@ -374,7 +374,8 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
             TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-            // 跳过访问修饰符、static、using 和 const（用于 lookahead）
+            // 跳过访问修饰符和 static（用于 lookahead）。
+            // 保留 using/const，让字段解析器自己处理这两种合法前缀。
             if (ps->lexer->t.token == ZR_TK_PERCENT) {
                 parse_optional_method_receiver_qualifier(ps);
             }
@@ -382,14 +383,14 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
                 parse_decorator_expression(ps);
             }
 
-            // 跳过访问修饰符、static、using 和 const（用于 lookahead）
             while (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI ||
-                   ps->lexer->t.token == ZR_TK_PRO || ps->lexer->t.token == ZR_TK_STATIC ||
-                   ps->lexer->t.token == ZR_TK_USING || ps->lexer->t.token == ZR_TK_CONST) {
+                   ps->lexer->t.token == ZR_TK_PRO || ps->lexer->t.token == ZR_TK_STATIC) {
                 ZrParser_Lexer_Next(ps->lexer);
             }
 
-            if (ps->lexer->t.token == ZR_TK_VAR) {
+            EZrToken nextToken = ps->lexer->t.token;
+
+            if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_CONST || nextToken == ZR_TK_USING) {
                 // 恢复状态并解析字段
                 ps->lexer->currentPos = savedPos;
                 ps->lexer->currentChar = savedChar;
@@ -402,7 +403,7 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
                 ps->lexer->lookaheadLine = savedLookaheadLine;
                 ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
                 member = parse_struct_field(ps);
-            } else if (ps->lexer->t.token == ZR_TK_AT) {
+            } else if (nextToken == ZR_TK_AT) {
                 // 恢复状态并解析元函数
                 ps->lexer->currentPos = savedPos;
                 ps->lexer->currentChar = savedChar;

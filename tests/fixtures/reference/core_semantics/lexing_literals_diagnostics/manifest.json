@@ -1,0 +1,1202 @@
+{
+  "domain": "lexing_literals_diagnostics",
+  "summary": "Reference matrix for lexer, literal, and diagnostic contracts.",
+  "cases": [
+    {
+      "id": "lexing-basic-string-escape-pass",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "string_escapes",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_string_literals.py",
+      "upstream_intent": "Common escape sequences stay executable in ordinary string literals.",
+      "zr_decision": "adopt",
+      "zr_contract": "Valid escape sequences parse and lower without changing surrounding tokenization.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "escaped strings compile and execute with preserved characters",
+      "assertions": [
+        "AST keeps one string literal node",
+        "compiled constant preserves escape meaning",
+        "runtime result matches expected string"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "escaped strings compile and execute with preserved characters"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-comment-crlf-tokenization-pass",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "newline_and_comment_layout",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/errors.lua",
+      "upstream_intent": "Mixed comments and line endings must not destabilize token boundaries.",
+      "zr_decision": "adapt",
+      "zr_contract": "CRLF and comment adjacency preserve token positions for later diagnostics.",
+      "layer_targets": [
+        "parser",
+        "artifact",
+        "module/project"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "source with comments and CRLF parses with stable token spans",
+      "assertions": [
+        "line mapping remains monotonic",
+        "comment text does not leak into literals",
+        "artifact text keeps original statement count"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "source with comments and CRLF parses with stable token spans"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-unclosed-string",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "literal_eof_recovery",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_eof.py",
+      "upstream_intent": "EOF inside a string literal is a dedicated syntax error.",
+      "zr_decision": "adopt",
+      "zr_contract": "The parser rejects an unterminated string before later passes observe a completed literal value.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "compile fails with literal.unclosed diagnostic",
+      "assertions": [
+        "diagnostic category is stable",
+        "line and column point at the broken literal",
+        "no completed literal payload reaches SemIR"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "compile fails with literal.unclosed diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-invalid-hex-escape",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "escape_validation",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/parser/bad-unicode-escape.rs",
+      "upstream_intent": "Malformed numeric escapes are rejected precisely instead of being normalized silently.",
+      "zr_decision": "adopt",
+      "zr_contract": "Invalid hex escapes fail in lexical parsing with a dedicated invalid-escape diagnostic.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "compile fails with literal.invalid_escape diagnostic",
+      "assertions": [
+        "diagnostic message contains the bad escape family",
+        "range covers only the malformed escape",
+        "no fallback character is synthesized"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "compile fails with literal.invalid_escape diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-unicode-boundary",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "unicode_escape_limits",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_string_literals.py",
+      "upstream_intent": "Unicode escape handling needs boundary coverage around minimum and maximum scalar values.",
+      "zr_decision": "adapt",
+      "zr_contract": "Valid unicode escapes at supported scalar boundaries normalize consistently and reject unsupported scalar widths.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "supported boundary escapes pass and unsupported widths fail deterministically",
+      "assertions": [
+        "supported boundary value survives roundtrip",
+        "unsupported width produces a stable diagnostic family",
+        "diagnostic span isolates the escape"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span",
+        "runtime_contract",
+        "probe_summary"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "supported boundary escapes pass and unsupported widths fail deterministically"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span",
+            "runtime_contract",
+            "probe_summary"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-invalid-char-width",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "char_literal_width",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/parser/too-many-characters-in-char-literal.rs",
+      "upstream_intent": "Character literals reject zero-width and multi-codepoint payloads.",
+      "zr_decision": "adopt",
+      "zr_contract": "Character literals must represent exactly one logical character after escape normalization.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "runtime"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "invalid-width char literals fail before code generation",
+      "assertions": [
+        "char literal diagnostic family is stable",
+        "single-character literals still compile",
+        "width error does not degrade into generic parse failure"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "invalid-width char literals fail before code generation"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-comment-literal-recovery",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "error_recovery",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/errors.lua",
+      "upstream_intent": "A broken literal should not destroy downstream recovery for the rest of the file.",
+      "zr_decision": "adapt",
+      "zr_contract": "The diagnostic model reports the broken literal while preserving subsequent statement boundaries for follow-up diagnostics.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "artifact"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "first literal error is reported and later declarations remain recoverable",
+      "assertions": [
+        "primary literal diagnostic appears first",
+        "secondary statement is still tokenized",
+        "artifact or AST count matches recovered statement count"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "first literal error is reported and later declarations remain recoverable"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-diagnostic-range-with-mixed-newlines",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "diagnostic_ranges",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/codemap_tests/tab_2.rs",
+      "upstream_intent": "Tabs and mixed newlines must not corrupt diagnostic coordinates.",
+      "zr_decision": "adopt",
+      "zr_contract": "Diagnostic line and column mapping stays stable across tabs, CRLF, and LF within the same file.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "artifact"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "diagnostic range remains stable under mixed newline layouts",
+      "assertions": [
+        "reported line is absolute and stable",
+        "reported column does not drift after CRLF",
+        "artifact keeps the original source span metadata"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "diagnostic range remains stable under mixed newline layouts"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-location-recovery",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "diagnostic_locations",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_syntax.py",
+      "upstream_intent": "Friendly diagnostics depend on precise token and range tracking.",
+      "zr_decision": "adopt",
+      "zr_contract": "Line and column reporting remain a public contract for literal and tokenization failures.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "module/project"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "diagnostic coordinates remain stable across parser refactors",
+      "assertions": [
+        "line and column are asserted explicitly",
+        "diagnostic keyword survives wording drift",
+        "project-level compile output prints the same source location"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "diagnostic coordinates remain stable across parser refactors"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-eof-literal-regression",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "literal_eof_recovery",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/tests/test_language.js",
+      "upstream_intent": "A dedicated regression keeps EOF literal failures from degrading into generic parser crashes.",
+      "zr_decision": "adapt",
+      "zr_contract": "EOF inside a literal never escalates to an unrelated parser-internal failure.",
+      "layer_targets": [
+        "parser",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "unterminated literal fails cleanly without parser crash",
+      "assertions": [
+        "compiler state stays valid after failure",
+        "no runtime artifact is emitted",
+        "failure text still names the literal family"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "unterminated literal fails cleanly without parser crash"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-multiline-literal-reject",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "literal_surface_divergence",
+      "upstream_language": "lua",
+      "upstream_file": "lua/testes/errors.lua",
+      "upstream_intent": "Some reference languages accept alternate multiline literal forms that ZR does not expose.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR does not implicitly adopt Lua long strings or Python triple-quoted strings unless the language surface defines them explicitly.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "module/project"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "unsupported multiline literal spellings fail with explicit syntax diagnostics",
+      "assertions": [
+        "diagnostic names the unsupported literal form",
+        "parser does not reinterpret the token stream as indexing or calls",
+        "project compile path rejects the file identically"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "unsupported multiline literal spellings fail with explicit syntax diagnostics"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "lexing-stringly-diagnostic-fulltext-reject",
+      "domain": "lexing_literals_diagnostics",
+      "feature_group": "diagnostic_contract_shape",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/tools/javac/diags/examples/CantAssignToFinal.java",
+      "upstream_intent": "Modern compilers keep diagnosis structured instead of freezing every full message byte-for-byte.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR locks error category, source range, and key phrase instead of promising full-message identity for every lexer failure.",
+      "layer_targets": [
+        "parser",
+        "semantic/compiler",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "diagnostic assertions target category plus range plus phrase, not full text",
+      "assertions": [
+        "diagnostic helper accepts regex-like phrase matching",
+        "artifact tests pin source span metadata",
+        "message wording may evolve without breaking the contract"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "deopt_map",
+        "diagnostic_span"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "diagnostic assertions target category plus range plus phrase, not full text"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "deopt_map",
+            "diagnostic_span"
+          ],
+          "must_not_contain": []
+        }
+      }
+    }
+  ]
+}

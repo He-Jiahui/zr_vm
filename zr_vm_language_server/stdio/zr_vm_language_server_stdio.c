@@ -106,7 +106,9 @@ SZrString *server_get_cached_uri(SZrStdioServer *server, const char *uriText) {
     }
 
     if (server->uriCache.count == server->uriCache.capacity) {
-        size_t newCapacity = server->uriCache.capacity == 0 ? 8 : server->uriCache.capacity * 2;
+        size_t newCapacity = server->uriCache.capacity == 0
+                                     ? ZR_LSP_ARRAY_INITIAL_CAPACITY
+                                     : server->uriCache.capacity * ZR_LSP_DYNAMIC_CAPACITY_GROWTH_FACTOR;
         SZrCachedUri *newItems =
             (SZrCachedUri *)realloc(server->uriCache.items, newCapacity * sizeof(SZrCachedUri));
         if (newItems == NULL) {
@@ -198,14 +200,14 @@ int main(void) {
         free(payload);
 
         if (message == NULL) {
-            send_error_response(NULL, -32700, "Parse error");
+            send_error_response(NULL, ZR_LSP_JSON_RPC_PARSE_ERROR_CODE, "Parse error");
             continue;
         }
 
         methodJson = get_object_item(message, "method");
         if (!cJSON_IsString((cJSON *)methodJson)) {
             id = get_object_item(message, "id");
-            send_error_response(id, -32600, "Invalid Request");
+            send_error_response(id, ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE, "Invalid Request");
             cJSON_Delete(message);
             continue;
         }

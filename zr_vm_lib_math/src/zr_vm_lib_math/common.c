@@ -189,19 +189,26 @@ TZrBool ZrMath_ObjectTypeEquals(SZrState *state, SZrObject *object, const TZrCha
            typeName != ZR_NULL && strcmp(ZrCore_String_GetNativeString(object->prototype->name), typeName) == 0;
 }
 
-SZrObject *ZrMath_ResolveConstructTarget(ZrLibCallContext *context, const TZrChar *typeName) {
+SZrObject *ZrMath_ResolveConstructTarget(ZrLibCallContext *context) {
     SZrObject *self;
+    SZrObjectPrototype *ownerPrototype;
+    SZrObjectPrototype *targetPrototype;
 
-    if (context == ZR_NULL || context->state == ZR_NULL || typeName == ZR_NULL) {
+    if (context == ZR_NULL || context->state == ZR_NULL) {
         return ZR_NULL;
     }
 
     self = ZrMath_SelfObject(context);
-    if (self != ZR_NULL && ZrMath_ObjectTypeEquals(context->state, self, typeName)) {
+    ownerPrototype = ZrLib_CallContext_OwnerPrototype(context);
+    if (self != ZR_NULL && ownerPrototype != ZR_NULL && ZrCore_Object_IsInstanceOfPrototype(self, ownerPrototype)) {
         return self;
     }
 
-    return ZrLib_Type_NewInstance(context->state, typeName);
+    targetPrototype = ZrLib_CallContext_GetConstructTargetPrototype(context);
+    if (targetPrototype == ZR_NULL) {
+        targetPrototype = ownerPrototype;
+    }
+    return ZrLib_Type_NewInstanceWithPrototype(context->state, targetPrototype);
 }
 
 TZrBool ZrMath_FinishConstructObject(ZrLibCallContext *context, SZrTypeValue *result, SZrObject *object) {
@@ -215,19 +222,17 @@ TZrBool ZrMath_FinishConstructObject(ZrLibCallContext *context, SZrTypeValue *re
 
 TZrBool ZrMath_ConstructFloatObject(ZrLibCallContext *context,
                                     SZrTypeValue *result,
-                                    const TZrChar *typeName,
                                     const TZrChar *const *fieldNames,
                                     const TZrFloat64 *fieldValues,
                                     TZrSize fieldCount) {
     SZrObject *object;
     TZrSize index;
 
-    if (context == ZR_NULL || result == ZR_NULL || typeName == ZR_NULL ||
-        fieldNames == ZR_NULL || fieldValues == ZR_NULL) {
+    if (context == ZR_NULL || result == ZR_NULL || fieldNames == ZR_NULL || fieldValues == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    object = ZrMath_ResolveConstructTarget(context, typeName);
+    object = ZrMath_ResolveConstructTarget(context);
     if (object == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -480,7 +485,7 @@ TZrBool ZrMath_TensorComputeOffset(SZrState *state, SZrObject *shape, SZrObject 
 }
 
 TZrBool ZrMath_MakeStringResult(SZrState *state, SZrTypeValue *result, const TZrChar *format, ...) {
-    TZrChar buffer[512];
+    TZrChar buffer[ZR_MATH_FORMAT_BUFFER_LENGTH];
     va_list arguments;
     va_start(arguments, format);
     vsnprintf(buffer, sizeof(buffer), format, arguments);

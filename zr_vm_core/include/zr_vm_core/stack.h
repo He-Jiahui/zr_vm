@@ -7,8 +7,6 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/value.h"
 
-#define ZR_STACK_NATIVE_CALL_MIN 20
-
 struct ZR_STRUCT_ALIGN SZrTypeValueOnStack {
     SZrTypeValue value;
     TZrUInt32 toBeClosedValueOffset;

@@ -424,7 +424,6 @@ static TZrBool build_function_like_export_symbol(SZrCompilerState *cs,
                                                  SZrType *returnType,
                                                  SZrFunctionTypedExportSymbol *outSymbol) {
     TZrUInt32 parameterCount = 0;
-    TZrBool hasCompleteParameterTypes = ZR_TRUE;
 
     if (cs == ZR_NULL || exportedVar == ZR_NULL || outSymbol == ZR_NULL) {
         return ZR_FALSE;
@@ -443,19 +442,6 @@ static TZrBool build_function_like_export_symbol(SZrCompilerState *cs,
     parameterCount = params != ZR_NULL ? (TZrUInt32)params->count : 0;
     outSymbol->parameterCount = parameterCount;
     if (parameterCount == 0) {
-        return ZR_TRUE;
-    }
-
-    for (TZrUInt32 index = 0; index < parameterCount; index++) {
-        SZrAstNode *paramNode = params->nodes[index];
-
-        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER || paramNode->data.parameter.typeInfo == ZR_NULL) {
-            hasCompleteParameterTypes = ZR_FALSE;
-            break;
-        }
-    }
-
-    if (!hasCompleteParameterTypes) {
         return ZR_TRUE;
     }
 
@@ -478,6 +464,10 @@ static TZrBool build_function_like_export_symbol(SZrCompilerState *cs,
         }
 
         parameter = &paramNode->data.parameter;
+        if (parameter->typeInfo == ZR_NULL) {
+            continue;
+        }
+
         if (!typed_type_ref_from_ast_type(cs, parameter->typeInfo, &outSymbol->parameterTypes[index])) {
             return ZR_FALSE;
         }

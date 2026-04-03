@@ -1,0 +1,6 @@
+var container = %import("zr.container");
+var map = new container.Map<string, int>();
+
+map["count"] = 7;
+
+return map.count * 10 + map["count"];

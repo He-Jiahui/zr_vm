@@ -1,0 +1,126 @@
+{
+  "feature_group": "casts-and-const",
+  "phase_note": "Phase 1 is intentionally weighted toward const and immutability diagnostics; explicit cast edge cases remain inventoried here for follow-up expansion.",
+  "cases": [
+    {
+      "id": "casts-const-cpython-invalid-assignment-targets",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_syntax.py",
+      "upstream_focus": "Assignment diagnostics must distinguish illegal targets and immutable targets clearly at compile time.",
+      "zr_decision": "ZR rejects const reassignment during compilation instead of allowing the write and failing later at runtime.",
+      "expected_outcome": "compile-rejects-const-reassignment"
+    },
+    {
+      "id": "casts-const-rust-immutable-local-twice",
+      "upstream_language": "rust",
+      "upstream_path": "lua/rust/tests/ui/borrowck/assign-imm-local-twice.rs",
+      "upstream_focus": "Immutable locals need a dedicated reassign diagnostic, not a generic type or parse error.",
+      "zr_decision": "ZR const locals should emit a focused compile-time failure when assigned after initialization.",
+      "expected_outcome": "immutable-local-reassign-diagnostic-planned"
+    },
+    {
+      "id": "casts-const-rust-assign-to-constants",
+      "upstream_language": "rust",
+      "upstream_path": "lua/rust/tests/ui/borrowck/borrowck-assign-to-constants.rs",
+      "upstream_focus": "Writes through constant bindings must be rejected regardless of surrounding expression context.",
+      "zr_decision": "ZR const protection applies to both local and module-visible bindings once the compiler marks them immutable.",
+      "expected_outcome": "constant-write-rejected"
+    },
+    {
+      "id": "casts-const-jdk-final-variable-assignment",
+      "upstream_language": "jdk",
+      "upstream_path": "lua/jdk/test/langtools/tools/javac/diags/examples/CantAssignToFinal.java",
+      "upstream_focus": "Final or immutable storage rules belong in compile-time diagnostics, not runtime contract checks.",
+      "zr_decision": "ZR uses compile-time const enforcement as the primary contract for immutable storage.",
+      "expected_outcome": "final-like-bindings-fail-during-compilation"
+    },
+    {
+      "id": "casts-const-jdk-definite-assignment-after-if",
+      "upstream_language": "jdk",
+      "upstream_path": "lua/jdk/test/langtools/tools/javac/DefiniteAssignment/DefAssignAfterIf_2.java",
+      "upstream_focus": "Constructor-time immutable storage must be proven assigned on every control-flow path, not just one side of a branch.",
+      "zr_decision": "ZR rejects const fields left uninitialized after one-armed if or incomplete else-if chains.",
+      "expected_outcome": "constructor-const-if-chain-requires-full-path-coverage"
+    },
+    {
+      "id": "casts-const-jdk-definite-assignment-in-conditional-expression",
+      "upstream_language": "jdk",
+      "upstream_path": "lua/jdk/test/langtools/tools/javac/DefiniteAssignment/DefAssignBoolean/DefAssignCond.java",
+      "upstream_focus": "Conditional expressions must merge definite-assignment state from both branches instead of evaluating them linearly.",
+      "zr_decision": "ZR ternary expressions in constructors now participate in the same const definite-assignment model as statement-level branches.",
+      "expected_outcome": "constructor-const-ternary-branches-merge-by-intersection"
+    },
+    {
+      "id": "casts-const-jdk-definite-assignment-in-switch",
+      "upstream_language": "jdk",
+      "upstream_path": "lua/jdk/test/langtools/tools/javac/DefiniteAssignment/DUSwitch.java",
+      "upstream_focus": "Switch statements need conservative definite-assignment merging across cases and unmatched/default paths.",
+      "zr_decision": "ZR requires constructor const fields to be initialized across every continuing switch path; missing default keeps the field non-definite.",
+      "expected_outcome": "constructor-const-switch-requires-default-or-total-coverage"
+    },
+    {
+      "id": "casts-const-jdk-final-parameter-assignment",
+      "upstream_language": "jdk",
+      "upstream_path": "lua/jdk/test/langtools/tools/javac/diags/examples/FinalParamCantBeAssigned.java",
+      "upstream_focus": "Immutability must cover parameter bindings as well as standalone variable declarations when the language marks them readonly.",
+      "zr_decision": "ZR future const-parameter work should reuse the same immutable-assignment diagnostic model as const locals.",
+      "expected_outcome": "const-parameter-work-inventoried"
+    },
+    {
+      "id": "casts-const-mono-isconst-type-modifiers",
+      "upstream_language": "mono",
+      "upstream_path": "lua/mono-6.12.0.199/mono/tests/custom-modifiers-inheritance.cs",
+      "upstream_focus": "Const-like type metadata at the ABI or signature layer should stay separate from ordinary assignment semantics but remain traceable.",
+      "zr_decision": "ZR records const and explicit-cast precedent in one matrix, while phase 1 only turns immutable assignment into a runnable fixture.",
+      "expected_outcome": "cast-and-const-matrix-established"
+    },
+    {
+      "id": "casts-const-fixture-zr-else-if-pass",
+      "upstream_language": "zr",
+      "upstream_path": "tests/fixtures/reference/core_semantics/casts-and-const/const_else_if_paths_pass.zr",
+      "upstream_focus": "Repository-local fixture proving constructor const definite assignment across nested else-if chains.",
+      "zr_decision": "The reference fixture suite includes a compile-success baseline for else-if coverage.",
+      "expected_outcome": "reference-fixture-else-if-pass"
+    },
+    {
+      "id": "casts-const-fixture-zr-if-missing-branch-fail",
+      "upstream_language": "zr",
+      "upstream_path": "tests/fixtures/reference/core_semantics/casts-and-const/const_if_missing_branch_fail.zr",
+      "upstream_focus": "Repository-local fixture proving a one-armed if leaves constructor const fields uninitialized on continuing paths.",
+      "zr_decision": "The reference fixture suite includes a compile-fail baseline for incomplete if-path coverage.",
+      "expected_outcome": "reference-fixture-if-missing-branch-fail"
+    },
+    {
+      "id": "casts-const-fixture-zr-switch-pass",
+      "upstream_language": "zr",
+      "upstream_path": "tests/fixtures/reference/core_semantics/casts-and-const/const_switch_paths_pass.zr",
+      "upstream_focus": "Repository-local fixture proving constructor const definite assignment across switch cases plus default.",
+      "zr_decision": "The reference fixture suite includes a compile-success baseline for switch path coverage.",
+      "expected_outcome": "reference-fixture-switch-pass"
+    },
+    {
+      "id": "casts-const-fixture-zr-switch-fail",
+      "upstream_language": "zr",
+      "upstream_path": "tests/fixtures/reference/core_semantics/casts-and-const/const_switch_missing_default_fail.zr",
+      "upstream_focus": "Repository-local fixture proving missing default leaves unmatched switch paths uninitialized.",
+      "zr_decision": "The reference fixture suite includes a compile-fail baseline for incomplete switch path coverage.",
+      "expected_outcome": "reference-fixture-switch-fail"
+    },
+    {
+      "id": "casts-const-fixture-zr-ternary-pass",
+      "upstream_language": "zr",
+      "upstream_path": "tests/fixtures/reference/core_semantics/casts-and-const/const_ternary_paths_pass.zr",
+      "upstream_focus": "Repository-local fixture proving ternary branches merge const definite-assignment state by intersection.",
+      "zr_decision": "The reference fixture suite includes a compile-success baseline for ternary branch coverage.",
+      "expected_outcome": "reference-fixture-ternary-pass"
+    },
+    {
+      "id": "casts-const-fixture-zr-ternary-fail",
+      "upstream_language": "zr",
+      "upstream_path": "tests/fixtures/reference/core_semantics/casts-and-const/const_ternary_missing_branch_fail.zr",
+      "upstream_focus": "Repository-local fixture proving ternary branches that initialize only one side are rejected.",
+      "zr_decision": "The reference fixture suite includes a compile-fail baseline for incomplete ternary coverage.",
+      "expected_outcome": "reference-fixture-ternary-fail"
+    }
+  ]
+}

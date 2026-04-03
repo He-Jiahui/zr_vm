@@ -36,9 +36,9 @@ SZrAstNode *find_function_declaration(SZrCompilerState *cs, SZrString *funcName)
 
 // 根据函数参数列表解析调用参数。
 // 对已知签名的调用，统一处理命名参数重排和缺失默认值回填。
-SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs, 
-                                               SZrFunctionCall *call,
-                                               SZrAstNodeArray *paramList) {
+ZR_PARSER_API SZrAstNodeArray *ZrParser_Compiler_MatchNamedArguments(SZrCompilerState *cs,
+                                                                     SZrFunctionCall *call,
+                                                                     SZrAstNodeArray *paramList) {
     if (cs == ZR_NULL || call == ZR_NULL ||
         call->args == ZR_NULL || call->argNames == ZR_NULL || paramList == ZR_NULL) {
         return call->args;
@@ -151,7 +151,7 @@ SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs,
             if (!found) {
                 // 未找到匹配的参数名
                 TZrNativeString nameStr = ZrCore_String_GetNativeString(argName);
-                TZrChar errorMsg[256];
+                TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
                 snprintf(errorMsg, sizeof(errorMsg), "Unknown argument name: %s", nameStr ? nameStr : "<null>");
                 ZrParser_Compiler_Error(cs, errorMsg, call->args->nodes[i]->location);
                 ZrCore_Memory_RawFreeWithType(cs->state->global, provided, sizeof(TZrBool) * paramCount, ZR_MEMORY_NATIVE_TYPE_ARRAY);
@@ -226,8 +226,14 @@ void compile_member_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 成员访问在 primary expression 中处理
     // 这里只处理属性访问
-    // 注意：实际的 GETTABLE/SETTABLE 指令应该在 primary expression 中生成
+    // 注意：实际的 GET_MEMBER/SET_MEMBER 或 GET_BY_INDEX/SET_BY_INDEX 指令应该在 primary expression 中生成
     // 因为需要先编译对象表达式
+}
+
+SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs,
+                                       SZrFunctionCall *call,
+                                       SZrAstNodeArray *paramList) {
+    return ZrParser_Compiler_MatchNamedArguments(cs, call, paramList);
 }
 
 void compile_import_expression(SZrCompilerState *cs, SZrAstNode *node) {

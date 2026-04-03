@@ -32,8 +32,8 @@ ZR_MATH_UNARY(ZrMath_Scalar_Floor, floor(value))
 ZR_MATH_UNARY(ZrMath_Scalar_Ceil, ceil(value))
 ZR_MATH_UNARY(ZrMath_Scalar_Round, round(value))
 ZR_MATH_UNARY(ZrMath_Scalar_Sign, value < 0.0 ? -1.0 : (value > 0.0 ? 1.0 : 0.0))
-ZR_MATH_UNARY(ZrMath_Scalar_Degrees, value * (180.0 / M_PI))
-ZR_MATH_UNARY(ZrMath_Scalar_Radians, value * (M_PI / 180.0))
+ZR_MATH_UNARY(ZrMath_Scalar_Degrees, value * (180.0 / ZR_MATH_PI))
+ZR_MATH_UNARY(ZrMath_Scalar_Radians, value * (ZR_MATH_PI / 180.0))
 
 TZrBool ZrMath_Scalar_Clamp(ZrLibCallContext *context, SZrTypeValue *result) {
     TZrFloat64 value = 0.0, minimum = 0.0, maximum = 0.0;

@@ -39,7 +39,7 @@ static SZrString *lsp_append_markdown_section(SZrState *state, SZrString *base, 
     TZrNativeString appendixText;
     TZrSize baseLength;
     TZrSize appendixLength;
-    TZrChar buffer[4096];
+    TZrChar buffer[ZR_LSP_MARKDOWN_BUFFER_SIZE];
     TZrSize used = 0;
 
     if (state == ZR_NULL || base == ZR_NULL || appendix == ZR_NULL) {
@@ -104,8 +104,11 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     context->uriToAnalyzerMap.capacity = 0;
     context->uriToAnalyzerMap.resizeThreshold = 0;
     context->uriToAnalyzerMap.isValid = ZR_FALSE;
-    ZrCore_HashSet_Init(state, &context->uriToAnalyzerMap, 4); // capacityLog2 = 4
-    ZrCore_Array_Init(state, &context->projectIndexes, sizeof(SZrLspProjectIndex *), 2);
+    ZrCore_HashSet_Init(state, &context->uriToAnalyzerMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
+    ZrCore_Array_Init(state,
+                      &context->projectIndexes,
+                      sizeof(SZrLspProjectIndex *),
+                      ZR_LSP_PROJECT_INDEX_INITIAL_CAPACITY);
 
     ZrVmLibMath_Register(state->global);
     ZrVmLibSystem_Register(state->global);
@@ -337,7 +340,7 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspDiagnostic *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspDiagnostic *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
     
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
@@ -357,7 +360,7 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
         return ZR_TRUE;
     }
 
-    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrDiagnostic *), 8);
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrDiagnostic *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(state, analyzer, &diagnostics)) {
         ZrCore_Array_Free(state, &diagnostics);
         return ZR_FALSE;
@@ -397,7 +400,7 @@ TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspCompletionItem *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspCompletionItem *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
     
     ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
@@ -421,7 +424,7 @@ TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
 
     // 获取补全
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+    ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL && analyzer->ast != ZR_NULL) {
         hasReceiverCompletions = ZrLanguageServer_Lsp_ProjectTryCollectImportCompletions(state,
                                                                                          context,
@@ -467,7 +470,7 @@ TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
                 lspItem->label = item->label;
                 
                 // 转换 kind 字符串到整数
-                TZrInt32 kindValue = 1; // 默认 Text
+                TZrInt32 kindValue = ZR_LSP_COMPLETION_ITEM_KIND_TEXT;
                 if (item->kind != ZR_NULL) {
                     TZrNativeString kindStr;
                     TZrSize kindLen;
@@ -481,29 +484,29 @@ TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
                     
                     // LSP CompletionItemKind 映射
                     if (kindLen == 8 && memcmp(kindStr, "function", 8) == 0) {
-                        kindValue = 3; // Function
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_FUNCTION;
                     } else if (kindLen == 5 && memcmp(kindStr, "class", 5) == 0) {
-                        kindValue = 7; // Class
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_CLASS;
                     } else if (kindLen == 8 && memcmp(kindStr, "variable", 8) == 0) {
-                        kindValue = 6; // Variable
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_VARIABLE;
                     } else if (kindLen == 6 && memcmp(kindStr, "struct", 6) == 0) {
-                        kindValue = 22; // Struct
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_STRUCT;
                     } else if (kindLen == 6 && memcmp(kindStr, "method", 6) == 0) {
-                        kindValue = 2; // Method
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_METHOD;
                     } else if (kindLen == 9 && memcmp(kindStr, "interface", 9) == 0) {
-                        kindValue = 8; // Interface
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_INTERFACE;
                     } else if (kindLen == 8 && memcmp(kindStr, "property", 8) == 0) {
-                        kindValue = 10; // Property
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_PROPERTY;
                     } else if (kindLen == 5 && memcmp(kindStr, "field", 5) == 0) {
-                        kindValue = 5; // Field
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_FIELD;
                     } else if (kindLen == 6 && memcmp(kindStr, "module", 6) == 0) {
-                        kindValue = 9; // Module
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_MODULE;
                     } else if (kindLen == 4 && memcmp(kindStr, "enum", 4) == 0) {
-                        kindValue = 13; // Enum
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_ENUM;
                     } else if (kindLen == 8 && memcmp(kindStr, "constant", 8) == 0) {
-                        kindValue = 21; // Constant
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_CONSTANT;
                     } else {
-                        kindValue = 1; // Text (默认)
+                        kindValue = ZR_LSP_COMPLETION_ITEM_KIND_TEXT;
                     }
                 }
                 lspItem->kind = kindValue;
@@ -560,7 +563,18 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     symbol = ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(analyzer, fileRange);
 
-    if (ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, fileRange, &hoverInfo) &&
+    content = fileVersion != ZR_NULL && fileVersion->content != ZR_NULL
+                  ? ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(state,
+                                                                             analyzer,
+                                                                             analyzer->ast,
+                                                                             fileVersion->content,
+                                                                             fileVersion->contentLength,
+                                                                             filePos.offset)
+                  : ZR_NULL;
+
+    if (content != ZR_NULL) {
+        /* Receiver-specialized native hover already produced the final markdown. */
+    } else if (ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, fileRange, &hoverInfo) &&
         hoverInfo != ZR_NULL &&
         hoverInfo->contents != ZR_NULL) {
         content = hoverInfo->contents;
@@ -669,7 +683,7 @@ TZrBool ZrLanguageServer_Lsp_FindReferences(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
     
     // 获取分析器
@@ -690,7 +704,7 @@ TZrBool ZrLanguageServer_Lsp_FindReferences(SZrState *state,
     
     // 获取所有引用
     SZrArray references;
-    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), 8);
+    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_ReferenceTracker_FindReferences(state, analyzer->referenceTracker, symbol, &references)) {
         ZrCore_Array_Free(state, &references);
         return ZR_FALSE;
@@ -734,7 +748,7 @@ TZrBool ZrLanguageServer_Lsp_Rename(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
     
     // 获取分析器
@@ -755,7 +769,7 @@ TZrBool ZrLanguageServer_Lsp_Rename(SZrState *state,
     
     // 获取所有引用（包括定义）
     SZrArray references;
-    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), 8);
+    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_ReferenceTracker_FindReferences(state, analyzer->referenceTracker, symbol, &references)) {
         ZrCore_Array_Free(state, &references);
         return ZR_FALSE;
@@ -794,7 +808,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentSymbols(SZrState *state,
     }
 
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspSymbolInformation *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
     analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
@@ -834,7 +848,7 @@ TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
     }
 
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspSymbolInformation *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
     ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(state, context, query, result);
@@ -899,7 +913,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentHighlights(SZrState *state,
     }
 
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspDocumentHighlight *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspDocumentHighlight *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
     analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
@@ -921,7 +935,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentHighlights(SZrState *state,
         ZrCore_Array_Push(state, result, &highlight);
     }
 
-    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), 8);
+    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_ReferenceTracker_FindReferences(state, analyzer->referenceTracker, symbol, &references)) {
         ZrCore_Array_Free(state, &references);
         return ZR_TRUE;

@@ -375,10 +375,7 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
 
         case ZR_TK_STRING: {
             SZrString *value = ps->lexer->t.seminfo.stringValue;
-            // 从词法分析器获取错误信息和原始字符串
-            // stringValue已经包含了原始字符串（包括引号）
-            // 错误信息可以通过检查字符串是否包含转义错误来判断
-            TZrBool hasError = ZR_FALSE; // TODO: 词法分析器通常会在遇到错误时报告，这里暂时设为false
+            TZrBool hasError = ps->lexer->t.hasLexError;
             SZrString *literal = value; // 原始字符串已经存储在stringValue中
             ZrParser_Lexer_Next(ps->lexer);
             return create_string_literal_node(ps, value, hasError, literal);
@@ -394,9 +391,7 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
 
         case ZR_TK_CHAR: {
             TZrChar value = ps->lexer->t.seminfo.charValue;
-            // 从词法分析器获取错误信息和原始字符串
-            // char字面量的原始字符串可以通过stringValue获取（如果lexer存储了）
-            TZrBool hasError = ZR_FALSE; // TODO: 词法分析器通常会在遇到错误时报告，这里暂时设为false
+            TZrBool hasError = ps->lexer->t.hasLexError;
             SZrString *literal = ps->lexer->t.seminfo.stringValue; // 如果lexer存储了原始字符串，使用它
             ZrParser_Lexer_Next(ps->lexer);
             return create_char_literal_node(ps, value, hasError, literal);

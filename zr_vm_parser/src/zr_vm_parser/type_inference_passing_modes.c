@@ -82,7 +82,7 @@ TZrBool validate_call_argument_passing_modes(SZrCompilerState *cs,
         SZrInferredType *argType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)argTypes, index);
         SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)parameterTypes, index);
         SZrAstNode *argNode;
-        TZrChar errorBuffer[160];
+        TZrChar errorBuffer[ZR_PARSER_DETAIL_BUFFER_LENGTH];
 
         if (passingMode != ZR_PARAMETER_PASSING_MODE_OUT && passingMode != ZR_PARAMETER_PASSING_MODE_REF) {
             continue;

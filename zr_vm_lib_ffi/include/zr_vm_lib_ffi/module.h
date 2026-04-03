@@ -5,7 +5,7 @@
 #ifndef ZR_VM_LIB_FFI_MODULE_H
 #define ZR_VM_LIB_FFI_MODULE_H
 
-#include "zr_vm_library.h"
+#include "zr_vm_lib_ffi/conf.h"
 
 ZR_API const ZrLibModuleDescriptor *ZrVmLibFfi_GetModuleDescriptor(void);
 ZR_API TZrBool ZrVmLibFfi_Register(SZrGlobalState *global);

@@ -533,7 +533,7 @@ static TZrBool ct_eval_member_access(SZrCompilerState *cs,
 
     memberValue = ZrCore_Object_GetValue(cs->state, ZR_CAST_OBJECT(cs->state, baseValue->value.object), &keyValue);
     if (memberValue == ZR_NULL) {
-        TZrChar message[256];
+        TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
         snprintf(message, sizeof(message), "Unknown compile-time member: %s",
                  (!memberExpr->computed && memberExpr->property != ZR_NULL &&
                   memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL)

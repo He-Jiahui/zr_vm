@@ -25,5 +25,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
 // 将解析后的 AST 写入可读的明文格式文件
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteSyntaxTreeFile(SZrState *state, SZrAstNode *ast, const TZrChar *filename);
 
+// 从 SemIR 降低为 AOT 后端文本工件。
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFile(SZrState *state, SZrFunction *function, const TZrChar *filename);
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFile(SZrState *state, SZrFunction *function, const TZrChar *filename);
+
 #endif //ZR_VM_PARSER_WRITER_H
 

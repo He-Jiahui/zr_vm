@@ -1273,6 +1273,72 @@ static void test_reserved_import_expression_member_chain_parsing(void) {
     TEST_DIVIDER();
 }
 
+static void test_percent_upgrade_and_release_expression_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Percent Upgrade And Release Expression Parsing";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Percent ownership lifecycle syntax parsing",
+              "Testing parsing of %upgrade(expr) and %release(expr) as dedicated ownership builtin construct expressions");
+    {
+        const char *source =
+            "class Holder {}\n"
+            "var owner = %shared new Holder();\n"
+            "var watcher = %weak(owner);\n"
+            "var upgraded = %upgrade(watcher);\n"
+            "var released = %release(owner);";
+        SZrString *sourceName = ZrCore_String_Create(state, "percent_upgrade_release_syntax.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *upgradeDecl;
+        SZrAstNode *releaseDecl;
+        SZrAstNode *expr;
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
+
+        upgradeDecl = ast->data.script.statements->nodes[3];
+        releaseDecl = ast->data.script.statements->nodes[4];
+
+        TEST_ASSERT_NOT_NULL(upgradeDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, upgradeDecl->type);
+        expr = upgradeDecl->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
+        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
+        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_NONE,
+                              expr->data.constructExpression.ownershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE,
+                              expr->data.constructExpression.builtinKind);
+
+        TEST_ASSERT_NOT_NULL(releaseDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, releaseDecl->type);
+        expr = releaseDecl->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
+        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
+        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_NONE,
+                              expr->data.constructExpression.ownershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
+                              expr->data.constructExpression.builtinKind);
+
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 static void test_reserved_type_expression_parsing(void) {
     SZrTestTimer timer;
     const char *testSummary = "Reserved Type Expression Parsing";
@@ -2259,6 +2325,7 @@ int main(void) {
     RUN_TEST(test_parameter_passing_mode_parsing);
     RUN_TEST(test_const_generic_construction_parsing);
     RUN_TEST(test_percent_owned_and_ownership_expression_parsing);
+    RUN_TEST(test_percent_upgrade_and_release_expression_parsing);
     RUN_TEST(test_conditional_expression);
     RUN_TEST(test_array_literal);
     RUN_TEST(test_object_literal);

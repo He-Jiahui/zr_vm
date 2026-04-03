@@ -75,6 +75,7 @@ typedef struct SZrCompilerState {
     
     // 错误处理
     TZrBool hasError;
+    TZrBool hadRecoverableError;            // 本轮编译是否出现过可恢复但不可忽略的错误
     const TZrChar *errorMessage;
     TZrChar *errorMessageStorage;
     TZrSize errorMessageStorageCapacity;
@@ -120,10 +121,12 @@ typedef struct SZrCompilerState {
     TZrBool isInConstructor;                     // 是否在构造函数中编译
     SZrAstNode *currentFunctionNode;          // 当前编译的函数 AST 节点（用于访问参数信息）
     SZrString *currentTypeName;               // 当前编译的类型名称（用于成员字段 const 检查）
+    SZrAstNode *currentTypeNode;              // 当前编译的类型声明节点（用于 const 成员初始化检查）
     
     // const 变量跟踪（用于编译时检查）
     SZrArray constLocalVars;                   // const 局部变量名数组（SZrString*）
     SZrArray constParameters;                  // const 参数名数组（SZrString*）
+    SZrArray constructorInitializedConstFields; // 构造函数中已初始化的 const 成员名数组（SZrString*）
 } SZrCompilerState;
 
 // 编译期变量信息
@@ -276,24 +279,6 @@ typedef struct SZrCompileResult {
     TZrSize testFunctionCount;          // 测试函数数量
 } SZrCompileResult;
 
-// 常量引用路径步骤类型
-// 注意：使用负数作为特殊标记，实际使用时会转换为TZrUInt32（作为无符号整数存储）
-enum EZrConstantReferenceStepType {
-    ZR_CONSTANT_REF_STEP_PARENT = -1,        // 向上引用parent function
-    ZR_CONSTANT_REF_STEP_CHILD = 0,          // 0: childFunctionList[index] (需配合额外参数，实际为正数)
-    ZR_CONSTANT_REF_STEP_CONSTANT_POOL = -2, // 当前函数的常量池索引
-    ZR_CONSTANT_REF_STEP_MODULE = -3,        // 模块引用
-    ZR_CONSTANT_REF_STEP_PROTOTYPE_INDEX = -4, // 下一个数值读取prototype的index
-    ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX = -5, // 下一个数值读取childFunctionList的index
-    // 未来可扩展其他类型
-};
-
-typedef enum EZrConstantReferenceStepType EZrConstantReferenceStepType;
-
-// 辅助宏：将步骤类型转换为TZrUInt32（用于存储）
-#define ZR_CONSTANT_REF_STEP_TO_UINT32(step) ((TZrUInt32)(TZrInt32)(step))
-#define ZR_CONSTANT_REF_STEP_FROM_UINT32(step) ((TZrInt32)(TZrUInt32)(step))
-
 // 常量引用路径结构
 // 使用状态机编码模式，例如：5(长度), -1, -5, 0, -4, 1 表示 parent->childFunction[0]->prototypes[1]
 typedef struct SZrConstantReferencePath {
@@ -330,6 +315,9 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode
 // 公开的低层编译入口，用于语义/HIR 相关测试和分阶段编译接线
 ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API SZrAstNodeArray *ZrParser_Compiler_MatchNamedArguments(SZrCompilerState *cs,
+                                                                     struct SZrFunctionCall *call,
+                                                                     struct SZrAstNodeArray *paramList);
 ZR_PARSER_API void ZrParser_Compiler_CompileStructDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_CompileClassDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_CompileInterfaceDeclaration(SZrCompilerState *cs, SZrAstNode *node);

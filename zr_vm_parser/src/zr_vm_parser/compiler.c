@@ -30,6 +30,109 @@ EZrOwnershipQualifier get_implicit_this_ownership_qualifier(EZrOwnershipQualifie
 
 // 初始化编译器状态
 
+static EZrProtocolId compiler_protocol_id_from_type_name(SZrString *typeName) {
+    const TZrChar *nativeName;
+    TZrSize length = 0;
+
+    if (typeName == ZR_NULL) {
+        return ZR_PROTOCOL_ID_NONE;
+    }
+
+    nativeName = ZrCore_String_GetNativeString(typeName);
+    if (nativeName == ZR_NULL) {
+        return ZR_PROTOCOL_ID_NONE;
+    }
+
+    while (nativeName[length] != '\0' && nativeName[length] != '<') {
+        length++;
+    }
+
+    if (length == 9 && strncmp(nativeName, "Equatable", length) == 0) {
+        return ZR_PROTOCOL_ID_EQUATABLE;
+    }
+    if (length == 8 && strncmp(nativeName, "Hashable", length) == 0) {
+        return ZR_PROTOCOL_ID_HASHABLE;
+    }
+    if (length == 10 && strncmp(nativeName, "Comparable", length) == 0) {
+        return ZR_PROTOCOL_ID_COMPARABLE;
+    }
+    if (length == 8 && strncmp(nativeName, "Iterable", length) == 0) {
+        return ZR_PROTOCOL_ID_ITERABLE;
+    }
+    if (length == 8 && strncmp(nativeName, "Iterator", length) == 0) {
+        return ZR_PROTOCOL_ID_ITERATOR;
+    }
+    if (length == 9 && strncmp(nativeName, "ArrayLike", length) == 0) {
+        return ZR_PROTOCOL_ID_ARRAY_LIKE;
+    }
+
+    return ZR_PROTOCOL_ID_NONE;
+}
+
+static void compiler_accumulate_protocol_mask_from_type_names(const SZrArray *typeNames, TZrUInt64 *protocolMask) {
+    if (typeNames == ZR_NULL || protocolMask == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < typeNames->length; index++) {
+        SZrString **typeNamePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)typeNames, index);
+        EZrProtocolId protocolId;
+
+        if (typeNamePtr == ZR_NULL || *typeNamePtr == ZR_NULL) {
+            continue;
+        }
+
+        protocolId = compiler_protocol_id_from_type_name(*typeNamePtr);
+        if (protocolId != ZR_PROTOCOL_ID_NONE) {
+            *protocolMask |= ZR_PROTOCOL_BIT(protocolId);
+        }
+    }
+}
+
+static TZrUInt64 compiler_protocol_mask_from_prototype_info(SZrTypePrototypeInfo *info) {
+    TZrUInt64 protocolMask = 0;
+
+    if (info == ZR_NULL) {
+        return 0;
+    }
+
+    compiler_accumulate_protocol_mask_from_type_names(&info->inherits, &protocolMask);
+    compiler_accumulate_protocol_mask_from_type_names(&info->implements, &protocolMask);
+    return protocolMask;
+}
+
+static TZrUInt32 compiler_member_contract_role_from_member_info(const SZrTypeMemberInfo *memberInfo) {
+    const TZrChar *memberName;
+
+    if (memberInfo == ZR_NULL || memberInfo->name == ZR_NULL) {
+        return ZR_MEMBER_CONTRACT_ROLE_NONE;
+    }
+
+    memberName = ZrCore_String_GetNativeString(memberInfo->name);
+    if (memberName == ZR_NULL) {
+        return ZR_MEMBER_CONTRACT_ROLE_NONE;
+    }
+
+    if ((memberInfo->memberType == ZR_AST_STRUCT_FIELD || memberInfo->memberType == ZR_AST_CLASS_FIELD) &&
+        strcmp(memberName, "current") == 0) {
+        return ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD;
+    }
+
+    if (memberInfo->memberType == ZR_AST_STRUCT_METHOD || memberInfo->memberType == ZR_AST_CLASS_METHOD) {
+        if (strcmp(memberName, "getIterator") == 0) {
+            return ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT;
+        }
+        if (strcmp(memberName, "moveNext") == 0) {
+            return ZR_MEMBER_CONTRACT_ROLE_ITERATOR_MOVE_NEXT;
+        }
+        if (strcmp(memberName, "current") == 0) {
+            return ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_METHOD;
+        }
+    }
+
+    return ZR_MEMBER_CONTRACT_ROLE_NONE;
+}
+
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize) {
     if (cs == ZR_NULL || info == ZR_NULL || info->name == ZR_NULL || outData == ZR_NULL || outSize == ZR_NULL) {
@@ -86,11 +189,13 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     
     // 5. 填充序列化数据（使用C原生结构，避免指针，所有数据直接嵌入）
     SZrCompiledPrototypeInfo *protoInfo = (SZrCompiledPrototypeInfo *)serializedData;
+    ZrCore_Memory_RawSet(protoInfo, 0, sizeof(*protoInfo));
     protoInfo->nameStringIndex = nameStringIndex;
     protoInfo->type = (TZrUInt32)info->type;
     protoInfo->accessModifier = (TZrUInt32)info->accessModifier;
     protoInfo->inheritsCount = inheritsCount;
     protoInfo->membersCount = membersCount;
+    protoInfo->protocolMask = compiler_protocol_mask_from_prototype_info(info);
     
     // 复制继承类型索引数组到序列化数据中（紧跟在结构体后面）
     TZrUInt32 *embeddedInheritIndices = (TZrUInt32 *)(serializedData + sizeof(SZrCompiledPrototypeInfo));
@@ -110,6 +215,7 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
         }
         
         SZrCompiledMemberInfo *compiledMember = &members[i];
+        ZrCore_Memory_RawSet(compiledMember, 0, sizeof(*compiledMember));
         compiledMember->memberType = (TZrUInt32)memberInfo->memberType;
         compiledMember->accessModifier = (TZrUInt32)memberInfo->accessModifier;
         compiledMember->isStatic = memberInfo->isStatic ? ZR_TRUE : ZR_FALSE;
@@ -119,6 +225,7 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
         compiledMember->callsClose = memberInfo->callsClose ? ZR_TRUE : ZR_FALSE;
         compiledMember->callsDestructor = memberInfo->callsDestructor ? ZR_TRUE : ZR_FALSE;
         compiledMember->declarationOrder = memberInfo->declarationOrder;
+        compiledMember->contractRole = compiler_member_contract_role_from_member_info(memberInfo);
         
         // 添加成员名称字符串到常量池（临时方案）
         if (memberInfo->name != ZR_NULL) {
@@ -326,14 +433,17 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 // 这样可以尽可能多地编译成功的语句
                 if (cs->hasError && !cs->hasFatalError) {
                     printf("    Compilation error at statement %zu, resetting error and continuing...\n", i);
-                    // 重置错误状态，继续编译后续语句
+                    // 清除当前语句的阻塞状态，保留总体失败标记以继续收集后续错误
                     cs->hasError = ZR_FALSE;
-                    cs->errorMessage = ZR_NULL;
                 } else if (cs->hasFatalError) {
                     printf("  Fatal error encountered, stopping compilation\n");
                     return;
                 }
             }
+        }
+        if (cs->hadRecoverableError) {
+            cs->hasError = ZR_TRUE;
+            return;
         }
         if (!cs->hasError && !compiler_build_script_typed_metadata(cs)) {
             ZrParser_Compiler_Error(cs, "Failed to build typed metadata for compiled script", node->location);
@@ -711,6 +821,18 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
     // 执行指令优化（占位实现，后续填充具体逻辑）
     optimize_instructions(&cs);
 
+    if (!compiler_build_function_semir_metadata(state, func)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
+    if (!compiler_quicken_execbc_function(state, func)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
     ZrParser_CompilerState_Free(&cs);
     return func;
 }
@@ -928,6 +1050,34 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
             result->testFunctions[i] = srcTestArray[i];
         }
         result->testFunctionCount = cs.testFunctions.length;
+    }
+
+    if (!compiler_build_function_semir_metadata(state, func)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = 0; i < result->testFunctionCount; i++) {
+        if (!compiler_build_function_semir_metadata(state, result->testFunctions[i])) {
+            ZrCore_Function_Free(state, func);
+            ZrParser_CompilerState_Free(&cs);
+            return ZR_FALSE;
+        }
+    }
+
+    if (!compiler_quicken_execbc_function(state, func)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = 0; i < result->testFunctionCount; i++) {
+        if (!compiler_quicken_execbc_function(state, result->testFunctions[i])) {
+            ZrCore_Function_Free(state, func);
+            ZrParser_CompilerState_Free(&cs);
+            return ZR_FALSE;
+        }
     }
 
     ZrParser_CompilerState_Free(&cs);

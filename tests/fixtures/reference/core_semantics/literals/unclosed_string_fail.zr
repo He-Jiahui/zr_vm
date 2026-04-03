@@ -1,0 +1,3 @@
+%module "reference.literals";
+
+var broken = "unterminated

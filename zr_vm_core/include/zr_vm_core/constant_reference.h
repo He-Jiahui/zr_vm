@@ -8,6 +8,7 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_common/zr_type_conf.h"
 
 struct SZrState;
@@ -27,6 +28,7 @@ typedef struct SZrCompiledPrototypeInfo {
     TZrUInt32 accessModifier;               // EZrAccessModifier
     TZrUInt32 inheritsCount;                // 继承类型数量
     TZrUInt32 membersCount;                 // 成员数量
+    TZrUInt64 protocolMask;                 // 稳定 protocol bit mask
     // 注意：inheritStringIndices数组紧跟在结构体后面（不是指针）
     // 运行时通过 inheritsCount 和固定偏移量访问：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo)
     // 成员数据紧跟在继承数组后面：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo) + inheritsCount * sizeof(TZrUInt32)
@@ -57,6 +59,7 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 callsClose;                   // TZrBool (0或1)
     TZrUInt32 callsDestructor;              // TZrBool (0或1)
     TZrUInt32 declarationOrder;             // 成员声明顺序
+    TZrUInt32 contractRole;                 // EZrMemberContractRole
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 

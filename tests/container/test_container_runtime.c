@@ -5,6 +5,8 @@
 
 #include "container_test_common.h"
 #include "runtime_support.h"
+#include "test_support.h"
+#include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
@@ -49,6 +51,46 @@ static SZrFunction *compile_test_script(SZrState *state, const char *path, const
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+static char *read_reference_file(const char *relativePath, size_t *outSize) {
+    return ZrTests_Reference_ReadFixture(relativePath, outSize);
+}
+
+static TZrUInt32 count_instruction_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
+    TZrUInt32 count = 0;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return 0;
+    }
+
+    for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+        if ((EZrInstructionCode)function->instructionsList[index].instruction.operationCode == opcode) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static TZrUInt32 count_instruction_opcode_recursive(const SZrFunction *function, EZrInstructionCode opcode) {
+    TZrUInt32 count;
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return 0;
+    }
+
+    count = count_instruction_opcode(function, opcode);
+    if (function->childFunctionList == ZR_NULL) {
+        return count;
+    }
+
+    for (index = 0; index < function->childFunctionLength; index++) {
+        count += count_instruction_opcode_recursive(&function->childFunctionList[index], opcode);
+    }
+
+    return count;
+}
+
 static void test_container_fixed_array_runtime_supports_mutation_and_iteration(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Fixed Array Supports Mutation And Iteration";
@@ -74,6 +116,87 @@ static void test_container_fixed_array_runtime_supports_mutation_and_iteration(v
     TEST_ASSERT_NOT_NULL(entryFunction);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
     TEST_ASSERT_EQUAL_INT64(13, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_fixed_array_runtime_reiterates_managed_elements_without_corrupting_iterator_state(void) {
+    SZrTestTimer timer = {0};
+    const char *summary =
+            "Container Runtime - Fixed Array Reiterates Managed Elements Without Corrupting Iterator State";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    const char *source =
+            "var xs: string[3] = [\"a\", \"bb\", \"ccc\"];\n"
+            "var total = 0;\n"
+            "for (var item in xs) {\n"
+            "    if (item == \"a\") { total = total + 1; }\n"
+            "    if (item == \"bb\") { total = total + 2; }\n"
+            "    if (item == \"ccc\") { total = total + 3; }\n"
+            "}\n"
+            "for (var item in xs) {\n"
+            "    if (item == \"a\") { total = total + 10; }\n"
+            "    if (item == \"bb\") { total = total + 20; }\n"
+            "    if (item == \"ccc\") { total = total + 30; }\n"
+            "}\n"
+            "return total;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_fixed_array_managed_foreach_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(66, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_fixed_array_runtime_supports_nested_independent_managed_iterators(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Fixed Array Supports Nested Independent Managed Iterators";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    const char *source =
+            "var xs: string[3] = [\"a\", \"bb\", \"ccc\"];\n"
+            "var total = 0;\n"
+            "for (var left in xs) {\n"
+            "    for (var right in xs) {\n"
+            "        if (left == \"a\") { total = total + 1; }\n"
+            "        if (left == \"bb\") { total = total + 2; }\n"
+            "        if (left == \"ccc\") { total = total + 3; }\n"
+            "        if (right == \"a\") { total = total + 10; }\n"
+            "        if (right == \"bb\") { total = total + 20; }\n"
+            "        if (right == \"ccc\") { total = total + 30; }\n"
+            "    }\n"
+            "}\n"
+            "return total;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_fixed_array_nested_managed_foreach_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(198, result);
 
     ZrCore_Function_Free(state, entryFunction);
     ZrContainerTests_DestroyState(state);
@@ -527,20 +650,20 @@ static void test_container_linked_list_runtime_empty_removals_return_null(void) 
     TEST_DIVIDER();
 }
 
-static void test_container_linked_list_runtime_remove_first_preserves_pair_values_across_function_boundary(void) {
+static void test_container_linked_list_runtime_remove_first_preserves_pair_values_across_typed_function_boundary(void) {
     SZrTestTimer timer = {0};
-    const char *summary = "Container Runtime - LinkedList RemoveFirst Preserves Pair Values Across Function Boundary";
+    const char *summary = "Container Runtime - LinkedList RemoveFirst Preserves Pair Values Across Typed Function Boundary";
     SZrState *state;
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
             "var container = %import(\"zr.container\");\n"
-            "buildQueue() {\n"
+            "buildQueue(): LinkedList<Pair<string, int>> {\n"
             "    var queue = new container.LinkedList<Pair<string, int>>();\n"
             "    queue.addLast(new container.Pair<string, int>(\"odd_hi\", 3));\n"
             "    return queue;\n"
             "}\n"
-            "var queue = buildQueue();\n"
+            "var queue: LinkedList<Pair<string, int>> = buildQueue();\n"
             "if (queue.count != 1) { return -10; }\n"
             "if (queue.first == null) { return -20; }\n"
             "if (queue.first.value == null) { return -30; }\n"
@@ -556,12 +679,350 @@ static void test_container_linked_list_runtime_remove_first_preserves_pair_value
     state = ZrContainerTests_CreateState();
     TEST_ASSERT_NOT_NULL(state);
 
-    entryFunction = compile_test_script(state, "container_linked_list_remove_first_pair_runtime_test.zr", source);
+    entryFunction = compile_test_script(state, "container_linked_list_remove_first_pair_typed_runtime_test.zr", source);
     TEST_ASSERT_NOT_NULL(entryFunction);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
     TEST_ASSERT_EQUAL_INT64(0, result);
 
     ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_reference_object_member_vs_string_index_fixture_separates_member_and_index_contracts(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Reference Object Fixture - Member And String Index Stay Separate";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    size_t sourceSize = 0;
+    char *source;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/object_member_index_construct_target/member_vs_string_index_split.zr",
+                                 &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceSize > 0);
+
+    entryFunction = compile_test_script(state, "reference_member_vs_string_index_split.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)) >= 1);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)) >= 1);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SET_BY_INDEX)) >= 1);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(17, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_reference_object_missing_member_vs_missing_key_fixture_preserves_member_error_boundary(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Reference Object Fixture - Missing Member Stays Distinct From Missing Key";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    size_t manifestSize = 0;
+    size_t sourceSize = 0;
+    char *manifestText;
+    char *source;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    manifestText =
+            read_reference_file("core_semantics/object_member_index_construct_target/manifest.json", &manifestSize);
+    TEST_ASSERT_NOT_NULL(manifestText);
+    TEST_ASSERT_TRUE(manifestSize > 0);
+    TEST_ASSERT_NOT_NULL(strstr(manifestText, "object-missing-member-vs-missing-key"));
+
+    source = read_reference_file("core_semantics/object_member_index_construct_target/missing_member_vs_missing_key.zr",
+                                 &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceSize > 0);
+
+    entryFunction = compile_test_script(state, "reference_missing_member_vs_missing_key.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(count_instruction_opcode_recursive(entryFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)) >= 1);
+    TEST_ASSERT_TRUE(count_instruction_opcode_recursive(entryFunction, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)) >= 1);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(7, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
+    free(manifestText);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_reference_object_array_map_plain_index_fixture_keeps_contract_specific_miss_semantics(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Reference Object Fixture - Array Map Plain Object Keep Index Semantics";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    size_t sourceSize = 0;
+    char *source;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/object_member_index_construct_target/array_map_plain_index_split.zr",
+                                 &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceSize > 0);
+
+    entryFunction = compile_test_script(state, "reference_array_map_plain_index_split.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)) >= 6);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SET_BY_INDEX)) >= 2);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(111111, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_reference_object_property_fixture_prefers_getter_and_setter_contracts(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Reference Object Fixture - Property Getter Setter Keep Contract Precedence";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    size_t sourceSize = 0;
+    char *source;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/object_member_index_construct_target/property_getter_setter_precedence.zr",
+                                 &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceSize > 0);
+
+    entryFunction = compile_test_script(state, "reference_property_getter_setter_precedence.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED)) >= 2);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED)) >= 1);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(4142, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_reference_protocols_foreach_fixture_lowers_to_iter_contract_opcodes(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Reference Protocol Fixture - Foreach Lowers To Iterator Contracts";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    size_t sourceSize = 0;
+    char *source;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/protocols_iteration_comparable/foreach_contract_lowering.zr",
+                                 &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceSize > 0);
+
+    entryFunction = compile_test_script(state, "reference_foreach_contract_lowering.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_INIT)) >= 1);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) >= 1);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_CURRENT)) >= 1);
+    TEST_ASSERT_EQUAL_UINT32(0, count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+    TEST_ASSERT_EQUAL_UINT32(0, count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(6, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_reference_protocols_empty_iterator_fixture_keeps_zero_body_execution_stable(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Reference Protocol Fixture - Empty Iterator Stays Stable";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    size_t sourceSize = 0;
+    char *source;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/protocols_iteration_comparable/empty_iterator_boundary.zr",
+                                 &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceSize > 0);
+
+    entryFunction = compile_test_script(state, "reference_empty_iterator_boundary.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_INIT)) >= 1);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) >= 1);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_CURRENT)) >= 1);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(0, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_reference_protocols_singleton_iterator_fixture_yields_once_per_pass(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Reference Protocol Fixture - Singleton Iterator Yields Once Per Pass";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    size_t sourceSize = 0;
+    char *source;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/protocols_iteration_comparable/singleton_iterator_boundary.zr",
+                                 &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceSize > 0);
+
+    entryFunction = compile_test_script(state, "reference_singleton_iterator_boundary.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_INIT)) >= 2);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) >= 2);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_CURRENT)) >= 2);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(99, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_reference_protocols_nested_foreach_fixture_keeps_iterators_independent(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Reference Protocol Fixture - Nested Foreach Keeps Iterators Independent";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    size_t sourceSize = 0;
+    char *source;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/protocols_iteration_comparable/nested_foreach_regression.zr",
+                                 &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceSize > 0);
+
+    entryFunction = compile_test_script(state, "reference_nested_foreach_regression.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_INIT)) >= 2);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) >= 2);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_CURRENT)) >= 2);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(198, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_reference_protocols_comparable_hashable_fixture_preserves_container_consistency(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Reference Protocol Fixture - Comparable And Hashable Stay Consistent";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    size_t sourceSize = 0;
+    char *source;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    source = read_reference_file("core_semantics/protocols_iteration_comparable/comparable_hashable_consistency.zr",
+                                 &sourceSize);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceSize > 0);
+
+    entryFunction = compile_test_script(state, "reference_comparable_hashable_consistency.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(2118, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    free(source);
     ZrContainerTests_DestroyState(state);
 
     timer.endTime = clock();
@@ -576,6 +1037,8 @@ void tearDown(void) {}
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_container_fixed_array_runtime_supports_mutation_and_iteration);
+    RUN_TEST(test_container_fixed_array_runtime_reiterates_managed_elements_without_corrupting_iterator_state);
+    RUN_TEST(test_container_fixed_array_runtime_supports_nested_independent_managed_iterators);
     RUN_TEST(test_container_array_runtime_supports_capacity_growth_and_structural_equality);
     RUN_TEST(test_container_array_runtime_clear_preserves_capacity_and_missing_item_returns_null);
     RUN_TEST(test_container_array_runtime_accepts_unary_negation_in_constructor_arguments);
@@ -588,6 +1051,15 @@ int main(void) {
     RUN_TEST(test_container_pair_runtime_exposes_value_semantics);
     RUN_TEST(test_container_linked_list_runtime_detaches_removed_and_cleared_nodes);
     RUN_TEST(test_container_linked_list_runtime_empty_removals_return_null);
-    RUN_TEST(test_container_linked_list_runtime_remove_first_preserves_pair_values_across_function_boundary);
+    RUN_TEST(test_container_linked_list_runtime_remove_first_preserves_pair_values_across_typed_function_boundary);
+    RUN_TEST(test_reference_object_member_vs_string_index_fixture_separates_member_and_index_contracts);
+    RUN_TEST(test_reference_object_missing_member_vs_missing_key_fixture_preserves_member_error_boundary);
+    RUN_TEST(test_reference_object_array_map_plain_index_fixture_keeps_contract_specific_miss_semantics);
+    RUN_TEST(test_reference_object_property_fixture_prefers_getter_and_setter_contracts);
+    RUN_TEST(test_reference_protocols_foreach_fixture_lowers_to_iter_contract_opcodes);
+    RUN_TEST(test_reference_protocols_empty_iterator_fixture_keeps_zero_body_execution_stable);
+    RUN_TEST(test_reference_protocols_singleton_iterator_fixture_yields_once_per_pass);
+    RUN_TEST(test_reference_protocols_nested_foreach_fixture_keeps_iterators_independent);
+    RUN_TEST(test_reference_protocols_comparable_hashable_fixture_preserves_container_consistency);
     return UNITY_END();
 }

@@ -14,7 +14,7 @@ TZrBool ZrMath_Vector2_Construct(ZrLibCallContext *context, SZrTypeValue *result
     }
     values[0] = x;
     values[1] = y;
-    return ZrMath_ConstructFloatObject(context, result, "Vector2", kFields, values, ZR_ARRAY_COUNT(kFields));
+    return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 
 TZrBool ZrMath_Vector2_Length(ZrLibCallContext *context, SZrTypeValue *result) {

@@ -1,0 +1,18 @@
+//
+// Shared configuration for zr.container public headers.
+//
+
+#ifndef ZR_VM_LIB_CONTAINER_CONF_H
+#define ZR_VM_LIB_CONTAINER_CONF_H
+
+#include "zr_vm_library.h"
+
+#define ZR_VM_LIB_CONTAINER_API ZR_API
+
+#define ZR_CONTAINER_SEQUENCE_INITIAL_CAPACITY 4U
+#define ZR_CONTAINER_SEQUENCE_GROWTH_FACTOR 2U
+
+#define ZR_CONTAINER_HASH_MIX_PRIME 16777619ULL
+#define ZR_CONTAINER_HASH_MIX_OFFSET 31ULL
+
+#endif // ZR_VM_LIB_CONTAINER_CONF_H

@@ -6,15 +6,23 @@
 #define ZR_VM_COMMON_H
 
 // all in one to include zr_vm_common
+#include "zr_vm_common/zr_abi_conf.h"
 #include "zr_vm_common/zr_api_conf.h"
 #include "zr_vm_common/zr_array_conf.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_common/zr_constant_reference_conf.h"
+#include "zr_vm_common/zr_contract_conf.h"
+#include "zr_vm_common/zr_gc_internal_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_log_conf.h"
 #include "zr_vm_common/zr_memory_conf.h"
 #include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
+#include "zr_vm_common/zr_parser_conf.h"
+#include "zr_vm_common/zr_path_conf.h"
+#include "zr_vm_common/zr_runtime_limits_conf.h"
+#include "zr_vm_common/zr_runtime_sentinel_conf.h"
 #include "zr_vm_common/zr_string_conf.h"
 #include "zr_vm_common/zr_thread_conf.h"
 #include "zr_vm_common/zr_type_conf.h"

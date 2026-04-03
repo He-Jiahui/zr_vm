@@ -6,14 +6,21 @@ SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
 
-    // 期望 var 关键字
-    expect_token(ps, ZR_TK_VAR);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    // 解析 const 关键字（可选）
+    // 解析 const 关键字（可选，可以在 var 之前或之后）
     TZrBool isConst = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_CONST) {
         isConst = ZR_TRUE;
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_VAR) {
+        ZrParser_Lexer_Next(ps->lexer);
+        if (ps->lexer->t.token == ZR_TK_CONST) {
+            isConst = ZR_TRUE;
+            ZrParser_Lexer_Next(ps->lexer);
+        }
+    } else if (!isConst) {
+        expect_token(ps, ZR_TK_VAR);
         ZrParser_Lexer_Next(ps->lexer);
     }
 
@@ -355,7 +362,8 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
 
         // 检查成员类型
         EZrToken token = ps->lexer->t.token;
-        if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO) {
+        if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO ||
+            token == ZR_TK_VAR || token == ZR_TK_CONST) {
             // 向前看以确定成员类型
             TZrSize savedPos = ps->lexer->currentPos;
             TZrInt32 savedChar = ps->lexer->currentChar;
@@ -368,10 +376,14 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
 
-            // 跳过访问修饰符
-            ZrParser_Lexer_Next(ps->lexer);
+            if (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI ||
+                ps->lexer->t.token == ZR_TK_PRO) {
+                ZrParser_Lexer_Next(ps->lexer);
+            }
 
-            if (ps->lexer->t.token == ZR_TK_VAR) {
+            EZrToken nextToken = ps->lexer->t.token;
+
+            if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_CONST) {
                 // 字段声明
                 ps->lexer->currentPos = savedPos;
                 ps->lexer->currentChar = savedChar;
@@ -384,7 +396,7 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
                 ps->lexer->lookaheadLine = savedLookaheadLine;
                 ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
                 member = parse_interface_field_declaration(ps);
-            } else if (ps->lexer->t.token == ZR_TK_GET || ps->lexer->t.token == ZR_TK_SET) {
+            } else if (nextToken == ZR_TK_GET || nextToken == ZR_TK_SET) {
                 // 属性签名
                 ps->lexer->currentPos = savedPos;
                 ps->lexer->currentChar = savedChar;
@@ -397,7 +409,7 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
                 ps->lexer->lookaheadLine = savedLookaheadLine;
                 ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
                 member = parse_interface_property_signature(ps);
-            } else if (ps->lexer->t.token == ZR_TK_AT) {
+            } else if (nextToken == ZR_TK_AT) {
                 // 元函数签名
                 ps->lexer->currentPos = savedPos;
                 ps->lexer->currentChar = savedChar;

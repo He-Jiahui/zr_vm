@@ -4,6 +4,27 @@
 
 #include "gc_internal.h"
 
+static TZrSize garbage_collector_mark_object_node_map(SZrState *state, SZrObject *object) {
+    TZrSize work = 0;
+
+    if (state == ZR_NULL || object == ZR_NULL || !object->nodeMap.isValid) {
+        return 0;
+    }
+
+    for (TZrSize i = 0; i < object->nodeMap.capacity; i++) {
+        SZrHashKeyValuePair *pair = object->nodeMap.buckets[i];
+
+        while (pair != ZR_NULL) {
+            garbage_collector_mark_value(state, &pair->key);
+            garbage_collector_mark_value(state, &pair->value);
+            pair = pair->next;
+            work++;
+        }
+    }
+
+    return work;
+}
+
 void garbage_collector_mark_object(SZrState *state, SZrRawObject *object) {
     if (ZR_GC_IS_REFERENCED(object) || ZR_GC_IS_WAIT_TO_SCAN(object)) {
         return;
@@ -30,7 +51,7 @@ void garbage_collector_mark_value(SZrState *state, SZrTypeValue *value) {
 void garbage_collector_link_to_gray_list(SZrRawObject *object, SZrRawObject **list) {
     SZrRawObject *current = *list;
     TZrSize checkCount = 0;
-    const TZrSize maxCheckCount = 10000;
+    const TZrSize maxCheckCount = ZR_GC_GRAY_LIST_DUPLICATE_SCAN_LIMIT;
 
     if (ZR_GC_IS_REFERENCED(object) || ZR_GC_IS_WAIT_TO_SCAN(object)) {
         return;
@@ -155,22 +176,12 @@ TZrSize ZrGarbageCollectorPropagateMark(SZrState *state) {
     object->gcList = ZR_NULL;
 
     switch (object->type) {
-        case ZR_RAW_OBJECT_TYPE_OBJECT: {
+        case ZR_RAW_OBJECT_TYPE_OBJECT:
+        case ZR_RAW_OBJECT_TYPE_ARRAY: {
             SZrObject *obj = ZR_CAST_OBJECT(state, object);
 
-            if (obj->nodeMap.isValid) {
-                for (TZrSize i = 0; i < obj->nodeMap.capacity; i++) {
-                    SZrHashKeyValuePair *pair = obj->nodeMap.buckets[i];
-
-                    while (pair != ZR_NULL) {
-                        garbage_collector_mark_value(state, &pair->key);
-                        garbage_collector_mark_value(state, &pair->value);
-                        pair = pair->next;
-                        work++;
-                    }
-                }
-            }
-            if (obj->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+            work += garbage_collector_mark_object_node_map(state, obj);
+            if (obj != ZR_NULL && obj->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
                 SZrObjectModule *module = (SZrObjectModule *)obj;
 
                 if (module->moduleName != ZR_NULL) {
@@ -196,30 +207,6 @@ TZrSize ZrGarbageCollectorPropagateMark(SZrState *state) {
             }
             if (obj->prototype != ZR_NULL) {
                 garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(obj->prototype));
-            }
-            break;
-        }
-        case ZR_RAW_OBJECT_TYPE_ARRAY: {
-            SZrObject *obj = ZR_CAST_OBJECT(state, object);
-
-            if (obj != ZR_NULL) {
-                SZrArray *array = (SZrArray *)obj;
-
-                if (array->head != ZR_NULL && array->isValid && array->length > 0) {
-                    if (array->elementSize == sizeof(SZrTypeValue)) {
-                        SZrTypeValue *elements = (SZrTypeValue *)array->head;
-                        for (TZrSize i = 0; i < array->length; i++) {
-                            garbage_collector_mark_value(state, &elements[i]);
-                            work++;
-                        }
-                    } else {
-                        work = 1;
-                    }
-                } else {
-                    work = 1;
-                }
-            } else {
-                work = 1;
             }
             break;
         }
@@ -363,7 +350,7 @@ TZrSize ZrGarbageCollectorPropagateAll(SZrState *state) {
     SZrGlobalState *global = state->global;
     TZrSize total = 0;
     TZrSize iterationCount = 0;
-    const TZrSize maxIterations = 10000;
+    const TZrSize maxIterations = ZR_GC_PROPAGATE_ALL_ITERATION_LIMIT;
 
     while (global->garbageCollector->waitToScanObjectList != ZR_NULL) {
         TZrSize work;

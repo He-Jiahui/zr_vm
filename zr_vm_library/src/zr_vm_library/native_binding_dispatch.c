@@ -62,6 +62,8 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
     context.state = state;
     context.moduleDescriptor = entry->moduleDescriptor;
     context.typeDescriptor = entry->typeDescriptor;
+    context.ownerPrototype = entry->ownerPrototype;
+    context.constructTargetPrototype = entry->ownerPrototype;
     context.functionDescriptor =
             entry->bindingKind == ZR_LIB_RESOLVED_BINDING_FUNCTION ? entry->descriptor.functionDescriptor : ZR_NULL;
     context.methodDescriptor =
@@ -71,6 +73,16 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
     context.functionBase = functionBase;
 
     native_binding_init_call_context_layout(&context, functionBase, rawArgumentCount);
+
+    if (context.selfValue != ZR_NULL &&
+        (context.selfValue->type == ZR_VALUE_TYPE_OBJECT || context.selfValue->type == ZR_VALUE_TYPE_ARRAY) &&
+        context.selfValue->value.object != ZR_NULL) {
+        SZrObject *selfObject = ZR_CAST_OBJECT(state, context.selfValue->value.object);
+        if (selfObject != ZR_NULL && context.ownerPrototype != ZR_NULL &&
+            ZrCore_Object_IsInstanceOfPrototype(selfObject, context.ownerPrototype)) {
+            context.constructTargetPrototype = selfObject->prototype;
+        }
+    }
 
     ZrLib_Value_SetNull(&result);
 
@@ -122,6 +134,14 @@ SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSiz
         return ZR_NULL;
     }
     return ZrCore_Stack_GetValue(context->argumentBase + index);
+}
+
+SZrObjectPrototype *ZrLib_CallContext_OwnerPrototype(const ZrLibCallContext *context) {
+    return context != ZR_NULL ? context->ownerPrototype : ZR_NULL;
+}
+
+SZrObjectPrototype *ZrLib_CallContext_GetConstructTargetPrototype(const ZrLibCallContext *context) {
+    return context != ZR_NULL ? context->constructTargetPrototype : ZR_NULL;
 }
 
 TZrBool ZrLib_CallContext_CheckArity(const ZrLibCallContext *context,
@@ -663,6 +683,10 @@ SZrObject *ZrLib_Type_NewInstance(SZrState *state, const TZrChar *typeName) {
     return native_binding_new_instance_with_prototype(state, ZrLib_Type_FindPrototype(state, typeName));
 }
 
+SZrObject *ZrLib_Type_NewInstanceWithPrototype(SZrState *state, SZrObjectPrototype *prototype) {
+    return native_binding_new_instance_with_prototype(state, prototype);
+}
+
 SZrObjectModule *ZrLib_Module_GetLoaded(SZrState *state, const TZrChar *moduleName) {
     SZrString *moduleString;
     if (state == ZR_NULL || moduleName == ZR_NULL) {
@@ -709,6 +733,10 @@ TZrBool ZrLib_CallValue(SZrState *state,
                         SZrTypeValue *result) {
     SZrTypeValue stableCallable;
     SZrTypeValue stableReceiver;
+    SZrTypeValue inlineArguments[ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY];
+    SZrTypeValue *stableArguments = ZR_NULL;
+    TZrBool freeStableArguments = ZR_FALSE;
+    TZrSize stableArgumentsBytes = 0;
     TZrStackValuePointer savedStackTop;
     SZrCallInfo *savedCallInfo;
     TZrSize totalArguments;
@@ -726,11 +754,34 @@ TZrBool ZrLib_CallValue(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrLib_Value_SetNull(result);
     stableCallable = *callable;
     if (receiver != ZR_NULL) {
         stableReceiver = *receiver;
     }
+    if (argumentCount > 0) {
+        if (arguments == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        if (argumentCount <= ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY) {
+            stableArguments = inlineArguments;
+        } else {
+            stableArgumentsBytes = argumentCount * sizeof(SZrTypeValue);
+            stableArguments = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                              stableArgumentsBytes,
+                                                                              ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            if (stableArguments == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            freeStableArguments = ZR_TRUE;
+        }
+
+        for (index = 0; index < argumentCount; index++) {
+            stableArguments[index] = arguments[index];
+        }
+    }
+
+    ZrLib_Value_SetNull(result);
     savedStackTop = state->stackTop.valuePointer;
     savedCallInfo = state->callInfoList;
     totalArguments = argumentCount + (receiver != ZR_NULL ? 1 : 0);
@@ -766,7 +817,9 @@ TZrBool ZrLib_CallValue(SZrState *state,
         ZrCore_Stack_CopyValue(state, base + 1, &stableReceiver);
     }
     for (index = 0; index < argumentCount; index++) {
-        ZrCore_Stack_CopyValue(state, base + 1 + (receiver != ZR_NULL ? 1 : 0) + index, &arguments[index]);
+        ZrCore_Stack_CopyValue(state,
+                               base + 1 + (receiver != ZR_NULL ? 1 : 0) + index,
+                               &stableArguments[index]);
     }
 
     state->stackTop.valuePointer = base + scratchSlots;
@@ -793,11 +846,23 @@ TZrBool ZrLib_CallValue(SZrState *state,
         ZrCore_Value_Copy(state, result, stackResult);
         state->stackTop.valuePointer = savedStackTop;
         state->callInfoList = savedCallInfo;
+        if (freeStableArguments) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          stableArguments,
+                                          stableArgumentsBytes,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        }
         return ZR_TRUE;
     }
 
     state->stackTop.valuePointer = savedStackTop;
     state->callInfoList = savedCallInfo;
+    if (freeStableArguments) {
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      stableArguments,
+                                      stableArgumentsBytes,
+                                      ZR_MEMORY_NATIVE_TYPE_OBJECT);
+    }
     return ZR_FALSE;
 }
 

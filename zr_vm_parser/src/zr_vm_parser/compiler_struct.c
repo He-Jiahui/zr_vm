@@ -146,7 +146,7 @@ static TZrBool compiler_append_ast_node_display_text(SZrCompilerState *cs,
                                                      ZrCore_String_GetNativeString(node->data.integerLiteral.literal));
             }
             {
-                char integerBuffer[64];
+                char integerBuffer[ZR_PARSER_INTEGER_BUFFER_LENGTH];
                 snprintf(integerBuffer, sizeof(integerBuffer), "%lld", (long long)node->data.integerLiteral.value);
                 return compiler_append_text_fragment(buffer, bufferSize, offset, integerBuffer);
             }
@@ -187,7 +187,7 @@ static TZrBool compiler_append_ast_node_display_text(SZrCompilerState *cs,
 }
 
 SZrString *extract_generic_argument_name_string(SZrCompilerState *cs, SZrAstNode *node) {
-    char buffer[1024];
+    char buffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
     TZrSize offset = 0;
 
     if (cs == ZR_NULL || node == ZR_NULL) {
@@ -197,7 +197,7 @@ SZrString *extract_generic_argument_name_string(SZrCompilerState *cs, SZrAstNode
     if (node->type != ZR_AST_TYPE) {
         SZrTypeValue evaluatedValue;
         if (ZrParser_Compiler_EvaluateCompileTimeExpression(cs, node, &evaluatedValue)) {
-            char integerBuffer[64];
+            char integerBuffer[ZR_PARSER_INTEGER_BUFFER_LENGTH];
 
             switch (evaluatedValue.type) {
                 case ZR_VALUE_TYPE_INT8:
@@ -242,7 +242,7 @@ static SZrString *compiler_extract_type_name_node_string(SZrCompilerState *cs, S
 
     if (typeNameNode->type == ZR_AST_GENERIC_TYPE) {
         SZrGenericType *genericType = &typeNameNode->data.genericType;
-        char buffer[1024];
+        char buffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
         TZrSize offset = 0;
 
         if (genericType->name == ZR_NULL || genericType->name->name == ZR_NULL) {
@@ -287,7 +287,7 @@ static SZrString *compiler_extract_type_name_node_string(SZrCompilerState *cs, S
 
     if (typeNameNode->type == ZR_AST_TUPLE_TYPE) {
         SZrTupleType *tupleType = &typeNameNode->data.tupleType;
-        char buffer[1024];
+        char buffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
         TZrSize offset = 0;
 
         buffer[0] = '\0';
@@ -328,7 +328,7 @@ static SZrString *compiler_extract_type_name_node_string(SZrCompilerState *cs, S
 // 辅助函数：从类型节点提取类型名称字符串
 SZrString *extract_type_name_string(SZrCompilerState *cs, SZrType *type) {
     SZrString *baseName;
-    char buffer[1024];
+    char buffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
     TZrSize offset = 0;
 
     if (cs == ZR_NULL || type == ZR_NULL || type->name == ZR_NULL) {
@@ -552,7 +552,9 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 设置当前类型名称（用于成员字段 const 检查）
     SZrString *oldTypeName = cs->currentTypeName;
     SZrTypePrototypeInfo *oldTypePrototypeInfo = cs->currentTypePrototypeInfo;
+    SZrAstNode *oldTypeNode = cs->currentTypeNode;
     cs->currentTypeName = typeName;
+    cs->currentTypeNode = node;
     
     // 创建 prototype 信息结构
     SZrTypePrototypeInfo info;
@@ -565,8 +567,8 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.allowBoxedConstruction = ZR_TRUE;
     
     // 初始化继承数组
-    ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 4);
-    ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 2);
+    ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
     ZrCore_Array_Init(cs->state,
                       &info.genericParameters,
                       sizeof(SZrTypeGenericParameterInfo),
@@ -592,7 +594,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     // 初始化成员数组
-    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), 16);
+    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
     cs->currentTypePrototypeInfo = &info;
     
     // 处理成员信息
@@ -629,7 +631,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             ZrCore_Array_Construct(&memberInfo.genericParameters);
             ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
             memberInfo.declarationNode = member;
-            memberInfo.metaType = 0; // ZR_META_ENUM_MAX表示非元方法
+            memberInfo.metaType = ZR_META_ENUM_MAX;
             memberInfo.isMetaMethod = ZR_FALSE;
             memberInfo.returnTypeName = ZR_NULL;
             
@@ -652,6 +654,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                            member->location);
                         cs->currentTypeName = oldTypeName;
                         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                        cs->currentTypeNode = oldTypeNode;
                         return;
                     }
                     
@@ -711,6 +714,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 }
                 case ZR_AST_STRUCT_METHOD: {
                     SZrStructMethod *method = &member->data.structMethod;
+                    TZrUInt32 compiledParameterCount = 0;
                     memberInfo.accessModifier = method->access;
                     memberInfo.isStatic = method->isStatic;
                     memberInfo.receiverQualifier = method->receiverQualifier;
@@ -742,31 +746,34 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                                  method->params);
                     }
                     memberInfo.isMetaMethod = ZR_FALSE;
+                    {
+                        SZrFunction *compiledMethod =
+                                compile_class_member_function(cs, member, ZR_NULL, !method->isStatic, &compiledParameterCount);
+                        if (compiledMethod == ZR_NULL) {
+                            cs->currentTypeName = oldTypeName;
+                            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                            cs->currentTypeNode = oldTypeNode;
+                            return;
+                        }
+
+                        SZrTypeValue functionValue;
+                        ZrCore_Value_InitAsRawObject(cs->state,
+                                                     &functionValue,
+                                                     ZR_CAST_RAW_OBJECT_AS_SUPER(compiledMethod));
+                        memberInfo.compiledFunction = compiledMethod;
+                        memberInfo.functionConstantIndex = add_constant(cs, &functionValue);
+                    }
                     break;
                 }
                 case ZR_AST_STRUCT_META_FUNCTION: {
                     SZrStructMetaFunction *metaFunc = &member->data.structMetaFunction;
+                    TZrUInt32 compiledParameterCount = 0;
                     memberInfo.accessModifier = metaFunc->access;
                     memberInfo.isStatic = metaFunc->isStatic;
                     if (metaFunc->meta != ZR_NULL) {
                         memberInfo.name = metaFunc->meta->name;
-                        
-                        // 提取元方法类型（如@constructor -> ZR_META_CONSTRUCTOR）
-                        // 通过元方法名称匹配
-                        TZrNativeString metaName = ZrCore_String_GetNativeStringShort(metaFunc->meta->name);
-                        if (metaName != ZR_NULL) {
-                            if (strcmp(metaName, "constructor") == 0) {
-                                memberInfo.metaType = ZR_META_CONSTRUCTOR;
-                            } else if (strcmp(metaName, "destructor") == 0) {
-                                memberInfo.metaType = ZR_META_DESTRUCTOR;
-                            } else if (strcmp(metaName, "add") == 0) {
-                                memberInfo.metaType = ZR_META_ADD;
-                            } else if (strcmp(metaName, "toString") == 0) {
-                                memberInfo.metaType = ZR_META_TO_STRING;
-                            }
-                            // TODO: 添加更多元方法类型匹配
-                            memberInfo.isMetaMethod = ZR_TRUE;
-                        }
+                        memberInfo.metaType = compiler_resolve_meta_type_name(metaFunc->meta->name);
+                        memberInfo.isMetaMethod = memberInfo.metaType != ZR_META_ENUM_MAX;
                     }
                     // 处理返回类型信息
                     if (metaFunc->returnType != ZR_NULL) {
@@ -782,6 +789,23 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         compiler_collect_parameter_passing_modes(cs->state,
                                                                  &memberInfo.parameterPassingModes,
                                                                  metaFunc->params);
+                    }
+                    if (memberInfo.isMetaMethod) {
+                        SZrFunction *compiledMeta =
+                                compile_class_member_function(cs, member, ZR_NULL, !metaFunc->isStatic, &compiledParameterCount);
+                        if (compiledMeta == ZR_NULL) {
+                            cs->currentTypeName = oldTypeName;
+                            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                            cs->currentTypeNode = oldTypeNode;
+                            return;
+                        }
+
+                        SZrTypeValue functionValue;
+                        ZrCore_Value_InitAsRawObject(cs->state,
+                                                     &functionValue,
+                                                     ZR_CAST_RAW_OBJECT_AS_SUPER(compiledMeta));
+                        memberInfo.compiledFunction = compiledMeta;
+                        memberInfo.functionConstantIndex = add_constant(cs, &functionValue);
                     }
                     break;
                 }
@@ -835,41 +859,9 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName);
     }
     
-    // 编译元函数（特别是构造函数）
-    if (structDecl->members != ZR_NULL && structDecl->members->count > 0) {
-        for (TZrSize i = 0; i < structDecl->members->count; i++) {
-            SZrAstNode *member = structDecl->members->nodes[i];
-            if (member == ZR_NULL) {
-                continue;
-            }
-            
-            if (member->type == ZR_AST_STRUCT_META_FUNCTION) {
-                SZrStructMetaFunction *metaFunc = &member->data.structMetaFunction;
-                if (metaFunc->meta != ZR_NULL) {
-                    TZrNativeString metaName = ZrCore_String_GetNativeStringShort(metaFunc->meta->name);
-                    if (metaName != ZR_NULL) {
-                        EZrMetaType metaType = 0;
-                        if (strcmp(metaName, "constructor") == 0) {
-                            metaType = ZR_META_CONSTRUCTOR;
-                        } else if (strcmp(metaName, "destructor") == 0) {
-                            metaType = ZR_META_DESTRUCTOR;
-                        } else if (strcmp(metaName, "add") == 0) {
-                            metaType = ZR_META_ADD;
-                        } else if (strcmp(metaName, "toString") == 0) {
-                            metaType = ZR_META_TO_STRING;
-                        }
-                        
-                        if (metaType != 0) {
-                            compile_meta_function(cs, member, metaType);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
     // 恢复当前类型名称
     cs->currentTypeName = oldTypeName;
     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+    cs->currentTypeNode = oldTypeNode;
 }
 

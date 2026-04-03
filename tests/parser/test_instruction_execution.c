@@ -362,11 +362,26 @@ static void print_instructions(SZrFunction *function) {
             case ZR_INSTRUCTION_ENUM(SETUPVAL):
                 opcodeName = "SETUPVAL";
                 break;
-            case ZR_INSTRUCTION_ENUM(GETTABLE):
-                opcodeName = "GETTABLE";
+            case ZR_INSTRUCTION_ENUM(GET_MEMBER):
+                opcodeName = "GET_MEMBER";
                 break;
-            case ZR_INSTRUCTION_ENUM(SETTABLE):
-                opcodeName = "SETTABLE";
+            case ZR_INSTRUCTION_ENUM(SET_MEMBER):
+                opcodeName = "SET_MEMBER";
+                break;
+            case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
+                opcodeName = "GET_BY_INDEX";
+                break;
+            case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
+                opcodeName = "SET_BY_INDEX";
+                break;
+            case ZR_INSTRUCTION_ENUM(ITER_INIT):
+                opcodeName = "ITER_INIT";
+                break;
+            case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
+                opcodeName = "ITER_MOVE_NEXT";
+                break;
+            case ZR_INSTRUCTION_ENUM(ITER_CURRENT):
+                opcodeName = "ITER_CURRENT";
                 break;
             case ZR_INSTRUCTION_ENUM(ADD):
                 opcodeName = "ADD";
@@ -525,8 +540,12 @@ static void print_instructions(SZrFunction *function) {
                    opcode == ZR_INSTRUCTION_ENUM(DIV_FLOAT) || opcode == ZR_INSTRUCTION_ENUM(MOD) ||
                    opcode == ZR_INSTRUCTION_ENUM(MOD_SIGNED) || opcode == ZR_INSTRUCTION_ENUM(MOD_FLOAT)) {
             printf(" dst=%u, left=%u, right=%u", operandExtra, op1_0, op1_1);
-        } else if (opcode == ZR_INSTRUCTION_ENUM(GETTABLE) || opcode == ZR_INSTRUCTION_ENUM(SETTABLE)) {
-            printf(" dst=%u, table=%u, key=%u", operandExtra, op1_0, op1_1);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER) || opcode == ZR_INSTRUCTION_ENUM(SET_MEMBER) ||
+                   opcode == ZR_INSTRUCTION_ENUM(GET_BY_INDEX) || opcode == ZR_INSTRUCTION_ENUM(SET_BY_INDEX)) {
+            printf(" dst=%u, receiver=%u, operand=%u", operandExtra, op1_0, op1_1);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(ITER_INIT) || opcode == ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(ITER_CURRENT)) {
+            printf(" dst=%u, iterator=%u", operandExtra, op1_0);
         } else if (opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL) || opcode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
             printf(" result_count=%u, result_slot=%u", operandExtra, op1_0);
             if (opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL) && op1_1 > 0) {
@@ -1610,12 +1629,12 @@ static void test_execute_logical_equal_instruction(void) {
     TEST_DIVIDER();
 }
 
-// ==================== GETTABLE/SETTABLE 指令测试 ====================
+// ==================== GET_MEMBER/SET_MEMBER 指令测试 ====================
 
-// 测试 SETTABLE 指令（对象属性设置，在对象字面量中使用）
+// 测试 SET_MEMBER 指令（对象属性设置，在对象字面量中使用）
 static void test_execute_settable_instruction(void) {
     SZrTestTimer timer;
-    const char *testSummary = "SETTABLE Instruction (Object Property Setting)";
+    const char *testSummary = "SET_MEMBER Instruction (Object Property Setting)";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -1623,9 +1642,9 @@ static void test_execute_settable_instruction(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("SETTABLE instruction", "Testing SETTABLE instruction in object literal: {a: 1, b: 2}");
+    TEST_INFO("SET_MEMBER instruction", "Testing SET_MEMBER instruction in object literal: {a: 1, b: 2}");
 
-    // 对象字面量在编译时会使用 SETTABLE 来设置属性
+    // 对象字面量在编译时会使用 SET_MEMBER 来设置属性
     const char *source = "return {a: 1, b: 2};";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -1644,12 +1663,12 @@ static void test_execute_settable_instruction(void) {
         return;
     }
 
-    // 验证函数指令（检查是否包含 SETTABLE 指令）
+    // 验证函数指令（检查是否包含 SET_MEMBER 指令）
     TZrBool hasSetTable = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
         for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(SETTABLE)) {
+            if (opcode == ZR_INSTRUCTION_ENUM(SET_MEMBER)) {
                 hasSetTable = ZR_TRUE;
                 break;
             }
@@ -1663,7 +1682,7 @@ static void test_execute_settable_instruction(void) {
     ZrParser_Ast_Free(state, ast);
 
     if (!hasSetTable) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "SETTABLE instruction not found in compiled function");
+        TEST_FAIL_CUSTOM(timer, testSummary, "SET_MEMBER instruction not found in compiled function");
         destroy_test_state(state);
         return;
     }
@@ -2469,6 +2488,83 @@ static void test_execute_nested_using_return_invokes_all_close_meta(void) {
     TEST_DIVIDER();
 }
 
+static void test_execute_get_member_materializes_global_prototype_with_aliased_destination(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GET_MEMBER Materializes Global Prototype With Aliased Destination";
+    TZrBool hasAliasedGetMember = ZR_FALSE;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        TEST_ASSERT_NOT_NULL(state);
+
+        TEST_INFO("GET_MEMBER retry path",
+                  "Testing that static member access still succeeds when GET_MEMBER reuses the receiver slot and needs prototype materialization");
+
+        {
+            const char *source =
+                "%module \"static_retry\";\n"
+                "class StaticHolder {\n"
+                "    pub static var value: int = 42;\n"
+                "}\n"
+                "return StaticHolder.value;";
+            SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+            SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+            SZrFunction *function;
+            SZrTypeValue result;
+
+            if (ast == ZR_NULL) {
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse static member access source");
+                destroy_test_state(state);
+                return;
+            }
+
+            function = ZrParser_Compiler_Compile(state, ast);
+            if (function == ZR_NULL) {
+                ZrParser_Ast_Free(state, ast);
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile static member access source");
+                destroy_test_state(state);
+                return;
+            }
+
+            TEST_ASSERT_TRUE(function->prototypeCount > 0);
+            if (function->instructionsList != ZR_NULL) {
+                for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
+                    const TZrInstruction *instruction = &function->instructionsList[i];
+                    EZrInstructionCode opcode =
+                        (EZrInstructionCode)instruction->instruction.operationCode;
+                    if (opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER) &&
+                        instruction->instruction.operandExtra == instruction->instruction.operand.operand1[0]) {
+                        hasAliasedGetMember = ZR_TRUE;
+                        break;
+                    }
+                }
+            }
+
+            TEST_ASSERT_TRUE(hasAliasedGetMember);
+
+            ZrParser_Ast_Free(state, ast);
+
+            if (!execute_function_and_get_result(state, function, &result)) {
+                TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute static member access source");
+                destroy_test_state(state);
+                return;
+            }
+
+            TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+            TEST_ASSERT_EQUAL_INT64(42, result.value.nativeObject.nativeInt64);
+        }
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_execute_source_import_typed_call_runtime_result(void) {
     SZrTestTimer timer;
     const char *testSummary = "Source Import Typed Call Runtime Result";
@@ -2565,6 +2661,55 @@ static void test_execute_binary_import_typed_call_runtime_result(void) {
     TEST_DIVIDER();
 }
 
+static void test_execute_binary_import_member_opcode_runtime_result(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Binary Import Member Opcode Runtime Result";
+    const char *moduleSource = "touchGlobalMember(): int { var err = zr.Error; return 7; }";
+    const char *source = "var math = %import(\"math\"); return math.touchGlobalMember();";
+    const char *binaryPath = "instruction_import_member_runtime_fixture.zro";
+    SZrTypeValue result;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+    TEST_INFO("Binary import member opcode execution",
+              "Testing that binary-imported functions preserve GET_MEMBER metadata and execute successfully after reload");
+
+    {
+        SZrState *state = create_test_state();
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes = ZR_NULL;
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        binaryBytes = build_binary_import_fixture(state, moduleSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+        install_import_test_fixture(state, "math", binaryBytes, binaryLength, ZR_TRUE);
+
+        sourceName = ZrCore_String_Create(state, "binary_import_member_runtime_test.zr", 36);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(execute_function_and_get_result(state, function, &result));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(7, result.value.nativeObject.nativeInt64);
+
+        free(binaryBytes);
+        remove(binaryPath);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // ==================== 主函数 ====================
 
 int main(void) {
@@ -2623,11 +2768,13 @@ int main(void) {
     RUN_TEST(test_execute_nested_using_return_invokes_all_close_meta);
     RUN_TEST(test_execute_source_import_typed_call_runtime_result);
     RUN_TEST(test_execute_binary_import_typed_call_runtime_result);
+    RUN_TEST(test_execute_binary_import_member_opcode_runtime_result);
 
-    // GETTABLE/SETTABLE 指令测试
+    // GET_MEMBER/SET_MEMBER 指令测试
     printf("==========\n");
-    printf("Table Access Instruction Tests (SETTABLE)\n");
+    printf("Member Access Instruction Tests (SET_MEMBER)\n");
     printf("==========\n");
+    RUN_TEST(test_execute_get_member_materializes_global_prototype_with_aliased_destination);
     RUN_TEST(test_execute_settable_instruction);
 
     TEST_MODULE_DIVIDER();

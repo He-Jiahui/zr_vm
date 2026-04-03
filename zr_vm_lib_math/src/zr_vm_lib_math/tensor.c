@@ -17,7 +17,7 @@ TZrBool ZrMath_Tensor_Construct(ZrLibCallContext *context, SZrTypeValue *result)
     SZrObject *shapeCopy;
     SZrObject *dataCopy;
     if (!ZrLib_CallContext_ReadArray(context, 0, &shape) || !ZrLib_CallContext_ReadArray(context, 1, &data)) return ZR_FALSE;
-    tensor = ZrMath_ResolveConstructTarget(context, "Tensor");
+    tensor = ZrMath_ResolveConstructTarget(context);
     shapeCopy = zr_math_tensor_copy_array(context->state, shape);
     dataCopy = zr_math_tensor_copy_array(context->state, data);
     if (tensor == ZR_NULL || shapeCopy == ZR_NULL || dataCopy == ZR_NULL ||

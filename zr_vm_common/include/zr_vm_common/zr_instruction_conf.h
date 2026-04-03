@@ -25,8 +25,13 @@
     Z(SET_CLOSURE)                                                                                                     \
     Z(GETUPVAL)                                                                                                        \
     Z(SETUPVAL)                                                                                                        \
-    Z(GETTABLE)                                                                                                        \
-    Z(SETTABLE)                                                                                                        \
+    Z(GET_MEMBER)                                                                                                      \
+    Z(SET_MEMBER)                                                                                                      \
+    Z(GET_BY_INDEX)                                                                                                    \
+    Z(SET_BY_INDEX)                                                                                                    \
+    Z(ITER_INIT)                                                                                                       \
+    Z(ITER_MOVE_NEXT)                                                                                                  \
+    Z(ITER_CURRENT)                                                                                                    \
     Z(TO_BOOL)                                                                                                         \
     Z(TO_INT)                                                                                                          \
     Z(TO_UINT)                                                                                                         \
@@ -95,6 +100,10 @@
     Z(CREATE_CLOSURE)                                                                                                  \
     Z(CREATE_OBJECT)                                                                                                   \
     Z(CREATE_ARRAY)                                                                                                    \
+    Z(OWN_UNIQUE)                                                                                                      \
+    Z(OWN_USING)                                                                                                       \
+    Z(OWN_SHARE)                                                                                                       \
+    Z(OWN_WEAK)                                                                                                        \
     Z(MARK_TO_BE_CLOSED)                                                                                               \
     Z(CLOSE_SCOPE)                                                                                                     \
     Z(TRY)                                                                                                             \
@@ -104,7 +113,33 @@
     Z(END_FINALLY)                                                                                                     \
     Z(SET_PENDING_RETURN)                                                                                              \
     Z(SET_PENDING_BREAK)                                                                                               \
-    Z(SET_PENDING_CONTINUE)
+    Z(SET_PENDING_CONTINUE)                                                                                            \
+    Z(TYPEOF)                                                                                                          \
+    Z(DYN_CALL)                                                                                                        \
+    Z(DYN_TAIL_CALL)                                                                                                   \
+    Z(META_CALL)                                                                                                       \
+    Z(META_TAIL_CALL)                                                                                                  \
+    Z(DYN_ITER_INIT)                                                                                                   \
+    Z(DYN_ITER_MOVE_NEXT)                                                                                              \
+    Z(SUPER_FUNCTION_CALL_NO_ARGS)                                                                                     \
+    Z(SUPER_DYN_CALL_NO_ARGS)                                                                                          \
+    Z(SUPER_META_CALL_NO_ARGS)                                                                                         \
+    Z(SUPER_DYN_CALL_CACHED)                                                                                           \
+    Z(SUPER_META_CALL_CACHED)                                                                                          \
+    Z(SUPER_FUNCTION_TAIL_CALL_NO_ARGS)                                                                                \
+    Z(SUPER_DYN_TAIL_CALL_NO_ARGS)                                                                                     \
+    Z(SUPER_META_TAIL_CALL_NO_ARGS)                                                                                    \
+    Z(SUPER_DYN_TAIL_CALL_CACHED)                                                                                      \
+    Z(SUPER_META_TAIL_CALL_CACHED)                                                                                     \
+    Z(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE)                                                                          \
+    Z(SUPER_META_GET_CACHED)                                                                                           \
+    Z(SUPER_META_SET_CACHED)                                                                                           \
+    Z(OWN_UPGRADE)                                                                                                     \
+    Z(OWN_RELEASE)                                                                                                     \
+    Z(META_GET)                                                                                                        \
+    Z(META_SET)                                                                                                        \
+    Z(SUPER_META_GET_STATIC_CACHED)                                                                                    \
+    Z(SUPER_META_SET_STATIC_CACHED)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

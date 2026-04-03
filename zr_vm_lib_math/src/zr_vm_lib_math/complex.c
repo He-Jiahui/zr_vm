@@ -11,7 +11,7 @@ TZrBool ZrMath_Complex_Construct(ZrLibCallContext *context, SZrTypeValue *result
     if (!ZrLib_CallContext_ReadFloat(context, 0, &real) || !ZrLib_CallContext_ReadFloat(context, 1, &imag)) return ZR_FALSE;
     values[0] = real;
     values[1] = imag;
-    return ZrMath_ConstructFloatObject(context, result, "Complex", kFields, values, ZR_ARRAY_COUNT(kFields));
+    return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 TZrBool ZrMath_Complex_Magnitude(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex value; if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;

@@ -60,7 +60,10 @@ SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, SZrS
     
     tracker->state = state;
     tracker->symbolTable = symbolTable;
-    ZrCore_Array_Init(state, &tracker->allReferences, sizeof(SZrReference *), 16);
+    ZrCore_Array_Init(state,
+                      &tracker->allReferences,
+                      sizeof(SZrReference *),
+                      ZR_LSP_LARGE_ARRAY_INITIAL_CAPACITY);
     
     // 初始化哈希表（使用符号名称作为键）
     tracker->symbolToReferencesMap.buckets = ZR_NULL;
@@ -69,7 +72,7 @@ SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, SZrS
     tracker->symbolToReferencesMap.capacity = 0;
     tracker->symbolToReferencesMap.resizeThreshold = 0;
     tracker->symbolToReferencesMap.isValid = ZR_FALSE;
-    ZrCore_HashSet_Init(state, &tracker->symbolToReferencesMap, 4); // 4 = 16 buckets
+    ZrCore_HashSet_Init(state, &tracker->symbolToReferencesMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
     
     return tracker;
 }
@@ -161,7 +164,10 @@ TZrBool ZrLanguageServer_ReferenceTracker_AddReference(SZrState *state,
             // 创建新数组
             refArray = (SZrArray *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrArray));
             if (refArray != ZR_NULL) {
-                ZrCore_Array_Init(state, refArray, sizeof(SZrReference *), 4);
+                ZrCore_Array_Init(state,
+                                  refArray,
+                                  sizeof(SZrReference *),
+                                  ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
                 
                 // 添加到哈希表
                 pair = ZrCore_HashSet_Add(state, &tracker->symbolToReferencesMap, &key);
@@ -196,7 +202,7 @@ TZrBool ZrLanguageServer_ReferenceTracker_FindReferences(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrReference *), 4);
+        ZrCore_Array_Init(state, result, sizeof(SZrReference *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
     
     // 使用哈希表快速查找
@@ -305,7 +311,7 @@ TZrBool ZrLanguageServer_ReferenceTracker_GetReferenceLocations(SZrState *state,
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrFileRange), 4);
+        ZrCore_Array_Init(state, result, sizeof(SZrFileRange), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
     
     // 使用哈希表快速查找

@@ -15,6 +15,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_common/zr_meta_conf.h"
+#include "zr_vm_common/zr_runtime_limits_conf.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -71,6 +72,9 @@ static void reflection_assign_owner_links(SZrState *state,
                                           SZrObject *ownerReflection,
                                           SZrObject *moduleReflection);
 static SZrString *reflection_make_string(SZrState *state, const TZrChar *text);
+static TZrBool reflection_build_type_of_value(SZrState *state,
+                                              const SZrTypeValue *targetValue,
+                                              SZrTypeValue *result);
 
 static SZrObject *reflection_new_object(SZrState *state) {
     SZrObject *object;
@@ -763,8 +767,8 @@ static void reflection_populate_parameters_from_typed_refs(SZrState *state,
                         : 0;
 
     for (TZrUInt32 index = 0; index < parameterCount; index++) {
-        TZrChar paramName[32];
-        TZrChar typeNameBuffer[128];
+        TZrChar paramName[ZR_RUNTIME_MEMBER_NAME_BUFFER_LENGTH];
+        TZrChar typeNameBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
         SZrObject *parameterReflection;
         SZrTypeValue parameterValue;
 
@@ -816,8 +820,8 @@ static void reflection_populate_parameters_from_metadata(SZrState *state,
                             strlen(reflection_get_field_string_native(state, callableReflection, "qualifiedName", "")));
 
     for (TZrUInt32 index = 0; index < parameterCount; index++) {
-        TZrChar fallbackName[32];
-        TZrChar typeNameBuffer[128];
+        TZrChar fallbackName[ZR_RUNTIME_MEMBER_NAME_BUFFER_LENGTH];
+        TZrChar typeNameBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
         const TZrChar *parameterName = fallbackName;
         SZrObject *parameterReflection;
 
@@ -878,8 +882,8 @@ static void reflection_populate_parameters_from_function(SZrState *state,
         TZrUInt32 localIndex = hiddenParameterCount + index;
         const TZrChar *parameterName = "arg";
         const TZrChar *typeName = "any";
-        TZrChar fallbackName[32];
-        TZrChar typeNameBuffer[128];
+        TZrChar fallbackName[ZR_RUNTIME_MEMBER_NAME_BUFFER_LENGTH];
+        TZrChar typeNameBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
         SZrObject *parameterReflection;
         SZrTypeValue parameterValue;
 
@@ -1370,8 +1374,8 @@ static void reflection_populate_module_compile_time_metadata(SZrState *state,
 
     for (TZrUInt32 index = 0; index < entryFunction->compileTimeVariableInfoLength; index++) {
         SZrFunctionCompileTimeVariableInfo *info = &entryFunction->compileTimeVariableInfos[index];
-        TZrChar qualifiedName[512];
-        TZrChar typeNameBuffer[128];
+        TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+        TZrChar typeNameBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
         const TZrChar *name = info->name != ZR_NULL ? ZrCore_String_GetNativeString(info->name) : "compileTimeVar";
         SZrObject *infoObject;
 
@@ -1410,8 +1414,8 @@ static void reflection_populate_module_compile_time_metadata(SZrState *state,
 
     for (TZrUInt32 index = 0; index < entryFunction->compileTimeFunctionInfoLength; index++) {
         SZrFunctionCompileTimeFunctionInfo *info = &entryFunction->compileTimeFunctionInfos[index];
-        TZrChar qualifiedName[512];
-        TZrChar returnTypeBuffer[128];
+        TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+        TZrChar returnTypeBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
         const TZrChar *name = info->name != ZR_NULL ? ZrCore_String_GetNativeString(info->name) : "compileTimeFn";
         SZrObject *infoObject;
 
@@ -1468,7 +1472,7 @@ static void reflection_populate_module_tests_metadata(SZrState *state,
     moduleQualifiedName = reflection_get_field_string_native(state, moduleReflection, "qualifiedName", "");
     for (TZrUInt32 index = 0; index < entryFunction->testInfoLength; index++) {
         SZrFunctionTestInfo *info = &entryFunction->testInfos[index];
-        TZrChar qualifiedName[512];
+        TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
         const TZrChar *name = info->name != ZR_NULL ? ZrCore_String_GetNativeString(info->name) : "test";
         SZrObject *testObject;
 
@@ -1656,7 +1660,7 @@ static void reflection_populate_script_members(SZrState *state,
         const TZrChar *fieldTypeName;
         const TZrChar *returnTypeName;
         const TZrChar *kind;
-        TZrChar qualifiedMemberName[512];
+        TZrChar qualifiedMemberName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
         SZrObject *memberReflection;
 
         if (memberName == ZR_NULL || memberName[0] == '\0') {
@@ -1729,7 +1733,7 @@ static void reflection_populate_script_members(SZrState *state,
                                                                                           entryFunction,
                                                                                           member->functionConstantIndex);
             if (member->isMetaMethod && memberName != ZR_NULL && memberName[0] != '\0') {
-                TZrChar metaName[128];
+                TZrChar metaName[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
                 snprintf(metaName, sizeof(metaName), "@%s", memberName);
                 reflection_set_field_string(state, memberReflection, "name", metaName);
             }
@@ -1819,7 +1823,7 @@ static void reflection_populate_native_members(SZrState *state,
             const SZrTypeValue *entryValue = reflection_array_get(state, fieldsArray, index);
             SZrObject *entryObject;
             const TZrChar *fieldName;
-            TZrChar qualifiedMemberName[512];
+            TZrChar qualifiedMemberName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
             SZrObject *fieldReflection;
 
             if (entryValue == ZR_NULL || entryValue->type != ZR_VALUE_TYPE_OBJECT || entryValue->value.object == ZR_NULL) {
@@ -1853,7 +1857,7 @@ static void reflection_populate_native_members(SZrState *state,
             SZrObject *entryObject;
             const SZrTypeValue *maxArgsValue;
             const TZrChar *methodName;
-            TZrChar qualifiedMemberName[512];
+            TZrChar qualifiedMemberName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
             SZrObject *methodReflection;
 
             if (entryValue == ZR_NULL || entryValue->type != ZR_VALUE_TYPE_OBJECT || entryValue->value.object == ZR_NULL) {
@@ -2065,7 +2069,7 @@ static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectM
                 SZrObject *entryObject;
                 const SZrTypeValue *maxArgsValue;
                 const TZrChar *functionName;
-                TZrChar qualifiedName[512];
+                TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
                 TZrUInt32 maxArgs = 0;
                 SZrObject *functionReflection;
 
@@ -2114,7 +2118,7 @@ static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectM
                 SZrObject *entryObject;
                 const TZrChar *variableName;
                 const TZrChar *typeName;
-                TZrChar qualifiedName[512];
+                TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
                 SZrObject *variableReflection;
 
                 if (entryValue == ZR_NULL || entryValue->type != ZR_VALUE_TYPE_OBJECT || entryValue->value.object == ZR_NULL) {
@@ -2176,7 +2180,7 @@ static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectM
                 const SZrTypeValue *exportedValue;
                 SZrFunction *exportedFunction;
                 const TZrChar *symbolName;
-                TZrChar qualifiedName[512];
+                TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
 
                 if (symbol == ZR_NULL || symbol->name == ZR_NULL) {
                     continue;
@@ -2211,7 +2215,7 @@ static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectM
                 }
 
                 if (symbol->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION) {
-                    TZrChar returnTypeBuffer[128];
+                    TZrChar returnTypeBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
                     SZrObject *callableReflection = reflection_build_callable_reflection(state,
                                                                                          symbolName,
                                                                                          qualifiedName,
@@ -2269,7 +2273,7 @@ static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectM
             reflection_populate_module_compile_time_metadata(state, moduleReflection, entryFunction);
             reflection_populate_module_tests_metadata(state, moduleReflection, entryFunction);
 
-            TZrChar entryQualifiedName[512];
+            TZrChar entryQualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
             snprintf(entryQualifiedName,
                      sizeof(entryQualifiedName),
                      "%s.__entry",
@@ -2282,7 +2286,7 @@ static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectM
                                                                               ZR_FALSE,
                                                                               ZR_NULL,
                                                                               moduleReflection,
-                                                                              module->pathHash ^ 0xE177u);
+                                                                              module->pathHash ^ ZR_RUNTIME_REFLECTION_ENTRY_HASH_SALT);
             if (entryReflection != ZR_NULL) {
                 reflection_populate_parameters_from_function(state, entryReflection, entryFunction, entryFunction->parameterCount);
                 reflection_populate_function_metadata(state, entryReflection, entryFunction);
@@ -2307,7 +2311,7 @@ static SZrObject *reflection_build_type_reflection(SZrState *state,
     SZrObject *moduleReflection = ZR_NULL;
     const TZrChar *name;
     const TZrChar *kind;
-    TZrChar qualifiedName[512];
+    TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
 
     if (state == ZR_NULL || (prototype == ZR_NULL && nativeTypeEntry == ZR_NULL)) {
         return ZR_NULL;
@@ -2583,7 +2587,7 @@ TZrBool ZrCore_Reflection_IsReflectionObject(SZrState *state, SZrObject *object)
 }
 
 SZrString *ZrCore_Reflection_FormatObject(SZrState *state, SZrObject *object) {
-    char buffer[8192];
+    char buffer[ZR_RUNTIME_REFLECTION_FORMAT_BUFFER_LENGTH];
     TZrSize offset = 0;
     const TZrChar *kind;
     const TZrChar *name;
@@ -2705,32 +2709,13 @@ void ZrCore_Reflection_AttachPrototypeRuntimeMetadata(SZrState *state,
     }
 }
 
-TZrInt64 ZrCore_Reflection_TypeOfNativeEntry(SZrState *state) {
-    TZrStackValuePointer functionBase;
-    TZrStackValuePointer argBase;
-    SZrTypeValue *result;
-    SZrTypeValue *targetValue;
+static TZrBool reflection_build_type_of_value(SZrState *state,
+                                              const SZrTypeValue *targetValue,
+                                              SZrTypeValue *result) {
     SZrObject *reflectionObject = ZR_NULL;
 
-    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
-        return 0;
-    }
-
-    functionBase = state->callInfoList->functionBase.valuePointer;
-    argBase = functionBase + 1;
-    result = ZrCore_Stack_GetValue(functionBase);
-
-    if (state->stackTop.valuePointer <= argBase) {
-        ZrCore_Value_ResetAsNull(result);
-        state->stackTop.valuePointer = functionBase + 1;
-        return 1;
-    }
-
-    targetValue = ZrCore_Stack_GetValue(argBase);
-    if (targetValue == ZR_NULL) {
-        ZrCore_Value_ResetAsNull(result);
-        state->stackTop.valuePointer = functionBase + 1;
-        return 1;
+    if (state == ZR_NULL || targetValue == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
     }
 
     if (targetValue->type == ZR_VALUE_TYPE_OBJECT && targetValue->value.object != ZR_NULL) {
@@ -2755,7 +2740,7 @@ TZrInt64 ZrCore_Reflection_TypeOfNativeEntry(SZrState *state) {
     if (reflectionObject == ZR_NULL &&
         (targetValue->type == ZR_VALUE_TYPE_FUNCTION || targetValue->type == ZR_VALUE_TYPE_CLOSURE)) {
         SZrFunction *function = reflection_extract_function_from_value(state, targetValue);
-        char returnTypeBuffer[128];
+        char returnTypeBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
         const TZrChar *returnTypeName = "void";
         SZrObjectModule *ownerModule = ZR_NULL;
         SZrObject *moduleReflection = ZR_NULL;
@@ -2763,7 +2748,7 @@ TZrInt64 ZrCore_Reflection_TypeOfNativeEntry(SZrState *state) {
         const TZrChar *callableName = function != ZR_NULL && function->functionName != ZR_NULL
                                               ? ZrCore_String_GetNativeString(function->functionName)
                                               : "callable";
-        char qualifiedName[512];
+        char qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
 
         if (reflection_find_callable_export_context(state, targetValue, &ownerModule, &exportName) &&
             exportName != ZR_NULL) {
@@ -2835,6 +2820,53 @@ TZrInt64 ZrCore_Reflection_TypeOfNativeEntry(SZrState *state) {
     } else {
         reflection_init_object_value(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(reflectionObject), ZR_VALUE_TYPE_OBJECT);
     }
+
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Reflection_TypeOfValue(SZrState *state,
+                                      const SZrTypeValue *targetValue,
+                                      SZrTypeValue *result) {
+    if (state == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (targetValue == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(result);
+        return ZR_TRUE;
+    }
+
+    return reflection_build_type_of_value(state, targetValue, result);
+}
+
+TZrInt64 ZrCore_Reflection_TypeOfNativeEntry(SZrState *state) {
+    TZrStackValuePointer functionBase;
+    TZrStackValuePointer argBase;
+    SZrTypeValue *result;
+    SZrTypeValue *targetValue;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    functionBase = state->callInfoList->functionBase.valuePointer;
+    argBase = functionBase + 1;
+    result = ZrCore_Stack_GetValue(functionBase);
+
+    if (state->stackTop.valuePointer <= argBase) {
+        ZrCore_Value_ResetAsNull(result);
+        state->stackTop.valuePointer = functionBase + 1;
+        return 1;
+    }
+
+    targetValue = ZrCore_Stack_GetValue(argBase);
+    if (targetValue == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(result);
+        state->stackTop.valuePointer = functionBase + 1;
+        return 1;
+    }
+
+    ZrCore_Reflection_TypeOfValue(state, targetValue, result);
 
     state->stackTop.valuePointer = functionBase + 1;
     return 1;

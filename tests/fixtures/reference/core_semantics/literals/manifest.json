@@ -1,0 +1,54 @@
+{
+  "feature_group": "literals",
+  "phase_note": "Phase 1 focuses on literal parsing, escape handling, and early unterminated-token diagnostics before widening to full literal normalization.",
+  "cases": [
+    {
+      "id": "literals-lua-errors-malformed-constructs",
+      "upstream_language": "lua",
+      "upstream_path": "lua/testes/errors.lua",
+      "upstream_focus": "Malformed source snippets should fail during parsing with location-aware diagnostics instead of surviving into later execution stages.",
+      "zr_decision": "ZR rejects unterminated or structurally broken literal forms during parse and treats them as non-recoverable for the current compilation unit.",
+      "expected_outcome": "parse-rejects-malformed-literal"
+    },
+    {
+      "id": "literals-cpython-eof-single-quote",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_eof.py",
+      "upstream_focus": "EOF inside single-quoted and double-quoted strings must raise a dedicated unterminated-literal syntax error.",
+      "zr_decision": "ZR should reject an unclosed string token immediately when the lexer/parser reaches end-of-file.",
+      "expected_outcome": "parse-rejects-unclosed-string"
+    },
+    {
+      "id": "literals-cpython-syntax-friendly-end-quote",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_syntax.py",
+      "upstream_focus": "Escaped end-quote and unterminated literal diagnostics should stay precise instead of collapsing into a generic parse failure.",
+      "zr_decision": "ZR keeps a dedicated fixture for unclosed strings so later compiler passes never see a partial string AST node.",
+      "expected_outcome": "diagnostic-preserves-literal-context"
+    },
+    {
+      "id": "literals-cpython-valid-string-literal-baseline",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_string_literals.py",
+      "upstream_focus": "Valid literal escape combinations need a positive baseline alongside negative EOF diagnostics.",
+      "zr_decision": "ZR literal coverage should pair failing fixtures with future escape-sequence success fixtures in the same matrix.",
+      "expected_outcome": "future-positive-literal-fixtures-share-matrix"
+    },
+    {
+      "id": "literals-rust-unterminated-double-quote",
+      "upstream_language": "rust",
+      "upstream_path": "lua/rust/tests/ui/codemap_tests/tab_2.rs",
+      "upstream_focus": "The parser must stop on unterminated double-quoted strings even in the presence of indentation or tab alignment noise.",
+      "zr_decision": "ZR treats unterminated string literals as parser-level failures independent of surrounding whitespace layout.",
+      "expected_outcome": "whitespace-does-not-mask-literal-errors"
+    },
+    {
+      "id": "literals-quickjs-string-eval-baseline",
+      "upstream_language": "quickjs",
+      "upstream_path": "lua/QuickJS-master/tests/test_language.js",
+      "upstream_focus": "General language baselines should keep literal evaluation and parse behavior exercised under executable tests, not documentation only.",
+      "zr_decision": "ZR keeps literal inventory in manifests first, then grows runtime literal fixtures from the same matrix.",
+      "expected_outcome": "manifest-links-negative-and-positive-literal-work"
+    }
+  ]
+}

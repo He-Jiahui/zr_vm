@@ -2,6 +2,7 @@
 #define ZR_VM_TEST_SUPPORT_H
 
 #include "harness/path_support.h"
+#include "harness/reference_support.h"
 #include "harness/runtime_support.h"
 
 #define ZrTests_Allocator_Default ZrTests_Runtime_Allocator_Default

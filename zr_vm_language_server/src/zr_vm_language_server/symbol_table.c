@@ -298,15 +298,15 @@ SZrSymbolTable *ZrLanguageServer_SymbolTable_New(SZrState *state) {
     
     table->state = state;
     table->globalScope = ZR_NULL;
-    ZrCore_Array_Init(state, &table->scopeStack, sizeof(SZrSymbolScope *), 8);
-    ZrCore_Array_Init(state, &table->allScopes, sizeof(SZrSymbolScope *), 8);
+    ZrCore_Array_Init(state, &table->scopeStack, sizeof(SZrSymbolScope *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    ZrCore_Array_Init(state, &table->allScopes, sizeof(SZrSymbolScope *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     
     // 创建映射对象（使用 SZrObject 的 nodeMap 存储）
     table->nameToSymbolsMap = ZrCore_Object_New(state, ZR_NULL);
     if (table->nameToSymbolsMap != ZR_NULL) {
         // 初始化 Object 的 nodeMap（ZrCore_Object_New 只调用了 ZrCore_HashSet_Construct，需要调用 ZrCore_HashSet_Init）
         // 直接调用 ZrCore_HashSet_Init 而不是 ZrCore_Object_Init，避免调用构造函数查找
-        ZrCore_HashSet_Init(state, &table->nameToSymbolsMap->nodeMap, ZR_OBJECT_TABLE_INIT_SIZE_LOG2);
+        ZrCore_HashSet_Init(state, &table->nameToSymbolsMap->nodeMap, ZR_OBJECT_TABLE_INITIAL_SIZE_LOG2);
     }
     table->useHashTable = ZR_FALSE; // 使用 Object 映射
     
@@ -317,7 +317,7 @@ SZrSymbolTable *ZrLanguageServer_SymbolTable_New(SZrState *state) {
     table->nameToSymbolsHashSet.capacity = 0;
     table->nameToSymbolsHashSet.resizeThreshold = 0;
     table->nameToSymbolsHashSet.isValid = ZR_FALSE;
-    ZrCore_HashSet_Init(state, &table->nameToSymbolsHashSet, 4); // 4 = 16 buckets
+    ZrCore_HashSet_Init(state, &table->nameToSymbolsHashSet, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
     
     // 创建全局作用域
     table->globalScope = (SZrSymbolScope *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrSymbolScope));
@@ -326,7 +326,10 @@ SZrSymbolTable *ZrLanguageServer_SymbolTable_New(SZrState *state) {
         return ZR_NULL;
     }
     
-    ZrCore_Array_Init(state, &table->globalScope->symbols, sizeof(SZrSymbol *), 16);
+    ZrCore_Array_Init(state,
+                      &table->globalScope->symbols,
+                      sizeof(SZrSymbol *),
+                      ZR_LSP_GLOBAL_SCOPE_SYMBOL_INITIAL_CAPACITY);
     table->globalScope->parent = ZR_NULL;
     table->globalScope->isFunctionScope = ZR_FALSE;
     table->globalScope->isClassScope = ZR_FALSE;
@@ -484,7 +487,7 @@ SZrSymbol *ZrLanguageServer_Symbol_New(SZrState *state, EZrSymbolType type,
         }
     }
     
-    ZrCore_Array_Init(state, &symbol->references, sizeof(SZrFileRange), 4);
+    ZrCore_Array_Init(state, &symbol->references, sizeof(SZrFileRange), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     
     return symbol;
 }
@@ -613,7 +616,10 @@ TZrBool ZrLanguageServer_SymbolTable_AddSymbolEx(SZrState *state, SZrSymbolTable
             // 单独分配 SZrArray（不能嵌入在 SZrObject 中）
             symbolArray = (SZrArray *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrArray));
             if (symbolArray != ZR_NULL) {
-                ZrCore_Array_Init(state, symbolArray, sizeof(SZrSymbol *), 4);
+                ZrCore_Array_Init(state,
+                                  symbolArray,
+                                  sizeof(SZrSymbol *),
+                                  ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
                 
                 // 添加到 Object 映射（使用 NATIVE_POINTER 类型）
                 SZrTypeValue value;
@@ -642,7 +648,10 @@ TZrBool ZrLanguageServer_SymbolTable_AddSymbolEx(SZrState *state, SZrSymbolTable
             // 创建新数组
             symbolArray = (SZrArray *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrArray));
             if (symbolArray != ZR_NULL) {
-                ZrCore_Array_Init(state, symbolArray, sizeof(SZrSymbol *), 4);
+                ZrCore_Array_Init(state,
+                                  symbolArray,
+                                  sizeof(SZrSymbol *),
+                                  ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
                 
                 // 添加到哈希表
                 pair = ZrCore_HashSet_Add(state, &table->nameToSymbolsHashSet, &key);
@@ -764,7 +773,7 @@ TZrBool ZrLanguageServer_SymbolTable_LookupAll(SZrState *state, SZrSymbolTable *
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrSymbol *), 4);
+        ZrCore_Array_Init(state, result, sizeof(SZrSymbol *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
     
     // 使用哈希表和 Object 映射快速查找
@@ -896,7 +905,7 @@ TZrBool ZrLanguageServer_SymbolTable_GetVisibleSymbolsAtPosition(SZrState *state
     }
 
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrSymbol *), 8);
+        ZrCore_Array_Init(state, result, sizeof(SZrSymbol *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
     for (TZrSize scopeIndex = 0; scopeIndex < table->allScopes.length; scopeIndex++) {
@@ -981,7 +990,7 @@ TZrBool ZrLanguageServer_SymbolTable_GetSymbolsInRange(SZrState *state, SZrSymbo
     
     // 初始化结果数组
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrSymbol *), 4);
+        ZrCore_Array_Init(state, result, sizeof(SZrSymbol *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
     
     // 实现范围查询：查找所有在指定范围内的符号
@@ -1032,7 +1041,7 @@ void ZrLanguageServer_SymbolTable_EnterScope(SZrState *state, SZrSymbolTable *ta
         return;
     }
     
-    ZrCore_Array_Init(state, &newScope->symbols, sizeof(SZrSymbol *), 8);
+    ZrCore_Array_Init(state, &newScope->symbols, sizeof(SZrSymbol *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     newScope->parent = ZrLanguageServer_SymbolTable_GetCurrentScope(table);
     newScope->range = range;
     newScope->isFunctionScope = isFunctionScope;

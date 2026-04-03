@@ -52,55 +52,55 @@
 		}],
 	"instructions":	[{
 			"index":	0,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	0
 		}, {
 			"index":	1,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	1
 		}, {
 			"index":	2,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	2
 		}, {
 			"index":	3,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	3
 		}, {
 			"index":	4,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	4
 		}, {
 			"index":	5,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	5
 		}, {
 			"index":	6,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	6
 		}, {
 			"index":	7,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	7
 		}, {
 			"index":	8,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	8
 		}, {
 			"index":	9,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	9
 		}, {
 			"index":	10,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	10
 		}, {
 			"index":	11,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	11
 		}, {
 			"index":	12,
-			"opcode":	75,
+			"opcode":	80,
 			"operandExtra":	12
 		}, {
 			"index":	13,
@@ -108,7 +108,7 @@
 			"operandExtra":	13
 		}, {
 			"index":	14,
-			"opcode":	70,
+			"opcode":	75,
 			"operandExtra":	1
 		}]
 }

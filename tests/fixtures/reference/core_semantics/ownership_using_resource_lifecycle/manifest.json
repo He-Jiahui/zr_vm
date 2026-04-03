@@ -1,0 +1,1280 @@
+{
+  "domain": "ownership_using_resource_lifecycle",
+  "summary": "Reference matrix for unique or shared ownership, using cleanup, weak references, and resource lifetime rules.",
+  "cases": [
+    {
+      "id": "ownership-shared-owner-consume",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "shared_ownership",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/borrowck/assign-imm-local-twice.rs",
+      "upstream_intent": "Ownership transfer should be explicit and visible at the call site.",
+      "zr_decision": "adapt",
+      "zr_contract": "`%shared(owner)` consumes or rebinds ownership according to the explicit ownership contract.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "shared-owner transfer follows the documented consume semantics",
+      "assertions": [
+        "compiler records an ownership transfer",
+        "runtime reference counts or ownership state update explicitly",
+        "project fixture observes the expected owner identity"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "shared-owner transfer follows the documented consume semantics"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-shared-new-wrapper",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "shared_ownership",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/critical-finalizers.cs",
+      "upstream_intent": "Wrapping a new resource in shared ownership needs a stable positive contract.",
+      "zr_decision": "adapt",
+      "zr_contract": "`%shared new` produces the documented wrapper ownership state without hidden copies.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "shared wrapper construction creates the expected ownership state",
+      "assertions": [
+        "compiler records shared-wrapper creation explicitly",
+        "runtime produces one managed owner wrapper",
+        "project fixture observes the expected lifetime behavior"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "shared wrapper construction creates the expected ownership state"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-move-after-use-reject",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "move_semantics",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/borrowck/assign-imm-local-twice.rs",
+      "upstream_intent": "Use-after-move should fail before runtime.",
+      "zr_decision": "adopt",
+      "zr_contract": "Moved values cannot be read or moved again unless the contract explicitly restores them.",
+      "layer_targets": [
+        "semantic/compiler",
+        "artifact",
+        "module/project"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "use-after-move fails with ownership.move_after_use diagnostic",
+      "assertions": [
+        "diagnostic names the moved binding",
+        "artifact omits the invalid read path",
+        "project compile path rejects the same misuse"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "use-after-move fails with ownership.move_after_use diagnostic"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-field-overwrite-reject",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "resource_fields",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/critical-finalizers.cs",
+      "upstream_intent": "Overwriting a resource field without cleanup must not silently leak the prior value.",
+      "zr_decision": "adopt",
+      "zr_contract": "Resource fields follow explicit overwrite or cleanup rules rather than hidden leaks.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "illegal field overwrite fails or triggers the documented cleanup path",
+      "assertions": [
+        "compiler or runtime reports the overwrite rule explicitly",
+        "cleanup count or rejection is asserted",
+        "project fixture observes deterministic behavior"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "illegal field overwrite fails or triggers the documented cleanup path"
+          ],
+          "cleanup_trace": [
+            "cleanup count or rejection is asserted"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-weak-expiry-after-last-shared-release",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "weak_references",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/borrowck/assign-imm-local-twice.rs",
+      "upstream_intent": "Weak references need a boundary case at the last shared release.",
+      "zr_decision": "adapt",
+      "zr_contract": "Weak references expire once the last strong owner is released.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "weak references expire deterministically after the final shared release",
+      "assertions": [
+        "runtime expiry state is explicit",
+        "project fixture observes null or expired weak access",
+        "stress repeated release and expiry remains stable"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "weak references expire deterministically after the final shared release"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-null-after-move-boundary",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "move_semantics",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/borrowck/assign-imm-local-twice.rs",
+      "upstream_intent": "Some ownership designs null out moved-from storage; the boundary must be explicit.",
+      "zr_decision": "adapt",
+      "zr_contract": "Moved-from storage follows the documented post-move state, including nulling if the contract requires it.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "post-move storage state is deterministic and observable",
+      "assertions": [
+        "compiler tracks moved-from state",
+        "runtime exposes the documented null or invalid state",
+        "artifact records ownership state transitions"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "post-move storage state is deterministic and observable"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-using-cleanup-on-return",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "using_cleanup",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/critical-finalizers.cs",
+      "upstream_intent": "Using cleanup on structured return needs a combined lifetime test.",
+      "zr_decision": "adopt",
+      "zr_contract": "`using` cleanup runs on normal returns in stack-unwind order.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "returning from inside using still triggers deterministic cleanup",
+      "assertions": [
+        "cleanup count is asserted",
+        "cleanup order matches nesting",
+        "project fixture observes the cleaned-up state after return"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "returning from inside using still triggers deterministic cleanup"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "cleanup count is asserted",
+            "cleanup order matches nesting"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-nested-using-combination",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "using_cleanup",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/critical-finalizers.cs",
+      "upstream_intent": "Nested using scopes combine stack order and resource independence.",
+      "zr_decision": "adopt",
+      "zr_contract": "Nested using scopes unwind in a deterministic last-in-first-out cleanup order.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "nested using scopes cleanup in deterministic order",
+      "assertions": [
+        "close order is explicit",
+        "resources do not alias cleanup state accidentally",
+        "stress repeated nested using remains stable"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "nested using scopes cleanup in deterministic order"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "close order is explicit",
+            "resources do not alias cleanup state accidentally"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-partial-constructor-failure-regression",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "constructor_failures",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/appdomain-serialize-exception.cs",
+      "upstream_intent": "Partially constructed resource graphs are a common leak source.",
+      "zr_decision": "adapt",
+      "zr_contract": "Partial construction failures clean up already-acquired resources deterministically.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "partial constructor failure triggers cleanup for already acquired resources",
+      "assertions": [
+        "cleanup count matches acquired resources",
+        "error propagation remains stable",
+        "stress repeated partial failure does not leak handles"
+      ],
+      "stress_class": "full",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "partial constructor failure triggers cleanup for already acquired resources"
+          ],
+          "cleanup_trace": [
+            "cleanup count matches acquired resources"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-close-order-regression",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "resource_ordering",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/critical-finalizers.cs",
+      "upstream_intent": "Cleanup order regressions are subtle and need their own explicit guard.",
+      "zr_decision": "adopt",
+      "zr_contract": "Resource cleanup order remains deterministic and documented.",
+      "layer_targets": [
+        "runtime",
+        "module/project",
+        "stress"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "cleanup order stays stable across runtime refactors",
+      "assertions": [
+        "destructor or close order is recorded explicitly",
+        "project fixture reproduces the same order",
+        "stress repeated cleanup stays deterministic"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "cleanup order stays stable across runtime refactors"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "destructor or close order is recorded explicitly",
+            "project fixture reproduces the same order",
+            "stress repeated cleanup stays deterministic"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-no-hidden-copy-on-move-divergence",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "move_semantics",
+      "upstream_language": "rust",
+      "upstream_file": "lua/rust/tests/ui/borrowck/assign-imm-local-twice.rs",
+      "upstream_intent": "Hidden copies would undermine explicit ownership guarantees.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR move operations do not secretly clone or copy ownership-carrying values.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "moves do not allocate hidden duplicate owners",
+      "assertions": [
+        "compiler emits one ownership transfer",
+        "runtime reference or owner count does not increase unexpectedly",
+        "artifact omits clone-like fallback paths"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "moves do not allocate hidden duplicate owners"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "ownership-no-name-based-resource-optin-divergence",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "resource_contracts",
+      "upstream_language": "mono",
+      "upstream_file": "lua/mono-6.12.0.199/mono/tests/critical-finalizers.cs",
+      "upstream_intent": "Resource lifetime rules should not depend on type names or method spellings.",
+      "zr_decision": "reject",
+      "zr_contract": "Resource cleanup and ownership participation come from explicit metadata or contracts, not type-name heuristics.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "resource semantics are not enabled by matching a magic type or method name",
+      "assertions": [
+        "compiler checks explicit lifetime metadata",
+        "runtime cleanup registration is contract-driven",
+        "artifact metadata records the resource contract explicitly"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "drop_order",
+        "runtime_contract"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "resource semantics are not enabled by matching a magic type or method name"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "runtime cleanup registration is contract-driven"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE",
+            "EFFECT_TABLE",
+            "CALLSITE_CACHE_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "drop_order",
+            "runtime_contract"
+          ],
+          "must_not_contain": []
+        }
+      }
+    }
+  ]
+}

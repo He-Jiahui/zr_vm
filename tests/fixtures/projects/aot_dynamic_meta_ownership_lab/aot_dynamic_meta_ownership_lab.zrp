@@ -1,0 +1,6 @@
+{
+  "name": "aot_dynamic_meta_ownership_lab",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

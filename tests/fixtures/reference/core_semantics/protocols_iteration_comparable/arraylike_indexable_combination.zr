@@ -1,0 +1,8 @@
+class NeedsArrayLike<T> where T: ArrayLike<int> { var value: T; }
+class NeedsIterable<T> where T: Iterable<int> { var value: T; }
+
+var xs: int[3] = [1, 2, 3];
+
+new NeedsArrayLike<int[3]>();
+new NeedsIterable<int[3]>();
+xs[0];

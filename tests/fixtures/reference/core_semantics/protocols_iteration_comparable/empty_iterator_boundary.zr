@@ -1,0 +1,13 @@
+var container = %import("zr.container");
+var items = new container.LinkedList<int>();
+var score = 0;
+
+for (var item in items) {
+    score = score + 100;
+}
+
+for (var item in items) {
+    score = score + 1000;
+}
+
+return score + items.count;

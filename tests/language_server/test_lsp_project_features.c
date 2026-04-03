@@ -291,6 +291,42 @@ static TZrBool completion_array_contains_label(SZrArray *completions, const TZrC
     return ZR_FALSE;
 }
 
+static void describe_completion_labels(SZrArray *completions, TZrChar *buffer, size_t bufferSize) {
+    TZrSize offset = 0;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (completions == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < completions->length && offset + 1 < bufferSize; index++) {
+        SZrLspCompletionItem **itemPtr =
+            (SZrLspCompletionItem **)ZrCore_Array_Get(completions, index);
+        const TZrChar *label;
+        int written;
+
+        if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL || (*itemPtr)->label == ZR_NULL) {
+            continue;
+        }
+
+        label = test_string_ptr((*itemPtr)->label);
+        written = snprintf(buffer + offset,
+                           bufferSize - offset,
+                           "%s%s",
+                           offset == 0 ? "" : ", ",
+                           label != ZR_NULL ? label : "<null>");
+        if (written < 0 || (size_t)written >= bufferSize - offset) {
+            buffer[bufferSize - 1] = '\0';
+            return;
+        }
+        offset += (TZrSize)written;
+    }
+}
+
 static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     if (hover == ZR_NULL || needle == ZR_NULL) {
         return ZR_FALSE;
@@ -698,6 +734,124 @@ static void test_lsp_native_imports_and_ownership_display(SZrState *state) {
     TEST_PASS(timer, "LSP Native Imports And Ownership Display");
 }
 
+static void test_lsp_container_native_members_surface_closed_types_and_completions(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    const TZrChar *content =
+        "var container = %import(\"zr.container\");\n"
+        "var xs: Array<int> = null;\n"
+        "var map: Map<string, int> = null;\n"
+        "var list: LinkedList<int> = null;\n"
+        "var node: LinkedNode<int> = null;\n"
+        "list.addLast;\n"
+        "container.Array;\n"
+        "xs.length;\n"
+        "node.value;\n";
+    SZrString *uri;
+    SZrLspPosition moduleCompletion;
+    SZrLspPosition arrayCompletion;
+    SZrLspPosition nodeCompletion;
+    SZrLspPosition nodeHoverPosition;
+    SZrLspPosition addLastHoverPosition;
+    SZrArray completions;
+    SZrLspHover *hover = ZR_NULL;
+    TZrChar completionLabels[512];
+
+    TEST_START("LSP Container Native Members Surface Closed Types And Completions");
+    TEST_INFO("Container completions / hover",
+              "Native container modules and closed generic instances should expose member completions and resolved hover text");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state,
+                               "file:///container_native_members.zr",
+                               strlen("file:///container_native_members.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "container.Array", 0, 10, &moduleCompletion) ||
+        !lsp_find_position_for_substring(content, "xs.length", 0, 3, &arrayCompletion) ||
+        !lsp_find_position_for_substring(content, "node.value", 0, 5, &nodeCompletion) ||
+        !lsp_find_position_for_substring(content, "node.value", 0, 0, &nodeHoverPosition) ||
+        !lsp_find_position_for_substring(content, "addLast", 0, 0, &addLastHoverPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Native Members Surface Closed Types And Completions",
+                  "Failed to prepare container-native LSP fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, moduleCompletion, &completions) ||
+        !completion_array_contains_label(&completions, "Array") ||
+        !completion_array_contains_label(&completions, "Map") ||
+        !completion_array_contains_label(&completions, "Set") ||
+        !completion_array_contains_label(&completions, "LinkedList") ||
+        !completion_array_contains_label(&completions, "LinkedNode")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Native Members Surface Closed Types And Completions",
+                  "Container module completion should list native container interfaces and types");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, arrayCompletion, &completions) ||
+        !completion_array_contains_label(&completions, "add") ||
+        !completion_array_contains_label(&completions, "insert") ||
+        !completion_array_contains_label(&completions, "length") ||
+        !completion_array_contains_label(&completions, "capacity")) {
+        describe_completion_labels(&completions, completionLabels, sizeof(completionLabels));
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Native Members Surface Closed Types And Completions",
+                  completionLabels[0] != '\0'
+                      ? completionLabels
+                      : "Array<int> completion should list sequence members");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, nodeCompletion, &completions) ||
+        !completion_array_contains_label(&completions, "value") ||
+        !completion_array_contains_label(&completions, "next") ||
+        !completion_array_contains_label(&completions, "previous")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Native Members Surface Closed Types And Completions",
+                  "LinkedNode<int> completion should list value/next/previous");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, nodeHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "LinkedNode<int>")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Native Members Surface Closed Types And Completions",
+                  "Hover on node reference should surface the resolved closed type");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, addLastHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "addLast") ||
+        !hover_contains_text(hover, "LinkedNode<int>")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Native Members Surface Closed Types And Completions",
+                  "Hover on addLast should expose the closed generic method signature");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Container Native Members Surface Closed Types And Completions");
+}
+
 static void test_lsp_semantic_tokens_cover_keywords_and_symbols(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -777,6 +931,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_native_imports_and_ownership_display(state);
+    TEST_DIVIDER();
+
+    test_lsp_container_native_members_surface_closed_types_and_completions(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_cover_keywords_and_symbols(state);

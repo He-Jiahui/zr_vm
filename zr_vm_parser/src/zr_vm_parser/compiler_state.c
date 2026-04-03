@@ -15,55 +15,71 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->hirModule = ZR_NULL;
 
     // 初始化常量池
-    ZrCore_Array_Init(state, &cs->constants, sizeof(SZrTypeValue), 16);
+    ZrCore_Array_Init(state, &cs->constants, sizeof(SZrTypeValue), ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
     cs->constantCount = 0;
     cs->cachedNullConstantIndex = 0;
     cs->hasCachedNullConstantIndex = ZR_FALSE;
 
     // 初始化局部变量数组
-    ZrCore_Array_Init(state, &cs->localVars, sizeof(SZrFunctionLocalVariable), 16);
+    ZrCore_Array_Init(state, &cs->localVars, sizeof(SZrFunctionLocalVariable), ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
     cs->localVarCount = 0;
     cs->stackSlotCount = 0;
     cs->maxStackSlotCount = 0;
 
     // 初始化闭包变量数组
-    ZrCore_Array_Init(state, &cs->closureVars, sizeof(SZrFunctionClosureVariable), 8);
+    ZrCore_Array_Init(state, &cs->closureVars, sizeof(SZrFunctionClosureVariable), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     cs->closureVarCount = 0;
 
     // 初始化指令数组
-    ZrCore_Array_Init(state, &cs->instructions, sizeof(TZrInstruction), 64);
+    ZrCore_Array_Init(state, &cs->instructions, sizeof(TZrInstruction), ZR_PARSER_INSTRUCTION_INITIAL_CAPACITY);
     cs->instructionCount = 0;
 
     // 初始化作用域栈
-    ZrCore_Array_Init(state, &cs->scopeStack, sizeof(SZrScope), 8);
+    ZrCore_Array_Init(state, &cs->scopeStack, sizeof(SZrScope), ZR_PARSER_INITIAL_CAPACITY_SMALL);
 
     // 初始化标签数组
-    ZrCore_Array_Init(state, &cs->labels, sizeof(SZrLabel), 8);
+    ZrCore_Array_Init(state, &cs->labels, sizeof(SZrLabel), ZR_PARSER_INITIAL_CAPACITY_SMALL);
 
     // 初始化待解析跳转数组
-    ZrCore_Array_Init(state, &cs->pendingJumps, sizeof(SZrPendingJump), 8);
-    ZrCore_Array_Init(state, &cs->pendingAbsolutePatches, sizeof(SZrPendingAbsolutePatch), 8);
+    ZrCore_Array_Init(state, &cs->pendingJumps, sizeof(SZrPendingJump), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &cs->pendingAbsolutePatches,
+                      sizeof(SZrPendingAbsolutePatch),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
 
     // 初始化循环标签栈
-    ZrCore_Array_Init(state, &cs->loopLabelStack, sizeof(SZrLoopLabel), 4);
-    ZrCore_Array_Init(state, &cs->tryContextStack, sizeof(SZrCompilerTryContext), 4);
+    ZrCore_Array_Init(state, &cs->loopLabelStack, sizeof(SZrLoopLabel), ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(state, &cs->tryContextStack, sizeof(SZrCompilerTryContext), ZR_PARSER_INITIAL_CAPACITY_TINY);
 
     // 初始化调试与异常元数据
-    ZrCore_Array_Init(state, &cs->executionLocations, sizeof(SZrFunctionExecutionLocationInfo), 32);
-    ZrCore_Array_Init(state, &cs->catchClauseInfos, sizeof(SZrCompilerCatchClauseInfo), 8);
-    ZrCore_Array_Init(state, &cs->exceptionHandlerInfos, sizeof(SZrCompilerExceptionHandlerInfo), 4);
+    ZrCore_Array_Init(state,
+                      &cs->executionLocations,
+                      sizeof(SZrFunctionExecutionLocationInfo),
+                      ZR_PARSER_INITIAL_CAPACITY_LARGE);
+    ZrCore_Array_Init(state,
+                      &cs->catchClauseInfos,
+                      sizeof(SZrCompilerCatchClauseInfo),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &cs->exceptionHandlerInfos,
+                      sizeof(SZrCompilerExceptionHandlerInfo),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
 
     // 初始化子函数数组
-    ZrCore_Array_Init(state, &cs->childFunctions, sizeof(SZrFunction *), 8);
+    ZrCore_Array_Init(state, &cs->childFunctions, sizeof(SZrFunction *), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     
     // 初始化函数名到子函数索引的映射数组（仅用于编译时查找）
-    ZrCore_Array_Init(state, &cs->childFunctionNameMap, sizeof(SZrChildFunctionNameMap), 8);
+    ZrCore_Array_Init(state,
+                      &cs->childFunctionNameMap,
+                      sizeof(SZrChildFunctionNameMap),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
 
     // 初始化顶层函数声明
     cs->topLevelFunction = ZR_NULL;
 
     // 初始化错误状态
     cs->hasError = ZR_FALSE;
+    cs->hadRecoverableError = ZR_FALSE;
     cs->hasFatalError = ZR_FALSE;
     cs->hasCompileTimeError = ZR_FALSE;
     cs->errorMessage = ZR_NULL;
@@ -76,25 +92,31 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
 
     // 初始化测试模式
     cs->isTestMode = ZR_FALSE;
-    ZrCore_Array_Init(state, &cs->testFunctions, sizeof(SZrFunction *), 8);
+    ZrCore_Array_Init(state, &cs->testFunctions, sizeof(SZrFunction *), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     
     // 初始化尾调用上下文
     cs->isInTailCallContext = ZR_FALSE;
     
     // 初始化外部变量引用数组
-    ZrCore_Array_Init(state, &cs->referencedExternalVars, sizeof(SZrString *), 8);
+    ZrCore_Array_Init(state,
+                      &cs->referencedExternalVars,
+                      sizeof(SZrString *),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
     
     // 初始化类型环境
     cs->typeEnv = ZrParser_TypeEnvironment_New(state);
     if (cs->typeEnv != ZR_NULL) {
         cs->typeEnv->semanticContext = cs->semanticContext;
     }
-    ZrCore_Array_Init(state, &cs->typeEnvStack, sizeof(SZrTypeEnvironment *), 8);
+    ZrCore_Array_Init(state, &cs->typeEnvStack, sizeof(SZrTypeEnvironment *), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     
     // 初始化模块导出跟踪数组
-    ZrCore_Array_Init(state, &cs->pubVariables, sizeof(SZrExportedVariable), 8);
-    ZrCore_Array_Init(state, &cs->proVariables, sizeof(SZrExportedVariable), 8);
-    ZrCore_Array_Init(state, &cs->exportedTypes, sizeof(SZrString *), 4);  // TODO: 暂时存储类型名
+    ZrCore_Array_Init(state, &cs->pubVariables, sizeof(SZrExportedVariable), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state, &cs->proVariables, sizeof(SZrExportedVariable), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &cs->exportedTypes,
+                      sizeof(SZrString *),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);  // TODO: 暂时存储类型名
     
     // 初始化脚本 AST 引用
     cs->scriptAst = ZR_NULL;
@@ -103,7 +125,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->isScriptLevel = ZR_FALSE;
     
     // 初始化类型 Prototype 信息数组
-    ZrCore_Array_Init(state, &cs->typePrototypes, sizeof(SZrTypePrototypeInfo), 8);
+    ZrCore_Array_Init(state, &cs->typePrototypes, sizeof(SZrTypePrototypeInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     cs->currentTypePrototypeInfo = ZR_NULL;
     cs->externBindingsPredeclared = ZR_FALSE;
     
@@ -112,18 +134,29 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     if (cs->compileTimeTypeEnv != ZR_NULL) {
         cs->compileTimeTypeEnv->semanticContext = ZR_NULL;
     }
-    ZrCore_Array_Init(state, &cs->compileTimeVariables, sizeof(SZrCompileTimeVariable*), 8);
-    ZrCore_Array_Init(state, &cs->compileTimeFunctions, sizeof(SZrCompileTimeFunction*), 8);
+    ZrCore_Array_Init(state,
+                      &cs->compileTimeVariables,
+                      sizeof(SZrCompileTimeVariable*),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &cs->compileTimeFunctions,
+                      sizeof(SZrCompileTimeFunction*),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
     cs->isInCompileTimeContext = ZR_FALSE;
     
     // 初始化构造函数上下文
     cs->isInConstructor = ZR_FALSE;
     cs->currentFunctionNode = ZR_NULL;
     cs->currentTypeName = ZR_NULL;
+    cs->currentTypeNode = ZR_NULL;
     
     // 初始化 const 变量跟踪数组
-    ZrCore_Array_Init(state, &cs->constLocalVars, sizeof(SZrString *), 8);
-    ZrCore_Array_Init(state, &cs->constParameters, sizeof(SZrString *), 8);
+    ZrCore_Array_Init(state, &cs->constLocalVars, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state, &cs->constParameters, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &cs->constructorInitializedConstFields,
+                      sizeof(SZrString *),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
 }
 
 // 清理解译器状态
@@ -376,6 +409,12 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
     if (cs->constParameters.isValid && cs->constParameters.head != ZR_NULL && 
         cs->constParameters.capacity > 0 && cs->constParameters.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->constParameters);
+    }
+    if (cs->constructorInitializedConstFields.isValid &&
+        cs->constructorInitializedConstFields.head != ZR_NULL &&
+        cs->constructorInitializedConstFields.capacity > 0 &&
+        cs->constructorInitializedConstFields.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->constructorInitializedConstFields);
     }
     
     // 释放编译期函数表

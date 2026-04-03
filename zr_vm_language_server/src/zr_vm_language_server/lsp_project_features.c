@@ -145,8 +145,8 @@ static TZrBool create_hover_for_symbol(SZrState *state,
 static void append_project_symbol_completion(SZrState *state,
                                              SZrSymbol *symbol,
                                              SZrArray *result) {
-    TZrChar detail[192];
-    TZrChar typeBuffer[128];
+    TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
     const TZrChar *typeText = "object";
     SZrCompletionItem *item;
 
@@ -194,7 +194,7 @@ static void append_native_module_completions(SZrState *state,
 
     for (TZrSize index = 0; index < descriptor->moduleLinkCount; index++) {
         const ZrLibModuleLinkDescriptor *link = &descriptor->moduleLinks[index];
-        TZrChar detail[192];
+        TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
         SZrCompletionItem *item;
 
         if (link->name == ZR_NULL || link->moduleName == ZR_NULL) {
@@ -215,7 +215,7 @@ static void append_native_module_completions(SZrState *state,
 
     for (TZrSize index = 0; index < descriptor->functionCount; index++) {
         const ZrLibFunctionDescriptor *functionDescriptor = &descriptor->functions[index];
-        TZrChar detail[192];
+        TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
         SZrCompletionItem *item;
 
         if (functionDescriptor->name == ZR_NULL) {
@@ -241,7 +241,7 @@ static void append_native_module_completions(SZrState *state,
     for (TZrSize index = 0; index < descriptor->typeCount; index++) {
         const ZrLibTypeDescriptor *typeDescriptor = &descriptor->types[index];
         const TZrChar *kind;
-        TZrChar detail[192];
+        TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
         SZrCompletionItem *item;
 
         if (typeDescriptor->name == ZR_NULL) {
@@ -336,7 +336,7 @@ static TZrBool create_native_member_hover(SZrState *state,
                                           SZrFileRange range,
                                           SZrLspHover **result) {
     SZrLspNativeMemberResolution resolution;
-    TZrChar buffer[512];
+    TZrChar buffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
     const TZrChar *kindText = "symbol";
     const TZrChar *detailText = "object";
     const TZrChar *documentation = ZR_NULL;
@@ -539,7 +539,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryCollectImportCompletions(SZrState *state,
 
     projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     startLength = result->length;
-    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), 4);
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
     if (extract_receiver_alias_before_dot(state, content, contentLength, cursorOffset, &aliasName)) {
         binding = ZrLanguageServer_LspProject_FindImportBindingByAlias(&bindings, aliasName);
@@ -605,7 +605,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetHover(SZrState *state,
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
 
-    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), 4);
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
 
     if (ZrLanguageServer_LspProject_FindImportedMemberHit(analyzer->ast, &bindings, fileRange, &memberHit)) {
@@ -631,7 +631,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetHover(SZrState *state,
 
     if (ZrLanguageServer_LspProject_FindImportBindingHit(analyzer->ast, &bindings, fileRange, &binding, &bindingRange) &&
         binding != ZR_NULL) {
-        TZrChar buffer[256];
+        TZrChar buffer[ZR_LSP_TEXT_BUFFER_LENGTH];
         snprintf(buffer,
                  sizeof(buffer),
                  "module <%s>",

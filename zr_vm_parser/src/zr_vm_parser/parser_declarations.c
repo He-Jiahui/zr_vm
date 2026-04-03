@@ -96,7 +96,7 @@ SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
             }
             // 如果没有错误但返回 NULL，可能是遇到了不支持的语法
             const TZrChar *tokenStr = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
-            TZrChar errorMsg[256];
+            TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
             snprintf(errorMsg, sizeof(errorMsg), "无法解析表达式（遇到 '%s'）", tokenStr);
             report_error_with_token(ps, errorMsg, ps->lexer->t.token);
             return ZR_NULL;
@@ -117,7 +117,7 @@ SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
                ps->lexer->t.token != ZR_TK_LPAREN) { // 允许函数调用
         // 如果下一个 token 不是语句开始关键字或表达式继续符号，期望分号
         const TZrChar *tokenStr = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
-        TZrChar errorMsg[256];
+        TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
         snprintf(errorMsg, sizeof(errorMsg), "期望 ';'，但遇到 '%s'", tokenStr);
         report_error_with_token(ps, errorMsg, ps->lexer->t.token);
         // 不立即返回，允许错误恢复

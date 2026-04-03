@@ -1,0 +1,22 @@
+class Box {
+    pub var raw: int;
+
+    pub @constructor(raw: int) {
+        this.raw = raw;
+    }
+
+    pub get value: int {
+        return this.raw + 1;
+    }
+
+    pub set value(next: int) {
+        this.raw = next + 2;
+    }
+}
+
+var box = new Box(3);
+var before = box.value;
+box.value = 10;
+var after = box.value;
+
+return before * 1000 + after * 10 + box.raw;

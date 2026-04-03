@@ -5,7 +5,7 @@
 #ifndef ZR_VM_LIB_SYSTEM_VM_H
 #define ZR_VM_LIB_SYSTEM_VM_H
 
-#include "zr_vm_library.h"
+#include "zr_vm_lib_system/conf.h"
 
 TZrBool ZrSystem_Vm_LoadedModules(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrSystem_Vm_State(ZrLibCallContext *context, SZrTypeValue *result);

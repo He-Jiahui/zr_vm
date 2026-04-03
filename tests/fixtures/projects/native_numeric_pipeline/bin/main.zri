@@ -8,7 +8,7 @@ FUNCTION: <anonymous>
   HAS_VAR_ARGS: false
   STACK_SIZE: 13
 
-CONSTANTS (34):
+CONSTANTS (30):
   [0] native closure
   [1] string: "zr.math"
   [2] null
@@ -24,36 +24,32 @@ CONSTANTS (34):
   [12] string: "system_io"
   [13] native closure
   [14] string: "callbacks"
-  [15] string: "runCallbacks"
-  [16] string: "persistReport"
-  [17] string: "console"
-  [18] string: "printLine"
-  [19] string: "NATIVE_NUMERIC_PIPELINE_PASS "
-  [20] string: "banner"
-  [21] string: "checksum"
-  [22] string: "projectVectorsImpl"
-  [23] string: "object"
-  [24] string: "projectVectors"
-  [25] string: "mixSignalImpl"
-  [26] string: "mixSignal"
-  [27] string: "runTensorPassImpl"
-  [28] string: "runTensorPass"
-  [29] string: "persistReportImpl"
-  [30] string: "scaleValue"
-  [31] string: "summarizeCallbackImpl"
-  [32] string: "runCallbacksImpl"
-  [33] string: "summarizeCallback"
+  [15] string: "NATIVE_NUMERIC_PIPELINE_PASS "
+  [16] string: "projectVectorsImpl"
+  [17] string: "object"
+  [18] string: "projectVectors"
+  [19] string: "mixSignalImpl"
+  [20] string: "mixSignal"
+  [21] string: "runTensorPassImpl"
+  [22] string: "runTensorPass"
+  [23] string: "persistReportImpl"
+  [24] string: "persistReport"
+  [25] string: "scaleValue"
+  [26] string: "summarizeCallbackImpl"
+  [27] string: "runCallbacksImpl"
+  [28] string: "summarizeCallback"
+  [29] string: "runCallbacks"
 
 LOCAL_VARIABLES (9):
-  [0] math: offset_activate=4, offset_dead=70
-  [1] system: offset_activate=8, offset_dead=70
-  [2] lin: offset_activate=12, offset_dead=70
-  [3] signal: offset_activate=16, offset_dead=70
-  [4] tensor: offset_activate=20, offset_dead=70
-  [5] io: offset_activate=24, offset_dead=70
-  [6] callbacks: offset_activate=28, offset_dead=70
-  [7] summary: offset_activate=39, offset_dead=70
-  [8] output: offset_activate=46, offset_dead=70
+  [0] math: offset_activate=4, offset_dead=58
+  [1] system: offset_activate=8, offset_dead=58
+  [2] lin: offset_activate=12, offset_dead=58
+  [3] signal: offset_activate=16, offset_dead=58
+  [4] tensor: offset_activate=20, offset_dead=58
+  [5] io: offset_activate=24, offset_dead=58
+  [6] callbacks: offset_activate=28, offset_dead=58
+  [7] summary: offset_activate=37, offset_dead=58
+  [8] output: offset_activate=42, offset_dead=58
 
 CLOSURE_VARIABLES (0):
 
@@ -69,6 +65,23 @@ TYPE_METADATA:
     [7] summary: object
     [8] output: object
   EXPORTED_SYMBOLS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+EH_TABLE (0):
 
 PROTOTYPES (5):
 // ========== PROTOTYPES FROM DATA (count: 5) ==========
@@ -239,7 +252,7 @@ module callbacks {
 
 // ========== END OF PROTOTYPES ==========
 
-INSTRUCTIONS (70):
+INSTRUCTIONS (58):
   [0] GET_CONSTANT (extra=0, operand=0)
   [1] GET_CONSTANT (extra=1, operand=1)
   [2] FUNCTION_CALL (extra=0, operand1=0, operand2=1)
@@ -269,45 +282,33 @@ INSTRUCTIONS (70):
   [26] FUNCTION_CALL (extra=6, operand1=6, operand2=1)
   [27] GET_CONSTANT (extra=7, operand=2)
   [28] GET_STACK (extra=7, operand=6)
-  [29] GET_CONSTANT (extra=8, operand=15)
-  [30] GETTABLE (extra=7, operand1=7, operand2=8)
-  [31] GET_CONSTANT (extra=8, operand=2)
-  [32] GET_STACK (extra=8, operand=2)
-  [33] GET_STACK (extra=9, operand=3)
-  [34] GET_STACK (extra=10, operand=4)
-  [35] FUNCTION_CALL (extra=7, operand1=7, operand2=3)
-  [36] GET_CONSTANT (extra=8, operand=2)
-  [37] GET_CONSTANT (extra=9, operand=2)
-  [38] GET_CONSTANT (extra=10, operand=2)
-  [39] GET_STACK (extra=8, operand=5)
-  [40] GET_CONSTANT (extra=9, operand=16)
-  [41] GETTABLE (extra=8, operand1=8, operand2=9)
-  [42] GET_CONSTANT (extra=9, operand=2)
-  [43] GET_STACK (extra=9, operand=7)
-  [44] FUNCTION_CALL (extra=8, operand1=8, operand2=1)
-  [45] GET_CONSTANT (extra=9, operand=2)
-  [46] GET_STACK (extra=9, operand=1)
-  [47] GET_CONSTANT (extra=10, operand=17)
-  [48] GETTABLE (extra=9, operand1=9, operand2=10)
-  [49] GET_CONSTANT (extra=10, operand=2)
-  [50] GET_CONSTANT (extra=10, operand=18)
-  [51] GETTABLE (extra=9, operand1=9, operand2=10)
-  [52] GET_CONSTANT (extra=10, operand=2)
-  [53] GET_CONSTANT (extra=10, operand=19)
-  [54] GET_STACK (extra=11, operand=8)
-  [55] GET_CONSTANT (extra=12, operand=20)
-  [56] GETTABLE (extra=11, operand1=11, operand2=12)
-  [57] GET_CONSTANT (extra=12, operand=2)
-  [58] ADD (extra=12, operand1=10, operand2=11)
-  [59] SET_STACK (extra=10, operand=12)
-  [60] GET_CONSTANT (extra=11, operand=2)
-  [61] GET_CONSTANT (extra=12, operand=2)
-  [62] FUNCTION_CALL (extra=9, operand1=9, operand2=1)
-  [63] GET_CONSTANT (extra=10, operand=2)
-  [64] GET_CONSTANT (extra=9, operand=2)
-  [65] GET_STACK (extra=9, operand=8)
-  [66] GET_CONSTANT (extra=10, operand=21)
-  [67] GETTABLE (extra=9, operand1=9, operand2=10)
-  [68] GET_CONSTANT (extra=10, operand=2)
-  [69] FUNCTION_RETURN (extra=1, operand1=9, operand2=0)
+  [29] GET_MEMBER (extra=7, operand1=7, operand2=0)
+  [30] GET_STACK (extra=8, operand=2)
+  [31] GET_STACK (extra=9, operand=3)
+  [32] GET_STACK (extra=10, operand=4)
+  [33] FUNCTION_CALL (extra=7, operand1=7, operand2=3)
+  [34] GET_CONSTANT (extra=8, operand=2)
+  [35] GET_CONSTANT (extra=9, operand=2)
+  [36] GET_CONSTANT (extra=10, operand=2)
+  [37] GET_STACK (extra=8, operand=5)
+  [38] GET_MEMBER (extra=8, operand1=8, operand2=1)
+  [39] GET_STACK (extra=9, operand=7)
+  [40] FUNCTION_CALL (extra=8, operand1=8, operand2=1)
+  [41] GET_CONSTANT (extra=9, operand=2)
+  [42] GET_STACK (extra=9, operand=1)
+  [43] GET_MEMBER (extra=9, operand1=9, operand2=2)
+  [44] GET_MEMBER (extra=9, operand1=9, operand2=3)
+  [45] GET_CONSTANT (extra=10, operand=15)
+  [46] GET_STACK (extra=11, operand=8)
+  [47] GET_MEMBER (extra=11, operand1=11, operand2=4)
+  [48] ADD (extra=12, operand1=10, operand2=11)
+  [49] SET_STACK (extra=10, operand=12)
+  [50] GET_CONSTANT (extra=11, operand=2)
+  [51] GET_CONSTANT (extra=12, operand=2)
+  [52] FUNCTION_CALL (extra=9, operand1=9, operand2=1)
+  [53] GET_CONSTANT (extra=10, operand=2)
+  [54] GET_CONSTANT (extra=9, operand=2)
+  [55] GET_STACK (extra=9, operand=8)
+  [56] GET_MEMBER (extra=9, operand1=9, operand2=5)
+  [57] FUNCTION_RETURN (extra=1, operand1=9, operand2=0)
 

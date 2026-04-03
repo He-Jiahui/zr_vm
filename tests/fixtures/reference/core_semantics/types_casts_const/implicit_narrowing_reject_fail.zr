@@ -1,0 +1,6 @@
+%module "reference.types.implicit_narrowing";
+
+%test("implicit_narrowing_reject") {
+    var narrowed: int = 3.75;
+    return narrowed;
+}

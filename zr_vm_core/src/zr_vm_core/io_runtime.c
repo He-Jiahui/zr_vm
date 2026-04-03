@@ -6,14 +6,25 @@
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/reflection.h"
 
-static void io_runtime_init_inline_function(SZrFunction *function) {
+static void io_runtime_init_inline_function(SZrState *state, SZrFunction *function) {
     ZrCore_Memory_RawSet(function, 0, sizeof(*function));
     ZrCore_RawObject_Construct(&function->super, ZR_RAW_OBJECT_TYPE_FUNCTION);
+    /*
+     * Inline child functions live inside their parent function allocation
+     * instead of the GC object list, but they still appear as function values
+     * in constant tables after binary import rebinding. Give them the current
+     * GC generation so liveness checks treat them the same way as source-built
+     * inline children copied from managed function objects.
+     */
+    if (state != ZR_NULL) {
+        ZrCore_RawObject_MarkAsInit(state, &function->super);
+    }
 }
 
 FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helperId) {
@@ -64,6 +75,141 @@ static void io_runtime_copy_typed_type_ref(SZrFunctionTypedTypeRef *destination,
     destination->elementTypeName = source->elementTypeName;
 }
 
+static TZrBool io_runtime_copy_semir_metadata(SZrState *state,
+                                              const SZrIoFunction *source,
+                                              SZrFunction *function) {
+    SZrGlobalState *global;
+
+    if (state == ZR_NULL || source == ZR_NULL || function == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    global = state->global;
+    if (source->semIrTypeTableLength > 0 && source->semIrTypeTable != ZR_NULL) {
+        function->semIrTypeTable = (SZrFunctionTypedTypeRef *)ZrCore_Memory_RawMallocWithType(
+                global,
+                sizeof(SZrFunctionTypedTypeRef) * source->semIrTypeTableLength,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->semIrTypeTable == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawSet(function->semIrTypeTable,
+                             0,
+                             sizeof(SZrFunctionTypedTypeRef) * source->semIrTypeTableLength);
+        for (TZrSize index = 0; index < source->semIrTypeTableLength; index++) {
+            io_runtime_copy_typed_type_ref(&function->semIrTypeTable[index], &source->semIrTypeTable[index]);
+        }
+        function->semIrTypeTableLength = (TZrUInt32)source->semIrTypeTableLength;
+    }
+
+    if (source->semIrOwnershipTableLength > 0 && source->semIrOwnershipTable != ZR_NULL) {
+        TZrSize bytes = sizeof(SZrSemIrOwnershipEntry) * source->semIrOwnershipTableLength;
+        function->semIrOwnershipTable = (SZrSemIrOwnershipEntry *)ZrCore_Memory_RawMallocWithType(
+                global,
+                bytes,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->semIrOwnershipTable == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Memory_RawCopy(function->semIrOwnershipTable, source->semIrOwnershipTable, bytes);
+        function->semIrOwnershipTableLength = (TZrUInt32)source->semIrOwnershipTableLength;
+    }
+
+    if (source->semIrEffectTableLength > 0 && source->semIrEffectTable != ZR_NULL) {
+        TZrSize bytes = sizeof(SZrSemIrEffectEntry) * source->semIrEffectTableLength;
+        function->semIrEffectTable = (SZrSemIrEffectEntry *)ZrCore_Memory_RawMallocWithType(
+                global,
+                bytes,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->semIrEffectTable == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Memory_RawCopy(function->semIrEffectTable, source->semIrEffectTable, bytes);
+        function->semIrEffectTableLength = (TZrUInt32)source->semIrEffectTableLength;
+    }
+
+    if (source->semIrBlockTableLength > 0 && source->semIrBlockTable != ZR_NULL) {
+        TZrSize bytes = sizeof(SZrSemIrBlockEntry) * source->semIrBlockTableLength;
+        function->semIrBlockTable = (SZrSemIrBlockEntry *)ZrCore_Memory_RawMallocWithType(
+                global,
+                bytes,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->semIrBlockTable == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Memory_RawCopy(function->semIrBlockTable, source->semIrBlockTable, bytes);
+        function->semIrBlockTableLength = (TZrUInt32)source->semIrBlockTableLength;
+    }
+
+    if (source->semIrInstructionLength > 0 && source->semIrInstructions != ZR_NULL) {
+        TZrSize bytes = sizeof(SZrSemIrInstruction) * source->semIrInstructionLength;
+        function->semIrInstructions = (SZrSemIrInstruction *)ZrCore_Memory_RawMallocWithType(
+                global,
+                bytes,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->semIrInstructions == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Memory_RawCopy(function->semIrInstructions, source->semIrInstructions, bytes);
+        function->semIrInstructionLength = (TZrUInt32)source->semIrInstructionLength;
+    }
+
+    if (source->semIrDeoptTableLength > 0 && source->semIrDeoptTable != ZR_NULL) {
+        TZrSize bytes = sizeof(SZrSemIrDeoptEntry) * source->semIrDeoptTableLength;
+        function->semIrDeoptTable = (SZrSemIrDeoptEntry *)ZrCore_Memory_RawMallocWithType(
+                global,
+                bytes,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->semIrDeoptTable == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Memory_RawCopy(function->semIrDeoptTable, source->semIrDeoptTable, bytes);
+        function->semIrDeoptTableLength = (TZrUInt32)source->semIrDeoptTableLength;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool io_runtime_copy_callsite_cache_metadata(SZrState *state,
+                                                       const SZrIoFunction *source,
+                                                       SZrFunction *function) {
+    SZrGlobalState *global;
+    TZrSize bytes;
+
+    if (state == ZR_NULL || source == ZR_NULL || function == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (source->callSiteCacheLength == 0 || source->callSiteCaches == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    global = state->global;
+    bytes = sizeof(SZrFunctionCallSiteCacheEntry) * source->callSiteCacheLength;
+    function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+            global,
+            bytes,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (function->callSiteCaches == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(function->callSiteCaches, 0, bytes);
+    for (TZrSize index = 0; index < source->callSiteCacheLength; index++) {
+        const SZrIoFunctionCallSiteCacheEntry *src = &source->callSiteCaches[index];
+        SZrFunctionCallSiteCacheEntry *dst = &function->callSiteCaches[index];
+
+        dst->kind = src->kind;
+        dst->instructionIndex = src->instructionIndex;
+        dst->memberEntryIndex = src->memberEntryIndex;
+        dst->deoptId = src->deoptId;
+        dst->argumentCount = src->argumentCount;
+    }
+    function->callSiteCacheLength = (TZrUInt32)source->callSiteCacheLength;
+    return ZR_TRUE;
+}
+
 static TZrBool io_runtime_copy_metadata_parameters(SZrState *state,
                                                    SZrFunctionMetadataParameter **outParameters,
                                                    TZrUInt32 *outCount,
@@ -104,6 +250,67 @@ static TZrBool io_runtime_populate_function(SZrState *state,
                                             const SZrIoFunction *source,
                                             SZrFunction *function);
 
+static TZrBool io_runtime_function_matches_inline_child(const SZrFunction *left, const SZrFunction *right) {
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return left->functionName == right->functionName &&
+           left->parameterCount == right->parameterCount &&
+           left->instructionsLength == right->instructionsLength &&
+           left->lineInSourceStart == right->lineInSourceStart &&
+           left->lineInSourceEnd == right->lineInSourceEnd;
+}
+
+static void io_runtime_rebind_constant_function_values_to_children(SZrFunction *function) {
+    if (function == ZR_NULL || function->constantValueList == ZR_NULL || function->childFunctionList == ZR_NULL ||
+        function->childFunctionLength == 0) {
+        return;
+    }
+
+    for (TZrUInt32 constantIndex = 0; constantIndex < function->constantValueLength; constantIndex++) {
+        SZrTypeValue *constant = &function->constantValueList[constantIndex];
+        SZrRawObject *rawObject;
+        SZrFunction *constantFunction = ZR_NULL;
+
+        if ((constant->type != ZR_VALUE_TYPE_FUNCTION && constant->type != ZR_VALUE_TYPE_CLOSURE) ||
+            constant->value.object == ZR_NULL) {
+            continue;
+        }
+
+        rawObject = constant->value.object;
+        if (rawObject->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+            constantFunction = ZR_CAST(SZrFunction *, rawObject);
+        } else if (rawObject->type == ZR_RAW_OBJECT_TYPE_CLOSURE && !constant->isNative) {
+            SZrClosure *closure = ZR_CAST(SZrClosure *, rawObject);
+            if (closure != ZR_NULL) {
+                constantFunction = closure->function;
+            }
+        }
+
+        if (constantFunction == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+            SZrFunction *childFunction = &function->childFunctionList[childIndex];
+            if (!io_runtime_function_matches_inline_child(constantFunction, childFunction)) {
+                continue;
+            }
+
+            if (rawObject->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+                constant->value.object = ZR_CAST_RAW_OBJECT_AS_SUPER(childFunction);
+            } else if (rawObject->type == ZR_RAW_OBJECT_TYPE_CLOSURE && !constant->isNative) {
+                SZrClosure *closure = ZR_CAST(SZrClosure *, rawObject);
+                if (closure != ZR_NULL) {
+                    closure->function = childFunction;
+                }
+            }
+            break;
+        }
+    }
+}
+
 static TZrBool io_runtime_convert_constant(SZrState *state,
                                            const SZrIoFunctionConstantVariable *source,
                                            SZrTypeValue *destination) {
@@ -113,11 +320,11 @@ static TZrBool io_runtime_convert_constant(SZrState *state,
         return ZR_FALSE;
     }
 
+    ZrCore_Value_ResetAsNull(destination);
     nativeHelper = ZrCore_Io_GetSerializableNativeHelperFunction(source->startLine);
 
     switch (source->type) {
         case ZR_VALUE_TYPE_NULL:
-            ZrCore_Value_ResetAsNull(destination);
             return ZR_TRUE;
 
         case ZR_VALUE_TYPE_BOOL:
@@ -451,6 +658,38 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         function->testInfoLength = (TZrUInt32)source->testInfosLength;
     }
 
+    if (source->memberEntriesLength > 0) {
+        TZrSize entryBytes = sizeof(SZrFunctionMemberEntry) * source->memberEntriesLength;
+        function->memberEntries =
+                (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(global,
+                                                                          entryBytes,
+                                                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->memberEntries == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawSet(function->memberEntries, 0, entryBytes);
+        for (TZrSize index = 0; index < source->memberEntriesLength; index++) {
+            const SZrIoFunctionMemberEntry *sourceEntry = &source->memberEntries[index];
+            SZrFunctionMemberEntry *destinationEntry = &function->memberEntries[index];
+
+            destinationEntry->symbol = sourceEntry->symbol;
+            destinationEntry->entryKind = sourceEntry->entryKind;
+            destinationEntry->reserved0 = sourceEntry->reserved0;
+            destinationEntry->reserved1 = sourceEntry->reserved1;
+            destinationEntry->prototypeIndex = sourceEntry->prototypeIndex;
+            destinationEntry->descriptorIndex = sourceEntry->descriptorIndex;
+        }
+        function->memberEntryLength = (TZrUInt32)source->memberEntriesLength;
+    }
+
+    if (!io_runtime_copy_semir_metadata(state, source, function)) {
+        return ZR_FALSE;
+    }
+    if (!io_runtime_copy_callsite_cache_metadata(state, source, function)) {
+        return ZR_FALSE;
+    }
+
     if (source->prototypeData != ZR_NULL &&
         source->prototypeDataLength >= sizeof(TZrUInt32) &&
         source->prototypesLength > 0) {
@@ -479,7 +718,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         }
 
         for (TZrSize index = 0; index < source->closuresLength; index++) {
-            io_runtime_init_inline_function(&function->childFunctionList[index]);
+            io_runtime_init_inline_function(state, &function->childFunctionList[index]);
             if (source->closures[index].subFunction == ZR_NULL ||
                 !io_runtime_populate_function(state,
                                               source->closures[index].subFunction,
@@ -489,6 +728,8 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         }
         function->childFunctionLength = (TZrUInt32)source->closuresLength;
     }
+
+    io_runtime_rebind_constant_function_values_to_children(function);
 
     return ZR_TRUE;
 }

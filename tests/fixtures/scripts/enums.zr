@@ -36,7 +36,7 @@ var enum_compare_test = () => {
     var dir1 = Direction.Up;
     var dir2 = Direction.Up;
     // 假设枚举可以比较
-    return if (dir1 == dir2) { 1; } else { 0; };
+    return dir1 == dir2 ? 1 : 0 ;
 };
 
 // 枚举作为函数参数测试

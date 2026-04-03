@@ -141,7 +141,8 @@ SZrAstNode *create_prototype_reference_node(SZrParserState *ps, SZrAstNode *targ
 
 SZrAstNode *create_construct_expression_node(SZrParserState *ps, SZrAstNode *target, SZrAstNodeArray *args,
                                                     EZrOwnershipQualifier ownershipQualifier, TZrBool isUsing,
-                                                    TZrBool isNew, SZrFileRange location);
+                                                    TZrBool isNew, EZrOwnershipBuiltinKind builtinKind,
+                                                    SZrFileRange location);
 
 SZrAstNode *parse_prototype_path_expression(SZrParserState *ps);
 
@@ -150,7 +151,8 @@ SZrAstNode *parse_prototype_reference_expression(SZrParserState *ps);
 SZrAstNode *parse_construct_expression(SZrParserState *ps,
                                               SZrFileRange startLoc,
                                               EZrOwnershipQualifier ownershipQualifier,
-                                              TZrBool isUsing);
+                                              TZrBool isUsing,
+                                              EZrOwnershipBuiltinKind builtinKind);
 
 EZrOwnershipQualifier parse_optional_method_receiver_qualifier(SZrParserState *ps);
 

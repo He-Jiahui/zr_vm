@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "zr_vm_cli/conf.h"
 #include "zr_vm_cli/project.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/exception.h"
@@ -169,7 +170,7 @@ static int zr_cli_repl_submit(const TZrChar *code) {
 }
 
 int ZrCli_Repl_Run(void) {
-    TZrChar line[1024];
+    TZrChar line[ZR_CLI_REPL_LINE_BUFFER_LENGTH];
     TZrChar *buffer = ZR_NULL;
     TZrSize bufferLength = 0;
     TZrSize bufferCapacity = 0;
@@ -213,7 +214,8 @@ int ZrCli_Repl_Run(void) {
         }
 
         if (bufferLength + lineLength + 2 > bufferCapacity) {
-            TZrSize newCapacity = bufferCapacity == 0 ? 256 : bufferCapacity * 2;
+            TZrSize newCapacity = bufferCapacity == 0 ? ZR_CLI_REPL_BUFFER_INITIAL_CAPACITY
+                                                      : bufferCapacity * ZR_CLI_COLLECTION_GROWTH_FACTOR;
             TZrChar *newBuffer;
 
             while (newCapacity < bufferLength + lineLength + 2) {

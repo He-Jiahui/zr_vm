@@ -29,7 +29,7 @@ const TZrChar *ct_name(SZrString *name) {
 }
 
 void ct_error_name(SZrCompilerState *cs, SZrString *name, const TZrChar *prefix, SZrFileRange location) {
-    TZrChar msg[256];
+    TZrChar msg[ZR_PARSER_ERROR_BUFFER_LENGTH];
     snprintf(msg, sizeof(msg), "%s%s", prefix, ct_name(name));
     ZrParser_CompileTime_Error(cs, ZR_COMPILE_TIME_ERROR_ERROR, msg, location);
 }
@@ -107,7 +107,10 @@ TZrBool ct_eval_import_expression(SZrCompilerState *cs,
 
 void ct_frame_init(SZrCompilerState *cs, SZrCompileTimeFrame *frame, SZrCompileTimeFrame *parent) {
     frame->parent = parent;
-    ZrCore_Array_Init(cs->state, &frame->bindings, sizeof(SZrCompileTimeBinding), 4);
+    ZrCore_Array_Init(cs->state,
+                      &frame->bindings,
+                      sizeof(SZrCompileTimeBinding),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
 }
 
 void ct_frame_free(SZrCompilerState *cs, SZrCompileTimeFrame *frame) {
@@ -395,4 +398,3 @@ TZrBool register_compile_time_function_declaration(SZrCompilerState *cs,
 
     return ZR_TRUE;
 }
-

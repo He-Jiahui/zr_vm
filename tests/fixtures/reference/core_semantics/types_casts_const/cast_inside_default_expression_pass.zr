@@ -1,0 +1,9 @@
+%module "reference.types.default_cast";
+
+addBase(a: int, extra: int = <int> 3.75): int {
+    return a + extra;
+}
+
+%test("cast_inside_default_expression") {
+    return addBase(4) + addBase(4, <int> 2.25);
+}

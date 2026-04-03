@@ -399,7 +399,7 @@ SZrAstNode *parse_test_declaration(SZrParserState *ps) {
             }
             TZrNativeString nameStr = ZrCore_String_GetNativeString(identName);
             if (nameStr == ZR_NULL || strcmp(nameStr, "test") != 0) {
-                TZrChar errorMsg[256];
+                TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
                 snprintf(errorMsg, sizeof(errorMsg), "Expected 'test' after '%%', but got identifier '%s'",
                          nameStr ? nameStr : "<null>");
                 report_error(ps, errorMsg);
@@ -550,7 +550,7 @@ SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
 
         TZrNativeString nameStr = ZrCore_String_GetNativeString(identName);
         if (nameStr == ZR_NULL || strcmp(nameStr, "compileTime") != 0) {
-            TZrChar errorMsg[256];
+            TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
             snprintf(errorMsg, sizeof(errorMsg), "Expected 'compileTime' after '%%', but got identifier '%s'",
                      nameStr ? nameStr : "<null>");
             report_error(ps, errorMsg);

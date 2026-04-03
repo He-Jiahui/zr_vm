@@ -12,14 +12,6 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_common/zr_string_conf.h"
 
-// 常量引用路径步骤类型（与parser模块中的定义保持一致）
-// 注意：这些值作为TZrUInt32存储，但表示负数（通过类型转换）
-#define ZR_CONSTANT_REF_STEP_PARENT ((TZrUInt32)(TZrInt32)-1)        // -1: 向上引用parent function
-#define ZR_CONSTANT_REF_STEP_CONSTANT_POOL ((TZrUInt32)(TZrInt32)-2) // -2: 当前函数的常量池索引
-#define ZR_CONSTANT_REF_STEP_MODULE ((TZrUInt32)(TZrInt32)-3)        // -3: 模块引用
-#define ZR_CONSTANT_REF_STEP_PROTOTYPE_INDEX ((TZrUInt32)(TZrInt32)-4) // -4: 下一个数值读取prototype的index
-#define ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX ((TZrUInt32)(TZrInt32)-5) // -5: 下一个数值读取childFunctionList的index
-
 // 创建常量引用路径（分配内存）
 SZrConstantReferencePath *ZrCore_ConstantReferencePath_Create(
     struct SZrState *state,

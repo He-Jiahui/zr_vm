@@ -16,6 +16,7 @@
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/meta.h"
@@ -30,6 +31,8 @@ typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
+
+static TZrInt64 g_hidden_meta_static_storage = 0;
 
 // 测试日志宏（符合测试规范）
 #define TEST_START(summary)                                                                                            \
@@ -122,6 +125,452 @@ static void destroy_test_state(SZrState *state) {
     }
 }
 
+static SZrFunction *create_native_callable(SZrState *state, FZrNativeFunction nativeFunction) {
+    SZrClosureNative *closure;
+
+    if (state == ZR_NULL || nativeFunction == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    closure = ZrCore_ClosureNative_New(state, 0);
+    if (closure == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    closure->nativeFunction = nativeFunction;
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    return ZR_CAST(SZrFunction *, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+}
+
+static void set_object_field_cstring(SZrState *state,
+                                     SZrObject *object,
+                                     const TZrChar *fieldName,
+                                     const SZrTypeValue *value) {
+    SZrString *fieldString;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL) {
+        return;
+    }
+
+    fieldString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
+    TEST_ASSERT_NOT_NULL(fieldString);
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Object_SetValue(state, object, &key, value);
+}
+
+static const SZrTypeValue *get_object_field_cstring(SZrState *state,
+                                                    SZrObject *object,
+                                                    const TZrChar *fieldName) {
+    SZrString *fieldString;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    fieldString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
+    if (fieldString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    return ZrCore_Object_GetValue(state, object, &key);
+}
+
+static TZrInt64 test_member_property_getter_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(base), 77);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_hidden_meta_getter_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *receiverValue;
+    SZrObject *receiverObject;
+    const SZrTypeValue *storedValue;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverValue = ZrCore_Stack_GetValue(base + 1);
+    if (receiverValue == ZR_NULL ||
+        (receiverValue->type != ZR_VALUE_TYPE_OBJECT && receiverValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    receiverObject = ZR_CAST_OBJECT(state, receiverValue->value.object);
+    storedValue = get_object_field_cstring(state, receiverObject, "__meta_value");
+    if (storedValue == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+    } else {
+        ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), storedValue);
+    }
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_hidden_meta_setter_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *assignedValue;
+    SZrObject *receiverObject;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverValue = ZrCore_Stack_GetValue(base + 1);
+    assignedValue = ZrCore_Stack_GetValue(base + 2);
+    if (receiverValue == ZR_NULL || assignedValue == ZR_NULL ||
+        (receiverValue->type != ZR_VALUE_TYPE_OBJECT && receiverValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    receiverObject = ZR_CAST_OBJECT(state, receiverValue->value.object);
+    set_object_field_cstring(state, receiverObject, "__meta_value", assignedValue);
+    ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), assignedValue);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_hidden_meta_static_getter_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    TZrStackValuePointer stackTop;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    stackTop = state->stackTop.valuePointer;
+    ZrCore_Value_InitAsInt(state,
+                           ZrCore_Stack_GetValue(base),
+                           stackTop == (base + 1) ? 91 : -1);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_hidden_meta_static_cached_getter_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(base), g_hidden_meta_static_storage);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_hidden_meta_static_cached_setter_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *assignedValue;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    assignedValue = ZrCore_Stack_GetValue(base + 1);
+    if (assignedValue == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    if (ZR_VALUE_IS_TYPE_INT(assignedValue->type)) {
+        g_hidden_meta_static_storage = assignedValue->value.nativeObject.nativeInt64;
+    }
+
+    ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), assignedValue);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_hidden_meta_cached_monomorphic_a_getter_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(base), 101);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_hidden_meta_cached_monomorphic_b_getter_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(base), 202);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_meta_call_cached_add_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *argumentValue;
+    SZrObject *receiverObject;
+    const SZrTypeValue *storedValue;
+    TZrInt64 baseValue = 0;
+    TZrInt64 argument = 0;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverValue = ZrCore_Stack_GetValue(base + 1);
+    argumentValue = ZrCore_Stack_GetValue(base + 2);
+    if (receiverValue == ZR_NULL || argumentValue == ZR_NULL ||
+        (receiverValue->type != ZR_VALUE_TYPE_OBJECT && receiverValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    receiverObject = ZR_CAST_OBJECT(state, receiverValue->value.object);
+    storedValue = get_object_field_cstring(state, receiverObject, "__call_base");
+    if (storedValue != ZR_NULL && ZR_VALUE_IS_TYPE_INT(storedValue->type)) {
+        baseValue = storedValue->value.nativeObject.nativeInt64;
+    }
+    if (ZR_VALUE_IS_TYPE_INT(argumentValue->type)) {
+        argument = argumentValue->value.nativeObject.nativeInt64;
+    }
+
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(base), baseValue + argument);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_meta_call_cached_mul_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *argumentValue;
+    SZrObject *receiverObject;
+    const SZrTypeValue *storedValue;
+    TZrInt64 baseValue = 0;
+    TZrInt64 argument = 0;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverValue = ZrCore_Stack_GetValue(base + 1);
+    argumentValue = ZrCore_Stack_GetValue(base + 2);
+    if (receiverValue == ZR_NULL || argumentValue == ZR_NULL ||
+        (receiverValue->type != ZR_VALUE_TYPE_OBJECT && receiverValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    receiverObject = ZR_CAST_OBJECT(state, receiverValue->value.object);
+    storedValue = get_object_field_cstring(state, receiverObject, "__call_base");
+    if (storedValue != ZR_NULL && ZR_VALUE_IS_TYPE_INT(storedValue->type)) {
+        baseValue = storedValue->value.nativeObject.nativeInt64;
+    }
+    if (ZR_VALUE_IS_TYPE_INT(argumentValue->type)) {
+        argument = argumentValue->value.nativeObject.nativeInt64;
+    }
+
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(base), baseValue * argument);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_index_contract_get_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *receiverValue;
+    const SZrTypeValue *storedValue;
+    SZrObject *receiverObject;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverValue = ZrCore_Stack_GetValue(base + 1);
+    if (receiverValue == ZR_NULL ||
+        (receiverValue->type != ZR_VALUE_TYPE_OBJECT && receiverValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    receiverObject = ZR_CAST_OBJECT(state, receiverValue->value.object);
+    storedValue = get_object_field_cstring(state, receiverObject, "__contract_index_value");
+    if (storedValue == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+    } else {
+        ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), storedValue);
+    }
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_index_contract_set_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *inputValue;
+    SZrObject *receiverObject;
+    SZrTypeValue storedValue;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverValue = ZrCore_Stack_GetValue(base + 1);
+    inputValue = ZrCore_Stack_GetValue(base + 3);
+    if (receiverValue == ZR_NULL || inputValue == ZR_NULL ||
+        (receiverValue->type != ZR_VALUE_TYPE_OBJECT && receiverValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        return 0;
+    }
+
+    receiverObject = ZR_CAST_OBJECT(state, receiverValue->value.object);
+    if (ZR_VALUE_IS_TYPE_INT(inputValue->type)) {
+        ZrCore_Value_InitAsInt(state, &storedValue, inputValue->value.nativeObject.nativeInt64 * 2);
+    } else {
+        ZrCore_Value_ResetAsNull(&storedValue);
+    }
+    set_object_field_cstring(state, receiverObject, "__contract_index_value", &storedValue);
+    state->stackTop.valuePointer = base;
+    return 0;
+}
+
+static TZrInt64 test_iter_contract_init_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *receiverValue;
+    const SZrTypeValue *iteratorValue;
+    SZrObject *receiverObject;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverValue = ZrCore_Stack_GetValue(base + 1);
+    if (receiverValue == ZR_NULL || receiverValue->type != ZR_VALUE_TYPE_OBJECT) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    receiverObject = ZR_CAST_OBJECT(state, receiverValue->value.object);
+    iteratorValue = get_object_field_cstring(state, receiverObject, "__contract_iterator");
+    if (iteratorValue == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+    } else {
+        ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), iteratorValue);
+    }
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_iter_contract_move_next_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *iteratorValue;
+    SZrObject *iteratorObject;
+    const SZrTypeValue *stepValue;
+    TZrInt64 nextStep = 0;
+    SZrTypeValue storedStep;
+    SZrTypeValue currentValue;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    iteratorValue = ZrCore_Stack_GetValue(base + 1);
+    if (iteratorValue == ZR_NULL || iteratorValue->type != ZR_VALUE_TYPE_OBJECT) {
+        ZrCore_Value_InitAsBool(state, ZrCore_Stack_GetValue(base), ZR_FALSE);
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    iteratorObject = ZR_CAST_OBJECT(state, iteratorValue->value.object);
+    stepValue = get_object_field_cstring(state, iteratorObject, "__iter_step");
+    if (stepValue != ZR_NULL && ZR_VALUE_IS_TYPE_INT(stepValue->type)) {
+        nextStep = stepValue->value.nativeObject.nativeInt64 + 1;
+    }
+
+    ZrCore_Value_InitAsInt(state, &storedStep, nextStep);
+    set_object_field_cstring(state, iteratorObject, "__iter_step", &storedStep);
+
+    if (nextStep == 0) {
+        ZrCore_Value_InitAsInt(state, &currentValue, 10);
+        set_object_field_cstring(state, iteratorObject, "__iter_current", &currentValue);
+        ZrCore_Value_InitAsBool(state, ZrCore_Stack_GetValue(base), ZR_TRUE);
+    } else if (nextStep == 1) {
+        ZrCore_Value_InitAsInt(state, &currentValue, 20);
+        set_object_field_cstring(state, iteratorObject, "__iter_current", &currentValue);
+        ZrCore_Value_InitAsBool(state, ZrCore_Stack_GetValue(base), ZR_TRUE);
+    } else {
+        ZrCore_Value_ResetAsNull(&currentValue);
+        set_object_field_cstring(state, iteratorObject, "__iter_current", &currentValue);
+        ZrCore_Value_InitAsBool(state, ZrCore_Stack_GetValue(base), ZR_FALSE);
+    }
+
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 test_iter_contract_current_native(struct SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *iteratorValue;
+    SZrObject *iteratorObject;
+    const SZrTypeValue *currentValue;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    iteratorValue = ZrCore_Stack_GetValue(base + 1);
+    if (iteratorValue == ZR_NULL || iteratorValue->type != ZR_VALUE_TYPE_OBJECT) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    iteratorObject = ZR_CAST_OBJECT(state, iteratorValue->value.object);
+    currentValue = get_object_field_cstring(state, iteratorObject, "__iter_current");
+    if (currentValue == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+    } else {
+        ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), currentValue);
+    }
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
 // 创建指令的辅助函数（内联定义，不依赖parser模块）
 static TZrInstruction create_instruction_0(EZrInstructionCode opcode, TZrUInt16 operandExtra) {
     TZrInstruction instruction;
@@ -168,10 +617,20 @@ static const char *get_instruction_name(EZrInstructionCode opcode) {
             return "GETUPVAL";
         case ZR_INSTRUCTION_ENUM(SETUPVAL):
             return "SETUPVAL";
-        case ZR_INSTRUCTION_ENUM(GETTABLE):
-            return "GETTABLE";
-        case ZR_INSTRUCTION_ENUM(SETTABLE):
-            return "SETTABLE";
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER):
+            return "GET_MEMBER";
+        case ZR_INSTRUCTION_ENUM(SET_MEMBER):
+            return "SET_MEMBER";
+        case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
+            return "GET_BY_INDEX";
+        case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
+            return "SET_BY_INDEX";
+        case ZR_INSTRUCTION_ENUM(ITER_INIT):
+            return "ITER_INIT";
+        case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
+            return "ITER_MOVE_NEXT";
+        case ZR_INSTRUCTION_ENUM(ITER_CURRENT):
+            return "ITER_CURRENT";
         case ZR_INSTRUCTION_ENUM(TO_BOOL):
             return "TO_BOOL";
         case ZR_INSTRUCTION_ENUM(TO_INT):
@@ -290,6 +749,38 @@ static const char *get_instruction_name(EZrInstructionCode opcode) {
             return "FUNCTION_TAIL_CALL";
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
             return "FUNCTION_RETURN";
+        case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
+            return "SUPER_FUNCTION_CALL_NO_ARGS";
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS):
+            return "SUPER_DYN_CALL_NO_ARGS";
+        case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS):
+            return "SUPER_META_CALL_NO_ARGS";
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):
+            return "SUPER_DYN_CALL_CACHED";
+        case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
+            return "SUPER_META_CALL_CACHED";
+        case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS):
+            return "SUPER_FUNCTION_TAIL_CALL_NO_ARGS";
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS):
+            return "SUPER_DYN_TAIL_CALL_NO_ARGS";
+        case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS):
+            return "SUPER_META_TAIL_CALL_NO_ARGS";
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED):
+            return "SUPER_DYN_TAIL_CALL_CACHED";
+        case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):
+            return "SUPER_META_TAIL_CALL_CACHED";
+        case ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED):
+            return "SUPER_META_GET_CACHED";
+        case ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED):
+            return "SUPER_META_SET_CACHED";
+        case ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED):
+            return "SUPER_META_GET_STATIC_CACHED";
+        case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):
+            return "SUPER_META_SET_STATIC_CACHED";
+        case ZR_INSTRUCTION_ENUM(META_GET):
+            return "META_GET";
+        case ZR_INSTRUCTION_ENUM(META_SET):
+            return "META_SET";
         case ZR_INSTRUCTION_ENUM(JUMP):
             return "JUMP";
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
@@ -338,12 +829,30 @@ static void print_instruction(const char *label, TZrInstruction *inst, TZrSize i
             break;
         case ZR_INSTRUCTION_ENUM(GETUPVAL):
         case ZR_INSTRUCTION_ENUM(SETUPVAL):
-        case ZR_INSTRUCTION_ENUM(GETTABLE):
-        case ZR_INSTRUCTION_ENUM(SETTABLE):
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER):
+        case ZR_INSTRUCTION_ENUM(SET_MEMBER):
+        case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
+        case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
         case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
+        case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):
+        case ZR_INSTRUCTION_ENUM(META_GET):
+        case ZR_INSTRUCTION_ENUM(META_SET):
         case ZR_INSTRUCTION_ENUM(ADD_INT):
         case ZR_INSTRUCTION_ENUM(SUB_INT):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
@@ -369,6 +878,11 @@ static void print_instruction(const char *label, TZrInstruction *inst, TZrSize i
         case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
             printf(", operand1[0]=%u, operand1[1]=%u", inst->instruction.operand.operand1[0],
                    inst->instruction.operand.operand1[1]);
+            break;
+        case ZR_INSTRUCTION_ENUM(ITER_INIT):
+        case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
+        case ZR_INSTRUCTION_ENUM(ITER_CURRENT):
+            printf(", operand1[0]=%u", inst->instruction.operand.operand1[0]);
             break;
         case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
         case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
@@ -1544,8 +2058,8 @@ static void test_create_array(void) {
 
 // ==================== 表操作指令测试 ====================
 
-static void test_gettable(void) {
-    TEST_START("GETTABLE Instruction");
+static void test_get_by_index(void) {
+    TEST_START("GET_BY_INDEX Instruction");
     SZrTestTimer timer;
     timer.startTime = clock();
 
@@ -1556,8 +2070,8 @@ static void test_gettable(void) {
     // CREATE_OBJECT -> stack[0]
     // GET_CONSTANT "key" -> stack[1]
     // GET_CONSTANT 42 -> stack[2]
-    // SETTABLE stack[0], stack[1], stack[2]
-    // GETTABLE stack[3], stack[0], stack[1]
+    // SET_BY_INDEX stack[0], stack[1], stack[2]
+    // GET_BY_INDEX stack[3], stack[0], stack[1]
     SZrString *keyStr = ZrCore_String_CreateFromNative(state, "key");
     SZrTypeValue constants[2];
     ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(keyStr));
@@ -1567,8 +2081,8 @@ static void test_gettable(void) {
     instructions[0] = create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), 0); // dest=0
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 0); // dest=1, const=0 ("key")
     instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 1); // dest=2, const=1 (42)
-    instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), 2, 0, 1); // value=2, table=0, key=1
-    instructions[4] = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), 3, 0, 1); // dest=3, table=0, key=1
+    instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), 2, 0, 1); // value=2, receiver=0, key=1
+    instructions[4] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX), 3, 0, 1); // dest=3, receiver=0, key=1
 
     SZrFunction *function = create_test_function(state, instructions, 5, constants, 2, 5);
     TEST_ASSERT_NOT_NULL(function);
@@ -1586,12 +2100,12 @@ static void test_gettable(void) {
     destroy_test_state(state);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, "GETTABLE Instruction");
+    TEST_PASS_CUSTOM(timer, "GET_BY_INDEX Instruction");
     TEST_DIVIDER();
 }
 
-static void test_settable(void) {
-    TEST_START("SETTABLE Instruction");
+static void test_set_by_index(void) {
+    TEST_START("SET_BY_INDEX Instruction");
     SZrTestTimer timer;
     timer.startTime = clock();
 
@@ -1608,7 +2122,7 @@ static void test_settable(void) {
     instructions[0] = create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), 0); // dest=0
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 0); // dest=1, const=0 ("value")
     instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 1); // dest=2, const=1 (100)
-    instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), 2, 0, 1); // value=2, table=0, key=1
+    instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), 2, 0, 1); // value=2, receiver=0, key=1
 
     SZrFunction *function = create_test_function(state, instructions, 4, constants, 2, 4);
     TEST_ASSERT_NOT_NULL(function);
@@ -1616,21 +2130,1083 @@ static void test_settable(void) {
     TZrBool success = execute_test_function(state, function);
     TEST_ASSERT_TRUE(success);
 
-    // 验证：通过GETTABLE获取值
+    // 验证：通过 index contract 获取值
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
     SZrTypeValue *tableValue = ZrCore_Stack_GetValue(base + 1);
     SZrTypeValue *keyValue = ZrCore_Stack_GetValue(base + 2);
-    SZrObject *table = ZR_CAST_OBJECT(state, tableValue->value.object);
-    const SZrTypeValue *result = ZrCore_Object_GetValue(state, table, keyValue);
-    TEST_ASSERT_NOT_NULL(result);
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
-    TEST_ASSERT_EQUAL_INT64(100, result->value.nativeObject.nativeInt64);
+    SZrTypeValue result;
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(ZrCore_Object_GetByIndex(state, tableValue, keyValue, &result));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+    TEST_ASSERT_EQUAL_INT64(100, result.value.nativeObject.nativeInt64);
 
     ZrCore_Function_Free(state, function);
     destroy_test_state(state);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, "SETTABLE Instruction");
+    TEST_PASS_CUSTOM(timer, "SET_BY_INDEX Instruction");
+    TEST_DIVIDER();
+}
+
+static void test_get_member_uses_property_descriptor(void) {
+    TEST_START("GET_MEMBER Property Descriptor");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *typeName = ZrCore_String_CreateFromNative(state, "ContractBox");
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrMemberDescriptor descriptor;
+        SZrObject *instance;
+        SZrTypeValue receiver;
+        SZrTypeValue result;
+
+        TEST_ASSERT_NOT_NULL(typeName);
+        TEST_ASSERT_NOT_NULL(memberName);
+        TEST_ASSERT_NOT_NULL(prototype);
+
+        memset(&descriptor, 0, sizeof(descriptor));
+        descriptor.name = memberName;
+        descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY;
+        descriptor.getterFunction = create_native_callable(state, test_member_property_getter_native);
+        TEST_ASSERT_NOT_NULL(descriptor.getterFunction);
+        TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor));
+
+        instance = ZrCore_Object_New(state, prototype);
+        TEST_ASSERT_NOT_NULL(instance);
+        ZrCore_Object_Init(state, instance);
+
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(instance));
+        receiver.type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_ResetAsNull(&result);
+
+        TEST_ASSERT_TRUE(ZrCore_Object_GetMember(state, &receiver, memberName, &result));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(77, result.value.nativeObject.nativeInt64);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER Property Descriptor");
+    TEST_DIVIDER();
+}
+
+static void test_builtin_array_length_member_uses_native_contract(void) {
+    TEST_START("GET_MEMBER Builtin Array Length");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrObject *array = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+        SZrTypeValue receiver;
+        SZrTypeValue key;
+        SZrTypeValue inputValue;
+        SZrTypeValue result;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "length");
+
+        TEST_ASSERT_NOT_NULL(array);
+        TEST_ASSERT_NOT_NULL(memberName);
+        ZrCore_Object_Init(state, array);
+
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(array));
+        receiver.type = ZR_VALUE_TYPE_ARRAY;
+
+        ZrCore_Value_InitAsInt(state, &key, 0);
+        ZrCore_Value_InitAsInt(state, &inputValue, 11);
+        TEST_ASSERT_TRUE(ZrCore_Object_SetByIndex(state, &receiver, &key, &inputValue));
+
+        ZrCore_Value_InitAsInt(state, &key, 1);
+        ZrCore_Value_InitAsInt(state, &inputValue, 22);
+        TEST_ASSERT_TRUE(ZrCore_Object_SetByIndex(state, &receiver, &key, &inputValue));
+
+        ZrCore_Value_ResetAsNull(&result);
+        TEST_ASSERT_TRUE(ZrCore_Object_GetMember(state, &receiver, memberName, &result));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(2, result.value.nativeObject.nativeInt64);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER Builtin Array Length");
+    TEST_DIVIDER();
+}
+
+static void test_meta_get_and_meta_set_instructions_dispatch_hidden_accessors(void) {
+    TEST_START("META_GET And META_SET Instructions");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *typeName = ZrCore_String_CreateFromNative(state, "MetaBox");
+        SZrString *hiddenGetterName = ZrCore_String_CreateFromNative(state, "__get_value");
+        SZrString *hiddenSetterName = ZrCore_String_CreateFromNative(state, "__set_value");
+        SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObject *instance;
+        SZrTypeValue functionValue;
+        SZrTypeValue storedValue;
+        SZrTypeValue constants[3];
+        TZrInstruction instructions[5];
+        SZrFunction *function;
+        TZrBool success;
+        TZrStackValuePointer base;
+        const SZrTypeValue *updatedValue;
+
+        TEST_ASSERT_NOT_NULL(typeName);
+        TEST_ASSERT_NOT_NULL(hiddenGetterName);
+        TEST_ASSERT_NOT_NULL(hiddenSetterName);
+        TEST_ASSERT_NOT_NULL(prototype);
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(state,
+                                                                                         test_hidden_meta_getter_native)));
+        set_object_field_cstring(state, &prototype->super, "__get_value", &functionValue);
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(state,
+                                                                                         test_hidden_meta_setter_native)));
+        set_object_field_cstring(state, &prototype->super, "__set_value", &functionValue);
+
+        instance = ZrCore_Object_New(state, prototype);
+        TEST_ASSERT_NOT_NULL(instance);
+        ZrCore_Object_Init(state, instance);
+
+        ZrCore_Value_InitAsInt(state, &storedValue, 5);
+        set_object_field_cstring(state, instance, "__meta_value", &storedValue);
+
+        ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(instance));
+        constants[0].type = ZR_VALUE_TYPE_OBJECT;
+        constants[1] = constants[0];
+        ZrCore_Value_InitAsInt(state, &constants[2], 13);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(META_GET), 0, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[4] = create_instruction_2(ZR_INSTRUCTION_ENUM(META_SET), 1, 2, 1);
+
+        function = create_test_function(state, instructions, 5, constants, 3, 3);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry) * 2,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry) * 2);
+        function->memberEntries[0].symbol = hiddenGetterName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntries[1].symbol = hiddenSetterName;
+        function->memberEntries[1].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 2;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+
+        base = state->callInfoList->functionBase.valuePointer;
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(ZrCore_Stack_GetValue(base + 1)->type));
+        TEST_ASSERT_EQUAL_INT64(5, ZrCore_Stack_GetValue(base + 1)->value.nativeObject.nativeInt64);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(ZrCore_Stack_GetValue(base + 2)->type));
+        TEST_ASSERT_EQUAL_INT64(13, ZrCore_Stack_GetValue(base + 2)->value.nativeObject.nativeInt64);
+
+        updatedValue = get_object_field_cstring(state, instance, "__meta_value");
+        TEST_ASSERT_NOT_NULL(updatedValue);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(updatedValue->type));
+        TEST_ASSERT_EQUAL_INT64(13, updatedValue->value.nativeObject.nativeInt64);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "META_GET And META_SET Instructions");
+    TEST_DIVIDER();
+}
+
+static void test_super_meta_get_and_meta_set_cached_instructions_fill_and_hit_callsite_cache(void) {
+    TEST_START("SUPER_META_GET_CACHED And SUPER_META_SET_CACHED Instructions");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *typeName = ZrCore_String_CreateFromNative(state, "CachedMetaBox");
+        SZrString *hiddenGetterName = ZrCore_String_CreateFromNative(state, "__get_value");
+        SZrString *hiddenSetterName = ZrCore_String_CreateFromNative(state, "__set_value");
+        SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObject *instance;
+        SZrTypeValue functionValue;
+        SZrTypeValue storedValue;
+        SZrTypeValue constants[2];
+        TZrInstruction instructions[9];
+        SZrFunction *function;
+        TZrBool success;
+        const SZrTypeValue *updatedValue;
+
+        TEST_ASSERT_NOT_NULL(typeName);
+        TEST_ASSERT_NOT_NULL(hiddenGetterName);
+        TEST_ASSERT_NOT_NULL(hiddenSetterName);
+        TEST_ASSERT_NOT_NULL(prototype);
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(state,
+                                                                                         test_hidden_meta_getter_native)));
+        set_object_field_cstring(state, &prototype->super, "__get_value", &functionValue);
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(state,
+                                                                                         test_hidden_meta_setter_native)));
+        set_object_field_cstring(state, &prototype->super, "__set_value", &functionValue);
+
+        instance = ZrCore_Object_New(state, prototype);
+        TEST_ASSERT_NOT_NULL(instance);
+        ZrCore_Object_Init(state, instance);
+
+        ZrCore_Value_InitAsInt(state, &storedValue, 5);
+        set_object_field_cstring(state, instance, "__meta_value", &storedValue);
+
+        ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(instance));
+        constants[0].type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_InitAsInt(state, &constants[1], 13);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED), 0, 0, 0);
+        instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 0);
+        instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED), 1, 1, 0);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 0);
+        instructions[5] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 1);
+        instructions[6] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED), 2, 3, 1);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 0);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED), 2, 3, 1);
+
+        function = create_test_function(state, instructions, 9, constants, 2, 4);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry) * 2,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry) * 2);
+        function->memberEntries[0].symbol = hiddenGetterName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntries[1].symbol = hiddenSetterName;
+        function->memberEntries[1].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 2;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry) * 2,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry) * 2);
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCaches[1].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET;
+        function->callSiteCaches[1].instructionIndex = 6;
+        function->callSiteCaches[1].memberEntryIndex = 1;
+        function->callSiteCacheLength = 2;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_TRUE(function->callSiteCaches[0].runtimeMissCount > 0);
+        TEST_ASSERT_TRUE(function->callSiteCaches[1].runtimeMissCount > 0);
+        TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCaches[1].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[1].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[0].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[1].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedFunction);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[1].picSlots[0].cachedFunction);
+        TEST_ASSERT_TRUE(function->callSiteCaches[0].runtimeHitCount > 0);
+        TEST_ASSERT_TRUE(function->callSiteCaches[1].runtimeHitCount > 0);
+
+        updatedValue = get_object_field_cstring(state, instance, "__meta_value");
+        TEST_ASSERT_NOT_NULL(updatedValue);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(updatedValue->type));
+        TEST_ASSERT_EQUAL_INT64(13, updatedValue->value.nativeObject.nativeInt64);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SUPER_META_GET_CACHED And SUPER_META_SET_CACHED Instructions");
+    TEST_DIVIDER();
+}
+
+static void test_object_invoke_member_omits_receiver_for_static_hidden_accessor(void) {
+    TEST_START("Object InvokeMember Static Hidden Accessor");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *typeName = ZrCore_String_CreateFromNative(state, "StaticMetaBox");
+        SZrString *hiddenGetterName = ZrCore_String_CreateFromNative(state, "__get_shared");
+        SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrMemberDescriptor descriptor;
+        SZrTypeValue functionValue;
+        SZrTypeValue receiver;
+        SZrTypeValue result;
+
+        TEST_ASSERT_NOT_NULL(typeName);
+        TEST_ASSERT_NOT_NULL(hiddenGetterName);
+        TEST_ASSERT_NOT_NULL(prototype);
+
+        memset(&descriptor, 0, sizeof(descriptor));
+        descriptor.name = hiddenGetterName;
+        descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
+        descriptor.isStatic = ZR_TRUE;
+        TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor));
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(state,
+                                                                                         test_hidden_meta_static_getter_native)));
+        set_object_field_cstring(state, &prototype->super, "__get_shared", &functionValue);
+
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+        receiver.type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_ResetAsNull(&result);
+
+        TEST_ASSERT_TRUE(ZrCore_Object_InvokeMember(state, &receiver, hiddenGetterName, ZR_NULL, 0, &result));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(91, result.value.nativeObject.nativeInt64);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Object InvokeMember Static Hidden Accessor");
+    TEST_DIVIDER();
+}
+
+static void test_super_meta_get_cached_instruction_populates_two_slot_pic(void) {
+    TEST_START("SUPER_META_GET_CACHED Two Slot PIC");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *typeNameA = ZrCore_String_CreateFromNative(state, "CachedMetaBoxA");
+        SZrString *typeNameB = ZrCore_String_CreateFromNative(state, "CachedMetaBoxB");
+        SZrString *hiddenGetterName = ZrCore_String_CreateFromNative(state, "__get_value");
+        SZrObjectPrototype *prototypeA = ZrCore_ObjectPrototype_New(state, typeNameA, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObjectPrototype *prototypeB = ZrCore_ObjectPrototype_New(state, typeNameB, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrTypeValue functionValue;
+        SZrTypeValue constants[2];
+        TZrInstruction instructions[8];
+        SZrFunction *function;
+        TZrBool success;
+        TZrStackValuePointer base;
+        SZrTypeValue *lastResult;
+
+        TEST_ASSERT_NOT_NULL(typeNameA);
+        TEST_ASSERT_NOT_NULL(typeNameB);
+        TEST_ASSERT_NOT_NULL(hiddenGetterName);
+        TEST_ASSERT_NOT_NULL(prototypeA);
+        TEST_ASSERT_NOT_NULL(prototypeB);
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(
+                                             state,
+                                             test_hidden_meta_cached_monomorphic_a_getter_native)));
+        set_object_field_cstring(state, &prototypeA->super, "__get_value", &functionValue);
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(
+                                             state,
+                                             test_hidden_meta_cached_monomorphic_b_getter_native)));
+        set_object_field_cstring(state, &prototypeB->super, "__get_value", &functionValue);
+
+        instanceA = ZrCore_Object_New(state, prototypeA);
+        instanceB = ZrCore_Object_New(state, prototypeB);
+        TEST_ASSERT_NOT_NULL(instanceA);
+        TEST_ASSERT_NOT_NULL(instanceB);
+        ZrCore_Object_Init(state, instanceA);
+        ZrCore_Object_Init(state, instanceB);
+
+        ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(instanceA));
+        constants[0].type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_InitAsRawObject(state, &constants[1], ZR_CAST_RAW_OBJECT_AS_SUPER(instanceB));
+        constants[1].type = ZR_VALUE_TYPE_OBJECT;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED), 0, 0, 0);
+        instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED), 1, 1, 0);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 0);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED), 2, 2, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 1);
+        instructions[7] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED), 2, 2, 0);
+
+        function = create_test_function(state, instructions, 8, constants, 2, 3);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = hiddenGetterName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototypeA, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototypeA, function->callSiteCaches[0].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedFunction);
+        TEST_ASSERT_EQUAL_PTR(prototypeB, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototypeB, function->callSiteCaches[0].picSlots[1].cachedOwnerPrototype);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[1].cachedFunction);
+
+        base = state->callInfoList->functionBase.valuePointer;
+        lastResult = ZrCore_Stack_GetValue(base + 3);
+        TEST_ASSERT_NOT_NULL(lastResult);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lastResult->type));
+        TEST_ASSERT_EQUAL_INT64(202, lastResult->value.nativeObject.nativeInt64);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SUPER_META_GET_CACHED Two Slot PIC");
+    TEST_DIVIDER();
+}
+
+static void test_super_meta_call_cached_instruction_fills_and_hits_callsite_pic(void) {
+    TEST_START("SUPER_META_CALL_CACHED Callsite PIC");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *typeNameA = ZrCore_String_CreateFromNative(state, "CallableBoxA");
+        SZrString *typeNameB = ZrCore_String_CreateFromNative(state, "CallableBoxB");
+        SZrObjectPrototype *prototypeA = ZrCore_ObjectPrototype_New(state, typeNameA, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObjectPrototype *prototypeB = ZrCore_ObjectPrototype_New(state, typeNameB, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrTypeValue constants[4];
+        TZrInstruction instructions[12];
+        SZrTypeValue storedValue;
+        SZrFunction *function;
+        TZrBool success;
+        TZrStackValuePointer base;
+        SZrTypeValue *lastResult;
+
+        TEST_ASSERT_NOT_NULL(typeNameA);
+        TEST_ASSERT_NOT_NULL(typeNameB);
+        TEST_ASSERT_NOT_NULL(prototypeA);
+        TEST_ASSERT_NOT_NULL(prototypeB);
+
+        ZrCore_ObjectPrototype_AddMeta(state,
+                                       prototypeA,
+                                       ZR_META_CALL,
+                                       create_native_callable(state, test_meta_call_cached_add_native));
+        ZrCore_ObjectPrototype_AddMeta(state,
+                                       prototypeB,
+                                       ZR_META_CALL,
+                                       create_native_callable(state, test_meta_call_cached_mul_native));
+
+        instanceA = ZrCore_Object_New(state, prototypeA);
+        instanceB = ZrCore_Object_New(state, prototypeB);
+        TEST_ASSERT_NOT_NULL(instanceA);
+        TEST_ASSERT_NOT_NULL(instanceB);
+        ZrCore_Object_Init(state, instanceA);
+        ZrCore_Object_Init(state, instanceB);
+
+        ZrCore_Value_InitAsInt(state, &storedValue, 10);
+        set_object_field_cstring(state, instanceA, "__call_base", &storedValue);
+        ZrCore_Value_InitAsInt(state, &storedValue, 4);
+        set_object_field_cstring(state, instanceB, "__call_base", &storedValue);
+
+        ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(instanceA));
+        constants[0].type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_InitAsInt(state, &constants[1], 3);
+        ZrCore_Value_InitAsRawObject(state, &constants[2], ZR_CAST_RAW_OBJECT_AS_SUPER(instanceB));
+        constants[2].type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_InitAsInt(state, &constants[3], 5);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED), 0, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED), 0, 0, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED), 0, 0, 0);
+        instructions[9] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 2);
+        instructions[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 3);
+        instructions[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED), 0, 0, 0);
+
+        function = create_test_function(state, instructions, 12, constants, 4, 3);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = UINT32_MAX;
+        function->callSiteCaches[0].argumentCount = 1;
+        function->callSiteCacheLength = 1;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototypeA, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototypeB, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+
+        base = state->callInfoList->functionBase.valuePointer;
+        lastResult = ZrCore_Stack_GetValue(base + 1);
+        TEST_ASSERT_NOT_NULL(lastResult);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lastResult->type));
+        TEST_ASSERT_EQUAL_INT64(20, lastResult->value.nativeObject.nativeInt64);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SUPER_META_CALL_CACHED Callsite PIC");
+    TEST_DIVIDER();
+}
+
+static void test_super_dyn_call_cached_instruction_fills_and_hits_callsite_pic(void) {
+    TEST_START("SUPER_DYN_CALL_CACHED Callsite PIC");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *typeNameA = ZrCore_String_CreateFromNative(state, "DynamicCallableBoxA");
+        SZrString *typeNameB = ZrCore_String_CreateFromNative(state, "DynamicCallableBoxB");
+        SZrObjectPrototype *prototypeA = ZrCore_ObjectPrototype_New(state, typeNameA, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObjectPrototype *prototypeB = ZrCore_ObjectPrototype_New(state, typeNameB, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrTypeValue constants[4];
+        TZrInstruction instructions[12];
+        SZrTypeValue storedValue;
+        SZrFunction *function;
+        TZrBool success;
+        TZrStackValuePointer base;
+        SZrTypeValue *lastResult;
+
+        TEST_ASSERT_NOT_NULL(typeNameA);
+        TEST_ASSERT_NOT_NULL(typeNameB);
+        TEST_ASSERT_NOT_NULL(prototypeA);
+        TEST_ASSERT_NOT_NULL(prototypeB);
+
+        ZrCore_ObjectPrototype_AddMeta(state,
+                                       prototypeA,
+                                       ZR_META_CALL,
+                                       create_native_callable(state, test_meta_call_cached_add_native));
+        ZrCore_ObjectPrototype_AddMeta(state,
+                                       prototypeB,
+                                       ZR_META_CALL,
+                                       create_native_callable(state, test_meta_call_cached_mul_native));
+
+        instanceA = ZrCore_Object_New(state, prototypeA);
+        instanceB = ZrCore_Object_New(state, prototypeB);
+        TEST_ASSERT_NOT_NULL(instanceA);
+        TEST_ASSERT_NOT_NULL(instanceB);
+        ZrCore_Object_Init(state, instanceA);
+        ZrCore_Object_Init(state, instanceB);
+
+        ZrCore_Value_InitAsInt(state, &storedValue, 10);
+        set_object_field_cstring(state, instanceA, "__call_base", &storedValue);
+        ZrCore_Value_InitAsInt(state, &storedValue, 4);
+        set_object_field_cstring(state, instanceB, "__call_base", &storedValue);
+
+        ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(instanceA));
+        constants[0].type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_InitAsInt(state, &constants[1], 7);
+        ZrCore_Value_InitAsRawObject(state, &constants[2], ZR_CAST_RAW_OBJECT_AS_SUPER(instanceB));
+        constants[2].type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_InitAsInt(state, &constants[3], 11);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED), 0, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED), 0, 0, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED), 0, 0, 0);
+        instructions[9] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 2);
+        instructions[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 3);
+        instructions[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED), 0, 0, 0);
+
+        function = create_test_function(state, instructions, 12, constants, 4, 3);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = UINT32_MAX;
+        function->callSiteCaches[0].argumentCount = 1;
+        function->callSiteCacheLength = 1;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototypeA, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototypeB, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+
+        base = state->callInfoList->functionBase.valuePointer;
+        lastResult = ZrCore_Stack_GetValue(base + 1);
+        TEST_ASSERT_NOT_NULL(lastResult);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lastResult->type));
+        TEST_ASSERT_EQUAL_INT64(44, lastResult->value.nativeObject.nativeInt64);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SUPER_DYN_CALL_CACHED Callsite PIC");
+    TEST_DIVIDER();
+}
+
+static void test_super_meta_get_and_meta_set_static_cached_instructions_fill_and_hit_callsite_cache(void) {
+    TEST_START("SUPER_META_GET_STATIC_CACHED And SUPER_META_SET_STATIC_CACHED Instructions");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *typeName = ZrCore_String_CreateFromNative(state, "StaticCachedMetaBox");
+        SZrString *hiddenGetterName = ZrCore_String_CreateFromNative(state, "__get_count");
+        SZrString *hiddenSetterName = ZrCore_String_CreateFromNative(state, "__set_count");
+        SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrMemberDescriptor descriptor;
+        SZrTypeValue functionValue;
+        SZrTypeValue constants[2];
+        TZrInstruction instructions[9];
+        SZrFunction *function;
+        TZrBool success;
+
+        TEST_ASSERT_NOT_NULL(typeName);
+        TEST_ASSERT_NOT_NULL(hiddenGetterName);
+        TEST_ASSERT_NOT_NULL(hiddenSetterName);
+        TEST_ASSERT_NOT_NULL(prototype);
+
+        memset(&descriptor, 0, sizeof(descriptor));
+        descriptor.name = hiddenGetterName;
+        descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
+        descriptor.isStatic = ZR_TRUE;
+        TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor));
+
+        memset(&descriptor, 0, sizeof(descriptor));
+        descriptor.name = hiddenSetterName;
+        descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
+        descriptor.isStatic = ZR_TRUE;
+        TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor));
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(state,
+                                                                                         test_hidden_meta_static_cached_getter_native)));
+        set_object_field_cstring(state, &prototype->super, "__get_count", &functionValue);
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(state,
+                                                                                         test_hidden_meta_static_cached_setter_native)));
+        set_object_field_cstring(state, &prototype->super, "__set_count", &functionValue);
+
+        ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+        constants[0].type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_InitAsInt(state, &constants[1], 13);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED), 0, 0, 0);
+        instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 0);
+        instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED), 1, 1, 0);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 0);
+        instructions[5] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 1);
+        instructions[6] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED), 2, 3, 1);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 0);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED), 2, 3, 1);
+
+        function = create_test_function(state, instructions, 9, constants, 2, 4);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry) * 2,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry) * 2);
+        function->memberEntries[0].symbol = hiddenGetterName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntries[0].reserved0 = ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR;
+        function->memberEntries[1].symbol = hiddenSetterName;
+        function->memberEntries[1].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntries[1].reserved0 = ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR;
+        function->memberEntryLength = 2;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry) * 2,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry) * 2);
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET_STATIC;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCaches[1].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET_STATIC;
+        function->callSiteCaches[1].instructionIndex = 6;
+        function->callSiteCaches[1].memberEntryIndex = 1;
+        function->callSiteCacheLength = 2;
+
+        g_hidden_meta_static_storage = 5;
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_TRUE(function->callSiteCaches[0].runtimeMissCount > 0);
+        TEST_ASSERT_TRUE(function->callSiteCaches[1].runtimeMissCount > 0);
+        TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCaches[1].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[1].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[0].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[1].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedFunction);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[1].picSlots[0].cachedFunction);
+        TEST_ASSERT_TRUE(function->callSiteCaches[0].picSlots[0].cachedIsStatic);
+        TEST_ASSERT_TRUE(function->callSiteCaches[1].picSlots[0].cachedIsStatic);
+        TEST_ASSERT_TRUE(function->callSiteCaches[0].runtimeHitCount > 0);
+        TEST_ASSERT_TRUE(function->callSiteCaches[1].runtimeHitCount > 0);
+        TEST_ASSERT_EQUAL_INT64(13, g_hidden_meta_static_storage);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SUPER_META_GET_STATIC_CACHED And SUPER_META_SET_STATIC_CACHED Instructions");
+    TEST_DIVIDER();
+}
+
+static void test_index_contract_dispatches_without_storage_fallback(void) {
+    TEST_START("Index Contract Dispatch");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *typeName = ZrCore_String_CreateFromNative(state, "IndexedBox");
+        SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrIndexContract contract;
+        SZrObject *instance;
+        SZrTypeValue receiver;
+        SZrTypeValue key;
+        SZrTypeValue inputValue;
+        SZrTypeValue result;
+
+        TEST_ASSERT_NOT_NULL(typeName);
+        TEST_ASSERT_NOT_NULL(prototype);
+
+        memset(&contract, 0, sizeof(contract));
+        contract.getByIndexFunction = create_native_callable(state, test_index_contract_get_native);
+        contract.setByIndexFunction = create_native_callable(state, test_index_contract_set_native);
+        TEST_ASSERT_NOT_NULL(contract.getByIndexFunction);
+        TEST_ASSERT_NOT_NULL(contract.setByIndexFunction);
+        ZrCore_ObjectPrototype_SetIndexContract(prototype, &contract);
+
+        instance = ZrCore_Object_New(state, prototype);
+        TEST_ASSERT_NOT_NULL(instance);
+        ZrCore_Object_Init(state, instance);
+
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(instance));
+        receiver.type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_InitAsInt(state, &key, 5);
+        ZrCore_Value_InitAsInt(state, &inputValue, 21);
+        ZrCore_Value_ResetAsNull(&result);
+
+        TEST_ASSERT_TRUE(ZrCore_Object_SetByIndex(state, &receiver, &key, &inputValue));
+        TEST_ASSERT_TRUE(ZrCore_Object_GetByIndex(state, &receiver, &key, &result));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(42, result.value.nativeObject.nativeInt64);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Index Contract Dispatch");
+    TEST_DIVIDER();
+}
+
+static void test_index_contract_get_preserves_receiver_when_destination_aliases(void) {
+    TEST_START("Index Contract Aliased Destination");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *typeName = ZrCore_String_CreateFromNative(state, "IndexedAliasBox");
+        SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrIndexContract contract;
+        SZrObject *instance;
+        SZrTypeValue receiver;
+        SZrTypeValue key;
+        SZrTypeValue storedValue;
+
+        TEST_ASSERT_NOT_NULL(typeName);
+        TEST_ASSERT_NOT_NULL(prototype);
+
+        memset(&contract, 0, sizeof(contract));
+        contract.getByIndexFunction = create_native_callable(state, test_index_contract_get_native);
+        TEST_ASSERT_NOT_NULL(contract.getByIndexFunction);
+        ZrCore_ObjectPrototype_SetIndexContract(prototype, &contract);
+
+        instance = ZrCore_Object_New(state, prototype);
+        TEST_ASSERT_NOT_NULL(instance);
+        ZrCore_Object_Init(state, instance);
+
+        ZrCore_Value_InitAsInt(state, &storedValue, 33);
+        set_object_field_cstring(state, instance, "__contract_index_value", &storedValue);
+
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(instance));
+        receiver.type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_InitAsInt(state, &key, 0);
+
+        TEST_ASSERT_TRUE(ZrCore_Object_GetByIndex(state, &receiver, &key, &receiver));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(receiver.type));
+        TEST_ASSERT_EQUAL_INT64(33, receiver.value.nativeObject.nativeInt64);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Index Contract Aliased Destination");
+    TEST_DIVIDER();
+}
+
+static void test_iterator_contract_dispatches_without_named_protocol_members(void) {
+    TEST_START("Iterator Contract Dispatch");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *iteratorTypeName = ZrCore_String_CreateFromNative(state, "ContractIterator");
+        SZrString *iterableTypeName = ZrCore_String_CreateFromNative(state, "ContractIterable");
+        SZrObjectPrototype *iteratorPrototype =
+                ZrCore_ObjectPrototype_New(state, iteratorTypeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObjectPrototype *iterablePrototype =
+                ZrCore_ObjectPrototype_New(state, iterableTypeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrIteratorContract iteratorContract;
+        SZrIterableContract iterableContract;
+        SZrObject *iteratorObject;
+        SZrObject *iterableObject;
+        SZrTypeValue iteratorStoredValue;
+        SZrTypeValue iteratorValue;
+        SZrTypeValue receiver;
+        SZrTypeValue moveResult;
+        SZrTypeValue currentValue;
+        SZrTypeValue stepValue;
+
+        TEST_ASSERT_NOT_NULL(iteratorPrototype);
+        TEST_ASSERT_NOT_NULL(iterablePrototype);
+
+        memset(&iteratorContract, 0, sizeof(iteratorContract));
+        iteratorContract.moveNextFunction = create_native_callable(state, test_iter_contract_move_next_native);
+        iteratorContract.currentFunction = create_native_callable(state, test_iter_contract_current_native);
+        TEST_ASSERT_NOT_NULL(iteratorContract.moveNextFunction);
+        TEST_ASSERT_NOT_NULL(iteratorContract.currentFunction);
+        ZrCore_ObjectPrototype_SetIteratorContract(iteratorPrototype, &iteratorContract);
+
+        memset(&iterableContract, 0, sizeof(iterableContract));
+        iterableContract.iterInitFunction = create_native_callable(state, test_iter_contract_init_native);
+        TEST_ASSERT_NOT_NULL(iterableContract.iterInitFunction);
+        ZrCore_ObjectPrototype_SetIterableContract(iterablePrototype, &iterableContract);
+
+        iteratorObject = ZrCore_Object_New(state, iteratorPrototype);
+        iterableObject = ZrCore_Object_New(state, iterablePrototype);
+        TEST_ASSERT_NOT_NULL(iteratorObject);
+        TEST_ASSERT_NOT_NULL(iterableObject);
+        ZrCore_Object_Init(state, iteratorObject);
+        ZrCore_Object_Init(state, iterableObject);
+
+        ZrCore_Value_InitAsInt(state, &stepValue, -1);
+        set_object_field_cstring(state, iteratorObject, "__iter_step", &stepValue);
+        ZrCore_Value_InitAsRawObject(state, &iteratorStoredValue, ZR_CAST_RAW_OBJECT_AS_SUPER(iteratorObject));
+        iteratorStoredValue.type = ZR_VALUE_TYPE_OBJECT;
+        set_object_field_cstring(state, iterableObject, "__contract_iterator", &iteratorStoredValue);
+
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(iterableObject));
+        receiver.type = ZR_VALUE_TYPE_OBJECT;
+
+        TEST_ASSERT_TRUE(ZrCore_Object_IterInit(state, &receiver, &iteratorValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_OBJECT(iteratorValue.type));
+
+        TEST_ASSERT_TRUE(ZrCore_Object_IterMoveNext(state, &iteratorValue, &moveResult));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(moveResult.type));
+        TEST_ASSERT_TRUE(moveResult.value.nativeObject.nativeBool);
+        TEST_ASSERT_TRUE(ZrCore_Object_IterCurrent(state, &iteratorValue, &currentValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(currentValue.type));
+        TEST_ASSERT_EQUAL_INT64(10, currentValue.value.nativeObject.nativeInt64);
+
+        TEST_ASSERT_TRUE(ZrCore_Object_IterMoveNext(state, &iteratorValue, &moveResult));
+        TEST_ASSERT_TRUE(moveResult.value.nativeObject.nativeBool);
+        TEST_ASSERT_TRUE(ZrCore_Object_IterCurrent(state, &iteratorValue, &currentValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(currentValue.type));
+        TEST_ASSERT_EQUAL_INT64(20, currentValue.value.nativeObject.nativeInt64);
+
+        TEST_ASSERT_TRUE(ZrCore_Object_IterMoveNext(state, &iteratorValue, &moveResult));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(moveResult.type));
+        TEST_ASSERT_FALSE(moveResult.value.nativeObject.nativeBool);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Iterator Contract Dispatch");
+    TEST_DIVIDER();
+}
+
+static void test_iteration_requires_explicit_contracts_not_named_members(void) {
+    TEST_START("Iteration Requires Explicit Contracts");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrString *iteratorTypeName = ZrCore_String_CreateFromNative(state, "NamedOnlyIterator");
+        SZrString *iterableTypeName = ZrCore_String_CreateFromNative(state, "NamedOnlyIterable");
+        SZrObjectPrototype *iteratorPrototype =
+                ZrCore_ObjectPrototype_New(state, iteratorTypeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObjectPrototype *iterablePrototype =
+                ZrCore_ObjectPrototype_New(state, iterableTypeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrObject *iteratorObject;
+        SZrObject *iterableObject;
+        SZrTypeValue receiver;
+        SZrTypeValue iteratorValue;
+        SZrTypeValue moveResult;
+        SZrTypeValue currentValue;
+        SZrTypeValue iteratorStoredValue;
+        SZrTypeValue stepValue;
+        SZrTypeValue functionValue;
+
+        TEST_ASSERT_NOT_NULL(iteratorPrototype);
+        TEST_ASSERT_NOT_NULL(iterablePrototype);
+
+        iteratorObject = ZrCore_Object_New(state, iteratorPrototype);
+        iterableObject = ZrCore_Object_New(state, iterablePrototype);
+        TEST_ASSERT_NOT_NULL(iteratorObject);
+        TEST_ASSERT_NOT_NULL(iterableObject);
+        ZrCore_Object_Init(state, iteratorObject);
+        ZrCore_Object_Init(state, iterableObject);
+
+        ZrCore_Value_InitAsInt(state, &stepValue, -1);
+        set_object_field_cstring(state, iteratorObject, "__iter_step", &stepValue);
+
+        ZrCore_Value_InitAsRawObject(state, &iteratorStoredValue, ZR_CAST_RAW_OBJECT_AS_SUPER(iteratorObject));
+        iteratorStoredValue.type = ZR_VALUE_TYPE_OBJECT;
+        set_object_field_cstring(state, iterableObject, "__contract_iterator", &iteratorStoredValue);
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(state,
+                                                                                         test_iter_contract_init_native)));
+        set_object_field_cstring(state, iterableObject, "getIterator", &functionValue);
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(state,
+                                                                                         test_iter_contract_move_next_native)));
+        set_object_field_cstring(state, iteratorObject, "moveNext", &functionValue);
+
+        ZrCore_Value_InitAsRawObject(state,
+                                     &functionValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(create_native_callable(state,
+                                                                                         test_iter_contract_current_native)));
+        set_object_field_cstring(state, iteratorObject, "current", &functionValue);
+
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(iterableObject));
+        receiver.type = ZR_VALUE_TYPE_OBJECT;
+
+        TEST_ASSERT_FALSE(ZrCore_Object_IterInit(state, &receiver, &iteratorValue));
+
+        ZrCore_Value_InitAsRawObject(state, &iteratorValue, ZR_CAST_RAW_OBJECT_AS_SUPER(iteratorObject));
+        iteratorValue.type = ZR_VALUE_TYPE_OBJECT;
+        TEST_ASSERT_FALSE(ZrCore_Object_IterMoveNext(state, &iteratorValue, &moveResult));
+        TEST_ASSERT_FALSE(ZrCore_Object_IterCurrent(state, &iteratorValue, &currentValue));
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Iteration Requires Explicit Contracts");
     TEST_DIVIDER();
 }
 
@@ -2185,7 +3761,8 @@ static void test_neg_generic(void) {
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
     SZrTypeValue *result = ZrCore_Stack_GetValue(base + 2);
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(result->type));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(result->type));
+    TEST_ASSERT_EQUAL_INT64(-5, result->value.nativeObject.nativeInt64);
 
     ZrCore_Function_Free(state, function);
     destroy_test_state(state);
@@ -2674,8 +4251,21 @@ int main(void) {
     RUN_TEST(test_create_array);
 
     // 表操作指令测试
-    RUN_TEST(test_gettable);
-    RUN_TEST(test_settable);
+    RUN_TEST(test_get_by_index);
+    RUN_TEST(test_set_by_index);
+    RUN_TEST(test_get_member_uses_property_descriptor);
+    RUN_TEST(test_builtin_array_length_member_uses_native_contract);
+    RUN_TEST(test_meta_get_and_meta_set_instructions_dispatch_hidden_accessors);
+    RUN_TEST(test_super_meta_get_and_meta_set_cached_instructions_fill_and_hit_callsite_cache);
+    RUN_TEST(test_object_invoke_member_omits_receiver_for_static_hidden_accessor);
+    RUN_TEST(test_super_meta_get_cached_instruction_populates_two_slot_pic);
+    RUN_TEST(test_super_meta_call_cached_instruction_fills_and_hits_callsite_pic);
+    RUN_TEST(test_super_dyn_call_cached_instruction_fills_and_hits_callsite_pic);
+    RUN_TEST(test_super_meta_get_and_meta_set_static_cached_instructions_fill_and_hit_callsite_cache);
+    RUN_TEST(test_index_contract_dispatches_without_storage_fallback);
+    RUN_TEST(test_index_contract_get_preserves_receiver_when_destination_aliases);
+    RUN_TEST(test_iterator_contract_dispatches_without_named_protocol_members);
+    RUN_TEST(test_iteration_requires_explicit_contracts_not_named_members);
 
     // 闭包操作指令测试
     RUN_TEST(test_get_closure);

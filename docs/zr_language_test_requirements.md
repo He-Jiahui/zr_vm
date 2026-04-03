@@ -221,6 +221,128 @@ func swap<T>(%ref value: T): T { return value; }
 
 **测试文件**: `tests/language_server/test_semantic_analyzer.c`
 
+### 3.6 Native 容器 / Fixed Array 深度测试
+
+**优先级**: 高  
+**状态**: 已实现首轮深度矩阵，后续按回归继续扩展
+
+```zr
+var container = %import("zr.container");
+
+var fixed: int[4] = [1, 2, 3, 4];
+var xs: Array<int> = new container.Array<int>();
+var map: Map<string, int> = new container.Map<string, int>();
+var set: Set<Pair<int, string>> = new container.Set<Pair<int, string>>();
+var list: LinkedList<int> = new container.LinkedList<int>();
+```
+
+**默认必跑覆盖层**:
+- 运行时语义: `tests/container/test_container_runtime.c`
+  - fixed array 读写、迭代、长度约束
+  - `Array<T>` 扩容、插入/删除、clear、越界、结构相等
+  - `Map<K,V>` 覆盖写、`[]`、Pair key、顺序无关迭代
+  - `Set<T>` 唯一性、Pair 值语义
+  - `Pair<K,V>` `equals` / `compareTo` / `hashCode`
+  - `LinkedList<T>` 节点脱链、空移除、typed function boundary 上的 `removeFirst`
+- 元数据 / 反射: `tests/container/test_container_metadata.c`
+  - `zr.container` 导出项
+  - open generic 参数 / 约束 / implemented interfaces
+  - closed native instance canonical name、字段 / 方法 / meta-method 签名替换
+- 编译 / 类型推断: `tests/container/test_container_type_inference.c`
+  - fixed array 类型身份与 `ArrayLike` / `Iterable` 适配
+  - native generic 约束接受 / 拒绝路径
+  - `GET_MEMBER` / `SET_MEMBER` 与 `GET_BY_INDEX` / `SET_BY_INDEX` 分流后的返回类型
+  - typed function return 上的 native container method 闭型保持
+  - `Set` / `LinkedList` 非法 `[]` 拒绝路径
+- LSP / 语义展示:
+  - `tests/language_server/test_semantic_analyzer.c`
+  - `tests/language_server/test_lsp_project_features.c`
+  - 覆盖 native generic hover / completion、`zr.container` 模块成员补全、`LinkedNode<int>` / `Array<int>` 关闭类型展示
+- 多文件集成工程:
+  - `tests/fixtures/projects/container_matrix/`
+  - `tests/projects/CMakeLists.txt`
+  - 要求输出 deterministic banner + checksum（当前标准: `CONTAINER_MATRIX_PASS` + `635`）
+
+**持续回归优先补充点**:
+- `Map` / `Set` 迭代顺序无关聚合，不锁顺序只锁总和/集合语义
+- `Map` key 与成员名冲突、`Pair` 相等 key 覆盖不增计数
+- `LinkedList.clear` 后旧节点完全脱链
+- fixed array 作为参数传给 `ArrayLike<T>` / `Iterable<T>` 约束目标
+- 同一 closed native generic 在重复 materialize / import alias 场景下保持稳定身份
+
+### 3.7 基础访问语义 / 迭代 / 协议 / 构造目标测试
+
+**优先级**: 最高  
+**状态**: 进行中，属于破坏式底层迁移，旧 `.zri/.zro` 产物必须重生成
+
+```zr
+var obj = { name: 1 };
+var a = obj.name;
+var b = obj["name"];
+obj.name = 2;
+obj["name"] = 3;
+
+for (var item in values) {
+    total = total + item;
+}
+```
+
+**默认必跑覆盖层**:
+- parser / lowering: `tests/parser/test_compiler_features.c`
+  - `.` 只能落成 `GET_MEMBER` / `SET_MEMBER`
+  - `[]` 只能落成 `GET_BY_INDEX` / `SET_BY_INDEX`
+  - emitted `.zri` 不允许再出现 `GETTABLE` / `SETTABLE` / `DYN_GET` / `DYN_SET`
+- SemIR / ExecBC / AOT artifact: `tests/parser/test_semir_pipeline.c` + `tests/parser/test_execbc_aot_pipeline.c` + `tests/parser/test_dynamic_iteration_pipeline.c`
+  - SemIR enum 与文本产物不再保留 `DYN_GET` / `DYN_SET`
+  - AOT C / LLVM artifact 不再声明仅服务旧动态访问 quickening 的 runtime contract
+  - 禁止保留旧访问兼容 quickening，例如 `SUPER_GET_GLOBAL_NAMED`
+  - dynamic foreach 允许在 ExecBC 上把 `DYN_ITER_MOVE_NEXT + JUMP_IF(false)` 融合成 `SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE`
+  - 该 superinstruction 只允许出现在 ExecBC；`.zri` 的 SemIR 区段和 AOT C / LLVM artifact 仍必须保留 `DYN_ITER_INIT` / `DYN_ITER_MOVE_NEXT`
+  - 零参数 `FUNCTION_CALL` / `DYN_CALL` / `META_CALL` / `FUNCTION_TAIL_CALL` / `DYN_TAIL_CALL` / `META_TAIL_CALL` 允许在 ExecBC 上 quicken 成对应的 `SUPER_*_CALL_NO_ARGS`
+  - 这些 zero-arg superinstruction 只允许出现在 ExecBC；`SemIR` / AOT artifact 仍必须保留原始语义 opcode
+- dynamic/meta call artifact: `tests/parser/test_meta_call_pipeline.c` + `tests/parser/test_tail_call_pipeline.c`
+  - 非 tail `@call` 站点必须显式保留 `META_CALL`
+  - tail position 上无法静态解析的 callable 必须显式保留 `DYN_TAIL_CALL`
+  - tail position 上的 `@call` receiver 必须显式保留 `META_TAIL_CALL`
+  - property getter/setter 必须直接落成 ExecBC `META_GET` / `META_SET`，不能再退化成 `GET_MEMBER + FUNCTION_CALL (+ SET_STACK)` helper 序列
+  - `SemIR` / `.zri` / AOT C / AOT LLVM 中必须显式保留 `META_GET` / `META_SET`
+  - `.zri`、AOT C、AOT LLVM 三类产物都必须保留这些 opcode 名称，而不是退化成普通 `FUNCTION_TAIL_CALL`
+  - `DYN_CALL` / `DYN_TAIL_CALL` / `META_CALL` / `META_TAIL_CALL` / `META_GET` / `META_SET` 必须统一携带 shared `FUNCTION_PRECALL` runtime contract 或等价 runtime contract 与 deopt metadata
+  - 深尾递归必须证明 `callInfo` 链保持有界，而不是只验证结果值正确
+  - 带活动异常处理器或 `%using` cleanup 的 frame 必须允许显式回退到非复用路径，不能为了 TCO 破坏现有展开语义
+- ownership lifecycle artifact: `tests/parser/test_parser.c` + `tests/parser/test_compiler_features.c` + `tests/parser/test_execbc_aot_pipeline.c`
+  - parser 必须把 `%upgrade(expr)` / `%release(expr)` 解析成 dedicated ownership builtin，而不是继续复用普通 helper-call 形态
+  - ExecBC 必须显式保留 `OWN_UPGRADE` / `OWN_RELEASE`
+  - `SemIR`、`.zri`、AOT C、AOT LLVM 必须显式保留 `OWN_UPGRADE` / `OWN_RELEASE`
+  - AOT artifact 必须声明 `ZrCore_Ownership_UpgradeValue` / `ZrCore_Ownership_ReleaseValue` runtime contract 或等价 contract
+  - `%upgrade(weak)` 在仍有 shared owner 时必须返回非空 shared；最后一个 shared owner 消失后再次升级必须返回 `null`
+  - `%release` 当前若尚未引入 place-aware ownership effect，至少必须限制为 local identifier binding，不能假装正确支持 member/index/closure-place release
+- runtime contracts: `tests/instructions/test_instructions.c`
+  - member descriptor、index contract、iterable contract、iterator contract 全部走显式 contract dispatch
+  - `META_GET` / `META_SET` 必须直接调用 hidden accessor runtime path，而不是先退回普通成员取值再走 helper call
+  - `SUPER_META_GET_CACHED` / `SUPER_META_SET_CACHED` 必须通过 `CALLSITE_CACHE_TABLE` 命中，并在 receiver prototype 改变时重新 guard 不能错用旧 accessor
+  - static property accessor site 必须允许进一步 quicken 成 `SUPER_META_GET_STATIC_CACHED` / `SUPER_META_SET_STATIC_CACHED`
+  - static hidden accessor invocation 不能额外注入 receiver
+  - 禁止仅靠 `getIterator` / `moveNext` / `current` 字段名字满足 `foreach`
+- compiler + runtime integration: `tests/parser/test_instruction_execution.c`
+  - binary import roundtrip 后仍保留 `GET_MEMBER` metadata
+  - `GET_MEMBER` / `GET_BY_INDEX` 混合链式访问、赋值、模板字符串、全局 sugar 都要回归
+- native/container/module integration:
+  - `tests/container/test_container_runtime.c`
+  - `tests/module/test_module_system.c`
+  - 覆盖 field、method、property、static member、prototype inherited member、dynamic member opt-in、array/map/plain object/custom indexable、native iterable、custom iterable
+- project / CLI / artifact:
+  - `tests/cmake/run_cli_suite.cmake`
+  - `tests/fixtures/projects/classes/`
+  - `tests/fixtures/projects/native_numeric_pipeline/`
+  - 旧访问语义产生的 `.zri/.zro` 视为失效产物，fixture 需要重新编译，不保留运行时兼容分支
+
+**持续回归优先补充点**:
+- protocol conformance 统一走稳定 `protocol_id`，不再依赖 `Iterable` / `Iterator` / `ArrayLike` 字符串白名单
+- construct-target resolution 统一走 prototype identity，不再按 `"Array"` / `"Map"` / `"Tensor"` / `"Pair"` 等名字复用 self
+- property accessor、static member、prototype member、dynamic member write opt-in 的顺序冲突和边界错误路径
+- 空迭代器、失效迭代器、GC 下活跃 iterator/constructor 对象、重复导入 `.zro` 的压力测试
+
 ## 4. 装饰器测试
 
 ### 4.1 类装饰器测试

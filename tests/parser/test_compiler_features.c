@@ -72,6 +72,7 @@ typedef struct SZrCompiledPrototypeInfoView {
     TZrUInt32 accessModifier;
     TZrUInt32 inheritsCount;
     TZrUInt32 membersCount;
+    TZrUInt64 protocolMask;
 } SZrCompiledPrototypeInfoView;
 
 typedef struct SZrCompiledMemberInfoView {
@@ -93,6 +94,7 @@ typedef struct SZrCompiledMemberInfoView {
     TZrUInt32 callsClose;
     TZrUInt32 callsDestructor;
     TZrUInt32 declarationOrder;
+    TZrUInt32 contractRole;
 } SZrCompiledMemberInfoView;
 #pragma pack(pop)
 
@@ -408,11 +410,26 @@ static void test_function_parameter_handling(void) {
             case ZR_INSTRUCTION_ENUM(SETUPVAL):
                 opcodeName = "SETUPVAL";
                 break;
-            case ZR_INSTRUCTION_ENUM(GETTABLE):
-                opcodeName = "GETTABLE";
+            case ZR_INSTRUCTION_ENUM(GET_MEMBER):
+                opcodeName = "GET_MEMBER";
                 break;
-            case ZR_INSTRUCTION_ENUM(SETTABLE):
-                opcodeName = "SETTABLE";
+            case ZR_INSTRUCTION_ENUM(SET_MEMBER):
+                opcodeName = "SET_MEMBER";
+                break;
+            case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
+                opcodeName = "GET_BY_INDEX";
+                break;
+            case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
+                opcodeName = "SET_BY_INDEX";
+                break;
+            case ZR_INSTRUCTION_ENUM(ITER_INIT):
+                opcodeName = "ITER_INIT";
+                break;
+            case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
+                opcodeName = "ITER_MOVE_NEXT";
+                break;
+            case ZR_INSTRUCTION_ENUM(ITER_CURRENT):
+                opcodeName = "ITER_CURRENT";
                 break;
             case ZR_INSTRUCTION_ENUM(ADD_INT):
                 opcodeName = "ADD_INT";
@@ -537,9 +554,12 @@ static void test_function_parameter_handling(void) {
                    opcode == ZR_INSTRUCTION_ENUM(MOD_SIGNED) || opcode == ZR_INSTRUCTION_ENUM(MOD_FLOAT)) {
             // 二元运算指令：extra=结果槽位, operand1[0]=左操作数, operand1[1]=右操作数
             printf(" dst=%u, left=%u, right=%u", operandExtra, op1_0, op1_1);
-        } else if (opcode == ZR_INSTRUCTION_ENUM(GETTABLE) || opcode == ZR_INSTRUCTION_ENUM(SETTABLE)) {
-            // 表访问指令：extra=结果槽位, operand1[0]=表槽位, operand1[1]=键槽位
-            printf(" dst=%u, table=%u, key=%u", operandExtra, op1_0, op1_1);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER) || opcode == ZR_INSTRUCTION_ENUM(SET_MEMBER) ||
+                   opcode == ZR_INSTRUCTION_ENUM(GET_BY_INDEX) || opcode == ZR_INSTRUCTION_ENUM(SET_BY_INDEX)) {
+            printf(" dst=%u, receiver=%u, operand=%u", operandExtra, op1_0, op1_1);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(ITER_INIT) || opcode == ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(ITER_CURRENT)) {
+            printf(" dst=%u, iterator=%u", operandExtra, op1_0);
         } else if (opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL) || opcode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
             // 函数调用/返回指令：extra=结果数量, operand1[0]=结果槽位, operand1[1]=参数数量或0
             printf(" result_count=%u, result_slot=%u", operandExtra, op1_0);
@@ -633,7 +653,7 @@ static void test_global_object_access(void) {
 
     TEST_START(testSummary);
     TEST_INFO("Global Object Access",
-              "Testing that global object properties can be accessed using GET_GLOBAL + GETTABLE");
+              "Testing that global object properties can be accessed using GET_GLOBAL + GET_MEMBER");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -704,11 +724,26 @@ static void test_global_object_access(void) {
             case ZR_INSTRUCTION_ENUM(SETUPVAL):
                 opcodeName = "SETUPVAL";
                 break;
-            case ZR_INSTRUCTION_ENUM(GETTABLE):
-                opcodeName = "GETTABLE";
+            case ZR_INSTRUCTION_ENUM(GET_MEMBER):
+                opcodeName = "GET_MEMBER";
                 break;
-            case ZR_INSTRUCTION_ENUM(SETTABLE):
-                opcodeName = "SETTABLE";
+            case ZR_INSTRUCTION_ENUM(SET_MEMBER):
+                opcodeName = "SET_MEMBER";
+                break;
+            case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
+                opcodeName = "GET_BY_INDEX";
+                break;
+            case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
+                opcodeName = "SET_BY_INDEX";
+                break;
+            case ZR_INSTRUCTION_ENUM(ITER_INIT):
+                opcodeName = "ITER_INIT";
+                break;
+            case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
+                opcodeName = "ITER_MOVE_NEXT";
+                break;
+            case ZR_INSTRUCTION_ENUM(ITER_CURRENT):
+                opcodeName = "ITER_CURRENT";
                 break;
             case ZR_INSTRUCTION_ENUM(ADD_INT):
                 opcodeName = "ADD_INT";
@@ -828,9 +863,12 @@ static void test_global_object_access(void) {
                    opcode == ZR_INSTRUCTION_ENUM(MOD_SIGNED) || opcode == ZR_INSTRUCTION_ENUM(MOD_FLOAT)) {
             // 二元运算指令：extra=结果槽位, operand1[0]=左操作数, operand1[1]=右操作数
             printf(" dst=%u, left=%u, right=%u", operandExtra, op1_0, op1_1);
-        } else if (opcode == ZR_INSTRUCTION_ENUM(GETTABLE) || opcode == ZR_INSTRUCTION_ENUM(SETTABLE)) {
-            // 表访问指令：extra=结果槽位, operand1[0]=表槽位, operand1[1]=键槽位
-            printf(" dst=%u, table=%u, key=%u", operandExtra, op1_0, op1_1);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER) || opcode == ZR_INSTRUCTION_ENUM(SET_MEMBER) ||
+                   opcode == ZR_INSTRUCTION_ENUM(GET_BY_INDEX) || opcode == ZR_INSTRUCTION_ENUM(SET_BY_INDEX)) {
+            printf(" dst=%u, receiver=%u, operand=%u", operandExtra, op1_0, op1_1);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(ITER_INIT) || opcode == ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(ITER_CURRENT)) {
+            printf(" dst=%u, iterator=%u", operandExtra, op1_0);
         } else if (opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL) || opcode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
             // 函数调用/返回指令：extra=结果数量, operand1[0]=结果槽位, operand1[1]=参数数量或0
             printf(" result_count=%u, result_slot=%u", operandExtra, op1_0);
@@ -1740,7 +1778,7 @@ static void test_ownership_builtin_shared_expression_compiles_without_prototype_
     timer.startTime = clock();
     TEST_START(testSummary);
     TEST_INFO("Ownership builtin expression lowering",
-              "Testing that %shared(expr) compiles as an ownership builtin call instead of prototype construction");
+              "Testing that %shared(expr) compiles to OWN_SHARE without serialized native helper constants");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -1757,7 +1795,6 @@ static void test_ownership_builtin_shared_expression_compiles_without_prototype_
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_builtin_shared_expr.zr", 32);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
-        TZrBool hasNativePointerConstant = ZR_FALSE;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
@@ -1774,14 +1811,8 @@ static void test_ownership_builtin_shared_expression_compiles_without_prototype_
             return;
         }
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
-        for (TZrUInt32 i = 0; i < func->constantValueLength; i++) {
-            if (func->constantValueList[i].type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-                hasNativePointerConstant = ZR_TRUE;
-                break;
-            }
-        }
-        TEST_ASSERT_TRUE(hasNativePointerConstant);
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
+        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED));
 
         ZrCore_Function_Free(state, func);
     }
@@ -1799,7 +1830,7 @@ static void test_ownership_builtin_shared_new_wraps_constructed_result(void) {
     timer.startTime = clock();
     TEST_START(testSummary);
     TEST_INFO("Ownership builtin new lowering",
-              "Testing that %shared new Box() emits an ownership helper wrapper after normal construction");
+              "Testing that %shared new Box() emits OWN_SHARE after construction instead of a serialized helper wrapper");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -1815,7 +1846,6 @@ static void test_ownership_builtin_shared_new_wraps_constructed_result(void) {
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_builtin_shared_new.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
-        TZrBool hasNativePointerConstant = ZR_FALSE;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
@@ -1832,14 +1862,8 @@ static void test_ownership_builtin_shared_new_wraps_constructed_result(void) {
             return;
         }
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
-        for (TZrUInt32 i = 0; i < func->constantValueLength; i++) {
-            if (func->constantValueList[i].type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-                hasNativePointerConstant = ZR_TRUE;
-                break;
-            }
-        }
-        TEST_ASSERT_TRUE(hasNativePointerConstant);
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
+        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED));
 
         ZrCore_Function_Free(state, func);
     }
@@ -2018,6 +2042,74 @@ static void test_ownership_weak_runtime_expires_to_null_after_last_shared_releas
             return;
         }
 
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
+        TEST_ASSERT_EQUAL_INT64(1, result);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Upgrade And Release Runtime Follow Lifecycle Contract";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Ownership runtime weak->shared upgrade and explicit release",
+              "Testing that %upgrade(weak) yields a live shared alias while an owner exists, and %release(owner) clears the last shared owner so a later upgrade becomes null");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Box {}\n"
+            "var owner = %shared new Box();\n"
+            "var watcher = %weak(owner);\n"
+            "var alias = %upgrade(watcher);\n"
+            "var releasedOwner = %release(owner);\n"
+            "var stillAlive = %upgrade(watcher);\n"
+            "var releasedAlias = %release(alias);\n"
+            "var releasedStillAlive = %release(stillAlive);\n"
+            "var second = %upgrade(watcher);\n"
+            "if (releasedOwner == null && releasedAlias == null && releasedStillAlive == null && owner == null && alias == null && stillAlive == null && second == null) {\n"
+            "    return 1;\n"
+            "}\n"
+            "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_upgrade_release_runtime.zr",
+                                                     strlen("ownership_upgrade_release_runtime.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        TZrInt64 result = 0;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership upgrade/release runtime source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership upgrade/release runtime source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
         TEST_ASSERT_EQUAL_INT64(1, result);
 
@@ -2266,6 +2358,8 @@ static void test_member_and_index_access_emit_split_opcodes(void) {
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SET_MEMBER"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "GET_BY_INDEX"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SET_BY_INDEX"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "DYN_GET"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "DYN_SET"));
         TEST_ASSERT_NULL(strstr(intermediateText, "GETTABLE"));
         TEST_ASSERT_NULL(strstr(intermediateText, "SETTABLE"));
 
@@ -2338,6 +2432,63 @@ static void test_global_member_access_emits_get_member(void) {
     TEST_DIVIDER();
 }
 
+static void test_fixed_array_lowering_does_not_emit_length_member_write(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Fixed Array Lowering Omits Length Member Write";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Fixed array lowering",
+              "Testing that fixed-size array initialization lowers through CREATE_ARRAY and SET_BY_INDEX without synthesizing SET_MEMBER length writes");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "read(): int {\n"
+                "    var xs: int[3];\n"
+                "    return xs.length;\n"
+                "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "fixed_array_length_lowering_test.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *wrapper;
+        SZrFunction *readFunction;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse fixed array source");
+            destroy_test_state(state);
+            return;
+        }
+
+        wrapper = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (wrapper == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile fixed array source");
+            destroy_test_state(state);
+            return;
+        }
+
+        readFunction = get_single_compiled_child_function(wrapper);
+        TEST_ASSERT_TRUE(function_contains_opcode(readFunction, ZR_INSTRUCTION_ENUM(CREATE_ARRAY)));
+        TEST_ASSERT_TRUE(function_contains_opcode(readFunction, ZR_INSTRUCTION_ENUM(SET_BY_INDEX)));
+        TEST_ASSERT_TRUE(function_contains_opcode(readFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        TEST_ASSERT_FALSE(function_contains_opcode(readFunction, ZR_INSTRUCTION_ENUM(SET_MEMBER)));
+        ZrCore_Function_Free(state, wrapper);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 static void test_foreach_emits_iterator_contract_opcodes(void) {
     SZrTestTimer timer;
     const char *testSummary = "Foreach Emits Iterator Contract Opcodes";
@@ -2356,7 +2507,7 @@ static void test_foreach_emits_iterator_contract_opcodes(void) {
 
     {
         const char *source =
-                "foreach (item in [1, 2, 3]) {\n"
+                "for(var item in [1, 2, 3]) {\n"
                 "    var x = item;\n"
                 "}";
         const char *intermediatePath = "foreach_iterator_contract_test.zri";
@@ -2403,14 +2554,14 @@ static void test_foreach_emits_iterator_contract_opcodes(void) {
     TEST_DIVIDER();
 }
 
-static void test_type_expression_compiles_to_internal_reflection_helper(void) {
+static void test_type_expression_compiles_to_typeof_opcode(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Type Expression Compiles To Internal Reflection Helper";
+    const char *testSummary = "Type Expression Compiles To TYPEOF Opcode";
 
     timer.startTime = clock();
     TEST_START(testSummary);
     TEST_INFO("Type expression lowering",
-              "Testing that %type(expr) lowers to an internal native reflection helper call");
+              "Testing that %type(expr) lowers to the dedicated TYPEOF opcode instead of a serialized native helper");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -2443,9 +2594,64 @@ static void test_type_expression_compiles_to_internal_reflection_helper(void) {
             return;
         }
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
-        TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(TYPEOF)));
+        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF));
 
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_binary_writer_handles_exported_function_alias_with_unknown_parameter_types(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Binary Writer Handles Exported Function Alias With Unknown Parameter Types";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Binary writer export metadata",
+              "Testing that exported aliases of partially typed functions still serialize typed export metadata without crashes");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "runCallbacksImpl(lin, signal, tensor) {\n"
+                "    return 0;\n"
+                "}\n"
+                "pub var runCallbacks = runCallbacksImpl;";
+        const char *binaryPath = "export_alias_unknown_params_test.zro";
+        SZrString *sourceName = ZrCore_String_Create(state, "export_alias_unknown_params_test.zr", 35);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse exported alias source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile exported alias source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, func, binaryPath));
+
+        remove(binaryPath);
         ZrCore_Function_Free(state, func);
     }
 
@@ -2499,12 +2705,14 @@ int main(void) {
     RUN_TEST(test_member_access_type_inference);
     RUN_TEST(test_type_conversion_instructions);
     RUN_TEST(test_function_call_argument_conversion_emits_to_float);
-    RUN_TEST(test_type_expression_compiles_to_internal_reflection_helper);
+    RUN_TEST(test_type_expression_compiles_to_typeof_opcode);
     RUN_TEST(test_intermediate_writer_emits_type_metadata_section);
     RUN_TEST(test_intermediate_writer_emits_compile_time_and_test_metadata);
     RUN_TEST(test_member_and_index_access_emit_split_opcodes);
     RUN_TEST(test_global_member_access_emits_get_member);
+    RUN_TEST(test_fixed_array_lowering_does_not_emit_length_member_write);
     RUN_TEST(test_foreach_emits_iterator_contract_opcodes);
+    RUN_TEST(test_binary_writer_handles_exported_function_alias_with_unknown_parameter_types);
 
     // 高级功能测试模块
     printf("==========\n");
@@ -2521,6 +2729,7 @@ int main(void) {
     RUN_TEST(test_ownership_unique_share_runtime_moves_source_to_null);
     RUN_TEST(test_ownership_using_share_runtime_moves_source_to_null);
     RUN_TEST(test_ownership_weak_runtime_expires_to_null_after_last_shared_release);
+    RUN_TEST(test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract);
 
     printf("\n");
     TEST_MODULE_DIVIDER();

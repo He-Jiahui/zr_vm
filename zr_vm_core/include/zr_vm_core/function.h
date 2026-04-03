@@ -14,6 +14,22 @@ struct SZrTypeValueOnStack;
 struct SZrString;
 struct SZrObjectPrototype;
 
+typedef enum EZrFunctionMemberEntryKind {
+    ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL = 0,
+    ZR_FUNCTION_MEMBER_ENTRY_KIND_BOUND_DESCRIPTOR = 1
+} EZrFunctionMemberEntryKind;
+
+typedef struct SZrFunctionMemberEntry {
+    struct SZrString *symbol;
+    TZrUInt8 entryKind;
+    TZrUInt8 reserved0;
+    TZrUInt16 reserved1;
+    TZrUInt32 prototypeIndex;
+    TZrUInt32 descriptorIndex;
+} SZrFunctionMemberEntry;
+
+#define ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR ((TZrUInt8)0x01)
+
 struct ZR_STRUCT_ALIGN SZrFunctionStackAnchor {
     TZrMemoryOffset offset;
 };
@@ -124,6 +140,113 @@ typedef struct SZrFunctionTestInfo {
     TZrUInt32 lineInSourceEnd;
 } SZrFunctionTestInfo;
 
+typedef enum EZrSemIrOpcode {
+    ZR_SEMIR_OPCODE_NOP = 0,
+    ZR_SEMIR_OPCODE_OWN_UNIQUE = 1,
+    ZR_SEMIR_OPCODE_OWN_USING = 2,
+    ZR_SEMIR_OPCODE_OWN_SHARE = 3,
+    ZR_SEMIR_OPCODE_OWN_WEAK = 4,
+    ZR_SEMIR_OPCODE_TYPEOF = 5,
+    ZR_SEMIR_OPCODE_DYN_CALL = 6,
+    ZR_SEMIR_OPCODE_DYN_TAIL_CALL = 7,
+    ZR_SEMIR_OPCODE_META_CALL = 8,
+    ZR_SEMIR_OPCODE_META_TAIL_CALL = 9,
+    ZR_SEMIR_OPCODE_META_GET = 10,
+    ZR_SEMIR_OPCODE_META_SET = 11,
+    ZR_SEMIR_OPCODE_DYN_ITER_INIT = 12,
+    ZR_SEMIR_OPCODE_DYN_ITER_MOVE_NEXT = 13,
+    ZR_SEMIR_OPCODE_OWN_UPGRADE = 14,
+    ZR_SEMIR_OPCODE_OWN_RELEASE = 15
+} EZrSemIrOpcode;
+
+typedef enum EZrSemIrEffectKind {
+    ZR_SEMIR_EFFECT_KIND_NONE = 0,
+    ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION = 1,
+    ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME = 2
+} EZrSemIrEffectKind;
+
+typedef enum EZrSemIrOwnershipState {
+    ZR_SEMIR_OWNERSHIP_STATE_PLAIN_GC = 0,
+    ZR_SEMIR_OWNERSHIP_STATE_UNIQUE = 1,
+    ZR_SEMIR_OWNERSHIP_STATE_SHARED = 2,
+    ZR_SEMIR_OWNERSHIP_STATE_WEAK = 3,
+    ZR_SEMIR_OWNERSHIP_STATE_BORROW_SHARED = 4,
+    ZR_SEMIR_OWNERSHIP_STATE_BORROW_MUT = 5
+} EZrSemIrOwnershipState;
+
+typedef struct SZrSemIrOwnershipEntry {
+    TZrUInt32 state;
+} SZrSemIrOwnershipEntry;
+
+typedef struct SZrSemIrEffectEntry {
+    TZrUInt32 kind;
+    TZrUInt32 instructionIndex;
+    TZrUInt32 ownershipInputIndex;
+    TZrUInt32 ownershipOutputIndex;
+} SZrSemIrEffectEntry;
+
+typedef struct SZrSemIrBlockEntry {
+    TZrUInt32 blockId;
+    TZrUInt32 firstInstructionIndex;
+    TZrUInt32 instructionCount;
+} SZrSemIrBlockEntry;
+
+typedef struct SZrSemIrInstruction {
+    TZrUInt32 opcode;
+    TZrUInt32 execInstructionIndex;
+    TZrUInt32 typeTableIndex;
+    TZrUInt32 effectTableIndex;
+    TZrUInt32 destinationSlot;
+    TZrUInt32 operand0;
+    TZrUInt32 operand1;
+    TZrUInt32 deoptId;
+} SZrSemIrInstruction;
+
+typedef struct SZrSemIrDeoptEntry {
+    TZrUInt32 deoptId;
+    TZrUInt32 execInstructionIndex;
+} SZrSemIrDeoptEntry;
+
+#define ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY ((TZrUInt32)2)
+
+typedef enum EZrFunctionCallSiteCacheKind {
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_NONE = 0,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET = 1,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET = 2,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET_STATIC = 3,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET_STATIC = 4,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL = 5,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL = 6,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL = 7,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL = 8
+} EZrFunctionCallSiteCacheKind;
+
+typedef struct SZrFunctionCallSitePicSlot {
+    struct SZrObjectPrototype *cachedReceiverPrototype;
+    struct SZrObjectPrototype *cachedOwnerPrototype;
+    struct SZrFunction *cachedFunction;
+    TZrUInt32 cachedReceiverVersion;
+    TZrUInt32 cachedOwnerVersion;
+    TZrUInt32 cachedDescriptorIndex;
+    TZrUInt8 cachedIsStatic;
+    TZrUInt8 reserved0;
+    TZrUInt16 reserved1;
+} SZrFunctionCallSitePicSlot;
+
+typedef struct SZrFunctionCallSiteCacheEntry {
+    TZrUInt32 kind;
+    TZrUInt32 instructionIndex;
+    TZrUInt32 memberEntryIndex;
+    TZrUInt32 deoptId;
+    TZrUInt32 argumentCount;
+    TZrUInt32 picSlotCount;
+    TZrUInt32 picNextInsertIndex;
+    TZrUInt32 reserved2;
+    SZrFunctionCallSitePicSlot picSlots[ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY];
+    TZrUInt32 runtimeHitCount;
+    TZrUInt32 runtimeMissCount;
+} SZrFunctionCallSiteCacheEntry;
+
 struct ZR_STRUCT_ALIGN SZrFunction {
     SZrRawObject super;
     TZrUInt16 parameterCount;
@@ -177,6 +300,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 compileTimeFunctionInfoLength;
     SZrFunctionTestInfo *testInfos;
     TZrUInt32 testInfoLength;
+    SZrFunctionMemberEntry *memberEntries;
+    TZrUInt32 memberEntryLength;
     
     // prototype数据存储（从常量池迁移）
     TZrByte *prototypeData;                           // prototype 二进制数据（序列化后的 SZrCompiledPrototypeInfo 数组）
@@ -184,6 +309,21 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 prototypeCount;                         // prototype 数量
     struct SZrObjectPrototype **prototypeInstances; // 运行时实例化的prototype对象指针数组
     TZrUInt32 prototypeInstancesLength;               // prototype实例数组长度
+
+    SZrFunctionTypedTypeRef *semIrTypeTable;
+    TZrUInt32 semIrTypeTableLength;
+    SZrSemIrOwnershipEntry *semIrOwnershipTable;
+    TZrUInt32 semIrOwnershipTableLength;
+    SZrSemIrEffectEntry *semIrEffectTable;
+    TZrUInt32 semIrEffectTableLength;
+    SZrSemIrBlockEntry *semIrBlockTable;
+    TZrUInt32 semIrBlockTableLength;
+    SZrSemIrInstruction *semIrInstructions;
+    TZrUInt32 semIrInstructionLength;
+    SZrSemIrDeoptEntry *semIrDeoptTable;
+    TZrUInt32 semIrDeoptTableLength;
+    SZrFunctionCallSiteCacheEntry *callSiteCaches;
+    TZrUInt32 callSiteCacheLength;
 };
 
 typedef struct SZrFunction SZrFunction;
@@ -246,6 +386,10 @@ ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldAndRestoreAncho
 
 ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, TZrStackValuePointer stackPointer,
                                                   TZrSize resultCount, TZrStackValuePointer returnDestination);
+
+ZR_CORE_API TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
+                                                 struct SZrCallInfo *callInfo,
+                                                 TZrStackValuePointer stackPointer);
 
 ZR_CORE_API void ZrCore_Function_PostCall(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount);
 #endif // ZR_VM_CORE_FUNCTION_H

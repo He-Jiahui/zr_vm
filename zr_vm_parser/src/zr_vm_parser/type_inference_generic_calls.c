@@ -179,7 +179,7 @@ static void finalize_generic_call_diagnostic(TZrChar *diagnosticBuffer,
                                              const TZrChar *callableKind,
                                              SZrString *callableName,
                                              const TZrChar *fallbackDetail) {
-    TZrChar detailBuffer[256];
+    TZrChar detailBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
 
     if (diagnosticBuffer == ZR_NULL || diagnosticBufferSize == 0 || callableKind == ZR_NULL) {
         return;
@@ -204,7 +204,7 @@ static TZrBool explicit_const_generic_argument_to_type(SZrCompilerState *cs,
                                                        SZrAstNode *node,
                                                        SZrInferredType *result) {
     SZrTypeValue evaluatedValue;
-    TZrChar integerBuffer[64];
+    TZrChar integerBuffer[ZR_PARSER_INTEGER_BUFFER_LENGTH];
 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;

@@ -22,7 +22,7 @@ const char *zr_ffi_error_name(ZrFfiErrorCode code) {
 }
 
 void zr_ffi_raise_error(SZrState *state, ZrFfiErrorCode code, const char *format, ...) {
-    char message[512];
+    char message[ZR_FFI_DIAGNOSTIC_BUFFER_LENGTH];
     va_list arguments;
 
     if (state == ZR_NULL || format == ZR_NULL) {

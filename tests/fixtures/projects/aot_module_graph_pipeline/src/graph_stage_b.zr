@@ -1,0 +1,3 @@
+pub var merge = (left: int, right: int) => {
+    return left + right + 25;
+};

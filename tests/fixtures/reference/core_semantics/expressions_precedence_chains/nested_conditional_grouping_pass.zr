@@ -1,0 +1,5 @@
+%module "reference.expressions.conditional";
+
+%test("nested_conditional_grouping") {
+    return 1 == 1 ? (0 == 1 ? 20 : 30) : 40;
+}

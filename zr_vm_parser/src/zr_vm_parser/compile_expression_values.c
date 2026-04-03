@@ -322,23 +322,26 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
-    // 如果不是子函数，尝试作为全局对象（zr）的属性访问（使用 GET_GLOBAL + GETTABLE）
+    // 如果不是子函数，尝试作为全局对象（zr）的成员访问（使用 GET_GLOBAL + GET_MEMBER）
     // 1. 使用 GET_GLOBAL 获取全局 zr 对象
     TZrUInt32 globalObjSlot = allocate_stack_slot(cs);
     TZrInstruction getGlobalInst =
             create_instruction_0(ZR_INSTRUCTION_ENUM(GET_GLOBAL), ZR_COMPILE_SLOT_U16(globalObjSlot));
     emit_instruction(cs, getGlobalInst);
-    
-    // 2. 将属性名作为字符串常量压栈
-    TZrUInt32 nameSlot = emit_string_constant(cs, name);
-    if (nameSlot == (TZrUInt32)-1) {
-        return;
+
+    {
+        TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, name);
+        if (memberId == (TZrUInt32)-1) {
+            ZrParser_Compiler_Error(cs, "Failed to register global member symbol", cs->currentAst->location);
+            return;
+        }
+
+        emit_instruction(cs,
+                         create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                                              (TZrUInt16)globalObjSlot,
+                                              (TZrUInt16)globalObjSlot,
+                                              (TZrUInt16)memberId));
     }
-    
-    // 3. 使用 GETTABLE 访问属性
-    TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TZrUInt16)globalObjSlot, (TZrUInt16)globalObjSlot, (TZrUInt16)nameSlot);
-    emit_instruction(cs, getTableInst);
-    collapse_stack_to_slot(cs, globalObjSlot);
 }
 
 // 编译一元表达式
@@ -382,9 +385,10 @@ void compile_array_literal(SZrCompilerState *cs, SZrAstNode *node) {
             TZrInstruction getIndexInst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16)indexSlot, (TZrInt32)indexConstantIndex);
             emit_instruction(cs, getIndexInst);
             
-            // 使用 SETTABLE 设置数组元素
-            // SETTABLE 的格式: operandExtra = valueSlot (destination/value), operand1[0] = tableSlot, operand1[1] = keySlot
-            TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TZrUInt16)valueSlot, (TZrUInt16)destSlot, (TZrUInt16)indexSlot);
+            TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX),
+                                                               (TZrUInt16)valueSlot,
+                                                               (TZrUInt16)destSlot,
+                                                               (TZrUInt16)indexSlot);
             emit_instruction(cs, setTableInst);
             
             // 丢弃元素表达式留下的所有临时值，只保留数组对象本身。
@@ -444,8 +448,11 @@ void compile_object_literal(SZrCompilerState *cs, SZrAstNode *node) {
                         ZrParser_Expression_Compile(cs, kv->value);
                         TZrUInt32 valueSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
                         
-                        // 使用 SETTABLE 设置对象属性
-                        TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TZrUInt16)valueSlot, (TZrUInt16)destSlot, (TZrUInt16)keySlot);
+                        TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, keyName);
+                        TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER),
+                                                                           (TZrUInt16)valueSlot,
+                                                                           (TZrUInt16)destSlot,
+                                                                           (TZrUInt16)memberId);
                         emit_instruction(cs, setTableInst);
                         
                         // 丢弃属性表达式留下的所有临时值，只保留对象本身。
@@ -460,8 +467,10 @@ void compile_object_literal(SZrCompilerState *cs, SZrAstNode *node) {
                     ZrParser_Expression_Compile(cs, kv->value);
                     TZrUInt32 valueSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
                     
-                    // 使用 SETTABLE 设置对象属性
-                    TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE), (TZrUInt16)valueSlot, (TZrUInt16)destSlot, (TZrUInt16)keySlot);
+                    TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX),
+                                                                       (TZrUInt16)valueSlot,
+                                                                       (TZrUInt16)destSlot,
+                                                                       (TZrUInt16)keySlot);
                     emit_instruction(cs, setTableInst);
                     
                     // 丢弃属性表达式留下的所有临时值，只保留对象本身。

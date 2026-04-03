@@ -1,0 +1,6 @@
+%module "reference.expressions.chain";
+
+%test("member_index_call_chain") {
+    var box = { values: [3, 5] };
+    return <int> box.values[0] + <int> box.values[1] + <int> box.values[0];
+}

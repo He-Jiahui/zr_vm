@@ -1,0 +1,13 @@
+class FixtureConstElseIf {
+    pub const id: int;
+
+    pub @constructor(flag: int) {
+        if (flag == 1) {
+            this.id = 1;
+        } else if (flag == 2) {
+            this.id = 2;
+        } else {
+            this.id = 3;
+        }
+    }
+}

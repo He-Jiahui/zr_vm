@@ -1,0 +1,5 @@
+%module "reference.expressions.arithmetic";
+
+%test("arithmetic_precedence") {
+    return 2 + 3 * 4 + (10 - 5);
+}

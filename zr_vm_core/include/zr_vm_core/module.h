@@ -14,7 +14,6 @@ struct SZrState;
 struct SZrGlobalState;
 
 #define ZR_NATIVE_MODULE_INFO_EXPORT_NAME "__zr_native_module_info"
-#define ZR_NATIVE_MODULE_INFO_VERSION 1
 
 struct ZR_STRUCT_ALIGN SZrObjectModule {
     SZrObject super; // 继承自 SZrObject，pub 变量存储在 super.nodeMap

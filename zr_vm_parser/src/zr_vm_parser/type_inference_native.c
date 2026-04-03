@@ -139,10 +139,13 @@ static void native_module_info_init_prototype(SZrState *state,
     info->type = type;
     info->accessModifier = ZR_ACCESS_PUBLIC;
     info->isImportedNative = ZR_TRUE;
-    ZrCore_Array_Init(state, &info->inherits, sizeof(SZrString *), 2);
-    ZrCore_Array_Init(state, &info->implements, sizeof(SZrString *), 2);
-    ZrCore_Array_Init(state, &info->genericParameters, sizeof(SZrTypeGenericParameterInfo), 2);
-    ZrCore_Array_Init(state, &info->members, sizeof(SZrTypeMemberInfo), 8);
+    ZrCore_Array_Init(state, &info->inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(state, &info->implements, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(state,
+                      &info->genericParameters,
+                      sizeof(SZrTypeGenericParameterInfo),
+                      ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(state, &info->members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     info->extendsTypeName = ZR_NULL;
     info->enumValueTypeName = ZR_NULL;
     info->allowValueConstruction =
@@ -377,7 +380,10 @@ static void native_module_info_add_generic_parameter(SZrState *state,
 
     memset(&genericInfo, 0, sizeof(genericInfo));
     genericInfo.name = name;
-    ZrCore_Array_Init(state, &genericInfo.constraintTypeNames, sizeof(SZrString *), 2);
+    ZrCore_Array_Init(state,
+                      &genericInfo.constraintTypeNames,
+                      sizeof(SZrString *),
+                      ZR_PARSER_INITIAL_CAPACITY_PAIR);
 
     constraintsArray = native_module_info_get_array_field(state, genericParameterEntry, "constraints");
     for (TZrSize index = 0; index < native_module_info_array_length(constraintsArray); index++) {
@@ -1234,6 +1240,8 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
 
                 if (memberExpr->computed) {
                     SZrTypeMemberInfo *metaMember;
+                    SZrTypePrototypeInfo *knownPrototype;
+                    TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
 
                     if (currentType.typeName == ZR_NULL) {
                         ZrParser_InferredType_Free(cs->state, &currentType);
@@ -1243,6 +1251,17 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
 
                     metaMember = find_compiler_type_meta_member_inference(cs, currentType.typeName, ZR_META_GET_ITEM);
                     if (metaMember == ZR_NULL) {
+                        knownPrototype = find_compiler_type_prototype_inference(cs, currentType.typeName);
+                        if (knownPrototype != ZR_NULL) {
+                            snprintf(errorMessage,
+                                     sizeof(errorMessage),
+                                     "Type '%s' does not support computed member access",
+                                     ZrCore_String_GetNativeString(currentType.typeName));
+                            ZrParser_Compiler_Error(cs, errorMessage, memberNode->location);
+                            ZrParser_InferredType_Free(cs->state, &currentType);
+                            return ZR_FALSE;
+                        }
+
                         ZrParser_InferredType_Free(cs->state, &currentType);
                         ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
                         return ZR_TRUE;
@@ -1298,7 +1317,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                 ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
                 if (nextIsFunctionCall) {
                     SZrResolvedCallSignature resolvedMemberSignature;
-                    TZrChar genericDiagnostic[256];
+                    TZrChar genericDiagnostic[ZR_PARSER_ERROR_BUFFER_LENGTH];
 
                     memset(&resolvedMemberSignature, 0, sizeof(resolvedMemberSignature));
                     ZrParser_InferredType_Init(cs->state, &resolvedMemberSignature.returnType, ZR_VALUE_TYPE_OBJECT);
@@ -1476,7 +1495,7 @@ static TZrBool type_name_string_append_type(SZrState *state,
                                             TZrChar *buffer,
                                             TZrSize bufferSize,
                                             TZrSize *writeIndex) {
-    TZrChar nestedBuffer[128];
+    TZrChar nestedBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
     const TZrChar *ownershipPrefix;
     const TZrChar *baseName;
 

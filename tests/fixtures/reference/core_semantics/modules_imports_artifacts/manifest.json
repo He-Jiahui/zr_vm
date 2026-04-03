@@ -1,0 +1,1288 @@
+{
+  "domain": "modules_imports_artifacts",
+  "summary": "Reference matrix for source or binary imports, project behavior, and artifact roundtrip contracts.",
+  "cases": [
+    {
+      "id": "modules-root-member-chain-pass",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "import_member_chain",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/tools/javac/importscope/ImportMembersTest.java",
+      "upstream_intent": "Imported roots should support stable member chains through explicit scope construction.",
+      "zr_decision": "adopt",
+      "zr_contract": "Root imports may participate in member chains without special runtime fallbacks.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "module/project"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "root module member chain compiles and executes",
+      "assertions": [
+        "import resolution records the root module identity",
+        "member chain uses ordinary member lowering",
+        "project fixture returns the expected value"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "root module member chain compiles and executes"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-source-binary-same-logical-path",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "source_binary_identity",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/tests/test_cyclic_import.js",
+      "upstream_intent": "Source and binary loading should converge on one logical module identity.",
+      "zr_decision": "adopt",
+      "zr_contract": "Source and binary forms of the same logical module share one canonical identity.",
+      "layer_targets": [
+        "module/project",
+        "artifact",
+        "runtime"
+      ],
+      "case_kind": "happy",
+      "expected_outcome": "source and binary import forms resolve to the same logical module identity",
+      "assertions": [
+        "module cache key is canonicalized",
+        "artifact metadata preserves the canonical path",
+        "runtime imported module identity matches across forms"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "source and binary import forms resolve to the same logical module identity"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-cyclic-import-reject",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "import_graphs",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/tests/test_cyclic_import.js",
+      "upstream_intent": "Cyclic imports need deterministic behavior and dedicated diagnostics.",
+      "zr_decision": "adapt",
+      "zr_contract": "ZR either rejects unsupported cycles or handles only the explicitly supported cycle forms with deterministic diagnostics.",
+      "layer_targets": [
+        "module/project",
+        "runtime",
+        "stress"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "unsupported cyclic import graph fails deterministically",
+      "assertions": [
+        "diagnostic names the import cycle",
+        "runtime cache state remains valid after failure",
+        "stress re-run of the failing graph stays deterministic"
+      ],
+      "stress_class": "full",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "unsupported cyclic import graph fails deterministically"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-hidden-internal-import-api-reject",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "module_visibility",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/jdk/jshell/ImportTest.java",
+      "upstream_intent": "Internal helper APIs should not leak into public import surfaces.",
+      "zr_decision": "adopt",
+      "zr_contract": "Hidden internal import helpers are not public module members.",
+      "layer_targets": [
+        "semantic/compiler",
+        "module/project",
+        "artifact"
+      ],
+      "case_kind": "negative",
+      "expected_outcome": "attempts to access hidden import helpers fail with visibility diagnostics",
+      "assertions": [
+        "diagnostic names inaccessible or hidden member",
+        "public export metadata omits the helper",
+        "artifact roundtrip preserves the hidden status"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "attempts to access hidden import helpers fail with visibility diagnostics"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-duplicate-import-identity",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "module_cache",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_import/__init__.py",
+      "upstream_intent": "Repeated imports should reuse a stable module identity.",
+      "zr_decision": "adopt",
+      "zr_contract": "Duplicate imports of the same logical path reuse module identity and cache state.",
+      "layer_targets": [
+        "module/project",
+        "runtime",
+        "stress"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "duplicate imports reuse one cached module instance",
+      "assertions": [
+        "cache hit and miss behavior is observable",
+        "runtime module object identity is reused",
+        "stress repeated import keeps one cache entry"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "duplicate imports reuse one cached module instance"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-cache-identity-boundary",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "module_cache",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_import/__init__.py",
+      "upstream_intent": "Boundary coverage should include repeated load after cache clear or reload.",
+      "zr_decision": "adapt",
+      "zr_contract": "Cache invalidation and reload are explicit module-system operations with stable observable identities.",
+      "layer_targets": [
+        "module/project",
+        "runtime",
+        "stress"
+      ],
+      "case_kind": "boundary",
+      "expected_outcome": "cache clear or reload semantics are deterministic and observable",
+      "assertions": [
+        "cache reset behavior is explicit",
+        "reloaded module identity differs only when contractually required",
+        "stress repeated load or clear stays stable"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "cache clear or reload semantics are deterministic and observable"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-binary-metadata-roundtrip",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "artifact_roundtrip",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/quickjs.c",
+      "upstream_intent": "Binary artifacts must preserve the metadata needed for later imports and reflection.",
+      "zr_decision": "adopt",
+      "zr_contract": "`.zri` and `.zro` roundtrip module metadata, protocol conformance, and member tokens without compatibility shims.",
+      "layer_targets": [
+        "artifact",
+        "module/project",
+        "runtime"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "binary import restores the same metadata contract as source compilation",
+      "assertions": [
+        "artifact text contains required metadata sections",
+        "binary reload restores metadata used by runtime",
+        "module fixture behaves the same after roundtrip"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "smoke",
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "binary import restores the same metadata contract as source compilation"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-cli-project-observable-combination",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "cli_project_behavior",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/jdk/jshell/ForwardReferenceImportTest.java",
+      "upstream_intent": "Project and CLI behavior must stay aligned with compiler and module semantics.",
+      "zr_decision": "adapt",
+      "zr_contract": "CLI, project compile, and module cache observation share the same import contracts as unit tests.",
+      "layer_targets": [
+        "module/project",
+        "artifact",
+        "stress"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "CLI and project fixtures expose the same import results as unit tests",
+      "assertions": [
+        "CLI output or return code is stable",
+        "project fixture reuses the same module graph semantics",
+        "artifact generation matches CLI compilation"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "probe_summary",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [
+            "CLI and project fixtures expose the same import results as unit tests"
+          ],
+          "return": [
+            "CLI and project fixtures expose the same import results as unit tests"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "probe_summary",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-import-root-visibility-regression",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "module_visibility",
+      "upstream_language": "jdk",
+      "upstream_file": "lua/jdk/test/langtools/jdk/jshell/ImportTest.java",
+      "upstream_intent": "Import refactors often regress root visibility and aliasing rules.",
+      "zr_decision": "adopt",
+      "zr_contract": "Imported root visibility remains stable across module-system refactors.",
+      "layer_targets": [
+        "semantic/compiler",
+        "module/project",
+        "artifact"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "root visibility diagnostics and exports remain stable",
+      "assertions": [
+        "visibility rules are asserted through module metadata",
+        "project fixture reproduces the same root access contract",
+        "artifact preserves export visibility"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "root visibility diagnostics and exports remain stable"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-artifact-text-enum-regression",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "artifact_roundtrip",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/quickjs.h",
+      "upstream_intent": "Artifact text is an external debugging contract and needs regression coverage.",
+      "zr_decision": "adapt",
+      "zr_contract": "Artifact text keeps enough stable structure to assert module metadata contracts across upgrades.",
+      "layer_targets": [
+        "artifact",
+        "module/project",
+        "runtime"
+      ],
+      "case_kind": "regression",
+      "expected_outcome": "artifact text and binary reload keep the same public metadata contract",
+      "assertions": [
+        "artifact sections remain present and ordered",
+        "module metadata reload uses the same tokens",
+        "runtime behavior after reload remains unchanged"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "artifact text and binary reload keep the same public metadata contract"
+          ],
+          "exception": [],
+          "cleanup_trace": [
+            "artifact sections remain present and ordered"
+          ]
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-no-implicit-relative-import-divergence",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "surface_divergence",
+      "upstream_language": "cpython",
+      "upstream_file": "lua/cpython/Lib/test/test_import/__init__.py",
+      "upstream_intent": "Reference languages disagree on implicit relative import rules.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR does not invent implicit relative import resolution beyond its documented module path rules.",
+      "layer_targets": [
+        "semantic/compiler",
+        "module/project",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "implicit relative import shortcuts are rejected or diagnosed explicitly",
+      "assertions": [
+        "diagnostic names the unresolved import rule",
+        "project compile path does not guess a relative path",
+        "artifact omits guessed resolution metadata"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "core"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "implicit relative import shortcuts are rejected or diagnosed explicitly"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    },
+    {
+      "id": "modules-no-name-based-loader-fallback-divergence",
+      "domain": "modules_imports_artifacts",
+      "feature_group": "module_cache",
+      "upstream_language": "quickjs",
+      "upstream_file": "lua/QuickJS-master/quickjs.c",
+      "upstream_intent": "Loaders that guess by module name or extension lead to unstable runtime behavior.",
+      "zr_decision": "reject",
+      "zr_contract": "ZR module loading does not use name-based runtime fallback branches after canonical path resolution.",
+      "layer_targets": [
+        "module/project",
+        "runtime",
+        "artifact"
+      ],
+      "case_kind": "divergence",
+      "expected_outcome": "loader does not guess alternative modules by name after canonical resolution fails",
+      "assertions": [
+        "runtime error reports the unresolved canonical path",
+        "artifact records the requested path only",
+        "stress repeated failures stay deterministic"
+      ],
+      "stress_class": "approximate",
+      "tiers": [
+        "core",
+        "stress"
+      ],
+      "execution_modes": [
+        "interp",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "artifact_targets": [
+        "zri",
+        "zro",
+        "aot_c",
+        "aot_llvm"
+      ],
+      "probe_targets": [
+        "module_cache_identity",
+        "artifact_roundtrip",
+        "probe_summary",
+        "runtime_contract",
+        "project_fixture"
+      ],
+      "backend_requirements": {
+        "require_aot_path": false,
+        "executed_via_allowed": [
+          "interp",
+          "aot_c",
+          "aot_llvm"
+        ],
+        "aot_c": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+        },
+        "aot_llvm": {
+          "artifact": true,
+          "executable": false,
+          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+        }
+      },
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [],
+          "exception": [
+            "loader does not guess alternative modules by name after canonical resolution fails"
+          ],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "CALLSITE_CACHE_TABLE",
+            "EH_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR",
+            "DEOPT_MAP",
+            "EH_TABLE"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "aot_c",
+            "aot_llvm"
+          ],
+          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+        },
+        "probe": {
+          "must_contain": [
+            "module_cache_identity",
+            "artifact_roundtrip",
+            "probe_summary",
+            "runtime_contract",
+            "project_fixture"
+          ],
+          "must_not_contain": []
+        }
+      }
+    }
+  ]
+}

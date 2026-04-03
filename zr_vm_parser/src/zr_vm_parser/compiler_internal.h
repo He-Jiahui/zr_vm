@@ -26,6 +26,103 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+static ZR_FORCE_INLINE EZrMetaType compiler_resolve_meta_type_name(SZrString *metaName) {
+    TZrNativeString metaNameText;
+
+    if (metaName == ZR_NULL) {
+        return ZR_META_ENUM_MAX;
+    }
+
+    metaNameText = ZrCore_String_GetNativeStringShort(metaName);
+    if (metaNameText == ZR_NULL) {
+        return ZR_META_ENUM_MAX;
+    }
+
+    if (strcmp(metaNameText, "constructor") == 0) {
+        return ZR_META_CONSTRUCTOR;
+    }
+    if (strcmp(metaNameText, "destructor") == 0) {
+        return ZR_META_DESTRUCTOR;
+    }
+    if (strcmp(metaNameText, "add") == 0) {
+        return ZR_META_ADD;
+    }
+    if (strcmp(metaNameText, "sub") == 0) {
+        return ZR_META_SUB;
+    }
+    if (strcmp(metaNameText, "mul") == 0) {
+        return ZR_META_MUL;
+    }
+    if (strcmp(metaNameText, "div") == 0) {
+        return ZR_META_DIV;
+    }
+    if (strcmp(metaNameText, "mod") == 0) {
+        return ZR_META_MOD;
+    }
+    if (strcmp(metaNameText, "pow") == 0) {
+        return ZR_META_POW;
+    }
+    if (strcmp(metaNameText, "neg") == 0) {
+        return ZR_META_NEG;
+    }
+    if (strcmp(metaNameText, "compare") == 0) {
+        return ZR_META_COMPARE;
+    }
+    if (strcmp(metaNameText, "toBool") == 0) {
+        return ZR_META_TO_BOOL;
+    }
+    if (strcmp(metaNameText, "toString") == 0) {
+        return ZR_META_TO_STRING;
+    }
+    if (strcmp(metaNameText, "toInt") == 0) {
+        return ZR_META_TO_INT;
+    }
+    if (strcmp(metaNameText, "toUInt") == 0) {
+        return ZR_META_TO_UINT;
+    }
+    if (strcmp(metaNameText, "toFloat") == 0) {
+        return ZR_META_TO_FLOAT;
+    }
+    if (strcmp(metaNameText, "call") == 0) {
+        return ZR_META_CALL;
+    }
+    if (strcmp(metaNameText, "getter") == 0) {
+        return ZR_META_GETTER;
+    }
+    if (strcmp(metaNameText, "setter") == 0) {
+        return ZR_META_SETTER;
+    }
+    if (strcmp(metaNameText, "shiftLeft") == 0) {
+        return ZR_META_SHIFT_LEFT;
+    }
+    if (strcmp(metaNameText, "shiftRight") == 0) {
+        return ZR_META_SHIFT_RIGHT;
+    }
+    if (strcmp(metaNameText, "bitAnd") == 0) {
+        return ZR_META_BIT_AND;
+    }
+    if (strcmp(metaNameText, "bitOr") == 0) {
+        return ZR_META_BIT_OR;
+    }
+    if (strcmp(metaNameText, "bitXor") == 0) {
+        return ZR_META_BIT_XOR;
+    }
+    if (strcmp(metaNameText, "bitNot") == 0) {
+        return ZR_META_BIT_NOT;
+    }
+    if (strcmp(metaNameText, "getItem") == 0) {
+        return ZR_META_GET_ITEM;
+    }
+    if (strcmp(metaNameText, "setItem") == 0) {
+        return ZR_META_SET_ITEM;
+    }
+    if (strcmp(metaNameText, "close") == 0) {
+        return ZR_META_CLOSE;
+    }
+
+    return ZR_META_ENUM_MAX;
+}
+
 typedef struct ZrExternCompilerTempRoot {
     SZrState *state;
     SZrFunctionStackAnchor savedStackTopAnchor;
@@ -40,6 +137,7 @@ typedef struct SZrCompiledPrototypeInfo {
     TZrUInt32 accessModifier;
     TZrUInt32 inheritsCount;
     TZrUInt32 membersCount;
+    TZrUInt64 protocolMask;
 } SZrCompiledPrototypeInfo;
 
 typedef struct SZrCompiledMemberInfo {
@@ -61,6 +159,7 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 callsClose;
     TZrUInt32 callsDestructor;
     TZrUInt32 declarationOrder;
+    TZrUInt32 contractRole;
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 
@@ -119,6 +218,11 @@ TZrSize ZrParser_Compiler_GetLocalStackFloor(const SZrCompilerState *cs) ;
 
 TZrUInt32 compiler_get_cached_null_constant_index(SZrCompilerState *cs) ;
 
+TZrUInt32 compiler_get_or_add_member_entry(SZrCompilerState *cs, SZrString *memberName) ;
+TZrUInt32 compiler_get_or_add_member_entry_with_flags(SZrCompilerState *cs,
+                                                      SZrString *memberName,
+                                                      TZrUInt8 flags) ;
+
 void ZrParser_Compiler_TrimStackToCount(SZrCompilerState *cs, TZrSize targetCount) ;
 
 void ZrParser_Compiler_TrimStackToSlot(SZrCompilerState *cs, TZrUInt32 slot) ;
@@ -147,6 +251,10 @@ void emit_string_constant_to_slot(SZrCompilerState *cs, TZrUInt32 slot, SZrStrin
 
 void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDeclaration *funcDecl) ;
 
+void compiler_register_callable_value_binding(SZrCompilerState *cs,
+                                                     SZrString *name,
+                                                     SZrAstNode *valueNode) ;
+
 void compiler_register_named_value_binding_to_env(SZrCompilerState *cs,
                                                          SZrTypeEnvironment *env,
                                                          SZrString *name,
@@ -168,6 +276,19 @@ void emit_object_field_assignment_from_expression(SZrCompilerState *cs,
                                                          SZrAstNode *expression) ;
 
 void emit_class_static_field_initializers(SZrCompilerState *cs, SZrAstNode *classNode) ;
+
+void compiler_begin_constructor_const_field_tracking(SZrCompilerState *cs) ;
+
+void compiler_end_constructor_const_field_tracking(SZrCompilerState *cs) ;
+
+TZrBool compiler_record_constructor_const_field_assignment(SZrCompilerState *cs,
+                                                                  SZrString *fieldName,
+                                                                  const TZrChar *op,
+                                                                  SZrFileRange location) ;
+
+TZrBool compiler_validate_constructor_const_field_initialization(SZrCompilerState *cs,
+                                                                 SZrAstNode *body,
+                                                                 SZrFileRange location) ;
 
 SZrString *compiler_create_hidden_property_accessor_name(SZrCompilerState *cs, SZrString *propertyName,
                                                          TZrBool isSetter) ;
@@ -413,6 +534,10 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
                                             TZrUInt32 *outCount);
 
 TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs);
+
+TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *function);
+
+TZrBool compiler_quicken_execbc_function(SZrState *state, SZrFunction *function);
 
 void compile_script(SZrCompilerState *cs, SZrAstNode *node) ;
 

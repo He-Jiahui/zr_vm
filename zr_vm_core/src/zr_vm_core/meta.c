@@ -8,6 +8,7 @@
 #include "zr_vm_core/meta.h"
 
 #include "zr_vm_common/zr_meta_conf.h"
+#include "zr_vm_common/zr_runtime_limits_conf.h"
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
@@ -136,7 +137,7 @@ static TZrInt64 meta_to_string_object(SZrState *state) {
     }
 
     // 默认返回 [object type=X]
-    char buffer[64];
+    char buffer[ZR_RUNTIME_SMALL_TEXT_BUFFER_LENGTH];
     snprintf(buffer, sizeof(buffer), "[object type=%d]", (int) object->internalType);
     result = ZrCore_String_CreateFromNative(state, buffer);
     ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(result));

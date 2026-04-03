@@ -30,6 +30,26 @@ TZrBool try_get_ownership_qualifier(SZrString *name, EZrOwnershipQualifier *qual
     return ZR_FALSE;
 }
 
+static EZrOwnershipBuiltinKind ownership_builtin_kind_from_flags(EZrOwnershipQualifier ownershipQualifier,
+                                                                 TZrBool isUsing) {
+    if (isUsing) {
+        return ZR_OWNERSHIP_BUILTIN_KIND_USING;
+    }
+
+    switch (ownershipQualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+            return ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE;
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+            return ZR_OWNERSHIP_BUILTIN_KIND_SHARED;
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+            return ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
+        case ZR_OWNERSHIP_QUALIFIER_NONE:
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+        default:
+            return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+    }
+}
+
 SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNames) {
     SZrAstNodeArray *args = ZrParser_AstNodeArray_New(ps->state, 4);
     if (args == ZR_NULL) {
@@ -70,7 +90,7 @@ SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNames) {
                 names = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrArray),
                                                         ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 if (names != ZR_NULL) {
-                    ZrCore_Array_Init(ps->state, names, sizeof(SZrString *), 4);
+                    ZrCore_Array_Init(ps->state, names, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
                 }
             }
             if (names != ZR_NULL) {
@@ -82,7 +102,7 @@ SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNames) {
                 names = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrArray),
                                                         ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 if (names != ZR_NULL) {
-                    ZrCore_Array_Init(ps->state, names, sizeof(SZrString *), 4);
+                    ZrCore_Array_Init(ps->state, names, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
                 }
             }
             if (names != ZR_NULL) {
@@ -359,7 +379,8 @@ SZrAstNode *create_prototype_reference_node(SZrParserState *ps, SZrAstNode *targ
 
 SZrAstNode *create_construct_expression_node(SZrParserState *ps, SZrAstNode *target, SZrAstNodeArray *args,
                                                     EZrOwnershipQualifier ownershipQualifier, TZrBool isUsing,
-                                                    TZrBool isNew, SZrFileRange location) {
+                                                    TZrBool isNew, EZrOwnershipBuiltinKind builtinKind,
+                                                    SZrFileRange location) {
     SZrAstNode *node;
 
     if (ps == ZR_NULL || target == ZR_NULL) {
@@ -376,6 +397,7 @@ SZrAstNode *create_construct_expression_node(SZrParserState *ps, SZrAstNode *tar
     node->data.constructExpression.ownershipQualifier = ownershipQualifier;
     node->data.constructExpression.isUsing = isUsing;
     node->data.constructExpression.isNew = isNew;
+    node->data.constructExpression.builtinKind = builtinKind;
     return node;
 }
 
@@ -499,7 +521,8 @@ SZrAstNode *parse_prototype_reference_expression(SZrParserState *ps) {
 SZrAstNode *parse_construct_expression(SZrParserState *ps,
                                               SZrFileRange startLoc,
                                               EZrOwnershipQualifier ownershipQualifier,
-                                              TZrBool isUsing) {
+                                              TZrBool isUsing,
+                                              EZrOwnershipBuiltinKind builtinKind) {
     SZrAstNode *target = ZR_NULL;
     SZrAstNodeArray *args = ZR_NULL;
     SZrArray *argNames = ZR_NULL;
@@ -547,7 +570,14 @@ SZrAstNode *parse_construct_expression(SZrParserState *ps,
     }
 
     fullLoc = ZrParser_FileRange_Merge(startLoc, get_current_location(ps));
-    constructNode = create_construct_expression_node(ps, target, args, ownershipQualifier, isUsing, ZR_TRUE, fullLoc);
+    constructNode = create_construct_expression_node(ps,
+                                                     target,
+                                                     args,
+                                                     ownershipQualifier,
+                                                     isUsing,
+                                                     ZR_TRUE,
+                                                     builtinKind,
+                                                     fullLoc);
     if (constructNode == ZR_NULL) {
         if (args != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, args);
@@ -580,6 +610,7 @@ EZrOwnershipQualifier parse_optional_method_receiver_qualifier(SZrParserState *p
 SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps) {
     SZrFileRange startLoc;
     EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    EZrOwnershipBuiltinKind builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
     TZrBool isUsing = ZR_FALSE;
     SZrAstNode *target = ZR_NULL;
     SZrAstNodeArray *args = ZR_NULL;
@@ -595,10 +626,12 @@ SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps) {
 
     if (ps->lexer->t.token == ZR_TK_USING) {
         isUsing = ZR_TRUE;
+        builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_USING;
         ZrParser_Lexer_Next(ps->lexer);
     } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
                zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "using")) {
         isUsing = ZR_TRUE;
+        builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_USING;
         ZrParser_Lexer_Next(ps->lexer);
     } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
                try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier)) {
@@ -606,6 +639,15 @@ SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps) {
             report_error(ps, "'%borrowed' is only valid in type and method-receiver positions");
             return ZR_NULL;
         }
+        builtinKind = ownership_builtin_kind_from_flags(ownershipQualifier, ZR_FALSE);
+        ZrParser_Lexer_Next(ps->lexer);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+               zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "upgrade")) {
+        builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE;
+        ZrParser_Lexer_Next(ps->lexer);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+               zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "release")) {
+        builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_RELEASE;
         ZrParser_Lexer_Next(ps->lexer);
     } else {
         report_error(ps, "Expected ownership directive after '%'");
@@ -617,7 +659,12 @@ SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps) {
             report_error(ps, "'%weak new' is not supported; use '%unique new' or '%shared new'");
             return ZR_NULL;
         }
-        return parse_construct_expression(ps, startLoc, ownershipQualifier, isUsing);
+        if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE ||
+            builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE) {
+            report_error(ps, "'%upgrade' and '%release' do not support 'new' construction");
+            return ZR_NULL;
+        }
+        return parse_construct_expression(ps, startLoc, ownershipQualifier, isUsing, builtinKind);
     }
 
     if (!consume_token(ps, ZR_TK_LPAREN)) {
@@ -641,6 +688,7 @@ SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps) {
                                             ownershipQualifier,
                                             isUsing,
                                             ZR_FALSE,
+                                            builtinKind,
                                             fullLoc);
     if (node == ZR_NULL) {
         if (args != ZR_NULL) {
@@ -842,7 +890,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             // 成员名上下文允许关键字以普通名称形式出现，例如 zr.ffi.out
             if (!is_member_name_token(ps->lexer->t.token)) {
                 const TZrChar *tokenStr = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
-                TZrChar errorMsg[256];
+                TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
                 snprintf(errorMsg, sizeof(errorMsg), "Expected identifier after '.' (遇到 '%s')", tokenStr);
                 report_error_with_token(ps, errorMsg, ps->lexer->t.token);
                 return ZR_NULL;
@@ -951,8 +999,14 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 ZrCore_Memory_RawFreeWithType(ps->state->global, base, sizeof(SZrAstNode), ZR_MEMORY_NATIVE_TYPE_ARRAY);
 
                 fullLoc = ZrParser_FileRange_Merge(startLoc, get_current_location(ps));
-                constructNode = create_construct_expression_node(ps, target, args, ZR_OWNERSHIP_QUALIFIER_NONE,
-                                                                 ZR_FALSE, ZR_FALSE, fullLoc);
+                constructNode = create_construct_expression_node(ps,
+                                                                 target,
+                                                                 args,
+                                                                 ZR_OWNERSHIP_QUALIFIER_NONE,
+                                                                 ZR_FALSE,
+                                                                 ZR_FALSE,
+                                                                 ZR_OWNERSHIP_BUILTIN_KIND_NONE,
+                                                                 fullLoc);
                 if (constructNode == ZR_NULL) {
                     if (args != ZR_NULL) {
                         ZrParser_AstNodeArray_Free(ps->state, args);

@@ -63,6 +63,7 @@ typedef struct ZrLibBindingEntry {
     EZrLibResolvedBindingKind bindingKind;
     const ZrLibModuleDescriptor *moduleDescriptor;
     const ZrLibTypeDescriptor *typeDescriptor;
+    SZrObjectPrototype *ownerPrototype;
     union {
         const ZrLibFunctionDescriptor *functionDescriptor;
         const ZrLibMethodDescriptor *methodDescriptor;
@@ -82,7 +83,7 @@ typedef struct ZrLibrary_NativeRegistryState {
     SZrArray bindingEntries;
     SZrArray pluginHandles;
     EZrLibNativeRegistryErrorCode lastErrorCode;
-    TZrChar lastErrorMessage[512];
+    TZrChar lastErrorMessage[ZR_LIBRARY_NATIVE_REGISTRY_ERROR_BUFFER_LENGTH];
 } ZrLibrary_NativeRegistryState;
 
 #define kNativeEnumValueFieldName "__zr_enumValue"
@@ -156,6 +157,7 @@ TZrBool native_binding_make_callable_value(SZrState *state,
                                                   EZrLibResolvedBindingKind bindingKind,
                                                   const ZrLibModuleDescriptor *moduleDescriptor,
                                                   const ZrLibTypeDescriptor *typeDescriptor,
+                                                  SZrObjectPrototype *ownerPrototype,
                                                   const void *descriptor,
                                                   SZrTypeValue *value);
 TZrStackValuePointer native_binding_resolve_call_scratch_base(TZrStackValuePointer stackTop,

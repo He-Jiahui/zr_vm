@@ -1,0 +1,54 @@
+{
+  "feature_group": "imports",
+  "phase_note": "Phase 1 anchors import behavior around native root-module member chains, canonical import resolution, cache shape, and duplicate-import diagnostics.",
+  "cases": [
+    {
+      "id": "imports-quickjs-cyclic-fixture-shape",
+      "upstream_language": "quickjs",
+      "upstream_path": "lua/QuickJS-master/tests/fixture_cyclic_import.js",
+      "upstream_focus": "Import fixtures should be organized as small reusable module graphs so cyclic and layered cases stay readable.",
+      "zr_decision": "ZR reference fixtures will keep import scenarios as small named graphs rather than one monolithic module test file.",
+      "expected_outcome": "fixture-graph-structure-established"
+    },
+    {
+      "id": "imports-quickjs-cyclic-runtime-resolution",
+      "upstream_language": "quickjs",
+      "upstream_path": "lua/QuickJS-master/tests/test_cyclic_import.js",
+      "upstream_focus": "Runtime import execution needs explicit coverage for cyclic graphs and cached module identity.",
+      "zr_decision": "ZR import testing should distinguish parser acceptance from runtime import graph behavior and cache reuse.",
+      "expected_outcome": "future-import-runtime-fixtures-cover-cycles"
+    },
+    {
+      "id": "imports-cpython-module-cache-and-loader",
+      "upstream_language": "cpython",
+      "upstream_path": "lua/cpython/Lib/test/test_import/__init__.py",
+      "upstream_focus": "Import tests need to cover cache behavior, loader interactions, and repeated import semantics instead of only first-load success.",
+      "zr_decision": "ZR import manifests track cache-sensitive cases so repeated `%import(...)` behavior can be asserted later.",
+      "expected_outcome": "cache-and-reimport-cases-in-matrix"
+    },
+    {
+      "id": "imports-jdk-member-import-resolution",
+      "upstream_language": "jdk",
+      "upstream_path": "lua/jdk/test/langtools/tools/javac/importscope/ImportMembersTest.java",
+      "upstream_focus": "Imported member visibility must remain resolvable through layered scope construction, not only through direct module handles.",
+      "zr_decision": "ZR should validate root-module member chains such as `%import(\"zr.system\").vm.state()` as a first-class import path.",
+      "expected_outcome": "native-root-member-chain-baseline-added"
+    },
+    {
+      "id": "imports-jdk-canonical-import-rules",
+      "upstream_language": "jdk",
+      "upstream_path": "lua/jdk/test/langtools/tools/javac/importChecks/ImportCanonical1.java",
+      "upstream_focus": "Canonical names and import-path normalization must be tested explicitly to avoid ambiguous resolution.",
+      "zr_decision": "ZR import manifests record canonical-path expectations before expanding cross-project import fixtures.",
+      "expected_outcome": "canonical-import-rules-inventory-added"
+    },
+    {
+      "id": "imports-jdk-duplicate-import-scope",
+      "upstream_language": "jdk",
+      "upstream_path": "lua/jdk/test/langtools/tools/javac/importscope/TestDuplicateImport.java",
+      "upstream_focus": "Duplicate imports should have deterministic scope behavior and diagnostics instead of silently diverging by load order.",
+      "zr_decision": "ZR needs duplicate-import and repeated-load regression cases in later phases; phase 1 records the precedent now.",
+      "expected_outcome": "duplicate-import-diagnostics-planned"
+    }
+  ]
+}

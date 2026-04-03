@@ -20,65 +20,73 @@ void emit_constant_to_slot_local(SZrCompilerState *cs, TZrUInt32 slot, const SZr
     emit_instruction(cs, inst);
 }
 
-TZrBool construct_expression_is_ownership_builtin(const SZrConstructExpression *constructExpr) {
-    return constructExpr != ZR_NULL &&
-           !constructExpr->isNew &&
-           (constructExpr->isUsing ||
-            constructExpr->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE);
-}
-
-static FZrNativeFunction resolve_ownership_builtin_native(const SZrConstructExpression *constructExpr) {
+static EZrOwnershipBuiltinKind resolve_construct_expression_builtin_kind(
+        const SZrConstructExpression *constructExpr) {
     if (constructExpr == ZR_NULL) {
-        return ZR_NULL;
+        return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+    }
+
+    if (constructExpr->builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
+        return constructExpr->builtinKind;
     }
 
     if (constructExpr->isUsing) {
-        return ZrCore_Ownership_NativeUsing;
+        return ZR_OWNERSHIP_BUILTIN_KIND_USING;
     }
 
     switch (constructExpr->ownershipQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-            return ZrCore_Ownership_NativeUnique;
+            return ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE;
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return ZrCore_Ownership_NativeShared;
+            return ZR_OWNERSHIP_BUILTIN_KIND_SHARED;
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return ZrCore_Ownership_NativeWeak;
+            return ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
+        case ZR_OWNERSHIP_QUALIFIER_NONE:
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
         default:
-            return ZR_NULL;
+            return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
     }
 }
 
-static TZrBool emit_native_function_constant_to_slot_local(SZrCompilerState *cs,
-                                                           TZrUInt32 slot,
-                                                           FZrNativeFunction nativeFunction,
-                                                           SZrFileRange location) {
-    SZrTypeValue constantValue;
-    TZrUInt32 constantIndex;
-    TZrInstruction inst;
+TZrBool construct_expression_is_ownership_builtin(const SZrConstructExpression *constructExpr) {
+    return constructExpr != ZR_NULL &&
+           !constructExpr->isNew &&
+           resolve_construct_expression_builtin_kind(constructExpr) != ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+}
 
-    if (cs == ZR_NULL || nativeFunction == ZR_NULL || cs->hasError) {
-        return ZR_FALSE;
+static EZrInstructionCode resolve_ownership_builtin_opcode(const SZrConstructExpression *constructExpr) {
+    EZrOwnershipBuiltinKind builtinKind;
+
+    if (constructExpr == ZR_NULL) {
+        return ZR_INSTRUCTION_ENUM(ENUM_MAX);
     }
 
-    ZrCore_Value_ResetAsNull(&constantValue);
-    constantValue.type = ZR_VALUE_TYPE_NATIVE_POINTER;
-    constantValue.value.nativeFunction = nativeFunction;
-    constantValue.isGarbageCollectable = ZR_FALSE;
-    constantValue.isNative = ZR_TRUE;
-    constantIndex = add_constant(cs, &constantValue);
-    inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
-                                (TZrUInt16)slot,
-                                (TZrInt32)constantIndex);
-    emit_instruction(cs, inst);
-    ZR_UNUSED_PARAMETER(location);
-    return ZR_TRUE;
+    builtinKind = resolve_construct_expression_builtin_kind(constructExpr);
+    switch (builtinKind) {
+        case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
+            return ZR_INSTRUCTION_ENUM(OWN_UNIQUE);
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+            return ZR_INSTRUCTION_ENUM(OWN_SHARE);
+        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+            return ZR_INSTRUCTION_ENUM(OWN_WEAK);
+        case ZR_OWNERSHIP_BUILTIN_KIND_USING:
+            return ZR_INSTRUCTION_ENUM(OWN_USING);
+        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+            return ZR_INSTRUCTION_ENUM(OWN_UPGRADE);
+        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+            return ZR_INSTRUCTION_ENUM(OWN_RELEASE);
+        case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
+        default:
+            return ZR_INSTRUCTION_ENUM(ENUM_MAX);
+    }
 }
 
 TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
                                                     SZrConstructExpression *constructExpr,
                                                     SZrFileRange location) {
-    FZrNativeFunction nativeFunction;
-    TZrUInt32 functionSlot;
+    EZrInstructionCode opcode;
+    EZrOwnershipBuiltinKind builtinKind;
+    TZrUInt32 resultSlot;
     TZrUInt32 argumentSlot;
     TZrBool shouldResetConsumedIdentifier = ZR_FALSE;
 
@@ -86,21 +94,42 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    nativeFunction = resolve_ownership_builtin_native(constructExpr);
-    if (nativeFunction == ZR_NULL) {
+    opcode = resolve_ownership_builtin_opcode(constructExpr);
+    builtinKind = resolve_construct_expression_builtin_kind(constructExpr);
+    if (opcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
         ZrParser_Compiler_Error(cs, "Unsupported ownership builtin expression", location);
         return ZR_FALSE;
     }
 
-    functionSlot = allocate_stack_slot(cs);
-    argumentSlot = allocate_stack_slot(cs);
-    if (!emit_native_function_constant_to_slot_local(cs, functionSlot, nativeFunction, location)) {
-        ZrParser_Compiler_Error(cs, "Failed to emit ownership builtin helper", location);
-        return ZR_FALSE;
+    resultSlot = allocate_stack_slot(cs);
+
+    if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE) {
+        TZrUInt32 sourceSlot;
+
+        if (constructExpr->target == ZR_NULL || constructExpr->target->type != ZR_AST_IDENTIFIER_LITERAL) {
+            ZrParser_Compiler_Error(cs, "'%release' currently requires a local identifier binding", location);
+            return ZR_FALSE;
+        }
+
+        sourceSlot = find_local_var(cs, constructExpr->target->data.identifier.name);
+        if (sourceSlot == (TZrUInt32)-1) {
+            ZrParser_Compiler_Error(cs, "'%release' currently only supports local identifier bindings", location);
+            return ZR_FALSE;
+        }
+
+        emit_instruction(cs,
+                         create_instruction_2(opcode,
+                                              (TZrUInt16)resultSlot,
+                                              (TZrUInt16)sourceSlot,
+                                              0));
+        collapse_stack_to_slot(cs, resultSlot);
+        return ZR_TRUE;
     }
 
+    argumentSlot = allocate_stack_slot(cs);
+
     shouldResetConsumedIdentifier =
-            constructExpr->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED &&
+            builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_SHARED &&
             constructExpr->target != ZR_NULL &&
             constructExpr->target->type == ZR_AST_IDENTIFIER_LITERAL &&
             infer_expression_ownership_qualifier_local(cs, constructExpr->target) ==
@@ -111,11 +140,11 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
     }
 
     emit_instruction(cs,
-                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
-                                          (TZrUInt16)functionSlot,
-                                         (TZrUInt16)functionSlot,
-                                         1));
-    collapse_stack_to_slot(cs, functionSlot);
+                     create_instruction_2(opcode,
+                                          (TZrUInt16)resultSlot,
+                                          (TZrUInt16)argumentSlot,
+                                          0));
+    collapse_stack_to_slot(cs, resultSlot);
     if (shouldResetConsumedIdentifier) {
         if (!emit_null_reset_to_identifier_binding_local(cs,
                                                          constructExpr->target->data.identifier.name,
@@ -132,37 +161,33 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
 TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
                                                               SZrConstructExpression *constructExpr,
                                                               SZrFileRange location) {
-    FZrNativeFunction nativeFunction;
-    TZrUInt32 functionSlot;
+    EZrInstructionCode opcode;
+    TZrUInt32 resultSlot;
     TZrUInt32 argumentSlot;
 
     if (cs == ZR_NULL || constructExpr == ZR_NULL || cs->hasError || cs->stackSlotCount == 0) {
         return ZR_FALSE;
     }
 
-    nativeFunction = resolve_ownership_builtin_native(constructExpr);
-    if (nativeFunction == ZR_NULL) {
+    opcode = resolve_ownership_builtin_opcode(constructExpr);
+    if (opcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
         ZrParser_Compiler_Error(cs, "Unsupported ownership construct wrapper", location);
         return ZR_FALSE;
     }
 
-    functionSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+    resultSlot = (TZrUInt32)(cs->stackSlotCount - 1);
     argumentSlot = allocate_stack_slot(cs);
     emit_instruction(cs,
                      create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                           (TZrUInt16)argumentSlot,
-                                          (TZrInt32)functionSlot));
-    if (!emit_native_function_constant_to_slot_local(cs, functionSlot, nativeFunction, location)) {
-        ZrParser_Compiler_Error(cs, "Failed to emit ownership construct wrapper", location);
-        return ZR_FALSE;
-    }
+                                          (TZrInt32)resultSlot));
 
     emit_instruction(cs,
-                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
-                                          (TZrUInt16)functionSlot,
-                                          (TZrUInt16)functionSlot,
-                                          1));
-    collapse_stack_to_slot(cs, functionSlot);
+                     create_instruction_2(opcode,
+                                          (TZrUInt16)resultSlot,
+                                          (TZrUInt16)argumentSlot,
+                                          0));
+    collapse_stack_to_slot(cs, resultSlot);
     return ZR_TRUE;
 }
 
@@ -528,6 +553,34 @@ TZrUInt32 emit_string_constant(SZrCompilerState *cs, SZrString *value) {
     return slot;
 }
 
+SZrString *resolve_member_expression_symbol(SZrCompilerState *cs, SZrMemberExpression *memberExpr) {
+    SZrInferredType inferredType;
+
+    if (cs == ZR_NULL || memberExpr == ZR_NULL || memberExpr->property == ZR_NULL || memberExpr->computed) {
+        return ZR_NULL;
+    }
+
+    if (memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return memberExpr->property->data.identifier.name;
+    }
+
+    if (memberExpr->property->type != ZR_AST_TYPE) {
+        return ZR_NULL;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_AstTypeToInferredType_Convert(cs, &memberExpr->property->data.type, &inferredType)) {
+        ZrParser_InferredType_Free(cs->state, &inferredType);
+        return ZR_NULL;
+    }
+
+    {
+        SZrString *resolvedName = inferredType.typeName;
+        ZrParser_InferredType_Free(cs->state, &inferredType);
+        return resolvedName;
+    }
+}
+
 TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return (TZrUInt32)-1;
@@ -543,6 +596,10 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
 
 TZrBool emit_property_getter_call(SZrCompilerState *cs, TZrUInt32 currentSlot, SZrString *propertyName,
                                        TZrBool isStatic, SZrFileRange location) {
+    TZrUInt32 memberId;
+    TZrInstruction metaGetInst;
+    TZrUInt8 memberFlags = isStatic ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR : 0;
+
     if (cs == ZR_NULL || propertyName == ZR_NULL || cs->hasError) {
         return ZR_FALSE;
     }
@@ -553,49 +610,30 @@ TZrBool emit_property_getter_call(SZrCompilerState *cs, TZrUInt32 currentSlot, S
         return ZR_FALSE;
     }
 
-    if (!isStatic) {
-        TZrUInt32 receiverSlot = allocate_stack_slot(cs);
-        TZrInstruction copyReceiverInst =
-                create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)receiverSlot, (TZrInt32)currentSlot);
-        emit_instruction(cs, copyReceiverInst);
-    }
-
-    TZrUInt32 keyTargetSlot = isStatic ? currentSlot + 1 : currentSlot + 2;
-    TZrUInt32 keySlot = emit_string_constant(cs, accessorName);
-    if (keySlot == (TZrUInt32)-1) {
+    memberId = compiler_get_or_add_member_entry_with_flags(cs, accessorName, memberFlags);
+    if (memberId == (TZrUInt32)-1) {
+        ZrParser_Compiler_Error(cs, "Failed to register property getter member symbol", location);
         return ZR_FALSE;
     }
-    keySlot = normalize_top_result_to_slot(cs, keyTargetSlot);
 
-    TZrInstruction getAccessorInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TZrUInt16)currentSlot,
-                                                          (TZrUInt16)currentSlot, (TZrUInt16)keySlot);
-    emit_instruction(cs, getAccessorInst);
-
-    TZrInstruction callAccessorInst =
-            create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL), (TZrUInt16)currentSlot, (TZrUInt16)currentSlot,
-                                 (TZrUInt16)(isStatic ? 0 : 1));
-    emit_instruction(cs, callAccessorInst);
+    metaGetInst = create_instruction_2(ZR_INSTRUCTION_ENUM(META_GET),
+                                       (TZrUInt16)currentSlot,
+                                       (TZrUInt16)currentSlot,
+                                       (TZrUInt16)memberId);
+    emit_instruction(cs, metaGetInst);
     collapse_stack_to_slot(cs, currentSlot);
     return ZR_TRUE;
 }
 
 TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, SZrString *propertyName, TZrBool isStatic,
                                          TZrUInt32 assignedValueSlot, SZrFileRange location) {
+    TZrUInt32 memberId;
+    TZrInstruction metaSetInst;
+    TZrUInt8 memberFlags = isStatic ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR : 0;
+
     if (cs == ZR_NULL || propertyName == ZR_NULL || cs->hasError) {
         return (TZrUInt32)-1;
     }
-
-    if (!isStatic) {
-        TZrUInt32 receiverSlot = allocate_stack_slot(cs);
-        TZrInstruction copyReceiverInst =
-                create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)receiverSlot, (TZrInt32)objectSlot);
-        emit_instruction(cs, copyReceiverInst);
-    }
-
-    TZrUInt32 valueArgSlot = allocate_stack_slot(cs);
-    TZrInstruction copyValueInst =
-            create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)valueArgSlot, (TZrInt32)assignedValueSlot);
-    emit_instruction(cs, copyValueInst);
 
     SZrString *accessorName = create_hidden_property_accessor_name(cs, propertyName, ZR_TRUE);
     if (accessorName == ZR_NULL) {
@@ -603,61 +641,31 @@ TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, 
         return (TZrUInt32)-1;
     }
 
-    TZrUInt32 keyTargetSlot = isStatic ? objectSlot + 2 : objectSlot + 3;
-    TZrUInt32 keySlot = emit_string_constant(cs, accessorName);
-    if (keySlot == (TZrUInt32)-1) {
+    memberId = compiler_get_or_add_member_entry_with_flags(cs, accessorName, memberFlags);
+    if (memberId == (TZrUInt32)-1) {
+        ZrParser_Compiler_Error(cs, "Failed to register property setter member symbol", location);
         return (TZrUInt32)-1;
     }
-    keySlot = normalize_top_result_to_slot(cs, keyTargetSlot);
 
-    TZrInstruction getAccessorInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GETTABLE), (TZrUInt16)objectSlot,
-                                                          (TZrUInt16)objectSlot, (TZrUInt16)keySlot);
-    emit_instruction(cs, getAccessorInst);
-
-    TZrInstruction callAccessorInst =
-            create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL), (TZrUInt16)objectSlot, (TZrUInt16)objectSlot,
-                                 (TZrUInt16)(isStatic ? 1 : 2));
-    emit_instruction(cs, callAccessorInst);
-
-    TZrInstruction preserveAssignedValue =
-            create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)objectSlot, (TZrInt32)assignedValueSlot);
-    emit_instruction(cs, preserveAssignedValue);
+    metaSetInst = create_instruction_2(ZR_INSTRUCTION_ENUM(META_SET),
+                                       (TZrUInt16)objectSlot,
+                                       (TZrUInt16)assignedValueSlot,
+                                       (TZrUInt16)memberId);
+    emit_instruction(cs, metaSetInst);
     collapse_stack_to_slot(cs, objectSlot);
     return objectSlot;
 }
 
 TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs, SZrMemberExpression *memberExpr, TZrUInt32 targetSlot) {
-    SZrInferredType inferredType;
-
     if (cs == ZR_NULL || memberExpr == ZR_NULL || memberExpr->property == ZR_NULL || cs->hasError) {
         return (TZrUInt32)-1;
     }
 
-    if (!memberExpr->computed && memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
-        SZrString *fieldName = memberExpr->property->data.identifier.name;
-        if (fieldName == ZR_NULL) {
+    if (!memberExpr->computed) {
+        SZrString *fieldName = resolve_member_expression_symbol(cs, memberExpr);
+        if (fieldName == ZR_NULL || emit_string_constant(cs, fieldName) == (TZrUInt32)-1) {
             return (TZrUInt32)-1;
         }
-
-        if (emit_string_constant(cs, fieldName) == (TZrUInt32)-1) {
-            return (TZrUInt32)-1;
-        }
-        return normalize_top_result_to_slot(cs, targetSlot);
-    }
-
-    if (!memberExpr->computed && memberExpr->property->type == ZR_AST_TYPE) {
-        ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-        if (!ZrParser_AstTypeToInferredType_Convert(cs, &memberExpr->property->data.type, &inferredType)) {
-            ZrParser_InferredType_Free(cs->state, &inferredType);
-            return (TZrUInt32)-1;
-        }
-
-        if (inferredType.typeName == ZR_NULL || emit_string_constant(cs, inferredType.typeName) == (TZrUInt32)-1) {
-            ZrParser_InferredType_Free(cs->state, &inferredType);
-            return (TZrUInt32)-1;
-        }
-
-        ZrParser_InferredType_Free(cs->state, &inferredType);
         return normalize_top_result_to_slot(cs, targetSlot);
     }
 

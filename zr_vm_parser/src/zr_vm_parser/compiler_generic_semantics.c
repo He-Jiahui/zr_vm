@@ -127,7 +127,7 @@ static TZrBool report_first_unassigned_out_parameter(SZrCompilerState *cs,
                                                      const SZrTrackedOutParameters *tracked,
                                                      const TZrBool *assigned,
                                                      SZrFileRange location) {
-    TZrChar errorBuffer[256];
+    TZrChar errorBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
 
     if (cs == ZR_NULL || tracked == ZR_NULL || assigned == ZR_NULL) {
         return ZR_FALSE;
@@ -564,7 +564,7 @@ static TZrBool report_invalid_variance_usage(SZrCompilerState *cs,
                                              TZrBool nestedUsage,
                                              SZrFileRange location) {
     const TZrChar *nameText = compiler_string_native(parameterName);
-    TZrChar errorBuffer[256];
+    TZrChar errorBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
 
     if (cs == ZR_NULL || parameterName == ZR_NULL || context == ZR_NULL) {
         return ZR_FALSE;

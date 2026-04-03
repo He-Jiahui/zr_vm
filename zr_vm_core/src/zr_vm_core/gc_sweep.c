@@ -17,7 +17,7 @@ SZrRawObject **garbage_collector_sweep_list(SZrState *state, SZrRawObject **list
             break;
         }
 
-        if ((TZrPtr)object < (TZrPtr)0x1000) {
+        if ((TZrPtr)object < (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
             *current = ZR_NULL;
             break;
         }
@@ -82,5 +82,5 @@ TZrSize garbage_collector_run_a_few_finalizers(SZrState *state, int maxCount) {
         count++;
     }
 
-    return count * ZR_GC_FINALIZE_COST;
+    return count * ZR_GC_FINALIZER_WORK_COST;
 }

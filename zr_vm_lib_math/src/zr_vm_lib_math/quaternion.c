@@ -27,7 +27,7 @@ TZrBool ZrMath_Quaternion_Construct(ZrLibCallContext *context, SZrTypeValue *res
     values[1] = y;
     values[2] = z;
     values[3] = w;
-    return ZrMath_ConstructFloatObject(context, result, "Quaternion", kFields, values, ZR_ARRAY_COUNT(kFields));
+    return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 
 TZrBool ZrMath_Quaternion_Length(ZrLibCallContext *context, SZrTypeValue *result) {

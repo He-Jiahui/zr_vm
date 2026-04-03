@@ -148,12 +148,12 @@ void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
     }
     
     // 检查state指针是否在合理范围内（避免访问无效内存）
-    if ((TZrPtr)state < (TZrPtr)0x1000) {
+    if ((TZrPtr)state < (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
         return;  // 无效指针，不释放
     }
     
     // 检查stackBase是否有效（在访问之前）
-    if ((TZrPtr)&state->stackBase >= (TZrPtr)0x1000) {
+    if ((TZrPtr)&state->stackBase >= (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
         ZrCore_Stack_Deconstruct(state, &state->stackBase, ZrCore_State_StackGetSize(state) + ZR_THREAD_STACK_SIZE_EXTRA);
         state->stackBase.valuePointer = ZR_NULL;
     }
@@ -201,7 +201,7 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     } else {
         state->stackTop.valuePointer = state->stackBase.valuePointer + 1;
     }
-    callInfo->functionTop.valuePointer = state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_MIN;
+    callInfo->functionTop.valuePointer = state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_RESERVED_MIN;
 
     // todo:
 

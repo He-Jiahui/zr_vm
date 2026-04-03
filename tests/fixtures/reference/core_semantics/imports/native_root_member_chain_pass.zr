@@ -1,0 +1,8 @@
+var system = %import("zr.system");
+var runtime = system.vm.state();
+
+if (runtime.loadedModuleCount > 0) {
+    return 1;
+}
+
+return 0;

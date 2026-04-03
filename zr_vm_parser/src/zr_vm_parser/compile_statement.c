@@ -38,26 +38,6 @@ static void emit_constant_to_slot_local(SZrCompilerState *cs, TZrUInt32 slot, co
     emit_instruction(cs, inst);
 }
 
-static TZrBool emit_cstring_constant_to_slot_local(SZrCompilerState *cs, TZrUInt32 slot, const TZrChar *literal) {
-    SZrString *stringValue;
-    SZrTypeValue constantValue;
-
-    if (cs == ZR_NULL || literal == ZR_NULL || cs->hasError) {
-        return ZR_FALSE;
-    }
-
-    stringValue = ZrCore_String_Create(cs->state, (TZrNativeString)literal, strlen(literal));
-    if (stringValue == ZR_NULL) {
-        ZrParser_Compiler_Error(cs, "Failed to allocate string constant", cs->errorLocation);
-        return ZR_FALSE;
-    }
-
-    ZrCore_Value_InitAsRawObject(cs->state, &constantValue, ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue));
-    constantValue.type = ZR_VALUE_TYPE_STRING;
-    emit_constant_to_slot_local(cs, slot, &constantValue, cs->errorLocation);
-    return !cs->hasError;
-}
-
 static TZrBool resolve_fixed_array_size(const SZrInferredType *type, TZrSize *fixedSize) {
     if (type == ZR_NULL || fixedSize == ZR_NULL ||
         type->baseType != ZR_VALUE_TYPE_ARRAY || !type->hasArraySizeConstraint) {
@@ -110,34 +90,13 @@ static void compile_default_fixed_array_initialization(SZrCompilerState *cs,
         emit_constant_to_slot_local(cs, indexSlot, &indexValue, location);
 
         emit_instruction(cs,
-                         create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE),
+                         create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX),
                                               (TZrUInt16)valueSlot,
                                               (TZrUInt16)arraySlot,
                                               (TZrUInt16)indexSlot));
         ZrParser_Compiler_TrimStackBy(cs, 2);
     }
 
-    {
-        SZrTypeValue lengthValue;
-        TZrUInt32 keySlot = allocate_stack_slot(cs);
-        TZrUInt32 valueSlot = allocate_stack_slot(cs);
-
-        if (!emit_cstring_constant_to_slot_local(cs, keySlot, "length")) {
-            return;
-        }
-
-        ZrCore_Value_InitAsInt(cs->state, &lengthValue, (TZrInt64)fixedSize);
-        emit_constant_to_slot_local(cs, valueSlot, &lengthValue, location);
-
-        emit_instruction(cs,
-                         create_instruction_2(ZR_INSTRUCTION_ENUM(SETTABLE),
-                                              (TZrUInt16)valueSlot,
-                                              (TZrUInt16)arraySlot,
-                                              (TZrUInt16)keySlot));
-        ZrParser_Compiler_TrimStackBy(cs, 2);
-    }
-
-    ZR_UNUSED_PARAMETER(location);
 }
 
 static TZrTypeId resolve_using_resource_type_id(SZrCompilerState *cs, SZrAstNode *resource) {
@@ -210,7 +169,7 @@ static SZrScope *get_current_scope(SZrCompilerState *cs) {
 }
 
 static SZrString *create_hidden_using_local_name(SZrCompilerState *cs) {
-    TZrChar buffer[64];
+    TZrChar buffer[ZR_PARSER_GENERATED_NAME_BUFFER_LENGTH];
     int length;
 
     if (cs == ZR_NULL || cs->state == ZR_NULL) {
@@ -359,6 +318,28 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
 
         TZrUInt32 varIndex = 0;
 
+        if (decl->isConst && decl->value == ZR_NULL) {
+            TZrNativeString varNameText = ZrCore_String_GetNativeStringShort(varName);
+            TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
+
+            if (varNameText != ZR_NULL) {
+                snprintf(errorMsg,
+                         sizeof(errorMsg),
+                         "Const variable '%s' must be initialized at declaration",
+                         varNameText);
+            } else {
+                snprintf(errorMsg, sizeof(errorMsg), "Const variable must be initialized at declaration");
+            }
+            ZrParser_Compiler_Error(cs, errorMsg, node->location);
+            if (initializerTypeInitialized) {
+                ZrParser_InferredType_Free(cs->state, &initializerType);
+            }
+            if (resolvedTypeInitialized) {
+                ZrParser_InferredType_Free(cs->state, &resolvedType);
+            }
+            return;
+        }
+
         // 如果有初始值，编译初始值表达式
         if (decl->value != ZR_NULL) {
             ZrParser_Expression_Compile(cs, decl->value);
@@ -403,6 +384,10 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                 ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, varName, &defaultType);
                 ZrParser_InferredType_Free(cs->state, &defaultType);
             }
+        }
+
+        if (decl->value != ZR_NULL) {
+            compiler_register_callable_value_binding(cs, varName, decl->value);
         }
 
         // 如果是 const 变量，记录到 constLocalVars 数组
@@ -498,7 +483,9 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
         if (exprInstAfter > exprInstBefore) {
             TZrInstruction *lastInst = (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, exprInstAfter - 1);
             if (lastInst != ZR_NULL &&
-                lastInst->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)) {
+                (lastInst->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) ||
+                 lastInst->instruction.operationCode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL) ||
+                 lastInst->instruction.operationCode == ZR_INSTRUCTION_ENUM(META_TAIL_CALL))) {
                 resultSlot = lastInst->instruction.operandExtra;
             } else {
                 resultSlot = (TZrUInt32)(cs->stackSlotCount - 1);
@@ -802,7 +789,7 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
                 node->type == ZR_AST_MODULE_DECLARATION ||
                 node->type == ZR_AST_SCRIPT) {
                 // 这些是声明类型，不应该作为语句编译
-                static TZrChar errorMsg[256];
+                static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
                 const TZrChar *typeName = "UNKNOWN";
                 switch (node->type) {
                     case ZR_AST_INTERFACE_METHOD_SIGNATURE: typeName = "INTERFACE_METHOD_SIGNATURE"; break;

@@ -5,7 +5,7 @@
 #ifndef ZR_VM_LIB_FFI_RUNTIME_H
 #define ZR_VM_LIB_FFI_RUNTIME_H
 
-#include "zr_vm_library.h"
+#include "zr_vm_lib_ffi/conf.h"
 
 const ZrLibModuleDescriptor *ZrVmLibFfiRuntime_GetModuleDescriptor(void);
 

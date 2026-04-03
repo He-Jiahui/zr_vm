@@ -1,0 +1,2 @@
+var const locked: int = 7;
+locked = 9;

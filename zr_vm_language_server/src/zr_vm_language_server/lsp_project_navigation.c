@@ -10,7 +10,7 @@ static TZrBool append_lsp_location(SZrState *state, SZrArray *result, SZrString 
     }
 
     if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 4);
+        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
 
     location = (SZrLspLocation *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspLocation));
@@ -61,7 +61,7 @@ static TZrBool append_symbol_references_from_tracker(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), 8);
+    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_ReferenceTracker_FindReferences(state, analyzer->referenceTracker, symbol, &references)) {
         ZrCore_Array_Free(state, &references);
         return ZR_FALSE;
@@ -111,7 +111,7 @@ static TZrBool append_project_imported_references(SZrState *state,
             continue;
         }
 
-        ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), 4);
+        ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
         ZrLanguageServer_LspProject_CollectImportBindings(state, candidateAnalyzer->ast, &bindings);
         appended = ZrLanguageServer_LspProject_AppendMatchingImportedMemberLocations(state,
                                                                                      candidateAnalyzer->ast,
@@ -160,7 +160,7 @@ static TZrBool project_resolve_symbol_at_position(SZrState *state,
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
 
-    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), 4);
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
     if (ZrLanguageServer_LspProject_FindImportedMemberHit(analyzer->ast, &bindings, fileRange, &hit)) {
         ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);

@@ -1,0 +1,21 @@
+var container = %import("zr.container");
+var left = new container.Pair<int, string>(1, "a");
+var same = new container.Pair<int, string>(1, "a");
+var right = new container.Pair<int, string>(2, "b");
+var map = new container.Map<Pair<int, string>, int>();
+var items = new container.Set<Pair<int, string>>();
+var score = 0;
+
+map[left] = 5;
+map[same] = 7;
+items.add(left);
+items.add(same);
+items.add(right);
+
+if (map.count != 1) { return -1; }
+if (items.count != 2) { return -2; }
+if (left.equals(same)) { score = score + 1; }
+if (left.hashCode() == same.hashCode()) { score = score + 10; }
+if (left.compareTo(right) < 0) { score = score + 100; }
+
+return score + map[left] + items.count * 1000;

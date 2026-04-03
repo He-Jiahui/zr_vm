@@ -10,7 +10,7 @@
 #include <direct.h>
 #define ZR_CLI_MKDIR(path) _mkdir(path)
 #else
-#define ZR_CLI_MKDIR(path) mkdir(path, 0755)
+#define ZR_CLI_MKDIR(path) mkdir(path, ZR_VM_POSIX_DIRECTORY_CREATE_MODE)
 #endif
 
 #include "zr_vm_core/string.h"
@@ -91,7 +91,8 @@ static TZrBool zr_cli_append_manifest_entry(SZrCliIncrementalManifest *manifest,
     }
 
     if (manifest->count == manifest->capacity) {
-        newCapacity = manifest->capacity == 0 ? 8 : manifest->capacity * 2;
+        newCapacity = manifest->capacity == 0 ? ZR_CLI_COLLECTION_INITIAL_CAPACITY
+                                              : manifest->capacity * ZR_CLI_COLLECTION_GROWTH_FACTOR;
         newEntries = (SZrCliManifestEntry *) realloc(manifest->entries, newCapacity * sizeof(*newEntries));
         if (newEntries == ZR_NULL) {
             return ZR_FALSE;
@@ -248,12 +249,21 @@ TZrBool ZrCli_Project_NormalizeModuleName(const TZrChar *modulePath, TZrChar *bu
         length--;
     }
 
-    if (length >= 4 && memcmp(modulePath + length - 4, ".zro", 4) == 0) {
-        length -= 4;
-    } else if (length >= 4 && memcmp(modulePath + length - 4, ".zri", 4) == 0) {
-        length -= 4;
-    } else if (length >= 3 && memcmp(modulePath + length - 3, ".zr", 3) == 0) {
-        length -= 3;
+    if (length >= ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH &&
+        memcmp(modulePath + length - ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH,
+               ZR_VM_BINARY_MODULE_FILE_EXTENSION,
+               ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH) == 0) {
+        length -= ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH;
+    } else if (length >= ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION_LENGTH &&
+               memcmp(modulePath + length - ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION_LENGTH,
+                      ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION,
+                      ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION_LENGTH) == 0) {
+        length -= ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION_LENGTH;
+    } else if (length >= ZR_VM_SOURCE_MODULE_FILE_EXTENSION_LENGTH &&
+               memcmp(modulePath + length - ZR_VM_SOURCE_MODULE_FILE_EXTENSION_LENGTH,
+                      ZR_VM_SOURCE_MODULE_FILE_EXTENSION,
+                      ZR_VM_SOURCE_MODULE_FILE_EXTENSION_LENGTH) == 0) {
+        length -= ZR_VM_SOURCE_MODULE_FILE_EXTENSION_LENGTH;
     }
 
     while (length > 0 && (*modulePath == '/' || *modulePath == '\\')) {
@@ -286,7 +296,11 @@ TZrBool ZrCli_Project_ResolveSourcePath(const SZrCliProjectContext *context,
         return ZR_FALSE;
     }
 
-    return zr_cli_resolve_output_path(context->sourceRoot, moduleName, ".zr", buffer, bufferSize);
+    return zr_cli_resolve_output_path(context->sourceRoot,
+                                      moduleName,
+                                      ZR_VM_SOURCE_MODULE_FILE_EXTENSION,
+                                      buffer,
+                                      bufferSize);
 }
 
 TZrBool ZrCli_Project_ResolveBinaryPath(const SZrCliProjectContext *context,
@@ -297,7 +311,11 @@ TZrBool ZrCli_Project_ResolveBinaryPath(const SZrCliProjectContext *context,
         return ZR_FALSE;
     }
 
-    return zr_cli_resolve_output_path(context->binaryRoot, moduleName, ".zro", buffer, bufferSize);
+    return zr_cli_resolve_output_path(context->binaryRoot,
+                                      moduleName,
+                                      ZR_VM_BINARY_MODULE_FILE_EXTENSION,
+                                      buffer,
+                                      bufferSize);
 }
 
 TZrBool ZrCli_Project_ResolveIntermediatePath(const SZrCliProjectContext *context,
@@ -308,7 +326,11 @@ TZrBool ZrCli_Project_ResolveIntermediatePath(const SZrCliProjectContext *contex
         return ZR_FALSE;
     }
 
-    return zr_cli_resolve_output_path(context->binaryRoot, moduleName, ".zri", buffer, bufferSize);
+    return zr_cli_resolve_output_path(context->binaryRoot,
+                                      moduleName,
+                                      ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION,
+                                      buffer,
+                                      bufferSize);
 }
 
 TZrBool ZrCli_Project_OpenFileIo(SZrState *state, const TZrChar *path, TZrBool isBinary, SZrIo *io) {
@@ -493,7 +515,8 @@ TZrBool ZrCli_Project_StringList_AppendUnique(SZrCliStringList *list, const TZrC
     }
 
     if (list->count == list->capacity) {
-        newCapacity = list->capacity == 0 ? 4 : list->capacity * 2;
+        newCapacity = list->capacity == 0 ? ZR_CLI_SMALL_COLLECTION_INITIAL_CAPACITY
+                                          : list->capacity * ZR_CLI_COLLECTION_GROWTH_FACTOR;
         newItems = (TZrChar **) realloc(list->items, newCapacity * sizeof(*newItems));
         if (newItems == ZR_NULL) {
             return ZR_FALSE;

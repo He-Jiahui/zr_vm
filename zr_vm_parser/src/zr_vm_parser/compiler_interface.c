@@ -40,34 +40,6 @@ static void compiler_interface_collect_parameter_types(SZrCompilerState *cs,
     }
 }
 
-static EZrMetaType compiler_interface_resolve_meta_type(SZrString *metaName) {
-    TZrNativeString metaNameText;
-
-    if (metaName == ZR_NULL) {
-        return ZR_META_ENUM_MAX;
-    }
-
-    metaNameText = ZrCore_String_GetNativeStringShort(metaName);
-    if (metaNameText == ZR_NULL) {
-        return ZR_META_ENUM_MAX;
-    }
-
-    if (strcmp(metaNameText, "constructor") == 0) {
-        return ZR_META_CONSTRUCTOR;
-    }
-    if (strcmp(metaNameText, "destructor") == 0) {
-        return ZR_META_DESTRUCTOR;
-    }
-    if (strcmp(metaNameText, "add") == 0) {
-        return ZR_META_ADD;
-    }
-    if (strcmp(metaNameText, "toString") == 0) {
-        return ZR_META_TO_STRING;
-    }
-
-    return ZR_META_ENUM_MAX;
-}
-
 static void compiler_interface_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
     if (memberInfo == ZR_NULL) {
         return;
@@ -117,7 +89,7 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.allowValueConstruction = ZR_FALSE;
     info.allowBoxedConstruction = ZR_FALSE;
 
-    ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 4);
+    ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 1);
     ZrCore_Array_Init(cs->state,
                       &info.genericParameters,
@@ -125,7 +97,7 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                       interfaceDecl->generic != ZR_NULL && interfaceDecl->generic->params != ZR_NULL
                               ? interfaceDecl->generic->params->count
                               : 1);
-    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), 8);
+    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     compiler_collect_generic_parameter_info(cs, &info.genericParameters, interfaceDecl->generic);
 
     if (interfaceDecl->inherits != ZR_NULL && interfaceDecl->inherits->count > 0) {
@@ -263,7 +235,7 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.declarationNode = member;
                     memberInfo.accessModifier = metaSignature->access;
                     memberInfo.name = metaSignature->meta != ZR_NULL ? metaSignature->meta->name : ZR_NULL;
-                    memberInfo.metaType = compiler_interface_resolve_meta_type(memberInfo.name);
+                    memberInfo.metaType = compiler_resolve_meta_type_name(memberInfo.name);
                     memberInfo.isMetaMethod = memberInfo.metaType != ZR_META_ENUM_MAX;
                     memberInfo.returnTypeName = metaSignature->returnType != ZR_NULL
                                                         ? extract_type_name_string(cs, metaSignature->returnType)

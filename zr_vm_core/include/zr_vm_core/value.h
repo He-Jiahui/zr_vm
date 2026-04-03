@@ -55,6 +55,8 @@ ZR_CORE_API void ZrCore_Value_InitAsUInt(struct SZrState *state, SZrTypeValue *v
 
 ZR_CORE_API void ZrCore_Value_InitAsInt(struct SZrState *state, SZrTypeValue *value, TZrInt64 intValue);
 
+ZR_CORE_API void ZrCore_Value_InitAsBool(struct SZrState *state, SZrTypeValue *value, TZrBool boolValue);
+
 ZR_CORE_API void ZrCore_Value_InitAsFloat(struct SZrState *state, SZrTypeValue *value, TZrFloat64 floatValue);
 
 ZR_CORE_API void ZrCore_Value_InitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZrPtr pointerValue);

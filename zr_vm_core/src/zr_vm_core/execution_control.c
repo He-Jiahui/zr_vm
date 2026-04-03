@@ -4,6 +4,8 @@
 
 #include "execution_internal.h"
 
+static SZrVmExceptionHandlerState *execution_find_top_handler_for_callinfo(SZrState *state, SZrCallInfo *callInfo);
+
 TZrSize close_scope_cleanup_registrations(SZrState *state, TZrSize cleanupCount) {
     TZrSize closedCount = 0;
     TZrMemoryOffset savedStackTopOffset;
@@ -201,6 +203,10 @@ SZrVmExceptionHandlerState *execution_find_handler_state(SZrState *state,
     }
 
     return ZR_NULL;
+}
+
+TZrBool execution_has_exception_handler_for_callinfo(SZrState *state, SZrCallInfo *callInfo) {
+    return execution_find_top_handler_for_callinfo(state, callInfo) != ZR_NULL;
 }
 
 static SZrVmExceptionHandlerState *execution_find_top_handler_for_callinfo(SZrState *state, SZrCallInfo *callInfo) {
