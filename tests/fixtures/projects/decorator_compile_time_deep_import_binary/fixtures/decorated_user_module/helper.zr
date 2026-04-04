@@ -1,0 +1,9 @@
+%module "helper";
+
+pub var toolkit = {
+    math: {
+        greet: () => {
+            return 42;
+        }
+    }
+};

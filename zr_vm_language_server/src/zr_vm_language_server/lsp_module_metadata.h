@@ -10,9 +10,10 @@
 typedef enum EZrLspImportedModuleSourceKind {
     ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED = 0,
     ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE = 1,
-    ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA = 2,
-    ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN = 3,
-    ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN = 4
+    ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER = 2,
+    ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA = 3,
+    ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN = 4,
+    ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN = 5
 } EZrLspImportedModuleSourceKind;
 
 typedef struct SZrLspResolvedImportedModule {
@@ -69,6 +70,10 @@ TZrBool ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleMetadata(SZrSta
                                                                           SZrString *moduleName,
                                                                           SZrLspIntermediateModuleMetadata *outMetadata);
 TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(SZrState *state,
+                                                                  SZrLspProjectIndex *projectIndex,
+                                                                  SZrString *moduleName,
+                                                                  SZrString **outUri);
+TZrBool ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(SZrState *state,
                                                                   SZrLspProjectIndex *projectIndex,
                                                                   SZrString *moduleName,
                                                                   SZrString **outUri);

@@ -10,6 +10,10 @@ if (NOT DEFINED REPO_ROOT OR REPO_ROOT STREQUAL "")
     message(FATAL_ERROR "REPO_ROOT is required.")
 endif()
 
+if (NOT DEFINED GENERATED_DIR OR GENERATED_DIR STREQUAL "")
+    message(FATAL_ERROR "GENERATED_DIR is required.")
+endif()
+
 if (DEFINED TIER AND NOT TIER STREQUAL "")
     string(TOLOWER "${TIER}" PROJECT_REQUESTED_TIER)
 elseif (DEFINED ENV{ZR_VM_TEST_TIER} AND NOT "$ENV{ZR_VM_TEST_TIER}" STREQUAL "")
@@ -26,6 +30,56 @@ endif ()
 
 set(COMMON_FAIL_REGEX "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error")
 set(PROJECT_CASE_NAMES "")
+set(PROJECT_FIXTURES_REL_PREFIX "tests/fixtures/projects/")
+
+set(PROJECT_SOURCE_FIXTURES_DIR "${PROJECT_FIXTURES_DIR}")
+set(PROJECT_SUITE_ROOT "${GENERATED_DIR}/projects_suite")
+set(PROJECT_FIXTURES_DIR "${PROJECT_SUITE_ROOT}/fixtures")
+file(REMOVE_RECURSE "${PROJECT_SUITE_ROOT}")
+file(MAKE_DIRECTORY "${PROJECT_SUITE_ROOT}")
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${PROJECT_SOURCE_FIXTURES_DIR}" "${PROJECT_FIXTURES_DIR}"
+    RESULT_VARIABLE project_fixture_copy_result
+    OUTPUT_VARIABLE project_fixture_copy_stdout
+    ERROR_VARIABLE project_fixture_copy_stderr
+)
+
+if (NOT project_fixture_copy_stdout STREQUAL "")
+    message("${project_fixture_copy_stdout}")
+endif()
+
+if (NOT project_fixture_copy_stderr STREQUAL "")
+    message("${project_fixture_copy_stderr}")
+endif()
+
+if (NOT project_fixture_copy_result EQUAL 0)
+    message(FATAL_ERROR "Failed while copying project fixtures into '${PROJECT_SUITE_ROOT}'.")
+endif()
+
+file(REMOVE_RECURSE "${PROJECT_FIXTURES_DIR}/.fixture_prepare")
+file(REMOVE_RECURSE "${PROJECT_FIXTURES_DIR}/.run_backup")
+
+set(native_numeric_pipeline_output_dir "${PROJECT_FIXTURES_DIR}/native_numeric_pipeline/bin/out")
+set(native_numeric_pipeline_source_file "${PROJECT_FIXTURES_DIR}/native_numeric_pipeline/src/system_io.zr")
+if (EXISTS "${native_numeric_pipeline_source_file}")
+    file(READ "${native_numeric_pipeline_source_file}" native_numeric_pipeline_source_contents)
+    string(REPLACE
+            "tests/fixtures/projects/native_numeric_pipeline/bin/out"
+            "${native_numeric_pipeline_output_dir}"
+            native_numeric_pipeline_source_contents
+            "${native_numeric_pipeline_source_contents}")
+    file(WRITE "${native_numeric_pipeline_source_file}" "${native_numeric_pipeline_source_contents}")
+endif()
+
+file(GLOB native_numeric_pipeline_bytecode
+        "${PROJECT_FIXTURES_DIR}/native_numeric_pipeline/bin/*.zro"
+        "${PROJECT_FIXTURES_DIR}/native_numeric_pipeline/bin/*.zri")
+if (NOT native_numeric_pipeline_bytecode STREQUAL "")
+    file(REMOVE ${native_numeric_pipeline_bytecode})
+endif()
+
+file(REMOVE_RECURSE "${native_numeric_pipeline_output_dir}")
+file(MAKE_DIRECTORY "${native_numeric_pipeline_output_dir}")
 
 if (DEFINED CMAKE_SHARED_LIBRARY_SUFFIX AND NOT CMAKE_SHARED_LIBRARY_SUFFIX STREQUAL "")
     set(PROJECT_SHARED_LIB_SUFFIX "${CMAKE_SHARED_LIBRARY_SUFFIX}")
@@ -172,6 +226,23 @@ function(project_restore_zro_files project_file backup_dir)
     endforeach()
 
     file(REMOVE_RECURSE "${backup_dir}")
+endfunction()
+
+function(project_case_resolve_required_file required_file_rel out_var)
+    if (required_file_rel STREQUAL "")
+        set(${out_var} "" PARENT_SCOPE)
+        return()
+    endif()
+
+    string(FIND "${required_file_rel}" "${PROJECT_FIXTURES_REL_PREFIX}" fixtures_prefix_index)
+    if (fixtures_prefix_index EQUAL 0)
+        string(LENGTH "${PROJECT_FIXTURES_REL_PREFIX}" fixtures_prefix_length)
+        string(SUBSTRING "${required_file_rel}" "${fixtures_prefix_length}" -1 required_fixture_rel)
+        set(${out_var} "${PROJECT_FIXTURES_DIR}/${required_fixture_rel}" PARENT_SCOPE)
+        return()
+    endif()
+
+    set(${out_var} "${REPO_ROOT}/${required_file_rel}" PARENT_SCOPE)
 endfunction()
 
 function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel prepare_aot_c prepare_aot_llvm)
@@ -450,7 +521,8 @@ function(run_project_case case_name)
     endif()
 
     if (NOT required_file_rel STREQUAL "")
-        file(REMOVE "${REPO_ROOT}/${required_file_rel}")
+        project_case_resolve_required_file("${required_file_rel}" required_file)
+        file(REMOVE "${required_file}")
     endif()
 
     if (NOT compile_args STREQUAL "")
@@ -539,7 +611,7 @@ function(run_project_case case_name)
     endif()
 
     if (NOT required_file_rel STREQUAL "")
-        set(required_file "${REPO_ROOT}/${required_file_rel}")
+        project_case_resolve_required_file("${required_file_rel}" required_file)
         if (NOT EXISTS "${required_file}")
             message(FATAL_ERROR "Project case '${case_name}' did not create required file '${required_file_rel}'.")
         endif()
@@ -556,13 +628,19 @@ endfunction()
 register_project_case("hello_world" "hello_world/hello_world.zrp" "hello world" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("import_basic" "import_basic/import_basic.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("decorator_import" "decorator_import/decorator_import.zrp" "31" "${COMMON_FAIL_REGEX}" "" "" "" "")
+register_project_case("decorator_compile_time" "decorator_compile_time/decorator_compile_time.zrp" "31" "${COMMON_FAIL_REGEX}" "" "" "" "")
+register_project_case("decorator_compile_time_import" "decorator_compile_time_import/decorator_compile_time_import.zrp" "31" "${COMMON_FAIL_REGEX}" "" "" "" "")
+register_project_case("decorator_compile_time_deep_import" "decorator_compile_time_deep_import/decorator_compile_time_deep_import.zrp" "43" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes" "classes/classes.zrp" "61" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes_full" "classes_full/classes_full.zrp" "127" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes_static" "classes_static/classes_static.zrp" "82" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes_super" "classes_super/classes_super.zrp" "42" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes_properties" "classes_properties/classes_properties.zrp" "40" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("import_binary" "import_binary/import_binary.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "import_binary/fixtures/greet_binary_source.zr" "import_binary/bin/greet.zro" "" "")
+register_project_case("import_binary_const" "import_binary_const/import_binary_const.zrp" "7" "${COMMON_FAIL_REGEX}" "import_binary_const/fixtures/greet_binary_source.zr" "import_binary_const/bin/greet.zro" "" "")
 register_project_case("decorator_import_binary" "decorator_import_binary/decorator_import_binary.zrp" "31" "${COMMON_FAIL_REGEX}" "decorator_import_binary/fixtures/decorated_user_module" "decorator_import_binary/bin/decorated_user.zro" "" "")
+register_project_case("decorator_compile_time_binary" "decorator_compile_time_binary/decorator_compile_time_binary.zrp" "31" "${COMMON_FAIL_REGEX}" "decorator_compile_time_binary/fixtures/decorated_user_module" "decorator_compile_time_binary/bin/decorated_user.zro" "" "")
+register_project_case("decorator_compile_time_deep_import_binary" "decorator_compile_time_deep_import_binary/decorator_compile_time_deep_import_binary.zrp" "43" "${COMMON_FAIL_REGEX}" "decorator_compile_time_deep_import_binary/fixtures/decorated_user_module" "decorator_compile_time_deep_import_binary/bin/decorated_user.zro" "" "")
 register_project_case("import_pub_function" "import_pub_function/import_pub_function.zrp" "7123" "${COMMON_FAIL_REGEX}|null" "" "" "" "")
 register_project_case("import_capture_native" "import_capture_native/import_capture_native.zrp" "7005" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("import_capture_vector3" "import_capture_vector3/import_capture_vector3.zrp" "5" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
@@ -585,13 +663,19 @@ register_project_case("aot_eh_tail_gc_stress" "aot_eh_tail_gc_stress/aot_eh_tail
 set_project_case_metadata("hello_world" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("import_basic" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("decorator_import" "smoke;core;stress" "" "OFF")
+set_project_case_metadata("decorator_compile_time" "smoke;core;stress" "" "OFF")
+set_project_case_metadata("decorator_compile_time_import" "smoke;core;stress" "" "OFF")
+set_project_case_metadata("decorator_compile_time_deep_import" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("classes" "core;stress" "" "OFF")
 set_project_case_metadata("classes_full" "core;stress" "" "OFF")
 set_project_case_metadata("classes_static" "core;stress" "" "OFF")
 set_project_case_metadata("classes_super" "core;stress" "" "OFF")
 set_project_case_metadata("classes_properties" "core;stress" "" "OFF")
 set_project_case_metadata("import_binary" "smoke;core;stress" "" "OFF")
+set_project_case_metadata("import_binary_const" "core;stress" "" "OFF")
 set_project_case_metadata("decorator_import_binary" "smoke;core;stress" "" "OFF")
+set_project_case_metadata("decorator_compile_time_binary" "smoke;core;stress" "" "OFF")
+set_project_case_metadata("decorator_compile_time_deep_import_binary" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("import_pub_function" "core;stress" "" "OFF")
 set_project_case_metadata("import_capture_native" "core;stress" "" "OFF")
 set_project_case_metadata("import_capture_vector3" "core;stress" "" "OFF")

@@ -1601,7 +1601,6 @@ static void semantic_append_imported_module_completions(SZrState *state,
             modulePrototype = ZrLanguageServer_LspModuleMetadata_FindTypePrototype(analyzer, moduleName);
             if (modulePrototype != ZR_NULL) {
                 semantic_append_module_prototype_completions(state, analyzer, modulePrototype, result);
-                return;
             }
 
             descriptor = semantic_resolve_native_module_descriptor(state, moduleName);

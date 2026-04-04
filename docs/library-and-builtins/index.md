@@ -31,6 +31,9 @@ doc_type: category-index
 - `../parser-and-semantics/ffi-extern-declarations.md`
   - source-level `%extern` 声明如何 lower 到 `zr.ffi.loadLibrary(...)` / `getSymbol(...)`
   - extern signature descriptor、layout descriptor 和 callback delegate 的消费规则
+- `zr-task-runtime.md`
+  - `zr.task` 模块、`Async<T>` / `Scheduler` / `Shared<T>` / `Transfer<T>`、`supportMultithread` / `autoCoroutine` 当前如何接到 CLI、project config、parser sugar 和 runtime
+  - `%mutex` / `%atomic`、`%async` 返回类型包装、`await` / borrowed effect 诊断，以及 native call 抛错如何回卷进 VM `try/catch/finally`
 - `zr-system-submodules.md`
   - `zr.system` 从扁平模块拆成 6 个叶子模块和 1 个聚合根模块
   - native descriptor 新增 `moduleLinks`，根模块通过通用物化逻辑导出子模块对象
@@ -38,6 +41,7 @@ doc_type: category-index
 
 ## 阅读顺序
 
-1. 先看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
-2. 再看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
-3. 需要追代码时，再用 frontmatter 里的 `related_code`、`implementation_files` 和 `tests` 反查实现与验证入口。
+1. 先看 `zr-task-runtime.md`，了解当前并发 runtime 的模块面、配置开关、parser sugar 和已落地限制。
+2. 再看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
+3. 然后看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
+4. 需要追代码时，再用 frontmatter 里的 `related_code`、`implementation_files` 和 `tests` 反查实现与验证入口。

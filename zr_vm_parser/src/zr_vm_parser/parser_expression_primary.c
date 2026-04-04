@@ -1160,6 +1160,7 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
                         lambdaNode->data.lambdaExpression.params = params;
                         lambdaNode->data.lambdaExpression.args = args;
                         lambdaNode->data.lambdaExpression.block = block;
+                        lambdaNode->data.lambdaExpression.isAsync = ZR_FALSE;
                         return parse_member_access(ps, lambdaNode);
                     }
                 }

@@ -58,5 +58,14 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedMemberLocations(SZrSta
                                                                           SZrString *moduleName,
                                                                           SZrString *memberName,
                                                                           SZrArray *result);
+TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedModuleLocations(SZrState *state,
+                                                                          SZrAstNode *node,
+                                                                          SZrArray *bindings,
+                                                                          SZrString *moduleName,
+                                                                          SZrArray *result);
+TZrBool ZrLanguageServer_LspProject_DeriveBinaryModuleNameFromPath(SZrLspProjectIndex *projectIndex,
+                                                                   const TZrChar *path,
+                                                                   TZrChar *buffer,
+                                                                   TZrSize bufferSize);
 
 #endif

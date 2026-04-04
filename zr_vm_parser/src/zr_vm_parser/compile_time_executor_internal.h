@@ -36,6 +36,14 @@ TZrBool evaluate_compile_time_expression_internal(SZrCompilerState *cs,
                                                   SZrTypeValue *result);
 TZrBool register_compile_time_variable_declaration(SZrCompilerState *cs, SZrAstNode *node, SZrFileRange location);
 TZrBool register_compile_time_function_declaration(SZrCompilerState *cs, SZrAstNode *node, SZrFileRange location);
+TZrBool register_compile_time_function_alias(SZrCompilerState *cs,
+                                             SZrString *aliasName,
+                                             SZrAstNode *node,
+                                             SZrFileRange location);
+TZrBool register_compile_time_decorator_class_alias(SZrCompilerState *cs,
+                                                    SZrString *aliasName,
+                                                    SZrAstNode *node,
+                                                    SZrFileRange location);
 TZrBool ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(SZrCompilerState *cs,
                                                               SZrAstNode *node,
                                                               SZrFileRange location);
@@ -46,6 +54,10 @@ TZrBool ZrParser_CompileTime_ApplyFunctionDecorators(SZrCompilerState *cs,
                                                      SZrAstNodeArray *decorators,
                                                      SZrFunction *function,
                                                      SZrFileRange location);
+TZrBool ZrParser_CompileTime_ApplyMemberDecorators(SZrCompilerState *cs,
+                                                   SZrAstNode *memberNode,
+                                                   SZrAstNodeArray *decorators,
+                                                   SZrTypeMemberInfo *memberInfo);
 TZrBool execute_compile_time_statement(SZrCompilerState *cs,
                                        SZrAstNode *node,
                                        SZrCompileTimeFrame *frame,

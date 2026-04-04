@@ -345,6 +345,10 @@ static TZrBool is_compile_time_projection_candidate(SZrCompilerState *cs, SZrStr
         return ZR_FALSE;
     }
 
+    if (cs->isCompilingCompileTimeRuntimeSupport) {
+        return ZR_FALSE;
+    }
+
     if (zr_string_equals_cstr_local(rootName, "Assert") ||
         zr_string_equals_cstr_local(rootName, "FatalError")) {
         return ZR_TRUE;
@@ -354,12 +358,29 @@ static TZrBool is_compile_time_projection_candidate(SZrCompilerState *cs, SZrStr
            has_compile_time_function_binding_local(cs, rootName);
 }
 
+static TZrBool import_expression_targets_module(SZrAstNode *rootNode, const TZrChar *moduleName) {
+    SZrAstNode *modulePathNode;
+
+    if (rootNode == ZR_NULL || moduleName == ZR_NULL || rootNode->type != ZR_AST_IMPORT_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    modulePathNode = rootNode->data.importExpression.modulePath;
+    return modulePathNode != ZR_NULL &&
+           modulePathNode->type == ZR_AST_STRING_LITERAL &&
+           modulePathNode->data.stringLiteral.value != ZR_NULL &&
+           zr_string_equals_cstr_local(modulePathNode->data.stringLiteral.value, moduleName);
+}
+
 static TZrBool primary_root_is_compile_time_projection_candidate(SZrCompilerState *cs, SZrAstNode *rootNode) {
     if (rootNode == ZR_NULL) {
         return ZR_FALSE;
     }
 
     if (rootNode->type == ZR_AST_IMPORT_EXPRESSION) {
+        if (import_expression_targets_module(rootNode, "zr.task")) {
+            return ZR_FALSE;
+        }
         return ZR_TRUE;
     }
 

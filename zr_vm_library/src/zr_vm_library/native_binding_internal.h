@@ -73,10 +73,17 @@ typedef struct ZrLibBindingEntry {
 
 typedef struct ZrLibRegisteredModuleRecord {
     const ZrLibModuleDescriptor *descriptor;
+    TZrChar *moduleName;
     TZrChar *sourcePath;
     EZrLibNativeModuleRegistrationKind registrationKind;
     TZrBool isDescriptorPlugin;
 } ZrLibRegisteredModuleRecord;
+
+typedef struct ZrLibPluginHandleRecord {
+    void *handle;
+    TZrChar *moduleName;
+    TZrChar *sourcePath;
+} ZrLibPluginHandleRecord;
 
 typedef struct ZrLibrary_NativeRegistryState {
     SZrArray moduleRecords;

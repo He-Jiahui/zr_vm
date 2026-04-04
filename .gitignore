@@ -91,4 +91,6 @@ dkms.conf
 /temp_*.gdb
 */__pycache__/
 *.pyc
+/tests/fixtures/projects/.fixture_prepare/
+/tests/fixtures/projects/.run_backup/
 

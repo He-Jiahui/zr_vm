@@ -18,6 +18,7 @@
 #include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
+#include "zr_vm_task/module.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
@@ -251,7 +252,7 @@ TZrBool ZrCli_Project_RegisterStandardModules(SZrGlobalState *global) {
 
     ZrParser_ToGlobalState_Register(global->mainThreadState);
     return ZrVmLibMath_Register(global) && ZrVmLibSystem_Register(global) &&
-           ZrVmLibContainer_Register(global) && ZrVmLibFfi_Register(global);
+           ZrVmLibContainer_Register(global) && ZrVmLibFfi_Register(global) && ZrVmTask_Register(global);
 }
 
 TZrBool ZrCli_ProjectContext_FromGlobal(SZrCliProjectContext *context,

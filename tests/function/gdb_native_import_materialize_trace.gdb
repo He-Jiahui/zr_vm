@@ -4,7 +4,7 @@ set breakpoint pending on
 set debuginfod enabled off
 
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_cli
-set args ./tests/projects/import_capture_native/import_capture_native.zrp
+set args ./tests/fixtures/projects/import_capture_native/import_capture_native.zrp
 
 break /mnt/d/Git/Github/zr_vm_mig/zr_vm/zr_vm_library/src/zr_vm_library/native_binding.c:1020
 commands

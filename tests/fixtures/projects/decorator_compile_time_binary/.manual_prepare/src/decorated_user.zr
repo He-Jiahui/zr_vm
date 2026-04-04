@@ -1,0 +1,27 @@
+%module "decorated_user";
+
+%compileTime class Serializable {
+    @decorate(target: %type Class): DecoratorPatch {
+        return { metadata: { serializable: true } };
+    }
+}
+
+%compileTime markFunction(target: %type Function, bonus: int = 16): DecoratorPatch {
+    return { metadata: { instrumented: bonus } };
+}
+
+#Serializable#
+pub class User {
+    pub var id: int = 1;
+}
+
+#markFunction#
+pub decoratedBonus(): int {
+    var meta = %type(decoratedBonus).metadata;
+    return meta.instrumented;
+}
+
+pub var verifyDecorators = () => {
+    var typeMeta = %type(User).metadata;
+    return typeMeta.serializable ? 15 : 0;
+};

@@ -3,9 +3,16 @@
 /* descriptor.moduleName = main */
 /* descriptor.inputKind = 1 */
 /* descriptor.inputHash = 519d8fc4249f42aa */
-/* descriptor.embeddedModuleBlobLength = 2276 */
+/* descriptor.embeddedModuleBlobLength = 2336 */
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_library/aot_runtime.h"
+
+#define ZR_AOT_C_GUARD(call_expr) \
+    do { \
+        if (!(call_expr)) { \
+            goto zr_aot_fail; \
+        } \
+    } while (0)
 
 
 /*
@@ -17,7 +24,7 @@ static const TZrChar *const zr_aot_runtime_contracts[] = {
 
 static const TZrByte zr_aot_embedded_module_blob[] = {
     0x01, 0x5a, 0x52, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x08, 0x08, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x73, 0x69, 0x6d, 0x70, 0x6c, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -151,8 +158,9 @@ static const TZrByte zr_aot_embedded_module_blob[] = {
     0x00, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6d, 0x65, 0x72, 
     0x67, 0x65, 0x64, 0x08, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x69, 0x6e, 0x74, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 
@@ -174,7 +182,7 @@ static const TZrByte zr_aot_embedded_module_blob[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x60, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x90, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -185,24 +193,28 @@ static const TZrByte zr_aot_embedded_module_blob[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x02, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 
-    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x12, 0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 
+    0x0c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 
+    0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
@@ -216,243 +228,265 @@ static const FZrAotEntryThunk zr_aot_function_thunks[] = {
 
 static TZrInt64 zr_aot_fn_0(struct SZrState *state) {
     ZrAotGeneratedFrame frame;
-    if (!ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame));
 zr_aot_fn_0_ins_0:
     /* opcode=2 extra=0 op1a=0 op1b=0 op2=0 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 0, 0)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 0),
+                      &frame.function->constantValueList[0]);
 zr_aot_fn_0_ins_1:
     /* opcode=2 extra=1 op1a=1 op1b=0 op2=1 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 1, 1)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 1),
+                      &frame.function->constantValueList[1]);
 zr_aot_fn_0_ins_2:
     /* opcode=73 extra=0 op1a=0 op1b=1 op2=65536 */
-    if (!ZrLibrary_AotRuntime_Call(state, &frame, 0, 0, 1)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 0, 0, 1));
 zr_aot_fn_0_ins_3:
     /* opcode=2 extra=1 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 1, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 1),
+                      &frame.function->constantValueList[2]);
 zr_aot_fn_0_ins_4:
     /* opcode=2 extra=1 op1a=3 op1b=0 op2=3 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 1, 3)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 1),
+                      &frame.function->constantValueList[3]);
 zr_aot_fn_0_ins_5:
     /* opcode=2 extra=2 op1a=4 op1b=0 op2=4 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 2, 4)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 2),
+                      &frame.function->constantValueList[4]);
 zr_aot_fn_0_ins_6:
     /* opcode=73 extra=1 op1a=1 op1b=1 op2=65537 */
-    if (!ZrLibrary_AotRuntime_Call(state, &frame, 1, 1, 1)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 1, 1, 1));
 zr_aot_fn_0_ins_7:
     /* opcode=2 extra=2 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 2, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 2),
+                      &frame.function->constantValueList[2]);
 zr_aot_fn_0_ins_8:
     /* opcode=2 extra=2 op1a=5 op1b=0 op2=5 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 2, 5)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 2),
+                      &frame.function->constantValueList[5]);
 zr_aot_fn_0_ins_9:
     /* opcode=2 extra=3 op1a=6 op1b=0 op2=6 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 3, 6)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 3),
+                      &frame.function->constantValueList[6]);
 zr_aot_fn_0_ins_10:
     /* opcode=73 extra=2 op1a=2 op1b=1 op2=65538 */
-    if (!ZrLibrary_AotRuntime_Call(state, &frame, 2, 2, 1)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 2, 2, 1));
 zr_aot_fn_0_ins_11:
     /* opcode=2 extra=3 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 3, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 3),
+                      &frame.function->constantValueList[2]);
 zr_aot_fn_0_ins_12:
     /* opcode=2 extra=3 op1a=7 op1b=0 op2=7 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 3, 7)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 3),
+                      &frame.function->constantValueList[7]);
 zr_aot_fn_0_ins_13:
     /* opcode=2 extra=4 op1a=8 op1b=0 op2=8 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 4, 8)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 4),
+                      &frame.function->constantValueList[8]);
 zr_aot_fn_0_ins_14:
     /* opcode=73 extra=3 op1a=3 op1b=1 op2=65539 */
-    if (!ZrLibrary_AotRuntime_Call(state, &frame, 3, 3, 1)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 3, 3, 1));
 zr_aot_fn_0_ins_15:
     /* opcode=2 extra=4 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 4, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 4),
+                      &frame.function->constantValueList[2]);
 zr_aot_fn_0_ins_16:
     /* opcode=0 extra=4 op1a=1 op1b=0 op2=1 */
-    if (!ZrLibrary_AotRuntime_CopyStack(state, &frame, 4, 1)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 4),
+                      ZrCore_Stack_GetValue(frame.slotBase + 1));
 zr_aot_fn_0_ins_17:
     /* opcode=8 extra=4 op1a=4 op1b=0 op2=4 */
-    if (!ZrLibrary_AotRuntime_GetMember(state, &frame, 4, 4, 0)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 4, 4, 0));
 zr_aot_fn_0_ins_18:
     /* opcode=104 extra=4 op1a=4 op1b=0 op2=4 */
-    if (!ZrLibrary_AotRuntime_Call(state, &frame, 4, 4, 0)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 4, 4, 0));
 zr_aot_fn_0_ins_19:
     /* opcode=16 extra=5 op1a=4 op1b=0 op2=4 */
-    if (!ZrLibrary_AotRuntime_ToInt(state, &frame, 5, 4)) {
-        return 0;
+    {
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 5);
+        const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + 4);
+        if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {
+            ZrCore_Value_Copy(state, zr_aot_destination, zr_aot_source);
+        } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {
+            ZR_VALUE_FAST_SET(zr_aot_destination,
+                              nativeInt64,
+                              (TZrInt64)zr_aot_source->value.nativeObject.nativeUInt64,
+                              ZR_VALUE_TYPE_INT64);
+        } else if (ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {
+            ZR_VALUE_FAST_SET(zr_aot_destination,
+                              nativeInt64,
+                              (TZrInt64)zr_aot_source->value.nativeObject.nativeDouble,
+                              ZR_VALUE_TYPE_INT64);
+        } else if (ZR_VALUE_IS_TYPE_BOOL(zr_aot_source->type)) {
+            ZR_VALUE_FAST_SET(zr_aot_destination,
+                              nativeInt64,
+                              zr_aot_source->value.nativeObject.nativeBool ? 1 : 0,
+                              ZR_VALUE_TYPE_INT64);
+        } else {
+            ZR_VALUE_FAST_SET(zr_aot_destination, nativeInt64, 0, ZR_VALUE_TYPE_INT64);
+        }
     }
 zr_aot_fn_0_ins_20:
     /* opcode=0 extra=6 op1a=3 op1b=0 op2=3 */
-    if (!ZrLibrary_AotRuntime_CopyStack(state, &frame, 6, 3)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 6),
+                      ZrCore_Stack_GetValue(frame.slotBase + 3));
 zr_aot_fn_0_ins_21:
     /* opcode=8 extra=6 op1a=6 op1b=1 op2=65542 */
-    if (!ZrLibrary_AotRuntime_GetMember(state, &frame, 6, 6, 1)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 6, 6, 1));
 zr_aot_fn_0_ins_22:
     /* opcode=104 extra=6 op1a=6 op1b=0 op2=6 */
-    if (!ZrLibrary_AotRuntime_Call(state, &frame, 6, 6, 0)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 6, 6, 0));
 zr_aot_fn_0_ins_23:
     /* opcode=16 extra=7 op1a=6 op1b=0 op2=6 */
-    if (!ZrLibrary_AotRuntime_ToInt(state, &frame, 7, 6)) {
-        return 0;
+    {
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 7);
+        const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + 6);
+        if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {
+            ZrCore_Value_Copy(state, zr_aot_destination, zr_aot_source);
+        } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {
+            ZR_VALUE_FAST_SET(zr_aot_destination,
+                              nativeInt64,
+                              (TZrInt64)zr_aot_source->value.nativeObject.nativeUInt64,
+                              ZR_VALUE_TYPE_INT64);
+        } else if (ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {
+            ZR_VALUE_FAST_SET(zr_aot_destination,
+                              nativeInt64,
+                              (TZrInt64)zr_aot_source->value.nativeObject.nativeDouble,
+                              ZR_VALUE_TYPE_INT64);
+        } else if (ZR_VALUE_IS_TYPE_BOOL(zr_aot_source->type)) {
+            ZR_VALUE_FAST_SET(zr_aot_destination,
+                              nativeInt64,
+                              zr_aot_source->value.nativeObject.nativeBool ? 1 : 0,
+                              ZR_VALUE_TYPE_INT64);
+        } else {
+            ZR_VALUE_FAST_SET(zr_aot_destination, nativeInt64, 0, ZR_VALUE_TYPE_INT64);
+        }
     }
 zr_aot_fn_0_ins_24:
     /* opcode=0 extra=8 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyStack(state, &frame, 8, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 8),
+                      ZrCore_Stack_GetValue(frame.slotBase + 2));
 zr_aot_fn_0_ins_25:
     /* opcode=8 extra=8 op1a=8 op1b=2 op2=131080 */
-    if (!ZrLibrary_AotRuntime_GetMember(state, &frame, 8, 8, 2)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 8, 8, 2));
 zr_aot_fn_0_ins_26:
     /* opcode=0 extra=9 op1a=5 op1b=0 op2=5 */
-    if (!ZrLibrary_AotRuntime_CopyStack(state, &frame, 9, 5)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 9),
+                      ZrCore_Stack_GetValue(frame.slotBase + 5));
 zr_aot_fn_0_ins_27:
     /* opcode=0 extra=10 op1a=7 op1b=0 op2=7 */
-    if (!ZrLibrary_AotRuntime_CopyStack(state, &frame, 10, 7)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 10),
+                      ZrCore_Stack_GetValue(frame.slotBase + 7));
 zr_aot_fn_0_ins_28:
     /* opcode=73 extra=8 op1a=8 op1b=2 op2=131080 */
-    if (!ZrLibrary_AotRuntime_Call(state, &frame, 8, 8, 2)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 8, 8, 2));
 zr_aot_fn_0_ins_29:
     /* opcode=2 extra=9 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 9, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 9),
+                      &frame.function->constantValueList[2]);
 zr_aot_fn_0_ins_30:
     /* opcode=2 extra=10 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 10, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 10),
+                      &frame.function->constantValueList[2]);
 zr_aot_fn_0_ins_31:
     /* opcode=0 extra=9 op1a=0 op1b=0 op2=0 */
-    if (!ZrLibrary_AotRuntime_CopyStack(state, &frame, 9, 0)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 9),
+                      ZrCore_Stack_GetValue(frame.slotBase + 0));
 zr_aot_fn_0_ins_32:
     /* opcode=8 extra=9 op1a=9 op1b=3 op2=196617 */
-    if (!ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 3)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 3));
 zr_aot_fn_0_ins_33:
     /* opcode=8 extra=9 op1a=9 op1b=4 op2=262153 */
-    if (!ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 4)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 4));
 zr_aot_fn_0_ins_34:
     /* opcode=2 extra=10 op1a=9 op1b=0 op2=9 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 10, 9)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 10),
+                      &frame.function->constantValueList[9]);
 zr_aot_fn_0_ins_35:
     /* opcode=73 extra=9 op1a=9 op1b=1 op2=65545 */
-    if (!ZrLibrary_AotRuntime_Call(state, &frame, 9, 9, 1)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 9, 9, 1));
 zr_aot_fn_0_ins_36:
     /* opcode=2 extra=10 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 10, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 10),
+                      &frame.function->constantValueList[2]);
 zr_aot_fn_0_ins_37:
     /* opcode=2 extra=9 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 9, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 9),
+                      &frame.function->constantValueList[2]);
 zr_aot_fn_0_ins_38:
     /* opcode=0 extra=9 op1a=0 op1b=0 op2=0 */
-    if (!ZrLibrary_AotRuntime_CopyStack(state, &frame, 9, 0)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 9),
+                      ZrCore_Stack_GetValue(frame.slotBase + 0));
 zr_aot_fn_0_ins_39:
     /* opcode=8 extra=9 op1a=9 op1b=3 op2=196617 */
-    if (!ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 3)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 3));
 zr_aot_fn_0_ins_40:
     /* opcode=8 extra=9 op1a=9 op1b=4 op2=262153 */
-    if (!ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 4)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 4));
 zr_aot_fn_0_ins_41:
     /* opcode=0 extra=10 op1a=8 op1b=0 op2=8 */
-    if (!ZrLibrary_AotRuntime_CopyStack(state, &frame, 10, 8)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 10),
+                      ZrCore_Stack_GetValue(frame.slotBase + 8));
 zr_aot_fn_0_ins_42:
     /* opcode=73 extra=9 op1a=9 op1b=1 op2=65545 */
-    if (!ZrLibrary_AotRuntime_Call(state, &frame, 9, 9, 1)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 9, 9, 1));
 zr_aot_fn_0_ins_43:
     /* opcode=2 extra=10 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 10, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 10),
+                      &frame.function->constantValueList[2]);
 zr_aot_fn_0_ins_44:
     /* opcode=2 extra=9 op1a=2 op1b=0 op2=2 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 9, 2)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 9),
+                      &frame.function->constantValueList[2]);
 zr_aot_fn_0_ins_45:
     /* opcode=0 extra=9 op1a=8 op1b=0 op2=8 */
-    if (!ZrLibrary_AotRuntime_CopyStack(state, &frame, 9, 8)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 9),
+                      ZrCore_Stack_GetValue(frame.slotBase + 8));
 zr_aot_fn_0_ins_46:
     /* opcode=75 extra=1 op1a=9 op1b=0 op2=9 */
-    return ZrLibrary_AotRuntime_Return(state, &frame, 9, ZR_FALSE);
+    {
+        SZrCallInfo *zr_aot_call_info = state->callInfoList;
+        TZrStackValuePointer zr_aot_result_slot = frame.slotBase + 9;
+        if (zr_aot_call_info == ZR_NULL || zr_aot_call_info->functionBase.valuePointer == ZR_NULL ||
+            zr_aot_result_slot == ZR_NULL) {
+            goto zr_aot_fail;
+        }
+        ZrCore_Value_Copy(state,
+                          ZrCore_Stack_GetValue(zr_aot_call_info->functionBase.valuePointer),
+                          ZrCore_Stack_GetValue(zr_aot_result_slot));
+        state->stackTop.valuePointer = zr_aot_call_info->functionBase.valuePointer + 1;
+        return 1;
+    }
     return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, 0, 47, 0);
+zr_aot_fail:
+    return 0;
 }
 
 static const ZrAotCompiledModule zr_aot_module = {
@@ -463,7 +497,7 @@ static const ZrAotCompiledModule zr_aot_module = {
     "519d8fc4249f42aa",
     zr_aot_runtime_contracts,
     zr_aot_embedded_module_blob,
-    2276,
+    2336,
     zr_aot_function_thunks,
     1,
     zr_aot_fn_0,

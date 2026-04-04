@@ -1083,14 +1083,13 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
                                                                    SZrArray *result) {
     SZrLspImportedMemberHit hit;
 
-    if (node == ZR_NULL || bindings == ZR_NULL || moduleName == ZR_NULL || memberName == ZR_NULL ||
-        result == ZR_NULL) {
+    if (node == ZR_NULL || bindings == ZR_NULL || moduleName == ZR_NULL || result == ZR_NULL) {
         return ZR_TRUE;
     }
 
     if (primary_expression_get_imported_member(node, bindings, &hit) &&
         ZrLanguageServer_Lsp_StringsEqual(hit.moduleName, moduleName) &&
-        ZrLanguageServer_Lsp_StringsEqual(hit.memberName, memberName) &&
+        (memberName == ZR_NULL || ZrLanguageServer_Lsp_StringsEqual(hit.memberName, memberName)) &&
         !append_lsp_location(state, result, hit.location.source, hit.location)) {
         return ZR_FALSE;
     }
@@ -1579,5 +1578,18 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedMemberLocations(SZrSta
                                                                bindings,
                                                                moduleName,
                                                                memberName,
+                                                               result);
+}
+
+TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedModuleLocations(SZrState *state,
+                                                                          SZrAstNode *node,
+                                                                          SZrArray *bindings,
+                                                                          SZrString *moduleName,
+                                                                          SZrArray *result) {
+    return append_matching_imported_member_locations_recursive(state,
+                                                               node,
+                                                               bindings,
+                                                               moduleName,
+                                                               ZR_NULL,
                                                                result);
 }

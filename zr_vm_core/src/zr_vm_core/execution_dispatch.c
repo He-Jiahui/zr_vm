@@ -207,6 +207,15 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
     } while (0)
 
+#define RESUME_AFTER_NATIVE_CALL(STATE, CALL_INFO)                                                                     \
+    do {                                                                                                               \
+        if ((STATE)->hasCurrentException && execution_unwind_exception_to_handler((STATE), &(CALL_INFO))) {           \
+            goto LZrReturning;                                                                                         \
+        }                                                                                                              \
+        UPDATE_BASE(CALL_INFO);                                                                                        \
+        UPDATE_TRAP(CALL_INFO);                                                                                        \
+    } while (0)
+
 #define JUMP(CALL_INFO, INSTRUCTION, OFFSET)                                                                           \
     {                                                                                                                  \
         programCounter += A2(INSTRUCTION) + (OFFSET);                                                                  \
@@ -1483,8 +1492,7 @@ LZrReturning: {
                 SZrCallInfo *nextCallInfo =
                         ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo = nextCallInfo;
                     goto LZrStart;
@@ -1512,8 +1520,7 @@ LZrReturning: {
                 nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
                     callInfo = nextCallInfo;
@@ -1548,8 +1555,7 @@ LZrReturning: {
                 SZrCallInfo *nextCallInfo = ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     // NULL means native call
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     // a vm call
                     callInfo = nextCallInfo;
@@ -1569,8 +1575,7 @@ LZrReturning: {
                 SZrCallInfo *nextCallInfo =
                         ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo = nextCallInfo;
                     goto LZrStart;
@@ -1600,8 +1605,7 @@ LZrReturning: {
                 callInfo->context.context.programCounter = programCounter + 1;
                 nextCallInfo = ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo = nextCallInfo;
                     goto LZrStart;
@@ -1629,8 +1633,7 @@ LZrReturning: {
                 nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
                     callInfo = nextCallInfo;
@@ -1669,8 +1672,7 @@ LZrReturning: {
                 nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
                     callInfo = nextCallInfo;
@@ -1696,8 +1698,7 @@ LZrReturning: {
                 SZrCallInfo *nextCallInfo =
                         ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo = nextCallInfo;
                     goto LZrStart;
@@ -1730,8 +1731,7 @@ LZrReturning: {
                 nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
                     callInfo = nextCallInfo;
@@ -1752,8 +1752,7 @@ LZrReturning: {
                 SZrCallInfo *nextCallInfo =
                         ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo = nextCallInfo;
                     goto LZrStart;
@@ -1785,8 +1784,7 @@ LZrReturning: {
                 callInfo->context.context.programCounter = programCounter + 1;
                 nextCallInfo = ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo = nextCallInfo;
                     goto LZrStart;
@@ -1814,8 +1812,7 @@ LZrReturning: {
                 nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
                     callInfo = nextCallInfo;
@@ -1856,8 +1853,7 @@ LZrReturning: {
                 nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
                     callInfo = nextCallInfo;
@@ -1885,8 +1881,7 @@ LZrReturning: {
                 SZrCallInfo *nextCallInfo =
                         ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo = nextCallInfo;
                     goto LZrStart;
@@ -1921,8 +1916,7 @@ LZrReturning: {
                 nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
                     callInfo = nextCallInfo;
@@ -1967,8 +1961,7 @@ LZrReturning: {
                 if (nextCallInfo == ZR_NULL) {
                     // Native调用，清除尾调用标志
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    UPDATE_BASE(callInfo);
-                    trap = callInfo->context.context.trap;
+                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
                 } else {
                     // VM调用：对于尾调用，重用当前callInfo而不是创建新的
                     // 但ZrFunctionPreCall总是创建新的callInfo，所以我们需要调整

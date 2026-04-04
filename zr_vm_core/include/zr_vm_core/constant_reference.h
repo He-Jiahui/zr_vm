@@ -68,6 +68,10 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 callsDestructor;              // TZrBool (0或1)
     TZrUInt32 declarationOrder;             // 成员声明顺序
     TZrUInt32 contractRole;                 // EZrMemberContractRole
+    TZrUInt32 hasDecoratorMetadata;         // 是否存在成员级 compile-time decorator metadata
+    TZrUInt32 decoratorMetadataConstantIndex; // metadata 常量索引（hasDecoratorMetadata=1 时有效）
+    TZrUInt32 hasDecoratorNames;            // 是否存在成员级 decorator 名称数组
+    TZrUInt32 decoratorNamesConstantIndex;  // decorator 名称数组常量索引（hasDecoratorNames=1 时有效）
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 

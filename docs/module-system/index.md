@@ -26,7 +26,7 @@ tests:
   - tests/parser/test_compiler_features.c
   - tests/parser/test_instruction_execution.c
   - tests/scripts/test_artifact_golden.c
-  - tests/projects/CMakeLists.txt
+  - tests/cmake/run_projects_suite.cmake
 doc_type: category-index
 ---
 

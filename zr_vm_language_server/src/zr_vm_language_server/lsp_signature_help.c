@@ -52,6 +52,32 @@ static TZrBool signature_range_contains_position(SZrFileRange range, SZrFileRang
              position.end.column <= range.end.column));
 }
 
+static SZrFileRange signature_call_context_range(SZrAstNode *callNode) {
+    SZrFunctionCall *call;
+    SZrFileRange range;
+
+    memset(&range, 0, sizeof(range));
+    if (callNode == ZR_NULL || callNode->type != ZR_AST_FUNCTION_CALL) {
+        return range;
+    }
+
+    call = &callNode->data.functionCall;
+    range = callNode->location;
+    if (call->args != ZR_NULL && call->args->count > 0) {
+        SZrAstNode *lastArg = call->args->nodes[call->args->count - 1];
+        if (lastArg != ZR_NULL) {
+            range.end = lastArg->location.end;
+        }
+    } else if (call->genericArguments != ZR_NULL && call->genericArguments->count > 0) {
+        SZrAstNode *lastGenericArg = call->genericArguments->nodes[call->genericArguments->count - 1];
+        if (lastGenericArg != ZR_NULL) {
+            range.end = lastGenericArg->location.end;
+        }
+    }
+
+    return range;
+}
+
 static TZrSize signature_range_span(SZrFileRange range) {
     if (range.end.offset > range.start.offset) {
         return range.end.offset - range.start.offset;
@@ -62,28 +88,7 @@ static TZrSize signature_range_span(SZrFileRange range) {
 }
 
 static TZrSize signature_call_context_span(SZrAstNode *callNode) {
-    SZrFunctionCall *call;
-    SZrFileRange endRange;
-
-    if (callNode == ZR_NULL || callNode->type != ZR_AST_FUNCTION_CALL) {
-        return 0;
-    }
-
-    call = &callNode->data.functionCall;
-    endRange = callNode->location;
-    if (call->args != ZR_NULL && call->args->count > 0) {
-        SZrAstNode *lastArg = call->args->nodes[call->args->count - 1];
-        if (lastArg != ZR_NULL) {
-            endRange.end = lastArg->location.end;
-        }
-    } else if (call->genericArguments != ZR_NULL && call->genericArguments->count > 0) {
-        SZrAstNode *lastGenericArg = call->genericArguments->nodes[call->genericArguments->count - 1];
-        if (lastGenericArg != ZR_NULL) {
-            endRange.end = lastGenericArg->location.end;
-        }
-    }
-
-    return signature_range_span(endRange);
+    return signature_range_span(signature_call_context_range(callNode));
 }
 
 static TZrBool signature_call_matches_position(SZrAstNode *callNode, SZrFileRange position) {
@@ -93,7 +98,7 @@ static TZrBool signature_call_matches_position(SZrAstNode *callNode, SZrFileRang
         return ZR_FALSE;
     }
 
-    if (signature_range_contains_position(callNode->location, position)) {
+    if (signature_range_contains_position(signature_call_context_range(callNode), position)) {
         return ZR_TRUE;
     }
 
@@ -565,6 +570,8 @@ static TZrBool signature_build_label_from_function(SZrState *state,
     SZrAstNode *declarationNode;
     SZrGenericDeclaration *genericDecl = ZR_NULL;
     SZrAstNodeArray *params = ZR_NULL;
+    SZrType *declaredReturnType = ZR_NULL;
+    TZrBool useDeclaredAstTypes = ZR_FALSE;
     TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
     TZrSize offset = 0;
 
@@ -574,9 +581,21 @@ static TZrBool signature_build_label_from_function(SZrState *state,
 
     buffer[0] = '\0';
     declarationNode = funcType->declarationNode;
-    if (declarationNode != ZR_NULL && declarationNode->type == ZR_AST_FUNCTION_DECLARATION) {
-        genericDecl = declarationNode->data.functionDeclaration.generic;
-        params = declarationNode->data.functionDeclaration.params;
+    if (declarationNode != ZR_NULL) {
+        switch (declarationNode->type) {
+            case ZR_AST_FUNCTION_DECLARATION:
+                genericDecl = declarationNode->data.functionDeclaration.generic;
+                params = declarationNode->data.functionDeclaration.params;
+                declaredReturnType = declarationNode->data.functionDeclaration.returnType;
+                break;
+            case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+                params = declarationNode->data.externFunctionDeclaration.params;
+                declaredReturnType = declarationNode->data.externFunctionDeclaration.returnType;
+                useDeclaredAstTypes = ZR_TRUE;
+                break;
+            default:
+                break;
+        }
     }
 
     signature_buffer_append(buffer,
@@ -594,7 +613,7 @@ static TZrBool signature_build_label_from_function(SZrState *state,
             if (index > 0) {
                 signature_buffer_append(buffer, bufferSize, &offset, ", ");
             }
-            if (resolvedSignature != ZR_NULL && index < resolvedSignature->parameterTypes.length) {
+            if (!useDeclaredAstTypes && resolvedSignature != ZR_NULL && index < resolvedSignature->parameterTypes.length) {
                 resolvedType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&resolvedSignature->parameterTypes, index);
             }
             if (resolvedSignature != ZR_NULL && index < resolvedSignature->parameterPassingModes.length) {
@@ -614,10 +633,16 @@ static TZrBool signature_build_label_from_function(SZrState *state,
         }
     }
     signature_buffer_append(buffer, bufferSize, &offset, "): ");
-    signature_format_type(state,
-                          resolvedSignature != ZR_NULL ? &resolvedSignature->returnType : &funcType->returnType,
-                          typeBuffer,
-                          sizeof(typeBuffer));
+    if (useDeclaredAstTypes && declaredReturnType != ZR_NULL) {
+        TZrSize typeOffset = 0;
+        typeBuffer[0] = '\0';
+        signature_append_ast_type(declaredReturnType, typeBuffer, sizeof(typeBuffer), &typeOffset);
+    } else {
+        signature_format_type(state,
+                              resolvedSignature != ZR_NULL ? &resolvedSignature->returnType : &funcType->returnType,
+                              typeBuffer,
+                              sizeof(typeBuffer));
+    }
     signature_buffer_append(buffer, bufferSize, &offset, "%s", typeBuffer);
     signature_append_where_clauses(state, genericDecl, buffer, bufferSize, &offset);
     return ZR_TRUE;
@@ -2817,6 +2842,7 @@ static TZrBool signature_resolve_function_help(SZrState *state,
     SZrResolvedCallSignature resolvedSignature;
     SZrPrimaryExpression *primary;
     SZrFunctionCall *call;
+    SZrAstNodeArray *signatureParams = ZR_NULL;
     TZrChar labelBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
     TZrBool resolved = ZR_FALSE;
 
@@ -2862,12 +2888,22 @@ static TZrBool signature_resolve_function_help(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (resolvedFunction->declarationNode != ZR_NULL) {
+        switch (resolvedFunction->declarationNode->type) {
+            case ZR_AST_FUNCTION_DECLARATION:
+                signatureParams = resolvedFunction->declarationNode->data.functionDeclaration.params;
+                break;
+            case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+                signatureParams = resolvedFunction->declarationNode->data.externFunctionDeclaration.params;
+                break;
+            default:
+                break;
+        }
+    }
+
     if (!signature_populate_help_from_label(state,
                                             labelBuffer,
-                                            resolvedFunction->declarationNode != ZR_NULL &&
-                                                    resolvedFunction->declarationNode->type == ZR_AST_FUNCTION_DECLARATION
-                                                ? resolvedFunction->declarationNode->data.functionDeclaration.params
-                                                : ZR_NULL,
+                                            signatureParams,
                                             &resolvedSignature,
                                             signature_active_parameter_index(call, position),
                                             result)) {

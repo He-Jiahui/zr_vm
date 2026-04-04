@@ -51,6 +51,53 @@ static FZrVmGetNativeModuleV1 native_registry_cast_module_symbol(TZrPtr symbolPo
     return symbol;
 }
 
+static void native_registry_remove_plugin_handles_for_module(SZrState *state,
+                                                             ZrLibrary_NativeRegistryState *registry,
+                                                             const TZrChar *moduleName) {
+    if (state == ZR_NULL || state->global == ZR_NULL || registry == ZR_NULL || moduleName == ZR_NULL ||
+        !registry->pluginHandles.isValid) {
+        return;
+    }
+
+    for (TZrSize index = registry->pluginHandles.length; index > 0; index--) {
+        ZrLibPluginHandleRecord *handleRecord =
+            (ZrLibPluginHandleRecord *)ZrCore_Array_Get(&registry->pluginHandles, index - 1);
+
+        if (handleRecord == ZR_NULL || handleRecord->moduleName == ZR_NULL ||
+            strcmp(handleRecord->moduleName, moduleName) != 0) {
+            continue;
+        }
+
+        if (handleRecord->handle != ZR_NULL) {
+            native_registry_close_library(handleRecord->handle);
+            handleRecord->handle = ZR_NULL;
+        }
+        if (handleRecord->moduleName != ZR_NULL) {
+            state->global->allocator(state->global->userAllocationArguments,
+                                     handleRecord->moduleName,
+                                     strlen(handleRecord->moduleName) + 1,
+                                     0,
+                                     ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            handleRecord->moduleName = ZR_NULL;
+        }
+        if (handleRecord->sourcePath != ZR_NULL) {
+            state->global->allocator(state->global->userAllocationArguments,
+                                     handleRecord->sourcePath,
+                                     strlen(handleRecord->sourcePath) + 1,
+                                     0,
+                                     ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            handleRecord->sourcePath = ZR_NULL;
+        }
+
+        if (index < registry->pluginHandles.length) {
+            memmove(registry->pluginHandles.head + (index - 1) * registry->pluginHandles.elementSize,
+                    registry->pluginHandles.head + index * registry->pluginHandles.elementSize,
+                    (registry->pluginHandles.length - index) * registry->pluginHandles.elementSize);
+        }
+        registry->pluginHandles.length--;
+    }
+}
+
 TZrBool native_registry_get_executable_directory(TZrChar *buffer, TZrSize bufferSize) {
     if (buffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
@@ -191,7 +238,33 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
         return ZR_NULL;
     }
 
-    ZrCore_Array_Push(state, &registry->pluginHandles, &handle);
+    native_registry_remove_plugin_handles_for_module(state, registry, requestedModuleName);
+    {
+        ZrLibPluginHandleRecord handleRecord;
+        memset(&handleRecord, 0, sizeof(handleRecord));
+        handleRecord.handle = handle;
+        handleRecord.moduleName = native_registry_duplicate_string(state->global, requestedModuleName);
+        handleRecord.sourcePath = native_registry_duplicate_string(state->global, candidatePath);
+        if (handleRecord.moduleName == ZR_NULL || handleRecord.sourcePath == ZR_NULL) {
+            if (handleRecord.moduleName != ZR_NULL) {
+                state->global->allocator(state->global->userAllocationArguments,
+                                         handleRecord.moduleName,
+                                         strlen(handleRecord.moduleName) + 1,
+                                         0,
+                                         ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            }
+            if (handleRecord.sourcePath != ZR_NULL) {
+                state->global->allocator(state->global->userAllocationArguments,
+                                         handleRecord.sourcePath,
+                                         strlen(handleRecord.sourcePath) + 1,
+                                         0,
+                                         ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            }
+            native_registry_close_library(handle);
+            return ZR_NULL;
+        }
+        ZrCore_Array_Push(state, &registry->pluginHandles, &handleRecord);
+    }
     native_registry_clear_error(registry);
     return descriptor;
 }
@@ -233,6 +306,117 @@ const ZrLibModuleDescriptor *native_registry_try_plugin_directory(SZrState *stat
     }
 
     return native_registry_load_plugin_descriptor(state, registry, candidatePath, moduleName);
+}
+
+static TZrBool native_registry_paths_equal(const TZrChar *left, const TZrChar *right) {
+    TZrSize index = 0;
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    while (left[index] != '\0' && right[index] != '\0') {
+        TZrChar leftValue = left[index];
+        TZrChar rightValue = right[index];
+
+        if (leftValue == '\\') {
+            leftValue = '/';
+        }
+        if (rightValue == '\\') {
+            rightValue = '/';
+        }
+#if defined(ZR_PLATFORM_WIN)
+        leftValue = (TZrChar)tolower((unsigned char)leftValue);
+        rightValue = (TZrChar)tolower((unsigned char)rightValue);
+#endif
+        if (leftValue != rightValue) {
+            return ZR_FALSE;
+        }
+        index++;
+    }
+
+    return left[index] == '\0' && right[index] == '\0';
+}
+
+static TZrBool native_registry_build_project_plugin_path(const TZrChar *projectDirectory,
+                                                         const TZrChar *moduleName,
+                                                         TZrChar *buffer,
+                                                         TZrSize bufferSize) {
+    TZrChar nativeDirectory[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar sanitizedModuleName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar pluginFileName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *extension;
+    TZrSize prefixLength;
+    TZrSize moduleNameLength;
+    TZrSize extensionLength;
+    TZrSize totalLength;
+
+    if (projectDirectory == ZR_NULL || moduleName == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    ZrLibrary_File_PathJoin((TZrNativeString)projectDirectory, "native", nativeDirectory);
+    native_registry_sanitize_module_name(moduleName, sanitizedModuleName, sizeof(sanitizedModuleName));
+    extension = native_registry_dynamic_library_extension();
+    prefixLength = sizeof("zrvm_native_") - 1;
+    moduleNameLength = ZrCore_NativeString_Length(sanitizedModuleName);
+    extensionLength = ZrCore_NativeString_Length((TZrNativeString)extension);
+    totalLength = prefixLength + moduleNameLength + extensionLength;
+    if (moduleNameLength == 0 || totalLength + 1 > sizeof(pluginFileName)) {
+        return ZR_FALSE;
+    }
+
+    memcpy(pluginFileName, "zrvm_native_", prefixLength);
+    memcpy(pluginFileName + prefixLength, sanitizedModuleName, moduleNameLength);
+    memcpy(pluginFileName + prefixLength + moduleNameLength, extension, extensionLength);
+    pluginFileName[totalLength] = '\0';
+    ZrLibrary_File_PathJoin((TZrNativeString)nativeDirectory, pluginFileName, buffer);
+    return buffer[0] != '\0';
+}
+
+TZrBool ZrLibrary_NativeRegistry_EnsureProjectDescriptorPlugin(SZrState *state,
+                                                               const TZrChar *projectDirectory,
+                                                               const TZrChar *moduleName) {
+    ZrLibrary_NativeRegistryState *registry;
+    ZrLibRegisteredModuleInfo moduleInfo;
+    SZrString *moduleNameString = ZR_NULL;
+    TZrChar candidatePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (state == ZR_NULL || state->global == ZR_NULL || projectDirectory == ZR_NULL || moduleName == ZR_NULL ||
+        projectDirectory[0] == '\0' || moduleName[0] == '\0' ||
+        !native_registry_build_project_plugin_path(projectDirectory, moduleName, candidatePath, sizeof(candidatePath)) ||
+        ZrLibrary_File_Exist(candidatePath) != ZR_LIBRARY_FILE_IS_FILE ||
+        !ZrLibrary_NativeRegistry_Attach(state->global)) {
+        return ZR_FALSE;
+    }
+
+    registry = native_registry_get(state->global);
+    if (registry == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(&moduleInfo, 0, sizeof(moduleInfo));
+    if (ZrLibrary_NativeRegistry_GetModuleInfo(state->global, moduleName, &moduleInfo)) {
+        if (!(moduleInfo.registrationKind == ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_DESCRIPTOR_PLUGIN ||
+              moduleInfo.isDescriptorPlugin)) {
+            return ZR_FALSE;
+        }
+
+        if (moduleInfo.sourcePath != ZR_NULL && native_registry_paths_equal(moduleInfo.sourcePath, candidatePath)) {
+            return ZR_TRUE;
+        }
+    }
+
+    if (native_registry_load_plugin_descriptor(state, registry, candidatePath, moduleName) == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    moduleNameString = native_binding_create_string(state, moduleName);
+    if (moduleNameString != ZR_NULL) {
+        ZrCore_Module_RemoveFromCache(state, moduleNameString);
+    }
+
+    return ZR_TRUE;
 }
 
 const ZrLibModuleDescriptor *native_registry_try_plugin_paths(SZrState *state,

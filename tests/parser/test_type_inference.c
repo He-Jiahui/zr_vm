@@ -5100,6 +5100,95 @@ static void test_type_inference_container_computed_access_uses_registered_meta_t
     TEST_DIVIDER();
 }
 
+static void test_type_inference_ffi_pointer_helpers_propagate_registered_pointer_types(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - FFI Pointer Helpers Propagate Registered Pointer Types";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var ffi = %import(\"zr.ffi\");"
+                "var buffer = ffi.BufferHandle.allocate(8);"
+                "var bytePtr = buffer.pin();"
+                "var typedPtr = bytePtr.as({ kind: \"pointer\", to: \"i32\", direction: \"inout\" });"
+                "var direct: ffi.Ptr<u8> = bytePtr;"
+                "bytePtr;"
+                "typedPtr;"
+                "direct;"
+                "typedPtr.read(\"i32\");";
+        SZrString *sourceName = ZrCore_String_Create(state, "ffi_pointer_helper_type_test.zr", 31);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *bytePtrExpr = ZR_NULL;
+        SZrAstNode *typedPtrExpr = ZR_NULL;
+        SZrAstNode *directPtrExpr = ZR_NULL;
+        SZrAstNode *readExpr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(9, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        for (TZrSize index = 0; index < 5; index++) {
+            ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[index]);
+            TEST_ASSERT_FALSE(cs->hasError);
+        }
+
+        bytePtrExpr = ast->data.script.statements->nodes[5]->data.expressionStatement.expr;
+        typedPtrExpr = ast->data.script.statements->nodes[6]->data.expressionStatement.expr;
+        directPtrExpr = ast->data.script.statements->nodes[7]->data.expressionStatement.expr;
+        readExpr = ast->data.script.statements->nodes[8]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(bytePtrExpr);
+        TEST_ASSERT_NOT_NULL(typedPtrExpr);
+        TEST_ASSERT_NOT_NULL(directPtrExpr);
+        TEST_ASSERT_NOT_NULL(readExpr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, bytePtrExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Ptr<u8>", ZrCore_String_GetNativeString(result.typeName));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, typedPtrExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Ptr<i32>", ZrCore_String_GetNativeString(result.typeName));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, directPtrExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Ptr<u8>", ZrCore_String_GetNativeString(result.typeName));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, readExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT32, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_foreach_binds_iterated_element_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Foreach Binds Iterated Element Type";
@@ -5211,6 +5300,7 @@ int main(void) {
     RUN_TEST(test_type_inference_source_class_and_struct_constraints_are_enforced);
     RUN_TEST(test_type_inference_container_dotted_generic_new_returns_closed_registered_type);
     RUN_TEST(test_type_inference_container_computed_access_uses_registered_meta_types);
+    RUN_TEST(test_type_inference_ffi_pointer_helpers_propagate_registered_pointer_types);
     RUN_TEST(test_type_inference_foreach_binds_iterated_element_type);
     RUN_TEST(test_type_inference_native_enum_construction_returns_enum_type);
     RUN_TEST(test_type_inference_native_enum_member_access_returns_enum_type);

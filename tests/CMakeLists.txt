@@ -364,6 +364,17 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core(zr_vm_compile_time_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_decorator_pipeline_test
+            ${CMAKE_SOURCE_DIR}/tests/decorators/test_compile_time_member_decorators.c
+    )
+    target_include_directories(zr_vm_decorator_pipeline_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    zr_vm_link_parser_core(zr_vm_decorator_pipeline_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_scripts_test
             ${CMAKE_SOURCE_DIR}/tests/scripts/test_comprehensive.c
             ${CMAKE_SOURCE_DIR}/tests/scripts/test_utils.c
@@ -404,6 +415,11 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/container/test_container_type_inference.c
             ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
     )
+    zr_vm_add_unity_test_target(
+            zr_vm_task_runtime_test
+            ${CMAKE_SOURCE_DIR}/tests/task/test_task_runtime.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
 
     foreach (container_target
             zr_vm_container_runtime_test
@@ -421,6 +437,28 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         )
         zr_vm_link_parser_core_plus_library(${container_target})
     endforeach ()
+
+    target_include_directories(zr_vm_task_runtime_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_task/include
+    )
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_task_runtime_test PRIVATE
+                zr_vm_parser_shared
+                zr_vm_core_shared
+                zr_vm_library_shared
+                zr_vm_task_shared
+        )
+    else ()
+        target_link_libraries(zr_vm_task_runtime_test PRIVATE
+                zr_vm_parser_static
+                zr_vm_core_static
+                zr_vm_library_static
+                zr_vm_task_static
+        )
+    endif ()
 endif ()
 
 if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static) AND
@@ -477,11 +515,13 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
     )
     target_include_directories(zr_vm_language_server_lsp_project_features_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
     )
 
     target_compile_definitions(zr_vm_language_server_lsp_interface_test PRIVATE
@@ -489,6 +529,8 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
     )
     target_compile_definitions(zr_vm_language_server_lsp_project_features_test PRIVATE
             ZR_VM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
+            ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_INT_PATH="$<TARGET_FILE:zr_vm_descriptor_plugin_fixture_int>"
+            ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_FLOAT_PATH="$<TARGET_FILE:zr_vm_descriptor_plugin_fixture_float>"
     )
 
     if (BUILD_SHARED_LIB)
@@ -502,12 +544,14 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
                 zr_vm_library_shared
                 zr_vm_lib_math_shared
                 zr_vm_lib_system_shared
+                zr_vm_lib_ffi_shared
         )
         target_link_libraries(zr_vm_language_server_lsp_project_features_test PRIVATE
                 zr_vm_library_shared
                 zr_vm_lib_math_shared
                 zr_vm_lib_container_shared
                 zr_vm_lib_system_shared
+                zr_vm_lib_ffi_shared
         )
     else ()
         target_link_libraries(zr_vm_language_server_semantic_analyzer_test PRIVATE
@@ -520,14 +564,17 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
                 zr_vm_library_static
                 zr_vm_lib_math_static
                 zr_vm_lib_system_static
+                zr_vm_lib_ffi_static
         )
         target_link_libraries(zr_vm_language_server_lsp_project_features_test PRIVATE
                 zr_vm_library_static
                 zr_vm_lib_math_static
                 zr_vm_lib_container_static
                 zr_vm_lib_system_static
+                zr_vm_lib_ffi_static
         )
     endif ()
+
 endif ()
 
 if (TARGET zr_vm_cli_executable AND
@@ -546,6 +593,40 @@ if (TARGET zr_vm_cli_executable AND
 endif ()
 
 find_package(Threads REQUIRED)
+
+add_library(
+        zr_vm_descriptor_plugin_fixture_int
+        SHARED
+        ${CMAKE_SOURCE_DIR}/tests/language_server/descriptor_plugin_fixture_int.c
+)
+target_include_directories(zr_vm_descriptor_plugin_fixture_int PRIVATE
+        ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+)
+set_target_properties(zr_vm_descriptor_plugin_fixture_int PROPERTIES
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+)
+
+add_library(
+        zr_vm_descriptor_plugin_fixture_float
+        SHARED
+        ${CMAKE_SOURCE_DIR}/tests/language_server/descriptor_plugin_fixture_float.c
+)
+target_include_directories(zr_vm_descriptor_plugin_fixture_float PRIVATE
+        ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+)
+set_target_properties(zr_vm_descriptor_plugin_fixture_float PROPERTIES
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+)
+
+if (TARGET zr_vm_language_server_lsp_project_features_test)
+    add_dependencies(zr_vm_language_server_lsp_project_features_test
+            zr_vm_descriptor_plugin_fixture_int
+            zr_vm_descriptor_plugin_fixture_float)
+endif ()
 
 add_library(
         zr_vm_ffi_fixture
@@ -644,12 +725,13 @@ if (TARGET zr_vm_parser_test AND
         TARGET zr_vm_module_system_test AND
         TARGET zr_vm_named_arguments_test AND
         TARGET zr_vm_compile_time_test AND
+        TARGET zr_vm_decorator_pipeline_test AND
         TARGET zr_vm_scripts_test)
     set(language_pipeline_executables
-            "$<TARGET_FILE:zr_vm_parser_test>;$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_type_inference_test>;$<TARGET_FILE:zr_vm_compiler_features_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_execbc_aot_pipeline_test>;$<TARGET_FILE:zr_vm_dynamic_iteration_pipeline_test>;$<TARGET_FILE:zr_vm_meta_call_pipeline_test>;$<TARGET_FILE:zr_vm_tail_call_pipeline_test>;$<TARGET_FILE:zr_vm_compiler_regressions_test>;$<TARGET_FILE:zr_vm_char_and_type_cast_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_lexer_parser_compiler_execution_test>;$<TARGET_FILE:zr_vm_prototype_test>;$<TARGET_FILE:zr_vm_const_keyword_test>;$<TARGET_FILE:zr_vm_exceptions_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_named_arguments_test>;$<TARGET_FILE:zr_vm_compile_time_test>;$<TARGET_FILE:zr_vm_scripts_test>"
+            "$<TARGET_FILE:zr_vm_parser_test>;$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_type_inference_test>;$<TARGET_FILE:zr_vm_compiler_features_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_execbc_aot_pipeline_test>;$<TARGET_FILE:zr_vm_dynamic_iteration_pipeline_test>;$<TARGET_FILE:zr_vm_meta_call_pipeline_test>;$<TARGET_FILE:zr_vm_tail_call_pipeline_test>;$<TARGET_FILE:zr_vm_compiler_regressions_test>;$<TARGET_FILE:zr_vm_char_and_type_cast_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_lexer_parser_compiler_execution_test>;$<TARGET_FILE:zr_vm_prototype_test>;$<TARGET_FILE:zr_vm_const_keyword_test>;$<TARGET_FILE:zr_vm_exceptions_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_named_arguments_test>;$<TARGET_FILE:zr_vm_compile_time_test>;$<TARGET_FILE:zr_vm_decorator_pipeline_test>;$<TARGET_FILE:zr_vm_scripts_test>"
     )
     set(language_pipeline_smoke_executables
-            "$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_compiler_features_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_execbc_aot_pipeline_test>;$<TARGET_FILE:zr_vm_dynamic_iteration_pipeline_test>;$<TARGET_FILE:zr_vm_meta_call_pipeline_test>;$<TARGET_FILE:zr_vm_tail_call_pipeline_test>;$<TARGET_FILE:zr_vm_char_and_type_cast_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_module_system_test>"
+            "$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_compiler_features_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_execbc_aot_pipeline_test>;$<TARGET_FILE:zr_vm_dynamic_iteration_pipeline_test>;$<TARGET_FILE:zr_vm_meta_call_pipeline_test>;$<TARGET_FILE:zr_vm_tail_call_pipeline_test>;$<TARGET_FILE:zr_vm_char_and_type_cast_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_decorator_pipeline_test>"
     )
     set(language_pipeline_core_executables "${language_pipeline_executables}")
     set(language_pipeline_stress_executables "${language_pipeline_executables}")
@@ -725,6 +807,7 @@ if (TARGET zr_vm_cli_executable)
             "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
             "-DREPO_ROOT=${CMAKE_SOURCE_DIR}"
             "-DPROJECT_FIXTURES_DIR=${ZR_VM_TESTS_SOURCE_DIR_NORMALIZED}/fixtures/projects"
+            "-DGENERATED_DIR=${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}"
             -P ${ZR_VM_PROJECTS_RUNNER_SCRIPT}
     )
 endif ()

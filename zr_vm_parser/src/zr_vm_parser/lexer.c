@@ -720,6 +720,9 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
             if (ls->currentChar == '=') {
                 next_char(ls);
                 return ZR_TK_MINUS_EQUALS;
+            } else if (ls->currentChar == '>') {
+                next_char(ls);
+                return ZR_TK_RIGHT_ARROW;
             }
             return ZR_TK_MINUS;
 

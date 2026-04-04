@@ -187,10 +187,12 @@ void compiler_register_extern_block_bindings(SZrCompilerState *cs, SZrExternBloc
             case ZR_AST_EXTERN_FUNCTION_DECLARATION:
                 compiler_register_extern_function_type_binding_to_env(
                         cs,
+                        declaration,
                         cs->typeEnv,
                         &declaration->data.externFunctionDeclaration);
                 compiler_register_extern_function_type_binding_to_env(
                         cs,
+                        declaration,
                         cs->compileTimeTypeEnv,
                         &declaration->data.externFunctionDeclaration);
                 break;

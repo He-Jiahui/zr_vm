@@ -3,9 +3,16 @@
 /* descriptor.moduleName = main */
 /* descriptor.inputKind = 1 */
 /* descriptor.inputHash = 17a814494fbf5749 */
-/* descriptor.embeddedModuleBlobLength = 392 */
+/* descriptor.embeddedModuleBlobLength = 401 */
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_library/aot_runtime.h"
+
+#define ZR_AOT_C_GUARD(call_expr) \
+    do { \
+        if (!(call_expr)) { \
+            goto zr_aot_fail; \
+        } \
+    } while (0)
 
 
 /*
@@ -17,7 +24,7 @@ static const TZrChar *const zr_aot_runtime_contracts[] = {
 
 static const TZrByte zr_aot_embedded_module_blob[] = {
     0x01, 0x5a, 0x52, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x08, 0x08, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x73, 0x69, 0x6d, 0x70, 0x6c, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -48,7 +55,8 @@ static const TZrByte zr_aot_embedded_module_blob[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00
 };
 
 static TZrInt64 zr_aot_fn_0(struct SZrState *state);
@@ -59,18 +67,30 @@ static const FZrAotEntryThunk zr_aot_function_thunks[] = {
 
 static TZrInt64 zr_aot_fn_0(struct SZrState *state) {
     ZrAotGeneratedFrame frame;
-    if (!ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame));
 zr_aot_fn_0_ins_0:
     /* opcode=2 extra=0 op1a=0 op1b=0 op2=0 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 0, 0)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 0),
+                      &frame.function->constantValueList[0]);
 zr_aot_fn_0_ins_1:
     /* opcode=75 extra=1 op1a=0 op1b=0 op2=0 */
-    return ZrLibrary_AotRuntime_Return(state, &frame, 0, ZR_FALSE);
+    {
+        SZrCallInfo *zr_aot_call_info = state->callInfoList;
+        TZrStackValuePointer zr_aot_result_slot = frame.slotBase + 0;
+        if (zr_aot_call_info == ZR_NULL || zr_aot_call_info->functionBase.valuePointer == ZR_NULL ||
+            zr_aot_result_slot == ZR_NULL) {
+            goto zr_aot_fail;
+        }
+        ZrCore_Value_Copy(state,
+                          ZrCore_Stack_GetValue(zr_aot_call_info->functionBase.valuePointer),
+                          ZrCore_Stack_GetValue(zr_aot_result_slot));
+        state->stackTop.valuePointer = zr_aot_call_info->functionBase.valuePointer + 1;
+        return 1;
+    }
     return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, 0, 2, 0);
+zr_aot_fail:
+    return 0;
 }
 
 static const ZrAotCompiledModule zr_aot_module = {
@@ -81,7 +101,7 @@ static const ZrAotCompiledModule zr_aot_module = {
     "17a814494fbf5749",
     zr_aot_runtime_contracts,
     zr_aot_embedded_module_blob,
-    392,
+    401,
     zr_aot_function_thunks,
     1,
     zr_aot_fn_0,

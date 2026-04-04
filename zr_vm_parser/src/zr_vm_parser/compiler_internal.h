@@ -167,6 +167,10 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 callsDestructor;
     TZrUInt32 declarationOrder;
     TZrUInt32 contractRole;
+    TZrUInt32 hasDecoratorMetadata;
+    TZrUInt32 decoratorMetadataConstantIndex;
+    TZrUInt32 hasDecoratorNames;
+    TZrUInt32 decoratorNamesConstantIndex;
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 
@@ -278,8 +282,9 @@ void compiler_register_named_value_binding_to_env(SZrCompilerState *cs,
                                                          SZrString *typeName) ;
 
 void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
-                                                                  SZrTypeEnvironment *env,
-                                                                  SZrExternFunctionDeclaration *functionDecl) ;
+                                                           SZrAstNode *declarationNode,
+                                                           SZrTypeEnvironment *env,
+                                                           SZrExternFunctionDeclaration *functionDecl) ;
 
 TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name) ;
 
@@ -569,6 +574,8 @@ TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *fun
 TZrBool compiler_quicken_execbc_function(SZrState *state, SZrFunction *function);
 
 void compile_script(SZrCompilerState *cs, SZrAstNode *node) ;
+
+TZrBool compiler_validate_task_effects(SZrCompilerState *cs, SZrAstNode *node);
 
 SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) ;
 

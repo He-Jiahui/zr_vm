@@ -24,6 +24,7 @@ typedef enum EZrLibNativeRegistryErrorCode {
 
 typedef struct ZrLibRegisteredModuleInfo {
     const ZrLibModuleDescriptor *descriptor;
+    const TZrChar *moduleName;
     const TZrChar *sourcePath;
     EZrLibNativeModuleRegistrationKind registrationKind;
     TZrBool isDescriptorPlugin;
@@ -38,6 +39,14 @@ ZR_LIBRARY_API const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModule(
 ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetModuleInfo(SZrGlobalState *global,
                                                               const TZrChar *moduleName,
                                                               ZrLibRegisteredModuleInfo *outInfo);
+ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetModuleInfoBySourcePath(SZrGlobalState *global,
+                                                                          const TZrChar *sourcePath,
+                                                                          ZrLibRegisteredModuleInfo *outInfo);
+ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_EnsureProjectDescriptorPlugin(SZrState *state,
+                                                                              const TZrChar *projectDirectory,
+                                                                              const TZrChar *moduleName);
+ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_InvalidateDescriptorPluginSource(SZrGlobalState *global,
+                                                                                 const TZrChar *sourcePath);
 ZR_LIBRARY_API EZrLibNativeRegistryErrorCode ZrLibrary_NativeRegistry_GetLastErrorCode(SZrGlobalState *global);
 ZR_LIBRARY_API const TZrChar *ZrLibrary_NativeRegistry_GetLastErrorMessage(SZrGlobalState *global);
 

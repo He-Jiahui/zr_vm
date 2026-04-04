@@ -76,6 +76,10 @@ static SZrString *reflection_make_string(SZrState *state, const TZrChar *text);
 static TZrBool reflection_build_type_of_value(SZrState *state,
                                               const SZrTypeValue *targetValue,
                                               SZrTypeValue *result);
+static void reflection_populate_compiled_member_decorator_metadata(SZrState *state,
+                                                                   SZrObject *memberReflection,
+                                                                   SZrFunction *entryFunction,
+                                                                   const SZrCompiledMemberInfo *member);
 
 static SZrObject *reflection_new_object(SZrState *state) {
     SZrObject *object;
@@ -738,6 +742,21 @@ static void reflection_attach_parameters_array(SZrState *state,
     reflection_set_field_object(state, callableReflection, "parameters", parametersArray, ZR_VALUE_TYPE_ARRAY);
 }
 
+static void reflection_merge_object_fields(SZrState *state, SZrObject *target, SZrObject *source) {
+    if (state == ZR_NULL || target == ZR_NULL || source == ZR_NULL || !source->nodeMap.isValid ||
+        source->nodeMap.buckets == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize bucketIndex = 0; bucketIndex < source->nodeMap.capacity; bucketIndex++) {
+        SZrHashKeyValuePair *pair = source->nodeMap.buckets[bucketIndex];
+        while (pair != ZR_NULL) {
+            ZrCore_Object_SetValue(state, target, &pair->key, &pair->value);
+            pair = pair->next;
+        }
+    }
+}
+
 static void reflection_array_push_object(SZrState *state, SZrObject *array, SZrObject *object, EZrValueType valueType) {
     SZrTypeValue value;
 
@@ -1360,6 +1379,75 @@ static void reflection_populate_function_metadata(SZrState *state, SZrObject *re
     ZrCore_RuntimeDecorator_OverlayFunctionReflection(state, reflectionObject, function);
 }
 
+static void reflection_append_decorator_name_value(SZrState *state,
+                                                   SZrObject *decoratorsArray,
+                                                   const SZrTypeValue *decoratorNameValue) {
+    SZrObject *decoratorEntry;
+
+    if (state == ZR_NULL || decoratorsArray == ZR_NULL || decoratorNameValue == ZR_NULL ||
+        decoratorNameValue->type != ZR_VALUE_TYPE_STRING || decoratorNameValue->value.object == ZR_NULL) {
+        return;
+    }
+
+    decoratorEntry = reflection_new_object(state);
+    if (decoratorEntry == ZR_NULL) {
+        return;
+    }
+
+    reflection_set_field_value(state, decoratorEntry, "name", decoratorNameValue);
+    reflection_array_push_object(state, decoratorsArray, decoratorEntry, ZR_VALUE_TYPE_OBJECT);
+}
+
+static void reflection_populate_compiled_member_decorator_metadata(SZrState *state,
+                                                                   SZrObject *memberReflection,
+                                                                   SZrFunction *entryFunction,
+                                                                   const SZrCompiledMemberInfo *member) {
+    SZrObject *metadataObject;
+    SZrObject *decoratorsArray;
+
+    if (state == ZR_NULL || memberReflection == ZR_NULL || entryFunction == ZR_NULL || member == ZR_NULL ||
+        entryFunction->constantValueList == ZR_NULL) {
+        return;
+    }
+
+    metadataObject = reflection_get_field_object(state, memberReflection, "metadata", ZR_VALUE_TYPE_OBJECT);
+    decoratorsArray = reflection_get_field_object(state, memberReflection, "decorators", ZR_VALUE_TYPE_ARRAY);
+
+    if (member->hasDecoratorMetadata &&
+        member->decoratorMetadataConstantIndex < entryFunction->constantValueLength) {
+        const SZrTypeValue *metadataValue = &entryFunction->constantValueList[member->decoratorMetadataConstantIndex];
+        if (metadataValue->type == ZR_VALUE_TYPE_OBJECT && metadataValue->value.object != ZR_NULL) {
+            if (metadataObject == ZR_NULL) {
+                reflection_set_field_object(state,
+                                            memberReflection,
+                                            "metadata",
+                                            ZR_CAST_OBJECT(state, metadataValue->value.object),
+                                            ZR_VALUE_TYPE_OBJECT);
+            } else {
+                reflection_merge_object_fields(state,
+                                               metadataObject,
+                                               ZR_CAST_OBJECT(state, metadataValue->value.object));
+            }
+        }
+    }
+
+    if (decoratorsArray != ZR_NULL && member->hasDecoratorNames &&
+        member->decoratorNamesConstantIndex < entryFunction->constantValueLength) {
+        const SZrTypeValue *decoratorNamesValue = &entryFunction->constantValueList[member->decoratorNamesConstantIndex];
+        if (decoratorNamesValue->type == ZR_VALUE_TYPE_ARRAY && decoratorNamesValue->value.object != ZR_NULL) {
+            SZrObject *nameArray = ZR_CAST_OBJECT(state, decoratorNamesValue->value.object);
+            if (nameArray != ZR_NULL && nameArray->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+                TZrUInt32 decoratorCount = reflection_array_length(nameArray);
+                for (TZrUInt32 decoratorIndex = 0; decoratorIndex < decoratorCount; decoratorIndex++) {
+                    reflection_append_decorator_name_value(state,
+                                                           decoratorsArray,
+                                                           reflection_array_get(state, nameArray, decoratorIndex));
+                }
+            }
+        }
+    }
+}
+
 static void reflection_populate_module_compile_time_metadata(SZrState *state,
                                                              SZrObject *moduleReflection,
                                                              SZrFunction *entryFunction) {
@@ -1735,6 +1823,7 @@ static void reflection_record_property_member(SZrState *state,
                                               const TZrChar *qualifiedTypeName,
                                               const TZrChar *propertyName,
                                               const SZrCompiledMemberInfo *member,
+                                              SZrFunction *entryFunction,
                                               SZrFunction *memberFunction,
                                               TZrUInt64 hashSeed) {
     SZrObject *propertyReflection;
@@ -1772,6 +1861,7 @@ static void reflection_record_property_member(SZrState *state,
         reflection_set_field_int(state, propertyReflection, "parameterCount", member->parameterCount);
         reflection_populate_parameters_from_typed_refs(state, propertyReflection, ZR_NULL, member->parameterCount);
     }
+    reflection_populate_compiled_member_decorator_metadata(state, propertyReflection, entryFunction, member);
 
     propertyNameString = ZrCore_String_Create(state, (TZrNativeString)propertyName, strlen(propertyName));
     if (propertyNameString != ZR_NULL) {
@@ -1883,6 +1973,7 @@ ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZ
                                               qualifiedTypeName,
                                               memberNameText,
                                               member,
+                                              entryFunction,
                                               reflection_extract_function_from_constant_index(state,
                                                                                             entryFunction,
                                                                                             member->functionConstantIndex),
@@ -1998,6 +2089,7 @@ ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZ
                                       reflection_get_field_object(state, memberReflection, "ownership", ZR_VALUE_TYPE_OBJECT),
                                       "callsDestructor",
                                       member->callsDestructor ? ZR_TRUE : ZR_FALSE);
+            reflection_populate_compiled_member_decorator_metadata(state, memberReflection, entryFunction, member);
             ZrCore_RuntimeDecorator_OverlayMemberReflection(state,
                                                             memberReflection,
                                                             prototype,
@@ -2028,6 +2120,7 @@ ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZ
                                                                ZR_NULL,
                                                                member->parameterCount);
             }
+            reflection_populate_compiled_member_decorator_metadata(state, memberReflection, entryFunction, member);
 
             ZrCore_RuntimeDecorator_OverlayMemberReflection(state,
                                                             memberReflection,
@@ -2227,6 +2320,7 @@ static void reflection_populate_script_members(SZrState *state,
                                       reflection_get_field_object(state, memberReflection, "ownership", ZR_VALUE_TYPE_OBJECT),
                                       "callsDestructor",
                                       member->callsDestructor ? ZR_TRUE : ZR_FALSE);
+            reflection_populate_compiled_member_decorator_metadata(state, memberReflection, entryFunction, member);
             if (memberNameString != ZR_NULL) {
                 ZrCore_RuntimeDecorator_OverlayMemberReflection(state,
                                                                 memberReflection,
@@ -2250,6 +2344,7 @@ static void reflection_populate_script_members(SZrState *state,
             } else if (member->parameterCount > 0) {
                 reflection_populate_parameters_from_typed_refs(state, memberReflection, ZR_NULL, member->parameterCount);
             }
+            reflection_populate_compiled_member_decorator_metadata(state, memberReflection, entryFunction, member);
 
             if (memberNameString != ZR_NULL) {
                 ZrCore_RuntimeDecorator_OverlayMemberReflection(state,
@@ -2268,6 +2363,7 @@ static void reflection_populate_script_members(SZrState *state,
                                                   qualifiedTypeName,
                                                   propertyName,
                                                   member,
+                                                  entryFunction,
                                                   memberFunction,
                                                   prototype->super.super.hash ^
                                                           ((TZrUInt64)memberIndex + ZR_RUNTIME_REFLECTION_MEMBER_HASH_BASE +

@@ -248,9 +248,8 @@ const ZrLibRegisteredModuleRecord *native_registry_find_record(ZrLibrary_NativeR
         const ZrLibRegisteredModuleRecord *record =
                 (const ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(&registry->moduleRecords, index);
         if (record != ZR_NULL &&
-            record->descriptor != ZR_NULL &&
-            record->descriptor->moduleName != ZR_NULL &&
-            strcmp(record->descriptor->moduleName, moduleName) == 0) {
+            record->moduleName != ZR_NULL &&
+            strcmp(record->moduleName, moduleName) == 0) {
             return record;
         }
     }
@@ -337,9 +336,36 @@ TZrBool native_registry_register_module_record(SZrGlobalState *global,
         ZrLibRegisteredModuleRecord *record =
                 (ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(&registry->moduleRecords, index);
         if (record != ZR_NULL &&
-            record->descriptor != ZR_NULL &&
-            record->descriptor->moduleName != ZR_NULL &&
-            strcmp(record->descriptor->moduleName, descriptor->moduleName) == 0) {
+            record->moduleName != ZR_NULL &&
+            strcmp(record->moduleName, descriptor->moduleName) == 0) {
+            TZrChar *moduleNameCopy = native_registry_duplicate_string(global, descriptor->moduleName);
+            TZrChar *sourcePathCopy = native_registry_duplicate_string(global, sourcePath);
+
+            if (moduleNameCopy == ZR_NULL || sourcePathCopy == ZR_NULL) {
+                if (moduleNameCopy != ZR_NULL) {
+                    global->allocator(global->userAllocationArguments,
+                                      moduleNameCopy,
+                                      strlen(moduleNameCopy) + 1,
+                                      0,
+                                      ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+                }
+                if (sourcePathCopy != ZR_NULL) {
+                    global->allocator(global->userAllocationArguments,
+                                      sourcePathCopy,
+                                      strlen(sourcePathCopy) + 1,
+                                      0,
+                                      ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+                }
+                return ZR_FALSE;
+            }
+
+            if (record->moduleName != ZR_NULL) {
+                global->allocator(global->userAllocationArguments,
+                                  record->moduleName,
+                                  strlen(record->moduleName) + 1,
+                                  0,
+                                  ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            }
             if (record->sourcePath != ZR_NULL) {
                 global->allocator(global->userAllocationArguments,
                                   record->sourcePath,
@@ -348,9 +374,10 @@ TZrBool native_registry_register_module_record(SZrGlobalState *global,
                                   ZR_MEMORY_NATIVE_TYPE_GLOBAL);
             }
             record->descriptor = descriptor;
+            record->moduleName = moduleNameCopy;
             record->registrationKind = registrationKind;
             record->isDescriptorPlugin = isDescriptorPlugin;
-            record->sourcePath = native_registry_duplicate_string(global, sourcePath);
+            record->sourcePath = sourcePathCopy;
             native_registry_clear_error(registry);
             return ZR_TRUE;
         }
@@ -360,9 +387,27 @@ TZrBool native_registry_register_module_record(SZrGlobalState *global,
         ZrLibRegisteredModuleRecord record;
         memset(&record, 0, sizeof(record));
         record.descriptor = descriptor;
+        record.moduleName = native_registry_duplicate_string(global, descriptor->moduleName);
         record.registrationKind = registrationKind;
         record.isDescriptorPlugin = isDescriptorPlugin;
         record.sourcePath = native_registry_duplicate_string(global, sourcePath);
+        if (record.moduleName == ZR_NULL || record.sourcePath == ZR_NULL) {
+            if (record.moduleName != ZR_NULL) {
+                global->allocator(global->userAllocationArguments,
+                                  record.moduleName,
+                                  strlen(record.moduleName) + 1,
+                                  0,
+                                  ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            }
+            if (record.sourcePath != ZR_NULL) {
+                global->allocator(global->userAllocationArguments,
+                                  record.sourcePath,
+                                  strlen(record.sourcePath) + 1,
+                                  0,
+                                  ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            }
+            return ZR_FALSE;
+        }
         ZrCore_Array_Push(global->mainThreadState, &registry->moduleRecords, &record);
     }
 

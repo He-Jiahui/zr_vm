@@ -20,6 +20,7 @@ zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_math")
 zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_system")
 zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_container")
 zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_parser")
+zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_task")
 
 if (BUILD_SHARED_LIB)
     target_compile_definitions(${zr_curr_module_exec} PRIVATE

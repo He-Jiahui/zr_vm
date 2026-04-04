@@ -267,6 +267,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     node->data.functionDeclaration.returnType = returnType;
     node->data.functionDeclaration.body = body;
     node->data.functionDeclaration.decorators = decorators;
+    node->data.functionDeclaration.isAsync = ZR_FALSE;
     return node;
 }
 

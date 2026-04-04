@@ -5,6 +5,11 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/lsp_module_metadata.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_project.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_project_features.c
+  - zr_vm_library/include/zr_vm_library/native_registry.h
+  - zr_vm_library/src/zr_vm_library/native_binding.c
+  - zr_vm_library/src/zr_vm_library/native_binding_support.c
+  - zr_vm_library/src/zr_vm_library/native_binding_registry_plugin.c
+  - zr_vm_library/src/zr_vm_library/native_binding_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
@@ -19,6 +24,9 @@ related_code:
   - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_parser/src/zr_vm_parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler_typed_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/compiler_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
   - tests/language_server/test_semantic_analyzer.c
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_project_features.c
@@ -29,6 +37,11 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/lsp_module_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_project.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_project_features.c
+  - zr_vm_library/include/zr_vm_library/native_registry.h
+  - zr_vm_library/src/zr_vm_library/native_binding.c
+  - zr_vm_library/src/zr_vm_library/native_binding_support.c
+  - zr_vm_library/src/zr_vm_library/native_binding_registry_plugin.c
+  - zr_vm_library/src/zr_vm_library/native_binding_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
@@ -43,12 +56,18 @@ implementation_files:
   - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_parser/src/zr_vm_parser/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/compiler_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
 plan_sources:
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
+  - user: 2026-04-05 继续把 plugin/native/binary metadata 统一链推进到更细粒度 completion/definition/references/watched refresh 覆盖
 tests:
   - tests/language_server/test_semantic_analyzer.c
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_project_features.c
+  - tests/language_server/descriptor_plugin_fixture_int.c
+  - tests/language_server/descriptor_plugin_fixture_float.c
   - tests/language_server/stdio_smoke.js
   - tests/parser/test_parser_extern.c
 doc_type: module-detail
@@ -110,6 +129,42 @@ class BossHero: BaseHero {
 - document highlight 会在当前文档里同时标出基类 `@constructor` 声明和对应的 `super(...)` 调用位置。
 
 这让 `super(...)` 不再只是 signature help 的补丁式特判，而是开始具备统一的构造函数导航语义，也避免了“必须先有完整 prototype 编译结果才能提示”的额外耦合。
+
+## `%extern` 函数与类型的统一语义入口
+
+这一轮把 `%extern` 里的 function / delegate / struct / enum 从“只有 symbol table 看得见”继续推进到“navigation、references、signature help 共用同一组结构化事实”。
+
+当前行为是：
+
+- `semantic_analyzer_symbols.c` 会给 extern function / delegate / enum member 建立真实 source symbol，并把 definition reference 直接挂到 symbol 上。
+- extern struct 声明现在也会补 definition reference，因此 type annotation 上的 `FindReferences` 不再只返回 usage，声明和 usage 会落到同一引用集合。
+- server 自己维护的 `compilerState->typeEnv` / `compileTimeTypeEnv` 现在会显式注册 extern function callable binding，而不再只依赖 symbol table。
+- 这一步会连同 declaration node 一起写入 type env，所以后续 overload resolution 和 signature help 能直接命中 extern declaration，而不是再回退到“源码里找不到普通 `func` 声明”。
+- parser/type inference 侧的 candidate lookup 也补进了 extern function declaration，因此基于 declaration node 的参数列表和命名参数匹配不再只支持普通函数。
+
+这条修复让 extern function 的以下能力开始共用同一路径：
+
+- goto definition
+- find references
+- document highlight
+- completion
+- signature help
+
+## Extern Call Context 与源类型保真
+
+extern function 的 signature help 之前还有两个独立缺口：
+
+1. bare function call 的 `FunctionCall.location` 没覆盖到“刚进入 `(` 后、还没进入第一个参数 AST 节点”的区间，导致 `NativeAdd(1, 2)` 这类位置虽然已经在调用里，signature help 仍然拿不到 call context。
+2. 即使解析到 extern declaration，签名展示也会把 `i32` 这样的源类型正规化成 `int`，丢掉 FFI/source declaration 的原始拼写。
+
+当前行为改成：
+
+- `lsp_signature_help.c` 为普通函数调用统一构造 `signature_call_context_range(...)`，调用上下文范围会从 call node 起点延伸到最后一个实参或 generic 实参结尾。
+- `signature_call_matches_position(...)` 不再只依赖裸 `callNode->location`，因此光标位于 `(` 后、逗号间隔区或第一个参数前时，也能正确触发 signature help。
+- extern function 的 signature label 构建优先使用 declaration AST 上的参数/返回类型文本，而不是把 resolved inferred type 直接格式化成标准化名字。
+- 结果是 `%extern` 源声明里的 `NativeAdd(lhs: i32, rhs: i32): i32;` 在 hover-independent signature help 里会保持 `i32`，而不是退化成 `int`。
+
+这条链路和 `super(...)` 一样，已经不再是 hover markdown 或 native 特判的派生结果，而是基于真实 callable declaration、真实调用区间和真实类型来源做结构化拼装。
 
 ## Decorator 导航与 parser 修复
 
@@ -216,6 +271,62 @@ var math = %import("zr.math");
 - `$math.Vector3(...).y` hover 可以展示 `field y: float` 和 `Receiver: Vector3`
 - 这条能力直接复用 parser/type inference/native descriptor 的结构化元信息，不再靠 LSP 特判库名
 
+## Project-Local Descriptor Plugin 优先级
+
+这一轮把 descriptor plugin 的“同名模块跨 project 漂移”问题补到了 registry 和 LSP metadata resolver 两层。
+
+之前的行为是：
+
+- native registry 只按逻辑模块名缓存 descriptor record。
+- 一旦某个测试工程先加载了 `zr.pluginprobe`，后续另一个工程即使在自己的 `native/` 目录下放了同名 plugin，LSP 也会继续命中旧 record。
+- hover 的 `Source: native descriptor plugin` 仍然是对的，但 definition / references 可能跳到上一个工程的 `.so/.dll` 路径。
+
+当前行为改成：
+
+- `native_registry` 增加了 `EnsureProjectDescriptorPlugin(...)` 这一类 project-aware 入口，优先检查当前 project `native/` 目录里的实际 plugin 文件。
+- `lsp_module_metadata.c` 不再“先查到 registry 就立即返回”，而是先给当前 project 一次覆盖当前 record 的机会，再统一从 registry 读结构化 descriptor/source-kind/source-path。
+- descriptor plugin record 现在持久保存 `moduleName/sourcePath` 副本，不再把 cache key 和 watched refresh 的身份信息借在插件导出的静态 descriptor 内存上。
+- imported-member hover 的优先级也改成 `source > binary metadata > native/plugin descriptor > module prototype fallback`。这样即使 analyzer 里还保留旧的 module prototype，hover 也不会再被它盖过当前 project 的真实 plugin descriptor。
+- imported-member completion 现在跟随同一套优先级：先用 source/binary/native/plugin metadata 生成主 completion 集，再只用 module prototype 补缺失 label，不再让旧 prototype detail 覆盖当前 plugin descriptor 的真实签名。
+
+对应的回归固定覆盖在 `test_lsp_descriptor_plugin_project_local_definition_overrides_stale_registry(...)`：
+
+- 先打开一个返回 `int` 的 `zr.pluginprobe`
+- 再打开另一个返回 `float` 的同名 plugin 工程
+- hover / completion / definition / references 都必须切到第二个工程自己的 plugin 副本
+
+这条规则把 project-local native plugin 从“可能命中”提升为“同名模块下的第一优先元信息源”。
+
+## Watched `.dll/.so/.dylib` Refresh 的加载时机
+
+watched dynamic library refresh 现在和 binary metadata refresh 走同一条 project discovery 入口，但加载时机不完全相同。
+
+之前 language server 在收到 watched plugin path 后，会：
+
+1. 失效 native registry 和 module cache。
+2. 立即对已打开项目执行完整 project refresh。
+3. 在 refresh 的 reanalyze 阶段又把当前 plugin 重新 `dlopen` 回来。
+
+这会带来一个实际问题：如果外部工具还没把新的 `.so/.dll` 写完，或者测试流程像 `test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents(...)` 那样先触发一次 reload、再覆盖文件、再触发第二次 reload，server 会在两次 watched event 中间把旧库重新载回去，导致后续覆盖和卸载变得不稳定。
+
+当前行为改成：
+
+- watched path 命中 `.dll/.so/.dylib` 时，server 先做两件确定性的失效：
+  - native registry descriptor record invalidation
+  - module cache invalidation
+- 如果这个 watched path 只是命中一个已经打开的 project，则这一步先返回，不再立刻把旧 plugin 重新加载回当前进程。
+- 后续真正的 hover / completion / definition / references 查询会通过 project-aware metadata resolver 懒加载当前磁盘上的 plugin descriptor。
+- 如果 watched path 还没有所属 project 打开，server 仍然会向上发现最近的 `.zrp` 并 bootstrap project index，使 unopened-project 的 workspace symbol / metadata bootstrap 语义不退化。
+
+结果是：
+
+- 已打开项目在 plugin 文件真正变化后，下一次 hover / completion 会拿到新的 descriptor。
+- 同名 plugin 切 project 时不会再因为“中间步骤把旧库又载回去”而污染后续 watched refresh。
+- bootstrap unopened project 的 watched plugin 场景仍然能建立 project metadata 索引。
+- 由于 imported-member completion 也改成 metadata-first，watched plugin refresh 现在会连同 completion detail 一起更新，而不再只修复 hover。
+
+这条策略和 binary metadata refresh 不同的地方在于：dynamic library reload 更强调“先失效、后按需装载”，避免把文件系统替换中的动态库重新拉回进程。
+
 ## 统一模块元信息入口与优先级
 
 `lsp_module_metadata.c` 现在是 server 侧统一的 imported-module metadata 入口，负责把四类来源归一到同一套 source-kind 判定上：
@@ -268,6 +379,16 @@ var math = %import("zr.math");
   - 若当前还没有可导航声明元数据，则保持 usage-only，不伪造 definition
 
 这意味着 imported member 不再只是 hover/completion 可用，references/highlights 失效；binary/native/plugin 也开始共享同一套结构化导航入口。
+
+这一轮又把“声明侧 metadata 文件本身”接回了同一条导航链，补掉了之前只支持“从 source usage 反推 declaration”的单向路径：
+
+- `.zri/.zro` 路径现在会先按 project binary root 反推出 `moduleName`
+- 若光标命中 `.zri` 的 `EXPORTED_SYMBOLS` 声明行，definition 会保持在该导出声明上，references 会回收到同一 module/member 的所有 project usages
+- 若光标落在 binary metadata file entry，本轮则退化为 module 级结果，references 会聚合该模块的 imported member usages
+- descriptor plugin `.dll/.so/.dylib` 入口会先尝试走 owning project 的 import bindings 反解 `moduleName`，避免同名 plugin 跨 project 时只依赖全局 registry
+- 若 project 侧暂时还没把 plugin 重新解析进 analyzer，再回退到 native registry 的 `sourcePath -> moduleName` 反查
+
+结果是 binary metadata declaration、plugin file entry、source-side imported member 这三类入口现在都能回到同一套 definition/references 目标模型，而不是继续分裂成“只能从 usage 侧工作”的半通路径。
 
 ## Watched Metadata Refresh
 

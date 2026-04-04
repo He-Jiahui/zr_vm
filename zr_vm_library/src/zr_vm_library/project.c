@@ -97,6 +97,15 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
 
     ZR_JSON_READ_STRING(state, projectJson, local);
     project->local = local;
+    {
+        cJSON *supportMultithread = cJSON_GetObjectItemCaseSensitive(projectJson, "supportMultithread");
+        cJSON *autoCoroutine = cJSON_GetObjectItemCaseSensitive(projectJson, "autoCoroutine");
+
+        project->supportMultithread =
+                cJSON_IsBool(supportMultithread) ? (cJSON_IsTrue(supportMultithread) ? ZR_TRUE : ZR_FALSE) : ZR_FALSE;
+        project->autoCoroutine =
+                cJSON_IsBool(autoCoroutine) ? (cJSON_IsTrue(autoCoroutine) ? ZR_TRUE : ZR_FALSE) : ZR_TRUE;
+    }
     project->aotRuntime = ZR_NULL;
 
     cJSON_Delete(projectJson);

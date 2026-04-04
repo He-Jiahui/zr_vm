@@ -113,9 +113,14 @@
 - `tests/golden/aot_c/`
 - `tests/golden/aot_llvm/`
 
+调试辅助脚本不属于 suite 入口，统一放在：
+
+- `tests/debug/projects/`
+
 构建时生成的临时产物统一输出到构建目录下的 `tests_generated/`，例如：
 
 - `build/codex-wsl-gcc-debug/tests_generated/language_pipeline/`
+- `build/codex-wsl-gcc-debug/tests_generated/projects_suite/fixtures/`
 - `build/codex-wsl-gcc-debug/tests_generated/scripts/`
 - `build/codex-wsl-gcc-debug/tests_generated/scripts/aot_c/`
 - `build/codex-wsl-gcc-debug/tests_generated/scripts/aot_llvm/`

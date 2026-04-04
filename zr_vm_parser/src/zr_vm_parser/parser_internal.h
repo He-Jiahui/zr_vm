@@ -160,7 +160,11 @@ SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps);
 
 SZrAstNode *parse_reserved_import_expression(SZrParserState *ps);
 
+SZrAstNode *parse_reserved_await_expression(SZrParserState *ps);
+
 SZrAstNode *parse_reserved_type_expression(SZrParserState *ps);
+
+SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps);
 
 SZrAstNode *parse_owned_class_declaration(SZrParserState *ps);
 

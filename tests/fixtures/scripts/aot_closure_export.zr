@@ -1,0 +1,7 @@
+%module "aot_closure_export";
+
+pub var greet = () => {
+    return "hello aot";
+};
+
+return greet();

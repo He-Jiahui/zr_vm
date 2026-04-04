@@ -192,6 +192,7 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     // parser and compiler (初始化为NULL，需要外部注入)
     // 封装了从源代码解析到编译的全流程
     global->compileSource = ZR_NULL;
+    global->emitCompileTimeRuntimeSupport = ZR_FALSE;
 
     // reset basic type object prototype
     for (TZrUInt64 i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {

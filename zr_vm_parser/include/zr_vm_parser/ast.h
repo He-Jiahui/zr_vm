@@ -352,6 +352,7 @@ typedef struct SZrLambdaExpression {
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
     SZrAstNode *block;
+    TZrBool isAsync;
 } SZrLambdaExpression;
 
 typedef struct SZrIfExpression {
@@ -489,6 +490,7 @@ typedef struct SZrFunctionDeclaration {
     SZrType *returnType; // 可选
     SZrAstNode *body; // Block
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
+    TZrBool isAsync;
 } SZrFunctionDeclaration;
 
 typedef struct SZrTestDeclaration {

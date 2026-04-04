@@ -3,7 +3,7 @@ set confirm off
 set print pretty on
 
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_cli
-set args ./tests/projects/native_vector3_capture_probe/native_vector3_capture_probe.zrp
+set args ./tests/fixtures/projects/native_vector3_capture_probe/native_vector3_capture_probe.zrp
 
 break execution.c:1956
 commands

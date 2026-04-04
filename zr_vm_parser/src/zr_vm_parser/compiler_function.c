@@ -645,9 +645,14 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             SZrExportedVariable exportedVar;
             exportedVar.name = functionName;
             exportedVar.stackSlot = functionVarIndex;
-            exportedVar.accessModifier = ZR_ACCESS_PUBLIC;
-            ZrCore_Array_Push(cs->state, &cs->pubVariables, &exportedVar);
-            ZrCore_Array_Push(cs->state, &cs->proVariables, &exportedVar);
+            if (cs->isCompilingCompileTimeRuntimeSupport) {
+                exportedVar.accessModifier = ZR_ACCESS_PROTECTED;
+                ZrCore_Array_Push(cs->state, &cs->proVariables, &exportedVar);
+            } else {
+                exportedVar.accessModifier = ZR_ACCESS_PUBLIC;
+                ZrCore_Array_Push(cs->state, &cs->pubVariables, &exportedVar);
+                ZrCore_Array_Push(cs->state, &cs->proVariables, &exportedVar);
+            }
         }
 
     }

@@ -426,6 +426,7 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
                             &function->catchClauseList[handlerInfo->catchClauseStartIndex + catchIndex];
                     if (ZrCore_Exception_CatchMatchesTypeName(state, &state->currentException, catchInfo->typeName)) {
                         handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_CATCH;
+                        state->threadStatus = ZR_THREAD_STATUS_FINE;
                         return execution_jump_to_instruction_offset(state,
                                                                     ioCallInfo,
                                                                     callInfo,
@@ -437,6 +438,7 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
             if (handlerInfo->hasFinally) {
                 handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;
                 execution_set_pending_exception(state, callInfo);
+                state->threadStatus = ZR_THREAD_STATUS_FINE;
                 return execution_jump_to_instruction_offset(state,
                                                             ioCallInfo,
                                                             callInfo,

@@ -1,0 +1,76 @@
+%module "decorator_artifact_baseline";
+
+class MarkClass {
+    @decorate(target: %type Class): void {
+        target.metadata.runtimeSerializable = true;
+    }
+}
+
+func markFunction(target: %type Function): void {
+    target.metadata.instrumented = true;
+}
+
+class MarkField {
+    @decorate(target: %type Field): void {
+        target.metadata.isRuntimeField = true;
+    }
+}
+
+class MarkMethod {
+    @decorate(target: %type Method): void {
+        target.metadata.isRuntimeMethod = true;
+    }
+}
+
+class MarkProperty {
+    @decorate(target: %type Property): void {
+        target.metadata.isRuntimeProperty = true;
+    }
+}
+
+#MarkClass#
+pub class User {
+    #MarkField#
+    pub var id: int = 1;
+
+    pri var _value: int = 2;
+
+    #MarkMethod#
+    pub load(v: int): int {
+        return v;
+    }
+
+    #MarkProperty#
+    pub get value: int {
+        return this._value;
+    }
+}
+
+#markFunction#
+pub verifyDecorators(seed: int = 0): int {
+    var typeMeta = %type(User).metadata;
+    var fieldMeta = %type(User).members.id[0].metadata;
+    var methodMeta = %type(User).members.load[0].metadata;
+    var propertyMeta = %type(User).members.value[0].metadata;
+    var functionMeta = %type(verifyDecorators).metadata;
+
+    if (typeMeta.runtimeSerializable) {
+        seed = seed + 1;
+    }
+    if (fieldMeta.isRuntimeField) {
+        seed = seed + 2;
+    }
+    if (methodMeta.isRuntimeMethod) {
+        seed = seed + 4;
+    }
+    if (propertyMeta.isRuntimeProperty) {
+        seed = seed + 8;
+    }
+    if (functionMeta.instrumented) {
+        seed = seed + 16;
+    }
+
+    return seed;
+}
+
+return verifyDecorators();

@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "zr_vm_parser/parser.h"
 
 void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     ZR_ASSERT(cs != ZR_NULL);
@@ -146,7 +147,16 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
                       &cs->compileTimeDecoratorClasses,
                       sizeof(SZrCompileTimeDecoratorClass *),
                       ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(state,
+                      &cs->importedCompileTimeModules,
+                      sizeof(SZrImportedCompileTimeModule *),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(state,
+                      &cs->importedCompileTimeModuleAliases,
+                      sizeof(SZrImportedCompileTimeModuleAlias),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
     cs->isInCompileTimeContext = ZR_FALSE;
+    cs->isCompilingCompileTimeRuntimeSupport = ZR_FALSE;
     
     // 初始化构造函数上下文
     cs->isInConstructor = ZR_FALSE;
@@ -370,6 +380,13 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                             memberInfo->parameterPassingModes.elementSize > 0) {
                             ZrCore_Array_Free(state, &memberInfo->parameterPassingModes);
                         }
+                        if (memberInfo != ZR_NULL &&
+                            memberInfo->decorators.isValid &&
+                            memberInfo->decorators.head != ZR_NULL &&
+                            memberInfo->decorators.capacity > 0 &&
+                            memberInfo->decorators.elementSize > 0) {
+                            ZrCore_Array_Free(state, &memberInfo->decorators);
+                        }
                     }
                     ZrCore_Array_Free(state, &info->members);
                 }
@@ -446,6 +463,12 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                     }
                     ZrCore_Array_Free(state, &func->paramTypes);
                 }
+                if (func->paramNames.isValid &&
+                    func->paramNames.head != ZR_NULL &&
+                    func->paramNames.capacity > 0 &&
+                    func->paramNames.elementSize > 0) {
+                    ZrCore_Array_Free(state, &func->paramNames);
+                }
                 // 释放函数结构体本身（字符串和AST节点由GC管理）
                 ZrCore_Memory_RawFreeWithType(state->global, func, sizeof(SZrCompileTimeFunction), ZR_MEMORY_NATIVE_TYPE_ARRAY);
             }
@@ -468,6 +491,96 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
             }
         }
         ZrCore_Array_Free(state, &cs->compileTimeDecoratorClasses);
+    }
+
+    if (cs->importedCompileTimeModuleAliases.isValid &&
+        cs->importedCompileTimeModuleAliases.head != ZR_NULL &&
+        cs->importedCompileTimeModuleAliases.capacity > 0 &&
+        cs->importedCompileTimeModuleAliases.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->importedCompileTimeModuleAliases);
+    }
+
+    if (cs->importedCompileTimeModules.isValid &&
+        cs->importedCompileTimeModules.head != ZR_NULL &&
+        cs->importedCompileTimeModules.capacity > 0 &&
+        cs->importedCompileTimeModules.elementSize > 0) {
+        for (TZrSize i = 0; i < cs->importedCompileTimeModules.length; i++) {
+            SZrImportedCompileTimeModule **modulePtr =
+                    (SZrImportedCompileTimeModule **)ZrCore_Array_Get(&cs->importedCompileTimeModules, i);
+            if (modulePtr == ZR_NULL || *modulePtr == ZR_NULL) {
+                continue;
+            }
+
+            SZrImportedCompileTimeModule *module = *modulePtr;
+
+            if (module->compileTimeFunctions.isValid &&
+                module->compileTimeFunctions.head != ZR_NULL &&
+                module->compileTimeFunctions.capacity > 0 &&
+                module->compileTimeFunctions.elementSize > 0) {
+                for (TZrSize j = 0; j < module->compileTimeFunctions.length; j++) {
+                    SZrCompileTimeFunction **funcPtr =
+                            (SZrCompileTimeFunction **)ZrCore_Array_Get(&module->compileTimeFunctions, j);
+                    if (funcPtr == ZR_NULL || *funcPtr == ZR_NULL) {
+                        continue;
+                    }
+
+                    SZrCompileTimeFunction *func = *funcPtr;
+                    ZrParser_InferredType_Free(state, &func->returnType);
+                    if (func->paramTypes.isValid &&
+                        func->paramTypes.head != ZR_NULL &&
+                        func->paramTypes.capacity > 0 &&
+                        func->paramTypes.elementSize > 0) {
+                        for (TZrSize k = 0; k < func->paramTypes.length; k++) {
+                            SZrInferredType *paramType =
+                                    (SZrInferredType *)ZrCore_Array_Get(&func->paramTypes, k);
+                            if (paramType != ZR_NULL) {
+                                ZrParser_InferredType_Free(state, paramType);
+                            }
+                        }
+                        ZrCore_Array_Free(state, &func->paramTypes);
+                    }
+                    if (func->paramNames.isValid &&
+                        func->paramNames.head != ZR_NULL &&
+                        func->paramNames.capacity > 0 &&
+                        func->paramNames.elementSize > 0) {
+                        ZrCore_Array_Free(state, &func->paramNames);
+                    }
+                    ZrCore_Memory_RawFreeWithType(state->global,
+                                                  func,
+                                                  sizeof(SZrCompileTimeFunction),
+                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
+                ZrCore_Array_Free(state, &module->compileTimeFunctions);
+            }
+
+            if (module->compileTimeDecoratorClasses.isValid &&
+                module->compileTimeDecoratorClasses.head != ZR_NULL &&
+                module->compileTimeDecoratorClasses.capacity > 0 &&
+                module->compileTimeDecoratorClasses.elementSize > 0) {
+                for (TZrSize j = 0; j < module->compileTimeDecoratorClasses.length; j++) {
+                    SZrCompileTimeDecoratorClass **classPtr =
+                            (SZrCompileTimeDecoratorClass **)ZrCore_Array_Get(&module->compileTimeDecoratorClasses, j);
+                    if (classPtr != ZR_NULL && *classPtr != ZR_NULL) {
+                        ZrCore_Memory_RawFreeWithType(state->global,
+                                                      *classPtr,
+                                                      sizeof(SZrCompileTimeDecoratorClass),
+                                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                    }
+                }
+                ZrCore_Array_Free(state, &module->compileTimeDecoratorClasses);
+            }
+
+            if (module->scriptAst != ZR_NULL) {
+                ZrParser_Ast_Free(state, module->scriptAst);
+                module->scriptAst = ZR_NULL;
+            }
+
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          module,
+                                          sizeof(SZrImportedCompileTimeModule),
+                                          ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        }
+        ZrCore_Array_Free(state, &cs->importedCompileTimeModules);
     }
     
     // 释放编译期类型环境

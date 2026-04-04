@@ -42,7 +42,7 @@ tests:
   - tests/parser/test_compiler_features.c
   - tests/parser/test_instruction_execution.c
   - tests/scripts/test_artifact_golden.c
-  - tests/projects/CMakeLists.txt
+  - tests/cmake/run_projects_suite.cmake
   - tests/fixtures/projects/import_binary/fixtures/greet_binary_source.zr
   - tests/fixtures/projects/import_binary/bin/greet.zro
 doc_type: module-detail
@@ -204,7 +204,7 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
   - binary import typed call 真实执行结果
 - [tests/scripts/test_artifact_golden.c](../../tests/scripts/test_artifact_golden.c)
   - `.zrs` / `.zri` / `.zro` golden 回归
-- [tests/projects/CMakeLists.txt](../../tests/projects/CMakeLists.txt)
+- [tests/cmake/run_projects_suite.cmake](../../tests/cmake/run_projects_suite.cmake)
   - `hello_world`
   - `import_basic`
   - `import_binary`

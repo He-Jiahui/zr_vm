@@ -1,0 +1,19 @@
+%module "decorated_user";
+
+var decorators = %import("decorators");
+
+#Serializable#
+pub class User {
+    pub var id: int = 1;
+}
+
+#markFunction#
+pub decoratedBonus(): int {
+    var meta = %type(decoratedBonus).metadata;
+    return meta.instrumented;
+}
+
+pub var verifyDecorators = () => {
+    var typeMeta = %type(User).metadata;
+    return typeMeta.serializable ? 15 : 0;
+};

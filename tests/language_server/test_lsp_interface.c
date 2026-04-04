@@ -2616,11 +2616,11 @@ static void test_lsp_extern_type_symbols_surface_hover_and_definition(SZrState *
     uri = ZrCore_String_Create(state, "file:///extern_type_symbols.zr", 31);
     if (uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
-        !lsp_find_position_for_substring(content, "delegate Callback(value: i32): void;", 0, 0, &callbackDeclPosition) ||
+        !lsp_find_position_for_substring(content, "delegate Callback(value: i32): void;", 0, 9, &callbackDeclPosition) ||
         !lsp_find_position_for_substring(content, "cb: Callback", 0, 4, &callbackUsePosition) ||
-        !lsp_find_position_for_substring(content, "struct NativePoint", 0, 0, &pointDeclPosition) ||
+        !lsp_find_position_for_substring(content, "struct NativePoint", 0, 7, &pointDeclPosition) ||
         !lsp_find_position_for_substring(content, "point: NativePoint", 0, 7, &pointUsePosition) ||
-        !lsp_find_position_for_substring(content, "enum Mode", 0, 0, &modeDeclPosition) ||
+        !lsp_find_position_for_substring(content, "enum Mode", 0, 5, &modeDeclPosition) ||
         !lsp_find_position_for_substring(content, "): Mode", 0, 3, &modeUsePosition) ||
         !lsp_find_position_for_substring(content, "return Mode.On;", 0, 7, &completionPosition)) {
         ZrLanguageServer_LspContext_Free(state, context);

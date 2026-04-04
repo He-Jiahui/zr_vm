@@ -91,7 +91,7 @@ enum EZrToken {
     ZR_TK_PERCENT,       // "%"
     ZR_TK_AMPERSAND_AMPERSAND, // "&&"
     ZR_TK_PIPE_PIPE,     // "||"
-    ZR_TK_RIGHT_ARROW,   // "=>"
+    ZR_TK_RIGHT_ARROW,   // "=>" or "->"
     ZR_TK_LEFT_SHIFT,    // "<<"
     ZR_TK_RIGHT_SHIFT,   // ">>"
     ZR_TK_OR,            // "|"

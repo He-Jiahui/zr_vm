@@ -116,7 +116,10 @@ typedef struct SZrCompilerState {
     SZrArray compileTimeVariables;            // 编译期变量表（SZrCompileTimeVariable*）
     SZrArray compileTimeFunctions;            // 编译期函数表（SZrCompileTimeFunction*）
     SZrArray compileTimeDecoratorClasses;     // 编译期装饰器类表（SZrCompileTimeDecoratorClass*）
+    SZrArray importedCompileTimeModules;      // 跨文件导入模块的 compile-time 元数据（SZrImportedCompileTimeModule*）
+    SZrArray importedCompileTimeModuleAliases; // 模块别名表（SZrImportedCompileTimeModuleAlias）
     TZrBool isInCompileTimeContext;             // 是否在编译期上下文中
+    TZrBool isCompilingCompileTimeRuntimeSupport; // 是否正在为 binary import 生成 compile-time runtime support
     
     // 构造函数上下文
     TZrBool isInConstructor;                     // 是否在构造函数中编译
@@ -147,6 +150,10 @@ typedef struct SZrCompileTimeFunction {
     SZrAstNode *declaration;               // 函数声明 AST 节点
     SZrInferredType returnType;            // 返回类型
     SZrArray paramTypes;                   // 参数类型数组（SZrInferredType）
+    SZrArray paramNames;                   // 参数名称数组（SZrString*）
+    SZrString *runtimeProjectionModuleName; // binary import 时回落到的模块路径
+    SZrString *runtimeProjectionExportName; // binary import 时回落到的 pro export 名称
+    TZrBool isRuntimeProjection;            // 是否为 runtime callable projection
     SZrFileRange location;                  // 声明位置
 } SZrCompileTimeFunction;
 
@@ -158,6 +165,18 @@ typedef struct SZrCompileTimeDecoratorClass {
     TZrBool isStructDecorator;             // 是否来自 %compileTime struct
     SZrFileRange location;                 // 声明位置
 } SZrCompileTimeDecoratorClass;
+
+typedef struct SZrImportedCompileTimeModule {
+    SZrString *moduleName;                 // 逻辑模块路径
+    SZrAstNode *scriptAst;                 // imported module AST（保持声明节点存活）
+    SZrArray compileTimeFunctions;         // SZrCompileTimeFunction*
+    SZrArray compileTimeDecoratorClasses;  // SZrCompileTimeDecoratorClass*
+} SZrImportedCompileTimeModule;
+
+typedef struct SZrImportedCompileTimeModuleAlias {
+    SZrString *aliasName;                          // 当前脚本中的模块别名
+    SZrImportedCompileTimeModule *module;          // 对应 imported module metadata
+} SZrImportedCompileTimeModuleAlias;
 
 typedef struct SZrTypeDecoratorInfo {
     SZrString *name;                       // 装饰器名称
@@ -278,13 +297,16 @@ typedef struct SZrTypeMemberInfo {
     
       // 方法特定信息
       SZrFunction *compiledFunction;       // 编译后的函数对象（用于最终序列化时重新落常量池）
-      TZrUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
-      TZrUInt32 parameterCount;             // 参数数量
-      SZrArray parameterTypes;              // 参数类型数组（SZrInferredType）
-      SZrArray genericParameters;           // 泛型参数信息（SZrTypeGenericParameterInfo）
-      SZrArray parameterPassingModes;       // 参数传递模式（EZrParameterPassingMode）
-      SZrAstNode *declarationNode;          // 声明节点（可选）
-      EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
+    TZrUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
+    TZrUInt32 parameterCount;             // 参数数量
+    SZrArray parameterTypes;              // 参数类型数组（SZrInferredType）
+    SZrArray genericParameters;           // 泛型参数信息（SZrTypeGenericParameterInfo）
+    SZrArray parameterPassingModes;       // 参数传递模式（EZrParameterPassingMode）
+    SZrArray decorators;                  // 成员级 compile-time decorator 记录（SZrTypeDecoratorInfo）
+    TZrBool hasDecoratorMetadata;         // 是否存在成员级 compile-time decorator metadata
+    SZrTypeValue decoratorMetadataValue;  // 成员级 compile-time decorator metadata 常量值
+    SZrAstNode *declarationNode;          // 声明节点（可选）
+    EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
     TZrBool isMetaMethod;                 // 是否为元方法
     SZrString *returnTypeName;          // 返回类型名称（字符串表示，用于运行时类型查找）
 } SZrTypeMemberInfo;
@@ -389,6 +411,10 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_ApplyCompileTimeTypeDecorators(SZrCompil
                                                                        SZrAstNode *typeNode,
                                                                        SZrAstNodeArray *decorators,
                                                                        SZrTypePrototypeInfo *info);
+ZR_PARSER_API TZrBool ZrParser_CompileTime_ApplyMemberDecorators(SZrCompilerState *cs,
+                                                                 SZrAstNode *memberNode,
+                                                                 SZrAstNodeArray *decorators,
+                                                                 SZrTypeMemberInfo *memberInfo);
 ZR_PARSER_API TZrBool ZrParser_Compiler_IsCompileTimeDecorator(SZrCompilerState *cs,
                                                                SZrAstNode *decoratorNode);
 

@@ -3,7 +3,7 @@ set breakpoint pending on
 set debuginfod enabled off
 
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_cli
-set args ./tests/projects/classes_properties/classes_properties.zrp
+set args ./tests/fixtures/projects/classes_properties/classes_properties.zrp
 
 break ZrFunctionPostCall
 commands

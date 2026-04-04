@@ -3,7 +3,7 @@ set confirm off
 set print pretty on
 
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_cli
-set args ./tests/projects/import_capture_native/import_capture_native.zrp
+set args ./tests/fixtures/projects/import_capture_native/import_capture_native.zrp
 
 run
 

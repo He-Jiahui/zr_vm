@@ -52,6 +52,9 @@ static void compiler_interface_init_member_defaults(SZrTypeMemberInfo *memberInf
     ZrCore_Array_Construct(&memberInfo->parameterTypes);
     ZrCore_Array_Construct(&memberInfo->genericParameters);
     ZrCore_Array_Construct(&memberInfo->parameterPassingModes);
+    ZrCore_Array_Construct(&memberInfo->decorators);
+    memberInfo->hasDecoratorMetadata = ZR_FALSE;
+    ZrCore_Value_ResetAsNull(&memberInfo->decoratorMetadataValue);
 }
 
 void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {

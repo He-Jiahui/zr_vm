@@ -4,6 +4,7 @@
 
 #include "lsp_interface_internal.h"
 
+#include "zr_vm_lib_ffi/module.h"
 #include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
@@ -115,6 +116,7 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     ZrVmLibMath_Register(state->global);
     ZrVmLibSystem_Register(state->global);
     ZrVmLibContainer_Register(state->global);
+    ZrVmLibFfi_Register(state->global);
     
     if (context->parser == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));

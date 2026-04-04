@@ -60,6 +60,7 @@ ZR_CORE_API TZrUInt64 ZrCore_Module_CalculatePathHash(struct SZrState *state, st
 // 模块缓存操作
 ZR_CORE_API struct SZrObjectModule *ZrCore_Module_GetFromCache(struct SZrState *state, struct SZrString *path);
 ZR_CORE_API void ZrCore_Module_AddToCache(struct SZrState *state, struct SZrString *path, struct SZrObjectModule *module);
+ZR_CORE_API void ZrCore_Module_RemoveFromCache(struct SZrState *state, struct SZrString *path);
 
 // 内部模块导入 helper
 ZR_CORE_API struct SZrObjectModule *ZrCore_Module_ImportByPath(struct SZrState *state, struct SZrString *path);

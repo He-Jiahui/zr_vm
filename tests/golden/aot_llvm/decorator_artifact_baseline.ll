@@ -7,7 +7,7 @@ declare i1 @ZrCore_Reflection_TypeOfValue(ptr, ptr, ptr)
 ; [1] TYPEOF exec=10 type=0 effect=1 dst=2 op0=2 op1=0 deopt=2
 ; [2] TYPEOF exec=21 type=0 effect=2 dst=3 op0=3 op1=0 deopt=3
 ; [3] TYPEOF exec=32 type=0 effect=3 dst=4 op0=4 op1=0 deopt=4
-; [4] TYPEOF exec=43 type=0 effect=4 dst=5 op0=5 op1=0 deopt=5
+; [4] TYPEOF exec=42 type=0 effect=4 dst=5 op0=5 op1=0 deopt=5
 @zr_aot_module_name = private unnamed_addr constant [10 x i8] c"__entry__\00"
 @zr_aot_input_hash = private unnamed_addr constant [8 x i8] c"unknown\00"
 @zr_aot_runtime_contract_0 = private unnamed_addr constant [18 x i8] c"reflection.typeof\00"

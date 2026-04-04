@@ -26,6 +26,8 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrString *entry;
     SZrString *dependency;
     SZrString *local;
+    TZrBool supportMultithread;
+    TZrBool autoCoroutine;
     TZrPtr aotRuntime;
 };
 

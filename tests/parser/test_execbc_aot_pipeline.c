@@ -716,9 +716,128 @@ static void test_aot_c_backend_emits_native_entry_descriptor_instead_of_shim_inv
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrVm_GetAotCompiledModule"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame)"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_fn_0_ins_0:"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyConstant"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "&frame.function->constantValueList[0]"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyConstant"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeCurrentClosureShim"));
+
+        free(cText);
+        remove(cPath);
+        ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_c_backend_directly_lowers_static_slot_and_int_ops(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT C Backend Directly Lowers Static Slot And Int Ops";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot c direct static lowering",
+                 "Testing that simple constant loads, local copies, and integer adds lower to direct generated C instead of routing through AOT runtime opcode helpers");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var left = 40;\n"
+                "var copied = left;\n"
+                "return copied + 2;";
+        const char *cPath = "execbc_aot_direct_static_ops_test.c";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *func;
+        char *cText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "execbc_aot_direct_static_ops_test.zr", 37);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(func);
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(GET_CONSTANT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(GET_STACK)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SET_STACK)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD_INT)));
+
+        remove(cPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            func,
+                                                            "execbc_aot_direct_static_ops_test",
+                                                            cPath));
+
+        cText = read_text_file_owned(cPath);
+        TEST_ASSERT_NOT_NULL(cText);
+
+        TEST_ASSERT_NOT_NULL(strstr(cText, "&frame.function->constantValueList["));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Stack_GetValue(frame.slotBase +"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_VALUE_FAST_SET("));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyConstant"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyStack"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_AddInt"));
+
+        free(cText);
+        remove(cPath);
+        ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_c_backend_directly_lowers_non_export_return(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT C Backend Directly Lowers Non Export Return";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot c direct return lowering",
+                 "Testing that functions without export publication inline their return writeback in generated C instead of routing through the AOT runtime return helper");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var left = 40;\n"
+                "var copied = left;\n"
+                "return copied + 2;";
+        const char *cPath = "execbc_aot_direct_return_test.c";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *func;
+        char *cText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "execbc_aot_direct_return_test.zr", 33);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(func);
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
+        TEST_ASSERT_EQUAL_UINT32(0, func->exportedVariableLength);
+
+        remove(cPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state, func, "execbc_aot_direct_return_test", cPath));
+
+        cText = read_text_file_owned(cPath);
+        TEST_ASSERT_NOT_NULL(cText);
+
+        TEST_ASSERT_NOT_NULL(strstr(cText, "SZrCallInfo *zr_aot_call_info = state->callInfoList;"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Value_Copy(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_call_info->functionBase.valuePointer"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "state->stackTop.valuePointer = zr_aot_call_info->functionBase.valuePointer + 1;"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Return"));
 
         free(cText);
         remove(cPath);
@@ -2538,6 +2657,8 @@ int main(void) {
     RUN_TEST(test_aot_c_and_llvm_backends_emit_runtime_contract_artifacts);
     RUN_TEST(test_aot_c_backend_emits_child_thunks_for_callable_constants);
     RUN_TEST(test_aot_c_backend_emits_native_entry_descriptor_instead_of_shim_invoke);
+    RUN_TEST(test_aot_c_backend_directly_lowers_static_slot_and_int_ops);
+    RUN_TEST(test_aot_c_backend_directly_lowers_non_export_return);
     RUN_TEST(test_aot_c_backend_emits_root_shim_fallback_when_embedded_blob_present);
     RUN_TEST(test_aot_c_backend_rejects_unsupported_entry_lowering_without_embedded_blob);
     RUN_TEST(test_aot_c_backend_emits_child_shim_fallback_when_embedded_blob_present);

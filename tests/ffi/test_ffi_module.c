@@ -279,7 +279,8 @@ static void test_zr_ffi_import_exposes_known_types_and_functions(void) {
     SZrState *state;
     SZrObjectModule *module;
     const TZrChar *exports[] = {"loadLibrary", "callback", "sizeof", "alignof", "nullPointer",
-                                "LibraryHandle", "SymbolHandle", "CallbackHandle", "PointerHandle", "BufferHandle"};
+                                "LibraryHandle", "SymbolHandle", "CallbackHandle", "PointerHandle", "BufferHandle",
+                                "Ptr", "Ptr32", "Ptr64", "Char", "WChar"};
     TZrSize index;
 
     ZR_TEST_START("zr.ffi import exposes known types and functions");

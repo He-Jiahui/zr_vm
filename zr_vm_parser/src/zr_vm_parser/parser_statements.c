@@ -944,6 +944,19 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 }
                 return ownedClass;
             }
+            if (current_identifier_equals(ps, "async")) {
+                ps->lexer->currentPos = savedPos;
+                ps->lexer->currentChar = savedChar;
+                ps->lexer->lineNumber = savedLine;
+                ps->lexer->lastLine = savedLastLine;
+                ps->lexer->t = savedToken;
+                ps->lexer->lookahead = savedLookahead;
+                ps->lexer->lookaheadPos = savedLookaheadPos;
+                ps->lexer->lookaheadChar = savedLookaheadChar;
+                ps->lexer->lookaheadLine = savedLookaheadLine;
+                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                return parse_reserved_async_function_declaration(ps);
+            }
 
             ps->lexer->currentPos = savedPos;
             ps->lexer->currentChar = savedChar;
@@ -1007,6 +1020,9 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
         case ZR_TK_PERCENT:
             if (current_percent_directive_equals(ps, "module")) {
                 return parse_module_declaration(ps);
+            }
+            if (current_percent_directive_equals(ps, "async")) {
+                return parse_reserved_async_function_declaration(ps);
             }
             if (current_percent_directive_equals(ps, "compileTime")) {
                 return parse_compile_time_declaration(ps);
@@ -1131,6 +1147,9 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 }
             }
             if (token == ZR_TK_PERCENT) {
+                if (current_percent_directive_equals(ps, "async")) {
+                    return parse_reserved_async_function_declaration(ps);
+                }
                 if (current_percent_directive_equals(ps, "compileTime")) {
                     return parse_compile_time_declaration(ps);
                 }

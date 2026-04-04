@@ -6,6 +6,8 @@
 
 #include "zr_vm_lib_ffi/runtime.h"
 
+static const ZrLibGenericParameterDescriptor kPointerGenericParameters[] = {{"T", ZR_NULL, ZR_NULL, 0}};
+
 static const ZrLibFunctionDescriptor g_ffi_functions[] = {
         {"loadLibrary", 1, 1, ZrFfi_LoadLibrary, "LibraryHandle",
          "Load a dynamic library by absolute or relative path.", ZR_NULL, 0},
@@ -13,7 +15,7 @@ static const ZrLibFunctionDescriptor g_ffi_functions[] = {
          "Create a C-callable callback trampoline from a zr closure.", ZR_NULL, 0},
         {"sizeof", 1, 1, ZrFfi_SizeOf, "int", "Return the byte size of a runtime FFI type descriptor.", ZR_NULL, 0},
         {"alignof", 1, 1, ZrFfi_AlignOf, "int", "Return the alignment of a runtime FFI type descriptor.", ZR_NULL, 0},
-        {"nullPointer", 1, 1, ZrFfi_NullPointer, "PointerHandle", "Create a typed null pointer handle.", ZR_NULL, 0},
+        {"nullPointer", 1, 1, ZrFfi_NullPointer, "Ptr<void>", "Create a typed null pointer handle.", ZR_NULL, 0},
 };
 
 static const ZrLibMethodDescriptor g_library_methods[] = {
@@ -43,7 +45,7 @@ static const ZrLibMethodDescriptor g_callback_methods[] = {
 };
 
 static const ZrLibMethodDescriptor g_pointer_methods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("as", 1, 1, ZrFfi_Pointer_As, "PointerHandle",
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("as", 1, 1, ZrFfi_Pointer_As, "Ptr<void>",
                                       "Reinterpret the pointer handle with a different type descriptor.", ZR_FALSE,
                                       ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("read", 1, 1, ZrFfi_Pointer_Read, "value",
@@ -58,7 +60,7 @@ static const ZrLibMethodDescriptor g_buffer_methods[] = {
                                       "Allocate a managed native buffer.", ZR_TRUE, ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("close", 0, 0, ZrFfi_Buffer_Close, "null",
                                       "Close the buffer handle. Idempotent.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("pin", 0, 0, ZrFfi_Buffer_Pin, "PointerHandle",
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("pin", 0, 0, ZrFfi_Buffer_Pin, "Ptr<u8>",
                                       "Pin the buffer and return a pointer view.", ZR_FALSE, ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("read", 2, 2, ZrFfi_Buffer_Read, "array", "Read a byte range from the buffer.",
                                       ZR_FALSE, ZR_NULL, 0),
@@ -91,6 +93,24 @@ static const ZrLibTypeDescriptor g_ffi_types[] = {
                                     ZR_ARRAY_COUNT(g_buffer_methods), ZR_NULL, 0,
                                     "Managed native byte buffer with pin support.", ZR_NULL, ZR_NULL, 0, ZR_NULL, 0,
                                     ZR_NULL, ZR_FALSE, ZR_TRUE, "BufferHandle(size: int)", ZR_NULL, 0),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("Ptr", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
+                                    "Semantic pointer family for ABI-aware FFI handles.", "PointerHandle", ZR_NULL, 0,
+                                    ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, kPointerGenericParameters,
+                                    ZR_ARRAY_COUNT(kPointerGenericParameters)),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("Ptr32", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
+                                    "32-bit semantic pointer family for ABI-aware FFI handles.", "PointerHandle",
+                                    ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
+                                    kPointerGenericParameters, ZR_ARRAY_COUNT(kPointerGenericParameters)),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("Ptr64", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
+                                    "64-bit semantic pointer family for ABI-aware FFI handles.", "PointerHandle",
+                                    ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
+                                    kPointerGenericParameters, ZR_ARRAY_COUNT(kPointerGenericParameters)),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("Char", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
+                                    "Single-byte ABI character wrapper used by FFI metadata.", ZR_NULL, ZR_NULL, 0,
+                                    ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("WChar", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
+                                    "Wide ABI character wrapper used by FFI metadata.", ZR_NULL, ZR_NULL, 0, ZR_NULL,
+                                    0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0),
 };
 
 static const ZrLibTypeHintDescriptor g_ffi_hints[] = {
@@ -99,12 +119,17 @@ static const ZrLibTypeHintDescriptor g_ffi_hints[] = {
          "Create a C-callable callback trampoline."},
         {"sizeof", "function", "sizeof(type: object): int", "Return the byte size of a runtime FFI type descriptor."},
         {"alignof", "function", "alignof(type: object): int", "Return the alignment of a runtime FFI type descriptor."},
-        {"nullPointer", "function", "nullPointer(type: object): PointerHandle", "Create a typed null pointer handle."},
+        {"nullPointer", "function", "nullPointer(type: object): Ptr<void>", "Create a typed null pointer handle."},
         {"LibraryHandle", "type", "class LibraryHandle", "Managed dynamic-library handle."},
         {"SymbolHandle", "type", "class SymbolHandle", "Typed symbol handle compiled from an ABI signature."},
         {"CallbackHandle", "type", "class CallbackHandle", "C-callable callback trampoline rooted in the zr VM."},
         {"PointerHandle", "type", "class PointerHandle", "Typed pointer wrapper for native addresses."},
         {"BufferHandle", "type", "class BufferHandle", "Managed native byte buffer with pin support."},
+        {"Ptr", "type", "class Ptr<T>", "Semantic pointer family for ABI-aware FFI handles."},
+        {"Ptr32", "type", "class Ptr32<T>", "32-bit semantic pointer family for ABI-aware FFI handles."},
+        {"Ptr64", "type", "class Ptr64<T>", "64-bit semantic pointer family for ABI-aware FFI handles."},
+        {"Char", "type", "struct Char", "Single-byte ABI character wrapper used by FFI metadata."},
+        {"WChar", "type", "struct WChar", "Wide ABI character wrapper used by FFI metadata."},
 };
 
 static const TZrChar g_ffi_type_hints_json[] =
@@ -116,14 +141,19 @@ static const TZrChar g_ffi_type_hints_json[] =
         "    {\"name\":\"callback\",\"signature\":\"callback(signature: object, fn: function): CallbackHandle\"},\n"
         "    {\"name\":\"sizeof\",\"signature\":\"sizeof(type: object): int\"},\n"
         "    {\"name\":\"alignof\",\"signature\":\"alignof(type: object): int\"},\n"
-        "    {\"name\":\"nullPointer\",\"signature\":\"nullPointer(type: object): PointerHandle\"}\n"
+        "    {\"name\":\"nullPointer\",\"signature\":\"nullPointer(type: object): Ptr<void>\"}\n"
         "  ],\n"
         "  \"types\": [\n"
         "    {\"name\":\"LibraryHandle\",\"kind\":\"class\"},\n"
         "    {\"name\":\"SymbolHandle\",\"kind\":\"class\"},\n"
         "    {\"name\":\"CallbackHandle\",\"kind\":\"class\"},\n"
         "    {\"name\":\"PointerHandle\",\"kind\":\"class\"},\n"
-        "    {\"name\":\"BufferHandle\",\"kind\":\"class\"}\n"
+        "    {\"name\":\"BufferHandle\",\"kind\":\"class\"},\n"
+        "    {\"name\":\"Ptr\",\"kind\":\"class\"},\n"
+        "    {\"name\":\"Ptr32\",\"kind\":\"class\"},\n"
+        "    {\"name\":\"Ptr64\",\"kind\":\"class\"},\n"
+        "    {\"name\":\"Char\",\"kind\":\"struct\"},\n"
+        "    {\"name\":\"WChar\",\"kind\":\"struct\"}\n"
         "  ]\n"
         "}\n";
 

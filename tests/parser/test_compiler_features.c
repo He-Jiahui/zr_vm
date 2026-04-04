@@ -98,6 +98,10 @@ typedef struct SZrCompiledMemberInfoView {
     TZrUInt32 callsDestructor;
     TZrUInt32 declarationOrder;
     TZrUInt32 contractRole;
+    TZrUInt32 hasDecoratorMetadata;
+    TZrUInt32 decoratorMetadataConstantIndex;
+    TZrUInt32 hasDecoratorNames;
+    TZrUInt32 decoratorNamesConstantIndex;
 } SZrCompiledMemberInfoView;
 #pragma pack(pop)
 

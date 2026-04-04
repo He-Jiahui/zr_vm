@@ -11,6 +11,8 @@ set(SCRIPTS_COMMON_SOURCES
 )
 
 function(zr_vm_configure_scripts_target target_name)
+    zr_vm_apply_common_test_settings(${target_name})
+
     target_include_directories(${target_name} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/tests

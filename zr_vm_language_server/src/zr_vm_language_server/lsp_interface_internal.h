@@ -74,6 +74,7 @@ typedef struct SZrLspProjectFileRecord {
     SZrString *uri;
     SZrString *path;
     SZrString *moduleName;
+    TZrBool isFfiWrapperSource;
 } SZrLspProjectFileRecord;
 
 typedef struct SZrLspProjectIndex {

@@ -7,6 +7,13 @@
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_library/aot_runtime.h"
 
+#define ZR_AOT_C_GUARD(call_expr) \
+    do { \
+        if (!(call_expr)) { \
+            goto zr_aot_fail; \
+        } \
+    } while (0)
+
 
 /*
  */
@@ -125,39 +132,49 @@ static const FZrAotEntryThunk zr_aot_function_thunks[] = {
 
 static TZrInt64 zr_aot_fn_0(struct SZrState *state) {
     ZrAotGeneratedFrame frame;
-    if (!ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame));
 zr_aot_fn_0_ins_0:
     /* opcode=80 extra=0 op1a=0 op1b=0 op2=0 */
-    if (!ZrLibrary_AotRuntime_CreateClosure(state, &frame, 0, 0)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateClosure(state, &frame, 0, 0));
 zr_aot_fn_0_ins_1:
     /* opcode=2 extra=1 op1a=1 op1b=0 op2=1 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 1, 1)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 1),
+                      &frame.function->constantValueList[1]);
 zr_aot_fn_0_ins_2:
     /* opcode=75 extra=1 op1a=1 op1b=0 op2=1 */
     return ZrLibrary_AotRuntime_Return(state, &frame, 1, ZR_TRUE);
     return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, 0, 3, 0);
+zr_aot_fail:
+    return 0;
 }
 
 static TZrInt64 zr_aot_fn_1(struct SZrState *state) {
     ZrAotGeneratedFrame frame;
-    if (!ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 1, &frame)) {
-        return 0;
-    }
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 1, &frame));
 zr_aot_fn_1_ins_0:
     /* opcode=2 extra=0 op1a=0 op1b=0 op2=0 */
-    if (!ZrLibrary_AotRuntime_CopyConstant(state, &frame, 0, 0)) {
-        return 0;
-    }
+    ZrCore_Value_Copy(state,
+                      ZrCore_Stack_GetValue(frame.slotBase + 0),
+                      &frame.function->constantValueList[0]);
 zr_aot_fn_1_ins_1:
     /* opcode=75 extra=1 op1a=0 op1b=0 op2=0 */
-    return ZrLibrary_AotRuntime_Return(state, &frame, 0, ZR_FALSE);
+    {
+        SZrCallInfo *zr_aot_call_info = state->callInfoList;
+        TZrStackValuePointer zr_aot_result_slot = frame.slotBase + 0;
+        if (zr_aot_call_info == ZR_NULL || zr_aot_call_info->functionBase.valuePointer == ZR_NULL ||
+            zr_aot_result_slot == ZR_NULL) {
+            goto zr_aot_fail;
+        }
+        ZrCore_Value_Copy(state,
+                          ZrCore_Stack_GetValue(zr_aot_call_info->functionBase.valuePointer),
+                          ZrCore_Stack_GetValue(zr_aot_result_slot));
+        state->stackTop.valuePointer = zr_aot_call_info->functionBase.valuePointer + 1;
+        return 1;
+    }
     return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, 1, 2, 0);
+zr_aot_fail:
+    return 0;
 }
 
 static const ZrAotCompiledModule zr_aot_module = {

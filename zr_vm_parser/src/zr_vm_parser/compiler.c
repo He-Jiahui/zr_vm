@@ -133,6 +133,49 @@ static TZrUInt32 compiler_member_contract_role_from_member_info(const SZrTypeMem
     return ZR_MEMBER_CONTRACT_ROLE_NONE;
 }
 
+static TZrBool compiler_add_decorator_name_array_constant(SZrCompilerState *cs,
+                                                          const SZrArray *decorators,
+                                                          TZrUInt32 *outConstantIndex) {
+    SZrObject *decoratorArray;
+    SZrTypeValue arrayValue;
+
+    if (outConstantIndex != ZR_NULL) {
+        *outConstantIndex = 0;
+    }
+
+    if (cs == ZR_NULL || decorators == ZR_NULL || outConstantIndex == ZR_NULL || decorators->length == 0) {
+        return ZR_TRUE;
+    }
+
+    decoratorArray = ZrCore_Object_NewCustomized(cs->state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+    if (decoratorArray == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Object_Init(cs->state, decoratorArray);
+
+    for (TZrSize index = 0; index < decorators->length; index++) {
+        SZrTypeDecoratorInfo *decoratorInfo = (SZrTypeDecoratorInfo *)ZrCore_Array_Get((SZrArray *)decorators, index);
+        SZrTypeValue keyValue;
+        SZrTypeValue entryValue;
+
+        if (decoratorInfo == ZR_NULL || decoratorInfo->name == ZR_NULL) {
+            continue;
+        }
+
+        ZrCore_Value_InitAsInt(cs->state, &keyValue, (TZrInt64)index);
+        ZrCore_Value_InitAsRawObject(cs->state,
+                                     &entryValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(decoratorInfo->name));
+        entryValue.type = ZR_VALUE_TYPE_STRING;
+        ZrCore_Object_SetValue(cs->state, decoratorArray, &keyValue, &entryValue);
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &arrayValue, ZR_CAST_RAW_OBJECT_AS_SUPER(decoratorArray));
+    arrayValue.type = ZR_VALUE_TYPE_ARRAY;
+    *outConstantIndex = add_constant(cs, &arrayValue);
+    return ZR_TRUE;
+}
+
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize) {
     if (cs == ZR_NULL || info == ZR_NULL || info->name == ZR_NULL || outData == ZR_NULL || outSize == ZR_NULL) {
@@ -269,7 +312,19 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
         compiledMember->callsDestructor = memberInfo->callsDestructor ? ZR_TRUE : ZR_FALSE;
         compiledMember->declarationOrder = memberInfo->declarationOrder;
         compiledMember->contractRole = compiler_member_contract_role_from_member_info(memberInfo);
-        
+        compiledMember->hasDecoratorMetadata = memberInfo->hasDecoratorMetadata ? ZR_TRUE : ZR_FALSE;
+        compiledMember->decoratorMetadataConstantIndex =
+                memberInfo->hasDecoratorMetadata ? add_constant(cs, &memberInfo->decoratorMetadataValue) : 0;
+        compiledMember->hasDecoratorNames = memberInfo->decorators.length > 0 ? ZR_TRUE : ZR_FALSE;
+        compiledMember->decoratorNamesConstantIndex = 0;
+        if (compiledMember->hasDecoratorNames &&
+            !compiler_add_decorator_name_array_constant(cs,
+                                                        &memberInfo->decorators,
+                                                        &compiledMember->decoratorNamesConstantIndex)) {
+            ZrCore_Memory_RawFree(cs->state->global, serializedData, serializedSize);
+            return ZR_FALSE;
+        }
+
         // 添加成员名称字符串到常量池（临时方案）
         if (memberInfo->name != ZR_NULL) {
             SZrTypeValue memberNameValue;
@@ -340,6 +395,46 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     *outSize = serializedSize;
     
     return ZR_TRUE;
+}
+
+static void compiler_compile_compile_time_runtime_support(SZrCompilerState *cs, SZrAstNode *statement) {
+    SZrAstNode *declaration;
+    TZrBool oldSupportFlag;
+
+    if (cs == ZR_NULL || statement == ZR_NULL || statement->type != ZR_AST_COMPILE_TIME_DECLARATION || cs->hasError) {
+        return;
+    }
+
+    if (cs->state == ZR_NULL ||
+        cs->state->global == ZR_NULL ||
+        !cs->state->global->emitCompileTimeRuntimeSupport) {
+        return;
+    }
+
+    declaration = statement->data.compileTimeDeclaration.declaration;
+    if (declaration == ZR_NULL) {
+        return;
+    }
+
+    oldSupportFlag = cs->isCompilingCompileTimeRuntimeSupport;
+    cs->isCompilingCompileTimeRuntimeSupport = ZR_TRUE;
+
+    switch (declaration->type) {
+        case ZR_AST_VARIABLE_DECLARATION: {
+            EZrAccessModifier oldAccessModifier = declaration->data.variableDeclaration.accessModifier;
+            declaration->data.variableDeclaration.accessModifier = ZR_ACCESS_PROTECTED;
+            ZrParser_Statement_Compile(cs, declaration);
+            declaration->data.variableDeclaration.accessModifier = oldAccessModifier;
+            break;
+        }
+        case ZR_AST_FUNCTION_DECLARATION:
+            compile_function_declaration(cs, declaration);
+            break;
+        default:
+            break;
+    }
+
+    cs->isCompilingCompileTimeRuntimeSupport = oldSupportFlag;
 }
 
 // 编译脚本
@@ -417,8 +512,8 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
         for (TZrSize i = 0; i < script->statements->count; i++) {
             SZrAstNode *stmt = script->statements->nodes[i];
             if (stmt != ZR_NULL) {
-                // 跳过编译期声明（已在第一遍执行）
                 if (stmt->type == ZR_AST_COMPILE_TIME_DECLARATION) {
+                    compiler_compile_compile_time_runtime_support(cs, stmt);
                     continue;
                 }
                 
@@ -656,6 +751,11 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
     SZrCompilerState cs;
     ZrParser_CompilerState_Init(&cs, state);
 
+    if (!compiler_validate_task_effects(&cs, ast)) {
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
     // 创建新函数
     cs.currentFunction = ZrCore_Function_New(state);
     if (cs.currentFunction == ZR_NULL) {
@@ -737,6 +837,11 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
 
     SZrCompilerState cs;
     ZrParser_CompilerState_Init(&cs, state);
+
+    if (!compiler_validate_task_effects(&cs, ast)) {
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_FALSE;
+    }
 
     // 创建新函数
     cs.currentFunction = ZrCore_Function_New(state);

@@ -336,6 +336,11 @@ static void import_add_field_member(SZrState *state,
     }
 
     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
+    ZrCore_Array_Construct(&memberInfo.parameterTypes);
+    ZrCore_Array_Construct(&memberInfo.genericParameters);
+    ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
+    ZrCore_Array_Construct(&memberInfo.decorators);
+    ZrCore_Value_ResetAsNull(&memberInfo.decoratorMetadataValue);
     memberInfo.memberType = info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ? ZR_AST_STRUCT_FIELD : ZR_AST_CLASS_FIELD;
     memberInfo.name = memberName;
     memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
@@ -355,6 +360,11 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
     }
 
     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
+    ZrCore_Array_Construct(&memberInfo.parameterTypes);
+    ZrCore_Array_Construct(&memberInfo.genericParameters);
+    ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
+    ZrCore_Array_Construct(&memberInfo.decorators);
+    ZrCore_Value_ResetAsNull(&memberInfo.decoratorMetadataValue);
     memberInfo.memberType = ZR_AST_CLASS_METHOD;
     memberInfo.name = symbol->name;
     memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
@@ -386,6 +396,11 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
     }
 
     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
+    ZrCore_Array_Construct(&memberInfo.parameterTypes);
+    ZrCore_Array_Construct(&memberInfo.genericParameters);
+    ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
+    ZrCore_Array_Construct(&memberInfo.decorators);
+    ZrCore_Value_ResetAsNull(&memberInfo.decoratorMetadataValue);
     memberInfo.memberType = ZR_AST_CLASS_METHOD;
     memberInfo.name = symbol->name;
     memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
@@ -420,6 +435,64 @@ static SZrString *function_constant_string(SZrState *state, const SZrFunction *f
     }
 
     return ZR_CAST_STRING(state, constant->value.object);
+}
+
+static TZrBool import_append_decorator_names_from_constant_array(SZrState *state,
+                                                                 SZrArray *decorators,
+                                                                 const SZrTypeValue *decoratorArrayValue) {
+    SZrObject *decoratorArray;
+
+    if (state == ZR_NULL || decorators == ZR_NULL || decoratorArrayValue == ZR_NULL ||
+        decoratorArrayValue->type != ZR_VALUE_TYPE_ARRAY || decoratorArrayValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    decoratorArray = ZR_CAST_OBJECT(state, decoratorArrayValue->value.object);
+    if (decoratorArray == ZR_NULL || decoratorArray->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return ZR_FALSE;
+    }
+
+    if (!decorators->isValid || decorators->elementSize == 0) {
+        ZrCore_Array_Init(state,
+                          decorators,
+                          sizeof(SZrTypeDecoratorInfo),
+                          decoratorArray->nodeMap.elementCount > 0 ? decoratorArray->nodeMap.elementCount
+                                                                   : ZR_PARSER_INITIAL_CAPACITY_TINY);
+    }
+
+    for (TZrSize decoratorIndex = 0; decoratorIndex < decoratorArray->nodeMap.elementCount; decoratorIndex++) {
+        SZrTypeValue key;
+        const SZrTypeValue *decoratorNameValue;
+        SZrTypeDecoratorInfo decoratorInfo;
+
+        ZrCore_Value_InitAsInt(state, &key, (TZrInt64)decoratorIndex);
+        decoratorNameValue = ZrCore_Object_GetValue(state, decoratorArray, &key);
+        if (decoratorNameValue == ZR_NULL || decoratorNameValue->type != ZR_VALUE_TYPE_STRING ||
+            decoratorNameValue->value.object == ZR_NULL) {
+            continue;
+        }
+
+        ZrCore_Memory_RawSet(&decoratorInfo, 0, sizeof(decoratorInfo));
+        decoratorInfo.name = ZR_CAST_STRING(state, decoratorNameValue->value.object);
+        ZrCore_Array_Push(state, decorators, &decoratorInfo);
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool import_append_member_decorator_names_from_function_constant(SZrState *state,
+                                                                           SZrArray *decorators,
+                                                                           const SZrFunction *function,
+                                                                           TZrUInt32 constantIndex) {
+    const SZrTypeValue *constantValue;
+
+    if (state == ZR_NULL || decorators == ZR_NULL || function == ZR_NULL || function->constantValueList == ZR_NULL ||
+        constantIndex >= function->constantValueLength) {
+        return ZR_FALSE;
+    }
+
+    constantValue = &function->constantValueList[constantIndex];
+    return import_append_decorator_names_from_constant_array(state, decorators, constantValue);
 }
 
 static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, const SZrFunction *function) {
@@ -462,11 +535,19 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
 
         prototypeName = function_constant_string(cs->state, function, protoInfo->nameStringIndex);
         if (prototypeName != ZR_NULL && find_compiler_type_prototype_inference(cs, prototypeName) == ZR_NULL) {
+            const TZrUInt32 *prototypeDecoratorIndices =
+                    (const TZrUInt32 *)(currentPos + sizeof(SZrCompiledPrototypeInfo) +
+                                        inheritsCount * sizeof(TZrUInt32));
             import_type_prototype_init(cs->state,
                                        &typePrototype,
                                        prototypeName,
                                        (EZrObjectPrototypeType)protoInfo->type);
             typePrototype.accessModifier = (EZrAccessModifier)protoInfo->accessModifier;
+            if (protoInfo->hasDecoratorMetadata &&
+                protoInfo->decoratorMetadataConstantIndex < function->constantValueLength) {
+                typePrototype.decoratorMetadataValue = function->constantValueList[protoInfo->decoratorMetadataConstantIndex];
+                typePrototype.hasDecoratorMetadata = ZR_TRUE;
+            }
 
             if (inheritsCount > 0) {
                 const TZrUInt32 *inheritIndices =
@@ -483,6 +564,22 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                 }
             }
 
+            if (decoratorsCount > 0) {
+                for (TZrUInt32 decoratorIndex = 0; decoratorIndex < decoratorsCount; decoratorIndex++) {
+                    SZrTypeDecoratorInfo decoratorInfo;
+                    SZrString *decoratorName =
+                            function_constant_string(cs->state, function, prototypeDecoratorIndices[decoratorIndex]);
+
+                    if (decoratorName == ZR_NULL) {
+                        continue;
+                    }
+
+                    ZrCore_Memory_RawSet(&decoratorInfo, 0, sizeof(decoratorInfo));
+                    decoratorInfo.name = decoratorName;
+                    ZrCore_Array_Push(cs->state, &typePrototype.decorators, &decoratorInfo);
+                }
+            }
+
             if (membersCount > 0) {
                 const SZrCompiledMemberInfo *memberInfos = (const SZrCompiledMemberInfo *)(currentPos +
                                                                                            sizeof(SZrCompiledPrototypeInfo) +
@@ -493,6 +590,11 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                     SZrTypeMemberInfo memberInfo;
 
                     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
+                    ZrCore_Array_Construct(&memberInfo.parameterTypes);
+                    ZrCore_Array_Construct(&memberInfo.genericParameters);
+                    ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
+                    ZrCore_Array_Construct(&memberInfo.decorators);
+                    ZrCore_Value_ResetAsNull(&memberInfo.decoratorMetadataValue);
                     memberInfo.memberType = (EZrAstNodeType)compiledMember->memberType;
                     memberInfo.name = function_constant_string(cs->state, function, compiledMember->nameStringIndex);
                     memberInfo.accessModifier = (EZrAccessModifier)compiledMember->accessModifier;
@@ -514,6 +616,18 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                     memberInfo.callsClose = compiledMember->callsClose ? ZR_TRUE : ZR_FALSE;
                     memberInfo.callsDestructor = compiledMember->callsDestructor ? ZR_TRUE : ZR_FALSE;
                     memberInfo.declarationOrder = compiledMember->declarationOrder;
+                    if (compiledMember->hasDecoratorMetadata &&
+                        compiledMember->decoratorMetadataConstantIndex < function->constantValueLength) {
+                        memberInfo.decoratorMetadataValue =
+                                function->constantValueList[compiledMember->decoratorMetadataConstantIndex];
+                        memberInfo.hasDecoratorMetadata = ZR_TRUE;
+                    }
+                    if (compiledMember->hasDecoratorNames) {
+                        import_append_member_decorator_names_from_function_constant(cs->state,
+                                                                                   &memberInfo.decorators,
+                                                                                   function,
+                                                                                   compiledMember->decoratorNamesConstantIndex);
+                    }
                     ZrCore_Array_Push(cs->state, &typePrototype.members, &memberInfo);
                 }
             }

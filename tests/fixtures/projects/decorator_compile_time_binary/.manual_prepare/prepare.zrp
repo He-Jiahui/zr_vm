@@ -1,0 +1,6 @@
+{
+  "name": "manual_prepare",
+  "source": "src",
+  "binary": "bin",
+  "entry": "decorated_user"
+}

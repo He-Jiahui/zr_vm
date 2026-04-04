@@ -316,6 +316,15 @@ static TZrBool io_runtime_convert_constant(SZrState *state,
             destination->type = ZR_VALUE_TYPE_STRING;
             return ZR_TRUE;
 
+        case ZR_VALUE_TYPE_OBJECT:
+        case ZR_VALUE_TYPE_ARRAY:
+            if (source->value.object == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            ZrCore_Value_InitAsRawObject(state, destination, source->value.object);
+            destination->type = source->type;
+            return ZR_TRUE;
+
         case ZR_VALUE_TYPE_NATIVE_POINTER:
             if (nativeHelper == ZR_NULL) {
                 return ZR_FALSE;
@@ -666,6 +675,31 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             }
         }
         function->testInfoLength = (TZrUInt32)source->testInfosLength;
+    }
+
+    if (source->hasDecoratorMetadata) {
+        if (!io_runtime_convert_constant(state, &source->decoratorMetadataValue, &function->decoratorMetadataValue)) {
+            return ZR_FALSE;
+        }
+        function->hasDecoratorMetadata = ZR_TRUE;
+    }
+
+    if (source->decoratorNamesLength > 0) {
+        function->decoratorNames = (SZrString **)ZrCore_Memory_RawMallocWithType(
+                global,
+                sizeof(SZrString *) * source->decoratorNamesLength,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->decoratorNames == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawSet(function->decoratorNames,
+                             0,
+                             sizeof(SZrString *) * source->decoratorNamesLength);
+        for (TZrSize index = 0; index < source->decoratorNamesLength; index++) {
+            function->decoratorNames[index] = source->decoratorNames[index];
+        }
+        function->decoratorCount = (TZrUInt32)source->decoratorNamesLength;
     }
 
     if (source->memberEntriesLength > 0) {

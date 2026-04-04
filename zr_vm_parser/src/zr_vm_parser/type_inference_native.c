@@ -412,8 +412,13 @@ TZrBool inferred_type_from_type_name(SZrCompilerState *cs, SZrString *typeName, 
         return ZR_TRUE;
     }
 
-    nativeTypeName = ZrCore_String_GetNativeString(typeName);
-    nativeTypeNameLength = nativeTypeName != ZR_NULL ? strlen(nativeTypeName) : 0;
+    if (typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        nativeTypeName = ZrCore_String_GetNativeStringShort(typeName);
+        nativeTypeNameLength = typeName->shortStringLength;
+    } else {
+        nativeTypeName = ZrCore_String_GetNativeString(typeName);
+        nativeTypeNameLength = nativeTypeName != ZR_NULL ? typeName->longStringLength : 0;
+    }
     if (nativeTypeName != ZR_NULL &&
         nativeTypeNameLength > 2 &&
         nativeTypeName[nativeTypeNameLength - 1] == ']') {
@@ -492,6 +497,15 @@ not_array_type_name:
             ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName);
         }
         return ZR_TRUE;
+    }
+
+    {
+        EZrValueType primitiveBaseType = ZR_VALUE_TYPE_UNKNOWN;
+        if (nativeTypeName != ZR_NULL &&
+            inferred_type_try_map_primitive_name(nativeTypeName, nativeTypeNameLength, &primitiveBaseType)) {
+            ZrParser_InferredType_InitFull(cs->state, result, primitiveBaseType, ZR_FALSE, typeName);
+            return ZR_TRUE;
+        }
     }
 
     if (zr_string_equals_cstr(typeName, "null")) {
@@ -1319,6 +1333,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                 if (nextIsFunctionCall) {
                     SZrResolvedCallSignature resolvedMemberSignature;
                     TZrChar genericDiagnostic[ZR_PARSER_ERROR_BUFFER_LENGTH];
+                    TZrBool ffiHandled = ZR_FALSE;
 
                     memset(&resolvedMemberSignature, 0, sizeof(resolvedMemberSignature));
                     ZrParser_InferredType_Init(cs->state, &resolvedMemberSignature.returnType, ZR_VALUE_TYPE_OBJECT);
@@ -1365,7 +1380,22 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                         free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                         return ZR_FALSE;
                     }
-                    inferred_type_from_member_call(cs, memberInfo, &resolvedMemberSignature, &nextType);
+
+                    if (!infer_ffi_member_call_type(cs,
+                                                    &currentType,
+                                                    memberInfo,
+                                                    &members->nodes[i + 1]->data.functionCall,
+                                                    &nextType,
+                                                    &ffiHandled)) {
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        ZrParser_InferredType_Free(cs->state, &nextType);
+                        free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                        return ZR_FALSE;
+                    }
+
+                    if (!ffiHandled) {
+                        inferred_type_from_member_call(cs, memberInfo, &resolvedMemberSignature, &nextType);
+                    }
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                     i++;
                     nextIsPrototypeReference = ZR_FALSE;

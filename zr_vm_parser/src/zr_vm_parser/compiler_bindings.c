@@ -590,8 +590,9 @@ void compiler_register_named_value_binding_to_env(SZrCompilerState *cs,
 }
 
 void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
-                                                                  SZrTypeEnvironment *env,
-                                                                  SZrExternFunctionDeclaration *functionDecl) {
+                                                           SZrAstNode *declarationNode,
+                                                           SZrTypeEnvironment *env,
+                                                           SZrExternFunctionDeclaration *functionDecl) {
     SZrInferredType returnType;
     SZrArray paramTypes;
     SZrArray parameterPassingModes;
@@ -642,7 +643,7 @@ void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
                                                 &paramTypes,
                                                 ZR_NULL,
                                                 &parameterPassingModes,
-                                                ZR_NULL);
+                                                declarationNode);
 
     ZrParser_InferredType_Free(cs->state, &returnType);
     for (TZrSize i = 0; i < paramTypes.length; i++) {

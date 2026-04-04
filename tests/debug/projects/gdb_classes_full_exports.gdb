@@ -8,5 +8,5 @@ set $hit = $hit + 1
 printf "hit=%d name=%s valueType=%d module=%p\n", $hit, (char*)name->stringDataExtend, value->type, module
 continue
 end
-run ./tests/projects/classes_full/classes_full.zrp
+run ./tests/fixtures/projects/classes_full/classes_full.zrp
 quit

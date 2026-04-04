@@ -28,6 +28,24 @@ static TZrBool ct_eval_assignment(SZrCompilerState *cs,
                                 SZrAstNode *node,
                                 SZrCompileTimeFrame *frame,
                                 SZrTypeValue *result);
+static TZrBool ct_eval_runtime_projected_call_arg(SZrCompilerState *cs,
+                                                  SZrFunctionCall *call,
+                                                  SZrString *paramName,
+                                                  TZrSize paramIndex,
+                                                  SZrCompileTimeFrame *frame,
+                                                  SZrTypeValue *result);
+static TZrBool ct_invoke_runtime_callable_with_values(SZrCompilerState *cs,
+                                                      SZrAstNode *callSite,
+                                                      const SZrTypeValue *callableValue,
+                                                      TZrSize argCount,
+                                                      const SZrTypeValue *argValues,
+                                                      SZrTypeValue *result);
+static TZrBool ct_call_runtime_projected_compile_time_function(SZrCompilerState *cs,
+                                                               SZrAstNode *callSite,
+                                                               SZrCompileTimeFunction *func,
+                                                               SZrFunctionCall *call,
+                                                               SZrCompileTimeFrame *frame,
+                                                               SZrTypeValue *result);
 static TZrBool ct_eval_member_access(SZrCompilerState *cs,
                                    SZrAstNode *callSite,
                                    const SZrTypeValue *baseValue,
@@ -154,6 +172,19 @@ static const TZrChar *ct_expected_type_decorator_target_name(EZrObjectPrototypeT
     }
 }
 
+static const TZrChar *ct_module_name_text(SZrCompilerState *cs) {
+    if (cs == ZR_NULL ||
+        cs->scriptAst == ZR_NULL ||
+        cs->scriptAst->type != ZR_AST_SCRIPT ||
+        cs->scriptAst->data.script.moduleName == ZR_NULL ||
+        cs->scriptAst->data.script.moduleName->type != ZR_AST_STRING_LITERAL ||
+        cs->scriptAst->data.script.moduleName->data.stringLiteral.value == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_GetNativeString(cs->scriptAst->data.script.moduleName->data.stringLiteral.value);
+}
+
 static TZrBool ct_validate_named_decorator_target_param(SZrCompilerState *cs,
                                                         SZrParameter *param,
                                                         const TZrChar *expectedName,
@@ -208,7 +239,7 @@ static TZrBool ct_validate_decorator_meta_method_target(SZrCompilerState *cs,
     return ct_validate_named_decorator_target_param(cs,
                                                     &params->nodes[0]->data.parameter,
                                                     expectedTargetName,
-                                                    "Compile-time decorator @decorate target must use %type Class, %type Struct, %type Function, or %type Object",
+                                                    "Compile-time decorator @decorate target must use %type Class, %type Struct, %type Function, %type Field, %type Method, %type Property, or %type Object",
                                                     location);
 }
 
@@ -682,6 +713,188 @@ static TZrBool ct_build_function_decorator_snapshot(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static TZrBool ct_member_logical_name_text(SZrAstNode *memberNode,
+                                           const SZrTypeMemberInfo *memberInfo,
+                                           const TZrChar **outNameText) {
+    const TZrChar *nameText = ZR_NULL;
+
+    if (outNameText != ZR_NULL) {
+        *outNameText = ZR_NULL;
+    }
+
+    if (memberNode == ZR_NULL || memberInfo == ZR_NULL || outNameText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (memberNode->type) {
+        case ZR_AST_CLASS_FIELD:
+            if (memberNode->data.classField.name != ZR_NULL && memberNode->data.classField.name->name != ZR_NULL) {
+                nameText = ZrCore_String_GetNativeString(memberNode->data.classField.name->name);
+            }
+            break;
+        case ZR_AST_STRUCT_FIELD:
+            if (memberNode->data.structField.name != ZR_NULL && memberNode->data.structField.name->name != ZR_NULL) {
+                nameText = ZrCore_String_GetNativeString(memberNode->data.structField.name->name);
+            }
+            break;
+        case ZR_AST_CLASS_METHOD:
+            if (memberNode->data.classMethod.name != ZR_NULL && memberNode->data.classMethod.name->name != ZR_NULL) {
+                nameText = ZrCore_String_GetNativeString(memberNode->data.classMethod.name->name);
+            }
+            break;
+        case ZR_AST_STRUCT_METHOD:
+            if (memberNode->data.structMethod.name != ZR_NULL && memberNode->data.structMethod.name->name != ZR_NULL) {
+                nameText = ZrCore_String_GetNativeString(memberNode->data.structMethod.name->name);
+            }
+            break;
+        case ZR_AST_CLASS_PROPERTY:
+            if (memberNode->data.classProperty.modifier != ZR_NULL) {
+                if (memberNode->data.classProperty.modifier->type == ZR_AST_PROPERTY_GET &&
+                    memberNode->data.classProperty.modifier->data.propertyGet.name != ZR_NULL &&
+                    memberNode->data.classProperty.modifier->data.propertyGet.name->name != ZR_NULL) {
+                    nameText = ZrCore_String_GetNativeString(
+                            memberNode->data.classProperty.modifier->data.propertyGet.name->name);
+                } else if (memberNode->data.classProperty.modifier->type == ZR_AST_PROPERTY_SET &&
+                           memberNode->data.classProperty.modifier->data.propertySet.name != ZR_NULL &&
+                           memberNode->data.classProperty.modifier->data.propertySet.name->name != ZR_NULL) {
+                    nameText = ZrCore_String_GetNativeString(
+                            memberNode->data.classProperty.modifier->data.propertySet.name->name);
+                }
+            }
+            break;
+        default:
+            break;
+    }
+
+    if (nameText == ZR_NULL && memberInfo->name != ZR_NULL) {
+        nameText = ZrCore_String_GetNativeString(memberInfo->name);
+    }
+
+    *outNameText = nameText;
+    return nameText != ZR_NULL && nameText[0] != '\0';
+}
+
+static const TZrChar *ct_expected_member_decorator_target_name(SZrAstNode *memberNode) {
+    if (memberNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (memberNode->type) {
+        case ZR_AST_CLASS_FIELD:
+        case ZR_AST_STRUCT_FIELD:
+            return "Field";
+        case ZR_AST_CLASS_METHOD:
+        case ZR_AST_STRUCT_METHOD:
+            return "Method";
+        case ZR_AST_CLASS_PROPERTY:
+            return "Property";
+        default:
+            return ZR_NULL;
+    }
+}
+
+static const TZrChar *ct_member_snapshot_kind_name(SZrAstNode *memberNode) {
+    const TZrChar *targetName = ct_expected_member_decorator_target_name(memberNode);
+
+    if (targetName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (strcmp(targetName, "Field") == 0) {
+        return "field";
+    }
+    if (strcmp(targetName, "Method") == 0) {
+        return "method";
+    }
+    if (strcmp(targetName, "Property") == 0) {
+        return "property";
+    }
+    return ZR_NULL;
+}
+
+static TZrBool ct_build_member_decorator_snapshot(SZrCompilerState *cs,
+                                                  SZrAstNode *memberNode,
+                                                  const SZrTypeMemberInfo *memberInfo,
+                                                  SZrTypeValue *result) {
+    SZrObject *snapshotObject;
+    SZrObject *metadataObject;
+    SZrObject *decoratorsArray;
+    const TZrChar *kindName;
+    const TZrChar *memberNameText;
+    const TZrChar *moduleNameText;
+    const TZrChar *typeNameText;
+    TZrChar qualifiedName[ZR_PARSER_TEXT_BUFFER_LENGTH];
+    SZrTypeValue parameterCountValue;
+
+    if (cs == ZR_NULL || memberNode == ZR_NULL || memberInfo == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    kindName = ct_member_snapshot_kind_name(memberNode);
+    if (kindName == ZR_NULL || !ct_member_logical_name_text(memberNode, memberInfo, &memberNameText)) {
+        return ZR_FALSE;
+    }
+
+    snapshotObject = ct_new_object(cs->state);
+    metadataObject = ct_new_object(cs->state);
+    decoratorsArray = ct_new_array(cs->state);
+    if (snapshotObject == ZR_NULL || metadataObject == ZR_NULL || decoratorsArray == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    moduleNameText = ct_module_name_text(cs);
+    typeNameText = cs->currentTypeName != ZR_NULL ? ZrCore_String_GetNativeString(cs->currentTypeName) : ZR_NULL;
+    if (moduleNameText != ZR_NULL && moduleNameText[0] != '\0' &&
+        typeNameText != ZR_NULL && typeNameText[0] != '\0') {
+        snprintf(qualifiedName,
+                 sizeof(qualifiedName),
+                 "%s.%s.%s",
+                 moduleNameText,
+                 typeNameText,
+                 memberNameText);
+    } else if (typeNameText != ZR_NULL && typeNameText[0] != '\0') {
+        snprintf(qualifiedName, sizeof(qualifiedName), "%s.%s", typeNameText, memberNameText);
+    } else {
+        snprintf(qualifiedName, sizeof(qualifiedName), "%s", memberNameText);
+    }
+
+    ZrCore_Value_InitAsInt(cs->state, &parameterCountValue, memberInfo->parameterCount);
+    if (!ct_set_object_field_string(cs->state, snapshotObject, "kind", kindName) ||
+        !ct_set_object_field_string(cs->state, snapshotObject, "name", memberNameText) ||
+        !ct_set_object_field_string(cs->state, snapshotObject, "qualifiedName", qualifiedName) ||
+        !ct_set_object_field_object(cs->state, snapshotObject, "metadata", metadataObject, ZR_VALUE_TYPE_OBJECT) ||
+        !ct_set_object_field_object(cs->state, snapshotObject, "decorators", decoratorsArray, ZR_VALUE_TYPE_ARRAY) ||
+        !ct_set_object_field_bool(cs->state, snapshotObject, "mutable", ZR_FALSE) ||
+        !ct_set_object_field_string(cs->state, snapshotObject, "phase", "compileTime") ||
+        !ct_set_object_field_bool(cs->state, snapshotObject, "isStatic", memberInfo->isStatic) ||
+        !ct_set_object_field_bool(cs->state, snapshotObject, "isConst", memberInfo->isConst) ||
+        !ct_set_object_field_value(cs->state, snapshotObject, "parameterCount", &parameterCountValue)) {
+        return ZR_FALSE;
+    }
+
+    if (memberInfo->fieldTypeName != ZR_NULL &&
+        !ct_set_object_field_string(cs->state,
+                                    snapshotObject,
+                                    "typeName",
+                                    ZrCore_String_GetNativeString(memberInfo->fieldTypeName))) {
+        return ZR_FALSE;
+    }
+
+    if (memberInfo->returnTypeName != ZR_NULL &&
+        !ct_set_object_field_string(cs->state,
+                                    snapshotObject,
+                                    "returnTypeName",
+                                    ZrCore_String_GetNativeString(memberInfo->returnTypeName))) {
+        return ZR_FALSE;
+    } else if ((strcmp(kindName, "method") == 0 || strcmp(kindName, "property") == 0) &&
+               !ct_set_object_field_string(cs->state, snapshotObject, "returnTypeName", "void")) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(snapshotObject));
+    result->type = ZR_VALUE_TYPE_OBJECT;
+    return ZR_TRUE;
+}
+
 static TZrBool ct_build_metadata_patch_from_snapshot(SZrCompilerState *cs,
                                                      const SZrTypeValue *targetSnapshot,
                                                      SZrTypeValue *patchResult) {
@@ -895,6 +1108,95 @@ static TZrBool ct_apply_function_decorator_patch(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static TZrBool ct_apply_member_decorator_patch(SZrCompilerState *cs,
+                                               SZrTypeMemberInfo *memberInfo,
+                                               SZrString *decoratorName,
+                                               const SZrTypeValue *patchValue,
+                                               SZrFileRange location) {
+    SZrObject *patchObject;
+    const SZrTypeValue *metadataValue = ZR_NULL;
+    SZrTypeDecoratorInfo decoratorInfo;
+
+    if (cs == ZR_NULL || memberInfo == ZR_NULL || decoratorName == ZR_NULL || patchValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (patchValue->type != ZR_VALUE_TYPE_OBJECT || patchValue->value.object == ZR_NULL) {
+        ZrParser_CompileTime_Error(cs,
+                                   ZR_COMPILE_TIME_ERROR_ERROR,
+                                   "Compile-time decorator must return an object patch",
+                                   location);
+        return ZR_FALSE;
+    }
+
+    patchObject = ZR_CAST_OBJECT(cs->state, patchValue->value.object);
+    if (patchObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (patchObject->nodeMap.isValid && patchObject->nodeMap.buckets != ZR_NULL) {
+        for (TZrSize bucketIndex = 0; bucketIndex < patchObject->nodeMap.capacity; bucketIndex++) {
+            SZrHashKeyValuePair *pair = patchObject->nodeMap.buckets[bucketIndex];
+            while (pair != ZR_NULL) {
+                if (pair->key.type != ZR_VALUE_TYPE_STRING ||
+                    pair->key.value.object == ZR_NULL ||
+                    !ct_string_equals(ZR_CAST_STRING(cs->state, pair->key.value.object), "metadata")) {
+                    ZrParser_CompileTime_Error(cs,
+                                               ZR_COMPILE_TIME_ERROR_ERROR,
+                                               "Compile-time decorator patch currently only supports the 'metadata' field",
+                                               location);
+                    return ZR_FALSE;
+                }
+                pair = pair->next;
+            }
+        }
+    }
+
+    {
+        SZrTypeValue metadataKey;
+        if (ct_make_string_value(cs->state, "metadata", &metadataKey)) {
+            metadataValue = ZrCore_Object_GetValue(cs->state, patchObject, &metadataKey);
+        }
+    }
+
+    if (metadataValue != ZR_NULL && metadataValue->type != ZR_VALUE_TYPE_NULL) {
+        if (metadataValue->type != ZR_VALUE_TYPE_OBJECT || metadataValue->value.object == ZR_NULL) {
+            ZrParser_CompileTime_Error(cs,
+                                       ZR_COMPILE_TIME_ERROR_ERROR,
+                                       "Compile-time decorator patch metadata must be an object",
+                                       location);
+            return ZR_FALSE;
+        }
+
+        if (!ZrParser_Compiler_ValidateRuntimeProjectionValue(cs, metadataValue, location)) {
+            return ZR_FALSE;
+        }
+
+        if (!memberInfo->hasDecoratorMetadata ||
+            memberInfo->decoratorMetadataValue.type != ZR_VALUE_TYPE_OBJECT ||
+            memberInfo->decoratorMetadataValue.value.object == ZR_NULL) {
+            memberInfo->decoratorMetadataValue = *metadataValue;
+            memberInfo->hasDecoratorMetadata = ZR_TRUE;
+        } else if (!ct_merge_object_fields(cs->state,
+                                           ZR_CAST_OBJECT(cs->state, memberInfo->decoratorMetadataValue.value.object),
+                                           ZR_CAST_OBJECT(cs->state, metadataValue->value.object))) {
+            return ZR_FALSE;
+        }
+    }
+
+    if (!memberInfo->decorators.isValid || memberInfo->decorators.head == ZR_NULL ||
+        memberInfo->decorators.capacity == 0 || memberInfo->decorators.elementSize == 0) {
+        ZrCore_Array_Init(cs->state,
+                          &memberInfo->decorators,
+                          sizeof(SZrTypeDecoratorInfo),
+                          ZR_PARSER_INITIAL_CAPACITY_TINY);
+    }
+
+    decoratorInfo.name = decoratorName;
+    ZrCore_Array_Push(cs->state, &memberInfo->decorators, &decoratorInfo);
+    return ZR_TRUE;
+}
+
 static TZrBool ct_execute_compile_time_decorator_class(SZrCompilerState *cs,
                                                        SZrCompileTimeDecoratorClass *decoratorClass,
                                                        SZrFunctionCall *constructorCall,
@@ -976,9 +1278,81 @@ static TZrBool ct_execute_compile_time_decorator_function(SZrCompilerState *cs,
     TZrBool success = ZR_FALSE;
     TZrBool didReturn = ZR_FALSE;
     TZrSize expectedArgumentCount = 0;
+    SZrTypeValue callableValue;
+    SZrTypeValue *argValues = ZR_NULL;
 
-    if (cs == ZR_NULL || decoratorFunction == ZR_NULL || targetSnapshot == ZR_NULL || patchResult == ZR_NULL ||
-        decoratorFunction->declaration == ZR_NULL ||
+    if (cs == ZR_NULL || decoratorFunction == ZR_NULL || targetSnapshot == ZR_NULL || patchResult == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (decoratorFunction->isRuntimeProjection) {
+        ZR_UNUSED_PARAMETER(expectedTargetName);
+
+        if (decoratorFunction->paramNames.length == 0) {
+            ZrParser_CompileTime_Error(cs,
+                                       ZR_COMPILE_TIME_ERROR_ERROR,
+                                       "Compile-time decorator function must declare a target parameter",
+                                       location);
+            return ZR_FALSE;
+        }
+
+        expectedArgumentCount = decoratorFunction->paramNames.length > 0 ? decoratorFunction->paramNames.length - 1 : 0;
+        if (constructorCall != ZR_NULL && constructorCall->args != ZR_NULL &&
+            constructorCall->args->count > expectedArgumentCount) {
+            ZrParser_CompileTime_Error(cs,
+                                       ZR_COMPILE_TIME_ERROR_ERROR,
+                                       "Too many arguments for compile-time decorator function",
+                                       location);
+            return ZR_FALSE;
+        }
+
+        if (!ct_value_from_compile_time_function(cs, decoratorFunction, &callableValue)) {
+            ZrParser_CompileTime_Error(cs,
+                                       ZR_COMPILE_TIME_ERROR_ERROR,
+                                       "Failed to resolve runtime projection for compile-time decorator function",
+                                       location);
+            return ZR_FALSE;
+        }
+
+        argValues = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                    sizeof(SZrTypeValue) * decoratorFunction->paramNames.length,
+                                                                    ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        if (argValues == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        argValues[0] = *targetSnapshot;
+        for (TZrSize paramIndex = 1; paramIndex < decoratorFunction->paramNames.length; paramIndex++) {
+            SZrString **paramNamePtr =
+                    (SZrString **)ZrCore_Array_Get(&decoratorFunction->paramNames, paramIndex);
+            if (!ct_eval_runtime_projected_call_arg(cs,
+                                                    constructorCall,
+                                                    paramNamePtr != ZR_NULL ? *paramNamePtr : ZR_NULL,
+                                                    paramIndex - 1,
+                                                    ZR_NULL,
+                                                    &argValues[paramIndex])) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                              argValues,
+                                              sizeof(SZrTypeValue) * decoratorFunction->paramNames.length,
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                return ZR_FALSE;
+            }
+        }
+
+        success = ct_invoke_runtime_callable_with_values(cs,
+                                                         ZR_NULL,
+                                                         &callableValue,
+                                                         decoratorFunction->paramNames.length,
+                                                         argValues,
+                                                         patchResult);
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      argValues,
+                                      sizeof(SZrTypeValue) * decoratorFunction->paramNames.length,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        return success;
+    }
+
+    if (decoratorFunction->declaration == ZR_NULL ||
         decoratorFunction->declaration->type != ZR_AST_FUNCTION_DECLARATION) {
         return ZR_FALSE;
     }
@@ -996,7 +1370,7 @@ static TZrBool ct_execute_compile_time_decorator_function(SZrCompilerState *cs,
     if (!ct_validate_named_decorator_target_param(cs,
                                                   &decl->params->nodes[0]->data.parameter,
                                                   expectedTargetName,
-                                                  "Compile-time decorator function target must use %type Class, %type Struct, %type Function, or %type Object",
+                                                  "Compile-time decorator function target must use %type Class, %type Struct, %type Function, %type Field, %type Method, %type Property, or %type Object",
                                                   location)) {
         return ZR_FALSE;
     }
@@ -1269,6 +1643,9 @@ TZrBool ZrParser_CompileTime_RegisterDecoratorFunctionIfAvailable(SZrCompilerSta
         (!ct_string_equals(targetTypeName, "Class") &&
          !ct_string_equals(targetTypeName, "Struct") &&
          !ct_string_equals(targetTypeName, "Function") &&
+         !ct_string_equals(targetTypeName, "Field") &&
+         !ct_string_equals(targetTypeName, "Method") &&
+         !ct_string_equals(targetTypeName, "Property") &&
          !ct_string_equals(targetTypeName, "Object"))) {
         return ZR_TRUE;
     }
@@ -1430,6 +1807,164 @@ cleanup:
         function->decoratorNames = ZR_NULL;
         function->decoratorCount = 0;
     }
+    if (patchValues != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      patchValues,
+                                      sizeof(SZrTypeValue) * compileTimeDecoratorCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    if (decoratorNames != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      decoratorNames,
+                                      sizeof(SZrString *) * compileTimeDecoratorCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    if (compileTimeDecoratorNodes != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      compileTimeDecoratorNodes,
+                                      sizeof(SZrAstNode *) * compileTimeDecoratorCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    return success;
+}
+
+TZrBool ZrParser_CompileTime_ApplyMemberDecorators(SZrCompilerState *cs,
+                                                   SZrAstNode *memberNode,
+                                                   SZrAstNodeArray *decorators,
+                                                   SZrTypeMemberInfo *memberInfo) {
+    SZrTypeValue targetSnapshot;
+    const TZrChar *expectedTargetName;
+    TZrSize compileTimeDecoratorCount = 0;
+    SZrTypeValue *patchValues = ZR_NULL;
+    SZrString **decoratorNames = ZR_NULL;
+    SZrAstNode **compileTimeDecoratorNodes = ZR_NULL;
+    TZrBool success = ZR_FALSE;
+
+    if (cs == ZR_NULL || memberNode == ZR_NULL || memberInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (decorators == ZR_NULL || decorators->count == 0) {
+        return ZR_TRUE;
+    }
+
+    expectedTargetName = ct_expected_member_decorator_target_name(memberNode);
+    if (expectedTargetName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < decorators->count; index++) {
+        SZrAstNode *decoratorNode = decorators->nodes[index];
+
+        if (decoratorNode == ZR_NULL) {
+            continue;
+        }
+
+        if (ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
+            compileTimeDecoratorCount++;
+        }
+        if (cs->hasError) {
+            goto cleanup;
+        }
+    }
+
+    if (compileTimeDecoratorCount == 0) {
+        return ZR_TRUE;
+    }
+
+    patchValues = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                  sizeof(SZrTypeValue) * compileTimeDecoratorCount,
+                                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    decoratorNames = (SZrString **)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                   sizeof(SZrString *) * compileTimeDecoratorCount,
+                                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    compileTimeDecoratorNodes = (SZrAstNode **)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                                sizeof(SZrAstNode *) * compileTimeDecoratorCount,
+                                                                                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (patchValues == ZR_NULL || decoratorNames == ZR_NULL || compileTimeDecoratorNodes == ZR_NULL) {
+        goto cleanup;
+    }
+
+    ZrCore_Memory_RawSet(patchValues, 0, sizeof(SZrTypeValue) * compileTimeDecoratorCount);
+    ZrCore_Memory_RawSet(decoratorNames, 0, sizeof(SZrString *) * compileTimeDecoratorCount);
+    ZrCore_Memory_RawSet(compileTimeDecoratorNodes, 0, sizeof(SZrAstNode *) * compileTimeDecoratorCount);
+
+    if (!ct_build_member_decorator_snapshot(cs, memberNode, memberInfo, &targetSnapshot)) {
+        goto cleanup;
+    }
+
+    for (TZrSize index = 0, compileIndex = 0; index < decorators->count; index++) {
+        SZrAstNode *decoratorNode = decorators->nodes[index];
+        SZrString *decoratorName = ZR_NULL;
+        SZrFunctionCall *constructorCall = ZR_NULL;
+        SZrCompileTimeDecoratorClass *decoratorClass;
+        SZrCompileTimeFunction *decoratorFunction;
+
+        if (decoratorNode == ZR_NULL) {
+            continue;
+        }
+
+        if (!ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
+            if (cs->hasError) {
+                goto cleanup;
+            }
+            continue;
+        }
+
+        if (!ct_extract_decorator_invocation(cs, decoratorNode, &decoratorName, &constructorCall)) {
+            goto cleanup;
+        }
+
+        decoratorClass = ct_find_compile_time_decorator_class(cs, decoratorName);
+        decoratorFunction = find_compile_time_function(cs, decoratorName);
+        if (decoratorClass != ZR_NULL && decoratorFunction != ZR_NULL) {
+            ct_error_name(cs, decoratorName, "Ambiguous compile-time decorator name: ", decoratorNode->location);
+            goto cleanup;
+        }
+        if (decoratorClass == ZR_NULL && decoratorFunction == ZR_NULL) {
+            continue;
+        }
+
+        decoratorNames[compileIndex] = decoratorName;
+        compileTimeDecoratorNodes[compileIndex] = decoratorNode;
+        if (decoratorClass != ZR_NULL &&
+            !ct_execute_compile_time_decorator_class(cs,
+                                                     decoratorClass,
+                                                     constructorCall,
+                                                     &targetSnapshot,
+                                                     expectedTargetName,
+                                                     &patchValues[compileIndex],
+                                                     decoratorNode->location)) {
+            goto cleanup;
+        }
+        if (decoratorFunction != ZR_NULL &&
+            !ct_execute_compile_time_decorator_function(cs,
+                                                        decoratorFunction,
+                                                        constructorCall,
+                                                        &targetSnapshot,
+                                                        expectedTargetName,
+                                                        &patchValues[compileIndex],
+                                                        decoratorNode->location)) {
+            goto cleanup;
+        }
+        compileIndex++;
+    }
+
+    for (TZrSize index = compileTimeDecoratorCount; index > 0; index--) {
+        if (!ct_apply_member_decorator_patch(cs,
+                                             memberInfo,
+                                             decoratorNames[index - 1],
+                                             &patchValues[index - 1],
+                                             compileTimeDecoratorNodes[index - 1] != ZR_NULL
+                                                     ? compileTimeDecoratorNodes[index - 1]->location
+                                                     : memberNode->location)) {
+            goto cleanup;
+        }
+    }
+
+    success = ZR_TRUE;
+
+cleanup:
     if (patchValues != ZR_NULL) {
         ZrCore_Memory_RawFreeWithType(cs->state->global,
                                       patchValues,
@@ -1731,6 +2266,158 @@ static TZrBool ct_eval_call_arg(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
+static TZrBool ct_eval_runtime_projected_call_arg(SZrCompilerState *cs,
+                                                  SZrFunctionCall *call,
+                                                  SZrString *paramName,
+                                                  TZrSize paramIndex,
+                                                  SZrCompileTimeFrame *frame,
+                                                  SZrTypeValue *result) {
+    TZrSize positionalCount = 0;
+
+    if (cs == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (call != ZR_NULL && call->hasNamedArgs && call->argNames != ZR_NULL) {
+        for (TZrSize i = 0; i < call->argNames->length && call->args != ZR_NULL && i < call->args->count; i++) {
+            SZrString **argNamePtr = (SZrString **)ZrCore_Array_Get(call->argNames, i);
+            if (argNamePtr != ZR_NULL && *argNamePtr == ZR_NULL) {
+                positionalCount++;
+                continue;
+            }
+            break;
+        }
+
+        if (paramName != ZR_NULL) {
+            for (TZrSize i = 0; i < call->argNames->length && call->args != ZR_NULL && i < call->args->count; i++) {
+                SZrString **argNamePtr = (SZrString **)ZrCore_Array_Get(call->argNames, i);
+                if (argNamePtr != ZR_NULL && *argNamePtr != ZR_NULL &&
+                    ZrCore_String_Equal(*argNamePtr, paramName)) {
+                    return evaluate_compile_time_expression_internal(cs, call->args->nodes[i], frame, result);
+                }
+            }
+        }
+
+        if (call->args != ZR_NULL && paramIndex < positionalCount) {
+            return evaluate_compile_time_expression_internal(cs, call->args->nodes[paramIndex], frame, result);
+        }
+    } else if (call != ZR_NULL && call->args != ZR_NULL && paramIndex < call->args->count) {
+        return evaluate_compile_time_expression_internal(cs, call->args->nodes[paramIndex], frame, result);
+    }
+
+    ct_error_name(cs, paramName, "Missing compile-time argument for parameter: ", (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL});
+    return ZR_FALSE;
+}
+
+static TZrBool ct_invoke_runtime_callable_with_values(SZrCompilerState *cs,
+                                                      SZrAstNode *callSite,
+                                                      const SZrTypeValue *callableValue,
+                                                      TZrSize argCount,
+                                                      const SZrTypeValue *argValues,
+                                                      SZrTypeValue *result) {
+    SZrState *state;
+    TZrStackValuePointer base;
+    SZrFunctionStackAnchor baseAnchor;
+
+    if (cs == ZR_NULL || callableValue == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    state = cs->state;
+    base = state->stackTop.valuePointer;
+    base = ZrCore_Function_CheckStackAndAnchor(state, argCount + 1, base, base, &baseAnchor);
+    state->stackTop.valuePointer = base;
+    ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), callableValue);
+    state->stackTop.valuePointer = base + 1;
+
+    for (TZrSize i = 0; i < argCount; i++) {
+        ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base + 1 + i), &argValues[i]);
+        state->stackTop.valuePointer = base + 2 + i;
+    }
+
+    base = ZrCore_Function_CallAndRestoreAnchor(state, &baseAnchor, 1);
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        ZrParser_CompileTime_Error(cs,
+                                   ZR_COMPILE_TIME_ERROR_ERROR,
+                                   "Runtime callable failed during compile-time evaluation",
+                                   callSite != ZR_NULL ? callSite->location : (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL});
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(base));
+    return ZR_TRUE;
+}
+
+static TZrBool ct_call_runtime_projected_compile_time_function(SZrCompilerState *cs,
+                                                               SZrAstNode *callSite,
+                                                               SZrCompileTimeFunction *func,
+                                                               SZrFunctionCall *call,
+                                                               SZrCompileTimeFrame *frame,
+                                                               SZrTypeValue *result) {
+    SZrTypeValue callableValue;
+    SZrTypeValue *argValues = ZR_NULL;
+    TZrSize parameterCount;
+    TZrBool success = ZR_FALSE;
+
+    if (cs == ZR_NULL || func == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    parameterCount = func->paramNames.length;
+    if (!ct_value_from_compile_time_function(cs, func, &callableValue)) {
+        ZrParser_CompileTime_Error(cs,
+                                   ZR_COMPILE_TIME_ERROR_ERROR,
+                                   "Failed to resolve runtime projection for compile-time function",
+                                   callSite != ZR_NULL ? callSite->location : (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL});
+        return ZR_FALSE;
+    }
+
+    if (call != ZR_NULL && call->args != ZR_NULL && call->args->count > parameterCount) {
+        ZrParser_CompileTime_Error(cs,
+                                   ZR_COMPILE_TIME_ERROR_ERROR,
+                                   "Too many arguments for compile-time function call",
+                                   callSite != ZR_NULL ? callSite->location : (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL});
+        return ZR_FALSE;
+    }
+
+    if (parameterCount > 0) {
+        argValues = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                    sizeof(SZrTypeValue) * parameterCount,
+                                                                    ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        if (argValues == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        for (TZrSize index = 0; index < parameterCount; index++) {
+            SZrString **paramNamePtr = (SZrString **)ZrCore_Array_Get(&func->paramNames, index);
+            if (!ct_eval_runtime_projected_call_arg(cs,
+                                                    call,
+                                                    paramNamePtr != ZR_NULL ? *paramNamePtr : ZR_NULL,
+                                                    index,
+                                                    frame,
+                                                    &argValues[index])) {
+                goto cleanup;
+            }
+        }
+    }
+
+    success = ct_invoke_runtime_callable_with_values(cs,
+                                                     callSite,
+                                                     &callableValue,
+                                                     parameterCount,
+                                                     argValues,
+                                                     result);
+
+cleanup:
+    if (argValues != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      argValues,
+                                      sizeof(SZrTypeValue) * parameterCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    return success;
+}
+
 static TZrBool ct_call_function(SZrCompilerState *cs,
                               SZrAstNode *callSite,
                               SZrCompileTimeFunction *func,
@@ -1742,8 +2429,15 @@ static TZrBool ct_call_function(SZrCompilerState *cs,
     TZrBool success = ZR_FALSE;
     TZrBool didReturn = ZR_FALSE;
 
-    if (cs == ZR_NULL || func == ZR_NULL || func->declaration == ZR_NULL ||
-        func->declaration->type != ZR_AST_FUNCTION_DECLARATION || result == ZR_NULL) {
+    if (cs == ZR_NULL || func == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (func->isRuntimeProjection) {
+        return ct_call_runtime_projected_compile_time_function(cs, callSite, func, call, parentFrame, result);
+    }
+
+    if (func->declaration == ZR_NULL || func->declaration->type != ZR_AST_FUNCTION_DECLARATION) {
         return ZR_FALSE;
     }
 

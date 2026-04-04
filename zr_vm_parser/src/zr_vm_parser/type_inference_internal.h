@@ -107,6 +107,12 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                         TZrSize startIndex,
                                         TZrBool baseIsPrototypeReference,
                                         SZrInferredType *result);
+TZrBool infer_ffi_member_call_type(SZrCompilerState *cs,
+                                   const SZrInferredType *receiverType,
+                                   const SZrTypeMemberInfo *memberInfo,
+                                   SZrFunctionCall *call,
+                                   SZrInferredType *result,
+                                   TZrBool *outHandled);
 TZrBool resolve_compile_time_array_size(SZrCompilerState *cs,
                                         const SZrType *astType,
                                         TZrSize *resolvedSize);

@@ -73,6 +73,8 @@ static TZrBool import_target_normalize_module_key(const TZrChar *modulePath,
 
     if (length >= 4 && memcmp(modulePath + length - 4, ".zro", 4) == 0) {
         length -= 4;
+    } else if (length >= 4 && memcmp(modulePath + length - 4, ".zri", 4) == 0) {
+        length -= 4;
     } else if (length >= 3 && memcmp(modulePath + length - 3, ".zr", 3) == 0) {
         length -= 3;
     }
@@ -259,6 +261,7 @@ TZrBool ZrLanguageServer_Lsp_TryGetImportTargetDefinition(SZrState *state,
     SZrLspProjectIndex *projectIndex;
     SZrLspResolvedImportedModule resolved;
     SZrString *binaryUri = ZR_NULL;
+    SZrString *nativeUri = ZR_NULL;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -299,6 +302,14 @@ TZrBool ZrLanguageServer_Lsp_TryGetImportTargetDefinition(SZrState *state,
                                              result,
                                              binaryUri,
                                              import_target_module_entry_range(binaryUri));
+    }
+
+    if (ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(state, projectIndex, moduleName, &nativeUri) &&
+        nativeUri != ZR_NULL) {
+        return import_target_append_location(state,
+                                             result,
+                                             nativeUri,
+                                             import_target_module_entry_range(nativeUri));
     }
 
     return ZR_FALSE;

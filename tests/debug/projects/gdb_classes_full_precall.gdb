@@ -5,7 +5,7 @@ set breakpoint pending on
 handle SIGABRT stop nopass
 
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_cli
-set args ./tests/projects/classes_full/classes_full.zrp
+set args ./tests/fixtures/projects/classes_full/classes_full.zrp
 
 break ZrFunctionPreCall
 commands

@@ -378,7 +378,7 @@ static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *
     if (useClangCl) {
         if (snprintf(command,
                      sizeof(command),
-                     "%s /nologo /LD \"%s\" /link /OUT:\"%s\" /LIBPATH:\"%s\" "
+                     "%s /nologo /LD \"%s\" /link /NOENTRY /OUT:\"%s\" /LIBPATH:\"%s\" "
                      "/EXPORT:ZrVm_GetAotCompiledModule zr_vm_library.lib zr_vm_core.lib",
                      toolCommand,
                      record->aotLlvmIrPath,
@@ -390,7 +390,7 @@ static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *
         if (snprintf(command,
                      sizeof(command),
                      "%s -Wno-override-module -shared \"%s\" -L\"%s\" -lzr_vm_library -lzr_vm_core "
-                     "-Wl,/EXPORT:ZrVm_GetAotCompiledModule -o \"%s\"",
+                     "-Wl,/NOENTRY -Wl,/EXPORT:ZrVm_GetAotCompiledModule -o \"%s\"",
                      toolCommand,
                      record->aotLlvmIrPath,
                      ZR_VM_HOST_LIB_DIR,
@@ -821,6 +821,8 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
     memset(&aotOptions, 0, sizeof(aotOptions));
 
     if (record->hasSourceInput) {
+        TZrBool oldEmitCompileTimeRuntimeSupport = ZR_FALSE;
+
         if (!ZrCli_Project_ReadTextFile(record->sourcePath, &source, &sourceLength)) {
             fprintf(stderr, "failed to read source: %s\n", record->sourcePath);
             ZrLibrary_CommonState_CommonGlobalState_Free(global);
@@ -828,7 +830,10 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
         }
 
         sourceName = ZrCore_String_CreateFromNative(state, (TZrNativeString)record->sourcePath);
+        oldEmitCompileTimeRuntimeSupport = global->emitCompileTimeRuntimeSupport;
+        global->emitCompileTimeRuntimeSupport = ZR_TRUE;
         function = ZrParser_Source_Compile(state, source, sourceLength, sourceName);
+        global->emitCompileTimeRuntimeSupport = oldEmitCompileTimeRuntimeSupport;
         free(source);
         source = ZR_NULL;
 

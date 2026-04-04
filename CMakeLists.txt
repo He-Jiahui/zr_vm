@@ -91,6 +91,8 @@ add_subdirectory("zr_vm_lib_container")
 
 add_subdirectory("zr_vm_lib_ffi")
 
+add_subdirectory("zr_vm_task")
+
 add_subdirectory("zr_vm_language_server")
 
 add_subdirectory("zr_vm_cli")

@@ -83,6 +83,8 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
         SZrAstNode *node = ZR_NULL;
         if (current_percent_directive_equals(ps, "import")) {
             node = parse_reserved_import_expression(ps);
+        } else if (current_percent_directive_equals(ps, "await")) {
+            node = parse_reserved_await_expression(ps);
         } else if (current_percent_directive_equals(ps, "type")) {
             node = parse_reserved_type_expression(ps);
         } else {

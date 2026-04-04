@@ -8,6 +8,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/module.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/runtime_decorator.h"
@@ -307,53 +308,142 @@ static void write_function_exception_metadata(SZrState *state, FILE *file, SZrFu
     }
 }
 
-static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *constant) {
-    TZrUInt32 type = (TZrUInt32) constant->type;
-    TZrUInt64 startLineConst = 0;
-    TZrUInt64 endLineConst = 0;
-    fwrite(&type, sizeof(TZrUInt32), 1, file);
+static TZrBool write_embedded_value(FILE *file, SZrState *state, const SZrTypeValue *value);
 
-    switch (constant->type) {
+static TZrBool write_object_constant_payload(FILE *file, SZrState *state, const SZrTypeValue *value) {
+    SZrObject *object;
+    TZrUInt64 entryCount = 0;
+
+    if (file == ZR_NULL || state == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object = value->value.object != ZR_NULL ? ZR_CAST_OBJECT(state, value->value.object) : ZR_NULL;
+    if (object != ZR_NULL && object->nodeMap.isValid && object->nodeMap.buckets != ZR_NULL) {
+        entryCount = (TZrUInt64)object->nodeMap.elementCount;
+    }
+
+    fwrite(&entryCount, sizeof(TZrUInt64), 1, file);
+    if (object == ZR_NULL || entryCount == 0) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize bucketIndex = 0; bucketIndex < object->nodeMap.capacity; bucketIndex++) {
+        SZrHashKeyValuePair *pair = object->nodeMap.buckets[bucketIndex];
+        while (pair != ZR_NULL) {
+            if (!write_embedded_value(file, state, &pair->key) ||
+                !write_embedded_value(file, state, &pair->value)) {
+                return ZR_FALSE;
+            }
+            pair = pair->next;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool write_array_constant_payload(FILE *file, SZrState *state, const SZrTypeValue *value) {
+    SZrObject *arrayObject;
+    TZrUInt64 elementCount = 0;
+
+    if (file == ZR_NULL || state == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    arrayObject = value->value.object != ZR_NULL ? ZR_CAST_OBJECT(state, value->value.object) : ZR_NULL;
+    if (arrayObject != ZR_NULL && arrayObject->nodeMap.isValid && arrayObject->nodeMap.buckets != ZR_NULL) {
+        elementCount = (TZrUInt64)arrayObject->nodeMap.elementCount;
+    }
+
+    fwrite(&elementCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < elementCount; index++) {
+        SZrTypeValue indexValue;
+        const SZrTypeValue *elementValue;
+        SZrTypeValue nullValue;
+
+        ZrCore_Value_InitAsInt(state, &indexValue, (TZrInt64)index);
+        elementValue = arrayObject != ZR_NULL ? ZrCore_Object_GetValue(state, arrayObject, &indexValue) : ZR_NULL;
+        if (elementValue == ZR_NULL) {
+            ZrCore_Value_ResetAsNull(&nullValue);
+            elementValue = &nullValue;
+        }
+
+        if (!write_embedded_value(file, state, elementValue)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool write_value_payload(FILE *file,
+                                   SZrState *state,
+                                   const SZrTypeValue *value,
+                                   TZrBool allowCallablePayload,
+                                   TZrUInt64 *outHelperId) {
+    if (file == ZR_NULL || state == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (outHelperId != ZR_NULL) {
+        *outHelperId = 0;
+    }
+
+    switch (value->type) {
         case ZR_VALUE_TYPE_NULL:
-            break;
+            return ZR_TRUE;
         case ZR_VALUE_TYPE_BOOL: {
-            TZrUInt8 boolValue = constant->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
+            TZrUInt8 boolValue = value->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
             fwrite(&boolValue, sizeof(TZrUInt8), 1, file);
-            break;
+            return ZR_TRUE;
         }
         case ZR_VALUE_TYPE_INT8:
         case ZR_VALUE_TYPE_INT16:
         case ZR_VALUE_TYPE_INT32:
         case ZR_VALUE_TYPE_INT64:
-            fwrite(&constant->value, sizeof(TZrInt64), 1, file);
-            break;
+            fwrite(&value->value.nativeObject.nativeInt64, sizeof(TZrInt64), 1, file);
+            return ZR_TRUE;
+        case ZR_VALUE_TYPE_UINT8:
+        case ZR_VALUE_TYPE_UINT16:
+        case ZR_VALUE_TYPE_UINT32:
+        case ZR_VALUE_TYPE_UINT64:
+            fwrite(&value->value.nativeObject.nativeUInt64, sizeof(TZrUInt64), 1, file);
+            return ZR_TRUE;
         case ZR_VALUE_TYPE_FLOAT:
         case ZR_VALUE_TYPE_DOUBLE:
-            fwrite(&constant->value, sizeof(TZrDouble), 1, file);
-            break;
+            fwrite(&value->value.nativeObject.nativeDouble, sizeof(TZrDouble), 1, file);
+            return ZR_TRUE;
         case ZR_VALUE_TYPE_STRING: {
             SZrString *str = ZR_NULL;
-            if (constant->value.object != ZR_NULL) {
-                SZrRawObject *rawObj = constant->value.object;
+            if (value->value.object != ZR_NULL) {
+                SZrRawObject *rawObj = value->value.object;
                 if (rawObj->type == ZR_RAW_OBJECT_TYPE_STRING) {
                     str = ZR_CAST_STRING(state, rawObj);
                 }
             }
             write_string_with_length(state, file, str);
-            break;
+            return ZR_TRUE;
         }
+        case ZR_VALUE_TYPE_OBJECT:
+            return write_object_constant_payload(file, state, value);
+        case ZR_VALUE_TYPE_ARRAY:
+            return write_array_constant_payload(file, state, value);
         case ZR_VALUE_TYPE_FUNCTION:
         case ZR_VALUE_TYPE_CLOSURE: {
             TZrBool hasFunctionValue = ZR_FALSE;
             SZrFunction *functionValue = ZR_NULL;
             TZrUInt64 helperId = ZR_IO_NATIVE_HELPER_NONE;
-            if (constant->value.object != ZR_NULL) {
-                SZrRawObject *rawObj = constant->value.object;
+            if (!allowCallablePayload) {
+                return ZR_FALSE;
+            }
+
+            if (value->value.object != ZR_NULL) {
+                SZrRawObject *rawObj = value->value.object;
                 if (rawObj->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
                     functionValue = ZR_CAST(SZrFunction *, rawObj);
                     hasFunctionValue = ZR_TRUE;
                 } else if (rawObj->type == ZR_RAW_OBJECT_TYPE_CLOSURE) {
-                    if (constant->isNative) {
+                    if (value->isNative) {
                         SZrClosureNative *nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, rawObj);
                         if (nativeClosure != ZR_NULL) {
                             helperId = ZrParser_Writer_GetSerializableNativeHelperId(nativeClosure->nativeFunction);
@@ -369,22 +459,63 @@ static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *c
             }
             fwrite(&hasFunctionValue, sizeof(TZrBool), 1, file);
             if (hasFunctionValue) {
-                write_io_function(state, file, functionValue, ZR_NULL);
+                if (!write_io_function(state, file, functionValue, ZR_NULL)) {
+                    return ZR_FALSE;
+                }
             }
-            startLineConst = helperId;
-            break;
+            if (outHelperId != ZR_NULL) {
+                *outHelperId = helperId;
+            }
+            return ZR_TRUE;
         }
         case ZR_VALUE_TYPE_NATIVE_POINTER: {
-            FZrNativeFunction nativeFunction = constant->value.nativeFunction;
-            startLineConst = ZrParser_Writer_GetSerializableNativeHelperId(nativeFunction);
-            break;
+            if (!allowCallablePayload) {
+                return ZR_FALSE;
+            }
+
+            if (outHelperId != ZR_NULL) {
+                FZrNativeFunction nativeFunction = value->value.nativeFunction;
+                *outHelperId = ZrParser_Writer_GetSerializableNativeHelperId(nativeFunction);
+            }
+            return ZR_TRUE;
         }
         default:
-            break;
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool write_embedded_value(FILE *file, SZrState *state, const SZrTypeValue *value) {
+    SZrTypeValue nullValue;
+    TZrUInt32 type;
+
+    if (value == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(&nullValue);
+        value = &nullValue;
     }
 
-    fwrite(&startLineConst, sizeof(TZrUInt64), 1, file);
+    type = (TZrUInt32)value->type;
+    fwrite(&type, sizeof(TZrUInt32), 1, file);
+    return write_value_payload(file, state, value, ZR_FALSE, ZR_NULL);
+}
+
+static TZrBool write_function_constant(FILE *file, SZrState *state, SZrTypeValue *constant) {
+    TZrUInt32 type;
+    TZrUInt64 helperId = 0;
+    TZrUInt64 endLineConst = 0;
+
+    if (file == ZR_NULL || state == ZR_NULL || constant == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    type = (TZrUInt32)constant->type;
+    fwrite(&type, sizeof(TZrUInt32), 1, file);
+    if (!write_value_payload(file, state, constant, ZR_TRUE, &helperId)) {
+        return ZR_FALSE;
+    }
+
+    fwrite(&helperId, sizeof(TZrUInt64), 1, file);
     fwrite(&endLineConst, sizeof(TZrUInt64), 1, file);
+    return ZR_TRUE;
 }
 
 static void write_function_typed_type_ref(FILE *file, SZrState *state, const SZrFunctionTypedTypeRef *typeRef) {
@@ -480,6 +611,25 @@ static void write_function_compile_time_metadata(FILE *file, SZrState *state, SZ
         fwrite(&info->lineInSourceStart, sizeof(TZrUInt32), 1, file);
         fwrite(&info->lineInSourceEnd, sizeof(TZrUInt32), 1, file);
     }
+}
+
+static TZrBool write_function_decorator_metadata(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt8 hasDecoratorMetadata = (function != ZR_NULL && function->hasDecoratorMetadata) ? ZR_TRUE : ZR_FALSE;
+    TZrUInt64 decoratorCount = function != ZR_NULL ? function->decoratorCount : 0;
+
+    fwrite(&hasDecoratorMetadata, sizeof(TZrUInt8), 1, file);
+    if (hasDecoratorMetadata) {
+        if (!write_function_constant(file, state, &function->decoratorMetadataValue)) {
+            return ZR_FALSE;
+        }
+    }
+
+    fwrite(&decoratorCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < decoratorCount; index++) {
+        write_string_with_length(state, file, function->decoratorNames[index]);
+    }
+
+    return ZR_TRUE;
 }
 
 static void write_function_test_metadata(FILE *file, SZrState *state, SZrFunction *function) {
@@ -745,7 +895,9 @@ static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *funct
         TZrUInt64 constantsLength = function->constantValueLength;
         fwrite(&constantsLength, sizeof(TZrUInt64), 1, file);
         for (TZrUInt64 i = 0; i < constantsLength; i++) {
-            write_function_constant(file, state, &function->constantValueList[i]);
+            if (!write_function_constant(file, state, &function->constantValueList[i])) {
+                return ZR_FALSE;
+            }
         }
     }
 
@@ -764,6 +916,9 @@ static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *funct
     write_function_typed_export_symbols(file, state, function);
     write_function_compile_time_metadata(file, state, function);
     write_function_test_metadata(file, state, function);
+    if (!write_function_decorator_metadata(file, state, function)) {
+        return ZR_FALSE;
+    }
     write_function_member_entries(file, state, function);
     write_function_semir_metadata(file, state, function);
     write_function_callsite_cache_metadata(file, function);
@@ -774,7 +929,9 @@ static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *funct
         TZrUInt64 closuresLength = function->childFunctionLength;
         fwrite(&closuresLength, sizeof(TZrUInt64), 1, file);
         for (TZrUInt64 i = 0; i < closuresLength; i++) {
-            write_io_function(state, file, &function->childFunctionList[i], ZR_NULL);
+            if (!write_io_function(state, file, &function->childFunctionList[i], ZR_NULL)) {
+                return ZR_FALSE;
+            }
         }
     }
 
@@ -867,8 +1024,11 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFile(SZrState *state, SZrFuncti
     fwrite(&declaresLength, sizeof(TZrUInt64), 1, file);
     
     // MODULE: ENTRY [.FUNCTION]
-    write_io_function(state, file, function, "__entry");
-    
+    if (!write_io_function(state, file, function, "__entry")) {
+        fclose(file);
+        return ZR_FALSE;
+    }
+
     fclose(file);
     return ZR_TRUE;
 }

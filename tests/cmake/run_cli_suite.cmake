@@ -450,6 +450,60 @@ if (run_compile_aot_c_binary_import)
                         "executed_via=aot_c")
 endif()
 
+cli_case_matches_tier("core;stress" run_compile_aot_c_binary_const_import)
+if (run_compile_aot_c_binary_const_import)
+    message("---- compile_aot_c_binary_const_import")
+    cli_copy_fixture("import_binary_const" binary_const_import_aot_c_dir)
+    file(REMOVE_RECURSE "${binary_const_import_aot_c_dir}/bin")
+    cli_prepare_binary_module("compile_aot_c_binary_const_import"
+                              "${binary_const_import_aot_c_dir}"
+                              "fixtures/greet_binary_source.zr"
+                              "greet")
+    cli_run("compile_aot_c_binary_const_import"
+            compile_aot_c_binary_const_import_output
+            compile_aot_c_binary_const_import_result
+            "${CLI_EXE}"
+            "--compile"
+            "${binary_const_import_aot_c_dir}/import_binary_const.zrp"
+            "--emit-aot-c")
+    cli_assert_success("compile_aot_c_binary_const_import"
+                       compile_aot_c_binary_const_import_result
+                       compile_aot_c_binary_const_import_output)
+    if (NOT EXISTS "${binary_const_import_aot_c_dir}/bin/aot_c/src/main.c")
+        message(FATAL_ERROR "compile_aot_c_binary_const_import did not create main AOT C source")
+    endif()
+    if (NOT EXISTS "${binary_const_import_aot_c_dir}/bin/aot_c/lib/zrvm_aot_main${CLI_SHARED_LIB_SUFFIX}")
+        message(FATAL_ERROR "compile_aot_c_binary_const_import did not create main AOT shared library")
+    endif()
+    if (NOT EXISTS "${binary_const_import_aot_c_dir}/bin/aot_c/src/greet.c")
+        message(FATAL_ERROR "compile_aot_c_binary_const_import did not create binary import AOT C source")
+    endif()
+    if (NOT EXISTS "${binary_const_import_aot_c_dir}/bin/aot_c/lib/zrvm_aot_greet${CLI_SHARED_LIB_SUFFIX}")
+        message(FATAL_ERROR "compile_aot_c_binary_const_import did not create binary import AOT shared library")
+    endif()
+
+    file(REMOVE "${binary_const_import_aot_c_dir}/bin/main.zro")
+    file(REMOVE "${binary_const_import_aot_c_dir}/bin/greet.zro")
+    cli_run("run_aot_c_binary_const_import_without_zro"
+            run_aot_c_binary_const_import_without_zro_output
+            run_aot_c_binary_const_import_without_zro_result
+            "${CLI_EXE}"
+            "--execution-mode"
+            "aot_c"
+            "--require-aot-path"
+            "--emit-executed-via"
+            "${binary_const_import_aot_c_dir}/import_binary_const.zrp")
+    cli_assert_success("run_aot_c_binary_const_import_without_zro"
+                       run_aot_c_binary_const_import_without_zro_result
+                       run_aot_c_binary_const_import_without_zro_output)
+    cli_assert_contains("run_aot_c_binary_const_import_without_zro"
+                        run_aot_c_binary_const_import_without_zro_output
+                        "7")
+    cli_assert_contains("run_aot_c_binary_const_import_without_zro"
+                        run_aot_c_binary_const_import_without_zro_output
+                        "executed_via=aot_c")
+endif()
+
 cli_case_matches_tier("core;stress" run_compile_aot_c_unsupported_lowering)
 if (run_compile_aot_c_unsupported_lowering)
     message("---- compile_aot_c_unsupported_lowering")
@@ -731,6 +785,70 @@ if (run_decorator_import_binary)
             "${decorator_import_binary_dir}/decorator_import_binary.zrp")
     cli_assert_success("decorator_import_binary_run" decorator_import_binary_result decorator_import_binary_output)
     cli_assert_contains("decorator_import_binary_run" decorator_import_binary_output "31")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_decorator_compile_time_deep_import_recursive)
+if (run_decorator_compile_time_deep_import_recursive)
+    message("---- decorator_compile_time_deep_import_compile_recursive_and_run")
+    cli_copy_fixture("decorator_compile_time_deep_import" decorator_compile_time_deep_import_dir)
+    file(REMOVE_RECURSE "${decorator_compile_time_deep_import_dir}/bin")
+    cli_run("decorator_compile_time_deep_import_compile_recursive_and_run"
+            decorator_compile_time_deep_import_output
+            decorator_compile_time_deep_import_result
+            "${CLI_EXE}"
+            "--compile"
+            "${decorator_compile_time_deep_import_dir}/decorator_compile_time_deep_import.zrp"
+            "--intermediate"
+            "--run")
+    cli_assert_success("decorator_compile_time_deep_import_compile_recursive_and_run"
+                       decorator_compile_time_deep_import_result
+                       decorator_compile_time_deep_import_output)
+    if (NOT EXISTS "${decorator_compile_time_deep_import_dir}/bin/main.zro")
+        message(FATAL_ERROR "decorator_compile_time_deep_import_compile_recursive_and_run did not create main.zro")
+    endif()
+    if (NOT EXISTS "${decorator_compile_time_deep_import_dir}/bin/decorated_user.zro")
+        message(FATAL_ERROR "decorator_compile_time_deep_import_compile_recursive_and_run did not create decorated_user.zro")
+    endif()
+    if (NOT EXISTS "${decorator_compile_time_deep_import_dir}/bin/decorators.zro")
+        message(FATAL_ERROR "decorator_compile_time_deep_import_compile_recursive_and_run did not create decorators.zro")
+    endif()
+    if (NOT EXISTS "${decorator_compile_time_deep_import_dir}/bin/main.zri")
+        message(FATAL_ERROR "decorator_compile_time_deep_import_compile_recursive_and_run did not create main.zri")
+    endif()
+    if (NOT EXISTS "${decorator_compile_time_deep_import_dir}/bin/decorated_user.zri")
+        message(FATAL_ERROR "decorator_compile_time_deep_import_compile_recursive_and_run did not create decorated_user.zri")
+    endif()
+    if (NOT EXISTS "${decorator_compile_time_deep_import_dir}/bin/decorators.zri")
+        message(FATAL_ERROR "decorator_compile_time_deep_import_compile_recursive_and_run did not create decorators.zri")
+    endif()
+    cli_assert_contains("decorator_compile_time_deep_import_compile_recursive_and_run"
+                        decorator_compile_time_deep_import_output
+                        "43")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_decorator_compile_time_deep_import_binary)
+if (run_decorator_compile_time_deep_import_binary)
+    message("---- decorator_compile_time_deep_import_binary_run")
+    cli_copy_fixture("decorator_compile_time_deep_import_binary" decorator_compile_time_deep_import_binary_dir)
+    file(REMOVE_RECURSE "${decorator_compile_time_deep_import_binary_dir}/bin")
+    cli_prepare_binary_module("decorator_compile_time_deep_import_binary_prepare"
+                              "${decorator_compile_time_deep_import_binary_dir}"
+                              "fixtures/decorated_user_module"
+                              "decorated_user")
+    if (NOT EXISTS "${decorator_compile_time_deep_import_binary_dir}/bin/decorators.zro")
+        message(FATAL_ERROR "decorator_compile_time_deep_import_binary_run did not prepare decorators.zro")
+    endif()
+    cli_run("decorator_compile_time_deep_import_binary_run"
+            decorator_compile_time_deep_import_binary_output
+            decorator_compile_time_deep_import_binary_result
+            "${CLI_EXE}"
+            "${decorator_compile_time_deep_import_binary_dir}/decorator_compile_time_deep_import_binary.zrp")
+    cli_assert_success("decorator_compile_time_deep_import_binary_run"
+                       decorator_compile_time_deep_import_binary_result
+                       decorator_compile_time_deep_import_binary_output)
+    cli_assert_contains("decorator_compile_time_deep_import_binary_run"
+                        decorator_compile_time_deep_import_binary_output
+                        "43")
 endif()
 
 cli_case_matches_tier("smoke;core;stress" run_aot_module_graph_roundtrip)

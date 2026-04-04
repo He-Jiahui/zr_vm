@@ -297,6 +297,10 @@ struct SZrIoFunction {
     SZrIoFunctionCompileTimeFunctionInfo *compileTimeFunctionInfos;
     TZrSize testInfosLength;
     SZrIoFunctionTestInfo *testInfos;
+    TZrUInt8 hasDecoratorMetadata;
+    SZrIoFunctionConstantVariable decoratorMetadataValue;
+    TZrSize decoratorNamesLength;
+    struct SZrString **decoratorNames;
     TZrSize memberEntriesLength;
     SZrIoFunctionMemberEntry *memberEntries;
     TZrSize semIrTypeTableLength;

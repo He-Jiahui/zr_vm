@@ -3,11 +3,13 @@
 //
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <string.h>
 #include "unity.h"
 #include "test_support.h"
 #include "zr_vm_parser.h"
+#include "zr_vm_parser/writer.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/global.h"
@@ -75,6 +77,9 @@ static void destroy_test_state(SZrState* state) {
 typedef struct {
     const TZrChar* path;
     const TZrChar* source;
+    const TZrByte* bytes;
+    TZrSize length;
+    TZrBool isBinary;
 } SZrCompileTimeImportFixture;
 
 typedef struct {
@@ -111,6 +116,86 @@ static void compile_time_import_reader_close(SZrState* state, TZrPtr customData)
     }
 }
 
+static TZrByte* read_compile_time_import_test_file_bytes(const TZrChar* path, TZrSize* outLength) {
+    FILE* file;
+    long fileSize;
+    TZrByte* buffer;
+
+    if (path == ZR_NULL || outLength == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    file = fopen(path, "rb");
+    if (file == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    fileSize = ftell(file);
+    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    buffer = (TZrByte*)malloc((size_t)fileSize);
+    if (buffer == ZR_NULL) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    if (fileSize > 0 && fread(buffer, 1, (size_t)fileSize, file) != (size_t)fileSize) {
+        free(buffer);
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    fclose(file);
+    *outLength = (TZrSize)fileSize;
+    return buffer;
+}
+
+static TZrByte* build_compile_time_import_binary_fixture(SZrState* state,
+                                                         const TZrChar* moduleSource,
+                                                         const TZrChar* binaryPath,
+                                                         TZrSize* outLength) {
+    SZrString* sourceName;
+    SZrFunction* function;
+    TZrBool oldEmitCompileTimeRuntimeSupport = ZR_FALSE;
+
+    if (state == ZR_NULL || moduleSource == ZR_NULL || binaryPath == ZR_NULL || outLength == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)binaryPath, strlen(binaryPath));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (state->global != ZR_NULL) {
+        oldEmitCompileTimeRuntimeSupport = state->global->emitCompileTimeRuntimeSupport;
+        state->global->emitCompileTimeRuntimeSupport = ZR_TRUE;
+    }
+    function = ZrParser_Source_Compile(state, moduleSource, strlen(moduleSource), sourceName);
+    if (state->global != ZR_NULL) {
+        state->global->emitCompileTimeRuntimeSupport = oldEmitCompileTimeRuntimeSupport;
+    }
+    if (function == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (!ZrParser_Writer_WriteBinaryFile(state, function, binaryPath)) {
+        ZrCore_Function_Free(state, function);
+        return ZR_NULL;
+    }
+
+    ZrCore_Function_Free(state, function);
+    return read_compile_time_import_test_file_bytes(binaryPath, outLength);
+}
+
 static TZrBool compile_time_import_source_loader(SZrState* state, TZrNativeString sourcePath, TZrNativeString md5, SZrIo* io) {
     TZrSize i;
 
@@ -122,18 +207,25 @@ static TZrBool compile_time_import_source_loader(SZrState* state, TZrNativeStrin
 
     for (i = 0; i < gCompileTimeImportFixtureCount; i++) {
         const SZrCompileTimeImportFixture* fixture = &gCompileTimeImportFixtures[i];
-        if (fixture->path != ZR_NULL && fixture->source != ZR_NULL && strcmp(fixture->path, sourcePath) == 0) {
+        if (fixture->path != ZR_NULL &&
+            (fixture->source != ZR_NULL || (fixture->bytes != ZR_NULL && fixture->length > 0)) &&
+            strcmp(fixture->path, sourcePath) == 0) {
             SZrCompileTimeImportReader* reader =
                     (SZrCompileTimeImportReader*)malloc(sizeof(SZrCompileTimeImportReader));
             if (reader == ZR_NULL) {
                 return ZR_FALSE;
             }
 
-            reader->bytes = (const TZrByte*)fixture->source;
-            reader->length = strlen(fixture->source);
+            if (fixture->bytes != ZR_NULL && fixture->length > 0) {
+                reader->bytes = fixture->bytes;
+                reader->length = fixture->length;
+            } else {
+                reader->bytes = (const TZrByte*)fixture->source;
+                reader->length = fixture->source != ZR_NULL ? strlen(fixture->source) : 0;
+            }
             reader->consumed = ZR_FALSE;
             ZrCore_Io_Init(state, io, compile_time_import_reader_read, compile_time_import_reader_close, reader);
-            io->isBinary = ZR_FALSE;
+            io->isBinary = fixture->isBinary;
             return ZR_TRUE;
         }
     }
@@ -902,6 +994,9 @@ static void test_compile_time_import_member_call_projection(void) {
                     "pub var greet = () => {\n"
                     "    return 42;\n"
                     "};\n",
+                    ZR_NULL,
+                    0,
+                    ZR_FALSE,
             },
     };
 
@@ -1003,6 +1098,9 @@ static void test_compile_time_import_deep_member_call_projection(void) {
                     "        }\n"
                     "    }\n"
                     "};\n",
+                    ZR_NULL,
+                    0,
+                    ZR_FALSE,
             },
     };
 
@@ -1055,6 +1153,110 @@ static void test_compile_time_import_deep_member_call_projection(void) {
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
     destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_binary_import_function_alias_projection(void) {
+    static const TZrChar* providerSource =
+            "%module \"provider\";\n"
+            "%compileTime var SCALE = 8;\n"
+            "%compileTime buildBias(seed: int): int {\n"
+            "    return seed + SCALE;\n"
+            "}\n";
+
+    SZrTestTimer timer;
+    const TZrChar* testSummary = "Compile-Time Execution - Binary Import Function Alias Projection";
+    const SZrCompileTimeImportFixture* previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+    const TZrChar* binaryPath = "test_compile_time_import_provider_binary.zro";
+    TZrByte* binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrCompileTimeImportFixture fixtures[1];
+        SZrState* state = create_test_state();
+        const TZrChar* source =
+                "%module \"test\";\n"
+                "var provider = %import(\"provider\");\n"
+                "var runtimeValue = buildBias(34);\n"
+                "%test(\"test\") {\n"
+                "    return runtimeValue;\n"
+                "}\n";
+        SZrString* sourceName;
+        SZrAstNode* ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+        ZrParser_ToGlobalState_Register(state);
+
+        binaryBytes = build_compile_time_import_binary_fixture(state, providerSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+        {
+            SZrCompileTimeImportReader* binaryReader =
+                    (SZrCompileTimeImportReader*)malloc(sizeof(SZrCompileTimeImportReader));
+            SZrIo binaryIo;
+            SZrIoSource* binarySource;
+
+            TEST_ASSERT_NOT_NULL(binaryReader);
+            binaryReader->bytes = binaryBytes;
+            binaryReader->length = binaryLength;
+            binaryReader->consumed = ZR_FALSE;
+            ZrCore_Io_Init(state,
+                           &binaryIo,
+                           compile_time_import_reader_read,
+                           compile_time_import_reader_close,
+                           binaryReader);
+            binaryIo.isBinary = ZR_TRUE;
+            binarySource = ZrCore_Io_ReadSourceNew(&binaryIo);
+            if (binaryIo.close != ZR_NULL) {
+                binaryIo.close(state, binaryIo.customData);
+            }
+
+            TEST_ASSERT_NOT_NULL(binarySource);
+            TEST_ASSERT_TRUE(binarySource->modulesLength > 0);
+            TEST_ASSERT_NOT_NULL(binarySource->modules);
+            TEST_ASSERT_NOT_NULL(binarySource->modules[0].entryFunction);
+            TEST_ASSERT_TRUE(binarySource->modules[0].entryFunction->compileTimeFunctionInfosLength > 0);
+        }
+
+        fixtures[0].path = "provider";
+        fixtures[0].source = ZR_NULL;
+        fixtures[0].bytes = binaryBytes;
+        fixtures[0].length = binaryLength;
+        fixtures[0].isBinary = ZR_TRUE;
+
+        gCompileTimeImportFixtures = fixtures;
+        gCompileTimeImportFixtureCount = 1;
+        state->global->sourceLoader = compile_time_import_source_loader;
+
+        sourceName = ZrCore_String_Create(state,
+                                          "test_compile_time_binary_import_function_alias_projection.zr",
+                                          61);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        reset_loaded_module_registry(state);
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+    if (binaryBytes != ZR_NULL) {
+        free(binaryBytes);
+    }
+    remove(binaryPath);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
     TEST_DIVIDER();
 }
 
@@ -1274,6 +1476,7 @@ int main(void) {
     RUN_TEST(test_compile_time_import_member_call_projection);
     RUN_TEST(test_compile_time_projection_rejects_function_ref_leak);
     RUN_TEST(test_compile_time_import_deep_member_call_projection);
+    RUN_TEST(test_compile_time_binary_import_function_alias_projection);
     RUN_TEST(test_compile_time_object_member_assignment_projects_mutation);
     RUN_TEST(test_compile_time_class_decorator_projects_metadata_to_runtime_reflection);
     RUN_TEST(test_compile_time_function_decorator_projects_metadata_to_runtime_reflection);

@@ -1730,6 +1730,7 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
             ZrCore_Array_Construct(&copiedMember.parameterTypes);
             ZrCore_Array_Construct(&copiedMember.genericParameters);
             ZrCore_Array_Construct(&copiedMember.parameterPassingModes);
+            ZrCore_Array_Construct(&copiedMember.decorators);
             copiedMember.declarationNode = sourceMember->declarationNode;
             if (sourceMember->parameterTypes.length > 0) {
                 ZrCore_Array_Init(cs->state,
@@ -1759,6 +1760,20 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
             type_inference_copy_parameter_passing_mode_array(cs->state,
                                                              &copiedMember.parameterPassingModes,
                                                              &sourceMember->parameterPassingModes);
+            if (sourceMember->decorators.length > 0) {
+                ZrCore_Array_Init(cs->state,
+                                  &copiedMember.decorators,
+                                  sizeof(SZrTypeDecoratorInfo),
+                                  sourceMember->decorators.length);
+                for (TZrSize decoratorIndex = 0; decoratorIndex < sourceMember->decorators.length; decoratorIndex++) {
+                    SZrTypeDecoratorInfo *sourceDecorator =
+                            (SZrTypeDecoratorInfo *)ZrCore_Array_Get(&sourceMember->decorators, decoratorIndex);
+                    if (sourceDecorator == ZR_NULL) {
+                        continue;
+                    }
+                    ZrCore_Array_Push(cs->state, &copiedMember.decorators, sourceDecorator);
+                }
+            }
             registeredPrototype =
                     (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, registeredPrototypeIndex);
             if (registeredPrototype == ZR_NULL) {
@@ -1809,26 +1824,38 @@ static TZrBool infer_function_call_argument_types(SZrCompilerState *cs,
 static TZrBool function_declaration_matches_candidate(SZrCompilerState *cs,
                                                     SZrAstNode *declNode,
                                                     const SZrFunctionTypeInfo *funcType) {
-    SZrFunctionDeclaration *decl;
+    SZrAstNodeArray *params = ZR_NULL;
+    const SZrType *returnTypeNode = ZR_NULL;
     SZrInferredType returnType;
 
-    if (cs == ZR_NULL || declNode == ZR_NULL || funcType == ZR_NULL ||
-        declNode->type != ZR_AST_FUNCTION_DECLARATION) {
+    if (cs == ZR_NULL || declNode == ZR_NULL || funcType == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    decl = &declNode->data.functionDeclaration;
-    if (decl->params == ZR_NULL) {
+    switch (declNode->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            params = declNode->data.functionDeclaration.params;
+            returnTypeNode = declNode->data.functionDeclaration.returnType;
+            break;
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            params = declNode->data.externFunctionDeclaration.params;
+            returnTypeNode = declNode->data.externFunctionDeclaration.returnType;
+            break;
+        default:
+            return ZR_FALSE;
+    }
+
+    if (params == ZR_NULL) {
         return funcType->paramTypes.length == 0;
     }
 
-    if (decl->params->count != funcType->paramTypes.length) {
+    if (params->count != funcType->paramTypes.length) {
         return ZR_FALSE;
     }
 
     ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_OBJECT);
-    if (decl->returnType != ZR_NULL) {
-        if (!ZrParser_AstTypeToInferredType_Convert(cs, decl->returnType, &returnType)) {
+    if (returnTypeNode != ZR_NULL) {
+        if (!ZrParser_AstTypeToInferredType_Convert(cs, returnTypeNode, &returnType)) {
             ZrParser_InferredType_Free(cs->state, &returnType);
             return ZR_FALSE;
         }
@@ -1840,8 +1867,8 @@ static TZrBool function_declaration_matches_candidate(SZrCompilerState *cs,
     }
     ZrParser_InferredType_Free(cs->state, &returnType);
 
-    for (TZrSize i = 0; i < decl->params->count; i++) {
-        SZrAstNode *paramNode = decl->params->nodes[i];
+    for (TZrSize i = 0; i < params->count; i++) {
+        SZrAstNode *paramNode = params->nodes[i];
         SZrParameter *param;
         SZrInferredType paramType;
         SZrInferredType *expectedType;
@@ -1907,18 +1934,41 @@ static SZrAstNode *find_function_declaration_for_candidate(SZrCompilerState *cs,
         SZrAstNode *stmt = cs->scriptAst->data.script.statements->nodes[i];
         SZrFunctionDeclaration *decl;
 
-        if (stmt == ZR_NULL || stmt->type != ZR_AST_FUNCTION_DECLARATION) {
+        if (stmt == ZR_NULL) {
             continue;
         }
 
-        decl = &stmt->data.functionDeclaration;
-        if (decl->name == ZR_NULL || decl->name->name == ZR_NULL ||
-            !ZrCore_String_Equal(decl->name->name, funcName)) {
-            continue;
-        }
+        if (stmt->type == ZR_AST_FUNCTION_DECLARATION) {
+            decl = &stmt->data.functionDeclaration;
+            if (decl->name == ZR_NULL || decl->name->name == ZR_NULL ||
+                !ZrCore_String_Equal(decl->name->name, funcName)) {
+                continue;
+            }
 
-        if (function_declaration_matches_candidate(cs, stmt, funcType)) {
-            return stmt;
+            if (function_declaration_matches_candidate(cs, stmt, funcType)) {
+                return stmt;
+            }
+        } else if (stmt->type == ZR_AST_EXTERN_BLOCK &&
+                   stmt->data.externBlock.declarations != ZR_NULL) {
+            for (TZrSize declarationIndex = 0; declarationIndex < stmt->data.externBlock.declarations->count;
+                 declarationIndex++) {
+                SZrAstNode *declaration = stmt->data.externBlock.declarations->nodes[declarationIndex];
+                SZrExternFunctionDeclaration *externDecl;
+
+                if (declaration == ZR_NULL || declaration->type != ZR_AST_EXTERN_FUNCTION_DECLARATION) {
+                    continue;
+                }
+
+                externDecl = &declaration->data.externFunctionDeclaration;
+                if (externDecl->name == ZR_NULL || externDecl->name->name == ZR_NULL ||
+                    !ZrCore_String_Equal(externDecl->name->name, funcName)) {
+                    continue;
+                }
+
+                if (function_declaration_matches_candidate(cs, declaration, funcType)) {
+                    return declaration;
+                }
+            }
         }
     }
 
@@ -1967,14 +2017,22 @@ TZrBool infer_function_call_argument_types_for_candidate(SZrCompilerState *cs,
     }
 
     declNode = funcType->declarationNode;
-    if (declNode == ZR_NULL || declNode->type != ZR_AST_FUNCTION_DECLARATION) {
+    if (declNode == ZR_NULL ||
+        (declNode->type != ZR_AST_FUNCTION_DECLARATION &&
+         declNode->type != ZR_AST_EXTERN_FUNCTION_DECLARATION)) {
         declNode = find_function_declaration_for_candidate(cs, env, funcName, funcType);
     }
-    if (declNode == ZR_NULL || declNode->type != ZR_AST_FUNCTION_DECLARATION) {
+    if (declNode == ZR_NULL) {
         return infer_function_call_argument_types(cs, call != ZR_NULL ? call->args : ZR_NULL, argTypes);
     }
 
-    paramList = declNode->data.functionDeclaration.params;
+    if (declNode->type == ZR_AST_FUNCTION_DECLARATION) {
+        paramList = declNode->data.functionDeclaration.params;
+    } else if (declNode->type == ZR_AST_EXTERN_FUNCTION_DECLARATION) {
+        paramList = declNode->data.externFunctionDeclaration.params;
+    } else {
+        return infer_function_call_argument_types(cs, call != ZR_NULL ? call->args : ZR_NULL, argTypes);
+    }
     paramCount = paramList != ZR_NULL ? paramList->count : 0;
     argCount = (call != ZR_NULL && call->args != ZR_NULL) ? call->args->count : 0;
 

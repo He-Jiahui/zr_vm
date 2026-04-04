@@ -205,6 +205,74 @@ static const ZrLibTypeDescriptor *module_metadata_find_type_descriptor_in_module
     return ZR_NULL;
 }
 
+static const ZrLibModuleDescriptor *module_metadata_find_registered_native_module(SZrState *state,
+                                                                                  const TZrChar *moduleName,
+                                                                                  EZrLspImportedModuleSourceKind *outSourceKind) {
+    ZrLibRegisteredModuleInfo moduleInfo;
+    const ZrLibModuleDescriptor *descriptor;
+
+    if (outSourceKind != ZR_NULL) {
+        *outSourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
+    }
+    if (state == ZR_NULL || state->global == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    memset(&moduleInfo, 0, sizeof(moduleInfo));
+    if (ZrLibrary_NativeRegistry_GetModuleInfo(state->global, moduleName, &moduleInfo)) {
+        if (outSourceKind != ZR_NULL) {
+            *outSourceKind =
+                moduleInfo.registrationKind == ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_DESCRIPTOR_PLUGIN ||
+                        moduleInfo.isDescriptorPlugin
+                    ? ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN
+                    : ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN;
+        }
+        return moduleInfo.descriptor;
+    }
+
+    descriptor = ZrLibrary_NativeRegistry_FindModule(state->global, moduleName);
+    if (descriptor != ZR_NULL && outSourceKind != ZR_NULL) {
+        *outSourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN;
+    }
+    return descriptor;
+}
+
+static TZrBool module_metadata_try_load_project_native_plugin(SZrState *state,
+                                                              SZrLspProjectIndex *projectIndex,
+                                                              const TZrChar *moduleName) {
+    const TZrChar *projectDirectory;
+
+    if (state == ZR_NULL || projectIndex == ZR_NULL || projectIndex->project == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    projectDirectory = module_metadata_string_text(projectIndex->project->directory);
+    if (projectDirectory == ZR_NULL || projectDirectory[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    return ZrLibrary_NativeRegistry_EnsureProjectDescriptorPlugin(state, projectDirectory, moduleName);
+}
+
+static const ZrLibModuleDescriptor *module_metadata_resolve_native_module_descriptor_internal(
+    SZrState *state,
+    SZrLspProjectIndex *projectIndex,
+    const TZrChar *moduleName,
+    EZrLspImportedModuleSourceKind *outSourceKind) {
+    const ZrLibModuleDescriptor *descriptor;
+
+    if (projectIndex != ZR_NULL) {
+        module_metadata_try_load_project_native_plugin(state, projectIndex, moduleName);
+    }
+
+    descriptor = module_metadata_find_registered_native_module(state, moduleName, outSourceKind);
+    if (descriptor != ZR_NULL) {
+        return descriptor;
+    }
+
+    return ZR_NULL;
+}
+
 const SZrTypePrototypeInfo *ZrLanguageServer_LspModuleMetadata_FindTypePrototype(SZrSemanticAnalyzer *analyzer,
                                                                                  const TZrChar *typeName) {
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || typeName == ZR_NULL) {
@@ -294,7 +362,9 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(SZrState *state
     if (projectIndex != ZR_NULL) {
         outResolved->sourceRecord = ZrLanguageServer_LspProject_FindRecordByModuleName(projectIndex, moduleName);
         if (outResolved->sourceRecord != ZR_NULL) {
-            outResolved->sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
+            outResolved->sourceKind = outResolved->sourceRecord->isFfiWrapperSource
+                                          ? ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER
+                                          : ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
         }
     }
 
@@ -307,7 +377,13 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(SZrState *state
     if (moduleText != ZR_NULL) {
         EZrLspImportedModuleSourceKind nativeSourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
         outResolved->nativeDescriptor =
-            ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleDescriptor(state, moduleText, &nativeSourceKind);
+            module_metadata_resolve_native_module_descriptor_internal(state,
+                                                                      outResolved->sourceKind ==
+                                                                              ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED
+                                                                          ? projectIndex
+                                                                          : ZR_NULL,
+                                                                      moduleText,
+                                                                      &nativeSourceKind);
         if (outResolved->nativeDescriptor != ZR_NULL &&
             outResolved->sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED) {
             outResolved->sourceKind = nativeSourceKind;
@@ -323,33 +399,7 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(SZrState *state
 const ZrLibModuleDescriptor *ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleDescriptor(SZrState *state,
                                                                                                const TZrChar *moduleName,
                                                                                                EZrLspImportedModuleSourceKind *outSourceKind) {
-    ZrLibRegisteredModuleInfo moduleInfo;
-    const ZrLibModuleDescriptor *descriptor;
-
-    if (outSourceKind != ZR_NULL) {
-        *outSourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
-    }
-    if (state == ZR_NULL || state->global == ZR_NULL || moduleName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    memset(&moduleInfo, 0, sizeof(moduleInfo));
-    if (ZrLibrary_NativeRegistry_GetModuleInfo(state->global, moduleName, &moduleInfo)) {
-        if (outSourceKind != ZR_NULL) {
-            *outSourceKind =
-                moduleInfo.registrationKind == ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_DESCRIPTOR_PLUGIN ||
-                        moduleInfo.isDescriptorPlugin
-                    ? ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN
-                    : ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN;
-        }
-        return moduleInfo.descriptor;
-    }
-
-    descriptor = ZrLibrary_NativeRegistry_FindModule(state->global, moduleName);
-    if (descriptor != ZR_NULL && outSourceKind != ZR_NULL) {
-        *outSourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN;
-    }
-    return descriptor;
+    return module_metadata_resolve_native_module_descriptor_internal(state, ZR_NULL, moduleName, outSourceKind);
 }
 
 const ZrLibTypeDescriptor *ZrLanguageServer_LspModuleMetadata_FindNativeTypeDescriptor(SZrState *state,
@@ -683,6 +733,42 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(SZrState *stat
     return *outUri != ZR_NULL;
 }
 
+TZrBool ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(SZrState *state,
+                                                                  SZrLspProjectIndex *projectIndex,
+                                                                  SZrString *moduleName,
+                                                                  SZrString **outUri) {
+    const TZrChar *moduleText;
+    ZrLibRegisteredModuleInfo moduleInfo;
+    EZrLspImportedModuleSourceKind sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
+
+    if (outUri != ZR_NULL) {
+        *outUri = ZR_NULL;
+    }
+
+    if (state == ZR_NULL || state->global == ZR_NULL || moduleName == ZR_NULL || outUri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    moduleText = module_metadata_string_text(moduleName);
+    if (moduleText == ZR_NULL ||
+        module_metadata_resolve_native_module_descriptor_internal(state,
+                                                                  projectIndex,
+                                                                  moduleText,
+                                                                  &sourceKind) == ZR_NULL ||
+        sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN) {
+        return ZR_FALSE;
+    }
+
+    memset(&moduleInfo, 0, sizeof(moduleInfo));
+    if (!ZrLibrary_NativeRegistry_GetModuleInfo(state->global, moduleText, &moduleInfo) ||
+        moduleInfo.sourcePath == ZR_NULL || moduleInfo.sourcePath[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    *outUri = module_metadata_create_file_uri_from_native_path(state, moduleInfo.sourcePath);
+    return *outUri != ZR_NULL;
+}
+
 const SZrLspIntermediateExportSymbol *ZrLanguageServer_LspModuleMetadata_FindIntermediateExportSymbol(
     const SZrLspIntermediateModuleMetadata *metadata,
     SZrString *symbolName) {
@@ -715,6 +801,8 @@ const TZrChar *ZrLanguageServer_LspModuleMetadata_SourceKindLabel(EZrLspImported
     switch (sourceKind) {
         case ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE:
             return "project source";
+        case ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER:
+            return "ffi source wrapper";
         case ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA:
             return "binary metadata";
         case ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN:

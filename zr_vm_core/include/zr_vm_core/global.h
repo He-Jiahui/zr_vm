@@ -89,6 +89,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // 如果为NULL，则只支持加载.zro二进制文件
     // 封装了从源代码解析到编译的全流程
     struct SZrFunction *(*compileSource)(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);
+    TZrBool emitCompileTimeRuntimeSupport;
 
 
     // exceptions

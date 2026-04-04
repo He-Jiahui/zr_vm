@@ -190,3 +190,20 @@ void ZrCore_Module_AddToCache(SZrState *state, SZrString *path, struct SZrObject
     zr_module_init_object_value(state, &moduleValue, ZR_CAST_RAW_OBJECT_AS_SUPER(module));
     ZrCore_Object_SetValue(state, registry, &key, &moduleValue);
 }
+
+void ZrCore_Module_RemoveFromCache(SZrState *state, SZrString *path) {
+    SZrObject *registry;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || path == ZR_NULL) {
+        return;
+    }
+
+    registry = zr_module_get_loaded_modules_registry(state);
+    if (registry == ZR_NULL) {
+        return;
+    }
+
+    zr_module_init_string_key(state, &key, path);
+    ZrCore_HashSet_Remove(state, &registry->nodeMap, &key);
+}

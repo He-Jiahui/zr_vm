@@ -9,6 +9,7 @@ zr_link_library_for_module(${zr_curr_module_name} "zr_vm_library")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_system")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_math")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_container")
+zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_ffi")
 zr_link_third_party_for_module(${zr_curr_module_name} "zr_c_json")
 
 zr_install_module(${zr_curr_module_name})
@@ -107,6 +108,10 @@ if(BUILD_WASM)
         file(GLOB_RECURSE zr_vm_lib_container_src
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/src/*.c
         )
+
+        file(GLOB_RECURSE zr_vm_lib_ffi_src
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/src/*.c
+        )
         
         # 排除测试文件
         list(FILTER zr_vm_core_src EXCLUDE REGEX ".*test.*")
@@ -115,6 +120,7 @@ if(BUILD_WASM)
         list(FILTER zr_vm_lib_system_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_lib_math_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_lib_container_src EXCLUDE REGEX ".*test.*")
+        list(FILTER zr_vm_lib_ffi_src EXCLUDE REGEX ".*test.*")
         
         # 创建 WASM 可执行文件（包含所有依赖的源文件）
         add_executable(${zr_curr_module_name}_wasm 
@@ -126,6 +132,7 @@ if(BUILD_WASM)
             ${zr_vm_lib_system_src}
             ${zr_vm_lib_math_src}
             ${zr_vm_lib_container_src}
+            ${zr_vm_lib_ffi_src}
         )
         
         # 设置包含目录
@@ -138,6 +145,7 @@ if(BUILD_WASM)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
         )

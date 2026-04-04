@@ -236,6 +236,9 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             ZrCore_Array_Construct(&memberInfo.parameterTypes);
             ZrCore_Array_Construct(&memberInfo.genericParameters);
             ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
+            ZrCore_Array_Construct(&memberInfo.decorators);
+            memberInfo.hasDecoratorMetadata = ZR_FALSE;
+            ZrCore_Value_ResetAsNull(&memberInfo.decoratorMetadataValue);
             memberInfo.declarationNode = member;
             memberInfo.metaType = ZR_META_ENUM_MAX;
             memberInfo.isMetaMethod = ZR_FALSE;
@@ -460,7 +463,24 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     // 忽略未知成员类型
                     continue;
             }
-            
+
+            if ((member->type == ZR_AST_CLASS_FIELD || member->type == ZR_AST_CLASS_METHOD ||
+                 member->type == ZR_AST_CLASS_PROPERTY) &&
+                !ZrParser_CompileTime_ApplyMemberDecorators(
+                        cs,
+                        member,
+                        member->type == ZR_AST_CLASS_FIELD
+                                ? member->data.classField.decorators
+                                : (member->type == ZR_AST_CLASS_METHOD
+                                           ? member->data.classMethod.decorators
+                                           : member->data.classProperty.decorators),
+                        &memberInfo)) {
+                cs->currentTypeName = oldTypeName;
+                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                cs->currentTypeNode = oldTypeNode;
+                return;
+            }
+
             if (memberInfo.name != ZR_NULL) {
                 ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
             }

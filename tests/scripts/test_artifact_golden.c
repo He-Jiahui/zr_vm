@@ -160,6 +160,36 @@ static void assert_file_matches_golden_if_present(const TZrChar* baseName, const
     }
 }
 
+static void assert_generated_text_contains(const TZrChar* baseName,
+                                           const TZrChar* subDir,
+                                           const TZrChar* extension,
+                                           const TZrChar* needle) {
+    TZrChar generatedPath[1024];
+    TZrBytePtr generatedBuffer = ZR_NULL;
+    TZrSize generatedLength = 0;
+
+    TEST_ASSERT_NOT_NULL(needle);
+    get_output_path(baseName, subDir, extension, generatedPath, sizeof(generatedPath));
+    TEST_ASSERT_TRUE_MESSAGE(read_file_bytes(generatedPath, &generatedBuffer, &generatedLength), generatedPath);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr((const char*)generatedBuffer, needle), needle);
+    free(generatedBuffer);
+}
+
+static void assert_generated_text_not_contains(const TZrChar* baseName,
+                                               const TZrChar* subDir,
+                                               const TZrChar* extension,
+                                               const TZrChar* needle) {
+    TZrChar generatedPath[1024];
+    TZrBytePtr generatedBuffer = ZR_NULL;
+    TZrSize generatedLength = 0;
+
+    TEST_ASSERT_NOT_NULL(needle);
+    get_output_path(baseName, subDir, extension, generatedPath, sizeof(generatedPath));
+    TEST_ASSERT_TRUE_MESSAGE(read_file_bytes(generatedPath, &generatedBuffer, &generatedLength), generatedPath);
+    TEST_ASSERT_NULL_MESSAGE(strstr((const char*)generatedBuffer, needle), needle);
+    free(generatedBuffer);
+}
+
 static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
     TZrChar sourcePath[1024];
     TZrSize sourceLength = 0;
@@ -213,6 +243,10 @@ static void run_true_aot_c_case(const SZrArtifactGoldenCase* testCase) {
 
     TEST_ASSERT_TRUE(dump_binary_to_file(state, result->function, testCase->baseName));
     TEST_ASSERT_TRUE(dump_aot_c_to_file(state, result->function, testCase->baseName));
+    assert_generated_text_contains(testCase->baseName, "aot_c", ".c", "#define ZR_AOT_C_GUARD(call_expr)");
+    assert_generated_text_contains(testCase->baseName, "aot_c", ".c", "ZR_AOT_C_GUARD(");
+    assert_generated_text_contains(testCase->baseName, "aot_c", ".c", "zr_aot_fail:");
+    assert_generated_text_not_contains(testCase->baseName, "aot_c", ".c", "if (!ZrLibrary_AotRuntime_");
     assert_file_matches_golden(testCase->baseName, "aot_c", ".c");
 
     free_test_result(result);

@@ -260,7 +260,7 @@ var list: LinkedList<int> = new container.LinkedList<int>();
   - 覆盖 native generic hover / completion、`zr.container` 模块成员补全、`LinkedNode<int>` / `Array<int>` 关闭类型展示
 - 多文件集成工程:
   - `tests/fixtures/projects/container_matrix/`
-  - `tests/projects/CMakeLists.txt`
+  - `tests/cmake/run_projects_suite.cmake`
   - 要求输出 deterministic banner + checksum（当前标准: `CONTAINER_MATRIX_PASS` + `635`）
 
 **持续回归优先补充点**:

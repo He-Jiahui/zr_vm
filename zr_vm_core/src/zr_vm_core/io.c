@@ -5,6 +5,7 @@
 #include "zr_vm_core/io.h"
 
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/exception.h"
@@ -92,8 +93,80 @@ static void io_read_imports(SZrIo *io, SZrIoImport *imports, TZrSize count) {
     }
 }
 
+static void io_read_typed_value(SZrIo *io, SZrTypeValue *value);
+
+static void io_init_value_from_pure(struct SZrState *state,
+                                    EZrValueType type,
+                                    const TZrPureValue *pure,
+                                    SZrTypeValue *value) {
+    if (value == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Value_ResetAsNull(value);
+    if (pure == ZR_NULL) {
+        return;
+    }
+
+    switch (type) {
+        case ZR_VALUE_TYPE_NULL:
+            return;
+
+        case ZR_VALUE_TYPE_BOOL:
+            ZrCore_Value_InitAsBool(state, value, pure->nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE);
+            return;
+
+        case ZR_VALUE_TYPE_INT8:
+        case ZR_VALUE_TYPE_INT16:
+        case ZR_VALUE_TYPE_INT32:
+        case ZR_VALUE_TYPE_INT64:
+            ZrCore_Value_InitAsInt(state, value, pure->nativeObject.nativeInt64);
+            value->type = type;
+            return;
+
+        case ZR_VALUE_TYPE_UINT8:
+        case ZR_VALUE_TYPE_UINT16:
+        case ZR_VALUE_TYPE_UINT32:
+        case ZR_VALUE_TYPE_UINT64:
+            ZrCore_Value_InitAsUInt(state, value, pure->nativeObject.nativeUInt64);
+            value->type = type;
+            return;
+
+        case ZR_VALUE_TYPE_FLOAT:
+        case ZR_VALUE_TYPE_DOUBLE:
+            ZrCore_Value_InitAsFloat(state, value, pure->nativeObject.nativeDouble);
+            value->type = type;
+            return;
+
+        case ZR_VALUE_TYPE_STRING:
+        case ZR_VALUE_TYPE_OBJECT:
+        case ZR_VALUE_TYPE_ARRAY:
+            ZrCore_Value_InitAsRawObject(state, value, pure->object);
+            value->type = type;
+            return;
+
+        case ZR_VALUE_TYPE_NATIVE_POINTER:
+            ZrCore_Value_InitAsNativePointer(state, value, pure->nativeObject.nativePointer);
+            return;
+
+        default:
+            value->type = type;
+            value->value = *pure;
+            value->isGarbageCollectable =
+                    (TZrBool)(type == ZR_VALUE_TYPE_STRING || type == ZR_VALUE_TYPE_OBJECT || type == ZR_VALUE_TYPE_ARRAY);
+            value->isNative = (TZrBool)!value->isGarbageCollectable;
+            return;
+    }
+}
+
 static void io_read_value(SZrIo *io, EZrValueType type, TZrPureValue *value) {
-    ZR_UNUSED_PARAMETER(io);
+    SZrState *state;
+
+    if (io == ZR_NULL || value == ZR_NULL) {
+        return;
+    }
+
+    state = io->state;
     switch (type) {
         case ZR_VALUE_TYPE_NULL: {
             value->nativeObject.nativeBool = ZR_FALSE;
@@ -120,10 +193,78 @@ static void io_read_value(SZrIo *io, EZrValueType type, TZrPureValue *value) {
         case ZR_VALUE_TYPE_STRING: {
             value->object = ZR_CAST_RAW_OBJECT_AS_SUPER(io_read_string_with_length(io));
         } break;
+        case ZR_VALUE_TYPE_OBJECT: {
+            TZrSize entryCount = 0;
+            SZrObject *object;
+
+            ZR_IO_READ_NATIVE_TYPE(io, entryCount, TZrSize);
+            object = ZrCore_Object_New(state, ZR_NULL);
+            if (object == ZR_NULL) {
+                value->object = ZR_NULL;
+                break;
+            }
+            ZrCore_Object_Init(state, object);
+
+            for (TZrSize index = 0; index < entryCount; index++) {
+                SZrTypeValue keyValue;
+                SZrTypeValue entryValue;
+
+                io_read_typed_value(io, &keyValue);
+                io_read_typed_value(io, &entryValue);
+                ZrCore_Object_SetValue(state, object, &keyValue, &entryValue);
+            }
+
+            value->object = ZR_CAST_RAW_OBJECT_AS_SUPER(object);
+        } break;
+        case ZR_VALUE_TYPE_ARRAY: {
+            TZrSize elementCount = 0;
+            SZrObject *arrayObject;
+            SZrTypeValue receiver;
+
+            ZR_IO_READ_NATIVE_TYPE(io, elementCount, TZrSize);
+            arrayObject = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+            if (arrayObject == ZR_NULL) {
+                value->object = ZR_NULL;
+                break;
+            }
+            ZrCore_Object_Init(state, arrayObject);
+
+            ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(arrayObject));
+            receiver.type = ZR_VALUE_TYPE_ARRAY;
+            for (TZrSize index = 0; index < elementCount; index++) {
+                SZrTypeValue indexValue;
+                SZrTypeValue elementValue;
+
+                io_read_typed_value(io, &elementValue);
+                ZrCore_Value_InitAsInt(state, &indexValue, (TZrInt64)index);
+                ZrCore_Object_SetByIndex(state, &receiver, &indexValue, &elementValue);
+            }
+
+            value->object = ZR_CAST_RAW_OBJECT_AS_SUPER(arrayObject);
+        } break;
         default: {
             // todo:
         } break;
     }
+}
+
+static void io_read_typed_value(SZrIo *io, SZrTypeValue *value) {
+    TZrUInt32 rawType = ZR_VALUE_TYPE_NULL;
+    TZrPureValue pureValue;
+
+    if (value == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Value_ResetAsNull(value);
+    if (io == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Memory_RawSet(&pureValue, 0, sizeof(pureValue));
+    ZR_IO_READ_NATIVE_TYPE(io, rawType, TZrUInt32);
+    io_read_value(io, (EZrValueType)rawType, &pureValue);
+    io_init_value_from_pure(io->state, (EZrValueType)rawType, &pureValue, value);
 }
 
 static void io_read_field(SZrIo *io, SZrIoField *field) { field->name = io_read_string_with_length(io); }
@@ -340,6 +481,41 @@ static void io_read_function_test_infos(SZrIo *io,
         infos[index].hasVariableArguments = hasVariableArguments ? ZR_TRUE : ZR_FALSE;
         ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceStart, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceEnd, TZrUInt32);
+    }
+}
+
+static void io_read_function_decorator_metadata(SZrIo *io, SZrIoFunction *function) {
+    SZrGlobalState *global;
+
+    if (io == ZR_NULL || function == ZR_NULL || io->state == ZR_NULL || io->state->global == ZR_NULL) {
+        return;
+    }
+
+    global = io->state->global;
+    function->hasDecoratorMetadata = ZR_FALSE;
+    function->decoratorMetadataValue.type = ZR_VALUE_TYPE_NULL;
+    ZrCore_Memory_RawSet(&function->decoratorMetadataValue.value, 0, sizeof(function->decoratorMetadataValue.value));
+    function->decoratorMetadataValue.hasFunctionValue = ZR_FALSE;
+    function->decoratorMetadataValue.functionValue = ZR_NULL;
+    function->decoratorMetadataValue.startLine = 0;
+    function->decoratorMetadataValue.endLine = 0;
+    function->decoratorNamesLength = 0;
+    function->decoratorNames = ZR_NULL;
+
+    ZR_IO_READ_NATIVE_TYPE(io, function->hasDecoratorMetadata, TZrUInt8);
+    if (function->hasDecoratorMetadata) {
+        io_read_function_constant_variables(io, &function->decoratorMetadataValue, 1);
+    }
+
+    ZR_IO_READ_NATIVE_TYPE(io, function->decoratorNamesLength, TZrSize);
+    if (function->decoratorNamesLength > 0) {
+        function->decoratorNames =
+                ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrString *) * function->decoratorNamesLength);
+        if (function->decoratorNames != ZR_NULL) {
+            for (TZrSize index = 0; index < function->decoratorNamesLength; index++) {
+                function->decoratorNames[index] = io_read_string_with_length(io);
+            }
+        }
     }
 }
 
@@ -649,6 +825,15 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->compileTimeFunctionInfos = ZR_NULL;
         function->testInfosLength = 0;
         function->testInfos = ZR_NULL;
+        function->hasDecoratorMetadata = ZR_FALSE;
+        function->decoratorMetadataValue.type = ZR_VALUE_TYPE_NULL;
+        ZrCore_Memory_RawSet(&function->decoratorMetadataValue.value, 0, sizeof(function->decoratorMetadataValue.value));
+        function->decoratorMetadataValue.hasFunctionValue = ZR_FALSE;
+        function->decoratorMetadataValue.functionValue = ZR_NULL;
+        function->decoratorMetadataValue.startLine = 0;
+        function->decoratorMetadataValue.endLine = 0;
+        function->decoratorNamesLength = 0;
+        function->decoratorNames = ZR_NULL;
         function->memberEntriesLength = 0;
         function->memberEntries = ZR_NULL;
         function->semIrTypeTableLength = 0;
@@ -698,6 +883,9 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
                     io_read_function_test_infos(io, function->testInfos, function->testInfosLength);
                 }
             }
+        }
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_DECORATOR_METADATA) {
+            io_read_function_decorator_metadata(io, function);
         }
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_MEMBER_ENTRIES) {
             ZR_IO_READ_NATIVE_TYPE(io, function->memberEntriesLength, TZrSize);
