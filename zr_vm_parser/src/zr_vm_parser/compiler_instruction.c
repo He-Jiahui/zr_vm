@@ -238,7 +238,7 @@ TZrUInt32 compiler_get_or_add_member_entry_with_flags(SZrCompilerState *cs,
     TZrSize copyBytes;
 
     if (cs == ZR_NULL || cs->currentFunction == ZR_NULL || memberName == ZR_NULL) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_MEMBER_ID_NONE;
     }
 
     function = cs->currentFunction;
@@ -258,7 +258,7 @@ TZrUInt32 compiler_get_or_add_member_entry_with_flags(SZrCompilerState *cs,
             sizeof(SZrFunctionMemberEntry) * newCount,
             ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     if (newEntries == ZR_NULL) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_MEMBER_ID_NONE;
     }
 
     copyBytes = sizeof(SZrFunctionMemberEntry) * function->memberEntryLength;

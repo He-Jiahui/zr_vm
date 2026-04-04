@@ -23,6 +23,8 @@
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 
+#define ZR_CLI_MANIFEST_FORMAT_VERSION 2U
+
 static TZrPtr zr_cli_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
@@ -737,7 +739,7 @@ void ZrCli_Project_Manifest_Init(SZrCliIncrementalManifest *manifest) {
         return;
     }
 
-    manifest->version = ZR_CLI_MANIFEST_VERSION;
+    manifest->version = ZR_CLI_MANIFEST_FORMAT_VERSION;
     manifest->entries = ZR_NULL;
     manifest->count = 0;
     manifest->capacity = 0;
@@ -755,7 +757,7 @@ void ZrCli_Project_Manifest_Free(SZrCliIncrementalManifest *manifest) {
     manifest->entries = ZR_NULL;
     manifest->count = 0;
     manifest->capacity = 0;
-    manifest->version = ZR_CLI_MANIFEST_VERSION;
+    manifest->version = ZR_CLI_MANIFEST_FORMAT_VERSION;
 }
 
 TZrBool ZrCli_Project_LoadManifest(const SZrCliProjectContext *context, SZrCliIncrementalManifest *manifest) {
@@ -781,11 +783,13 @@ TZrBool ZrCli_Project_LoadManifest(const SZrCliProjectContext *context, SZrCliIn
 
     cursor = content;
     line = zr_cli_next_line(&cursor);
-    if (line == ZR_NULL || strcmp(line, "zr_cli_manifest_v1") != 0) {
+    if (line == ZR_NULL ||
+        (strcmp(line, "zr_cli_manifest_v1") != 0 && strcmp(line, "zr_cli_manifest_v2") != 0)) {
         free(content);
         ZrCli_Project_Manifest_Free(manifest);
         return ZR_FALSE;
     }
+    manifest->version = strcmp(line, "zr_cli_manifest_v2") == 0 ? 2U : 1U;
 
     while ((line = zr_cli_next_line(&cursor)) != ZR_NULL) {
         if (line[0] == '\0') {
@@ -822,6 +826,8 @@ TZrBool ZrCli_Project_LoadManifest(const SZrCliProjectContext *context, SZrCliIn
             snprintf(current->sourceHash, sizeof(current->sourceHash), "%s", value);
         } else if (zr_cli_manifest_match_key(line, "zro_hash", &value)) {
             snprintf(current->zroHash, sizeof(current->zroHash), "%s", value);
+        } else if (zr_cli_manifest_match_key(line, "aot_c_input_hash", &value)) {
+            snprintf(current->aotCInputHash, sizeof(current->aotCInputHash), "%s", value);
         } else if (zr_cli_manifest_match_key(line, "zro", &value)) {
             snprintf(current->zroPath, sizeof(current->zroPath), "%s", value);
         } else if (zr_cli_manifest_match_key(line, "zri", &value)) {
@@ -830,6 +836,10 @@ TZrBool ZrCli_Project_LoadManifest(const SZrCliProjectContext *context, SZrCliIn
             snprintf(current->aotCSourcePath, sizeof(current->aotCSourcePath), "%s", value);
         } else if (zr_cli_manifest_match_key(line, "aot_c_lib", &value)) {
             snprintf(current->aotCLibraryPath, sizeof(current->aotCLibraryPath), "%s", value);
+        } else if (zr_cli_manifest_match_key(line, "aot_c_input_kind", &value)) {
+            current->aotCInputKind = (TZrUInt32)strtoul(value, ZR_NULL, 10);
+        } else if (zr_cli_manifest_match_key(line, "aot_c_abi_version", &value)) {
+            current->aotCAbiVersion = (TZrUInt32)strtoul(value, ZR_NULL, 10);
         } else if (zr_cli_manifest_match_key(line, "aot_llvm_ir", &value)) {
             snprintf(current->aotLlvmIrPath, sizeof(current->aotLlvmIrPath), "%s", value);
         } else if (zr_cli_manifest_match_key(line, "aot_llvm_lib", &value)) {
@@ -869,17 +879,20 @@ TZrBool ZrCli_Project_SaveManifest(const SZrCliProjectContext *context, const SZ
         return ZR_FALSE;
     }
 
-    fprintf(file, "zr_cli_manifest_v1\n");
+    fprintf(file, "zr_cli_manifest_v%u\n", (unsigned)ZR_CLI_MANIFEST_FORMAT_VERSION);
     for (TZrSize index = 0; index < manifest->count; index++) {
         const SZrCliManifestEntry *entry = &manifest->entries[index];
 
         fprintf(file, "module %s\n", entry->moduleName);
         fprintf(file, "hash %s\n", entry->sourceHash);
         fprintf(file, "zro_hash %s\n", entry->zroHash);
+        fprintf(file, "aot_c_input_hash %s\n", entry->aotCInputHash);
         fprintf(file, "zro %s\n", entry->zroPath);
         fprintf(file, "zri %s\n", entry->zriPath);
         fprintf(file, "aot_c_src %s\n", entry->aotCSourcePath);
         fprintf(file, "aot_c_lib %s\n", entry->aotCLibraryPath);
+        fprintf(file, "aot_c_input_kind %u\n", (unsigned)entry->aotCInputKind);
+        fprintf(file, "aot_c_abi_version %u\n", (unsigned)entry->aotCAbiVersion);
         fprintf(file, "aot_llvm_ir %s\n", entry->aotLlvmIrPath);
         fprintf(file, "aot_llvm_lib %s\n", entry->aotLlvmLibraryPath);
         fprintf(file, "imports %llu\n", (unsigned long long) entry->imports.count);

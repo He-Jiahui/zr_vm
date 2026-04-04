@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compile_time_executor_internal.h"
 
 void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -15,6 +16,10 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
+
+    if (!ZrParser_CompileTime_RegisterDecoratorFunctionIfAvailable(cs, node, node->location)) {
+        return;
+    }
     
     // 保存当前函数节点（用于访问参数信息）
     cs->currentFunctionNode = node;
@@ -47,6 +52,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldCatchClauseInfoLength = cs->catchClauseInfos.length;
     TZrSize oldExceptionHandlerInfoLength = cs->exceptionHandlerInfos.length;
     TZrSize oldTryContextLength = cs->tryContextStack.length;
+    TZrSize oldChildFunctionLength = cs->childFunctions.length;
+    TZrSize oldChildFunctionNameMapLength = cs->childFunctionNameMap.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     TZrSize oldConstLocalVarLength = cs->constLocalVars.length;
@@ -166,6 +173,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->localVars.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    cs->childFunctions.length = 0;
+    cs->childFunctionNameMap.length = 0;
     cs->cachedNullConstantIndex = 0;
     cs->hasCachedNullConstantIndex = ZR_FALSE;
 
@@ -361,6 +370,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->catchClauseInfos.length = oldCatchClauseInfoLength;
         cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
         cs->tryContextStack.length = oldTryContextLength;
+        cs->childFunctions.length = oldChildFunctionLength;
+        cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
@@ -429,6 +440,22 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
+    if (cs->childFunctions.length > 0) {
+        TZrSize childFuncSize = cs->childFunctions.length * sizeof(SZrFunction);
+        newFunc->childFunctionList =
+                (struct SZrFunction *) ZrCore_Memory_RawMallocWithType(global, childFuncSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->childFunctionList != ZR_NULL) {
+            SZrFunction **srcArray = (SZrFunction **) cs->childFunctions.head;
+            for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
+                if (srcArray[i] != ZR_NULL) {
+                    newFunc->childFunctionList[i] = *srcArray[i];
+                }
+            }
+            newFunc->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
+            ZrCore_Function_RebindConstantFunctionValuesToChildren(newFunc);
+        }
+    }
+
     // 设置函数元数据
     newFunc->stackSize = (TZrUInt32) cs->maxStackSlotCount;
     newFunc->parameterCount = (TZrUInt16) parameterCount;
@@ -450,6 +477,64 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         newFunc->functionName = funcDecl->name->name;
     } else {
         newFunc->functionName = ZR_NULL;  // 匿名函数
+    }
+
+    if (!ZrParser_CompileTime_ApplyFunctionDecorators(cs, funcDecl->decorators, newFunc, node->location)) {
+        if (newFunc != ZR_NULL) {
+            ZrCore_Function_Free(cs->state, newFunc);
+        }
+        if (savedParentInstructions != ZR_NULL && savedParentInstructionsSize > 0) {
+            memcpy(cs->instructions.head, savedParentInstructions, savedParentInstructionsSize);
+            ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                          savedParentInstructions,
+                                          savedParentInstructionsSize,
+                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentLocalVars != ZR_NULL && savedParentLocalVarsSize > 0) {
+            memcpy(cs->localVars.head, savedParentLocalVars, savedParentLocalVarsSize);
+            ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                          savedParentLocalVars,
+                                          savedParentLocalVarsSize,
+                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentConstants != ZR_NULL && savedParentConstantsSize > 0) {
+            memcpy(cs->constants.head, savedParentConstants, savedParentConstantsSize);
+            ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                          savedParentConstants,
+                                          savedParentConstantsSize,
+                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentClosureVars != ZR_NULL && savedParentClosureVarsSize > 0) {
+            memcpy(cs->closureVars.head, savedParentClosureVars, savedParentClosureVarsSize);
+            ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                          savedParentClosureVars,
+                                          savedParentClosureVarsSize,
+                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        cs->currentFunction = oldFunction;
+        cs->instructionCount = oldInstructionCount;
+        cs->stackSlotCount = oldStackSlotCount;
+        cs->maxStackSlotCount = oldMaxStackSlotCount;
+        cs->localVarCount = oldLocalVarCount;
+        cs->constantCount = oldConstantCount;
+        cs->closureVarCount = oldClosureVarCount;
+        cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
+        cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
+        cs->instructions.length = oldInstructionLength;
+        cs->localVars.length = oldLocalVarLength;
+        cs->constants.length = oldConstantLength;
+        cs->closureVars.length = oldClosureVarLength;
+        cs->executionLocations.length = oldExecutionLocationLength;
+        cs->catchClauseInfos.length = oldCatchClauseInfoLength;
+        cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
+        cs->tryContextStack.length = oldTryContextLength;
+        cs->childFunctions.length = oldChildFunctionLength;
+        cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
+        cs->isInConstructor = oldIsInConstructor;
+        cs->currentFunctionNode = oldFunctionNode;
+        cs->constLocalVars.length = 0;
+        cs->constParameters.length = oldConstParameterLength;
+        return;
     }
 
     if (savedParentInstructions != ZR_NULL && savedParentInstructionsSize > 0) {
@@ -490,6 +575,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->catchClauseInfos.length = oldCatchClauseInfoLength;
     cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
     cs->tryContextStack.length = oldTryContextLength;
+    cs->childFunctions.length = oldChildFunctionLength;
+    cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
     cs->isInConstructor = oldIsInConstructor;
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = 0;
@@ -525,7 +612,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         TZrUInt32 closureSlot;
         TZrUInt32 closureVarCount = (TZrUInt32)newFunc->closureValueLength;
 
-        if (functionVarIndex == (TZrUInt32)-1) {
+        if (functionVarIndex == ZR_PARSER_SLOT_NONE) {
             functionVarIndex = allocate_local_var(cs, functionName);
         }
 
@@ -545,6 +632,14 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                      (TZrUInt16)functionVarIndex,
                                      (TZrInt32)closureSlot));
+
+        if (!emit_runtime_decorator_applications(cs,
+                                                 funcDecl->decorators,
+                                                 functionVarIndex,
+                                                 ZR_TRUE,
+                                                 node->location)) {
+            return;
+        }
 
         if (cs->isScriptLevel) {
             SZrExportedVariable exportedVar;

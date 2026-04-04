@@ -61,6 +61,8 @@ TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
                                                               TZrSize contentLength,
                                                               TZrSize cursorOffset,
                                                               SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_IsKnownDirectiveToken(const TZrChar *text, TZrSize length);
+TZrBool ZrLanguageServer_Lsp_IsKnownMetaMethodToken(const TZrChar *text, TZrSize length);
 SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyzer *analyzer,
                                                               SZrFileRange position);
 SZrFileVersion *ZrLanguageServer_Lsp_GetDocumentFileVersion(SZrLspContext *context, SZrString *uri);
@@ -113,15 +115,25 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetDefinition(SZrState *state,
                                                      SZrString *uri,
                                                      SZrLspPosition position,
                                                      SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_TryGetImportTargetDefinition(SZrState *state,
+                                                          SZrLspContext *context,
+                                                          SZrString *uri,
+                                                          SZrLspPosition position,
+                                                          SZrArray *result);
 TZrBool ZrLanguageServer_Lsp_ProjectTryFindReferences(SZrState *state,
                                                       SZrLspContext *context,
                                                       SZrString *uri,
                                                       SZrLspPosition position,
                                                       TZrBool includeDeclaration,
                                                       SZrArray *result);
-TZrBool ZrLanguageServer_Lsp_ProjectContainsUri(SZrState *state,
-                                                SZrLspContext *context,
-                                                SZrString *uri);
+TZrBool ZrLanguageServer_Lsp_ProjectTryGetDocumentHighlights(SZrState *state,
+                                                             SZrLspContext *context,
+                                                             SZrString *uri,
+                                                             SZrLspPosition position,
+                                                             SZrArray *result);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_ProjectContainsUri(SZrState *state,
+                                                                       SZrLspContext *context,
+                                                                       SZrString *uri);
 TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrString *query,
@@ -131,6 +143,11 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetHover(SZrState *state,
                                                 SZrString *uri,
                                                 SZrLspPosition position,
                                                 SZrLspHover **result);
+TZrBool ZrLanguageServer_Lsp_TryGetImportTargetHover(SZrState *state,
+                                                     SZrLspContext *context,
+                                                     SZrString *uri,
+                                                     SZrLspPosition position,
+                                                     SZrLspHover **result);
 TZrBool ZrLanguageServer_Lsp_ProjectTryCollectImportCompletions(SZrState *state,
                                                                 SZrLspContext *context,
                                                                 SZrString *uri,
@@ -139,5 +156,36 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryCollectImportCompletions(SZrState *state,
                                                                 TZrSize cursorOffset,
                                                                 SZrFileRange cursorRange,
                                                                 SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDefinition(SZrState *state,
+                                                              SZrLspContext *context,
+                                                              SZrString *uri,
+                                                              SZrLspPosition position,
+                                                              SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
+                                                               SZrLspContext *context,
+                                                               SZrString *uri,
+                                                               SZrLspPosition position,
+                                                               TZrBool includeDeclaration,
+                                                               SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDocumentHighlights(SZrState *state,
+                                                                      SZrLspContext *context,
+                                                                      SZrString *uri,
+                                                                      SZrLspPosition position,
+                                                                      SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_TryGetDecoratorDefinition(SZrState *state,
+                                                       SZrLspContext *context,
+                                                       SZrString *uri,
+                                                       SZrLspPosition position,
+                                                       SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_TryGetDecoratorHover(SZrState *state,
+                                                  SZrLspContext *context,
+                                                  SZrString *uri,
+                                                  SZrLspPosition position,
+                                                  SZrLspHover **result);
+TZrBool ZrLanguageServer_Lsp_TryGetMetaMethodHover(SZrState *state,
+                                                   SZrLspContext *context,
+                                                   SZrString *uri,
+                                                   SZrLspPosition position,
+                                                   SZrLspHover **result);
 
 #endif

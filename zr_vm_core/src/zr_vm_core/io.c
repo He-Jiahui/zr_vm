@@ -665,7 +665,7 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->semIrDeoptTable = ZR_NULL;
         function->callSiteCacheLength = 0;
         function->callSiteCaches = ZR_NULL;
-        if (io->sourceVersionPatch >= 2) {
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_COMPILE_TIME_METADATA) {
             ZR_IO_READ_NATIVE_TYPE(io, function->compileTimeVariableInfosLength, TZrSize);
             if (function->compileTimeVariableInfosLength > 0) {
                 function->compileTimeVariableInfos =
@@ -699,7 +699,7 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
                 }
             }
         }
-        if (io->sourceVersionPatch >= 5) {
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_MEMBER_ENTRIES) {
             ZR_IO_READ_NATIVE_TYPE(io, function->memberEntriesLength, TZrSize);
             if (function->memberEntriesLength > 0) {
                 function->memberEntries =
@@ -710,10 +710,10 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
                 }
             }
         }
-        if (io->sourceVersionPatch >= 4) {
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_SEMIR_METADATA) {
             io_read_function_semir_metadata(io, function);
         }
-        if (io->sourceVersionPatch >= 7) {
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_CALLSITE_CACHE) {
             io_read_function_callsite_cache_metadata(io, function);
         }
         // 读取PROTOTYPES_LENGTH和PROTOTYPES（结构化格式）
@@ -745,7 +745,7 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
                 io_read_structs(io, function->structs, structCount);
             }
         }
-        if (io->sourceVersionPatch >= 3) {
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_PROTOTYPE_BLOB) {
             ZR_IO_READ_NATIVE_TYPE(io, function->prototypeDataLength, TZrSize);
             if (function->prototypeDataLength > 0) {
                 function->prototypeData = ZR_IO_MALLOC_NATIVE_DATA(global, function->prototypeDataLength);

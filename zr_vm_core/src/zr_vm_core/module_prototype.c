@@ -100,22 +100,11 @@ static TZrBool ensure_prototype_instance_storage(SZrState *state, SZrFunction *e
 }
 
 static SZrFunction *get_function_from_constant(SZrState *state, const SZrTypeValue *constant) {
-    SZrRawObject *rawObject;
-
     if (state == ZR_NULL || constant == ZR_NULL) {
         return ZR_NULL;
     }
 
-    if (constant->type != ZR_VALUE_TYPE_FUNCTION && constant->type != ZR_VALUE_TYPE_CLOSURE) {
-        return ZR_NULL;
-    }
-
-    rawObject = constant->value.object;
-    if (rawObject == ZR_NULL || rawObject->type != ZR_RAW_OBJECT_TYPE_FUNCTION) {
-        return ZR_NULL;
-    }
-
-    return ZR_CAST_FUNCTION(state, rawObject);
+    return ZrCore_Closure_GetMetadataFunctionFromValue(state, constant);
 }
 
 static void module_prototype_apply_protocol_mask(SZrObjectPrototype *prototype, TZrUInt64 protocolMask) {
@@ -383,6 +372,7 @@ static TZrBool parse_compiled_prototype_info(SZrState *state,
     TZrUInt32 accessModifier;
     TZrUInt32 inheritsCount;
     TZrUInt32 membersCount;
+    TZrUInt32 decoratorsCount;
     TZrSize expectedSize;
     const SZrTypeValue *nameConstant;
 
@@ -397,9 +387,11 @@ static TZrBool parse_compiled_prototype_info(SZrState *state,
     accessModifier = protoInfoHeader->accessModifier;
     inheritsCount = protoInfoHeader->inheritsCount;
     membersCount = protoInfoHeader->membersCount;
+    decoratorsCount = protoInfoHeader->decoratorsCount;
 
     expectedSize =
             sizeof(SZrCompiledPrototypeInfo) + inheritsCount * sizeof(TZrUInt32) +
+            decoratorsCount * sizeof(TZrUInt32) +
             membersCount * sizeof(SZrCompiledMemberInfo);
     if (dataSize < expectedSize) {
         return ZR_FALSE;
@@ -446,7 +438,8 @@ static TZrBool parse_compiled_prototype_info(SZrState *state,
 
     protoInfo->members =
             (const SZrCompiledMemberInfo *)(serializedData + sizeof(SZrCompiledPrototypeInfo) +
-                                            inheritsCount * sizeof(TZrUInt32));
+                                            inheritsCount * sizeof(TZrUInt32) +
+                                            decoratorsCount * sizeof(TZrUInt32));
 
     return ZR_TRUE;
 }
@@ -496,9 +489,10 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
             TZrUInt32 inheritsCount = protoInfo->inheritsCount;
             TZrUInt32 membersCount = protoInfo->membersCount;
             TZrSize inheritArraySize = inheritsCount * sizeof(TZrUInt32);
+            TZrSize decoratorArraySize = protoInfo->decoratorsCount * sizeof(TZrUInt32);
             TZrSize membersArraySize = membersCount * sizeof(SZrCompiledMemberInfo);
             TZrSize currentPrototypeSize =
-                    sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + membersArraySize;
+                    sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + decoratorArraySize + membersArraySize;
 
             if (remainingDataSize < currentPrototypeSize) {
                 break;
@@ -675,15 +669,11 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                                             ZrCore_String_CreateFromNative(state, "__constructor");
                                     if (constructorName != ZR_NULL) {
                                         SZrTypeValue constructorKey;
-                                        SZrTypeValue constructorValue;
                                         zr_module_init_string_key(state, &constructorKey, constructorName);
-                                        ZrCore_Value_InitAsRawObject(
-                                                state, &constructorValue, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
-                                        constructorValue.type = functionConstant->type;
                                         ZrCore_Object_SetValue(state,
                                                                &protoInfo->prototype->super,
                                                                &constructorKey,
-                                                               &constructorValue);
+                                                               functionConstant);
                                     }
                                 }
                                 continue;
@@ -696,14 +686,10 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                                                                     function);
 
                             {
-                                SZrTypeValue methodValue;
                                 SZrTypeValue methodKey;
-                                ZrCore_Value_InitAsRawObject(
-                                        state, &methodValue, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
-                                methodValue.type = functionConstant->type;
                                 zr_module_init_string_key(state, &methodKey, memberName);
                                 ZrCore_Object_SetValue(
-                                        state, &protoInfo->prototype->super, &methodKey, &methodValue);
+                                        state, &protoInfo->prototype->super, &methodKey, functionConstant);
                             }
                         }
                     }

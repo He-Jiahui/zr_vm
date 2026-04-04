@@ -225,6 +225,53 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
             }
             break;
 
+        case ZR_AST_EXTERN_BLOCK:
+            if (node->data.externBlock.declarations != ZR_NULL &&
+                node->data.externBlock.declarations->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < node->data.externBlock.declarations->count; i++) {
+                    if (node->data.externBlock.declarations->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   node->data.externBlock.declarations->nodes[i]);
+                    }
+                }
+            }
+            break;
+
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION: {
+            SZrExternFunctionDeclaration *funcDecl = &node->data.externFunctionDeclaration;
+            if (funcDecl->params != ZR_NULL && funcDecl->params->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < funcDecl->params->count; i++) {
+                    if (funcDecl->params->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   funcDecl->params->nodes[i]);
+                    }
+                }
+            }
+            if (funcDecl->returnType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, funcDecl->returnType);
+            }
+            break;
+        }
+
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION: {
+            SZrExternDelegateDeclaration *delegateDecl = &node->data.externDelegateDeclaration;
+            if (delegateDecl->params != ZR_NULL && delegateDecl->params->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < delegateDecl->params->count; i++) {
+                    if (delegateDecl->params->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   delegateDecl->params->nodes[i]);
+                    }
+                }
+            }
+            if (delegateDecl->returnType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, delegateDecl->returnType);
+            }
+            break;
+        }
+
         case ZR_AST_USING_STATEMENT: {
             SZrUsingStatement *usingStmt = &node->data.usingStatement;
             ZrLanguageServer_SemanticAnalyzer_RecordUsingCleanupStep(analyzer, usingStmt->resource);
@@ -570,6 +617,31 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
             }
             break;
         }
+
+        case ZR_AST_ENUM_DECLARATION: {
+            SZrEnumDeclaration *enumDecl = &node->data.enumDeclaration;
+            if (enumDecl->baseType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, enumDecl->baseType);
+            }
+            if (enumDecl->members != ZR_NULL && enumDecl->members->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < enumDecl->members->count; i++) {
+                    if (enumDecl->members->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   enumDecl->members->nodes[i]);
+                    }
+                }
+            }
+            break;
+        }
+
+        case ZR_AST_ENUM_MEMBER:
+            if (node->data.enumMember.value != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.enumMember.value);
+            }
+            break;
 
         case ZR_AST_INTERFACE_DECLARATION: {
             SZrInterfaceDeclaration *interfaceDecl = &node->data.interfaceDeclaration;

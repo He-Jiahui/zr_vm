@@ -7,6 +7,7 @@ import {
     ServerOptions,
     Trace,
 } from 'vscode-languageclient/node';
+import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
 
 const CONFIG_SECTION = 'zr.languageServer';
 const RESTART_COMMAND = 'zr.restartLanguageServer';
@@ -19,6 +20,8 @@ let restartSequence = 0;
 type LanguageServerMode = 'auto' | 'native' | 'web';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    context.subscriptions.push(registerZrpJsonSupport());
+
     context.subscriptions.push(
         vscode.commands.registerCommand(RESTART_COMMAND, async () => {
             await enqueueRestart(context, true);
@@ -103,14 +106,13 @@ async function startClient(
         },
     };
 
-    const fileEvents = vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp}');
-    clientResources = [fileEvents];
+    const fileEvents = vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp,zro,zri,dll,so,dylib}');
+    clientResources = [
+        fileEvents,
+    ];
 
     const clientOptions: LanguageClientOptions = {
-        documentSelector: [
-            { language: 'zr', scheme: 'file' },
-            { language: 'zr', scheme: 'untitled' },
-        ],
+        documentSelector: createDocumentSelector() as LanguageClientOptions['documentSelector'],
         outputChannelName: 'Zr Language Server',
         synchronize: {
             configurationSection: CONFIG_SECTION,

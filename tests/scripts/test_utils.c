@@ -7,6 +7,7 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/closure.h"
+#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "test_support.h"
@@ -286,13 +287,41 @@ TZrBool dump_binary_to_file(SZrState* state, SZrFunction* function, const TZrCha
 
 TZrBool dump_aot_c_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath) {
     TZrChar aotPath[1024];
+    TZrChar binaryPath[1024];
+    TZrBytePtr embeddedModuleBlob = ZR_NULL;
+    TZrSize embeddedModuleBlobLength = 0;
+    SZrAotWriterOptions options;
+    TZrBool success = ZR_FALSE;
 
     if (state == ZR_NULL || function == ZR_NULL || basePath == ZR_NULL) {
         return ZR_FALSE;
     }
 
     get_output_path(basePath, "aot_c", ".c", aotPath, sizeof(aotPath));
-    return ZrParser_Writer_WriteAotCFile(state, function, aotPath);
+    get_output_path(basePath, "binary", ".zro", binaryPath, sizeof(binaryPath));
+
+    if (!ZrTests_File_Exists(binaryPath) &&
+        !ZrParser_Writer_WriteBinaryFile(state, function, binaryPath)) {
+        return ZR_FALSE;
+    }
+    if (!ZrTests_ReadFileBytes(binaryPath, &embeddedModuleBlob, &embeddedModuleBlobLength) ||
+        embeddedModuleBlob == ZR_NULL ||
+        embeddedModuleBlobLength == 0) {
+        free(embeddedModuleBlob);
+        return ZR_FALSE;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = basePath;
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = basePath;
+    options.embeddedModuleBlob = embeddedModuleBlob;
+    options.embeddedModuleBlobLength = embeddedModuleBlobLength;
+    options.requireExecutableLowering = ZR_TRUE;
+
+    success = ZrParser_Writer_WriteAotCFileWithOptions(state, function, aotPath, &options);
+    free(embeddedModuleBlob);
+    return success;
 }
 
 TZrBool dump_aot_llvm_to_file(SZrState* state, SZrFunction* function, const TZrChar* basePath) {

@@ -322,7 +322,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               ZR_NULL,
-                                                                              1,
+                                                                              ZR_META_CALL_UNARY_ARGUMENT_COUNT,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -384,7 +384,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               ZR_NULL,
-                                                                              1,
+                                                                              ZR_META_CALL_UNARY_ARGUMENT_COUNT,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -437,7 +437,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               ZR_NULL,
-                                                                              1,
+                                                                              ZR_META_CALL_UNARY_ARGUMENT_COUNT,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -490,7 +490,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               ZR_NULL,
-                                                                              1,
+                                                                              ZR_META_CALL_UNARY_ARGUMENT_COUNT,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -578,7 +578,7 @@ LZrReturning: {
                                                                                       meta,
                                                                                       opA,
                                                                                       typeNameValue,
-                                                                                      2,
+                                                                                      ZR_META_CALL_MAX_ARGUMENTS,
                                                                                       &metaBase,
                                                                                       &restoredStackTop);
                                 RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -657,7 +657,7 @@ LZrReturning: {
                                                                                       meta,
                                                                                       opA,
                                                                                       typeNameValue,
-                                                                                      2,
+                                                                                      ZR_META_CALL_MAX_ARGUMENTS,
                                                                                       &metaBase,
                                                                                       &restoredStackTop);
                                 RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -738,7 +738,7 @@ LZrReturning: {
                                                                                   meta,
                                                                                   opA,
                                                                                   opB,
-                                                                                  2,
+                                                                                  ZR_META_CALL_MAX_ARGUMENTS,
                                                                                   &metaBase,
                                                                                   &restoredStackTop);
                             RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -819,7 +819,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               opB,
-                                                                              2,
+                                                                              ZR_META_CALL_MAX_ARGUMENTS,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -874,7 +874,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               opB,
-                                                                              2,
+                                                                              ZR_META_CALL_MAX_ARGUMENTS,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -945,7 +945,7 @@ LZrReturning: {
                                                                                   meta,
                                                                                   opA,
                                                                                   ZR_NULL,
-                                                                                  1,
+                                                                                  ZR_META_CALL_UNARY_ARGUMENT_COUNT,
                                                                                   &metaBase,
                                                                                   &restoredStackTop);
                             RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -982,7 +982,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               opB,
-                                                                              2,
+                                                                              ZR_META_CALL_MAX_ARGUMENTS,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -1058,7 +1058,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               opB,
-                                                                              2,
+                                                                              ZR_META_CALL_MAX_ARGUMENTS,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -1136,7 +1136,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               opB,
-                                                                              2,
+                                                                              ZR_META_CALL_MAX_ARGUMENTS,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -1217,7 +1217,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               opB,
-                                                                              2,
+                                                                              ZR_META_CALL_MAX_ARGUMENTS,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
@@ -1261,7 +1261,7 @@ LZrReturning: {
                                                                               meta,
                                                                               opA,
                                                                               opB,
-                                                                              2,
+                                                                              ZR_META_CALL_MAX_ARGUMENTS,
                                                                               &metaBase,
                                                                               &restoredStackTop);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);

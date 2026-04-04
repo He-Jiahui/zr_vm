@@ -41,9 +41,49 @@ function(cli_assert_contains case_name text_value expected)
     endif()
 endfunction()
 
+function(cli_assert_file_contains case_name path expected)
+    if (NOT EXISTS "${path}")
+        message(FATAL_ERROR "CLI case '${case_name}' expected file '${path}' to exist.")
+    endif()
+
+    file(READ "${path}" file_text)
+    string(FIND "${file_text}" "${expected}" match_index)
+    if (match_index EQUAL -1)
+        message(FATAL_ERROR "CLI case '${case_name}' expected file '${path}' to contain '${expected}'.")
+    endif()
+endfunction()
+
 function(cli_copy_fixture project_name destination_var)
     set(destination "${CLI_SUITE_ROOT}/${project_name}")
-    file(COPY "${PROJECT_FIXTURES_DIR}/${project_name}" DESTINATION "${CLI_SUITE_ROOT}")
+    file(REMOVE_RECURSE "${destination}")
+    file(MAKE_DIRECTORY "${destination}")
+    file(GLOB fixture_entries RELATIVE "${PROJECT_FIXTURES_DIR}/${project_name}" "${PROJECT_FIXTURES_DIR}/${project_name}/*")
+    foreach(fixture_entry IN LISTS fixture_entries)
+        if (fixture_entry STREQUAL "bin")
+            continue()
+        endif()
+
+        set(source_path "${PROJECT_FIXTURES_DIR}/${project_name}/${fixture_entry}")
+        if (IS_DIRECTORY "${source_path}")
+            file(COPY "${source_path}" DESTINATION "${destination}")
+        else()
+            execute_process(
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${source_path}" "${destination}/${fixture_entry}"
+                RESULT_VARIABLE copy_result
+                OUTPUT_VARIABLE copy_stdout
+                ERROR_VARIABLE copy_stderr
+            )
+            if (NOT copy_stdout STREQUAL "")
+                message("${copy_stdout}")
+            endif()
+            if (NOT copy_stderr STREQUAL "")
+                message("${copy_stderr}")
+            endif()
+            if (NOT copy_result EQUAL 0)
+                message(FATAL_ERROR "Failed to copy fixture entry '${fixture_entry}' for project '${project_name}'.")
+            endif()
+        endif()
+    endforeach()
     set(${destination_var} "${destination}" PARENT_SCOPE)
 endfunction()
 
@@ -66,6 +106,25 @@ function(cli_write_file path content)
     file(WRITE "${path}" "${content}")
 endfunction()
 
+function(cli_copy_file_or_fail case_name source_path destination_path description)
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${source_path}" "${destination_path}"
+        RESULT_VARIABLE copy_result
+        OUTPUT_VARIABLE copy_stdout
+        ERROR_VARIABLE copy_stderr
+    )
+
+    if (NOT copy_stdout STREQUAL "")
+        message("${copy_stdout}")
+    endif()
+    if (NOT copy_stderr STREQUAL "")
+        message("${copy_stderr}")
+    endif()
+    if (NOT copy_result EQUAL 0)
+        message(FATAL_ERROR "CLI case '${case_name}' failed while copying ${description}.")
+    endif()
+endfunction()
+
 function(cli_prepare_binary_module case_name project_dir source_rel output_name)
     set(temp_project_root "${CLI_SUITE_ROOT}/.prepare/${case_name}")
     set(temp_source_dir "${temp_project_root}/src")
@@ -73,12 +132,34 @@ function(cli_prepare_binary_module case_name project_dir source_rel output_name)
     set(temp_project_file "${temp_project_root}/${case_name}.zrp")
     set(temp_source_file "${temp_source_dir}/${output_name}.zr")
     set(final_output "${project_dir}/bin/${output_name}.zro")
+    set(prepare_source "${project_dir}/${source_rel}")
+    set(copy_all_outputs OFF)
 
     file(REMOVE_RECURSE "${temp_project_root}")
     file(MAKE_DIRECTORY "${temp_source_dir}")
     file(MAKE_DIRECTORY "${temp_binary_dir}")
     file(MAKE_DIRECTORY "${project_dir}/bin")
-    file(COPY_FILE "${project_dir}/${source_rel}" "${temp_source_file}" ONLY_IF_DIFFERENT)
+    if (IS_DIRECTORY "${prepare_source}")
+        set(copy_all_outputs ON)
+        file(REMOVE_RECURSE "${temp_source_dir}")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory "${prepare_source}" "${temp_source_dir}"
+            RESULT_VARIABLE copy_result
+            OUTPUT_VARIABLE copy_stdout
+            ERROR_VARIABLE copy_stderr
+        )
+        if (NOT copy_stdout STREQUAL "")
+            message("${copy_stdout}")
+        endif()
+        if (NOT copy_stderr STREQUAL "")
+            message("${copy_stderr}")
+        endif()
+        if (NOT copy_result EQUAL 0)
+            message(FATAL_ERROR "CLI case '${case_name}' failed while copying prepared source directory '${source_rel}'.")
+        endif()
+    else()
+        file(COPY_FILE "${prepare_source}" "${temp_source_file}" ONLY_IF_DIFFERENT)
+    endif()
     file(WRITE "${temp_project_file}"
         "{\n"
         "  \"name\": \"${case_name}_prepare\",\n"
@@ -94,20 +175,41 @@ function(cli_prepare_binary_module case_name project_dir source_rel output_name)
         message(FATAL_ERROR "CLI case '${case_name}' did not prepare ${output_name}.zro")
     endif()
 
-    execute_process(
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${temp_binary_dir}/${output_name}.zro" "${final_output}"
-        RESULT_VARIABLE copy_result
-        OUTPUT_VARIABLE copy_stdout
-        ERROR_VARIABLE copy_stderr
-    )
-    if (NOT copy_stdout STREQUAL "")
-        message("${copy_stdout}")
-    endif()
-    if (NOT copy_stderr STREQUAL "")
-        message("${copy_stderr}")
-    endif()
-    if (NOT copy_result EQUAL 0)
-        message(FATAL_ERROR "CLI case '${case_name}' failed while copying prepared binary module '${output_name}.zro'.")
+    if (copy_all_outputs)
+        file(GLOB prepared_outputs "${temp_binary_dir}/*.zro")
+        foreach(prepared_output IN LISTS prepared_outputs)
+            execute_process(
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${prepared_output}" "${project_dir}/bin"
+                RESULT_VARIABLE copy_result
+                OUTPUT_VARIABLE copy_stdout
+                ERROR_VARIABLE copy_stderr
+            )
+            if (NOT copy_stdout STREQUAL "")
+                message("${copy_stdout}")
+            endif()
+            if (NOT copy_stderr STREQUAL "")
+                message("${copy_stderr}")
+            endif()
+            if (NOT copy_result EQUAL 0)
+                message(FATAL_ERROR "CLI case '${case_name}' failed while copying prepared binary module set.")
+            endif()
+        endforeach()
+    else()
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${temp_binary_dir}/${output_name}.zro" "${final_output}"
+            RESULT_VARIABLE copy_result
+            OUTPUT_VARIABLE copy_stdout
+            ERROR_VARIABLE copy_stderr
+        )
+        if (NOT copy_stdout STREQUAL "")
+            message("${copy_stdout}")
+        endif()
+        if (NOT copy_stderr STREQUAL "")
+            message("${copy_stderr}")
+        endif()
+        if (NOT copy_result EQUAL 0)
+            message(FATAL_ERROR "CLI case '${case_name}' failed while copying prepared binary module '${output_name}.zro'.")
+        endif()
     endif()
 
     file(REMOVE_RECURSE "${temp_project_root}")
@@ -151,6 +253,25 @@ if (CLI_AOT_LLVM_HOST_TOOL)
 else ()
     set(CLI_AOT_LLVM_HOST_AVAILABLE OFF)
 endif ()
+
+get_filename_component(CLI_BIN_DIR "${CLI_EXE}" DIRECTORY)
+get_filename_component(CLI_BUILD_DIR "${CLI_BIN_DIR}" DIRECTORY)
+set(CLI_RUNTIME_CORE_LIBRARY "")
+if (WIN32)
+    set(_cli_runtime_core_candidates
+        "${CLI_BIN_DIR}/zr_vm_core${CLI_SHARED_LIB_SUFFIX}"
+        "${CLI_BUILD_DIR}/bin/zr_vm_core${CLI_SHARED_LIB_SUFFIX}")
+else ()
+    set(_cli_runtime_core_candidates
+        "${CLI_BUILD_DIR}/lib/libzr_vm_core${CLI_SHARED_LIB_SUFFIX}"
+        "${CLI_BIN_DIR}/libzr_vm_core${CLI_SHARED_LIB_SUFFIX}")
+endif ()
+foreach(_cli_runtime_core_candidate IN LISTS _cli_runtime_core_candidates)
+    if (EXISTS "${_cli_runtime_core_candidate}")
+        set(CLI_RUNTIME_CORE_LIBRARY "${_cli_runtime_core_candidate}")
+        break()
+    endif()
+endforeach()
 
 cli_case_matches_tier("smoke;core;stress" run_help)
 if (run_help)
@@ -237,6 +358,214 @@ if (run_compile_aot_c)
     cli_assert_contains("run_aot_c" run_aot_c_output "executed_via=aot_c")
 endif()
 
+cli_case_matches_tier("core;stress" run_aot_c_without_zro)
+if (run_aot_c_without_zro)
+    message("---- run_aot_c_without_zro")
+    cli_copy_fixture("hello_world" no_zro_aot_c_dir)
+    file(REMOVE_RECURSE "${no_zro_aot_c_dir}/bin")
+    cli_run("compile_aot_c_without_zro"
+            compile_aot_c_without_zro_output
+            compile_aot_c_without_zro_result
+            "${CLI_EXE}"
+            "--compile"
+            "${no_zro_aot_c_dir}/hello_world.zrp"
+            "--emit-aot-c")
+    cli_assert_success("compile_aot_c_without_zro"
+                       compile_aot_c_without_zro_result
+                       compile_aot_c_without_zro_output)
+    file(REMOVE "${no_zro_aot_c_dir}/bin/main.zro")
+    cli_run("run_aot_c_without_zro"
+            run_aot_c_without_zro_output
+            run_aot_c_without_zro_result
+            "${CLI_EXE}"
+            "--execution-mode"
+            "aot_c"
+            "--require-aot-path"
+            "--emit-executed-via"
+            "${no_zro_aot_c_dir}/hello_world.zrp")
+    cli_assert_success("run_aot_c_without_zro"
+                       run_aot_c_without_zro_result
+                       run_aot_c_without_zro_output)
+    cli_assert_contains("run_aot_c_without_zro" run_aot_c_without_zro_output "hello world")
+    cli_assert_contains("run_aot_c_without_zro" run_aot_c_without_zro_output "executed_via=aot_c")
+endif()
+
+cli_case_matches_tier("core;stress" run_compile_aot_c_binary_import)
+if (run_compile_aot_c_binary_import)
+    message("---- compile_aot_c_binary_import")
+    cli_copy_fixture("import_binary" binary_import_aot_c_dir)
+    file(REMOVE_RECURSE "${binary_import_aot_c_dir}/bin")
+    cli_prepare_binary_module("compile_aot_c_binary_import"
+                              "${binary_import_aot_c_dir}"
+                              "fixtures/greet_binary_source.zr"
+                              "greet")
+    cli_run("compile_aot_c_binary_import"
+            compile_aot_c_binary_import_output
+            compile_aot_c_binary_import_result
+            "${CLI_EXE}"
+            "--compile"
+            "${binary_import_aot_c_dir}/import_binary.zrp"
+            "--emit-aot-c")
+    cli_assert_success("compile_aot_c_binary_import"
+                       compile_aot_c_binary_import_result
+                       compile_aot_c_binary_import_output)
+    if (NOT EXISTS "${binary_import_aot_c_dir}/bin/aot_c/src/main.c")
+        message(FATAL_ERROR "compile_aot_c_binary_import did not create main AOT C source")
+    endif()
+    if (NOT EXISTS "${binary_import_aot_c_dir}/bin/aot_c/lib/zrvm_aot_main${CLI_SHARED_LIB_SUFFIX}")
+        message(FATAL_ERROR "compile_aot_c_binary_import did not create main AOT shared library")
+    endif()
+    if (NOT EXISTS "${binary_import_aot_c_dir}/bin/aot_c/src/greet.c")
+        message(FATAL_ERROR "compile_aot_c_binary_import did not create binary import AOT C source")
+    endif()
+    if (NOT EXISTS "${binary_import_aot_c_dir}/bin/aot_c/lib/zrvm_aot_greet${CLI_SHARED_LIB_SUFFIX}")
+        message(FATAL_ERROR "compile_aot_c_binary_import did not create binary import AOT shared library")
+    endif()
+    cli_assert_file_contains("compile_aot_c_binary_import"
+                             "${binary_import_aot_c_dir}/bin/aot_c/src/greet.c"
+                             "static TZrInt64 zr_aot_fn_1")
+    cli_assert_file_contains("compile_aot_c_binary_import"
+                             "${binary_import_aot_c_dir}/bin/aot_c/src/greet.c"
+                             "    2,")
+
+    file(REMOVE "${binary_import_aot_c_dir}/bin/main.zro")
+    file(REMOVE "${binary_import_aot_c_dir}/bin/greet.zro")
+    cli_run("run_aot_c_binary_import_without_zro"
+            run_aot_c_binary_import_without_zro_output
+            run_aot_c_binary_import_without_zro_result
+            "${CLI_EXE}"
+            "--execution-mode"
+            "aot_c"
+            "--require-aot-path"
+            "--emit-executed-via"
+            "${binary_import_aot_c_dir}/import_binary.zrp")
+    cli_assert_success("run_aot_c_binary_import_without_zro"
+                       run_aot_c_binary_import_without_zro_result
+                       run_aot_c_binary_import_without_zro_output)
+    cli_assert_contains("run_aot_c_binary_import_without_zro"
+                        run_aot_c_binary_import_without_zro_output
+                        "hello from import")
+    cli_assert_contains("run_aot_c_binary_import_without_zro"
+                        run_aot_c_binary_import_without_zro_output
+                        "executed_via=aot_c")
+endif()
+
+cli_case_matches_tier("core;stress" run_compile_aot_c_unsupported_lowering)
+if (run_compile_aot_c_unsupported_lowering)
+    message("---- compile_aot_c_unsupported_lowering")
+    cli_copy_fixture("hello_world" unsupported_aot_c_dir)
+    file(REMOVE_RECURSE "${unsupported_aot_c_dir}/bin")
+    cli_write_file("${unsupported_aot_c_dir}/src/main.zr"
+                   "return { value: 1 };\n")
+    cli_run("compile_aot_c_unsupported_lowering"
+            compile_aot_c_unsupported_lowering_output
+            compile_aot_c_unsupported_lowering_result
+            "${CLI_EXE}"
+            "--compile"
+            "${unsupported_aot_c_dir}/hello_world.zrp"
+            "--emit-aot-c")
+    cli_assert_success("compile_aot_c_unsupported_lowering"
+                       compile_aot_c_unsupported_lowering_result
+                       compile_aot_c_unsupported_lowering_output)
+    if (NOT EXISTS "${unsupported_aot_c_dir}/bin/aot_c/src/main.c")
+        message(FATAL_ERROR "compile_aot_c_unsupported_lowering did not create main AOT C source")
+    endif()
+    cli_assert_file_contains("compile_aot_c_unsupported_lowering"
+                             "${unsupported_aot_c_dir}/bin/aot_c/src/main.c"
+                             "ZrLibrary_AotRuntime_InvokeActiveShim")
+endif()
+
+cli_case_matches_tier("core;stress" run_aot_c_missing_artifacts)
+if (run_aot_c_missing_artifacts)
+    message("---- run_aot_c_missing_artifacts")
+    cli_copy_fixture("hello_world" missing_aot_c_dir)
+    file(REMOVE_RECURSE "${missing_aot_c_dir}/bin")
+    cli_run("run_aot_c_missing_artifacts"
+            run_aot_c_missing_artifacts_output
+            run_aot_c_missing_artifacts_result
+            "${CLI_EXE}"
+            "--execution-mode"
+            "aot_c"
+            "--require-aot-path"
+            "${missing_aot_c_dir}/hello_world.zrp")
+    cli_assert_failure("run_aot_c_missing_artifacts"
+                       run_aot_c_missing_artifacts_result
+                       run_aot_c_missing_artifacts_output)
+    cli_assert_contains("run_aot_c_missing_artifacts"
+                        run_aot_c_missing_artifacts_output
+                        "missing AOT artifacts for module 'main'")
+endif()
+
+cli_case_matches_tier("core;stress" run_aot_c_missing_descriptor_symbol)
+if (run_aot_c_missing_descriptor_symbol)
+    if (CLI_RUNTIME_CORE_LIBRARY STREQUAL "")
+        message(FATAL_ERROR "run_aot_c_missing_descriptor_symbol requires a resolvable zr_vm_core shared library.")
+    endif()
+    message("---- run_aot_c_missing_descriptor_symbol")
+    cli_copy_fixture("hello_world" missing_symbol_aot_c_dir)
+    file(REMOVE_RECURSE "${missing_symbol_aot_c_dir}/bin")
+    cli_run("compile_aot_c_missing_descriptor_symbol"
+            compile_aot_c_missing_descriptor_symbol_output
+            compile_aot_c_missing_descriptor_symbol_result
+            "${CLI_EXE}"
+            "--compile"
+            "${missing_symbol_aot_c_dir}/hello_world.zrp"
+            "--emit-aot-c")
+    cli_assert_success("compile_aot_c_missing_descriptor_symbol"
+                       compile_aot_c_missing_descriptor_symbol_result
+                       compile_aot_c_missing_descriptor_symbol_output)
+    cli_copy_file_or_fail("run_aot_c_missing_descriptor_symbol"
+                          "${CLI_RUNTIME_CORE_LIBRARY}"
+                          "${missing_symbol_aot_c_dir}/bin/aot_c/lib/zrvm_aot_main${CLI_SHARED_LIB_SUFFIX}"
+                          "non-AOT runtime library stub")
+    cli_run("run_aot_c_missing_descriptor_symbol"
+            run_aot_c_missing_descriptor_symbol_output
+            run_aot_c_missing_descriptor_symbol_result
+            "${CLI_EXE}"
+            "--execution-mode"
+            "aot_c"
+            "--require-aot-path"
+            "${missing_symbol_aot_c_dir}/hello_world.zrp")
+    cli_assert_failure("run_aot_c_missing_descriptor_symbol"
+                       run_aot_c_missing_descriptor_symbol_result
+                       run_aot_c_missing_descriptor_symbol_output)
+    cli_assert_contains("run_aot_c_missing_descriptor_symbol"
+                        run_aot_c_missing_descriptor_symbol_output
+                        "is missing ZrVm_GetAotCompiledModule")
+endif()
+
+cli_case_matches_tier("core;stress" run_aot_c_source_hash_mismatch)
+if (run_aot_c_source_hash_mismatch)
+    message("---- run_aot_c_source_hash_mismatch")
+    cli_copy_fixture("hello_world" source_hash_mismatch_aot_c_dir)
+    file(REMOVE_RECURSE "${source_hash_mismatch_aot_c_dir}/bin")
+    cli_run("compile_aot_c_source_hash_mismatch"
+            compile_aot_c_source_hash_mismatch_output
+            compile_aot_c_source_hash_mismatch_result
+            "${CLI_EXE}"
+            "--compile"
+            "${source_hash_mismatch_aot_c_dir}/hello_world.zrp"
+            "--emit-aot-c")
+    cli_assert_success("compile_aot_c_source_hash_mismatch"
+                       compile_aot_c_source_hash_mismatch_result
+                       compile_aot_c_source_hash_mismatch_output)
+    cli_write_file("${source_hash_mismatch_aot_c_dir}/src/main.zr" "return \"tampered source\";\n")
+    cli_run("run_aot_c_source_hash_mismatch"
+            run_aot_c_source_hash_mismatch_output
+            run_aot_c_source_hash_mismatch_result
+            "${CLI_EXE}"
+            "--execution-mode"
+            "aot_c"
+            "--require-aot-path"
+            "${source_hash_mismatch_aot_c_dir}/hello_world.zrp")
+    cli_assert_failure("run_aot_c_source_hash_mismatch"
+                       run_aot_c_source_hash_mismatch_result
+                       run_aot_c_source_hash_mismatch_output)
+    cli_assert_contains("run_aot_c_source_hash_mismatch"
+                        run_aot_c_source_hash_mismatch_output
+                        "AOT source hash mismatch for module 'main'")
+endif()
+
 cli_case_matches_tier("smoke;core;stress" run_compile_aot_llvm)
 if (run_compile_aot_llvm)
     message("---- compile_aot_llvm_and_run")
@@ -277,6 +606,61 @@ if (run_compile_aot_llvm)
     endif()
 endif()
 
+cli_case_matches_tier("core;stress" run_aot_llvm_missing_artifacts)
+if (run_aot_llvm_missing_artifacts)
+    message("---- run_aot_llvm_missing_artifacts")
+    cli_copy_fixture("hello_world" missing_aot_llvm_dir)
+    file(REMOVE_RECURSE "${missing_aot_llvm_dir}/bin")
+    cli_run("run_aot_llvm_missing_artifacts"
+            run_aot_llvm_missing_artifacts_output
+            run_aot_llvm_missing_artifacts_result
+            "${CLI_EXE}"
+            "--execution-mode"
+            "aot_llvm"
+            "--require-aot-path"
+            "${missing_aot_llvm_dir}/hello_world.zrp")
+    cli_assert_failure("run_aot_llvm_missing_artifacts"
+                       run_aot_llvm_missing_artifacts_result
+                       run_aot_llvm_missing_artifacts_output)
+    cli_assert_contains("run_aot_llvm_missing_artifacts"
+                        run_aot_llvm_missing_artifacts_output
+                        "missing AOT artifacts for module 'main'")
+endif()
+
+cli_case_matches_tier("core;stress" run_aot_llvm_source_hash_mismatch)
+if (run_aot_llvm_source_hash_mismatch AND CLI_AOT_LLVM_HOST_AVAILABLE)
+    message("---- run_aot_llvm_source_hash_mismatch")
+    cli_copy_fixture("hello_world" source_hash_mismatch_aot_llvm_dir)
+    file(REMOVE_RECURSE "${source_hash_mismatch_aot_llvm_dir}/bin")
+    cli_run("compile_aot_llvm_source_hash_mismatch"
+            compile_aot_llvm_source_hash_mismatch_output
+            compile_aot_llvm_source_hash_mismatch_result
+            "${CLI_EXE}"
+            "--compile"
+            "${source_hash_mismatch_aot_llvm_dir}/hello_world.zrp"
+            "--emit-aot-llvm")
+    cli_assert_success("compile_aot_llvm_source_hash_mismatch"
+                       compile_aot_llvm_source_hash_mismatch_result
+                       compile_aot_llvm_source_hash_mismatch_output)
+    cli_write_file("${source_hash_mismatch_aot_llvm_dir}/src/main.zr" "return \"tampered llvm source\";\n")
+    cli_run("run_aot_llvm_source_hash_mismatch"
+            run_aot_llvm_source_hash_mismatch_output
+            run_aot_llvm_source_hash_mismatch_result
+            "${CLI_EXE}"
+            "--execution-mode"
+            "aot_llvm"
+            "--require-aot-path"
+            "${source_hash_mismatch_aot_llvm_dir}/hello_world.zrp")
+    cli_assert_failure("run_aot_llvm_source_hash_mismatch"
+                       run_aot_llvm_source_hash_mismatch_result
+                       run_aot_llvm_source_hash_mismatch_output)
+    cli_assert_contains("run_aot_llvm_source_hash_mismatch"
+                        run_aot_llvm_source_hash_mismatch_output
+                        "AOT source hash mismatch for module 'main'")
+elseif (run_aot_llvm_source_hash_mismatch)
+    message("---- run_aot_llvm_source_hash_mismatch (skipped: AOT LLVM host adapter unavailable)")
+endif()
+
 cli_case_matches_tier("smoke;core;stress" run_compile_recursive)
 if (run_compile_recursive)
     message("---- compile_recursive_and_run")
@@ -291,6 +675,62 @@ if (run_compile_recursive)
         message(FATAL_ERROR "compile_recursive_and_run did not create greet.zro")
     endif()
     cli_assert_contains("compile_recursive_and_run" compile_run_output "hello from import")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_decorator_import_recursive)
+if (run_decorator_import_recursive)
+    message("---- decorator_import_compile_recursive_and_run")
+    cli_copy_fixture("decorator_import" decorator_import_dir)
+    file(REMOVE_RECURSE "${decorator_import_dir}/bin")
+    cli_run("decorator_import_compile_recursive_and_run"
+            decorator_import_output
+            decorator_import_result
+            "${CLI_EXE}"
+            "--compile"
+            "${decorator_import_dir}/decorator_import.zrp"
+            "--intermediate"
+            "--run")
+    cli_assert_success("decorator_import_compile_recursive_and_run" decorator_import_result decorator_import_output)
+    if (NOT EXISTS "${decorator_import_dir}/bin/main.zro")
+        message(FATAL_ERROR "decorator_import_compile_recursive_and_run did not create main.zro")
+    endif()
+    if (NOT EXISTS "${decorator_import_dir}/bin/decorated_user.zro")
+        message(FATAL_ERROR "decorator_import_compile_recursive_and_run did not create decorated_user.zro")
+    endif()
+    if (NOT EXISTS "${decorator_import_dir}/bin/main.zri")
+        message(FATAL_ERROR "decorator_import_compile_recursive_and_run did not create main.zri")
+    endif()
+    if (NOT EXISTS "${decorator_import_dir}/bin/decorated_user.zri")
+        message(FATAL_ERROR "decorator_import_compile_recursive_and_run did not create decorated_user.zri")
+    endif()
+    if (NOT EXISTS "${decorator_import_dir}/bin/decorators.zro")
+        message(FATAL_ERROR "decorator_import_compile_recursive_and_run did not create decorators.zro")
+    endif()
+    if (NOT EXISTS "${decorator_import_dir}/bin/decorators.zri")
+        message(FATAL_ERROR "decorator_import_compile_recursive_and_run did not create decorators.zri")
+    endif()
+    cli_assert_contains("decorator_import_compile_recursive_and_run" decorator_import_output "31")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_decorator_import_binary)
+if (run_decorator_import_binary)
+    message("---- decorator_import_binary_run")
+    cli_copy_fixture("decorator_import_binary" decorator_import_binary_dir)
+    file(REMOVE_RECURSE "${decorator_import_binary_dir}/bin")
+    cli_prepare_binary_module("decorator_import_binary_prepare"
+                              "${decorator_import_binary_dir}"
+                              "fixtures/decorated_user_module"
+                              "decorated_user")
+    if (NOT EXISTS "${decorator_import_binary_dir}/bin/decorators.zro")
+        message(FATAL_ERROR "decorator_import_binary_run did not prepare decorators.zro")
+    endif()
+    cli_run("decorator_import_binary_run"
+            decorator_import_binary_output
+            decorator_import_binary_result
+            "${CLI_EXE}"
+            "${decorator_import_binary_dir}/decorator_import_binary.zrp")
+    cli_assert_success("decorator_import_binary_run" decorator_import_binary_result decorator_import_binary_output)
+    cli_assert_contains("decorator_import_binary_run" decorator_import_binary_output "31")
 endif()
 
 cli_case_matches_tier("smoke;core;stress" run_aot_module_graph_roundtrip)

@@ -113,7 +113,7 @@ void exit_type_scope(SZrCompilerState *cs) {
 // 创建标签
 TZrSize create_label(SZrCompilerState *cs) {
     if (cs == ZR_NULL || cs->hasError) {
-        return (TZrSize) -1;
+        return ZR_PARSER_LABEL_ID_NONE;
     }
 
     SZrLabel label;

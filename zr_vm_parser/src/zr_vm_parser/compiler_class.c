@@ -4,6 +4,7 @@
 
 #include "compiler_internal.h"
 #include "compile_expression_internal.h"
+#include "compile_time_executor_internal.h"
 
 static SZrTypeMemberInfo *compiler_class_find_declared_member(SZrTypePrototypeInfo *info, SZrString *memberName) {
     if (info == ZR_NULL || memberName == ZR_NULL) {
@@ -158,6 +159,15 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.isImportedNative = ZR_FALSE;
     info.allowValueConstruction = ZR_TRUE;
     info.allowBoxedConstruction = ZR_TRUE;
+    info.hasDecoratorMetadata = ZR_FALSE;
+    ZrCore_Value_ResetAsNull(&info.decoratorMetadataValue);
+
+    if (!ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(cs, node, node->location)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
     
     // 初始化继承数组
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
@@ -168,6 +178,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                       classDecl->generic != ZR_NULL && classDecl->generic->params != ZR_NULL
                               ? classDecl->generic->params->count
                               : 1);
+    ZrCore_Array_Init(cs->state, &info.decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
     compiler_collect_generic_parameter_info(cs, &info.genericParameters, classDecl->generic);
     SZrString *primarySuperTypeName = ZR_NULL;
     // 处理继承关系
@@ -463,12 +474,120 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
+    if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(cs, node, classDecl->decorators, &info)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
+
     // 将 prototype 信息添加到数组
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
     
     // 注册类型名称到类型环境
     if (cs->typeEnv != ZR_NULL) {
         ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName);
+    }
+
+    if (classDecl->members != ZR_NULL && classDecl->members->count > 0) {
+        for (TZrSize memberIndex = 0; memberIndex < classDecl->members->count; memberIndex++) {
+            SZrAstNode *memberNode = classDecl->members->nodes[memberIndex];
+            SZrAstNodeArray *memberDecorators = ZR_NULL;
+            SZrString *memberName = ZR_NULL;
+            EZrRuntimeDecoratorTargetKind targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_INVALID;
+
+            if (memberNode == ZR_NULL) {
+                continue;
+            }
+
+            switch (memberNode->type) {
+                case ZR_AST_CLASS_FIELD:
+                    memberDecorators = memberNode->data.classField.decorators;
+                    memberName = memberNode->data.classField.name != ZR_NULL
+                                         ? memberNode->data.classField.name->name
+                                         : ZR_NULL;
+                    targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_FIELD;
+                    break;
+                case ZR_AST_CLASS_METHOD:
+                    memberDecorators = memberNode->data.classMethod.decorators;
+                    memberName = memberNode->data.classMethod.name != ZR_NULL
+                                         ? memberNode->data.classMethod.name->name
+                                         : ZR_NULL;
+                    targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_METHOD;
+                    break;
+                case ZR_AST_CLASS_PROPERTY:
+                    memberDecorators = memberNode->data.classProperty.decorators;
+                    if (memberNode->data.classProperty.modifier != ZR_NULL) {
+                        if (memberNode->data.classProperty.modifier->type == ZR_AST_PROPERTY_GET &&
+                            memberNode->data.classProperty.modifier->data.propertyGet.name != ZR_NULL) {
+                            memberName = memberNode->data.classProperty.modifier->data.propertyGet.name->name;
+                        } else if (memberNode->data.classProperty.modifier->type == ZR_AST_PROPERTY_SET &&
+                                   memberNode->data.classProperty.modifier->data.propertySet.name != ZR_NULL) {
+                            memberName = memberNode->data.classProperty.modifier->data.propertySet.name->name;
+                        }
+                    }
+                    targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_PROPERTY;
+                    break;
+                default:
+                    break;
+            }
+
+            if (memberDecorators == ZR_NULL || memberName == ZR_NULL ||
+                targetKind == ZR_RUNTIME_DECORATOR_TARGET_KIND_INVALID) {
+                continue;
+            }
+
+            if (!emit_runtime_member_decorator_applications(cs,
+                                                            memberDecorators,
+                                                            typeName,
+                                                            memberName,
+                                                            targetKind,
+                                                            memberNode->location)) {
+                cs->currentTypeName = oldTypeName;
+                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                cs->currentTypeNode = oldTypeNode;
+                return;
+            }
+        }
+    }
+
+    if (classDecl->decorators != ZR_NULL && classDecl->decorators->count > 0) {
+        TZrBool hasRuntimeDecorators = ZR_FALSE;
+        for (TZrSize decoratorIndex = 0; decoratorIndex < classDecl->decorators->count; decoratorIndex++) {
+            SZrAstNode *decoratorNode = classDecl->decorators->nodes[decoratorIndex];
+            if (decoratorNode == ZR_NULL) {
+                continue;
+            }
+
+            if (!ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
+                if (cs->hasError) {
+                    cs->currentTypeName = oldTypeName;
+                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                    cs->currentTypeNode = oldTypeNode;
+                    return;
+                }
+                hasRuntimeDecorators = ZR_TRUE;
+                break;
+            }
+            if (cs->hasError) {
+                cs->currentTypeName = oldTypeName;
+                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                cs->currentTypeNode = oldTypeNode;
+                return;
+            }
+        }
+
+        if (hasRuntimeDecorators &&
+            !emit_runtime_decorator_applications(cs,
+                                                 classDecl->decorators,
+                                                 emit_load_global_identifier(cs, typeName),
+                                                 ZR_FALSE,
+                                                 node->location)) {
+            cs->currentTypeName = oldTypeName;
+            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+            cs->currentTypeNode = oldTypeNode;
+            return;
+        }
     }
 
     emit_class_static_field_initializers(cs, node);

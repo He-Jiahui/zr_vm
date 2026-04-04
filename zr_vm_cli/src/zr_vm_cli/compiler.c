@@ -6,6 +6,7 @@
 
 #include "zr_vm_cli/conf.h"
 #include "zr_vm_cli/project.h"
+#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_library/common_state.h"
@@ -26,6 +27,11 @@ typedef struct SZrCliModuleRecord {
     TZrChar aotLlvmLibraryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar sourceHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
     TZrChar zroHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
+    TZrChar aotCInputHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
+    TZrUInt32 aotCInputKind;
+    TZrUInt32 aotCAbiVersion;
+    TZrBool hasSourceInput;
+    TZrBool hasBinaryInput;
     SZrCliStringList imports;
     TZrBool dirty;
 } SZrCliModuleRecord;
@@ -49,6 +55,8 @@ typedef struct SZrCliCompileSummary {
 #ifndef ZR_VM_HOST_LIB_DIR
 #define ZR_VM_HOST_LIB_DIR ""
 #endif
+
+static TZrBool zr_cli_command_exists(const TZrChar *commandName);
 
 static void zr_cli_module_collection_init(SZrCliModuleCollection *collection) {
     if (collection == ZR_NULL) {
@@ -178,6 +186,84 @@ static TZrBool zr_cli_hash_file(const TZrChar *path, TZrChar *buffer, TZrSize bu
     return ZR_TRUE;
 }
 
+static TZrBool zr_cli_read_binary_file(const TZrChar *path, TZrByte **outBuffer, TZrSize *outLength) {
+    FILE *file;
+    long fileLength;
+    TZrByte *buffer;
+    TZrSize readLength;
+
+    if (outBuffer != ZR_NULL) {
+        *outBuffer = ZR_NULL;
+    }
+    if (outLength != ZR_NULL) {
+        *outLength = 0;
+    }
+    if (path == ZR_NULL || outBuffer == ZR_NULL || outLength == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    file = fopen(path, "rb");
+    if (file == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return ZR_FALSE;
+    }
+
+    fileLength = ftell(file);
+    if (fileLength <= 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return ZR_FALSE;
+    }
+
+    buffer = (TZrByte *)malloc((size_t)fileLength);
+    if (buffer == ZR_NULL) {
+        fclose(file);
+        return ZR_FALSE;
+    }
+
+    readLength = (TZrSize)fread(buffer, 1, (size_t)fileLength, file);
+    fclose(file);
+    if (readLength != (TZrSize)fileLength) {
+        free(buffer);
+        return ZR_FALSE;
+    }
+
+    *outBuffer = buffer;
+    *outLength = readLength;
+    return ZR_TRUE;
+}
+
+static TZrBool zr_cli_load_binary_function(SZrState *state, const TZrChar *path, SZrFunction **outFunction) {
+    SZrIo io;
+    SZrIoSource *ioSource;
+
+    if (outFunction != ZR_NULL) {
+        *outFunction = ZR_NULL;
+    }
+    if (state == ZR_NULL || path == ZR_NULL || outFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrCli_Project_OpenFileIo(state, path, ZR_TRUE, &io)) {
+        return ZR_FALSE;
+    }
+
+    ioSource = ZrCore_Io_ReadSourceNew(&io);
+    if (io.close != ZR_NULL) {
+        io.close(state, io.customData);
+    }
+    if (ioSource == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, ioSource);
+    ZrCore_Io_ReadSourceFree(state->global, ioSource);
+    return *outFunction != ZR_NULL;
+}
+
 static TZrBool zr_cli_compile_aot_c_shared_library(const SZrCliModuleRecord *record) {
     TZrChar command[ZR_CLI_REPL_LINE_BUFFER_LENGTH * 8];
 
@@ -186,6 +272,11 @@ static TZrBool zr_cli_compile_aot_c_shared_library(const SZrCliModuleRecord *rec
     }
 
 #if defined(_WIN32)
+    if (!zr_cli_command_exists("cl")) {
+        fprintf(stderr, "AOT C host adapter unavailable: cl host toolchain not found\n");
+        return ZR_FALSE;
+    }
+
     if (snprintf(command,
                  sizeof(command),
                  "cl /nologo /LD /utf-8 /wd4819 /wd4103 /DZR_PLATFORM_WIN /DZR_PLATFORM_WIN_USE_MSVC /D_CRT_SECURE_NO_WARNINGS "
@@ -288,7 +379,7 @@ static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *
         if (snprintf(command,
                      sizeof(command),
                      "%s /nologo /LD \"%s\" /link /OUT:\"%s\" /LIBPATH:\"%s\" "
-                     "/EXPORT:ZrVm_GetAotCompiledModule_v1 zr_vm_library.lib zr_vm_core.lib",
+                     "/EXPORT:ZrVm_GetAotCompiledModule zr_vm_library.lib zr_vm_core.lib",
                      toolCommand,
                      record->aotLlvmIrPath,
                      record->aotLlvmLibraryPath,
@@ -299,7 +390,7 @@ static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *
         if (snprintf(command,
                      sizeof(command),
                      "%s -Wno-override-module -shared \"%s\" -L\"%s\" -lzr_vm_library -lzr_vm_core "
-                     "-Wl,/EXPORT:ZrVm_GetAotCompiledModule_v1 -o \"%s\"",
+                     "-Wl,/EXPORT:ZrVm_GetAotCompiledModule -o \"%s\"",
                      toolCommand,
                      record->aotLlvmIrPath,
                      ZR_VM_HOST_LIB_DIR,
@@ -565,6 +656,7 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
                                                SZrState *state,
                                                SZrCliModuleCollection *collection,
                                                const TZrChar *moduleName,
+                                               TZrBool includeBinaryModules,
                                                TZrChar *errorBuffer,
                                                TZrSize errorBufferSize) {
     TZrChar normalizedModule[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -575,6 +667,8 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     SZrCliModuleRecord record;
     TZrUInt64 sourceHash;
     SZrCliModuleRecord *recordSlot;
+    TZrBool sourceExists;
+    TZrBool binaryExists;
 
     if (project == ZR_NULL || state == ZR_NULL || collection == ZR_NULL || moduleName == ZR_NULL) {
         return ZR_FALSE;
@@ -592,9 +686,8 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     memset(&record, 0, sizeof(record));
     ZrCli_Project_StringList_Init(&record.imports);
     snprintf(record.moduleName, sizeof(record.moduleName), "%s", normalizedModule);
-    if (!ZrCli_Project_ResolveSourcePath(project, record.moduleName, record.sourcePath, sizeof(record.sourcePath)) ||
-        ZrLibrary_File_Exist(record.sourcePath) != ZR_LIBRARY_FILE_IS_FILE) {
-        snprintf(errorBuffer, errorBufferSize, "missing source module: %s", record.moduleName);
+    if (!ZrCli_Project_ResolveSourcePath(project, record.moduleName, record.sourcePath, sizeof(record.sourcePath))) {
+        snprintf(errorBuffer, errorBufferSize, "invalid source path for module: %s", record.moduleName);
         ZrCli_Project_StringList_Free(&record.imports);
         return ZR_FALSE;
     }
@@ -607,6 +700,16 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
                                             record.moduleName,
                                             record.aotLlvmLibraryPath,
                                             sizeof(record.aotLlvmLibraryPath));
+    sourceExists = ZrLibrary_File_Exist(record.sourcePath) == ZR_LIBRARY_FILE_IS_FILE;
+    binaryExists = ZrLibrary_File_Exist(record.zroPath) == ZR_LIBRARY_FILE_IS_FILE;
+    if (!sourceExists && (!includeBinaryModules || !binaryExists)) {
+        snprintf(errorBuffer, errorBufferSize, "missing source module: %s", record.moduleName);
+        ZrCli_Project_StringList_Free(&record.imports);
+        return ZR_FALSE;
+    }
+    record.hasSourceInput = sourceExists;
+    record.hasBinaryInput = binaryExists;
+    record.aotCAbiVersion = ZR_VM_AOT_ABI_VERSION;
 
     recordSlot = zr_cli_append_module(collection, &record);
     if (recordSlot == ZR_NULL) {
@@ -615,42 +718,68 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
         return ZR_FALSE;
     }
 
-    if (!ZrCli_Project_ReadTextFile(recordSlot->sourcePath, &source, &sourceLength)) {
-        snprintf(errorBuffer, errorBufferSize, "failed to read source: %s", recordSlot->sourcePath);
-        return ZR_FALSE;
-    }
-
-    sourceHash = ZrCli_Project_StableHashBytes((const TZrByte *) source, sourceLength);
-    ZrCli_Project_HashToHex(sourceHash, recordSlot->sourceHash, sizeof(recordSlot->sourceHash));
-
-    sourceName = ZrCore_String_CreateFromNative(state, recordSlot->sourcePath);
-    ast = ZrParser_Parse(state, source, sourceLength, sourceName);
-    free(source);
-    if (ast == ZR_NULL) {
-        snprintf(errorBuffer, errorBufferSize, "failed to parse source: %s", recordSlot->sourcePath);
-        return ZR_FALSE;
-    }
-
-    if (!zr_cli_collect_imports_from_ast(ast, &recordSlot->imports)) {
-        ZrParser_Ast_Free(state, ast);
-        snprintf(errorBuffer, errorBufferSize, "failed to collect imports for: %s", recordSlot->moduleName);
-        return ZR_FALSE;
-    }
-
-    ZrParser_Ast_Free(state, ast);
-
-    for (TZrSize index = 0; index < recordSlot->imports.count; index++) {
-        TZrChar resolvedSourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
-        const TZrChar *importName = recordSlot->imports.items[index];
-
-        if (!ZrCli_Project_ResolveSourcePath(project, importName, resolvedSourcePath, sizeof(resolvedSourcePath)) ||
-            ZrLibrary_File_Exist(resolvedSourcePath) != ZR_LIBRARY_FILE_IS_FILE) {
-            continue;
-        }
-
-        if (!zr_cli_collect_module_recursive(project, state, collection, importName, errorBuffer, errorBufferSize)) {
+    if (recordSlot->hasSourceInput) {
+        if (!ZrCli_Project_ReadTextFile(recordSlot->sourcePath, &source, &sourceLength)) {
+            snprintf(errorBuffer, errorBufferSize, "failed to read source: %s", recordSlot->sourcePath);
             return ZR_FALSE;
         }
+
+        sourceHash = ZrCli_Project_StableHashBytes((const TZrByte *) source, sourceLength);
+        ZrCli_Project_HashToHex(sourceHash, recordSlot->sourceHash, sizeof(recordSlot->sourceHash));
+        snprintf(recordSlot->aotCInputHash, sizeof(recordSlot->aotCInputHash), "%s", recordSlot->sourceHash);
+        recordSlot->aotCInputKind = ZR_AOT_INPUT_KIND_SOURCE;
+
+        sourceName = ZrCore_String_CreateFromNative(state, recordSlot->sourcePath);
+        ast = ZrParser_Parse(state, source, sourceLength, sourceName);
+        free(source);
+        if (ast == ZR_NULL) {
+            snprintf(errorBuffer, errorBufferSize, "failed to parse source: %s", recordSlot->sourcePath);
+            return ZR_FALSE;
+        }
+
+        if (!zr_cli_collect_imports_from_ast(ast, &recordSlot->imports)) {
+            ZrParser_Ast_Free(state, ast);
+            snprintf(errorBuffer, errorBufferSize, "failed to collect imports for: %s", recordSlot->moduleName);
+            return ZR_FALSE;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+
+        for (TZrSize index = 0; index < recordSlot->imports.count; index++) {
+            TZrChar resolvedSourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+            TZrChar resolvedBinaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+            const TZrChar *importName = recordSlot->imports.items[index];
+            TZrBool importHasSource = ZR_FALSE;
+            TZrBool importHasBinary = ZR_FALSE;
+
+            if (ZrCli_Project_ResolveSourcePath(project, importName, resolvedSourcePath, sizeof(resolvedSourcePath))) {
+                importHasSource = ZrLibrary_File_Exist(resolvedSourcePath) == ZR_LIBRARY_FILE_IS_FILE;
+            }
+            if (includeBinaryModules &&
+                ZrCli_Project_ResolveBinaryPath(project, importName, resolvedBinaryPath, sizeof(resolvedBinaryPath))) {
+                importHasBinary = ZrLibrary_File_Exist(resolvedBinaryPath) == ZR_LIBRARY_FILE_IS_FILE;
+            }
+            if (!importHasSource && !importHasBinary) {
+                continue;
+            }
+
+            if (!zr_cli_collect_module_recursive(project,
+                                                 state,
+                                                 collection,
+                                                 importName,
+                                                 includeBinaryModules,
+                                                 errorBuffer,
+                                                 errorBufferSize)) {
+                return ZR_FALSE;
+            }
+        }
+    } else {
+        if (!zr_cli_hash_file(recordSlot->zroPath, (TZrChar *)recordSlot->zroHash, sizeof(recordSlot->zroHash))) {
+            snprintf(errorBuffer, errorBufferSize, "failed to hash binary module: %s", recordSlot->zroPath);
+            return ZR_FALSE;
+        }
+        snprintf(recordSlot->aotCInputHash, sizeof(recordSlot->aotCInputHash), "%s", recordSlot->zroHash);
+        recordSlot->aotCInputKind = ZR_AOT_INPUT_KIND_BINARY;
     }
 
     return ZR_TRUE;
@@ -666,8 +795,10 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
     TZrChar *source = ZR_NULL;
     TZrSize sourceLength = 0;
     SZrString *sourceName;
-    SZrFunction *function;
-    TZrBool success;
+    SZrFunction *function = ZR_NULL;
+    TZrByte *embeddedModuleBlob = ZR_NULL;
+    TZrSize embeddedModuleBlobLength = 0;
+    TZrBool success = ZR_FALSE;
     SZrAotWriterOptions aotOptions;
 
     if (project == ZR_NULL || record == ZR_NULL) {
@@ -687,35 +818,56 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
     }
 
     state = global->mainThreadState;
-    if (!ZrCli_Project_ReadTextFile(record->sourcePath, &source, &sourceLength)) {
-        fprintf(stderr, "failed to read source: %s\n", record->sourcePath);
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return ZR_FALSE;
+    memset(&aotOptions, 0, sizeof(aotOptions));
+
+    if (record->hasSourceInput) {
+        if (!ZrCli_Project_ReadTextFile(record->sourcePath, &source, &sourceLength)) {
+            fprintf(stderr, "failed to read source: %s\n", record->sourcePath);
+            ZrLibrary_CommonState_CommonGlobalState_Free(global);
+            return ZR_FALSE;
+        }
+
+        sourceName = ZrCore_String_CreateFromNative(state, (TZrNativeString)record->sourcePath);
+        function = ZrParser_Source_Compile(state, source, sourceLength, sourceName);
+        free(source);
+        source = ZR_NULL;
+
+        if (function == ZR_NULL) {
+            fprintf(stderr, "failed to compile module: %s\n", record->moduleName);
+            ZrLibrary_CommonState_CommonGlobalState_Free(global);
+            return ZR_FALSE;
+        }
+
+        success = ZrCli_Project_EnsureParentDirectory(record->zroPath) &&
+                  ZrParser_Writer_WriteBinaryFile(state, function, record->zroPath);
+        if (success && emitIntermediate) {
+            success = ZrCli_Project_EnsureParentDirectory(record->zriPath) &&
+                      ZrParser_Writer_WriteIntermediateFile(state, function, record->zriPath);
+        }
+        if (success && !zr_cli_hash_file(record->zroPath, (TZrChar *)record->zroHash, sizeof(record->zroHash))) {
+            success = ZR_FALSE;
+        }
+    } else {
+        if (!zr_cli_load_binary_function(state, record->zroPath, &function)) {
+            fprintf(stderr, "failed to load binary module: %s\n", record->zroPath);
+            ZrLibrary_CommonState_CommonGlobalState_Free(global);
+            return ZR_FALSE;
+        }
+        success = zr_cli_hash_file(record->zroPath, (TZrChar *)record->zroHash, sizeof(record->zroHash));
     }
 
-    sourceName = ZrCore_String_CreateFromNative(state, (TZrNativeString)record->sourcePath);
-    function = ZrParser_Source_Compile(state, source, sourceLength, sourceName);
-    free(source);
-
-    if (function == ZR_NULL) {
-        fprintf(stderr, "failed to compile module: %s\n", record->moduleName);
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return ZR_FALSE;
-    }
-
-    success = ZrCli_Project_EnsureParentDirectory(record->zroPath) &&
-              ZrParser_Writer_WriteBinaryFile(state, function, record->zroPath);
-    if (success && emitIntermediate) {
-        success = ZrCli_Project_EnsureParentDirectory(record->zriPath) &&
-                  ZrParser_Writer_WriteIntermediateFile(state, function, record->zriPath);
-    }
-    if (success && !zr_cli_hash_file(record->zroPath, (TZrChar *)record->zroHash, sizeof(record->zroHash))) {
-        success = ZR_FALSE;
+    if (success && emitAotC) {
+        success = zr_cli_read_binary_file(record->zroPath, &embeddedModuleBlob, &embeddedModuleBlobLength);
     }
     if (success && (emitAotC || emitAotLlvm)) {
         aotOptions.moduleName = record->moduleName;
         aotOptions.sourceHash = record->sourceHash;
         aotOptions.zroHash = record->zroHash;
+        aotOptions.inputKind = record->aotCInputKind;
+        aotOptions.inputHash = record->aotCInputHash;
+        aotOptions.embeddedModuleBlob = embeddedModuleBlob;
+        aotOptions.embeddedModuleBlobLength = embeddedModuleBlobLength;
+        aotOptions.requireExecutableLowering = emitAotC;
     }
     if (success && emitAotC) {
         success = ZrCli_Project_EnsureParentDirectory(record->aotCSourcePath) &&
@@ -730,7 +882,12 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
                   zr_cli_compile_aot_llvm_shared_library(record);
     }
 
-    ZrCore_Function_Free(state, function);
+    if (embeddedModuleBlob != ZR_NULL) {
+        free(embeddedModuleBlob);
+    }
+    if (function != ZR_NULL) {
+        ZrCore_Function_Free(state, function);
+    }
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
     if (!success) {
         fprintf(stderr, "failed to write outputs for module: %s\n", record->moduleName);
@@ -761,7 +918,8 @@ static TZrBool zr_cli_module_has_required_outputs(const SZrCliModuleRecord *reco
         return ZR_FALSE;
     }
 
-    if (emitIntermediate &&
+    if (record->hasSourceInput &&
+        emitIntermediate &&
         ZrLibrary_File_Exist((TZrNativeString)record->zriPath) != ZR_LIBRARY_FILE_IS_FILE) {
         return ZR_FALSE;
     }
@@ -775,6 +933,39 @@ static TZrBool zr_cli_module_has_required_outputs(const SZrCliModuleRecord *reco
     if (emitAotLlvm &&
         (ZrLibrary_File_Exist((TZrNativeString)record->aotLlvmIrPath) != ZR_LIBRARY_FILE_IS_FILE ||
          ZrLibrary_File_Exist((TZrNativeString)record->aotLlvmLibraryPath) != ZR_LIBRARY_FILE_IS_FILE)) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool zr_cli_manifest_entry_matches_record(const SZrCliManifestEntry *entry,
+                                                    const SZrCliModuleRecord *record,
+                                                    TZrBool emitAotC) {
+    if (entry == ZR_NULL || record == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (record->hasSourceInput) {
+        if (strcmp(entry->sourceHash, record->sourceHash) != 0) {
+            return ZR_FALSE;
+        }
+    } else if (record->hasBinaryInput) {
+        if (strcmp(entry->zroHash, record->zroHash) != 0) {
+            return ZR_FALSE;
+        }
+    } else {
+        return ZR_FALSE;
+    }
+
+    if (!ZrCli_Project_StringList_Equals(&entry->imports, &record->imports)) {
+        return ZR_FALSE;
+    }
+
+    if (emitAotC &&
+        (entry->aotCInputKind != record->aotCInputKind ||
+         entry->aotCAbiVersion != record->aotCAbiVersion ||
+         strcmp(entry->aotCInputHash, record->aotCInputHash) != 0)) {
         return ZR_FALSE;
     }
 
@@ -797,12 +988,15 @@ static TZrBool zr_cli_build_next_manifest(const SZrCliModuleCollection *collecti
         snprintf(entry.moduleName, sizeof(entry.moduleName), "%s", record->moduleName);
         snprintf(entry.sourceHash, sizeof(entry.sourceHash), "%s", record->sourceHash);
         snprintf(entry.zroHash, sizeof(entry.zroHash), "%s", record->zroHash);
+        snprintf(entry.aotCInputHash, sizeof(entry.aotCInputHash), "%s", record->aotCInputHash);
         snprintf(entry.zroPath, sizeof(entry.zroPath), "%s", record->zroPath);
         snprintf(entry.zriPath, sizeof(entry.zriPath), "%s", record->zriPath);
         snprintf(entry.aotCSourcePath, sizeof(entry.aotCSourcePath), "%s", record->aotCSourcePath);
         snprintf(entry.aotCLibraryPath, sizeof(entry.aotCLibraryPath), "%s", record->aotCLibraryPath);
         snprintf(entry.aotLlvmIrPath, sizeof(entry.aotLlvmIrPath), "%s", record->aotLlvmIrPath);
         snprintf(entry.aotLlvmLibraryPath, sizeof(entry.aotLlvmLibraryPath), "%s", record->aotLlvmLibraryPath);
+        entry.aotCInputKind = record->aotCInputKind;
+        entry.aotCAbiVersion = record->aotCAbiVersion;
         if (!ZrCli_Project_StringList_Copy(&entry.imports, &record->imports) ||
             !zr_cli_manifest_append_entry(manifest, &entry)) {
             ZrCli_Project_StringList_Free(&entry.imports);
@@ -857,6 +1051,7 @@ int ZrCli_Compiler_CompileProject(const SZrCliCommand *command) {
                                          scanGlobal->mainThreadState,
                                          &modules,
                                          project.entryModule,
+                                         emitAotC,
                                          error,
                                          sizeof(error))) {
         fprintf(stderr, "%s\n", error[0] != '\0' ? error : "failed to collect compile graph");
@@ -883,8 +1078,7 @@ int ZrCli_Compiler_CompileProject(const SZrCliCommand *command) {
                     ZrCli_Project_FindManifestEntryConst(&previousManifest, record->moduleName);
 
             record->dirty = manifestEntry == ZR_NULL ||
-                            strcmp(manifestEntry->sourceHash, record->sourceHash) != 0 ||
-                            !ZrCli_Project_StringList_Equals(&manifestEntry->imports, &record->imports) ||
+                            !zr_cli_manifest_entry_matches_record(manifestEntry, record, emitAotC) ||
                             !zr_cli_module_has_required_outputs(record,
                                                                 command->emitIntermediate,
                                                                 emitAotC,

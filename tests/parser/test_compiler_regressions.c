@@ -72,6 +72,21 @@ static const TZrChar *function_name_or_anonymous(const SZrFunction *function) {
     return ZrCore_String_GetNativeString(function->functionName);
 }
 
+static TZrBool function_tree_contains_exact_child_pointer(const SZrFunction *function, const SZrFunction *target) {
+    if (function == ZR_NULL || target == ZR_NULL || function->childFunctionList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+        const SZrFunction *child = &function->childFunctionList[index];
+        if (child == target || function_tree_contains_exact_child_pointer(child, target)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static void assert_function_constant_operands_in_range_recursive(SZrState *state,
                                                                  const SZrFunction *function,
                                                                  TZrUInt32 depth) {
@@ -123,6 +138,65 @@ static void assert_function_constant_operands_in_range_recursive(SZrState *state
     }
 }
 
+static void assert_create_closure_targets_are_reachable_children_recursive(SZrState *state,
+                                                                           const SZrFunction *function,
+                                                                           TZrUInt32 depth) {
+    char message[256];
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE_MESSAGE(depth < 64, "CREATE_CLOSURE child reachability recursion depth exceeded 64");
+
+    for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+        const TZrInstruction *instruction = &function->instructionsList[index];
+        EZrInstructionCode opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+
+        if (opcode == ZR_INSTRUCTION_ENUM(CREATE_CLOSURE)) {
+            TZrUInt32 constantIndex = instruction->instruction.operand.operand1[0];
+            const SZrTypeValue *constant;
+            const SZrFunction *targetFunction = ZR_NULL;
+
+            snprintf(message,
+                     sizeof(message),
+                     "Function '%s' emitted CREATE_CLOSURE with constant index %u but pool length is %u at instruction %u",
+                     function_name_or_anonymous(function),
+                     (unsigned int)constantIndex,
+                     (unsigned int)function->constantValueLength,
+                     (unsigned int)index);
+            TEST_ASSERT_TRUE_MESSAGE(constantIndex < function->constantValueLength, message);
+
+            constant = &function->constantValueList[constantIndex];
+            if ((constant->type == ZR_VALUE_TYPE_FUNCTION || constant->type == ZR_VALUE_TYPE_CLOSURE) &&
+                constant->value.object != ZR_NULL &&
+                constant->value.object->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+                targetFunction = ZR_CAST_FUNCTION(state, constant->value.object);
+            }
+
+            snprintf(message,
+                     sizeof(message),
+                     "Function '%s' emitted CREATE_CLOSURE with non-function constant at instruction %u",
+                     function_name_or_anonymous(function),
+                     (unsigned int)index);
+            TEST_ASSERT_NOT_NULL_MESSAGE(targetFunction, message);
+
+            snprintf(message,
+                     sizeof(message),
+                     "Function '%s' emitted CREATE_CLOSURE for function constant %u that is not reachable from childFunctions at instruction %u",
+                     function_name_or_anonymous(function),
+                     (unsigned int)constantIndex,
+                     (unsigned int)index);
+            TEST_ASSERT_TRUE_MESSAGE(function_tree_contains_exact_child_pointer(function, targetFunction), message);
+        }
+    }
+
+    if (function->childFunctionList != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+            assert_create_closure_targets_are_reachable_children_recursive(state,
+                                                                           &function->childFunctionList[index],
+                                                                           depth + 1);
+        }
+    }
+}
+
 static void test_class_member_nested_functions_keep_constant_indices_in_range(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Class Member Nested Functions Keep Constant Indices In Range";
@@ -161,6 +235,46 @@ static void test_class_member_nested_functions_keep_constant_indices_in_range(vo
 
     ZrCore_Function_Free(state, function);
     free(source);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_lambda_create_closure_targets_are_reachable_from_child_function_graph(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Lambda Create Closure Targets Are Reachable From Child Function Graph";
+    const char *source =
+            "var build = () => {\n"
+            "    var emit = () => { return 1; };\n"
+            "    return emit();\n"
+            "};\n"
+            "return build();";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Lambda child function graph completeness",
+                 "Testing that CREATE_CLOSURE function constants are reachable from childFunctions instead of relying on constant-only recovery");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_CreateFromNative(state, "lambda_child_function_graph_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    assert_create_closure_targets_are_reachable_children_recursive(state, function, 0);
+
+    ZrCore_Function_Free(state, function);
     timer.endTime = clock();
     ZR_TEST_PASS(timer, testSummary);
     ZrTests_Runtime_State_Destroy(state);
@@ -218,6 +332,7 @@ int main(void) {
 
     UNITY_BEGIN();
     RUN_TEST(test_class_member_nested_functions_keep_constant_indices_in_range);
+    RUN_TEST(test_lambda_create_closure_targets_are_reachable_from_child_function_graph);
     RUN_TEST(test_classes_full_module_compiles_without_static_and_receiver_signature_regressions);
     return UNITY_END();
 }

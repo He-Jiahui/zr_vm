@@ -100,12 +100,15 @@ static void import_type_prototype_init(SZrState *state,
     info->allowValueConstruction = type != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE &&
                                    type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
     info->allowBoxedConstruction = info->allowValueConstruction;
+    info->hasDecoratorMetadata = ZR_FALSE;
+    ZrCore_Value_ResetAsNull(&info->decoratorMetadataValue);
     ZrCore_Array_Init(state, &info->inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
     ZrCore_Array_Init(state, &info->implements, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
     ZrCore_Array_Init(state,
                       &info->genericParameters,
                       sizeof(SZrTypeGenericParameterInfo),
                       ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(state, &info->decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(state, &info->members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
 }
 
@@ -437,6 +440,7 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
         TZrSize currentPrototypeSize;
         TZrUInt32 inheritsCount;
         TZrUInt32 membersCount;
+        TZrUInt32 decoratorsCount;
         SZrString *prototypeName;
         SZrTypePrototypeInfo typePrototype;
 
@@ -447,8 +451,10 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
         protoInfo = (const SZrCompiledPrototypeInfo *)currentPos;
         inheritsCount = protoInfo->inheritsCount;
         membersCount = protoInfo->membersCount;
+        decoratorsCount = protoInfo->decoratorsCount;
         currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) +
                                inheritsCount * sizeof(TZrUInt32) +
+                               decoratorsCount * sizeof(TZrUInt32) +
                                membersCount * sizeof(SZrCompiledMemberInfo);
         if (remainingDataSize < currentPrototypeSize) {
             return ZR_FALSE;
@@ -480,7 +486,8 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
             if (membersCount > 0) {
                 const SZrCompiledMemberInfo *memberInfos = (const SZrCompiledMemberInfo *)(currentPos +
                                                                                            sizeof(SZrCompiledPrototypeInfo) +
-                                                                                           inheritsCount * sizeof(TZrUInt32));
+                                                                                           inheritsCount * sizeof(TZrUInt32) +
+                                                                                           decoratorsCount * sizeof(TZrUInt32));
                 for (TZrUInt32 memberIndex = 0; memberIndex < membersCount; memberIndex++) {
                     const SZrCompiledMemberInfo *compiledMember = &memberInfos[memberIndex];
                     SZrTypeMemberInfo memberInfo;

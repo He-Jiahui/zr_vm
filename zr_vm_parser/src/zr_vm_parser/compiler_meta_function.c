@@ -29,6 +29,8 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
+    TZrSize oldChildFunctionLength = cs->childFunctions.length;
+    TZrSize oldChildFunctionNameMapLength = cs->childFunctionNameMap.length;
     TZrUInt32 oldCachedNullConstantIndex = cs->cachedNullConstantIndex;
     TZrBool oldHasCachedNullConstantIndex = cs->hasCachedNullConstantIndex;
     TZrBool oldIsInConstructor = cs->isInConstructor;
@@ -62,6 +64,8 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     cs->localVars.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    cs->childFunctions.length = 0;
+    cs->childFunctionNameMap.length = 0;
     cs->cachedNullConstantIndex = 0;
     cs->hasCachedNullConstantIndex = ZR_FALSE;
     
@@ -197,6 +201,8 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
         cs->localVars.length = 0;
         cs->constants.length = 0;
         cs->closureVars.length = 0;
+        cs->childFunctions.length = oldChildFunctionLength;
+        cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
         return;
     }
     
@@ -241,6 +247,22 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
             newFunc->localVariableLength = (TZrUInt32) cs->localVars.length;
         }
     }
+
+    if (cs->childFunctions.length > 0) {
+        TZrSize childFuncSize = cs->childFunctions.length * sizeof(SZrFunction);
+        newFunc->childFunctionList =
+                (struct SZrFunction *) ZrCore_Memory_RawMallocWithType(global, childFuncSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->childFunctionList != ZR_NULL) {
+            SZrFunction **srcArray = (SZrFunction **) cs->childFunctions.head;
+            for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
+                if (srcArray[i] != ZR_NULL) {
+                    newFunc->childFunctionList[i] = *srcArray[i];
+                }
+            }
+            newFunc->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
+            ZrCore_Function_RebindConstantFunctionValuesToChildren(newFunc);
+        }
+    }
     
     // 设置函数元数据
     newFunc->stackSize = (TZrUInt32) cs->maxStackSlotCount;
@@ -277,6 +299,8 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     cs->closureVarCount = oldClosureVarCount;
     cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
     cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
+    cs->childFunctions.length = oldChildFunctionLength;
+    cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
     cs->isInConstructor = oldIsInConstructor;
     
     // 清空数组（但保留已分配的内存）

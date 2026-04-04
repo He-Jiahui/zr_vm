@@ -10,6 +10,8 @@
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/state.h"
 #define MAX_DELTA ((256UL << ((sizeof(state->stackBase.valuePointer->toBeClosedValueOffset) - 1) * 8)) - 1)
+#define ZR_CLOSURE_CLOSED_COUNT_NONE ((TZrSize)0)
+
 SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closureValueCount) {
     SZrRawObject *object =
             ZrCore_RawObject_New(state, ZR_VALUE_TYPE_CLOSURE,
@@ -218,10 +220,10 @@ TZrSize ZrCore_Closure_CloseRegisteredValues(struct SZrState *state,
                                        TZrSize count,
                                        EZrThreadStatus errorStatus,
                                        TZrBool isYield) {
-    TZrSize closedCount = 0;
+    TZrSize closedCount = ZR_CLOSURE_CLOSED_COUNT_NONE;
 
     if (state == ZR_NULL || count == 0) {
-        return 0;
+        return ZR_CLOSURE_CLOSED_COUNT_NONE;
     }
 
     while (closedCount < count &&

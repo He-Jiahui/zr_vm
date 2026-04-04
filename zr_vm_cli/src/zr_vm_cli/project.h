@@ -25,12 +25,15 @@ typedef struct SZrCliManifestEntry {
     TZrChar moduleName[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar sourceHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
     TZrChar zroHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
+    TZrChar aotCInputHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
     TZrChar zroPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar zriPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar aotCSourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar aotCLibraryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar aotLlvmIrPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar aotLlvmLibraryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrUInt32 aotCInputKind;
+    TZrUInt32 aotCAbiVersion;
     SZrCliStringList imports;
 } SZrCliManifestEntry;
 

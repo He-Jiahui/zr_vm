@@ -1,4 +1,8 @@
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 function assert(condition, message) {
     if (!condition) {
@@ -33,6 +37,73 @@ function findPosition(text, substring, occurrence = 0, offset = 0) {
         character: lines[lines.length - 1].length,
     };
 }
+
+function createWatchedProjectFixture() {
+    const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-watch-'));
+    const sourcePath = path.join(rootPath, 'src');
+    const projectPath = path.join(rootPath, 'watched_refresh.zrp');
+    const mainPath = path.join(sourcePath, 'main.zr');
+
+    fs.mkdirSync(sourcePath, { recursive: true });
+    fs.writeFileSync(projectPath, JSON.stringify({
+        name: 'watched_refresh',
+        source: 'src',
+        binary: 'bin',
+        entry: 'main',
+    }, null, 2));
+    fs.writeFileSync(mainPath, [
+        'module "main";',
+        '',
+        'pub func watched_before_refresh(): int {',
+        '    return 1;',
+        '}',
+        '',
+    ].join('\n'));
+
+    return {
+        rootPath,
+        projectPath,
+        mainPath,
+        projectUri: pathToFileURL(projectPath).toString(),
+        mainUri: pathToFileURL(mainPath).toString(),
+    };
+}
+
+function createWatchedBinaryMetadataFixture() {
+    const sourceFixtureRoot = path.join(__dirname,
+        '..',
+        'fixtures',
+        'projects',
+        'aot_module_graph_pipeline');
+    const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-binary-watch-'));
+    const projectPath = path.join(rootPath, 'aot_module_graph_pipeline.zrp');
+    const mainPath = path.join(rootPath, 'src', 'main.zr');
+    const metadataPath = path.join(rootPath, 'bin', 'graph_binary_stage.zri');
+
+    fs.cpSync(sourceFixtureRoot, rootPath, { recursive: true });
+    fs.rmSync(path.join(rootPath, 'bin', 'graph_binary_stage.zro'), { force: true });
+
+    return {
+        rootPath,
+        projectPath,
+        mainPath,
+        metadataPath,
+        projectUri: pathToFileURL(projectPath).toString(),
+        mainUri: pathToFileURL(mainPath).toString(),
+        metadataUri: pathToFileURL(metadataPath).toString(),
+    };
+}
+
+function cleanupPath(targetPath) {
+    if (!targetPath) {
+        return;
+    }
+
+    fs.rmSync(targetPath, { recursive: true, force: true });
+}
+
+let watchedFixtureRootToCleanup = null;
+let watchedBinaryFixtureRootToCleanup = null;
 
 class LspClient {
     constructor(serverPath) {
@@ -258,6 +329,10 @@ class LspClient {
 async function main() {
     const serverPath = process.argv[2];
     assert(serverPath, 'Expected server executable path as argv[2]');
+    const watchedFixture = createWatchedProjectFixture();
+    const watchedBinaryFixture = createWatchedBinaryMetadataFixture();
+    watchedFixtureRootToCleanup = watchedFixture.rootPath;
+    watchedBinaryFixtureRootToCleanup = watchedBinaryFixture.rootPath;
 
     const client = new LspClient(serverPath);
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
@@ -527,6 +602,149 @@ async function main() {
         signature.label.includes('shape<const N: int>(value: Matrix<int, 4>): Matrix<int, 4>')),
         'signatureHelp should show the closed generic method signature with normalized const generics');
 
+    client.notify('workspace/didChangeWatchedFiles', {
+        changes: [
+            { uri: watchedBinaryFixture.metadataUri, type: 2 },
+        ],
+    });
+
+    const watchedBootstrapSymbols = await client.request('workspace/symbol', {
+        query: 'merged',
+    });
+    assert(Array.isArray(watchedBootstrapSymbols) && watchedBootstrapSymbols.some((item) =>
+        item &&
+        item.location &&
+        item.location.uri === watchedBinaryFixture.mainUri &&
+        item.name === 'merged'),
+    'workspace/didChangeWatchedFiles metadata change must bootstrap unopened project indexes');
+
+    const watchedBinaryText = fs.readFileSync(watchedBinaryFixture.mainPath, 'utf8');
+    const watchedBinaryMetadataText = fs.readFileSync(watchedBinaryFixture.metadataPath, 'utf8');
+    const watchedBinaryImportDefinitionPosition = findPosition(watchedBinaryText, '"graph_binary_stage"', 0, 1);
+    const watchedBinaryHoverPosition = findPosition(watchedBinaryText, 'binarySeed', 0, 0);
+    const watchedBinaryMetadataMemberDefinitionPosition = findPosition(
+        watchedBinaryMetadataText,
+        'fn binarySeed(): int',
+        0,
+        3,
+    );
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: watchedBinaryFixture.mainUri,
+            languageId: 'zr',
+            version: 1,
+            text: watchedBinaryText,
+        },
+    });
+
+    const watchedBinaryDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(watchedBinaryDiagnostics.uri === watchedBinaryFixture.mainUri,
+        'binary watched metadata diagnostics uri mismatch');
+    assert(Array.isArray(watchedBinaryDiagnostics.diagnostics) && watchedBinaryDiagnostics.diagnostics.length === 0,
+        'binary watched metadata fixture should open without diagnostics');
+
+    const watchedBinaryImportDefinition = await client.request('textDocument/definition', {
+        textDocument: { uri: watchedBinaryFixture.mainUri },
+        position: watchedBinaryImportDefinitionPosition,
+    });
+    assert(Array.isArray(watchedBinaryImportDefinition) && watchedBinaryImportDefinition.some((location) =>
+        location &&
+        location.uri === watchedBinaryFixture.metadataUri &&
+        location.range &&
+        location.range.start &&
+        location.range.start.line === 0 &&
+        location.range.start.character === 0),
+    'binary import literal definition should navigate to the binary metadata file entry');
+
+    const watchedBinaryMemberDefinition = await client.request('textDocument/definition', {
+        textDocument: { uri: watchedBinaryFixture.mainUri },
+        position: watchedBinaryHoverPosition,
+    });
+    assert(Array.isArray(watchedBinaryMemberDefinition) && watchedBinaryMemberDefinition.some((location) =>
+        location &&
+        location.uri === watchedBinaryFixture.metadataUri &&
+        location.range &&
+        location.range.start &&
+        location.range.end &&
+        location.range.start.line === watchedBinaryMetadataMemberDefinitionPosition.line &&
+        location.range.start.character === watchedBinaryMetadataMemberDefinitionPosition.character &&
+        location.range.end.line === watchedBinaryMetadataMemberDefinitionPosition.line &&
+        location.range.end.character === watchedBinaryMetadataMemberDefinitionPosition.character + 'binarySeed'.length),
+    'binary imported member definition should navigate to the exported symbol inside .zri metadata');
+
+    const watchedBinaryMemberReferences = await client.request('textDocument/references', {
+        textDocument: { uri: watchedBinaryFixture.mainUri },
+        position: watchedBinaryHoverPosition,
+        context: { includeDeclaration: true },
+    });
+    assert(Array.isArray(watchedBinaryMemberReferences) && watchedBinaryMemberReferences.some((location) =>
+        location &&
+        location.uri === watchedBinaryFixture.mainUri &&
+        location.range &&
+        location.range.start &&
+        location.range.end &&
+        location.range.start.line === watchedBinaryHoverPosition.line &&
+        location.range.start.character === watchedBinaryHoverPosition.character &&
+        location.range.end.line === watchedBinaryHoverPosition.line &&
+        location.range.end.character === watchedBinaryHoverPosition.character + 'binarySeed'.length) &&
+        watchedBinaryMemberReferences.some((location) =>
+            location &&
+            location.uri === watchedBinaryFixture.metadataUri &&
+            location.range &&
+            location.range.start &&
+            location.range.end &&
+            location.range.start.line === watchedBinaryMetadataMemberDefinitionPosition.line &&
+            location.range.start.character === watchedBinaryMetadataMemberDefinitionPosition.character &&
+            location.range.end.line === watchedBinaryMetadataMemberDefinitionPosition.line &&
+            location.range.end.character === watchedBinaryMetadataMemberDefinitionPosition.character + 'binarySeed'.length),
+    'binary imported member references should include the current project usage and the .zri export declaration');
+
+    const watchedBinaryHighlights = await client.request('textDocument/documentHighlight', {
+        textDocument: { uri: watchedBinaryFixture.mainUri },
+        position: watchedBinaryHoverPosition,
+    });
+    assert(Array.isArray(watchedBinaryHighlights) && watchedBinaryHighlights.some((highlight) =>
+        highlight &&
+        highlight.range &&
+        highlight.range.start &&
+        highlight.range.end &&
+        highlight.range.start.line === watchedBinaryHoverPosition.line &&
+        highlight.range.start.character === watchedBinaryHoverPosition.character &&
+        highlight.range.end.line === watchedBinaryHoverPosition.line &&
+        highlight.range.end.character === watchedBinaryHoverPosition.character + 'binarySeed'.length),
+    'binary imported member documentHighlight should include the current document usage');
+
+    const watchedBinaryHoverBefore = await client.request('textDocument/hover', {
+        textDocument: { uri: watchedBinaryFixture.mainUri },
+        position: watchedBinaryHoverPosition,
+    });
+    assert(watchedBinaryHoverBefore &&
+        watchedBinaryHoverBefore.contents &&
+        watchedBinaryHoverBefore.contents.value.includes('Type: int') &&
+        watchedBinaryHoverBefore.contents.value.includes('Source: binary metadata'),
+    'binary metadata hover should resolve the initial inferred return type');
+
+    fs.writeFileSync(
+        watchedBinaryFixture.metadataPath,
+        fs.readFileSync(watchedBinaryFixture.metadataPath, 'utf8').replace('fn binarySeed(): int', 'fn binarySeed(): float'),
+    );
+    client.notify('workspace/didChangeWatchedFiles', {
+        changes: [
+            { uri: watchedBinaryFixture.metadataUri, type: 2 },
+        ],
+    });
+
+    const watchedBinaryHoverAfter = await client.request('textDocument/hover', {
+        textDocument: { uri: watchedBinaryFixture.mainUri },
+        position: watchedBinaryHoverPosition,
+    });
+    assert(watchedBinaryHoverAfter &&
+        watchedBinaryHoverAfter.contents &&
+        watchedBinaryHoverAfter.contents.value.includes('Type: float') &&
+        watchedBinaryHoverAfter.contents.value.includes('Source: binary metadata'),
+    'workspace/didChangeWatchedFiles metadata change must refresh open analyzers that consume binary metadata');
+
     client.notify('textDocument/didClose', {
         textDocument: {
             uri: genericUri,
@@ -538,11 +756,88 @@ async function main() {
     assert(Array.isArray(genericCloseDiagnostics.diagnostics) && genericCloseDiagnostics.diagnostics.length === 0,
         'generic didClose must clear diagnostics');
 
+    client.notify('workspace/didChangeWatchedFiles', {
+        changes: [
+            { uri: watchedFixture.projectUri, type: 1 },
+        ],
+    });
+
+    const watchedCreateSymbols = await client.request('workspace/symbol', {
+        query: 'watched_before_refresh',
+    });
+    assert(Array.isArray(watchedCreateSymbols) && watchedCreateSymbols.some((item) =>
+        item &&
+        item.location &&
+        item.location.uri === watchedFixture.mainUri &&
+        item.name === 'watched_before_refresh'),
+    'workspace/didChangeWatchedFiles create must index unopened project sources');
+
+    fs.writeFileSync(watchedFixture.mainPath, [
+        'module "main";',
+        '',
+        'pub func watched_after_refresh(): int {',
+        '    return 2;',
+        '}',
+        '',
+    ].join('\n'));
+    client.notify('workspace/didChangeWatchedFiles', {
+        changes: [
+            { uri: watchedFixture.mainUri, type: 2 },
+        ],
+    });
+
+    const watchedChangeDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(watchedChangeDiagnostics.uri === watchedFixture.mainUri,
+        'workspace/didChangeWatchedFiles source change diagnostics uri mismatch');
+    assert(Array.isArray(watchedChangeDiagnostics.diagnostics) && watchedChangeDiagnostics.diagnostics.length === 0,
+        'workspace/didChangeWatchedFiles source change should publish empty diagnostics');
+
+    const watchedUpdatedSymbols = await client.request('workspace/symbol', {
+        query: 'watched_after_refresh',
+    });
+    assert(Array.isArray(watchedUpdatedSymbols) && watchedUpdatedSymbols.some((item) =>
+        item &&
+        item.location &&
+        item.location.uri === watchedFixture.mainUri &&
+        item.name === 'watched_after_refresh'),
+    'workspace/didChangeWatchedFiles change must refresh unopened source analyzers');
+
+    const watchedRemovedOldSymbols = await client.request('workspace/symbol', {
+        query: 'watched_before_refresh',
+    });
+    assert(Array.isArray(watchedRemovedOldSymbols) && watchedRemovedOldSymbols.length === 0,
+        'workspace/didChangeWatchedFiles change must replace stale unopened source symbols');
+
+    fs.unlinkSync(watchedFixture.projectPath);
+    client.notify('workspace/didChangeWatchedFiles', {
+        changes: [
+            { uri: watchedFixture.projectUri, type: 3 },
+        ],
+    });
+
+    const watchedDeleteDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(watchedDeleteDiagnostics.uri === watchedFixture.projectUri,
+        'workspace/didChangeWatchedFiles project delete diagnostics uri mismatch');
+    assert(Array.isArray(watchedDeleteDiagnostics.diagnostics) && watchedDeleteDiagnostics.diagnostics.length === 0,
+        'workspace/didChangeWatchedFiles project delete must clear diagnostics');
+
+    const watchedDeletedSymbols = await client.request('workspace/symbol', {
+        query: 'watched_after_refresh',
+    });
+    assert(Array.isArray(watchedDeletedSymbols) && watchedDeletedSymbols.length === 0,
+        'workspace/didChangeWatchedFiles delete must clear the removed project index');
+
     const semanticTokens = await client.request('textDocument/semanticTokens/full', {
         textDocument: { uri: docsUri },
     });
     assert(semanticTokens && Array.isArray(semanticTokens.data),
         'semanticTokens/full must return a data array');
+
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: watchedBinaryFixture.mainUri,
+        },
+    });
 
     client.notify('textDocument/didClose', {
         textDocument: {
@@ -556,10 +851,21 @@ async function main() {
         },
     });
 
-    const closeDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(closeDiagnostics.uri === documentUri, 'didClose diagnostics uri mismatch');
-    assert(Array.isArray(closeDiagnostics.diagnostics) && closeDiagnostics.diagnostics.length === 0,
-        'didClose must clear diagnostics');
+    const expectedClosedUris = new Set([
+        watchedBinaryFixture.mainUri,
+        documentUri,
+        docsUri,
+    ]);
+    let clearedCloseCount = 0;
+    while (clearedCloseCount < expectedClosedUris.size) {
+        const closeDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+        assert(expectedClosedUris.has(closeDiagnostics.uri),
+            `didClose diagnostics uri mismatch: ${closeDiagnostics.uri}`);
+        assert(Array.isArray(closeDiagnostics.diagnostics) && closeDiagnostics.diagnostics.length === 0,
+            'didClose must clear diagnostics');
+        expectedClosedUris.delete(closeDiagnostics.uri);
+        clearedCloseCount += 1;
+    }
 
     const shutdown = await client.request('shutdown', null);
     assert(shutdown === null, 'shutdown must return null');
@@ -567,9 +873,17 @@ async function main() {
     client.notify('exit', null);
     const exitCode = await client.waitForExit();
     assert(exitCode === 0, `server exited with ${exitCode}. stderr=${client.stderr()}`);
+    cleanupPath(watchedFixtureRootToCleanup);
+    cleanupPath(watchedBinaryFixtureRootToCleanup);
+    watchedFixtureRootToCleanup = null;
+    watchedBinaryFixtureRootToCleanup = null;
 }
 
 main().catch((error) => {
+    cleanupPath(watchedFixtureRootToCleanup);
+    cleanupPath(watchedBinaryFixtureRootToCleanup);
+    watchedFixtureRootToCleanup = null;
+    watchedBinaryFixtureRootToCleanup = null;
     console.error(error.stack || String(error));
     process.exit(1);
 });

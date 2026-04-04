@@ -52,8 +52,13 @@ doc_type: category-index
   - 项目上下文、输出目录和增量 manifest
   - compile / compile+run / REPL handler 的职责分离
   - `.zro` 里内部 native helper 的稳定序列化与运行时恢复
+- `zrp-editor-schema-and-lsp-refresh.md`
+  - `.zrp` 作为 JSON 文档的 VS Code 识别路径
+  - schema 字段覆盖、必填项与基础校验
+  - `.zrp` 文档更新与 language server project refresh 的连接方式
 
 ## 阅读顺序
 
 1. 先看 `zr-vm-cli-command-system.md`，了解 CLI 第一版对用户暴露的模式和内部模块边界。
-2. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。
+2. 需要修改 `.zrp` 编辑体验或 project config 刷新路径时，再看 `zrp-editor-schema-and-lsp-refresh.md`。
+3. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。

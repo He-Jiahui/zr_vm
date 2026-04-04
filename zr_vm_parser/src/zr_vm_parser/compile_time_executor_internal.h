@@ -2,6 +2,7 @@
 #define ZR_VM_PARSER_COMPILE_TIME_EXECUTOR_INTERNAL_H
 
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_core/function.h"
 
 typedef struct SZrCompileTimeBinding {
     SZrString *name;
@@ -35,6 +36,16 @@ TZrBool evaluate_compile_time_expression_internal(SZrCompilerState *cs,
                                                   SZrTypeValue *result);
 TZrBool register_compile_time_variable_declaration(SZrCompilerState *cs, SZrAstNode *node, SZrFileRange location);
 TZrBool register_compile_time_function_declaration(SZrCompilerState *cs, SZrAstNode *node, SZrFileRange location);
+TZrBool ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(SZrCompilerState *cs,
+                                                              SZrAstNode *node,
+                                                              SZrFileRange location);
+TZrBool ZrParser_CompileTime_RegisterDecoratorFunctionIfAvailable(SZrCompilerState *cs,
+                                                                  SZrAstNode *node,
+                                                                  SZrFileRange location);
+TZrBool ZrParser_CompileTime_ApplyFunctionDecorators(SZrCompilerState *cs,
+                                                     SZrAstNodeArray *decorators,
+                                                     SZrFunction *function,
+                                                     SZrFileRange location);
 TZrBool execute_compile_time_statement(SZrCompilerState *cs,
                                        SZrAstNode *node,
                                        SZrCompileTimeFrame *frame,

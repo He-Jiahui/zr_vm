@@ -1,0 +1,532 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 77
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 16
+
+CONSTANTS (36):
+  [0] null
+  [1] function
+  [2] function
+  [3] function
+  [4] function
+  [5] function
+  [6] function
+  [7] function
+  [8] native closure
+  [9] string: "id"
+  [10] int: 1
+  [11] native closure
+  [12] string: "load"
+  [13] int: 2
+  [14] native closure
+  [15] string: "value"
+  [16] int: 3
+  [17] native closure
+  [18] function
+  [19] native closure
+  [20] string: "MarkClass"
+  [21] string: "decorate"
+  [22] function
+  [23] string: "void"
+  [24] string: "MarkField"
+  [25] function
+  [26] string: "MarkMethod"
+  [27] function
+  [28] string: "MarkProperty"
+  [29] function
+  [30] string: "User"
+  [31] string: "int"
+  [32] string: "_value"
+  [33] function
+  [34] string: "__get_value"
+  [35] function
+
+LOCAL_VARIABLES (7):
+  [0] markFunction: offset_activate=0, offset_dead=84
+  [1] verifyDecorators: offset_activate=1, offset_dead=84
+  [2] __zr_member_definition_runtime_decorator_4_0: offset_activate=4, offset_dead=84
+  [3] __zr_member_definition_runtime_decorator_21_0: offset_activate=21, offset_dead=84
+  [4] __zr_member_definition_runtime_decorator_38_0: offset_activate=38, offset_dead=84
+  [5] __zr_definition_runtime_decorator_57_0: offset_activate=57, offset_dead=84
+  [6] __zr_definition_runtime_decorator_70_0: offset_activate=70, offset_dead=84
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (7):
+    [0] markFunction: function
+    [1] verifyDecorators: function
+    [3] __zr_member_definition_runtime_decorator_4_0: object
+    [5] __zr_member_definition_runtime_decorator_21_0: object
+    [7] __zr_member_definition_runtime_decorator_38_0: object
+    [10] __zr_definition_runtime_decorator_57_0: object
+    [12] __zr_definition_runtime_decorator_70_0: object
+  EXPORTED_SYMBOLS (2):
+    fn markFunction(Function): null
+    fn verifyDecorators(int): int
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+PROTOTYPES (5):
+// ========== PROTOTYPES FROM DATA (count: 5) ==========
+// --- Prototype 1 ---
+class MarkClass {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "decorate",
+      access: private (1),
+      static: false,
+      isMetaMethod: true,
+      metaType: DECORATE (27),
+      functionConstantIndex: 22,
+      parameterCount: 1,
+      returnType: "void"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+class MarkField {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "decorate",
+      access: private (1),
+      static: false,
+      isMetaMethod: true,
+      metaType: DECORATE (27),
+      functionConstantIndex: 25,
+      parameterCount: 1,
+      returnType: "void"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
+class MarkMethod {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "decorate",
+      access: private (1),
+      static: false,
+      isMetaMethod: true,
+      metaType: DECORATE (27),
+      functionConstantIndex: 27,
+      parameterCount: 1,
+      returnType: "void"
+    }
+  ]
+}
+
+// --- Prototype 4 ---
+class MarkProperty {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "decorate",
+      access: private (1),
+      static: false,
+      isMetaMethod: true,
+      metaType: DECORATE (27),
+      functionConstantIndex: 29,
+      parameterCount: 1,
+      returnType: "void"
+    }
+  ]
+}
+
+// --- Prototype 5 ---
+class User {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "id",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "_value",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "load",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 33,
+      parameterCount: 1,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__get_value",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 35,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (84):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=0)
+  [2] CREATE_CLOSURE (extra=2)
+  [3] SET_STACK (extra=0, operand=2)
+  [4] GET_GLOBAL (extra=4)
+  [5] GET_MEMBER (extra=4, operand1=4, operand2=0)
+  [6] SET_STACK (extra=3, operand=4)
+  [7] GET_CONSTANT (extra=4, operand=0)
+  [8] GET_GLOBAL (extra=4)
+  [9] GET_MEMBER (extra=4, operand1=4, operand2=1)
+  [10] GET_CONSTANT (extra=5, operand=8)
+  [11] GET_STACK (extra=6, operand=4)
+  [12] GET_CONSTANT (extra=7, operand=9)
+  [13] GET_CONSTANT (extra=8, operand=10)
+  [14] GET_STACK (extra=9, operand=3)
+  [15] FUNCTION_CALL (extra=5, operand1=5, operand2=4)
+  [16] GET_CONSTANT (extra=5, operand=0)
+  [17] GET_CONSTANT (extra=6, operand=0)
+  [18] GET_CONSTANT (extra=7, operand=0)
+  [19] GET_CONSTANT (extra=8, operand=0)
+  [20] GET_CONSTANT (extra=9, operand=0)
+  [21] GET_GLOBAL (extra=6)
+  [22] GET_MEMBER (extra=6, operand1=6, operand2=2)
+  [23] SET_STACK (extra=5, operand=6)
+  [24] GET_CONSTANT (extra=6, operand=0)
+  [25] GET_GLOBAL (extra=6)
+  [26] GET_MEMBER (extra=6, operand1=6, operand2=1)
+  [27] GET_CONSTANT (extra=7, operand=11)
+  [28] GET_STACK (extra=8, operand=6)
+  [29] GET_CONSTANT (extra=9, operand=12)
+  [30] GET_CONSTANT (extra=10, operand=13)
+  [31] GET_STACK (extra=11, operand=5)
+  [32] FUNCTION_CALL (extra=7, operand1=7, operand2=4)
+  [33] GET_CONSTANT (extra=7, operand=0)
+  [34] GET_CONSTANT (extra=8, operand=0)
+  [35] GET_CONSTANT (extra=9, operand=0)
+  [36] GET_CONSTANT (extra=10, operand=0)
+  [37] GET_CONSTANT (extra=11, operand=0)
+  [38] GET_GLOBAL (extra=8)
+  [39] GET_MEMBER (extra=8, operand1=8, operand2=3)
+  [40] SET_STACK (extra=7, operand=8)
+  [41] GET_CONSTANT (extra=8, operand=0)
+  [42] GET_GLOBAL (extra=8)
+  [43] GET_MEMBER (extra=8, operand1=8, operand2=1)
+  [44] GET_CONSTANT (extra=9, operand=14)
+  [45] GET_STACK (extra=10, operand=8)
+  [46] GET_CONSTANT (extra=11, operand=15)
+  [47] GET_CONSTANT (extra=12, operand=16)
+  [48] GET_STACK (extra=13, operand=7)
+  [49] FUNCTION_CALL (extra=9, operand1=9, operand2=4)
+  [50] GET_CONSTANT (extra=9, operand=0)
+  [51] GET_CONSTANT (extra=10, operand=0)
+  [52] GET_CONSTANT (extra=11, operand=0)
+  [53] GET_CONSTANT (extra=12, operand=0)
+  [54] GET_CONSTANT (extra=13, operand=0)
+  [55] GET_GLOBAL (extra=9)
+  [56] GET_MEMBER (extra=9, operand1=9, operand2=1)
+  [57] GET_GLOBAL (extra=11)
+  [58] GET_MEMBER (extra=11, operand1=11, operand2=4)
+  [59] SET_STACK (extra=10, operand=11)
+  [60] GET_CONSTANT (extra=11, operand=0)
+  [61] GET_CONSTANT (extra=11, operand=17)
+  [62] GET_STACK (extra=12, operand=9)
+  [63] GET_STACK (extra=13, operand=10)
+  [64] FUNCTION_CALL (extra=11, operand1=11, operand2=2)
+  [65] GET_CONSTANT (extra=11, operand=0)
+  [66] GET_CONSTANT (extra=12, operand=0)
+  [67] GET_CONSTANT (extra=13, operand=0)
+  [68] CREATE_CLOSURE (extra=11)
+  [69] SET_STACK (extra=1, operand=11)
+  [70] GET_STACK (extra=13, operand=0)
+  [71] SET_STACK (extra=12, operand=13)
+  [72] GET_CONSTANT (extra=13, operand=0)
+  [73] GET_CONSTANT (extra=13, operand=19)
+  [74] GET_STACK (extra=14, operand=1)
+  [75] GET_STACK (extra=15, operand=12)
+  [76] FUNCTION_CALL (extra=13, operand1=13, operand2=2)
+  [77] SET_STACK (extra=1, operand=13)
+  [78] GET_CONSTANT (extra=13, operand=0)
+  [79] GET_CONSTANT (extra=14, operand=0)
+  [80] GET_CONSTANT (extra=15, operand=0)
+  [81] GET_STACK (extra=13, operand=1)
+  [82] SUPER_FUNCTION_TAIL_CALL_NO_ARGS (extra=13, operand1=13, operand2=0)
+  [83] FUNCTION_RETURN (extra=1, operand1=13, operand2=0)
+
+CHILD_FUNCTIONS (2):
+  [0] FUNCTION:
+    NAME: markFunction
+    START_LINE: 9
+    END_LINE: 11
+    PARAMETERS: 1
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 4
+
+    CONSTANTS (3):
+      [0] bool: true
+      [1] string: "instrumented"
+      [2] null
+
+    LOCAL_VARIABLES (1):
+      [0] target: offset_activate=0, offset_dead=10
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (1):
+        [0] target: Function
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (10):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] GET_STACK (extra=2, operand=0)
+      [2] OPCODE_8 (extra=2, operand1=2, operand2=0)
+      [3] GET_CONSTANT (extra=3, operand=1)
+      [4] OPCODE_11 (extra=1, operand1=2, operand2=3)
+      [5] GET_CONSTANT (extra=3, operand=2)
+      [6] GET_CONSTANT (extra=2, operand=2)
+      [7] GET_CONSTANT (extra=1, operand=2)
+      [8] GET_CONSTANT (extra=1, operand=2)
+      [9] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+
+  [1] FUNCTION:
+    NAME: verifyDecorators
+    START_LINE: 49
+    END_LINE: 74
+    PARAMETERS: 1
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 14
+
+    CONSTANTS (7):
+      [0] null
+      [1] int: 0
+      [2] int: 1
+      [3] int: 2
+      [4] int: 4
+      [5] int: 8
+      [6] int: 16
+
+    LOCAL_VARIABLES (6):
+      [0] seed: offset_activate=0, offset_dead=102
+      [1] typeMeta: offset_activate=6, offset_dead=102
+      [2] fieldMeta: offset_activate=17, offset_dead=102
+      [3] methodMeta: offset_activate=28, offset_dead=102
+      [4] propertyMeta: offset_activate=39, offset_dead=102
+      [5] functionMeta: offset_activate=45, offset_dead=102
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (6):
+        [0] seed: int
+        [1] typeMeta: object
+        [2] fieldMeta: object
+        [3] methodMeta: object
+        [4] propertyMeta: object
+        [5] functionMeta: object
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (2):
+      [0] object
+      [1] int
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (5):
+      [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
+      [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
+      [2] DYNAMIC_RUNTIME inst=2 from=0 to=0
+      [3] DYNAMIC_RUNTIME inst=3 from=0 to=0
+      [4] DYNAMIC_RUNTIME inst=4 from=0 to=0
+
+    BLOCK_GRAPH (1):
+      [0] block=0 first=0 count=5
+
+    SEMIR (5):
+      [0] TYPEOF exec=4 type=0 effect=0 dst=1 op0=1 op1=0 deopt=1
+      [1] TYPEOF exec=10 type=0 effect=1 dst=2 op0=2 op1=0 deopt=2
+      [2] TYPEOF exec=21 type=0 effect=2 dst=3 op0=3 op1=0 deopt=3
+      [3] TYPEOF exec=32 type=0 effect=3 dst=4 op0=4 op1=0 deopt=4
+      [4] TYPEOF exec=43 type=0 effect=4 dst=5 op0=5 op1=0 deopt=5
+
+    DEOPT_MAP (5):
+      [0] deopt=1 exec=4
+      [1] deopt=2 exec=10
+      [2] deopt=3 exec=21
+      [3] deopt=4 exec=32
+      [4] deopt=5 exec=43
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (102):
+      [0] OPCODE_76 (extra=2, operand=0)
+      [1] OPCODE_8 (extra=2, operand1=2, operand2=0)
+      [2] SET_STACK (extra=1, operand=2)
+      [3] GET_CONSTANT (extra=2, operand=0)
+      [4] TYPEOF (extra=1, operand1=1, operand2=0)
+      [5] OPCODE_8 (extra=1, operand1=1, operand2=1)
+      [6] OPCODE_76 (extra=3, operand=0)
+      [7] OPCODE_8 (extra=3, operand1=3, operand2=0)
+      [8] SET_STACK (extra=2, operand=3)
+      [9] GET_CONSTANT (extra=3, operand=0)
+      [10] TYPEOF (extra=2, operand1=2, operand2=0)
+      [11] OPCODE_8 (extra=2, operand1=2, operand2=2)
+      [12] OPCODE_8 (extra=2, operand1=2, operand2=3)
+      [13] GET_CONSTANT (extra=3, operand=1)
+      [14] OPCODE_10 (extra=2, operand1=2, operand2=3)
+      [15] GET_CONSTANT (extra=3, operand=0)
+      [16] OPCODE_8 (extra=2, operand1=2, operand2=1)
+      [17] OPCODE_76 (extra=4, operand=0)
+      [18] OPCODE_8 (extra=4, operand1=4, operand2=0)
+      [19] SET_STACK (extra=3, operand=4)
+      [20] GET_CONSTANT (extra=4, operand=0)
+      [21] TYPEOF (extra=3, operand1=3, operand2=0)
+      [22] OPCODE_8 (extra=3, operand1=3, operand2=2)
+      [23] OPCODE_8 (extra=3, operand1=3, operand2=4)
+      [24] GET_CONSTANT (extra=4, operand=1)
+      [25] OPCODE_10 (extra=3, operand1=3, operand2=4)
+      [26] GET_CONSTANT (extra=4, operand=0)
+      [27] OPCODE_8 (extra=3, operand1=3, operand2=1)
+      [28] OPCODE_76 (extra=5, operand=0)
+      [29] OPCODE_8 (extra=5, operand1=5, operand2=0)
+      [30] SET_STACK (extra=4, operand=5)
+      [31] GET_CONSTANT (extra=5, operand=0)
+      [32] TYPEOF (extra=4, operand1=4, operand2=0)
+      [33] OPCODE_8 (extra=4, operand1=4, operand2=2)
+      [34] OPCODE_8 (extra=4, operand1=4, operand2=5)
+      [35] GET_CONSTANT (extra=5, operand=1)
+      [36] OPCODE_10 (extra=4, operand1=4, operand2=5)
+      [37] GET_CONSTANT (extra=5, operand=0)
+      [38] OPCODE_8 (extra=4, operand1=4, operand2=1)
+      [39] OPCODE_76 (extra=6, operand=0)
+      [40] OPCODE_8 (extra=6, operand1=6, operand2=6)
+      [41] SET_STACK (extra=5, operand=6)
+      [42] GET_CONSTANT (extra=6, operand=0)
+      [43] TYPEOF (extra=5, operand1=5, operand2=0)
+      [44] OPCODE_8 (extra=5, operand1=5, operand2=1)
+      [45] GET_STACK (extra=6, operand=1)
+      [46] OPCODE_8 (extra=6, operand1=6, operand2=7)
+      [47] OPCODE_79 (extra=6, operand=8)
+      [48] GET_STACK (extra=7, operand=0)
+      [49] GET_CONSTANT (extra=8, operand=2)
+      [50] ADD_INT (extra=9, operand1=7, operand2=8)
+      [51] SET_STACK (extra=0, operand=9)
+      [52] GET_CONSTANT (extra=7, operand=0)
+      [53] GET_CONSTANT (extra=8, operand=0)
+      [54] GET_CONSTANT (extra=9, operand=0)
+      [55] OPCODE_78 (extra=0, operand=0)
+      [56] GET_STACK (extra=7, operand=2)
+      [57] OPCODE_8 (extra=7, operand1=7, operand2=8)
+      [58] OPCODE_79 (extra=7, operand=8)
+      [59] GET_STACK (extra=8, operand=0)
+      [60] GET_CONSTANT (extra=9, operand=3)
+      [61] ADD_INT (extra=10, operand1=8, operand2=9)
+      [62] SET_STACK (extra=0, operand=10)
+      [63] GET_CONSTANT (extra=8, operand=0)
+      [64] GET_CONSTANT (extra=9, operand=0)
+      [65] GET_CONSTANT (extra=10, operand=0)
+      [66] OPCODE_78 (extra=0, operand=0)
+      [67] GET_STACK (extra=8, operand=3)
+      [68] OPCODE_8 (extra=8, operand1=8, operand2=9)
+      [69] OPCODE_79 (extra=8, operand=8)
+      [70] GET_STACK (extra=9, operand=0)
+      [71] GET_CONSTANT (extra=10, operand=4)
+      [72] ADD_INT (extra=11, operand1=9, operand2=10)
+      [73] SET_STACK (extra=0, operand=11)
+      [74] GET_CONSTANT (extra=9, operand=0)
+      [75] GET_CONSTANT (extra=10, operand=0)
+      [76] GET_CONSTANT (extra=11, operand=0)
+      [77] OPCODE_78 (extra=0, operand=0)
+      [78] GET_STACK (extra=9, operand=4)
+      [79] OPCODE_8 (extra=9, operand1=9, operand2=10)
+      [80] OPCODE_79 (extra=9, operand=8)
+      [81] GET_STACK (extra=10, operand=0)
+      [82] GET_CONSTANT (extra=11, operand=5)
+      [83] ADD_INT (extra=12, operand1=10, operand2=11)
+      [84] SET_STACK (extra=0, operand=12)
+      [85] GET_CONSTANT (extra=10, operand=0)
+      [86] GET_CONSTANT (extra=11, operand=0)
+      [87] GET_CONSTANT (extra=12, operand=0)
+      [88] OPCODE_78 (extra=0, operand=0)
+      [89] GET_STACK (extra=10, operand=5)
+      [90] OPCODE_8 (extra=10, operand1=10, operand2=11)
+      [91] OPCODE_79 (extra=10, operand=8)
+      [92] GET_STACK (extra=11, operand=0)
+      [93] GET_CONSTANT (extra=12, operand=6)
+      [94] ADD_INT (extra=13, operand1=11, operand2=12)
+      [95] SET_STACK (extra=0, operand=13)
+      [96] GET_CONSTANT (extra=11, operand=0)
+      [97] GET_CONSTANT (extra=12, operand=0)
+      [98] GET_CONSTANT (extra=13, operand=0)
+      [99] OPCODE_78 (extra=0, operand=0)
+      [100] GET_STACK (extra=11, operand=0)
+      [101] FUNCTION_RETURN (extra=1, operand1=11, operand2=0)
+
+

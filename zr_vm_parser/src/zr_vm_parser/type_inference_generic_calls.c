@@ -129,7 +129,7 @@ static TZrBool copy_direct_member_signature(SZrCompilerState *cs,
 
 static TZrInt32 find_generic_binding_index(const SZrArray *bindings, SZrString *typeName) {
     if (bindings == ZR_NULL || typeName == ZR_NULL) {
-        return -1;
+        return ZR_PARSER_I32_NONE;
     }
 
     for (TZrSize index = 0; index < bindings->length; index++) {
@@ -142,7 +142,7 @@ static TZrInt32 find_generic_binding_index(const SZrArray *bindings, SZrString *
         }
     }
 
-    return -1;
+    return ZR_PARSER_I32_NONE;
 }
 
 static const TZrChar *generic_callable_name_text(SZrString *name) {
@@ -294,7 +294,7 @@ static TZrBool substitute_generic_parameter_type(SZrState *state,
     }
 
     bindingIndex = find_generic_binding_index(bindings, sourceType->typeName);
-    if (bindingIndex >= 0 && sourceType->elementTypes.length == 0) {
+    if (bindingIndex != ZR_PARSER_I32_NONE && sourceType->elementTypes.length == 0) {
         SZrGenericCallBinding *binding = (SZrGenericCallBinding *)ZrCore_Array_Get((SZrArray *)bindings,
                                                                                    (TZrSize)bindingIndex);
         if (binding == ZR_NULL || !binding->isBound) {
@@ -369,7 +369,7 @@ static TZrBool unify_generic_binding(SZrState *state,
     }
 
     bindingIndex = find_generic_binding_index(bindings, expectedType->typeName);
-    if (bindingIndex >= 0 && expectedType->elementTypes.length == 0) {
+    if (bindingIndex != ZR_PARSER_I32_NONE && expectedType->elementTypes.length == 0) {
         SZrGenericCallBinding *binding =
                 (SZrGenericCallBinding *)ZrCore_Array_Get(bindings, (TZrSize)bindingIndex);
         if (binding == ZR_NULL) {

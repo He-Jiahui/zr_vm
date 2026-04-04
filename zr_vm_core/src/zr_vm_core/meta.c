@@ -25,6 +25,10 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/exception.h"
 
+#define ZR_META_COMPARE_RESULT_LESS ((TZrInt64)-1)
+#define ZR_META_COMPARE_RESULT_EQUAL ((TZrInt64)0)
+#define ZR_META_COMPARE_RESULT_GREATER ((TZrInt64)1)
+
 void ZrCore_Meta_GlobalStaticsInit(SZrState *state) {
     SZrGlobalState *global = state->global;
     for (TZrEnum i = 0; i < ZR_META_ENUM_MAX; i++) {
@@ -59,7 +63,7 @@ static TZrInt64 meta_to_string_null(SZrState *state) {
 static TZrInt64 meta_to_string_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     SZrString *result = ZR_NULL;
     if (self->value.nativeObject.nativeBool) {
         result = ZrCore_String_CreateFromNative(state, ZR_STRING_TRUE_STRING);
@@ -75,7 +79,7 @@ static TZrInt64 meta_to_string_bool(SZrState *state) {
 static TZrInt64 meta_to_string_number(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     SZrString *result = ZrCore_String_FromNumber(state, self);
     if (result == ZR_NULL) {
         result = ZrCore_String_CreateFromNative(state, "");
@@ -89,7 +93,7 @@ static TZrInt64 meta_to_string_number(SZrState *state) {
 static TZrInt64 meta_to_string_string(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     // 直接返回自身
     ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), self);
     state->stackTop.valuePointer = base + 1;
@@ -100,7 +104,7 @@ static TZrInt64 meta_to_string_string(SZrState *state) {
 static TZrInt64 meta_to_string_object(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     SZrTypeValue stableSelf = *self;
     SZrObject *object = ZR_CAST_OBJECT(state, stableSelf.value.object);
     SZrString *result = ZR_NULL;
@@ -113,8 +117,8 @@ static TZrInt64 meta_to_string_object(SZrState *state) {
         // 如果对象有自己的 TO_STRING 元方法，调用它
         // 将 meta->function 放到栈上，self 作为参数
         ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-        ZrCore_Stack_CopyValue(state, base + 1, &stableSelf);
-        state->stackTop.valuePointer = base + 2;
+        ZrCore_Stack_CopyValue(state, ZR_META_CALL_SELF_SLOT(base), &stableSelf);
+        state->stackTop.valuePointer = ZR_META_CALL_STACK_TOP(base, ZR_META_CALL_UNARY_ARGUMENT_COUNT);
         // 调用元方法
         base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
         // 返回值在 base 位置
@@ -162,7 +166,7 @@ static TZrInt64 meta_to_bool_null(SZrState *state) {
 static TZrInt64 meta_to_bool_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     // 直接返回自身
     ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(base), self);
     state->stackTop.valuePointer = base + 1;
@@ -173,7 +177,7 @@ static TZrInt64 meta_to_bool_bool(SZrState *state) {
 static TZrInt64 meta_to_bool_number(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     TZrBool result = ZR_FALSE;
 
     if (ZR_VALUE_IS_TYPE_INT(self->type)) {
@@ -202,7 +206,7 @@ static TZrSize get_string_length(SZrString *str) {
 static TZrInt64 meta_to_bool_string(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     SZrString *str = ZR_CAST_STRING(state, self->value.object);
     TZrSize length = get_string_length(str);
     TZrBool result = (length > 0);
@@ -216,7 +220,7 @@ static TZrInt64 meta_to_bool_string(SZrState *state) {
 static TZrInt64 meta_to_bool_object(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     SZrTypeValue stableSelf = *self;
     SZrObject *object = ZR_CAST_OBJECT(state, stableSelf.value.object);
 
@@ -224,8 +228,8 @@ static TZrInt64 meta_to_bool_object(SZrState *state) {
     SZrMeta *meta = ZrCore_Object_GetMetaRecursively(state->global, object, ZR_META_TO_BOOL);
     if (meta != ZR_NULL && meta->function != ZR_NULL) {
         ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-        ZrCore_Stack_CopyValue(state, base + 1, &stableSelf);
-        state->stackTop.valuePointer = base + 2;
+        ZrCore_Stack_CopyValue(state, ZR_META_CALL_SELF_SLOT(base), &stableSelf);
+        state->stackTop.valuePointer = ZR_META_CALL_STACK_TOP(base, ZR_META_CALL_UNARY_ARGUMENT_COUNT);
         base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
         SZrTypeValue *returnValue = ZrCore_Stack_GetValue(base);
         if (returnValue->type == ZR_VALUE_TYPE_BOOL) {
@@ -247,7 +251,7 @@ static TZrInt64 meta_to_bool_object(SZrState *state) {
 static TZrInt64 meta_to_int_number(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     TZrInt64 result = 0;
 
     if (ZR_VALUE_IS_TYPE_INT(self->type)) {
@@ -267,7 +271,7 @@ static TZrInt64 meta_to_int_number(SZrState *state) {
 static TZrInt64 meta_to_int_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     TZrInt64 result = self->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
     ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(base), result);
     state->stackTop.valuePointer = base + 1;
@@ -280,7 +284,7 @@ static TZrInt64 meta_to_int_bool(SZrState *state) {
 static TZrInt64 meta_to_uint_number(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     TZrUInt64 result = 0;
 
     if (ZR_VALUE_IS_TYPE_INT(self->type)) {
@@ -300,7 +304,7 @@ static TZrInt64 meta_to_uint_number(SZrState *state) {
 static TZrInt64 meta_to_uint_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     TZrUInt64 result = self->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
     ZrCore_Value_InitAsUInt(state, ZrCore_Stack_GetValue(base), result);
     state->stackTop.valuePointer = base + 1;
@@ -313,7 +317,7 @@ static TZrInt64 meta_to_uint_bool(SZrState *state) {
 static TZrInt64 meta_to_float_number(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     TZrFloat64 result = 0.0;
 
     if (ZR_VALUE_IS_TYPE_INT(self->type)) {
@@ -333,7 +337,7 @@ static TZrInt64 meta_to_float_number(SZrState *state) {
 static TZrInt64 meta_to_float_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     TZrFloat64 result = self->value.nativeObject.nativeBool ? (TZrFloat64)ZR_TRUE : (TZrFloat64)ZR_FALSE;
     ZrCore_Value_InitAsFloat(state, ZrCore_Stack_GetValue(base), result);
     state->stackTop.valuePointer = base + 1;
@@ -346,8 +350,8 @@ static TZrInt64 meta_to_float_bool(SZrState *state) {
 static TZrInt64 meta_add_int(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_INT(self->type) && ZR_VALUE_IS_TYPE_INT(other->type)) {
         TZrInt64 result = self->value.nativeObject.nativeInt64 + other->value.nativeObject.nativeInt64;
@@ -366,8 +370,8 @@ static TZrInt64 meta_add_int(SZrState *state) {
 static TZrInt64 meta_add_uint(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(self->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(other->type)) {
         TZrUInt64 result = self->value.nativeObject.nativeUInt64 + other->value.nativeObject.nativeUInt64;
@@ -385,8 +389,8 @@ static TZrInt64 meta_add_uint(SZrState *state) {
 static TZrInt64 meta_add_float(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_FLOAT(self->type) && ZR_VALUE_IS_TYPE_FLOAT(other->type)) {
         TZrFloat64 result = self->value.nativeObject.nativeDouble + other->value.nativeObject.nativeDouble;
@@ -404,8 +408,8 @@ static TZrInt64 meta_add_float(SZrState *state) {
 static TZrInt64 meta_add_string(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_STRING(self->type) && ZR_VALUE_IS_TYPE_STRING(other->type)) {
         SZrString *str1 = ZR_CAST_STRING(state, self->value.object);
@@ -440,8 +444,8 @@ static TZrInt64 meta_add_string(SZrState *state) {
 static TZrInt64 meta_sub_int(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_INT(self->type) && ZR_VALUE_IS_TYPE_INT(other->type)) {
         TZrInt64 result = self->value.nativeObject.nativeInt64 - other->value.nativeObject.nativeInt64;
@@ -459,8 +463,8 @@ static TZrInt64 meta_sub_int(SZrState *state) {
 static TZrInt64 meta_sub_uint(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(self->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(other->type)) {
         TZrUInt64 result = self->value.nativeObject.nativeUInt64 - other->value.nativeObject.nativeUInt64;
@@ -478,8 +482,8 @@ static TZrInt64 meta_sub_uint(SZrState *state) {
 static TZrInt64 meta_sub_float(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_FLOAT(self->type) && ZR_VALUE_IS_TYPE_FLOAT(other->type)) {
         TZrFloat64 result = self->value.nativeObject.nativeDouble - other->value.nativeObject.nativeDouble;
@@ -497,8 +501,8 @@ static TZrInt64 meta_sub_float(SZrState *state) {
 static TZrInt64 meta_mul_int(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_INT(self->type) && ZR_VALUE_IS_TYPE_INT(other->type)) {
         TZrInt64 result = self->value.nativeObject.nativeInt64 * other->value.nativeObject.nativeInt64;
@@ -516,8 +520,8 @@ static TZrInt64 meta_mul_int(SZrState *state) {
 static TZrInt64 meta_mul_uint(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(self->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(other->type)) {
         TZrUInt64 result = self->value.nativeObject.nativeUInt64 * other->value.nativeObject.nativeUInt64;
@@ -535,8 +539,8 @@ static TZrInt64 meta_mul_uint(SZrState *state) {
 static TZrInt64 meta_mul_float(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_FLOAT(self->type) && ZR_VALUE_IS_TYPE_FLOAT(other->type)) {
         TZrFloat64 result = self->value.nativeObject.nativeDouble * other->value.nativeObject.nativeDouble;
@@ -554,8 +558,8 @@ static TZrInt64 meta_mul_float(SZrState *state) {
 static TZrInt64 meta_div_int(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_INT(self->type) && ZR_VALUE_IS_TYPE_INT(other->type)) {
         TZrInt64 divisor = other->value.nativeObject.nativeInt64;
@@ -579,8 +583,8 @@ static TZrInt64 meta_div_int(SZrState *state) {
 static TZrInt64 meta_div_uint(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(self->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(other->type)) {
         TZrUInt64 divisor = other->value.nativeObject.nativeUInt64;
@@ -603,8 +607,8 @@ static TZrInt64 meta_div_uint(SZrState *state) {
 static TZrInt64 meta_div_float(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_FLOAT(self->type) && ZR_VALUE_IS_TYPE_FLOAT(other->type)) {
         TZrFloat64 divisor = other->value.nativeObject.nativeDouble;
@@ -627,8 +631,8 @@ static TZrInt64 meta_div_float(SZrState *state) {
 static TZrInt64 meta_compare_int(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_INT(self->type) && ZR_VALUE_IS_TYPE_INT(other->type)) {
         TZrInt64 diff = self->value.nativeObject.nativeInt64 - other->value.nativeObject.nativeInt64;
@@ -646,8 +650,8 @@ static TZrInt64 meta_compare_int(SZrState *state) {
 static TZrInt64 meta_compare_uint(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(self->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(other->type)) {
         TZrInt64 diff = (TZrInt64) (self->value.nativeObject.nativeUInt64 - other->value.nativeObject.nativeUInt64);
@@ -665,16 +669,16 @@ static TZrInt64 meta_compare_uint(SZrState *state) {
 static TZrInt64 meta_compare_float(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_FLOAT(self->type) && ZR_VALUE_IS_TYPE_FLOAT(other->type)) {
         TZrFloat64 diff = self->value.nativeObject.nativeDouble - other->value.nativeObject.nativeDouble;
-        TZrInt64 result = 0;
+        TZrInt64 result = ZR_META_COMPARE_RESULT_EQUAL;
         if (diff > 0.0) {
-            result = 1;
+            result = ZR_META_COMPARE_RESULT_GREATER;
         } else if (diff < 0.0) {
-            result = -1;
+            result = ZR_META_COMPARE_RESULT_LESS;
         }
         ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(base), result);
         state->stackTop.valuePointer = base + 1;
@@ -690,8 +694,8 @@ static TZrInt64 meta_compare_float(SZrState *state) {
 static TZrInt64 meta_compare_string(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_STRING(self->type) && ZR_VALUE_IS_TYPE_STRING(other->type)) {
         SZrString *str1 = ZR_CAST_STRING(state, self->value.object);
@@ -714,8 +718,8 @@ static TZrInt64 meta_compare_string(SZrState *state) {
 static TZrInt64 meta_compare_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_BOOL(self->type) && ZR_VALUE_IS_TYPE_BOOL(other->type)) {
         TZrInt64 val1 = self->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
@@ -735,8 +739,8 @@ static TZrInt64 meta_compare_bool(SZrState *state) {
 static TZrInt64 meta_sub_string_int(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_STRING(self->type)) {
         if (ZR_VALUE_IS_TYPE_STRING(other->type)) {
@@ -809,8 +813,8 @@ static TZrInt64 meta_sub_string_int(SZrState *state) {
 static TZrInt64 meta_mul_string_int(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_STRING(self->type) && ZR_VALUE_IS_TYPE_INT(other->type)) {
         SZrString *str = ZR_CAST_STRING(state, self->value.object);
@@ -853,8 +857,8 @@ static TZrInt64 meta_mul_string_int(SZrState *state) {
 static TZrInt64 meta_add_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_BOOL(self->type) && ZR_VALUE_IS_TYPE_BOOL(other->type)) {
         TZrBool result = self->value.nativeObject.nativeBool || other->value.nativeObject.nativeBool;
@@ -872,8 +876,8 @@ static TZrInt64 meta_add_bool(SZrState *state) {
 static TZrInt64 meta_sub_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_BOOL(self->type) && ZR_VALUE_IS_TYPE_BOOL(other->type)) {
         TZrBool result = self->value.nativeObject.nativeBool && other->value.nativeObject.nativeBool;
@@ -891,8 +895,8 @@ static TZrInt64 meta_sub_bool(SZrState *state) {
 static TZrInt64 meta_mul_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
-    SZrTypeValue *other = ZrCore_Stack_GetValue(base + 2);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
+    SZrTypeValue *other = ZrCore_Stack_GetValue(ZR_META_CALL_SECOND_ARGUMENT_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_BOOL(self->type) && ZR_VALUE_IS_TYPE_BOOL(other->type)) {
         TZrBool result = self->value.nativeObject.nativeBool != other->value.nativeObject.nativeBool;
@@ -910,7 +914,7 @@ static TZrInt64 meta_mul_bool(SZrState *state) {
 static TZrInt64 meta_neg_bool(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    SZrTypeValue *self = ZrCore_Stack_GetValue(base + 1);
+    SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
 
     if (ZR_VALUE_IS_TYPE_BOOL(self->type)) {
         TZrBool result = !self->value.nativeObject.nativeBool;
@@ -1086,3 +1090,4 @@ void ZrCore_Meta_InitBuiltinTypeMetaMethods(SZrState *state, EZrValueType valueT
             break;
     }
 }
+

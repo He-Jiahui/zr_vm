@@ -11,6 +11,7 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/reflection.h"
+#include "zr_vm_core/runtime_decorator.h"
 
 static void io_runtime_init_inline_function(SZrState *state, SZrFunction *function) {
     ZrCore_Memory_RawSet(function, 0, sizeof(*function));
@@ -46,6 +47,12 @@ FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helper
 
         case ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF:
             return ZrCore_Reflection_TypeOfNativeEntry;
+
+        case ZR_IO_NATIVE_HELPER_RUNTIME_DECORATOR_APPLY:
+            return ZrCore_RuntimeDecorator_ApplyNativeEntry;
+
+        case ZR_IO_NATIVE_HELPER_RUNTIME_MEMBER_DECORATOR_APPLY:
+            return ZrCore_RuntimeDecorator_ApplyMemberNativeEntry;
 
         case ZR_IO_NATIVE_HELPER_NONE:
         default:

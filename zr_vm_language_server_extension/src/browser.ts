@@ -4,6 +4,7 @@ import {
     LanguageClientOptions,
     Trace,
 } from 'vscode-languageclient/browser';
+import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
 
 const CONFIG_SECTION = 'zr.languageServer';
 const RESTART_COMMAND = 'zr.restartLanguageServer';
@@ -18,6 +19,8 @@ const WEB_STARTUP_TIMEOUT_MS = 30000;
 type LanguageServerMode = 'auto' | 'native' | 'web';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    context.subscriptions.push(registerZrpJsonSupport());
+
     context.subscriptions.push(
         vscode.commands.registerCommand(RESTART_COMMAND, async () => {
             await enqueueRestart(context, true);
@@ -70,8 +73,10 @@ async function startClient(context: vscode.ExtensionContext, requestedByUser: bo
     }
 
     const workerUri = vscode.Uri.joinPath(context.extensionUri, 'out', 'web', 'server-worker.js');
-    const fileEvents = vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp}');
-    clientResources = [fileEvents];
+    const fileEvents = vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp,zro,zri,dll,so,dylib}');
+    clientResources = [
+        fileEvents,
+    ];
 
     const worker = await createWorker(workerUri);
     worker.addEventListener('error', (event: Event) => {
@@ -84,7 +89,7 @@ async function startClient(context: vscode.ExtensionContext, requestedByUser: bo
     workerHandle = worker;
 
     const clientOptions: LanguageClientOptions = {
-        documentSelector: [{ language: 'zr' }],
+        documentSelector: createDocumentSelector() as LanguageClientOptions['documentSelector'],
         outputChannelName: 'Zr Language Server',
         initializationOptions: {
             serverBaseUrl: vscode.Uri.joinPath(context.extensionUri, 'out', 'web').toString(),

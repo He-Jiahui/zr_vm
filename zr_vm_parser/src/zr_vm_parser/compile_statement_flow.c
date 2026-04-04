@@ -34,7 +34,7 @@ TZrBool try_context_find_innermost_finally(const SZrCompilerState *cs, SZrCompil
     for (TZrSize index = cs->tryContextStack.length; index > 0; index--) {
         SZrCompilerTryContext *context =
                 (SZrCompilerTryContext *)ZrCore_Array_Get((SZrArray *)&cs->tryContextStack, index - 1);
-        if (context != ZR_NULL && context->finallyLabelId != (TZrSize)-1) {
+        if (context != ZR_NULL && context->finallyLabelId != ZR_PARSER_LABEL_ID_NONE) {
             *outContext = *context;
             return ZR_TRUE;
         }
@@ -78,11 +78,11 @@ TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
     SZrFunctionLocalVariable localVar;
 
     if (cs == ZR_NULL || cs->hasError || name == ZR_NULL) {
-        return 0;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     if (cs->stackSlotCount == 0 || stackSlot >= cs->stackSlotCount) {
-        return 0;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     localVar.name = name;
@@ -703,7 +703,7 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
     stmt = &node->data.tryCatchFinallyStatement;
     catchClauseStartIndex = (TZrUInt32)cs->catchClauseInfos.length;
     hasFinally = (TZrBool)(stmt->finallyBlock != ZR_NULL);
-    finallyLabelId = hasFinally ? create_label(cs) : (TZrSize)-1;
+    finallyLabelId = hasFinally ? create_label(cs) : ZR_PARSER_LABEL_ID_NONE;
     afterFinallyLabelId = create_label(cs);
 
     if (stmt->catchClauses != ZR_NULL) {

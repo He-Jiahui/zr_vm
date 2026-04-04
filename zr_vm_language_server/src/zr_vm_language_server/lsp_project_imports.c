@@ -89,7 +89,8 @@ void ZrLanguageServer_LspProject_FreeImportBindings(SZrState *state, SZrArray *b
 static TZrBool append_import_binding(SZrState *state,
                                      SZrArray *bindings,
                                      SZrString *aliasName,
-                                     const TZrChar *moduleNameText) {
+                                     const TZrChar *moduleNameText,
+                                     SZrFileRange modulePathLocation) {
     SZrLspImportBinding *binding;
     SZrString *moduleName;
 
@@ -108,6 +109,7 @@ static TZrBool append_import_binding(SZrState *state,
 
     binding->aliasName = aliasName;
     binding->moduleName = moduleName;
+    binding->modulePathLocation = modulePathLocation;
     ZrCore_Array_Push(state, bindings, &binding);
     return ZR_TRUE;
 }
@@ -162,7 +164,8 @@ void ZrLanguageServer_LspProject_CollectImportBindings(SZrState *state, SZrAstNo
                         append_import_binding(state,
                                               bindings,
                                               node->data.variableDeclaration.pattern->data.identifier.name,
-                                              normalizedModule);
+                                              normalizedModule,
+                                              node->data.variableDeclaration.value->data.importExpression.modulePath->location);
                     }
                 }
             }

@@ -20,7 +20,11 @@ typedef struct {
 
 static const SZrArtifactGoldenCase ZR_ARTIFACT_GOLDEN_CASES[] = {
     {"artifact_baseline.zr", "artifact_baseline"},
-    {"basic_operations.zr", "basic_operations"},
+    {"decorator_artifact_baseline.zr", "decorator_artifact_baseline"},
+};
+
+static const SZrArtifactGoldenCase ZR_TRUE_AOT_C_GOLDEN_CASES[] = {
+    {"aot_closure_export.zr", "aot_closure_export"},
 };
 
 static TZrBool is_text_artifact_extension(const TZrChar* extension) {
@@ -176,16 +180,40 @@ static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
     TEST_ASSERT_TRUE(dump_ast_to_file(state, result->ast, testCase->baseName));
     TEST_ASSERT_TRUE(dump_intermediate_to_file(state, result->function, testCase->baseName));
     TEST_ASSERT_TRUE(dump_binary_to_file(state, result->function, testCase->baseName));
-    TEST_ASSERT_TRUE(dump_aot_c_to_file(state, result->function, testCase->baseName));
     TEST_ASSERT_TRUE(dump_aot_llvm_to_file(state, result->function, testCase->baseName));
 
     assert_file_matches_golden(testCase->baseName, "ast", ".zrs");
     assert_file_matches_golden(testCase->baseName, "intermediate", ".zri");
     assert_file_matches_golden(testCase->baseName, "binary", ".zro");
-    assert_file_matches_golden(testCase->baseName, "aot_c", ".c");
     assert_file_matches_golden(testCase->baseName, "aot_llvm", ".ll");
     assert_file_matches_golden_if_present(testCase->baseName, "ast", ".zrs.json");
     assert_file_matches_golden_if_present(testCase->baseName, "intermediate", ".zri.json");
+
+    free_test_result(result);
+    free(source);
+    destroy_test_state(state);
+}
+
+static void run_true_aot_c_case(const SZrArtifactGoldenCase* testCase) {
+    TZrChar sourcePath[1024];
+    TZrSize sourceLength = 0;
+    TZrChar* source = ZR_NULL;
+    SZrState* state = create_test_state();
+
+    TEST_ASSERT_NOT_NULL(testCase);
+    TEST_ASSERT_NOT_NULL(state);
+
+    get_test_case_path(testCase->sourceFileName, sourcePath, sizeof(sourcePath));
+    source = load_zr_file(sourcePath, &sourceLength);
+    TEST_ASSERT_NOT_NULL(source);
+
+    SZrTestResult* result = parse_and_compile(state, source, sourceLength, sourcePath);
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_TRUE_MESSAGE(result->success, result->errorMessage ? result->errorMessage : "parse_and_compile failed");
+
+    TEST_ASSERT_TRUE(dump_binary_to_file(state, result->function, testCase->baseName));
+    TEST_ASSERT_TRUE(dump_aot_c_to_file(state, result->function, testCase->baseName));
+    assert_file_matches_golden(testCase->baseName, "aot_c", ".c");
 
     free_test_result(result);
     free(source);
@@ -200,8 +228,17 @@ static void test_artifact_outputs_match_goldens(void) {
     }
 }
 
+static void test_true_aot_c_outputs_match_goldens(void) {
+    TZrSize i;
+
+    for (i = 0; i < sizeof(ZR_TRUE_AOT_C_GOLDEN_CASES) / sizeof(ZR_TRUE_AOT_C_GOLDEN_CASES[0]); i++) {
+        run_true_aot_c_case(&ZR_TRUE_AOT_C_GOLDEN_CASES[i]);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_artifact_outputs_match_goldens);
+    RUN_TEST(test_true_aot_c_outputs_match_goldens);
     return UNITY_END();
 }

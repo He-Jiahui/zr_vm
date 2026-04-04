@@ -16,6 +16,10 @@ typedef TZrUInt32 TZrSymbolId;
 typedef TZrUInt32 TZrOverloadSetId;
 typedef TZrUInt32 TZrLifetimeRegionId;
 
+// Semantic IDs reserve 0 as "invalid / not assigned"; allocation starts at 1.
+#define ZR_SEMANTIC_ID_INVALID ((TZrUInt32)0U)
+#define ZR_SEMANTIC_ID_FIRST ((TZrUInt32)1U)
+
 enum EZrSemanticTypeKind {
     ZR_SEMANTIC_TYPE_KIND_UNKNOWN = 0,
     ZR_SEMANTIC_TYPE_KIND_VALUE,

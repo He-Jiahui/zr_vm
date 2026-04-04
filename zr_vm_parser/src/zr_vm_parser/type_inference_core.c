@@ -20,6 +20,9 @@
 #include <math.h>
 #include <limits.h>
 
+#define ZR_TYPE_INFERENCE_GENERIC_START_NOT_FOUND ((TZrSize)-1)
+#define ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE ((TZrInt32)-1)
+
 static TZrBool type_inference_copy_generic_parameter_info_array(SZrState *state,
                                                                 SZrArray *dest,
                                                                 const SZrArray *src) {
@@ -406,7 +409,7 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
                                              SZrArray *outArgumentTypeNames) {
     TZrNativeString nativeTypeName;
     TZrSize nativeTypeNameLength;
-    TZrSize genericStart = (TZrSize)-1;
+    TZrSize genericStart = ZR_TYPE_INFERENCE_GENERIC_START_NOT_FOUND;
     TZrInt32 depth = 0;
     TZrSize segmentStart;
 
@@ -433,7 +436,7 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
         }
     }
 
-    if (genericStart == (TZrSize)-1 || nativeTypeName[nativeTypeNameLength - 1] != '>') {
+    if (genericStart == ZR_TYPE_INFERENCE_GENERIC_START_NOT_FOUND || nativeTypeName[nativeTypeNameLength - 1] != '>') {
         return ZR_FALSE;
     }
 
@@ -1656,6 +1659,7 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
         ZrCore_Array_Init(cs->state, &closedPrototype.inherits, sizeof(SZrString *), openPrototypeSnapshot.inherits.length);
         ZrCore_Array_Init(cs->state, &closedPrototype.implements, sizeof(SZrString *), openPrototypeSnapshot.implements.length);
         ZrCore_Array_Init(cs->state, &closedPrototype.genericParameters, sizeof(SZrTypeGenericParameterInfo), 1);
+        ZrCore_Array_Init(cs->state, &closedPrototype.decorators, sizeof(SZrTypeDecoratorInfo), openPrototypeSnapshot.decorators.length);
         ZrCore_Array_Init(cs->state, &closedPrototype.members, sizeof(SZrTypeMemberInfo), openPrototypeSnapshot.members.length);
 
         if (cs->typeEnv != ZR_NULL) {
@@ -1695,6 +1699,15 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
                                                          &openPrototypeSnapshot.genericParameters,
                                                          &argumentTypeNames);
             ZrCore_Array_Push(cs->state, &registeredPrototype->implements, &implementName);
+        }
+
+        for (TZrSize index = 0; index < openPrototypeSnapshot.decorators.length; index++) {
+            SZrTypeDecoratorInfo *sourceDecorator =
+                    (SZrTypeDecoratorInfo *)ZrCore_Array_Get(&openPrototypeSnapshot.decorators, index);
+            if (sourceDecorator == ZR_NULL) {
+                continue;
+            }
+            ZrCore_Array_Push(cs->state, &registeredPrototype->decorators, sourceDecorator);
         }
 
         for (TZrSize index = 0; index < openPrototypeSnapshot.members.length; index++) {
@@ -2177,11 +2190,11 @@ error:
 static TZrInt32 score_function_overload_candidate(const SZrResolvedCallSignature *resolvedSignature,
                                                   const SZrArray *argTypes) {
     if (resolvedSignature == ZR_NULL || argTypes == ZR_NULL) {
-        return -1;
+        return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
     }
 
     if (resolvedSignature->parameterTypes.length != argTypes->length) {
-        return -1;
+        return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
     }
 
     {
@@ -2192,7 +2205,7 @@ static TZrInt32 score_function_overload_candidate(const SZrResolvedCallSignature
                     (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&resolvedSignature->parameterTypes, i);
 
             if (argType == ZR_NULL || paramType == ZR_NULL) {
-                return -1;
+                return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
             }
 
             if (ZrParser_InferredType_Equal(argType, paramType)) {
@@ -2200,7 +2213,7 @@ static TZrInt32 score_function_overload_candidate(const SZrResolvedCallSignature
             }
 
             if (!ZrParser_InferredType_IsCompatible(argType, paramType)) {
-                return -1;
+                return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
             }
 
             score += 1;
@@ -2315,7 +2328,7 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
 
         score = score_function_overload_candidate(&candidateResolvedSignature, &candidateArgTypes);
         free_inferred_type_array(cs->state, &candidateArgTypes);
-        if (score < 0) {
+        if (score == ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE) {
             free_resolved_call_signature(cs->state, &candidateResolvedSignature);
             continue;
         }

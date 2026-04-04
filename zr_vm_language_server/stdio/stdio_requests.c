@@ -1,5 +1,15 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
+                                                              SZrLspContext *context,
+                                                              SZrString *uri);
+TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri(SZrState *state,
+                                                          SZrLspContext *context,
+                                                          SZrString *uri);
+TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
+                                                                     SZrLspContext *context,
+                                                                     SZrString *uri);
+
 static cJSON *create_workspace_edit(SZrArray *locations, SZrString *newName) {
     cJSON *edit = cJSON_CreateObject();
     cJSON *changes = cJSON_CreateObject();
@@ -186,6 +196,126 @@ static int handle_did_save(SZrStdioServer *server, const cJSON *params) {
 
     publish_diagnostics(server, uri);
     return 1;
+}
+
+static TZrBool watched_string_ends_with(SZrString *value, const TZrChar *suffix) {
+    TZrNativeString text;
+    TZrSize length;
+    TZrSize suffixLength;
+
+    if (value == ZR_NULL || suffix == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        text = ZrCore_String_GetNativeStringShort(value);
+        length = value->shortStringLength;
+    } else {
+        text = ZrCore_String_GetNativeString(value);
+        length = value->longStringLength;
+    }
+
+    suffixLength = strlen(suffix);
+    return text != ZR_NULL && length >= suffixLength &&
+           memcmp(text + length - suffixLength, suffix, suffixLength) == 0;
+}
+
+static TZrBool watched_uri_has_metadata_extension(SZrString *uri) {
+    return watched_string_ends_with(uri, ZR_VM_BINARY_MODULE_FILE_EXTENSION) ||
+           watched_string_ends_with(uri, ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION) ||
+           watched_string_ends_with(uri, ".dll") ||
+           watched_string_ends_with(uri, ".so") ||
+           watched_string_ends_with(uri, ".dylib");
+}
+
+static int handle_single_watched_file_change(SZrStdioServer *server, SZrString *uri, TZrSize changeType) {
+    if (server == ZR_NULL || uri == ZR_NULL) {
+        return 0;
+    }
+
+    if (changeType == 3) {
+        if (watched_string_ends_with(uri, ".zrp")) {
+            ZrLanguageServer_LspProject_RemoveProjectByProjectUri(server->state, server->context, uri);
+            publish_empty_diagnostics(server, uri);
+            return 1;
+        }
+
+        if (watched_string_ends_with(uri, ".zr")) {
+            ZrLanguageServer_LspProject_RemoveFileRecordByUri(server->state, server->context, uri);
+            publish_empty_diagnostics(server, uri);
+            return 1;
+        }
+
+        if (watched_uri_has_metadata_extension(uri)) {
+            return ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(server->state,
+                                                                                server->context,
+                                                                                uri)
+                       ? 1
+                       : 0;
+        }
+
+        return 1;
+    }
+
+    if (watched_string_ends_with(uri, ".zrp") || watched_string_ends_with(uri, ".zr")) {
+        return update_document_contents_from_disk(server, uri);
+    }
+
+    if (watched_uri_has_metadata_extension(uri)) {
+        return ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(server->state,
+                                                                            server->context,
+                                                                            uri)
+                   ? 1
+                   : 0;
+    }
+
+    return 1;
+}
+
+static int handle_did_change_watched_files(SZrStdioServer *server, const cJSON *params) {
+    const cJSON *changes;
+    int handledAny = 0;
+
+    if (server == ZR_NULL || params == NULL) {
+        return 0;
+    }
+
+    changes = get_object_item(params, ZR_LSP_FIELD_CHANGES);
+    if (!cJSON_IsArray((cJSON *)changes)) {
+        return 0;
+    }
+
+    for (int index = 0; index < cJSON_GetArraySize((cJSON *)changes); index++) {
+        const cJSON *change = cJSON_GetArrayItem((cJSON *)changes, index);
+        const cJSON *uriJson = get_object_item(change, ZR_LSP_FIELD_URI);
+        const cJSON *typeJson = get_object_item(change, ZR_LSP_FIELD_TYPE);
+        const char *uriText;
+        SZrString *uri;
+        TZrSize changeType;
+
+        if (!cJSON_IsString((cJSON *)uriJson) || !cJSON_IsNumber((cJSON *)typeJson)) {
+            continue;
+        }
+
+        uriText = cJSON_GetStringValue((cJSON *)uriJson);
+        if (uriText == NULL) {
+            continue;
+        }
+
+        uri = server_get_cached_uri(server, uriText);
+        if (uri == ZR_NULL) {
+            continue;
+        }
+
+        changeType = parse_size_value(typeJson, 0);
+        if (changeType == 0) {
+            continue;
+        }
+
+        handledAny = handle_single_watched_file_change(server, uri, changeType) || handledAny;
+    }
+
+    return handledAny;
 }
 
 static cJSON *handle_completion_request(SZrStdioServer *server, const cJSON *params) {
@@ -702,7 +832,6 @@ void handle_notification_message(SZrStdioServer *server,
 
     if (strcmp(method, ZR_LSP_METHOD_INITIALIZED) == 0 ||
         strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_CONFIGURATION) == 0 ||
-        strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WATCHED_FILES) == 0 ||
         strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS) == 0 ||
         strcmp(method, ZR_LSP_METHOD_CANCEL_REQUEST) == 0) {
         return;
@@ -716,6 +845,8 @@ void handle_notification_message(SZrStdioServer *server,
         handle_did_close(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_SAVE) == 0) {
         handle_did_save(server, params);
+    } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WATCHED_FILES) == 0) {
+        handle_did_change_watched_files(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_EXIT) == 0) {
         if (outShouldExit != NULL) {
             *outShouldExit = 1;

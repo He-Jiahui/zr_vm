@@ -35,7 +35,7 @@ static TZrUInt32 compile_template_segment_into_string_slot(SZrCompilerState *cs,
     TZrBool hasInferredType = ZR_FALSE;
 
     if (cs == ZR_NULL || segmentNode == ZR_NULL || cs->hasError) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     if (segmentNode->type == ZR_AST_STRING_LITERAL) {
@@ -46,34 +46,34 @@ static TZrUInt32 compile_template_segment_into_string_slot(SZrCompilerState *cs,
                 ZrParser_Compiler_Error(cs,
                                 "Failed to allocate empty template string segment",
                                 segmentNode->location);
-                return (TZrUInt32)-1;
+                return ZR_PARSER_SLOT_NONE;
             }
         }
 
-        if (emit_string_constant(cs, value) == (TZrUInt32)-1) {
-            return (TZrUInt32)-1;
+        if (emit_string_constant(cs, value) == ZR_PARSER_SLOT_NONE) {
+            return ZR_PARSER_SLOT_NONE;
         }
         return normalize_top_result_to_slot(cs, targetSlot);
     }
 
     if (segmentNode->type != ZR_AST_INTERPOLATED_SEGMENT) {
         ZrParser_Compiler_Error(cs, "Unexpected template string segment", segmentNode->location);
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     if (segmentNode->data.interpolatedSegment.expression == ZR_NULL) {
         SZrString *emptyString = ZrCore_String_Create(cs->state, "", 0);
-        if (emptyString == ZR_NULL || emit_string_constant(cs, emptyString) == (TZrUInt32)-1) {
+        if (emptyString == ZR_NULL || emit_string_constant(cs, emptyString) == ZR_PARSER_SLOT_NONE) {
             ZrParser_Compiler_Error(cs, "Failed to allocate empty template string segment", segmentNode->location);
-            return (TZrUInt32)-1;
+            return ZR_PARSER_SLOT_NONE;
         }
         return normalize_top_result_to_slot(cs, targetSlot);
     }
 
     if (compile_expression_into_slot(cs,
                                      segmentNode->data.interpolatedSegment.expression,
-                                     targetSlot) == (TZrUInt32)-1) {
-        return (TZrUInt32)-1;
+                                     targetSlot) == ZR_PARSER_SLOT_NONE) {
+        return ZR_PARSER_SLOT_NONE;
     }
 
     ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
@@ -107,7 +107,7 @@ void compile_template_string_literal(SZrCompilerState *cs, SZrAstNode *node) {
     segments = node->data.templateStringLiteral.segments;
     if (segments == ZR_NULL || segments->count == 0) {
         SZrString *emptyString = ZrCore_String_Create(cs->state, "", 0);
-        if (emptyString == ZR_NULL || emit_string_constant(cs, emptyString) == (TZrUInt32)-1) {
+        if (emptyString == ZR_NULL || emit_string_constant(cs, emptyString) == ZR_PARSER_SLOT_NONE) {
             ZrParser_Compiler_Error(cs, "Failed to allocate empty template string", node->location);
         }
         return;
@@ -118,7 +118,7 @@ void compile_template_string_literal(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     resultSlot = allocate_stack_slot(cs);
-    if (compile_template_segment_into_string_slot(cs, segments->nodes[0], resultSlot) == (TZrUInt32)-1) {
+    if (compile_template_segment_into_string_slot(cs, segments->nodes[0], resultSlot) == ZR_PARSER_SLOT_NONE) {
         return;
     }
 
@@ -126,7 +126,7 @@ void compile_template_string_literal(SZrCompilerState *cs, SZrAstNode *node) {
         TZrUInt32 nextSlot = allocate_stack_slot(cs);
         TZrInstruction addInst;
 
-        if (compile_template_segment_into_string_slot(cs, segments->nodes[i], nextSlot) == (TZrUInt32)-1) {
+        if (compile_template_segment_into_string_slot(cs, segments->nodes[i], nextSlot) == ZR_PARSER_SLOT_NONE) {
             return;
         }
 
@@ -244,7 +244,7 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
     // 如果存在同名的局部变量，它会覆盖全局的 zr 对象
     // 这是作用域规则：局部变量优先于全局对象
     TZrUInt32 localVarIndex = find_local_var(cs, name);
-    if (localVarIndex != (TZrUInt32)-1) {
+    if (localVarIndex != ZR_PARSER_SLOT_NONE) {
         // 找到局部变量：使用 GET_STACK
         // 即使这个变量名是 "zr"，也使用局部变量而不是全局 zr 对象
         TZrUInt32 destSlot = allocate_stack_slot(cs);
@@ -256,7 +256,7 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 查找闭包变量（在局部变量之后，但在全局对象之前）
     TZrUInt32 closureVarIndex = find_closure_var(cs, name);
-    if (closureVarIndex != (TZrUInt32)-1) {
+    if (closureVarIndex != ZR_PARSER_INDEX_NONE) {
         // 闭包变量：根据 inStack 标志选择使用 GET_CLOSURE 还是 GETUPVAL
         // 即使这个变量名是 "zr"，也使用闭包变量而不是全局 zr 对象
         TZrUInt32 destSlot = allocate_stack_slot(cs);
@@ -313,7 +313,7 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
     // 在编译时查找子函数索引，而不是使用名称常量
     // GET_SUB_FUNCTION 通过索引直接访问 childFunctionList，这是编译时确定的静态索引
     TZrUInt32 childFunctionIndex = find_child_function_index(cs, name);
-    if (childFunctionIndex != (TZrUInt32)-1) {
+    if (childFunctionIndex != ZR_PARSER_INDEX_NONE) {
         // 找到子函数索引，生成 GET_SUB_FUNCTION 指令
         // GET_SUB_FUNCTION 格式: operandExtra = destSlot, operand1[0] = childFunctionIndex, operand1[1] = 0
         TZrUInt32 destSlot = allocate_stack_slot(cs);
@@ -331,7 +331,7 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
 
     {
         TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, name);
-        if (memberId == (TZrUInt32)-1) {
+        if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
             ZrParser_Compiler_Error(cs, "Failed to register global member symbol", cs->currentAst->location);
             return;
         }

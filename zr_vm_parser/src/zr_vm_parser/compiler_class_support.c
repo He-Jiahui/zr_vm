@@ -101,7 +101,7 @@ typedef struct SZrTrackedConstructorConstFields {
 static TZrInt32 tracked_constructor_const_field_index(const SZrTrackedConstructorConstFields *tracked,
                                                       SZrString *fieldName) {
     if (tracked == ZR_NULL || tracked->names == ZR_NULL || fieldName == ZR_NULL) {
-        return -1;
+        return ZR_PARSER_I32_NONE;
     }
 
     for (TZrSize index = 0; index < tracked->count; index++) {
@@ -110,7 +110,7 @@ static TZrInt32 tracked_constructor_const_field_index(const SZrTrackedConstructo
         }
     }
 
-    return -1;
+    return ZR_PARSER_I32_NONE;
 }
 
 static void copy_constructor_const_assignment_state(const TZrBool *source, TZrBool *dest, TZrSize count) {
@@ -253,7 +253,7 @@ static TZrBool mark_constructor_const_field_assignment(SZrCompilerState *cs,
     }
 
     trackedIndex = tracked_constructor_const_field_index(tracked, fieldName);
-    if (trackedIndex < 0) {
+    if (trackedIndex == ZR_PARSER_I32_NONE) {
         return ZR_TRUE;
     }
 
@@ -981,7 +981,7 @@ void emit_object_field_assignment_from_expression(SZrCompilerState *cs,
 
     TZrUInt32 valueSlot = (TZrUInt32)(cs->stackSlotCount - 1);
     memberId = compiler_get_or_add_member_entry(cs, fieldName);
-    if (memberId == (TZrUInt32)-1) {
+    if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
         return;
     }
 
@@ -1002,7 +1002,7 @@ void emit_class_static_field_initializers(SZrCompilerState *cs, SZrAstNode *clas
         return;
     }
 
-    TZrUInt32 prototypeSlot = (TZrUInt32)-1;
+    TZrUInt32 prototypeSlot = ZR_PARSER_SLOT_NONE;
     for (TZrSize i = 0; i < classDecl->members->count; i++) {
         SZrAstNode *member = classDecl->members->nodes[i];
         if (member == ZR_NULL || member->type != ZR_AST_CLASS_FIELD) {
@@ -1014,9 +1014,9 @@ void emit_class_static_field_initializers(SZrCompilerState *cs, SZrAstNode *clas
             continue;
         }
 
-        if (prototypeSlot == (TZrUInt32)-1) {
+        if (prototypeSlot == ZR_PARSER_SLOT_NONE) {
             prototypeSlot = emit_load_global_identifier(cs, classDecl->name->name);
-            if (prototypeSlot == (TZrUInt32)-1 || cs->hasError) {
+            if (prototypeSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
                 return;
             }
         }
@@ -1251,7 +1251,7 @@ void emit_super_constructor_call(SZrCompilerState *cs, SZrString *superTypeName,
     }
 
     TZrUInt32 prototypeSlot = emit_load_global_identifier(cs, superTypeName);
-    if (prototypeSlot == (TZrUInt32)-1 || cs->hasError) {
+    if (prototypeSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
         return;
     }
 

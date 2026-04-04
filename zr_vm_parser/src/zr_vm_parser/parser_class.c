@@ -3,12 +3,18 @@
 SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange endLoc;
+    SZrAstNodeArray *decorators;
+
+    // 允许 top-level decorators 出现在访问修饰符之前。
+    decorators = parse_leading_decorators(ps);
+    if (decorators == ZR_NULL) {
+        return ZR_NULL;
+    }
 
     // 解析可见性修饰符（可选，默认 private）
     EZrAccessModifier accessModifier = parse_access_modifier(ps);
 
-    // 解析装饰器（可选）
-    SZrAstNodeArray *decorators = ZrParser_AstNodeArray_New(ps->state, 2);
+    // 同时继续兼容访问修饰符之后的装饰器写法。
     while (ps->lexer->t.token == ZR_TK_SHARP) {
         SZrAstNode *decorator = parse_decorator_expression(ps);
         if (decorator != ZR_NULL) {

@@ -135,6 +135,13 @@ void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrAr
             collect_identifiers_from_array(cs, primary->members, identifierNames);
             break;
         }
+        case ZR_AST_TYPE_QUERY_EXPRESSION: {
+            SZrTypeQueryExpression *typeQuery = &node->data.typeQueryExpression;
+            if (typeQuery->operand != ZR_NULL) {
+                collect_identifiers_from_node(cs, typeQuery->operand, identifierNames);
+            }
+            break;
+        }
         case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION: {
             SZrPrototypeReferenceExpression *prototypeRef = &node->data.prototypeReferenceExpression;
             if (prototypeRef->target != ZR_NULL) {
@@ -362,18 +369,18 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
         TZrUInt32 closureIndex = find_closure_var(cs, name);
         
         // 如果既不是局部变量也不是闭包变量，可能是外部变量
-        if (localIndex == (TZrUInt32)-1 && closureIndex == (TZrUInt32)-1) {
+        if (localIndex == ZR_PARSER_SLOT_NONE && closureIndex == ZR_PARSER_INDEX_NONE) {
             // 在父编译器中查找（外部作用域的变量）
             TZrUInt32 parentLocalIndex = find_local_var(parentCompiler, name);
             TZrUInt32 parentClosureIndex = find_closure_var(parentCompiler, name);
-            if (parentLocalIndex != (TZrUInt32)-1 || parentClosureIndex != (TZrUInt32)-1) {
+            if (parentLocalIndex != ZR_PARSER_SLOT_NONE || parentClosureIndex != ZR_PARSER_INDEX_NONE) {
                 // 这是外部变量，需要捕获到闭包中
                 // 注意：index 必须指向父作用域中的真实槽位/上值索引，而不是当前闭包数组长度。
-                if (find_closure_var(cs, name) == (TZrUInt32)-1) {
+                if (find_closure_var(cs, name) == ZR_PARSER_INDEX_NONE) {
                     SZrFunctionClosureVariable closureVar;
                     closureVar.name = name;
-                    closureVar.inStack = (parentLocalIndex != (TZrUInt32)-1) ? ZR_TRUE : ZR_FALSE;
-                    closureVar.index = (parentLocalIndex != (TZrUInt32)-1) ? parentLocalIndex : parentClosureIndex;
+                    closureVar.inStack = (parentLocalIndex != ZR_PARSER_SLOT_NONE) ? ZR_TRUE : ZR_FALSE;
+                    closureVar.index = (parentLocalIndex != ZR_PARSER_SLOT_NONE) ? parentLocalIndex : parentClosureIndex;
                     closureVar.valueType = ZR_VALUE_TYPE_NULL;
                     ZrCore_Array_Push(cs->state, &cs->closureVars, &closureVar);
                     cs->closureVarCount++;

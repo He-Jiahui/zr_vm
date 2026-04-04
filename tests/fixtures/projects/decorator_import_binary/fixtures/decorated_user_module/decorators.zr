@@ -1,0 +1,21 @@
+%module "decorators";
+
+pub markClass(target: %type Class): void {
+    target.metadata.runtimeSerializable = true;
+}
+
+pub markFunction(target: %type Function): void {
+    target.metadata.instrumented = true;
+}
+
+pub markField(target: %type Field): void {
+    target.metadata.isRuntimeField = true;
+}
+
+pub markMethod(target: %type Method): void {
+    target.metadata.isRuntimeMethod = true;
+}
+
+pub markProperty(target: %type Property): void {
+    target.metadata.isRuntimeProperty = true;
+}

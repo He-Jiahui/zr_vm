@@ -6,6 +6,7 @@
 typedef struct SZrLspImportBinding {
     SZrString *aliasName;
     SZrString *moduleName;
+    SZrFileRange modulePathLocation;
 } SZrLspImportBinding;
 
 typedef struct SZrLspImportedMemberHit {
@@ -29,6 +30,15 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectByProjectUri(SZrLspCo
                                                                         SZrString *uri,
                                                                         TZrSize *outIndex);
 SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext *context, SZrString *uri);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
+                                                                                     SZrLspContext *context,
+                                                                                     SZrString *uri);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri(SZrState *state,
+                                                                                 SZrLspContext *context,
+                                                                                 SZrString *uri);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
+                                                                                            SZrLspContext *context,
+                                                                                            SZrString *uri);
 
 void ZrLanguageServer_LspProject_FreeImportBindings(SZrState *state, SZrArray *bindings);
 void ZrLanguageServer_LspProject_CollectImportBindings(SZrState *state, SZrAstNode *node, SZrArray *bindings);

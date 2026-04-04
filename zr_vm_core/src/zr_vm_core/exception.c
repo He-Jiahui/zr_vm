@@ -22,8 +22,8 @@
     try {                                                                                                              \
         block                                                                                                          \
     } catch (...) {                                                                                                    \
-        if ((context)->status == 0) {                                                                                  \
-            (context)->status = -1;                                                                                    \
+        if ((context)->status == ZR_THREAD_STATUS_FINE) {                                                              \
+            (context)->status = ZR_THREAD_STATUS_INVALID;                                                              \
         }                                                                                                              \
     }
 #elif defined(ZR_PLATFORM_UNIX)
@@ -39,6 +39,9 @@
         block                                                                                                          \
     }
 #endif
+
+/* Stack traces expose 0 as "no mapped source line" instead of the debug-hook-only 0xFFFFFFFF sentinel. */
+#define ZR_EXCEPTION_SOURCE_LINE_NONE ((TZrUInt32)0u)
 
 static void exception_set_object_field_cstring(SZrState *state,
                                                SZrObject *object,
@@ -613,10 +616,10 @@ TZrBool ZrCore_Exception_CatchMatchesTypeName(struct SZrState *state,
 }
 
 TZrUInt32 ZrCore_Exception_FindSourceLine(struct SZrFunction *function, TZrMemoryOffset instructionOffset) {
-    TZrUInt32 bestLine = 0;
+    TZrUInt32 bestLine = ZR_EXCEPTION_SOURCE_LINE_NONE;
 
     if (function == ZR_NULL || function->executionLocationInfoList == ZR_NULL || function->executionLocationInfoLength == 0) {
-        return 0;
+        return ZR_EXCEPTION_SOURCE_LINE_NONE;
     }
 
     for (TZrUInt32 index = 0; index < function->executionLocationInfoLength; index++) {
@@ -683,7 +686,7 @@ void ZrCore_Exception_PrintUnhandled(struct SZrState *state, const SZrTypeValue 
             const SZrTypeValue *instructionOffsetValue;
             const TZrChar *functionName = "<anonymous>";
             const TZrChar *sourceFile = "<unknown>";
-            TZrInt64 sourceLine = 0;
+            TZrInt64 sourceLine = (TZrInt64)ZR_EXCEPTION_SOURCE_LINE_NONE;
             TZrInt64 instructionOffset = 0;
 
             ZrCore_Value_InitAsInt(state, &key, (TZrInt64)index);

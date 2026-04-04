@@ -17,7 +17,11 @@ struct SZrObjectModule;
 
 // 编译时和运行时共享的prototype序列化结构定义
 // 这些结构用于将prototype信息序列化为紧凑二进制格式存储到常量池
-// 布局：SZrCompiledPrototypeInfo + [inheritsCount * 4字节] + [membersCount * SZrCompiledMemberInfo]
+// 布局：
+// SZrCompiledPrototypeInfo +
+// [inheritsCount * 4字节] +
+// [decoratorsCount * 4字节] +
+// [membersCount * SZrCompiledMemberInfo]
 
 // 编译时prototype信息结构（序列化格式头部）
 // 这是磁盘/内存共享的二进制协议，必须显式禁止编译器填充。
@@ -29,10 +33,14 @@ typedef struct SZrCompiledPrototypeInfo {
     TZrUInt32 inheritsCount;                // 继承类型数量
     TZrUInt32 membersCount;                 // 成员数量
     TZrUInt64 protocolMask;                 // 稳定 protocol bit mask
+    TZrUInt32 hasDecoratorMetadata;         // 是否存在 decorator metadata
+    TZrUInt32 decoratorMetadataConstantIndex; // metadata 常量索引（hasDecoratorMetadata=1 时有效）
+    TZrUInt32 decoratorsCount;              // decorator 名称记录数量
     // 注意：inheritStringIndices数组紧跟在结构体后面（不是指针）
     // 运行时通过 inheritsCount 和固定偏移量访问：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo)
-    // 成员数据紧跟在继承数组后面：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo) + inheritsCount * sizeof(TZrUInt32)
-    // 布局：SZrCompiledPrototypeInfo + [inheritsCount * 4字节] + [membersCount * SZrCompiledMemberInfo]
+    // decorator 名称数组紧跟在继承数组后面：
+    // offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo) + inheritsCount * sizeof(TZrUInt32)
+    // 成员数据紧跟在 decorator 数组后面。
 } SZrCompiledPrototypeInfo;
 
 // 编译时成员信息结构（序列化格式）

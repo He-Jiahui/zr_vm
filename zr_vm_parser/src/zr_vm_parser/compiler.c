@@ -152,7 +152,9 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     
     // 2. 添加继承类型名称字符串到常量池
     TZrUInt32 *inheritStringIndices = ZR_NULL;
+    TZrUInt32 *decoratorNameIndices = ZR_NULL;
     TZrUInt32 inheritsCount = (TZrUInt32)info->inherits.length;
+    TZrUInt32 decoratorsCount = (TZrUInt32)info->decorators.length;
     if (inheritsCount > 0) {
         inheritStringIndices = (TZrUInt32 *)ZrCore_Memory_RawMalloc(cs->state->global, inheritsCount * sizeof(TZrUInt32));
         if (inheritStringIndices == ZR_NULL) {
@@ -171,11 +173,38 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
             }
         }
     }
+
+    if (decoratorsCount > 0) {
+        decoratorNameIndices =
+                (TZrUInt32 *)ZrCore_Memory_RawMalloc(cs->state->global, decoratorsCount * sizeof(TZrUInt32));
+        if (decoratorNameIndices == ZR_NULL) {
+            if (inheritStringIndices != ZR_NULL) {
+                ZrCore_Memory_RawFree(cs->state->global, inheritStringIndices, inheritsCount * sizeof(TZrUInt32));
+            }
+            return ZR_FALSE;
+        }
+
+        for (TZrSize i = 0; i < info->decorators.length; i++) {
+            SZrTypeDecoratorInfo *decoratorInfo =
+                    (SZrTypeDecoratorInfo *)ZrCore_Array_Get(&info->decorators, i);
+            if (decoratorInfo != ZR_NULL && decoratorInfo->name != ZR_NULL) {
+                SZrTypeValue decoratorNameValue;
+                ZrCore_Value_InitAsRawObject(cs->state,
+                                            &decoratorNameValue,
+                                            ZR_CAST_RAW_OBJECT_AS_SUPER(decoratorInfo->name));
+                decoratorNameValue.type = ZR_VALUE_TYPE_STRING;
+                decoratorNameIndices[i] = add_constant(cs, &decoratorNameValue);
+            } else {
+                decoratorNameIndices[i] = 0;
+            }
+        }
+    }
     
     // 3. 计算序列化数据大小（使用C原生结构）
     TZrUInt32 membersCount = (TZrUInt32)info->members.length;
     TZrSize serializedSize = sizeof(SZrCompiledPrototypeInfo) + 
                              (inheritsCount > 0 ? inheritsCount * sizeof(TZrUInt32) : 0) +
+                             (decoratorsCount > 0 ? decoratorsCount * sizeof(TZrUInt32) : 0) +
                              membersCount * sizeof(SZrCompiledMemberInfo);
     
     // 4. 分配序列化数据缓冲区（C原生内存，非VM对象）
@@ -183,6 +212,9 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     if (serializedData == ZR_NULL) {
         if (inheritStringIndices != ZR_NULL) {
             ZrCore_Memory_RawFree(cs->state->global, inheritStringIndices, inheritsCount * sizeof(TZrUInt32));
+        }
+        if (decoratorNameIndices != ZR_NULL) {
+            ZrCore_Memory_RawFree(cs->state->global, decoratorNameIndices, decoratorsCount * sizeof(TZrUInt32));
         }
         return ZR_FALSE;
     }
@@ -196,6 +228,10 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     protoInfo->inheritsCount = inheritsCount;
     protoInfo->membersCount = membersCount;
     protoInfo->protocolMask = compiler_protocol_mask_from_prototype_info(info);
+    protoInfo->hasDecoratorMetadata = info->hasDecoratorMetadata ? ZR_TRUE : ZR_FALSE;
+    protoInfo->decoratorMetadataConstantIndex =
+            info->hasDecoratorMetadata ? add_constant(cs, &info->decoratorMetadataValue) : 0;
+    protoInfo->decoratorsCount = decoratorsCount;
     
     // 复制继承类型索引数组到序列化数据中（紧跟在结构体后面）
     TZrUInt32 *embeddedInheritIndices = (TZrUInt32 *)(serializedData + sizeof(SZrCompiledPrototypeInfo));
@@ -203,11 +239,18 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
         memcpy(embeddedInheritIndices, inheritStringIndices, inheritsCount * sizeof(TZrUInt32));
         ZrCore_Memory_RawFree(cs->state->global, inheritStringIndices, inheritsCount * sizeof(TZrUInt32));
     }
-    
+
+    TZrUInt32 *embeddedDecoratorIndices = embeddedInheritIndices + inheritsCount;
+    if (decoratorsCount > 0 && decoratorNameIndices != ZR_NULL) {
+        memcpy(embeddedDecoratorIndices, decoratorNameIndices, decoratorsCount * sizeof(TZrUInt32));
+        ZrCore_Memory_RawFree(cs->state->global, decoratorNameIndices, decoratorsCount * sizeof(TZrUInt32));
+    }
+
     // 序列化成员信息（紧跟在继承数组后面）
     SZrCompiledMemberInfo *members = (SZrCompiledMemberInfo *)(serializedData + 
                                                                  sizeof(SZrCompiledPrototypeInfo) +
-                                                                 inheritsCount * sizeof(TZrUInt32));
+                                                                 inheritsCount * sizeof(TZrUInt32) +
+                                                                 decoratorsCount * sizeof(TZrUInt32));
     for (TZrSize i = 0; i < info->members.length; i++) {
         SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, i);
         if (memberInfo == ZR_NULL) {
@@ -640,183 +683,14 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
 
     // 如果有顶层函数声明，返回它；否则返回脚本函数
     SZrFunction *func = (cs.topLevelFunction != ZR_NULL) ? cs.topLevelFunction : cs.currentFunction;
-    SZrGlobalState *global = state->global;
-
-    // 注意：如果返回的是 topLevelFunction，它的指令已经在 compile_function_declaration 中复制了
-    // 我们只需要处理脚本包装函数（currentFunction）的情况
-    if (func == cs.currentFunction) {
-        // 1. 复制指令列表（仅对脚本包装函数）
-        // 使用 instructions.length 而不是 instructionCount，确保同步
-        if (cs.instructions.length > 0) {
-            TZrSize instSize = cs.instructions.length * sizeof(TZrInstruction);
-            func->instructionsList =
-                    (TZrInstruction *) ZrCore_Memory_RawMallocWithType(global, instSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-            if (func->instructionsList == ZR_NULL) {
-                ZrCore_Function_Free(state, func);
-                ZrParser_CompilerState_Free(&cs);
-                return ZR_NULL;
-            }
-            memcpy(func->instructionsList, cs.instructions.head, instSize);
-            func->instructionsLength = (TZrUInt32) cs.instructions.length;
-            // 同步 instructionCount
-            cs.instructionCount = cs.instructions.length;
-        } else {
-            func->instructionsLength = 0;
-            func->instructionsList = ZR_NULL;
-        }
-    }
-
-    // 注意：如果返回的是 topLevelFunction，它的常量、局部变量、闭包变量等
-    // 已经在 compile_function_declaration 中复制了
-    // 我们只需要处理脚本包装函数（currentFunction）的情况
-    if (func == cs.currentFunction) {
-        // 2. 复制常量列表（仅对脚本包装函数）
-        // 使用 constants.length 而不是 constantCount，确保同步
-        if (cs.constants.length > 0) {
-            TZrSize constSize = cs.constants.length * sizeof(SZrTypeValue);
-            func->constantValueList =
-                    (SZrTypeValue *) ZrCore_Memory_RawMallocWithType(global, constSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-            if (func->constantValueList == ZR_NULL) {
-                ZrCore_Function_Free(state, func);
-                ZrParser_CompilerState_Free(&cs);
-                return ZR_NULL;
-            }
-            memcpy(func->constantValueList, cs.constants.head, constSize);
-            func->constantValueLength = (TZrUInt32) cs.constants.length;
-            // 同步 constantCount
-            cs.constantCount = cs.constants.length;
-        } else {
-            func->constantValueLength = 0;
-            func->constantValueList = ZR_NULL;
-        }
-
-
-        // 3. 复制局部变量列表（仅对脚本包装函数）
-        // 使用 localVars.length 而不是 localVarCount，确保同步
-        if (cs.localVars.length > 0) {
-            TZrSize localVarSize = cs.localVars.length * sizeof(SZrFunctionLocalVariable);
-            func->localVariableList = (SZrFunctionLocalVariable *) ZrCore_Memory_RawMallocWithType(
-                    global, localVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-            if (func->localVariableList == ZR_NULL) {
-                ZrCore_Function_Free(state, func);
-                ZrParser_CompilerState_Free(&cs);
-                return ZR_NULL;
-            }
-            memcpy(func->localVariableList, cs.localVars.head, localVarSize);
-            func->localVariableLength = (TZrUInt32) cs.localVars.length;
-            // 同步 localVarCount
-            cs.localVarCount = cs.localVars.length;
-        } else {
-            func->localVariableLength = 0;
-            func->localVariableList = ZR_NULL;
-        }
-
-        // 4. 复制闭包变量列表（仅对脚本包装函数）
-        if (cs.closureVarCount > 0) {
-            TZrSize closureVarSize = cs.closureVarCount * sizeof(SZrFunctionClosureVariable);
-            func->closureValueList = (SZrFunctionClosureVariable *) ZrCore_Memory_RawMallocWithType(
-                    global, closureVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-            if (func->closureValueList == ZR_NULL) {
-                ZrCore_Function_Free(state, func);
-                ZrParser_CompilerState_Free(&cs);
-                return ZR_NULL;
-            }
-            memcpy(func->closureValueList, cs.closureVars.head, closureVarSize);
-            func->closureValueLength = (TZrUInt32) cs.closureVarCount;
-        } else {
-            func->closureValueLength = 0;
-            func->closureValueList = ZR_NULL;
-        }
-    }
-
-    // 5. 复制子函数列表
-    if (cs.childFunctions.length > 0) {
-        TZrSize childFuncSize = cs.childFunctions.length * sizeof(SZrFunction);
-        func->childFunctionList =
-                (struct SZrFunction *) ZrCore_Memory_RawMallocWithType(global, childFuncSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        if (func->childFunctionList == ZR_NULL) {
-            ZrCore_Function_Free(state, func);
-            ZrParser_CompilerState_Free(&cs);
-            return ZR_NULL;
-        }
-        // 从指针数组复制到对象数组
-        SZrFunction **srcArray = (SZrFunction **) cs.childFunctions.head;
-        for (TZrSize i = 0; i < cs.childFunctions.length; i++) {
-            if (srcArray[i] != ZR_NULL) {
-                func->childFunctionList[i] = *srcArray[i];
-            }
-        }
-        func->childFunctionLength = (TZrUInt32) cs.childFunctions.length;
-        ZrCore_Function_RebindConstantFunctionValuesToChildren(func);
-    }
-
-    // 6. 复制导出变量信息（合并 pubVariables 和 proVariables）
-    // proVariables 已经包含所有 pubVariables，所以只需要复制 proVariables
-    if (cs.proVariables.length > 0) {
-        TZrSize exportVarSize = cs.proVariables.length * sizeof(struct SZrFunctionExportedVariable);
-        func->exportedVariables = (struct SZrFunctionExportedVariable *) ZrCore_Memory_RawMallocWithType(
-                global, exportVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        if (func->exportedVariables == ZR_NULL) {
-            ZrCore_Function_Free(state, func);
-            ZrParser_CompilerState_Free(&cs);
-            return ZR_NULL;
-        }
-        // 从 SZrExportedVariable 复制到 SZrFunctionExportedVariable
-        for (TZrSize i = 0; i < cs.proVariables.length; i++) {
-            SZrExportedVariable *src = (SZrExportedVariable *) ZrCore_Array_Get(&cs.proVariables, i);
-            if (src != ZR_NULL) {
-                func->exportedVariables[i].name = src->name;
-                func->exportedVariables[i].stackSlot = src->stackSlot;
-                func->exportedVariables[i].accessModifier = (TZrUInt8) src->accessModifier;
-            }
-        }
-        func->exportedVariableLength = (TZrUInt32) cs.proVariables.length;
-    } else {
-        func->exportedVariables = ZR_NULL;
-        func->exportedVariableLength = 0;
-    }
-
-    // 7. 设置函数元数据
-    // 注意：脚本入口函数没有参数（它是脚本的包装函数）
-    // 脚本中的函数声明会被编译为子函数，它们的参数信息已通过 compile_function_declaration 正确设置
-    // 但是，如果返回的是顶层函数声明，参数信息已经在 compile_function_declaration 中设置了，不应该覆盖
-    func->stackSize = (TZrUInt32) cs.maxStackSlotCount;
-    if (cs.topLevelFunction == ZR_NULL) {
-        // 只有当返回的是脚本函数时，才设置参数数量为0
-        func->parameterCount = 0;  // 脚本入口函数没有参数
-        func->hasVariableArguments = ZR_FALSE;  // 脚本入口函数不支持可变参数
-    }
-    // 如果返回的是顶层函数，parameterCount 和 hasVariableArguments 已经在 compile_function_declaration 中设置了
-    func->lineInSourceStart = (ast->location.start.line > 0) ? (TZrUInt32) ast->location.start.line : 0;
-    func->lineInSourceEnd = (ast->location.end.line > 0) ? (TZrUInt32) ast->location.end.line : 0;
-    if (func == cs.currentFunction &&
-        !compiler_copy_function_exception_metadata_slice(&cs, func, 0, 0, 0, ast)) {
+    if (!compiler_assemble_final_function(&cs,
+                                          func,
+                                          ast,
+                                          func == cs.currentFunction,
+                                          cs.topLevelFunction != ZR_NULL)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
-    }
-
-    // 确保所有字段都被正确初始化（避免 ZrCore_Function_Free 中的断言失败）
-    if (func->instructionsList == ZR_NULL) {
-        func->instructionsLength = 0;
-    }
-    if (func->constantValueList == ZR_NULL) {
-        func->constantValueLength = 0;
-    }
-    if (func->localVariableList == ZR_NULL) {
-        func->localVariableLength = 0;
-    }
-    if (func->closureValueList == ZR_NULL) {
-        func->closureValueLength = 0;
-    }
-    if (func->childFunctionList == ZR_NULL) {
-        func->childFunctionLength = 0;
-    }
-    if (func->executionLocationInfoList == ZR_NULL) {
-        func->executionLocationInfoLength = 0;
-    }
-    if (func->exportedVariables == ZR_NULL) {
-        func->exportedVariableLength = 0;
     }
 
     // 执行指令优化（占位实现，后续填充具体逻辑）
@@ -886,150 +760,13 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
         return ZR_FALSE;
     }
 
-    // 将编译结果复制到 SZrFunction（与ZrCompilerCompile相同的逻辑）
+    // 将编译结果复制到 SZrFunction（与 ZrParser_Compiler_Compile 共用装配逻辑）
     SZrFunction *func = cs.currentFunction;
     SZrGlobalState *global = state->global;
-
-    // 1. 复制指令列表
-    if (cs.instructions.length > 0) {
-        TZrSize instSize = cs.instructions.length * sizeof(TZrInstruction);
-        func->instructionsList =
-                (TZrInstruction *) ZrCore_Memory_RawMallocWithType(global, instSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        if (func->instructionsList == ZR_NULL) {
-            ZrCore_Function_Free(state, func);
-            ZrParser_CompilerState_Free(&cs);
-            return ZR_FALSE;
-        }
-        memcpy(func->instructionsList, cs.instructions.head, instSize);
-        func->instructionsLength = (TZrUInt32) cs.instructions.length;
-        cs.instructionCount = cs.instructions.length;
-    }
-
-    // 2. 复制常量列表
-    // 使用 constants.length 而不是 constantCount，确保同步
-    if (cs.constants.length > 0) {
-        TZrSize constSize = cs.constants.length * sizeof(SZrTypeValue);
-        func->constantValueList =
-                (SZrTypeValue *) ZrCore_Memory_RawMallocWithType(global, constSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        if (func->constantValueList == ZR_NULL) {
-            ZrCore_Function_Free(state, func);
-            ZrParser_CompilerState_Free(&cs);
-            return ZR_FALSE;
-        }
-        memcpy(func->constantValueList, cs.constants.head, constSize);
-        func->constantValueLength = (TZrUInt32) cs.constants.length;
-        // 同步 constantCount
-        cs.constantCount = cs.constants.length;
-    }
-
-    // 3. 复制局部变量列表
-    if (cs.localVars.length > 0) {
-        TZrSize localVarSize = cs.localVars.length * sizeof(SZrFunctionLocalVariable);
-        func->localVariableList = (SZrFunctionLocalVariable *) ZrCore_Memory_RawMallocWithType(
-                global, localVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        if (func->localVariableList == ZR_NULL) {
-            ZrCore_Function_Free(state, func);
-            ZrParser_CompilerState_Free(&cs);
-            return ZR_FALSE;
-        }
-        memcpy(func->localVariableList, cs.localVars.head, localVarSize);
-        func->localVariableLength = (TZrUInt32) cs.localVars.length;
-        cs.localVarCount = cs.localVars.length;
-    }
-
-    // 4. 复制闭包变量列表
-    if (cs.closureVarCount > 0) {
-        TZrSize closureVarSize = cs.closureVarCount * sizeof(SZrFunctionClosureVariable);
-        func->closureValueList = (SZrFunctionClosureVariable *) ZrCore_Memory_RawMallocWithType(
-                global, closureVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        if (func->closureValueList == ZR_NULL) {
-            ZrCore_Function_Free(state, func);
-            ZrParser_CompilerState_Free(&cs);
-            return ZR_FALSE;
-        }
-        memcpy(func->closureValueList, cs.closureVars.head, closureVarSize);
-        func->closureValueLength = (TZrUInt32) cs.closureVarCount;
-    }
-
-    // 5. 复制子函数列表
-    if (cs.childFunctions.length > 0) {
-        TZrSize childFuncSize = cs.childFunctions.length * sizeof(SZrFunction);
-        func->childFunctionList =
-                (struct SZrFunction *) ZrCore_Memory_RawMallocWithType(global, childFuncSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        if (func->childFunctionList == ZR_NULL) {
-            ZrCore_Function_Free(state, func);
-            ZrParser_CompilerState_Free(&cs);
-            return ZR_FALSE;
-        }
-        SZrFunction **srcArray = (SZrFunction **) cs.childFunctions.head;
-        for (TZrSize i = 0; i < cs.childFunctions.length; i++) {
-            if (srcArray[i] != ZR_NULL) {
-                func->childFunctionList[i] = *srcArray[i];
-            }
-        }
-        func->childFunctionLength = (TZrUInt32) cs.childFunctions.length;
-        ZrCore_Function_RebindConstantFunctionValuesToChildren(func);
-    }
-
-    // 6. 复制导出变量信息（合并 pubVariables 和 proVariables）
-    // proVariables 已经包含所有 pubVariables，所以只需要复制 proVariables
-    if (cs.proVariables.length > 0) {
-        TZrSize exportVarSize = cs.proVariables.length * sizeof(struct SZrFunctionExportedVariable);
-        func->exportedVariables = (struct SZrFunctionExportedVariable *) ZrCore_Memory_RawMallocWithType(
-                global, exportVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        if (func->exportedVariables == ZR_NULL) {
-            ZrCore_Function_Free(state, func);
-            ZrParser_CompilerState_Free(&cs);
-            return ZR_FALSE;
-        }
-        // 从 SZrExportedVariable 复制到 SZrFunctionExportedVariable
-        for (TZrSize i = 0; i < cs.proVariables.length; i++) {
-            SZrExportedVariable *src = (SZrExportedVariable *) ZrCore_Array_Get(&cs.proVariables, i);
-            if (src != ZR_NULL) {
-                func->exportedVariables[i].name = src->name;
-                func->exportedVariables[i].stackSlot = src->stackSlot;
-                func->exportedVariables[i].accessModifier = (TZrUInt8) src->accessModifier;
-            }
-        }
-        func->exportedVariableLength = (TZrUInt32) cs.proVariables.length;
-    } else {
-        func->exportedVariables = ZR_NULL;
-        func->exportedVariableLength = 0;
-    }
-
-    // 7. 设置函数元数据
-    func->stackSize = (TZrUInt32) cs.maxStackSlotCount;
-    func->parameterCount = 0;
-    func->hasVariableArguments = ZR_FALSE;
-    func->lineInSourceStart = (ast->location.start.line > 0) ? (TZrUInt32) ast->location.start.line : 0;
-    func->lineInSourceEnd = (ast->location.end.line > 0) ? (TZrUInt32) ast->location.end.line : 0;
-    if (!compiler_copy_function_exception_metadata_slice(&cs, func, 0, 0, 0, ast)) {
+    if (!compiler_assemble_final_function(&cs, func, ast, ZR_TRUE, ZR_FALSE)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
         return ZR_FALSE;
-    }
-
-    // 确保所有字段都被正确初始化
-    if (func->instructionsList == ZR_NULL) {
-        func->instructionsLength = 0;
-    }
-    if (func->constantValueList == ZR_NULL) {
-        func->constantValueLength = 0;
-    }
-    if (func->localVariableList == ZR_NULL) {
-        func->localVariableLength = 0;
-    }
-    if (func->closureValueList == ZR_NULL) {
-        func->closureValueLength = 0;
-    }
-    if (func->childFunctionList == ZR_NULL) {
-        func->childFunctionLength = 0;
-    }
-    if (func->executionLocationInfoList == ZR_NULL) {
-        func->executionLocationInfoLength = 0;
-    }
-    if (func->exportedVariables == ZR_NULL) {
-        func->exportedVariableLength = 0;
     }
 
     // 执行指令优化（占位实现，后续填充具体逻辑）
@@ -1052,6 +789,14 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
             result->testFunctions[i] = srcTestArray[i];
         }
         result->testFunctionCount = cs.testFunctions.length;
+    }
+
+    for (TZrSize i = 0; i < result->testFunctionCount; i++) {
+        if (!compiler_attach_detached_function_prototype_context(state, result->testFunctions[i], func)) {
+            ZrCore_Function_Free(state, func);
+            ZrParser_CompilerState_Free(&cs);
+            return ZR_FALSE;
+        }
     }
 
     if (!compiler_build_function_semir_metadata(state, func)) {

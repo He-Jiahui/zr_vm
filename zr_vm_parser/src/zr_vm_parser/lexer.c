@@ -11,8 +11,6 @@
 #include <ctype.h>
 #include <string.h>
 
-#define ZR_LEXER_EOZ (-1)
-
 // Token 信息结构（合并关键字表和名称表）
 typedef struct {
     const TZrChar *name;
@@ -160,8 +158,8 @@ static const struct {
 // 辅助函数：获取下一个字符
 static TZrInt32 next_char(SZrLexState *ls) {
     if (ls->currentPos >= ls->sourceLength) {
-        ls->currentChar = ZR_LEXER_EOZ;
-        return ZR_LEXER_EOZ;
+        ls->currentChar = ZR_PARSER_LEXER_EOZ;
+        return ZR_PARSER_LEXER_EOZ;
     }
 
     ls->currentChar = (TZrInt32) (TZrUInt8) ls->source[ls->currentPos++];
@@ -324,7 +322,7 @@ static void read_string(SZrLexState *ls, TZrSemInfo *seminfo) {
     next_char(ls); // 跳过开始引号
 
     reset_buffer(ls);
-    while (ls->currentChar != delimiter && ls->currentChar != ZR_LEXER_EOZ) {
+    while (ls->currentChar != delimiter && ls->currentChar != ZR_PARSER_LEXER_EOZ) {
         if (ls->currentChar == '\\') {
             next_char(ls); // 跳过反斜杠
             switch (ls->currentChar) {
@@ -412,7 +410,7 @@ static void read_string(SZrLexState *ls, TZrSemInfo *seminfo) {
         }
     }
 
-    if (ls->currentChar == ZR_LEXER_EOZ) {
+    if (ls->currentChar == ZR_PARSER_LEXER_EOZ) {
         ZrParser_Lexer_SyntaxError(ls, "unfinished string");
         return;
     }
@@ -426,7 +424,7 @@ static void read_template_string(SZrLexState *ls, TZrSemInfo *seminfo) {
     next_char(ls); // 跳过开始反引号
 
     reset_buffer(ls);
-    while (ls->currentChar != '`' && ls->currentChar != ZR_LEXER_EOZ) {
+    while (ls->currentChar != '`' && ls->currentChar != ZR_PARSER_LEXER_EOZ) {
         if (ls->currentChar == '\\') {
             next_char(ls);
             switch (ls->currentChar) {
@@ -452,7 +450,7 @@ static void read_template_string(SZrLexState *ls, TZrSemInfo *seminfo) {
                     break;
                 default:
                     save_char(ls, '\\');
-                    if (ls->currentChar != ZR_LEXER_EOZ) {
+                    if (ls->currentChar != ZR_PARSER_LEXER_EOZ) {
                         save_char(ls, (TZrChar)ls->currentChar);
                         next_char(ls);
                     }
@@ -465,7 +463,7 @@ static void read_template_string(SZrLexState *ls, TZrSemInfo *seminfo) {
         next_char(ls);
     }
 
-    if (ls->currentChar == ZR_LEXER_EOZ) {
+    if (ls->currentChar == ZR_PARSER_LEXER_EOZ) {
         ZrParser_Lexer_SyntaxError(ls, "unfinished template string");
         return;
     }
@@ -570,14 +568,14 @@ static void skip_whitespace_and_comments(SZrLexState *ls) {
             // 行注释
             next_char(ls); // 跳过 '/'
             next_char(ls); // 跳过 '/'
-            while (ls->currentChar != '\n' && ls->currentChar != ZR_LEXER_EOZ) {
+            while (ls->currentChar != '\n' && ls->currentChar != ZR_PARSER_LEXER_EOZ) {
                 next_char(ls);
             }
         } else if (ls->currentChar == '/' && ls->currentPos < ls->sourceLength && ls->source[ls->currentPos] == '*') {
             // 块注释
             next_char(ls); // 跳过 '/'
             next_char(ls); // 跳过 '*'
-            while (ls->currentChar != ZR_LEXER_EOZ) {
+            while (ls->currentChar != ZR_PARSER_LEXER_EOZ) {
                 if (ls->currentChar == '*' && ls->currentPos < ls->sourceLength && ls->source[ls->currentPos] == '/') {
                     next_char(ls); // 跳过 '*'
                     next_char(ls); // 跳过 '/'
@@ -599,7 +597,7 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
 
     ls->lastLine = ls->lineNumber;
 
-    if (ls->currentChar == ZR_LEXER_EOZ) {
+    if (ls->currentChar == ZR_PARSER_LEXER_EOZ) {
         return ZR_TK_EOS;
     }
 

@@ -9,7 +9,7 @@
 
 struct SZrState;
 
-#define ZR_VM_AOT_ABI_VERSION 1u
+#define ZR_VM_AOT_ABI_VERSION 2u
 
 typedef enum EZrAotBackendKind {
     ZR_AOT_BACKEND_KIND_NONE = 0,
@@ -17,19 +17,29 @@ typedef enum EZrAotBackendKind {
     ZR_AOT_BACKEND_KIND_LLVM = 2
 } EZrAotBackendKind;
 
+typedef enum EZrAotInputKind {
+    ZR_AOT_INPUT_KIND_NONE = 0,
+    ZR_AOT_INPUT_KIND_SOURCE = 1,
+    ZR_AOT_INPUT_KIND_BINARY = 2
+} EZrAotInputKind;
+
 typedef TZrInt64 (*FZrAotEntryThunk)(struct SZrState *state);
 
-typedef struct ZrAotCompiledModuleV1 {
+typedef struct ZrAotCompiledModule {
     TZrUInt32 abiVersion;
     TZrUInt32 backendKind;
     const TZrChar *moduleName;
-    const TZrChar *sourceHash;
-    const TZrChar *zroHash;
+    TZrUInt32 inputKind;
+    const TZrChar *inputHash;
     const TZrChar *const *runtimeContracts;
+    const TZrByte *embeddedModuleBlob;
+    TZrSize embeddedModuleBlobLength;
+    const FZrAotEntryThunk *functionThunks;
+    TZrUInt32 functionThunkCount;
     FZrAotEntryThunk entryThunk;
-} ZrAotCompiledModuleV1;
+} ZrAotCompiledModule;
 
-typedef const ZrAotCompiledModuleV1 *(*FZrVmGetAotCompiledModuleV1)(void);
+typedef const ZrAotCompiledModule *(*FZrVmGetAotCompiledModule)(void);
 
 #if defined(ZR_PLATFORM_WIN)
 #define ZR_VM_AOT_EXPORT __declspec(dllexport)

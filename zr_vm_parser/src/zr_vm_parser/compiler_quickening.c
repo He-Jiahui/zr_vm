@@ -8,11 +8,13 @@
 
 #include "compiler_internal.h"
 
+#define ZR_COMPILER_QUICKENING_MEMBER_FLAGS_NONE ((TZrUInt8)0)
+
 static TZrUInt32 compiler_quickening_find_deopt_id(const SZrFunction *function, TZrUInt32 instructionIndex) {
     TZrUInt32 index;
 
     if (function == ZR_NULL || function->semIrInstructions == ZR_NULL) {
-        return 0;
+        return ZR_RUNTIME_SEMIR_DEOPT_ID_NONE;
     }
 
     for (index = 0; index < function->semIrInstructionLength; index++) {
@@ -22,12 +24,12 @@ static TZrUInt32 compiler_quickening_find_deopt_id(const SZrFunction *function, 
         }
     }
 
-    return 0;
+    return ZR_RUNTIME_SEMIR_DEOPT_ID_NONE;
 }
 
 static TZrUInt8 compiler_quickening_member_entry_flags(const SZrFunction *function, TZrUInt32 memberEntryIndex) {
     if (function == ZR_NULL || function->memberEntries == ZR_NULL || memberEntryIndex >= function->memberEntryLength) {
-        return 0;
+        return ZR_COMPILER_QUICKENING_MEMBER_FLAGS_NONE;
     }
 
     return function->memberEntries[memberEntryIndex].reserved0;

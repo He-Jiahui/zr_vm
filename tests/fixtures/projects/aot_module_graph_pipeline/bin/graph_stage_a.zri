@@ -1,0 +1,49 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 4
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 2
+
+CONSTANTS (2):
+  [0] function
+  [1] null
+
+LOCAL_VARIABLES (1):
+  [0] seed: offset_activate=1, offset_dead=1
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (1):
+    [0] seed: function
+  EXPORTED_SYMBOLS (1):
+    fn seed(): int
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+INSTRUCTIONS (3):
+  [0] CREATE_CLOSURE (extra=0)
+  [1] GET_CONSTANT (extra=1, operand=1)
+  [2] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+

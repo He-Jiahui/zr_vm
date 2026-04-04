@@ -51,12 +51,12 @@
         "aot_c": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -89,7 +89,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -149,12 +149,12 @@
         "aot_c": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -187,7 +187,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -249,12 +249,12 @@
         "aot_c": {
           "artifact": true,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": true,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -288,7 +288,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -349,12 +349,12 @@
         "aot_c": {
           "artifact": true,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": true,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -388,7 +388,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -449,12 +449,12 @@
         "aot_c": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -485,7 +485,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -546,12 +546,12 @@
         "aot_c": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -582,7 +582,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -642,12 +642,12 @@
         "aot_c": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -678,7 +678,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -738,12 +738,12 @@
         "aot_c": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -774,7 +774,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -834,12 +834,12 @@
         "aot_c": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -870,7 +870,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -933,12 +933,12 @@
         "aot_c": {
           "artifact": true,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": true,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -974,7 +974,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -1035,12 +1035,12 @@
         "aot_c": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -1071,7 +1071,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -1131,12 +1131,12 @@
         "aot_c": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT C backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
         },
         "aot_llvm": {
           "artifact": false,
           "executable": false,
-          "skip_reason": "textual AOT LLVM backend only; no native executable parity hook in CLI/runtime yet"
+          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
         }
       },
       "oracles": {
@@ -1167,7 +1167,7 @@
             "aot_c",
             "aot_llvm"
           ],
-          "skip_reason": "textual AOT backends currently emit contract artifacts only; executable parity remains gated by backend_requirements"
+          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [

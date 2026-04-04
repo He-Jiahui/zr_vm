@@ -9,6 +9,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_ffi/module.h"
 #include "zr_vm_lib_math/module.h"
@@ -136,6 +137,62 @@ static TZrByte *read_binary_file_owned(const TZrChar *path, TZrSize *outLength) 
     return buffer;
 }
 
+static TZrBool write_embedded_aot_c_file(SZrState *state,
+                                         SZrFunction *function,
+                                         const TZrChar *moduleName,
+                                         const TZrChar *filename,
+                                         const TZrChar *binaryPath) {
+    SZrAotWriterOptions options;
+    TZrByte *embeddedModuleBlob = ZR_NULL;
+    TZrSize embeddedModuleBlobLength = 0;
+    TZrBool success;
+
+    if (state == ZR_NULL || function == ZR_NULL || moduleName == ZR_NULL || filename == ZR_NULL || binaryPath == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrParser_Writer_WriteBinaryFile(state, function, binaryPath)) {
+        return ZR_FALSE;
+    }
+
+    embeddedModuleBlob = read_binary_file_owned(binaryPath, &embeddedModuleBlobLength);
+    remove(binaryPath);
+    if (embeddedModuleBlob == ZR_NULL || embeddedModuleBlobLength == 0) {
+        free(embeddedModuleBlob);
+        return ZR_FALSE;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = moduleName;
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = moduleName;
+    options.embeddedModuleBlob = embeddedModuleBlob;
+    options.embeddedModuleBlobLength = embeddedModuleBlobLength;
+    options.requireExecutableLowering = ZR_TRUE;
+
+    success = ZrParser_Writer_WriteAotCFileWithOptions(state, function, filename, &options);
+    free(embeddedModuleBlob);
+    return success;
+}
+
+static TZrBool write_standalone_strict_aot_c_file(SZrState *state,
+                                                  SZrFunction *function,
+                                                  const TZrChar *moduleName,
+                                                  const TZrChar *filename) {
+    SZrAotWriterOptions options;
+
+    if (state == ZR_NULL || function == ZR_NULL || moduleName == ZR_NULL || filename == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = moduleName;
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = moduleName;
+    options.requireExecutableLowering = ZR_TRUE;
+    return ZrParser_Writer_WriteAotCFileWithOptions(state, function, filename, &options);
+}
+
 static TZrBytePtr binary_fixture_reader_read(struct SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size) {
     SZrBinaryFixtureReader *reader = (SZrBinaryFixtureReader *)customData;
 
@@ -181,6 +238,8 @@ static void assert_runtime_function_matches_source_function(const SZrFunction *e
     TEST_ASSERT_EQUAL_UINT32(expected->instructionsLength, actual->instructionsLength);
     TEST_ASSERT_EQUAL_UINT32(expected->parameterCount, actual->parameterCount);
     TEST_ASSERT_EQUAL_UINT32(expected->childFunctionLength, actual->childFunctionLength);
+    TEST_ASSERT_EQUAL_UINT32(expected->memberEntryLength, actual->memberEntryLength);
+    TEST_ASSERT_EQUAL_UINT32(expected->callSiteCacheLength, actual->callSiteCacheLength);
 
     for (index = 0; index < expected->instructionsLength; index++) {
         const TZrInstruction *left = &expected->instructionsList[index];
@@ -190,6 +249,19 @@ static void assert_runtime_function_matches_source_function(const SZrFunction *e
         TEST_ASSERT_EQUAL_UINT16(left->instruction.operand.operand1[0], right->instruction.operand.operand1[0]);
         TEST_ASSERT_EQUAL_UINT16(left->instruction.operand.operand1[1], right->instruction.operand.operand1[1]);
         TEST_ASSERT_EQUAL_INT32(left->instruction.operand.operand2[0], right->instruction.operand.operand2[0]);
+    }
+
+    for (index = 0; index < expected->memberEntryLength; index++) {
+        const SZrFunctionMemberEntry *left = &expected->memberEntries[index];
+        const SZrFunctionMemberEntry *right = &actual->memberEntries[index];
+        TEST_ASSERT_NOT_NULL(left->symbol);
+        TEST_ASSERT_NOT_NULL(right->symbol);
+        TEST_ASSERT_TRUE(ZrCore_String_Equal(left->symbol, right->symbol));
+        TEST_ASSERT_EQUAL_UINT8(left->entryKind, right->entryKind);
+        TEST_ASSERT_EQUAL_UINT8(left->reserved0, right->reserved0);
+        TEST_ASSERT_EQUAL_UINT16(left->reserved1, right->reserved1);
+        TEST_ASSERT_EQUAL_UINT32(left->prototypeIndex, right->prototypeIndex);
+        TEST_ASSERT_EQUAL_UINT32(left->descriptorIndex, right->descriptorIndex);
     }
 
     for (index = 0; index < expected->childFunctionLength; index++) {
@@ -348,6 +420,69 @@ static const SZrFunctionCallSiteCacheEntry *function_tree_find_first_callsite_ca
     return ZR_NULL;
 }
 
+static const SZrFunctionMemberEntry *find_member_entry_by_symbol(const SZrFunction *function,
+                                                                 const char *expectedSymbol) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->memberEntries == ZR_NULL || expectedSymbol == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < function->memberEntryLength; index++) {
+        const SZrFunctionMemberEntry *entry = &function->memberEntries[index];
+        const char *actualSymbol = entry->symbol != ZR_NULL ? ZrCore_String_GetNativeString(entry->symbol) : ZR_NULL;
+
+        if (actualSymbol != ZR_NULL && strcmp(actualSymbol, expectedSymbol) == 0) {
+            return entry;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void assert_member_entry_symbol_flags(const SZrFunction *function,
+                                             const char *expectedSymbol,
+                                             TZrUInt8 expectedFlags) {
+    const SZrFunctionMemberEntry *entry = find_member_entry_by_symbol(function, expectedSymbol);
+    TZrUInt32 index;
+
+    TEST_ASSERT_NOT_NULL(function);
+    if (entry == ZR_NULL && function->memberEntries != ZR_NULL) {
+        fprintf(stderr,
+                "missing member entry '%s' in function; memberEntryLength=%u\n",
+                expectedSymbol,
+                (unsigned int)function->memberEntryLength);
+        for (index = 0; index < function->memberEntryLength; index++) {
+            const SZrFunctionMemberEntry *current = &function->memberEntries[index];
+            fprintf(stderr,
+                    "  member[%u] symbol=%s flags=%u kind=%u\n",
+                    (unsigned int)index,
+                    current->symbol != ZR_NULL ? ZrCore_String_GetNativeString(current->symbol) : "<null>",
+                    (unsigned int)current->reserved0,
+                    (unsigned int)current->entryKind);
+        }
+        fflush(stderr);
+    }
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_NOT_NULL(entry->symbol);
+    TEST_ASSERT_EQUAL_UINT8(expectedFlags, entry->reserved0);
+}
+
+static void assert_first_callsite_cache_member_binding(const SZrFunction *function,
+                                                       EZrFunctionCallSiteCacheKind kind,
+                                                       const char *expectedSymbol,
+                                                       TZrUInt8 expectedFlags) {
+    const SZrFunctionCallSiteCacheEntry *entry = function_tree_find_first_callsite_cache_kind(function, kind);
+
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_TRUE(entry->memberEntryIndex < function->memberEntryLength);
+    TEST_ASSERT_NOT_NULL(function->memberEntries);
+    TEST_ASSERT_NOT_NULL(function->memberEntries[entry->memberEntryIndex].symbol);
+    TEST_ASSERT_EQUAL_STRING(expectedSymbol,
+                             ZrCore_String_GetNativeString(function->memberEntries[entry->memberEntryIndex].symbol));
+    TEST_ASSERT_EQUAL_UINT8(expectedFlags, function->memberEntries[entry->memberEntryIndex].reserved0);
+}
+
 static void test_access_lowering_preserves_explicit_member_and_index_ops(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Access Lowering Preserves Explicit Member And Index Ops";
@@ -445,12 +580,16 @@ static void test_aot_c_and_llvm_backends_emit_runtime_contract_artifacts(void) {
         TEST_ASSERT_NOT_NULL(llvmText);
 
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZR AOT C Backend"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrAotCompiledModule"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrVm_GetAotCompiledModule"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Reflection_TypeOfValue"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "TYPEOF"));
         TEST_ASSERT_NULL(strstr(cText, "DYN_GET"));
         TEST_ASSERT_NULL(strstr(cText, "ZrCore_Object_GetByIndex"));
 
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "ZR AOT LLVM Backend"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "%ZrAotCompiledModule = type"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "ZrVm_GetAotCompiledModule"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "declare i1 @ZrCore_Reflection_TypeOfValue"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "define i64 @zr_aot_entry"));
         TEST_ASSERT_NULL(strstr(llvmText, "declare i1 @ZrCore_Object_GetByIndex"));
@@ -459,6 +598,346 @@ static void test_aot_c_and_llvm_backends_emit_runtime_contract_artifacts(void) {
         free(llvmText);
         remove(cPath);
         remove(llvmPath);
+        ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_c_backend_emits_child_thunks_for_callable_constants(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT C Backend Emits Child Thunks For Callable Constants";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot c child thunk emission",
+                 "Testing that callable constants such as exported lambdas receive their own generated AOT thunks instead of being folded into the entry thunk only");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "pub var greet = () => {\n"
+                "    return \"hello from import\";\n"
+                "};\n"
+                "return greet();";
+        const char *cPath = "execbc_aot_child_thunk_test.c";
+        const char *binaryPath = "execbc_aot_child_thunk_test.zro";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *func;
+        char *cText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "execbc_aot_child_thunk_test.zr", 31);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(func);
+
+        TEST_ASSERT_TRUE(write_embedded_aot_c_file(state,
+                                                   func,
+                                                   "execbc_aot_child_thunk_test",
+                                                   cPath,
+                                                   binaryPath));
+
+        cText = read_text_file_owned(cPath);
+        TEST_ASSERT_NOT_NULL(cText);
+
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrAotCompiledModule"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "static const TZrByte zr_aot_embedded_module_blob[] = {"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "static const FZrAotEntryThunk zr_aot_function_thunks[] = {"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state) {"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "static TZrInt64 zr_aot_fn_1"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame)"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 1, &frame)"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_fn_0_ins_0:"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_fn_1_ins_0:"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "    zr_aot_fn_1,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "    2,"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeCurrentClosureShim"));
+
+        free(cText);
+        remove(cPath);
+        ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_c_backend_emits_native_entry_descriptor_instead_of_shim_invoke(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT C Backend Emits Native Entry Descriptor Instead Of Shim Invoke";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot c native entry",
+                 "Testing that AOT C output exports the formal descriptor and no longer routes entry execution through InvokeActiveShim");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source = "return 7;";
+        const char *cPath = "execbc_aot_native_entry_test.c";
+        const char *binaryPath = "execbc_aot_native_entry_test.zro";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *func;
+        char *cText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "execbc_aot_native_entry_test.zr", 30);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(func);
+
+        TEST_ASSERT_TRUE(write_embedded_aot_c_file(state,
+                                                   func,
+                                                   "execbc_aot_native_entry_test",
+                                                   cPath,
+                                                   binaryPath));
+
+        cText = read_text_file_owned(cPath);
+        TEST_ASSERT_NOT_NULL(cText);
+
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrAotCompiledModule"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrVm_GetAotCompiledModule"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame)"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_fn_0_ins_0:"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyConstant"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeCurrentClosureShim"));
+
+        free(cText);
+        remove(cPath);
+        ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_c_backend_emits_root_shim_fallback_when_embedded_blob_present(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT C Backend Emits Root Shim Fallback With Embedded Blob";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot c root shim fallback",
+                 "Testing that AOT C generation with an embedded module blob emits a root shim fallback for unsupported entry instructions");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var box = {};\n"
+                "box.value = 7;\n"
+                "return box.value;";
+        const char *cPath = "execbc_aot_root_shim_fallback_test.c";
+        const char *binaryPath = "execbc_aot_root_shim_fallback_test.zro";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *func;
+        char *cText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "execbc_aot_root_shim_fallback_test.zr", 38);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(func);
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(func, ZR_INSTRUCTION_ENUM(CREATE_OBJECT)));
+
+        remove(cPath);
+        TEST_ASSERT_TRUE(write_embedded_aot_c_file(state,
+                                                   func,
+                                                   "execbc_aot_root_shim_fallback_test",
+                                                   cPath,
+                                                   binaryPath));
+
+        cText = read_text_file_owned(cPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrVm_GetAotCompiledModule"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim(state, ZR_AOT_BACKEND_KIND_C)"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame)"));
+        free(cText);
+        remove(cPath);
+        ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_c_backend_rejects_unsupported_entry_lowering_without_embedded_blob(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT C Backend Rejects Unsupported Entry Lowering Without Embedded Blob";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot c strict standalone entry lowering",
+                 "Testing that standalone strict AOT C generation still rejects unsupported entry instructions when no embedded blob is available");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var box = {};\n"
+                "box.value = 7;\n"
+                "return box.value;";
+        const char *cPath = "execbc_aot_root_shim_fallback_test.c";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *func;
+        char *cText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "execbc_aot_root_shim_fallback_test.zr", 38);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(func);
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(func, ZR_INSTRUCTION_ENUM(CREATE_OBJECT)));
+
+        remove(cPath);
+        TEST_ASSERT_FALSE(write_standalone_strict_aot_c_file(state,
+                                                             func,
+                                                             "execbc_aot_root_shim_fallback_test",
+                                                             cPath));
+
+        cText = read_text_file_owned(cPath);
+        TEST_ASSERT_NULL(cText);
+        remove(cPath);
+        ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_c_backend_emits_child_shim_fallback_when_embedded_blob_present(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT C Backend Emits Child Shim Fallback With Embedded Blob";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot c child shim fallback",
+                 "Testing that AOT C generation with an embedded module blob emits a child shim fallback while keeping the supported entry thunk native");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var build = () => {\n"
+                "    var box = {};\n"
+                "    box.value = 9;\n"
+                "    return box.value;\n"
+                "};\n"
+                "return build();";
+        const char *cPath = "execbc_aot_child_shim_fallback_test.c";
+        const char *binaryPath = "execbc_aot_child_shim_fallback_test.zro";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *func;
+        char *cText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "execbc_aot_child_shim_fallback_test.zr", 39);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(func);
+
+        remove(cPath);
+        TEST_ASSERT_TRUE(write_embedded_aot_c_file(state,
+                                                   func,
+                                                   "execbc_aot_child_shim_fallback_test",
+                                                   cPath,
+                                                   binaryPath));
+
+        cText = read_text_file_owned(cPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame)"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeCurrentClosureShim(state, ZR_AOT_BACKEND_KIND_C)"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim(state, ZR_AOT_BACKEND_KIND_C)"));
+        free(cText);
+        remove(cPath);
+        ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_c_backend_rejects_unsupported_child_lowering_without_embedded_blob(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT C Backend Rejects Unsupported Child Lowering Without Embedded Blob";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot c strict standalone child lowering",
+                 "Testing that standalone strict AOT C generation still rejects unsupported child functions when no embedded blob is available");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var build = () => {\n"
+                "    var box = {};\n"
+                "    box.value = 9;\n"
+                "    return box.value;\n"
+                "};\n"
+                "return build();";
+        const char *cPath = "execbc_aot_child_shim_fallback_test.c";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *func;
+        char *cText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "execbc_aot_child_shim_fallback_test.zr", 39);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(func);
+
+        remove(cPath);
+        TEST_ASSERT_FALSE(write_standalone_strict_aot_c_file(state,
+                                                             func,
+                                                             "execbc_aot_child_shim_fallback_test",
+                                                             cPath));
+
+        cText = read_text_file_owned(cPath);
+        TEST_ASSERT_NULL(cText);
+        remove(cPath);
         ZrCore_Function_Free(state, func);
         ZrTests_Runtime_State_Destroy(state);
     }
@@ -611,6 +1090,8 @@ static void test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserve
         TEST_ASSERT_NOT_NULL(sourceObject);
         runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
         TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_EQUAL_UINT32(function->memberEntryLength, runtimeFunction->memberEntryLength);
+        assert_runtime_function_matches_source_function(function, runtimeFunction);
 
         metaCache = function_tree_find_first_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL);
         dynCache = function_tree_find_first_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL);
@@ -1551,6 +2032,16 @@ static void test_meta_access_semir_and_aot_use_dedicated_meta_get_set_opcodes(vo
         TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCacheLength);
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
+        assert_member_entry_symbol_flags(function, "__get_value", 0);
+        assert_member_entry_symbol_flags(function, "__set_value", 0);
+        assert_first_callsite_cache_member_binding(function,
+                                                   ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET,
+                                                   "__get_value",
+                                                   0);
+        assert_first_callsite_cache_member_binding(function,
+                                                   ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET,
+                                                   "__set_value",
+                                                   0);
         TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_GET, ZR_TRUE));
         TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_SET, ZR_TRUE));
 
@@ -1602,6 +2093,14 @@ static void test_meta_access_semir_and_aot_use_dedicated_meta_get_set_opcodes(vo
         TEST_ASSERT_EQUAL_UINT32(2, runtimeFunction->callSiteCacheLength);
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
+        assert_first_callsite_cache_member_binding(runtimeFunction,
+                                                   ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET,
+                                                   "__get_value",
+                                                   0);
+        assert_first_callsite_cache_member_binding(runtimeFunction,
+                                                   ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET,
+                                                   "__set_value",
+                                                   0);
 
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
         TEST_ASSERT_EQUAL_INT64(16, result);
@@ -1651,6 +2150,8 @@ static void test_static_meta_access_quickens_to_static_callsite_cache_variants(v
 
         function = compile_static_meta_access_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
+        assert_member_entry_symbol_flags(function, "__get_count", ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR);
+        assert_member_entry_symbol_flags(function, "__set_count", ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR);
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED)));
@@ -1752,6 +2253,16 @@ static void test_reference_property_fixture_preserves_meta_access_artifacts(void
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED)));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
+        assert_member_entry_symbol_flags(function, "__get_value", 0);
+        assert_member_entry_symbol_flags(function, "__set_value", 0);
+        assert_first_callsite_cache_member_binding(function,
+                                                   ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET,
+                                                   "__get_value",
+                                                   0);
+        assert_first_callsite_cache_member_binding(function,
+                                                   ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET,
+                                                   "__set_value",
+                                                   0);
         TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_GET, ZR_TRUE));
         TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_SET, ZR_TRUE));
 
@@ -2025,6 +2536,12 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_access_lowering_preserves_explicit_member_and_index_ops);
     RUN_TEST(test_aot_c_and_llvm_backends_emit_runtime_contract_artifacts);
+    RUN_TEST(test_aot_c_backend_emits_child_thunks_for_callable_constants);
+    RUN_TEST(test_aot_c_backend_emits_native_entry_descriptor_instead_of_shim_invoke);
+    RUN_TEST(test_aot_c_backend_emits_root_shim_fallback_when_embedded_blob_present);
+    RUN_TEST(test_aot_c_backend_rejects_unsupported_entry_lowering_without_embedded_blob);
+    RUN_TEST(test_aot_c_backend_emits_child_shim_fallback_when_embedded_blob_present);
+    RUN_TEST(test_aot_c_backend_rejects_unsupported_child_lowering_without_embedded_blob);
     RUN_TEST(test_execbc_quickens_zero_arg_call_sites_without_changing_semir_contracts);
     RUN_TEST(test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserves_binary_metadata);
     RUN_TEST(test_binary_roundtrip_preserves_fixed_array_helper_argument_values);

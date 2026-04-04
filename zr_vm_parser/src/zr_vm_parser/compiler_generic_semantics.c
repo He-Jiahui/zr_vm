@@ -89,7 +89,7 @@ TZrBool compiler_expression_is_assignable_storage_location(const SZrAstNode *nod
 
 static TZrInt32 tracked_out_parameter_index(const SZrTrackedOutParameters *tracked, SZrString *name) {
     if (tracked == ZR_NULL || tracked->names == ZR_NULL || name == ZR_NULL) {
-        return -1;
+        return ZR_PARSER_I32_NONE;
     }
 
     for (TZrSize index = 0; index < tracked->count; index++) {
@@ -98,7 +98,7 @@ static TZrInt32 tracked_out_parameter_index(const SZrTrackedOutParameters *track
         }
     }
 
-    return -1;
+    return ZR_PARSER_I32_NONE;
 }
 
 static void copy_assignment_state(const TZrBool *source, TZrBool *dest, TZrSize count) {
@@ -167,7 +167,7 @@ static void mark_expression_out_assignments(const SZrTrackedOutParameters *track
                 node->data.assignmentExpression.left->type == ZR_AST_IDENTIFIER_LITERAL) {
                 trackedIndex = tracked_out_parameter_index(tracked,
                                                            node->data.assignmentExpression.left->data.identifier.name);
-                if (trackedIndex >= 0) {
+                if (trackedIndex != ZR_PARSER_I32_NONE) {
                     assignedState[trackedIndex] = ZR_TRUE;
                 }
             }

@@ -97,6 +97,7 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                       interfaceDecl->generic != ZR_NULL && interfaceDecl->generic->params != ZR_NULL
                               ? interfaceDecl->generic->params->count
                               : 1);
+    ZrCore_Array_Init(cs->state, &info.decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     compiler_collect_generic_parameter_info(cs, &info.genericParameters, interfaceDecl->generic);
 

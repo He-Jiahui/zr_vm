@@ -5,6 +5,7 @@
 #include "compiler_internal.h"
 #include "compile_expression_internal.h"
 #include "zr_vm_core/reflection.h"
+#include "zr_vm_core/runtime_decorator.h"
 
 static void compiler_free_collected_generic_parameters(SZrState *state, SZrArray *genericParameters) {
     if (state == ZR_NULL || genericParameters == ZR_NULL ||
@@ -661,7 +662,7 @@ TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name)
     TZrSize startIndex;
 
     if (cs == ZR_NULL || name == ZR_NULL || cs->scopeStack.length == 0) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     scope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, cs->scopeStack.length - 1);
@@ -678,7 +679,7 @@ TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name)
         }
     }
 
-    return (TZrUInt32)-1;
+    return ZR_PARSER_SLOT_NONE;
 }
 
 void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) {
@@ -706,7 +707,7 @@ void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNo
             return;
         }
 
-        if (find_local_var_in_current_scope(cs, funcDecl->name->name) != (TZrUInt32)-1) {
+        if (find_local_var_in_current_scope(cs, funcDecl->name->name) != ZR_PARSER_SLOT_NONE) {
             continue;
         }
 
@@ -724,7 +725,7 @@ TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) {
     TZrUInt32 memberId;
 
     if (cs == ZR_NULL || name == ZR_NULL || cs->hasError) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     globalSlot = allocate_stack_slot(cs);
@@ -732,8 +733,8 @@ TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) {
     emit_instruction(cs, getGlobalInst);
 
     memberId = compiler_get_or_add_member_entry(cs, name);
-    if (memberId == (TZrUInt32)-1) {
-        return (TZrUInt32)-1;
+    if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
+        return ZR_PARSER_SLOT_NONE;
     }
 
     emit_instruction(cs,
@@ -742,6 +743,366 @@ TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) {
                                           (TZrUInt16)globalSlot,
                                           (TZrUInt16)memberId));
     return globalSlot;
+}
+
+static SZrString *compiler_create_runtime_decorator_temp_name(SZrCompilerState *cs, const TZrChar *prefix, TZrUInt32 index) {
+    TZrChar buffer[96];
+
+    if (cs == ZR_NULL || prefix == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    snprintf(buffer,
+             sizeof(buffer),
+             "__zr_%s_runtime_decorator_%u_%u",
+             prefix,
+             (unsigned int)cs->instructionCount,
+             (unsigned int)index);
+    return ZrCore_String_Create(cs->state, buffer, strlen(buffer));
+}
+
+static TZrBool compiler_emit_copy_stack_value(SZrCompilerState *cs, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+    if (cs == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    emit_instruction(cs,
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(GET_STACK),
+                                          (TZrUInt16)destinationSlot,
+                                          (TZrInt32)sourceSlot));
+    return !cs->hasError;
+}
+
+static TZrBool compiler_emit_runtime_decorator_application(SZrCompilerState *cs,
+                                                           TZrUInt32 targetSlot,
+                                                           TZrUInt32 decoratorSlot,
+                                                           TZrBool persistTarget,
+                                                           TZrSize trimTargetCount,
+                                                           SZrFileRange location) {
+    SZrClosureNative *helperClosure;
+    SZrTypeValue helperValue;
+    TZrUInt32 helperSlot;
+    TZrUInt32 targetArgumentSlot;
+    TZrUInt32 decoratorArgumentSlot;
+
+    if (cs == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    helperClosure = ZrCore_ClosureNative_New(cs->state, 0);
+    if (helperClosure == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "failed to create runtime decorator helper", location);
+        return ZR_FALSE;
+    }
+
+    helperClosure->nativeFunction = ZrCore_RuntimeDecorator_ApplyNativeEntry;
+    ZrCore_RawObject_MarkAsPermanent(cs->state, ZR_CAST_RAW_OBJECT_AS_SUPER(helperClosure));
+
+    ZrCore_Value_InitAsRawObject(cs->state, &helperValue, ZR_CAST_RAW_OBJECT_AS_SUPER(helperClosure));
+    helperValue.isNative = ZR_TRUE;
+
+    helperSlot = allocate_stack_slot(cs);
+    emit_constant_to_slot(cs, helperSlot, &helperValue);
+
+    targetArgumentSlot = allocate_stack_slot(cs);
+    if (!compiler_emit_copy_stack_value(cs, targetArgumentSlot, targetSlot)) {
+        return ZR_FALSE;
+    }
+
+    decoratorArgumentSlot = allocate_stack_slot(cs);
+    if (!compiler_emit_copy_stack_value(cs, decoratorArgumentSlot, decoratorSlot)) {
+        return ZR_FALSE;
+    }
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                          (TZrUInt16)helperSlot,
+                                          (TZrUInt16)helperSlot,
+                                          2));
+    if (persistTarget) {
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)targetSlot,
+                                              (TZrInt32)helperSlot));
+    }
+    ZrParser_Compiler_TrimStackToCount(cs, trimTargetCount);
+    return !cs->hasError;
+}
+
+TZrBool emit_runtime_decorator_applications(SZrCompilerState *cs,
+                                            SZrAstNodeArray *decorators,
+                                            TZrUInt32 targetSlot,
+                                            TZrBool persistTarget,
+                                            SZrFileRange location) {
+    TZrUInt32 *decoratorSlots = ZR_NULL;
+    TZrSize runtimeDecoratorCount = 0;
+    TZrSize decoratorIndex = 0;
+    TZrSize trimTargetCount;
+    TZrBool success = ZR_FALSE;
+
+    if (cs == ZR_NULL || decorators == ZR_NULL || decorators->count == 0 || cs->hasError) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < decorators->count; index++) {
+        SZrAstNode *decoratorNode = decorators->nodes[index];
+        if (decoratorNode == ZR_NULL) {
+            continue;
+        }
+
+        if (!ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
+            if (cs->hasError) {
+                goto cleanup;
+            }
+            runtimeDecoratorCount++;
+        } else if (cs->hasError) {
+            goto cleanup;
+        }
+    }
+
+    if (runtimeDecoratorCount == 0) {
+        return ZR_TRUE;
+    }
+
+    decoratorSlots = (TZrUInt32 *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                  sizeof(TZrUInt32) * runtimeDecoratorCount,
+                                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (decoratorSlots == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "failed to allocate runtime decorator slots", location);
+        goto cleanup;
+    }
+
+    for (TZrSize index = 0; index < decorators->count; index++) {
+        SZrAstNode *decoratorNode = decorators->nodes[index];
+        SZrString *tempName;
+
+        if (decoratorNode == ZR_NULL) {
+            continue;
+        }
+
+        if (ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
+            if (cs->hasError) {
+                goto cleanup;
+            }
+            continue;
+        }
+        if (decoratorNode->type != ZR_AST_DECORATOR_EXPRESSION || decoratorNode->data.decoratorExpression.expr == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "invalid runtime decorator expression", decoratorNode->location);
+            goto cleanup;
+        }
+
+        tempName = compiler_create_runtime_decorator_temp_name(cs, "definition", (TZrUInt32)decoratorIndex);
+        if (tempName == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "failed to allocate runtime decorator temp", decoratorNode->location);
+            goto cleanup;
+        }
+
+        decoratorSlots[decoratorIndex] = allocate_local_var(cs, tempName);
+        if (compile_expression_into_slot(cs,
+                                         decoratorNode->data.decoratorExpression.expr,
+                                         decoratorSlots[decoratorIndex]) == ZR_PARSER_SLOT_NONE ||
+            cs->hasError) {
+            goto cleanup;
+        }
+
+        decoratorIndex++;
+    }
+
+    trimTargetCount = cs->stackSlotCount;
+    for (TZrSize index = runtimeDecoratorCount; index > 0; index--) {
+        if (!compiler_emit_runtime_decorator_application(cs,
+                                                         targetSlot,
+                                                         decoratorSlots[index - 1],
+                                                         persistTarget,
+                                                         trimTargetCount,
+                                                         location)) {
+            goto cleanup;
+        }
+    }
+
+    success = ZR_TRUE;
+
+cleanup:
+    if (decoratorSlots != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      decoratorSlots,
+                                      sizeof(TZrUInt32) * runtimeDecoratorCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    return success;
+}
+
+static TZrBool compiler_emit_runtime_member_decorator_application(SZrCompilerState *cs,
+                                                                  TZrUInt32 prototypeSlot,
+                                                                  SZrString *memberName,
+                                                                  EZrRuntimeDecoratorTargetKind targetKind,
+                                                                  TZrUInt32 decoratorSlot,
+                                                                  TZrSize trimTargetCount,
+                                                                  SZrFileRange location) {
+    SZrClosureNative *helperClosure;
+    SZrTypeValue helperValue;
+    SZrTypeValue kindConstant;
+    TZrUInt32 helperSlot;
+    TZrUInt32 prototypeArgumentSlot;
+    TZrUInt32 memberNameSlot;
+    TZrUInt32 kindSlot;
+    TZrUInt32 decoratorArgumentSlot;
+
+    if (cs == ZR_NULL || memberName == ZR_NULL || targetKind == ZR_RUNTIME_DECORATOR_TARGET_KIND_INVALID || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    helperClosure = ZrCore_ClosureNative_New(cs->state, 0);
+    if (helperClosure == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "failed to create runtime member decorator helper", location);
+        return ZR_FALSE;
+    }
+
+    helperClosure->nativeFunction = ZrCore_RuntimeDecorator_ApplyMemberNativeEntry;
+    ZrCore_RawObject_MarkAsPermanent(cs->state, ZR_CAST_RAW_OBJECT_AS_SUPER(helperClosure));
+
+    ZrCore_Value_InitAsRawObject(cs->state, &helperValue, ZR_CAST_RAW_OBJECT_AS_SUPER(helperClosure));
+    helperValue.isNative = ZR_TRUE;
+
+    helperSlot = allocate_stack_slot(cs);
+    emit_constant_to_slot(cs, helperSlot, &helperValue);
+
+    prototypeArgumentSlot = allocate_stack_slot(cs);
+    if (!compiler_emit_copy_stack_value(cs, prototypeArgumentSlot, prototypeSlot)) {
+        return ZR_FALSE;
+    }
+
+    memberNameSlot = allocate_stack_slot(cs);
+    emit_string_constant_to_slot(cs, memberNameSlot, memberName);
+
+    kindSlot = allocate_stack_slot(cs);
+    ZrCore_Value_InitAsInt(cs->state, &kindConstant, (TZrInt64)targetKind);
+    emit_constant_to_slot(cs, kindSlot, &kindConstant);
+
+    decoratorArgumentSlot = allocate_stack_slot(cs);
+    if (!compiler_emit_copy_stack_value(cs, decoratorArgumentSlot, decoratorSlot)) {
+        return ZR_FALSE;
+    }
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                          (TZrUInt16)helperSlot,
+                                          (TZrUInt16)helperSlot,
+                                          4));
+    ZrParser_Compiler_TrimStackToCount(cs, trimTargetCount);
+    return !cs->hasError;
+}
+
+TZrBool emit_runtime_member_decorator_applications(SZrCompilerState *cs,
+                                                   SZrAstNodeArray *decorators,
+                                                   SZrString *typeName,
+                                                   SZrString *memberName,
+                                                   EZrRuntimeDecoratorTargetKind targetKind,
+                                                   SZrFileRange location) {
+    TZrUInt32 *decoratorSlots = ZR_NULL;
+    TZrSize runtimeDecoratorCount = 0;
+    TZrSize decoratorIndex = 0;
+    TZrUInt32 prototypeSlot;
+    TZrSize trimTargetCount;
+    TZrBool success = ZR_FALSE;
+
+    if (cs == ZR_NULL || decorators == ZR_NULL || decorators->count == 0 || typeName == ZR_NULL ||
+        memberName == ZR_NULL || targetKind == ZR_RUNTIME_DECORATOR_TARGET_KIND_INVALID || cs->hasError) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < decorators->count; index++) {
+        SZrAstNode *decoratorNode = decorators->nodes[index];
+        if (decoratorNode == ZR_NULL) {
+            continue;
+        }
+
+        if (!ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
+            if (cs->hasError) {
+                goto cleanup;
+            }
+            runtimeDecoratorCount++;
+        } else if (cs->hasError) {
+            goto cleanup;
+        }
+    }
+
+    if (runtimeDecoratorCount == 0) {
+        return ZR_TRUE;
+    }
+
+    decoratorSlots = (TZrUInt32 *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                  sizeof(TZrUInt32) * runtimeDecoratorCount,
+                                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (decoratorSlots == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "failed to allocate runtime member decorator slots", location);
+        goto cleanup;
+    }
+
+    for (TZrSize index = 0; index < decorators->count; index++) {
+        SZrAstNode *decoratorNode = decorators->nodes[index];
+        SZrString *tempName;
+
+        if (decoratorNode == ZR_NULL) {
+            continue;
+        }
+
+        if (ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
+            if (cs->hasError) {
+                goto cleanup;
+            }
+            continue;
+        }
+        if (decoratorNode->type != ZR_AST_DECORATOR_EXPRESSION || decoratorNode->data.decoratorExpression.expr == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "invalid runtime decorator expression", decoratorNode->location);
+            goto cleanup;
+        }
+
+        tempName = compiler_create_runtime_decorator_temp_name(cs, "member_definition", (TZrUInt32)decoratorIndex);
+        if (tempName == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "failed to allocate runtime member decorator temp", decoratorNode->location);
+            goto cleanup;
+        }
+
+        decoratorSlots[decoratorIndex] = allocate_local_var(cs, tempName);
+        if (compile_expression_into_slot(cs,
+                                         decoratorNode->data.decoratorExpression.expr,
+                                         decoratorSlots[decoratorIndex]) == ZR_PARSER_SLOT_NONE ||
+            cs->hasError) {
+            goto cleanup;
+        }
+
+        decoratorIndex++;
+    }
+
+    prototypeSlot = emit_load_global_identifier(cs, typeName);
+    if (prototypeSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
+        goto cleanup;
+    }
+
+    trimTargetCount = cs->stackSlotCount;
+    for (TZrSize index = runtimeDecoratorCount; index > 0; index--) {
+        if (!compiler_emit_runtime_member_decorator_application(cs,
+                                                                prototypeSlot,
+                                                                memberName,
+                                                                targetKind,
+                                                                decoratorSlots[index - 1],
+                                                                trimTargetCount,
+                                                                location)) {
+            goto cleanup;
+        }
+    }
+
+    success = ZR_TRUE;
+
+cleanup:
+    if (decoratorSlots != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      decoratorSlots,
+                                      sizeof(TZrUInt32) * runtimeDecoratorCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    return success;
 }
 
 ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompilerState *cs,
@@ -753,13 +1114,13 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompiler
     TZrUInt32 argumentSlot;
 
     if (cs == ZR_NULL || moduleName == ZR_NULL || cs->hasError) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     importClosure = ZrCore_ClosureNative_New(cs->state, 0);
     if (importClosure == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "failed to create internal import callable", location);
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
     importClosure->nativeFunction = ZrCore_Module_ImportNativeEntry;
     ZrCore_RawObject_MarkAsPermanent(cs->state, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
@@ -788,12 +1149,12 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerSta
     TZrUInt32 argumentSlot;
 
     if (cs == ZR_NULL || operand == ZR_NULL || cs->hasError) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     argumentSlot = allocate_stack_slot(cs);
-    if (compile_expression_into_slot(cs, operand, argumentSlot) == (TZrUInt32)-1 || cs->hasError) {
-        return (TZrUInt32)-1;
+    if (compile_expression_into_slot(cs, operand, argumentSlot) == ZR_PARSER_SLOT_NONE || cs->hasError) {
+        return ZR_PARSER_SLOT_NONE;
     }
 
     emit_instruction(cs,

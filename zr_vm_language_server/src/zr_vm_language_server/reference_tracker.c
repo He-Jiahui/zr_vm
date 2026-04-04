@@ -12,6 +12,8 @@
 
 #include <stdio.h>
 
+#define ZR_LSP_RANGE_SPAN_SCORE_INVALID ((TZrSize)-1)
+
 static TZrBool source_uri_equals(SZrString *left, SZrString *right) {
     TZrNativeString leftText;
     TZrNativeString rightText;
@@ -76,10 +78,10 @@ static TZrSize range_span_score(SZrFileRange range) {
     }
 
     if (range.end.line < range.start.line) {
-        return (TZrSize)-1;
+        return ZR_LSP_RANGE_SPAN_SCORE_INVALID;
     }
 
-    return (TZrSize)(range.end.line - range.start.line) * 4096 +
+    return (TZrSize)(range.end.line - range.start.line) * ZR_LSP_SIGNATURE_RANGE_PACK_BASE +
            (TZrSize)(range.end.column >= range.start.column
                          ? range.end.column - range.start.column
                          : 0);

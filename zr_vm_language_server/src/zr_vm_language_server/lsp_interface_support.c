@@ -3,8 +3,8 @@
 //
 
 #include "lsp_interface_internal.h"
+#include "lsp_module_metadata.h"
 
-#include "zr_vm_library/native_registry.h"
 #include "zr_vm_parser/type_inference.h"
 
 static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
@@ -776,117 +776,6 @@ static void append_completion_item_for_native_name(SZrState *state,
     }
 }
 
-typedef struct SZrLspFixedCompletionDescriptor {
-    const TZrChar *label;
-    const TZrChar *kind;
-    const TZrChar *detail;
-} SZrLspFixedCompletionDescriptor;
-
-static const SZrLspFixedCompletionDescriptor g_lspDirectiveCompletions[] = {
-    {"%import", "keyword", "module import directive"},
-    {"%type", "keyword", "type query / reflection directive"},
-    {"%module", "keyword", "module declaration directive"},
-    {"%test", "keyword", "test declaration directive"},
-    {"%compileTime", "keyword", "compile-time declaration directive"},
-    {"%extern", "keyword", "FFI extern declaration directive"},
-    {"%unique", "keyword", "ownership qualifier"},
-    {"%shared", "keyword", "ownership qualifier"},
-    {"%weak", "keyword", "ownership qualifier"},
-    {"%borrowed", "keyword", "ownership qualifier"}
-};
-
-static const SZrLspFixedCompletionDescriptor g_lspMetaMethodCompletions[] = {
-    {"@constructor", "method", "lifecycle meta method"},
-    {"@destructor", "method", "lifecycle meta method"},
-    {"@close", "method", "lifecycle meta method"},
-    {"@add", "method", "arithmetic/operator meta method"},
-    {"@sub", "method", "arithmetic/operator meta method"},
-    {"@mul", "method", "arithmetic/operator meta method"},
-    {"@div", "method", "arithmetic/operator meta method"},
-    {"@mod", "method", "arithmetic/operator meta method"},
-    {"@pow", "method", "arithmetic/operator meta method"},
-    {"@neg", "method", "arithmetic/operator meta method"},
-    {"@compare", "method", "arithmetic/operator meta method"},
-    {"@shiftLeft", "method", "arithmetic/operator meta method"},
-    {"@shiftRight", "method", "arithmetic/operator meta method"},
-    {"@bitAnd", "method", "arithmetic/operator meta method"},
-    {"@bitOr", "method", "arithmetic/operator meta method"},
-    {"@bitXor", "method", "arithmetic/operator meta method"},
-    {"@bitNot", "method", "arithmetic/operator meta method"},
-    {"@toBool", "method", "conversion meta method"},
-    {"@toString", "method", "conversion meta method"},
-    {"@toInt", "method", "conversion meta method"},
-    {"@toUInt", "method", "conversion meta method"},
-    {"@toFloat", "method", "conversion meta method"},
-    {"@call", "method", "call/access meta method"},
-    {"@getter", "method", "call/access meta method"},
-    {"@setter", "method", "call/access meta method"},
-    {"@getItem", "method", "call/access meta method"},
-    {"@setItem", "method", "call/access meta method"}
-};
-
-static void append_fixed_completion_descriptors(SZrState *state,
-                                                SZrArray *result,
-                                                const SZrLspFixedCompletionDescriptor *descriptors,
-                                                TZrSize descriptorCount) {
-    if (state == ZR_NULL || result == ZR_NULL || descriptors == ZR_NULL) {
-        return;
-    }
-
-    for (TZrSize index = 0; index < descriptorCount; index++) {
-        const SZrLspFixedCompletionDescriptor *descriptor = &descriptors[index];
-        SZrCompletionItem *item;
-
-        if (descriptor->label == ZR_NULL || descriptor->kind == ZR_NULL) {
-            continue;
-        }
-
-        item = ZrLanguageServer_CompletionItem_New(state,
-                                                   descriptor->label,
-                                                   descriptor->kind,
-                                                   descriptor->detail,
-                                                   ZR_NULL,
-                                                   ZR_NULL);
-        if (item != ZR_NULL) {
-            ZrCore_Array_Push(state, result, &item);
-        }
-    }
-}
-
-TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
-                                                              const TZrChar *content,
-                                                              TZrSize contentLength,
-                                                              TZrSize cursorOffset,
-                                                              SZrArray *result) {
-    TZrChar prefixChar;
-
-    if (state == ZR_NULL || content == ZR_NULL || result == ZR_NULL || cursorOffset == 0 ||
-        cursorOffset > contentLength) {
-        return ZR_FALSE;
-    }
-
-    prefixChar = content[cursorOffset - 1];
-    if (prefixChar == '%') {
-        append_fixed_completion_descriptors(state,
-                                            result,
-                                            g_lspDirectiveCompletions,
-                                            sizeof(g_lspDirectiveCompletions) /
-                                                sizeof(g_lspDirectiveCompletions[0]));
-        return result->length > 0;
-    }
-
-    if (prefixChar == '@') {
-        append_fixed_completion_descriptors(state,
-                                            result,
-                                            g_lspMetaMethodCompletions,
-                                            sizeof(g_lspMetaMethodCompletions) /
-                                                sizeof(g_lspMetaMethodCompletions[0]));
-        return result->length > 0;
-    }
-
-    return ZR_FALSE;
-}
-
 static void append_class_member_completions_recursive(SZrState *state,
                                                       SZrSemanticAnalyzer *analyzer,
                                                       SZrSymbol *classSymbol,
@@ -1036,52 +925,7 @@ static const ZrLibTypeDescriptor *find_native_type_descriptor_in_module(const Zr
 static const ZrLibTypeDescriptor *find_native_type_descriptor_across_modules(SZrState *state,
                                                                              const TZrChar *typeName,
                                                                              const ZrLibModuleDescriptor **outModule) {
-    static const TZrChar *builtinModules[] = {
-        "zr.math",
-        "zr.container",
-        "zr.system"
-    };
-    const ZrLibModuleDescriptor *module;
-    const ZrLibTypeDescriptor *typeDescriptor;
-    const TZrChar *lastDot;
-    TZrChar moduleName[ZR_LSP_TYPE_BUFFER_LENGTH];
-
-    if (outModule != ZR_NULL) {
-        *outModule = ZR_NULL;
-    }
-    if (state == ZR_NULL || state->global == ZR_NULL || typeName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    lastDot = strrchr(typeName, '.');
-    if (lastDot != ZR_NULL && lastDot != typeName) {
-        TZrSize moduleLength = (TZrSize)(lastDot - typeName);
-        if (moduleLength > 0 && moduleLength < sizeof(moduleName)) {
-            memcpy(moduleName, typeName, moduleLength);
-            moduleName[moduleLength] = '\0';
-            module = ZrLibrary_NativeRegistry_FindModule(state->global, moduleName);
-            typeDescriptor = find_native_type_descriptor_in_module(module, typeName);
-            if (typeDescriptor != ZR_NULL) {
-                if (outModule != ZR_NULL) {
-                    *outModule = module;
-                }
-                return typeDescriptor;
-            }
-        }
-    }
-
-    for (TZrSize index = 0; index < sizeof(builtinModules) / sizeof(builtinModules[0]); index++) {
-        module = ZrLibrary_NativeRegistry_FindModule(state->global, builtinModules[index]);
-        typeDescriptor = find_native_type_descriptor_in_module(module, typeName);
-        if (typeDescriptor != ZR_NULL) {
-            if (outModule != ZR_NULL) {
-                *outModule = module;
-            }
-            return typeDescriptor;
-        }
-    }
-
-    return ZR_NULL;
+    return ZrLanguageServer_LspModuleMetadata_FindNativeTypeDescriptor(state, typeName, outModule);
 }
 
 static void append_native_type_descriptor_member_completions(SZrState *state,

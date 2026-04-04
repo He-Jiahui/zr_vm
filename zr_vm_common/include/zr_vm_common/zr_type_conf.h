@@ -124,5 +124,19 @@ typedef enum EZrValueType EZrValueType;
     case ZR_VALUE_TYPE_NATIVE_POINTER:                                                                                 \
     case ZR_VALUE_TYPE_NATIVE_DATA:
 
+#define ZR_TYPE_RANGE_INT8_MIN ((TZrInt64)INT8_MIN)
+#define ZR_TYPE_RANGE_INT8_MAX ((TZrInt64)INT8_MAX)
+#define ZR_TYPE_RANGE_INT16_MIN ((TZrInt64)INT16_MIN)
+#define ZR_TYPE_RANGE_INT16_MAX ((TZrInt64)INT16_MAX)
+#define ZR_TYPE_RANGE_INT32_MIN ((TZrInt64)INT32_MIN)
+#define ZR_TYPE_RANGE_INT32_MAX ((TZrInt64)INT32_MAX)
+#define ZR_TYPE_RANGE_INT64_MIN ((TZrInt64)INT64_MIN)
+#define ZR_TYPE_RANGE_INT64_MAX ((TZrInt64)INT64_MAX)
+#define ZR_TYPE_RANGE_UINT8_MAX ((TZrInt64)UINT8_MAX)
+#define ZR_TYPE_RANGE_UINT16_MAX ((TZrInt64)UINT16_MAX)
+#define ZR_TYPE_RANGE_UINT32_MAX ((TZrInt64)UINT32_MAX)
+/* AST integer literals are stored as TZrInt64, so uint64 literal-range checks cannot exceed INT64_MAX. */
+#define ZR_TYPE_RANGE_UINT64_MAX ((TZrInt64)INT64_MAX)
+
 
 #endif // ZR_TYPE_CONF_H

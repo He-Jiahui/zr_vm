@@ -73,6 +73,9 @@ typedef struct SZrCompiledPrototypeInfoView {
     TZrUInt32 inheritsCount;
     TZrUInt32 membersCount;
     TZrUInt64 protocolMask;
+    TZrUInt32 hasDecoratorMetadata;
+    TZrUInt32 decoratorMetadataConstantIndex;
+    TZrUInt32 decoratorsCount;
 } SZrCompiledPrototypeInfoView;
 
 typedef struct SZrCompiledMemberInfoView {
@@ -276,6 +279,7 @@ static const SZrCompiledPrototypeInfoView *find_compiled_prototype_by_name(SZrSt
         const SZrCompiledPrototypeInfoView *prototypeInfo = (const SZrCompiledPrototypeInfoView *)currentPos;
         TZrSize prototypeSize = sizeof(SZrCompiledPrototypeInfoView) +
                                 prototypeInfo->inheritsCount * sizeof(TZrUInt32) +
+                                prototypeInfo->decoratorsCount * sizeof(TZrUInt32) +
                                 prototypeInfo->membersCount * sizeof(SZrCompiledMemberInfoView);
         SZrString *actualName;
 
@@ -313,7 +317,8 @@ static const SZrCompiledMemberInfoView *find_compiled_member_by_name(SZrState *s
 
     members = (const SZrCompiledMemberInfoView *)((const TZrByte *)prototypeInfo +
                                                   sizeof(SZrCompiledPrototypeInfoView) +
-                                              prototypeInfo->inheritsCount * sizeof(TZrUInt32));
+                                                  prototypeInfo->inheritsCount * sizeof(TZrUInt32) +
+                                                  prototypeInfo->decoratorsCount * sizeof(TZrUInt32));
     for (TZrUInt32 i = 0; i < prototypeInfo->membersCount; i++) {
         SZrString *actualName = get_string_constant_at(state, function, members[i].nameStringIndex);
         if (actualName != ZR_NULL && ZrCore_String_Equal(actualName, expectedName)) {

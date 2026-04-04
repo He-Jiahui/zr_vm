@@ -112,7 +112,7 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         }
 
         sourceSlot = find_local_var(cs, constructExpr->target->data.identifier.name);
-        if (sourceSlot == (TZrUInt32)-1) {
+        if (sourceSlot == ZR_PARSER_SLOT_NONE) {
             ZrParser_Compiler_Error(cs, "'%release' currently only supports local identifier bindings", location);
             return ZR_FALSE;
         }
@@ -135,7 +135,7 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
             infer_expression_ownership_qualifier_local(cs, constructExpr->target) ==
                     ZR_OWNERSHIP_QUALIFIER_UNIQUE;
 
-    if (compile_expression_into_slot(cs, constructExpr->target, argumentSlot) == (TZrUInt32)-1) {
+    if (compile_expression_into_slot(cs, constructExpr->target, argumentSlot) == ZR_PARSER_SLOT_NONE) {
         return ZR_FALSE;
     }
 
@@ -272,7 +272,7 @@ TZrBool emit_null_reset_to_identifier_binding_local(SZrCompilerState *cs,
     emit_constant_to_slot_local(cs, nullSlot, &nullValue, location);
 
     localVarIndex = find_local_var(cs, name);
-    if (localVarIndex != (TZrUInt32)-1) {
+    if (localVarIndex != ZR_PARSER_SLOT_NONE) {
         emit_instruction(cs,
                          create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                               (TZrUInt16)localVarIndex,
@@ -282,7 +282,7 @@ TZrBool emit_null_reset_to_identifier_binding_local(SZrCompilerState *cs,
     }
 
     closureVarIndex = find_closure_var(cs, name);
-    if (closureVarIndex != (TZrUInt32)-1) {
+    if (closureVarIndex != ZR_PARSER_INDEX_NONE) {
         SZrFunctionClosureVariable *closureVar =
                 (SZrFunctionClosureVariable *)ZrCore_Array_Get(&cs->closureVars, closureVarIndex);
         if (closureVar != ZR_NULL && closureVar->inStack) {
@@ -512,7 +512,7 @@ void collapse_stack_to_slot(SZrCompilerState *cs, TZrUInt32 slot) {
 
 TZrUInt32 normalize_top_result_to_slot(SZrCompilerState *cs, TZrUInt32 targetSlot) {
     if (cs == ZR_NULL || cs->hasError || cs->stackSlotCount == 0) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     TZrUInt32 resultSlot = (TZrUInt32)(cs->stackSlotCount - 1);
@@ -538,7 +538,7 @@ void compile_expression_non_tail(SZrCompilerState *cs, SZrAstNode *node) {
 
 TZrUInt32 emit_string_constant(SZrCompilerState *cs, SZrString *value) {
     if (cs == ZR_NULL || value == ZR_NULL || cs->hasError) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     SZrTypeValue constantValue;
@@ -583,12 +583,12 @@ SZrString *resolve_member_expression_symbol(SZrCompilerState *cs, SZrMemberExpre
 
 TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     compile_expression_non_tail(cs, node);
     if (cs->hasError) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     return normalize_top_result_to_slot(cs, targetSlot);
@@ -611,11 +611,10 @@ TZrBool emit_property_getter_call(SZrCompilerState *cs, TZrUInt32 currentSlot, S
     }
 
     memberId = compiler_get_or_add_member_entry_with_flags(cs, accessorName, memberFlags);
-    if (memberId == (TZrUInt32)-1) {
+    if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
         ZrParser_Compiler_Error(cs, "Failed to register property getter member symbol", location);
         return ZR_FALSE;
     }
-
     metaGetInst = create_instruction_2(ZR_INSTRUCTION_ENUM(META_GET),
                                        (TZrUInt16)currentSlot,
                                        (TZrUInt16)currentSlot,
@@ -632,21 +631,20 @@ TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, 
     TZrUInt8 memberFlags = isStatic ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR : 0;
 
     if (cs == ZR_NULL || propertyName == ZR_NULL || cs->hasError) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     SZrString *accessorName = create_hidden_property_accessor_name(cs, propertyName, ZR_TRUE);
     if (accessorName == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "Failed to create property setter accessor name", location);
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     memberId = compiler_get_or_add_member_entry_with_flags(cs, accessorName, memberFlags);
-    if (memberId == (TZrUInt32)-1) {
+    if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
         ZrParser_Compiler_Error(cs, "Failed to register property setter member symbol", location);
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
-
     metaSetInst = create_instruction_2(ZR_INSTRUCTION_ENUM(META_SET),
                                        (TZrUInt16)objectSlot,
                                        (TZrUInt16)assignedValueSlot,
@@ -658,13 +656,13 @@ TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, 
 
 TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs, SZrMemberExpression *memberExpr, TZrUInt32 targetSlot) {
     if (cs == ZR_NULL || memberExpr == ZR_NULL || memberExpr->property == ZR_NULL || cs->hasError) {
-        return (TZrUInt32)-1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     if (!memberExpr->computed) {
         SZrString *fieldName = resolve_member_expression_symbol(cs, memberExpr);
-        if (fieldName == ZR_NULL || emit_string_constant(cs, fieldName) == (TZrUInt32)-1) {
-            return (TZrUInt32)-1;
+        if (fieldName == ZR_NULL || emit_string_constant(cs, fieldName) == ZR_PARSER_SLOT_NONE) {
+            return ZR_PARSER_SLOT_NONE;
         }
         return normalize_top_result_to_slot(cs, targetSlot);
     }

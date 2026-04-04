@@ -12,6 +12,7 @@
 struct SZrState;
 struct SZrTypeValueOnStack;
 struct SZrString;
+struct SZrObject;
 struct SZrObjectPrototype;
 
 typedef enum EZrFunctionMemberEntryKind {
@@ -60,6 +61,12 @@ struct ZR_STRUCT_ALIGN SZrFunctionExecutionLocationInfo {
 };
 
 typedef struct SZrFunctionExecutionLocationInfo SZrFunctionExecutionLocationInfo;
+
+typedef struct SZrFunctionExportedVariable {
+    struct SZrString *name;
+    TZrUInt32 stackSlot;
+    TZrUInt8 accessModifier;
+} SZrFunctionExportedVariable;
 
 struct ZR_STRUCT_ALIGN SZrFunctionCatchClauseInfo {
     struct SZrString *typeName;
@@ -283,11 +290,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     
     // module export info (for script-level functions only)
     // 导出变量信息（用于模块导出）
-    struct SZrFunctionExportedVariable {
-        struct SZrString *name;                    // 变量名
-        TZrUInt32 stackSlot;                          // 栈槽位
-        TZrUInt8 accessModifier;                      // 可见性修饰符 (0=PRIVATE, 1=PUBLIC, 2=PROTECTED)
-    } *exportedVariables;                           // 导出变量数组
+    SZrFunctionExportedVariable *exportedVariables;   // 导出变量数组
     TZrUInt32 exportedVariableLength;                 // 导出变量数量
 
     SZrFunctionTypedLocalBinding *typedLocalBindings;
@@ -300,6 +303,10 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 compileTimeFunctionInfoLength;
     SZrFunctionTestInfo *testInfos;
     TZrUInt32 testInfoLength;
+    TZrBool hasDecoratorMetadata;
+    SZrTypeValue decoratorMetadataValue;
+    struct SZrString **decoratorNames;
+    TZrUInt32 decoratorCount;
     SZrFunctionMemberEntry *memberEntries;
     TZrUInt32 memberEntryLength;
     
@@ -324,6 +331,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 semIrDeoptTableLength;
     SZrFunctionCallSiteCacheEntry *callSiteCaches;
     TZrUInt32 callSiteCacheLength;
+    struct SZrObject *runtimeDecoratorMetadata;
+    struct SZrObject *runtimeDecoratorDecorators;
 };
 
 typedef struct SZrFunction SZrFunction;
@@ -364,13 +373,15 @@ ZR_CORE_API void ZrCore_Function_StackAnchorInit(struct SZrState *state,
                                            SZrFunctionStackAnchor *anchor);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_StackAnchorRestore(struct SZrState *state,
-                                                              const SZrFunctionStackAnchor *anchor);
+                                                               const SZrFunctionStackAnchor *anchor);
 
 ZR_CORE_API void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *function);
 
+ZR_CORE_API TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(const SZrFunction *function);
+
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CheckStackAndAnchor(struct SZrState *state,
-                                                               TZrSize size,
-                                                               TZrStackValuePointer checkPointer,
+                                                                TZrSize size,
+                                                                TZrStackValuePointer checkPointer,
                                                                TZrStackValuePointer stackPointer,
                                                                SZrFunctionStackAnchor *anchor);
 

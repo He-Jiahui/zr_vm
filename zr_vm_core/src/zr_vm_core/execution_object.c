@@ -12,6 +12,46 @@ static TZrBool prototype_type_matches(EZrObjectPrototypeType expectedType, EZrOb
     return expectedType == ZR_OBJECT_PROTOTYPE_TYPE_INVALID || expectedType == actualType;
 }
 
+static SZrFunction *execution_function_from_constant_value(SZrState *state, const SZrTypeValue *value) {
+    if (state == ZR_NULL || value == ZR_NULL || value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (value->type == ZR_VALUE_TYPE_FUNCTION &&
+        value->value.object->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+        return ZR_CAST_FUNCTION(state, value->value.object);
+    }
+
+    if (value->type == ZR_VALUE_TYPE_CLOSURE &&
+        !value->isNative &&
+        value->value.object->type == ZR_RAW_OBJECT_TYPE_CLOSURE) {
+        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, value->value.object);
+        if (closure != ZR_NULL) {
+            return closure->function;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrFunction *execution_find_entry_function_in_constants(SZrState *state, SZrFunction *function) {
+    if (state == ZR_NULL || function == ZR_NULL || function->constantValueList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0; index < function->constantValueLength; index++) {
+        SZrFunction *candidate = execution_function_from_constant_value(state, &function->constantValueList[index]);
+        if (candidate != ZR_NULL &&
+            candidate->prototypeData != ZR_NULL &&
+            candidate->prototypeDataLength > 0 &&
+            candidate->prototypeCount > 0) {
+            return candidate;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static SZrFunction *execution_find_entry_function(SZrState *state,
                                                   SZrClosure *currentClosure,
                                                   SZrCallInfo *currentCallInfo) {
@@ -20,6 +60,14 @@ static SZrFunction *execution_find_entry_function(SZrState *state,
         currentClosure->function->prototypeData != ZR_NULL &&
         currentClosure->function->prototypeCount > 0) {
         return currentClosure->function;
+    }
+
+    if (currentClosure != ZR_NULL && currentClosure->function != ZR_NULL) {
+        SZrFunction *constantContextFunction =
+                execution_find_entry_function_in_constants(state, currentClosure->function);
+        if (constantContextFunction != ZR_NULL) {
+            return constantContextFunction;
+        }
     }
 
     while (state != ZR_NULL && currentCallInfo != ZR_NULL) {
@@ -34,6 +82,13 @@ static SZrFunction *execution_find_entry_function(SZrState *state,
                     stackClosure->function->prototypeData != ZR_NULL &&
                     stackClosure->function->prototypeCount > 0) {
                     return stackClosure->function;
+                }
+                if (stackClosure != ZR_NULL && stackClosure->function != ZR_NULL) {
+                    SZrFunction *constantContextFunction =
+                            execution_find_entry_function_in_constants(state, stackClosure->function);
+                    if (constantContextFunction != ZR_NULL) {
+                        return constantContextFunction;
+                    }
                 }
             }
         }

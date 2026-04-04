@@ -312,6 +312,7 @@ SZrAstNode *parse_struct_meta_function(SZrParserState *ps) {
 
 SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNodeArray *decorators = parse_leading_decorators(ps);
 
     // 解析可见性修饰符（可选，默认 private）
     EZrAccessModifier accessModifier = parse_access_modifier(ps);
@@ -323,6 +324,9 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     // 解析结构体名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     SZrIdentifier *name = &nameNode->data.identifier;
@@ -337,6 +341,9 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     SZrAstNodeArray *inherits = ZrParser_AstNodeArray_New(ps->state, 0);
 
     if (!parse_optional_where_clauses(ps, generic)) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         ZrParser_AstNodeArray_Free(ps->state, inherits);
         return ZR_NULL;
     }
@@ -348,6 +355,9 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     // 解析成员列表
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (members == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         ZrParser_AstNodeArray_Free(ps->state, inherits);
         return ZR_NULL;
     }
@@ -459,6 +469,9 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRUCT_DECLARATION, structLoc);
     if (node == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+        }
         ZrParser_AstNodeArray_Free(ps->state, inherits);
         ZrParser_AstNodeArray_Free(ps->state, members);
         return ZR_NULL;
@@ -468,6 +481,7 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     node->data.structDeclaration.generic = generic;
     node->data.structDeclaration.inherits = inherits;
     node->data.structDeclaration.members = members;
+    node->data.structDeclaration.decorators = decorators;
     node->data.structDeclaration.accessModifier = accessModifier;
     return node;
 }

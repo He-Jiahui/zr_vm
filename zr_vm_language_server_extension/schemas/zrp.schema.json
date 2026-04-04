@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ZR Project",
+  "description": "Project manifest for zr_vm. Relative paths are resolved from the directory containing the .zrp file.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable project name."
+    },
+    "version": {
+      "type": "string",
+      "description": "Project version string."
+    },
+    "description": {
+      "type": "string",
+      "description": "Short project summary."
+    },
+    "author": {
+      "type": "string",
+      "description": "Author or organization name."
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "Contact email for the project."
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Homepage or repository URL."
+    },
+    "license": {
+      "type": "string",
+      "description": "License identifier or free-form license name."
+    },
+    "copyright": {
+      "type": "string",
+      "description": "Copyright notice."
+    },
+    "binary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Directory used for compiled binary artifacts such as .zro/.zri outputs.",
+      "examples": [
+        "bin"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Directory containing source .zr modules.",
+      "examples": [
+        "src"
+      ]
+    },
+    "entry": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Entry module path relative to the source root, without the .zr extension.",
+      "examples": [
+        "main",
+        "app/main"
+      ]
+    },
+    "dependency": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional dependency root or manifest path used by the project loader.",
+      "examples": [
+        "deps"
+      ]
+    },
+    "local": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional local package root or workspace-relative override path.",
+      "examples": [
+        "local"
+      ]
+    }
+  },
+  "required": [
+    "binary",
+    "source",
+    "entry"
+  ],
+  "additionalProperties": true
+}

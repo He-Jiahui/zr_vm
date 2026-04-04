@@ -1,0 +1,171 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 13
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 11
+
+CONSTANTS (14):
+  [0] native closure
+  [1] string: "zr.system"
+  [2] null
+  [3] native closure
+  [4] string: "graph_stage_a"
+  [5] native closure
+  [6] string: "graph_stage_b"
+  [7] native closure
+  [8] string: "graph_binary_stage"
+  [9] string: "AOT_MODULE_GRAPH_PIPELINE_PASS"
+  [10] string: "seed"
+  [11] string: "int"
+  [12] string: "merge"
+  [13] string: "binarySeed"
+
+LOCAL_VARIABLES (7):
+  [0] system: offset_activate=4, offset_dead=47
+  [1] stageA: offset_activate=8, offset_dead=47
+  [2] stageB: offset_activate=12, offset_dead=47
+  [3] binaryStage: offset_activate=16, offset_dead=47
+  [4] left: offset_activate=20, offset_dead=47
+  [5] right: offset_activate=24, offset_dead=47
+  [6] merged: offset_activate=31, offset_dead=47
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (7):
+    [0] system: zr.system
+    [1] stageA: graph_stage_a
+    [2] stageB: graph_stage_b
+    [3] binaryStage: graph_binary_stage
+    [5] left: int
+    [7] right: int
+    [8] merged: int
+  EXPORTED_SYMBOLS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+PROTOTYPES (3):
+// ========== PROTOTYPES FROM DATA (count: 3) ==========
+// --- Prototype 1 ---
+module graph_stage_a {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "seed",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+module graph_stage_b {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "merge",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 2,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
+module graph_binary_stage {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "binarySeed",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (47):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=1)
+  [2] FUNCTION_CALL (extra=0, operand1=0, operand2=1)
+  [3] GET_CONSTANT (extra=1, operand=2)
+  [4] GET_CONSTANT (extra=1, operand=3)
+  [5] GET_CONSTANT (extra=2, operand=4)
+  [6] FUNCTION_CALL (extra=1, operand1=1, operand2=1)
+  [7] GET_CONSTANT (extra=2, operand=2)
+  [8] GET_CONSTANT (extra=2, operand=5)
+  [9] GET_CONSTANT (extra=3, operand=6)
+  [10] FUNCTION_CALL (extra=2, operand1=2, operand2=1)
+  [11] GET_CONSTANT (extra=3, operand=2)
+  [12] GET_CONSTANT (extra=3, operand=7)
+  [13] GET_CONSTANT (extra=4, operand=8)
+  [14] FUNCTION_CALL (extra=3, operand1=3, operand2=1)
+  [15] GET_CONSTANT (extra=4, operand=2)
+  [16] GET_STACK (extra=4, operand=1)
+  [17] GET_MEMBER (extra=4, operand1=4, operand2=0)
+  [18] SUPER_FUNCTION_CALL_NO_ARGS (extra=4, operand1=4, operand2=0)
+  [19] TO_INT (extra=5, operand1=4)
+  [20] GET_STACK (extra=6, operand=3)
+  [21] GET_MEMBER (extra=6, operand1=6, operand2=1)
+  [22] SUPER_FUNCTION_CALL_NO_ARGS (extra=6, operand1=6, operand2=0)
+  [23] TO_INT (extra=7, operand1=6)
+  [24] GET_STACK (extra=8, operand=2)
+  [25] GET_MEMBER (extra=8, operand1=8, operand2=2)
+  [26] GET_STACK (extra=9, operand=5)
+  [27] GET_STACK (extra=10, operand=7)
+  [28] FUNCTION_CALL (extra=8, operand1=8, operand2=2)
+  [29] GET_CONSTANT (extra=9, operand=2)
+  [30] GET_CONSTANT (extra=10, operand=2)
+  [31] GET_STACK (extra=9, operand=0)
+  [32] GET_MEMBER (extra=9, operand1=9, operand2=3)
+  [33] GET_MEMBER (extra=9, operand1=9, operand2=4)
+  [34] GET_CONSTANT (extra=10, operand=9)
+  [35] FUNCTION_CALL (extra=9, operand1=9, operand2=1)
+  [36] GET_CONSTANT (extra=10, operand=2)
+  [37] GET_CONSTANT (extra=9, operand=2)
+  [38] GET_STACK (extra=9, operand=0)
+  [39] GET_MEMBER (extra=9, operand1=9, operand2=3)
+  [40] GET_MEMBER (extra=9, operand1=9, operand2=4)
+  [41] GET_STACK (extra=10, operand=8)
+  [42] FUNCTION_CALL (extra=9, operand1=9, operand2=1)
+  [43] GET_CONSTANT (extra=10, operand=2)
+  [44] GET_CONSTANT (extra=9, operand=2)
+  [45] GET_STACK (extra=9, operand=8)
+  [46] FUNCTION_RETURN (extra=1, operand1=9, operand2=0)
+

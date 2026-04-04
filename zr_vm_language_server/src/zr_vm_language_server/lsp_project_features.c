@@ -1,7 +1,7 @@
+#include "lsp_module_metadata.h"
 #include "lsp_project_internal.h"
 
 #include "zr_vm_parser/type_inference.h"
-#include "zr_vm_library/native_registry.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -174,15 +174,596 @@ static void append_project_symbol_completion(SZrState *state,
     }
 }
 
-static const ZrLibModuleDescriptor *resolve_native_module_descriptor(SZrState *state, SZrString *moduleName) {
-    const TZrChar *moduleText;
-
-    if (state == ZR_NULL || moduleName == ZR_NULL || state->global == ZR_NULL) {
+static const TZrChar *module_prototype_member_kind_text(const SZrTypeMemberInfo *member) {
+    if (member == ZR_NULL) {
         return ZR_NULL;
     }
 
-    moduleText = project_feature_get_string_text(moduleName);
-    return moduleText != ZR_NULL ? ZrLibrary_NativeRegistry_FindModule(state->global, moduleText) : ZR_NULL;
+    switch (member->memberType) {
+        case ZR_AST_CLASS_METHOD:
+        case ZR_AST_STRUCT_METHOD:
+            return "function";
+        case ZR_AST_CLASS_PROPERTY:
+            return "property";
+        case ZR_AST_CLASS_FIELD:
+        case ZR_AST_STRUCT_FIELD:
+            return "field";
+        default:
+            return ZR_NULL;
+    }
+}
+
+static const SZrTypeMemberInfo *find_module_prototype_member(const SZrTypePrototypeInfo *modulePrototype,
+                                                             SZrString *memberName) {
+    if (modulePrototype == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < modulePrototype->members.length; index++) {
+        const SZrTypeMemberInfo *member =
+            (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&modulePrototype->members, index);
+        if (member != ZR_NULL &&
+            member->name != ZR_NULL &&
+            !member->isMetaMethod &&
+            ZrLanguageServer_Lsp_StringsEqual(member->name, memberName)) {
+            return member;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void append_module_prototype_completions(SZrState *state,
+                                                const SZrTypePrototypeInfo *modulePrototype,
+                                                SZrArray *result) {
+    if (state == ZR_NULL || modulePrototype == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < modulePrototype->members.length; index++) {
+        const SZrTypeMemberInfo *member =
+            (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&modulePrototype->members, index);
+        const TZrChar *kind = module_prototype_member_kind_text(member);
+        const TZrChar *detailType = "object";
+        TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
+        SZrCompletionItem *item;
+
+        if (member == ZR_NULL || member->name == ZR_NULL || member->isMetaMethod || kind == ZR_NULL) {
+            continue;
+        }
+
+        if (strcmp(kind, "function") == 0) {
+            detailType = project_feature_get_string_text(member->returnTypeName);
+            snprintf(detail,
+                     sizeof(detail),
+                     "%s(...): %s",
+                     project_feature_get_string_text(member->name),
+                     detailType != ZR_NULL ? detailType : "object");
+        } else {
+            detailType = project_feature_get_string_text(member->fieldTypeName);
+            snprintf(detail,
+                     sizeof(detail),
+                     "%s %s",
+                     kind,
+                     detailType != ZR_NULL ? detailType : "object");
+        }
+
+        item = ZrLanguageServer_CompletionItem_New(state,
+                                                   project_feature_get_string_text(member->name),
+                                                   kind,
+                                                   detail,
+                                                   ZR_NULL,
+                                                   ZR_NULL);
+        if (item != ZR_NULL) {
+            ZrCore_Array_Push(state, result, &item);
+        }
+    }
+}
+
+static const TZrChar *binary_type_ref_text(const SZrIoFunctionTypedTypeRef *typeRef,
+                                           TZrChar *buffer,
+                                           TZrSize bufferSize) {
+    const TZrChar *baseName = "object";
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return "object";
+    }
+
+    buffer[0] = '\0';
+    if (typeRef == ZR_NULL) {
+        return "object";
+    }
+
+    if (typeRef->isArray) {
+        const TZrChar *elementName = typeRef->elementTypeName != ZR_NULL
+                                         ? project_feature_get_string_text(typeRef->elementTypeName)
+                                         : ZR_NULL;
+        if (elementName == ZR_NULL || elementName[0] == '\0') {
+            switch (typeRef->elementBaseType) {
+                case ZR_VALUE_TYPE_BOOL: elementName = "bool"; break;
+                case ZR_VALUE_TYPE_INT8: elementName = "i8"; break;
+                case ZR_VALUE_TYPE_INT16: elementName = "i16"; break;
+                case ZR_VALUE_TYPE_INT32: elementName = "i32"; break;
+                case ZR_VALUE_TYPE_INT64: elementName = "int"; break;
+                case ZR_VALUE_TYPE_UINT8: elementName = "u8"; break;
+                case ZR_VALUE_TYPE_UINT16: elementName = "u16"; break;
+                case ZR_VALUE_TYPE_UINT32: elementName = "u32"; break;
+                case ZR_VALUE_TYPE_UINT64: elementName = "uint"; break;
+                case ZR_VALUE_TYPE_FLOAT:
+                case ZR_VALUE_TYPE_DOUBLE:
+                    elementName = "float";
+                    break;
+                case ZR_VALUE_TYPE_STRING:
+                    elementName = "string";
+                    break;
+                default:
+                    elementName = "object";
+                    break;
+            }
+        }
+        snprintf(buffer, bufferSize, "%s[]", elementName);
+        return buffer;
+    }
+
+    if (typeRef->typeName != ZR_NULL) {
+        const TZrChar *typeName = project_feature_get_string_text(typeRef->typeName);
+        if (typeName != ZR_NULL && typeName[0] != '\0') {
+            return typeName;
+        }
+    }
+
+    switch (typeRef->baseType) {
+        case ZR_VALUE_TYPE_NULL: baseName = "null"; break;
+        case ZR_VALUE_TYPE_BOOL: baseName = "bool"; break;
+        case ZR_VALUE_TYPE_INT8: baseName = "i8"; break;
+        case ZR_VALUE_TYPE_INT16: baseName = "i16"; break;
+        case ZR_VALUE_TYPE_INT32: baseName = "i32"; break;
+        case ZR_VALUE_TYPE_INT64: baseName = "int"; break;
+        case ZR_VALUE_TYPE_UINT8: baseName = "u8"; break;
+        case ZR_VALUE_TYPE_UINT16: baseName = "u16"; break;
+        case ZR_VALUE_TYPE_UINT32: baseName = "u32"; break;
+        case ZR_VALUE_TYPE_UINT64: baseName = "uint"; break;
+        case ZR_VALUE_TYPE_FLOAT:
+        case ZR_VALUE_TYPE_DOUBLE:
+            baseName = "float";
+            break;
+        case ZR_VALUE_TYPE_STRING:
+            baseName = "string";
+            break;
+        case ZR_VALUE_TYPE_ARRAY:
+            baseName = "array";
+            break;
+        case ZR_VALUE_TYPE_CLOSURE:
+        case ZR_VALUE_TYPE_FUNCTION:
+            baseName = "function";
+            break;
+        default:
+            baseName = "object";
+            break;
+    }
+
+    snprintf(buffer, bufferSize, "%s", baseName);
+    return buffer;
+}
+
+static const TZrChar *compiled_type_ref_text(const SZrFunctionTypedTypeRef *typeRef,
+                                             TZrChar *buffer,
+                                             TZrSize bufferSize) {
+    const TZrChar *baseName = "object";
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return "object";
+    }
+
+    buffer[0] = '\0';
+    if (typeRef == ZR_NULL) {
+        return "object";
+    }
+
+    if (typeRef->isArray) {
+        const TZrChar *elementName = typeRef->elementTypeName != ZR_NULL
+                                         ? project_feature_get_string_text(typeRef->elementTypeName)
+                                         : ZR_NULL;
+        if (elementName == ZR_NULL || elementName[0] == '\0') {
+            switch (typeRef->elementBaseType) {
+                case ZR_VALUE_TYPE_BOOL: elementName = "bool"; break;
+                case ZR_VALUE_TYPE_INT8: elementName = "i8"; break;
+                case ZR_VALUE_TYPE_INT16: elementName = "i16"; break;
+                case ZR_VALUE_TYPE_INT32: elementName = "i32"; break;
+                case ZR_VALUE_TYPE_INT64: elementName = "int"; break;
+                case ZR_VALUE_TYPE_UINT8: elementName = "u8"; break;
+                case ZR_VALUE_TYPE_UINT16: elementName = "u16"; break;
+                case ZR_VALUE_TYPE_UINT32: elementName = "u32"; break;
+                case ZR_VALUE_TYPE_UINT64: elementName = "uint"; break;
+                case ZR_VALUE_TYPE_FLOAT:
+                case ZR_VALUE_TYPE_DOUBLE:
+                    elementName = "float";
+                    break;
+                case ZR_VALUE_TYPE_STRING:
+                    elementName = "string";
+                    break;
+                default:
+                    elementName = "object";
+                    break;
+            }
+        }
+        snprintf(buffer, bufferSize, "%s[]", elementName);
+        return buffer;
+    }
+
+    if (typeRef->typeName != ZR_NULL) {
+        const TZrChar *typeName = project_feature_get_string_text(typeRef->typeName);
+        if (typeName != ZR_NULL && typeName[0] != '\0') {
+            return typeName;
+        }
+    }
+
+    switch (typeRef->baseType) {
+        case ZR_VALUE_TYPE_NULL: baseName = "null"; break;
+        case ZR_VALUE_TYPE_BOOL: baseName = "bool"; break;
+        case ZR_VALUE_TYPE_INT8: baseName = "i8"; break;
+        case ZR_VALUE_TYPE_INT16: baseName = "i16"; break;
+        case ZR_VALUE_TYPE_INT32: baseName = "i32"; break;
+        case ZR_VALUE_TYPE_INT64: baseName = "int"; break;
+        case ZR_VALUE_TYPE_UINT8: baseName = "u8"; break;
+        case ZR_VALUE_TYPE_UINT16: baseName = "u16"; break;
+        case ZR_VALUE_TYPE_UINT32: baseName = "u32"; break;
+        case ZR_VALUE_TYPE_UINT64: baseName = "uint"; break;
+        case ZR_VALUE_TYPE_FLOAT:
+        case ZR_VALUE_TYPE_DOUBLE:
+            baseName = "float";
+            break;
+        case ZR_VALUE_TYPE_STRING:
+            baseName = "string";
+            break;
+        case ZR_VALUE_TYPE_ARRAY:
+            baseName = "array";
+            break;
+        case ZR_VALUE_TYPE_CLOSURE:
+        case ZR_VALUE_TYPE_FUNCTION:
+            baseName = "function";
+            break;
+        default:
+            baseName = "object";
+            break;
+    }
+
+    snprintf(buffer, bufferSize, "%s", baseName);
+    return buffer;
+}
+
+static TZrBool binary_export_symbol_is_callable(const SZrIoFunctionTypedExportSymbol *symbol) {
+    if (symbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (symbol->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION) {
+        return ZR_TRUE;
+    }
+
+    return symbol->valueType.baseType == ZR_VALUE_TYPE_FUNCTION ||
+           symbol->valueType.baseType == ZR_VALUE_TYPE_CLOSURE;
+}
+
+static void append_binary_module_completions(SZrState *state,
+                                             const SZrIoFunction *entryFunction,
+                                             SZrArray *result) {
+    if (state == ZR_NULL || entryFunction == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < entryFunction->typedExportedSymbolsLength; index++) {
+        const SZrIoFunctionTypedExportSymbol *symbol = &entryFunction->typedExportedSymbols[index];
+        const TZrChar *kind = binary_export_symbol_is_callable(symbol) ? "function" : "field";
+        TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
+        TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+        SZrCompletionItem *item;
+
+        if (symbol->name == ZR_NULL) {
+            continue;
+        }
+
+        if (binary_export_symbol_is_callable(symbol)) {
+            snprintf(detail,
+                     sizeof(detail),
+                     "%s(...): %s",
+                     project_feature_get_string_text(symbol->name),
+                     binary_type_ref_text(&symbol->valueType, typeBuffer, sizeof(typeBuffer)));
+        } else {
+            snprintf(detail,
+                     sizeof(detail),
+                     "field %s",
+                     binary_type_ref_text(&symbol->valueType, typeBuffer, sizeof(typeBuffer)));
+        }
+
+        item = ZrLanguageServer_CompletionItem_New(state,
+                                                   project_feature_get_string_text(symbol->name),
+                                                   kind,
+                                                   detail,
+                                                   ZR_NULL,
+                                                   ZR_NULL);
+        if (item != ZR_NULL) {
+            ZrCore_Array_Push(state, result, &item);
+        }
+    }
+
+    for (TZrSize index = 0; index < entryFunction->classesLength; index++) {
+        const SZrIoClass *classInfo = &entryFunction->classes[index];
+        const TZrChar *name = classInfo->name != ZR_NULL ? project_feature_get_string_text(classInfo->name) : ZR_NULL;
+        SZrCompletionItem *item;
+
+        if (name == ZR_NULL || name[0] == '\0') {
+            continue;
+        }
+
+        item = ZrLanguageServer_CompletionItem_New(state, name, "class", name, ZR_NULL, ZR_NULL);
+        if (item != ZR_NULL) {
+            ZrCore_Array_Push(state, result, &item);
+        }
+    }
+
+    for (TZrSize index = 0; index < entryFunction->structsLength; index++) {
+        const SZrIoStruct *structInfo = &entryFunction->structs[index];
+        const TZrChar *name = structInfo->name != ZR_NULL ? project_feature_get_string_text(structInfo->name) : ZR_NULL;
+        SZrCompletionItem *item;
+
+        if (name == ZR_NULL || name[0] == '\0') {
+            continue;
+        }
+
+        item = ZrLanguageServer_CompletionItem_New(state, name, "struct", name, ZR_NULL, ZR_NULL);
+        if (item != ZR_NULL) {
+            ZrCore_Array_Push(state, result, &item);
+        }
+    }
+}
+
+static TZrBool compiled_export_symbol_is_callable(const SZrFunctionTypedExportSymbol *symbol) {
+    if (symbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (symbol->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION) {
+        return ZR_TRUE;
+    }
+
+    return symbol->valueType.baseType == ZR_VALUE_TYPE_FUNCTION ||
+           symbol->valueType.baseType == ZR_VALUE_TYPE_CLOSURE;
+}
+
+static void append_compiled_module_completions(SZrState *state,
+                                               const SZrFunction *entryFunction,
+                                               SZrArray *result) {
+    if (state == ZR_NULL || entryFunction == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < entryFunction->typedExportedSymbolLength; index++) {
+        const SZrFunctionTypedExportSymbol *symbol = &entryFunction->typedExportedSymbols[index];
+        const TZrChar *kind = compiled_export_symbol_is_callable(symbol) ? "function" : "field";
+        TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
+        TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+        SZrCompletionItem *item;
+
+        if (symbol->name == ZR_NULL) {
+            continue;
+        }
+
+        if (compiled_export_symbol_is_callable(symbol)) {
+            snprintf(detail,
+                     sizeof(detail),
+                     "%s(...): %s",
+                     project_feature_get_string_text(symbol->name),
+                     compiled_type_ref_text(&symbol->valueType, typeBuffer, sizeof(typeBuffer)));
+        } else {
+            snprintf(detail,
+                     sizeof(detail),
+                     "field %s",
+                     compiled_type_ref_text(&symbol->valueType, typeBuffer, sizeof(typeBuffer)));
+        }
+
+        item = ZrLanguageServer_CompletionItem_New(state,
+                                                   project_feature_get_string_text(symbol->name),
+                                                   kind,
+                                                   detail,
+                                                   ZR_NULL,
+                                                   ZR_NULL);
+        if (item != ZR_NULL) {
+            ZrCore_Array_Push(state, result, &item);
+        }
+    }
+}
+
+static void append_intermediate_module_completions(SZrState *state,
+                                                   const SZrLspIntermediateModuleMetadata *metadata,
+                                                   SZrArray *result) {
+    if (state == ZR_NULL || metadata == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < metadata->exportedSymbols.length; index++) {
+        const SZrLspIntermediateExportSymbol *symbol =
+            (const SZrLspIntermediateExportSymbol *)ZrCore_Array_Get((SZrArray *)&metadata->exportedSymbols, index);
+        const TZrChar *kind = (symbol != ZR_NULL && symbol->isCallable) ? "function" : "field";
+        TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
+        SZrCompletionItem *item;
+
+        if (symbol == ZR_NULL || symbol->name == ZR_NULL || symbol->typeName == ZR_NULL) {
+            continue;
+        }
+
+        if (symbol->isCallable) {
+            snprintf(detail,
+                     sizeof(detail),
+                     "%s(...): %s",
+                     project_feature_get_string_text(symbol->name),
+                     project_feature_get_string_text(symbol->typeName));
+        } else {
+            snprintf(detail,
+                     sizeof(detail),
+                     "field %s",
+                     project_feature_get_string_text(symbol->typeName));
+        }
+
+        item = ZrLanguageServer_CompletionItem_New(state,
+                                                   project_feature_get_string_text(symbol->name),
+                                                   kind,
+                                                   detail,
+                                                   ZR_NULL,
+                                                   ZR_NULL);
+        if (item != ZR_NULL) {
+            ZrCore_Array_Push(state, result, &item);
+        }
+    }
+}
+
+static TZrBool create_binary_module_member_hover(SZrState *state,
+                                                 const SZrIoFunction *entryFunction,
+                                                 SZrString *memberName,
+                                                 const TZrChar *sourceKind,
+                                                 SZrFileRange range,
+                                                 SZrLspHover **result) {
+    TZrChar buffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+
+    if (state == ZR_NULL || entryFunction == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < entryFunction->typedExportedSymbolsLength; index++) {
+        const SZrIoFunctionTypedExportSymbol *symbol = &entryFunction->typedExportedSymbols[index];
+        const TZrChar *name = symbol->name != ZR_NULL ? project_feature_get_string_text(symbol->name) : ZR_NULL;
+        const TZrChar *kindText = binary_export_symbol_is_callable(symbol) ? "function" : "field";
+
+        if (name == ZR_NULL || strcmp(name, project_feature_get_string_text(memberName)) != 0) {
+            continue;
+        }
+
+        snprintf(buffer,
+                 sizeof(buffer),
+                 "**%s** `%s`\n\nType: %s%s%s",
+                 kindText,
+                 name,
+                 binary_type_ref_text(&symbol->valueType, typeBuffer, sizeof(typeBuffer)),
+                 sourceKind != ZR_NULL ? "\n\nSource: " : "",
+                 sourceKind != ZR_NULL ? sourceKind : "");
+        return create_hover_from_markdown(state, buffer, range, result);
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool create_compiled_module_member_hover(SZrState *state,
+                                                   const SZrFunction *entryFunction,
+                                                   SZrString *memberName,
+                                                   const TZrChar *sourceKind,
+                                                   SZrFileRange range,
+                                                   SZrLspHover **result) {
+    TZrChar buffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+
+    if (state == ZR_NULL || entryFunction == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < entryFunction->typedExportedSymbolLength; index++) {
+        const SZrFunctionTypedExportSymbol *symbol = &entryFunction->typedExportedSymbols[index];
+        const TZrChar *name = symbol->name != ZR_NULL ? project_feature_get_string_text(symbol->name) : ZR_NULL;
+        const TZrChar *kindText = compiled_export_symbol_is_callable(symbol) ? "function" : "field";
+
+        if (name == ZR_NULL || strcmp(name, project_feature_get_string_text(memberName)) != 0) {
+            continue;
+        }
+
+        snprintf(buffer,
+                 sizeof(buffer),
+                 "**%s** `%s`\n\nType: %s%s%s",
+                 kindText,
+                 name,
+                 compiled_type_ref_text(&symbol->valueType, typeBuffer, sizeof(typeBuffer)),
+                 sourceKind != ZR_NULL ? "\n\nSource: " : "",
+                 sourceKind != ZR_NULL ? sourceKind : "");
+        return create_hover_from_markdown(state, buffer, range, result);
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool create_intermediate_module_member_hover(SZrState *state,
+                                                       const SZrLspIntermediateModuleMetadata *metadata,
+                                                       SZrString *memberName,
+                                                       const TZrChar *sourceKind,
+                                                       SZrFileRange range,
+                                                       SZrLspHover **result) {
+    TZrChar buffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+
+    if (state == ZR_NULL || metadata == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < metadata->exportedSymbols.length; index++) {
+        const SZrLspIntermediateExportSymbol *symbol =
+            (const SZrLspIntermediateExportSymbol *)ZrCore_Array_Get((SZrArray *)&metadata->exportedSymbols, index);
+        const TZrChar *name = symbol != ZR_NULL && symbol->name != ZR_NULL
+                                  ? project_feature_get_string_text(symbol->name)
+                                  : ZR_NULL;
+        const TZrChar *kindText = symbol != ZR_NULL && symbol->isCallable ? "function" : "field";
+
+        if (symbol == ZR_NULL || name == ZR_NULL || symbol->typeName == ZR_NULL ||
+            strcmp(name, project_feature_get_string_text(memberName)) != 0) {
+            continue;
+        }
+
+        snprintf(buffer,
+                 sizeof(buffer),
+                 "**%s** `%s`\n\nType: %s%s%s",
+                 kindText,
+                 name,
+                 project_feature_get_string_text(symbol->typeName),
+                 sourceKind != ZR_NULL ? "\n\nSource: " : "",
+                 sourceKind != ZR_NULL ? sourceKind : "");
+        return create_hover_from_markdown(state, buffer, range, result);
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool create_module_prototype_member_hover(SZrState *state,
+                                                    const SZrTypePrototypeInfo *modulePrototype,
+                                                    SZrString *memberName,
+                                                    const TZrChar *sourceKind,
+                                                    SZrFileRange range,
+                                                    SZrLspHover **result) {
+    const SZrTypeMemberInfo *member;
+    const TZrChar *kindText;
+    const TZrChar *detailText = "object";
+    TZrChar buffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+
+    if (state == ZR_NULL || modulePrototype == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    member = find_module_prototype_member(modulePrototype, memberName);
+    kindText = module_prototype_member_kind_text(member);
+    if (member == ZR_NULL || kindText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (strcmp(kindText, "function") == 0) {
+        detailText = project_feature_get_string_text(member->returnTypeName);
+    } else {
+        detailText = project_feature_get_string_text(member->fieldTypeName);
+    }
+
+    snprintf(buffer,
+             sizeof(buffer),
+             "**%s** `%s`\n\nType: %s%s%s",
+             kindText,
+             project_feature_get_string_text(memberName),
+             detailText != ZR_NULL ? detailText : "object",
+             sourceKind != ZR_NULL ? "\n\nSource: " : "",
+             sourceKind != ZR_NULL ? sourceKind : "");
+    return create_hover_from_markdown(state, buffer, range, result);
 }
 
 static void append_native_module_completions(SZrState *state,
@@ -333,6 +914,7 @@ static TZrBool resolve_native_member_descriptor(const ZrLibModuleDescriptor *des
 static TZrBool create_native_member_hover(SZrState *state,
                                           const ZrLibModuleDescriptor *descriptor,
                                           SZrString *memberName,
+                                          const TZrChar *sourceKind,
                                           SZrFileRange range,
                                           SZrLspHover **result) {
     SZrLspNativeMemberResolution resolution;
@@ -350,8 +932,10 @@ static TZrBool create_native_member_hover(SZrState *state,
         case ZR_LSP_NATIVE_MEMBER_KIND_MODULE:
             snprintf(buffer,
                      sizeof(buffer),
-                     "module <%s>",
-                     resolution.moduleLink->moduleName != ZR_NULL ? resolution.moduleLink->moduleName : "");
+                     "module <%s>%s%s",
+                     resolution.moduleLink->moduleName != ZR_NULL ? resolution.moduleLink->moduleName : "",
+                     sourceKind != ZR_NULL ? "\n\nSource: " : "",
+                     sourceKind != ZR_NULL ? sourceKind : "");
             return create_hover_from_markdown(state, buffer, range, result);
 
         case ZR_LSP_NATIVE_MEMBER_KIND_FUNCTION:
@@ -384,10 +968,12 @@ static TZrBool create_native_member_hover(SZrState *state,
 
     snprintf(buffer,
              sizeof(buffer),
-             "**%s** `%s`\n\nType: %s%s%s",
+             "**%s** `%s`\n\nType: %s%s%s%s%s",
              kindText,
              project_feature_get_string_text(memberName),
              detailText,
+             sourceKind != ZR_NULL ? "\n\nSource: " : "",
+             sourceKind != ZR_NULL ? sourceKind : "",
              documentation != ZR_NULL ? "\n\n" : "",
              documentation != ZR_NULL ? documentation : "");
     return create_hover_from_markdown(state, buffer, range, result);
@@ -547,13 +1133,18 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryCollectImportCompletions(SZrState *state,
         binding = find_import_binding_for_completion_position(analyzer->ast, &bindings, cursorRange);
     }
     if (binding != ZR_NULL) {
-        SZrLspProjectFileRecord *record =
-            projectIndex != ZR_NULL ? ZrLanguageServer_LspProject_FindRecordByModuleName(projectIndex, binding->moduleName)
-                                    : ZR_NULL;
-        if (record != ZR_NULL) {
-            SZrSemanticAnalyzer *targetAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, record->uri);
+        SZrLspResolvedImportedModule resolved;
+
+        ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(state,
+                                                                 analyzer,
+                                                                 projectIndex,
+                                                                 binding->moduleName,
+                                                                 &resolved);
+        if (resolved.sourceRecord != ZR_NULL) {
+            SZrSemanticAnalyzer *targetAnalyzer =
+                ZrLanguageServer_Lsp_FindAnalyzer(state, context, resolved.sourceRecord->uri);
             if (targetAnalyzer == ZR_NULL) {
-                targetAnalyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, record->uri);
+                targetAnalyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, resolved.sourceRecord->uri);
             }
             if (targetAnalyzer != ZR_NULL &&
                 targetAnalyzer->symbolTable != ZR_NULL &&
@@ -567,8 +1158,44 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryCollectImportCompletions(SZrState *state,
                     }
                 }
             }
+        } else if (resolved.modulePrototype != ZR_NULL) {
+            append_module_prototype_completions(state, resolved.modulePrototype, result);
+        } else if (resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA) {
+            SZrIoSource *binarySource = ZR_NULL;
+            SZrLspIntermediateModuleMetadata intermediateMetadata;
+            SZrFunction *intermediateFunction = ZR_NULL;
+            ZrCore_Array_Construct(&intermediateMetadata.exportedSymbols);
+
+            if (ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(state,
+                                                                          projectIndex,
+                                                                          binding->moduleName,
+                                                                          &binarySource) &&
+                binarySource != ZR_NULL &&
+                binarySource->modulesLength > 0 &&
+                binarySource->modules != ZR_NULL &&
+                binarySource->modules[0].entryFunction != ZR_NULL) {
+                append_binary_module_completions(state, binarySource->modules[0].entryFunction, result);
+            } else if (ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleMetadata(state,
+                                                                                         projectIndex,
+                                                                                         binding->moduleName,
+                                                                                         &intermediateMetadata)) {
+                append_intermediate_module_completions(state, &intermediateMetadata, result);
+            } else if (ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleFunction(state,
+                                                                                         projectIndex,
+                                                                                         binding->moduleName,
+                                                                                         &intermediateFunction) &&
+                       intermediateFunction != ZR_NULL) {
+                append_compiled_module_completions(state, intermediateFunction, result);
+            }
+            if (binarySource != ZR_NULL) {
+                ZrCore_Io_ReadSourceFree(state->global, binarySource);
+            }
+            ZrLanguageServer_LspModuleMetadata_FreeIntermediateModuleMetadata(state, &intermediateMetadata);
+            if (intermediateFunction != ZR_NULL) {
+                ZrCore_Function_Free(state, intermediateFunction);
+            }
         } else {
-            append_native_module_completions(state, resolve_native_module_descriptor(state, binding->moduleName), result);
+            append_native_module_completions(state, resolved.nativeDescriptor, result);
         }
     }
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
@@ -609,35 +1236,121 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetHover(SZrState *state,
     ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
 
     if (ZrLanguageServer_LspProject_FindImportedMemberHit(analyzer->ast, &bindings, fileRange, &memberHit)) {
-        SZrLspProjectFileRecord *record =
-            projectIndex != ZR_NULL ? ZrLanguageServer_LspProject_FindRecordByModuleName(projectIndex, memberHit.moduleName)
-                                    : ZR_NULL;
-        if (record != ZR_NULL) {
-            SZrSemanticAnalyzer *targetAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, record->uri);
+        SZrLspResolvedImportedModule resolved;
+        const TZrChar *sourceKind;
+
+        ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(state,
+                                                                 analyzer,
+                                                                 projectIndex,
+                                                                 memberHit.moduleName,
+                                                                 &resolved);
+        sourceKind = ZrLanguageServer_LspModuleMetadata_SourceKindLabel(resolved.sourceKind);
+        if (resolved.sourceRecord != ZR_NULL) {
+            SZrSemanticAnalyzer *targetAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, resolved.sourceRecord->uri);
             if (targetAnalyzer == ZR_NULL) {
-                targetAnalyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, record->uri);
+                targetAnalyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, resolved.sourceRecord->uri);
             }
             SZrSymbol *targetSymbol = find_public_global_symbol(targetAnalyzer, memberHit.memberName);
             if (targetSymbol != ZR_NULL) {
                 ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
                 return create_hover_for_symbol(state, context, targetSymbol, memberHit.location, result);
             }
-        } else {
-            const ZrLibModuleDescriptor *descriptor = resolve_native_module_descriptor(state, memberHit.moduleName);
+        }
+
+        if (resolved.modulePrototype != ZR_NULL) {
             ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
-            return create_native_member_hover(state, descriptor, memberHit.memberName, memberHit.location, result);
+            return create_module_prototype_member_hover(state,
+                                                        resolved.modulePrototype,
+                                                        memberHit.memberName,
+                                                        sourceKind,
+                                                        memberHit.location,
+                                                        result);
+        }
+
+        if (resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA) {
+            SZrIoSource *binarySource = ZR_NULL;
+            SZrLspIntermediateModuleMetadata intermediateMetadata;
+            SZrFunction *intermediateFunction = ZR_NULL;
+            TZrBool hoverCreated = ZR_FALSE;
+            ZrCore_Array_Construct(&intermediateMetadata.exportedSymbols);
+
+            if (ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(state,
+                                                                          projectIndex,
+                                                                          memberHit.moduleName,
+                                                                          &binarySource) &&
+                binarySource != ZR_NULL &&
+                binarySource->modulesLength > 0 &&
+                binarySource->modules != ZR_NULL &&
+                binarySource->modules[0].entryFunction != ZR_NULL) {
+                hoverCreated = create_binary_module_member_hover(state,
+                                                                 binarySource->modules[0].entryFunction,
+                                                                 memberHit.memberName,
+                                                                 sourceKind,
+                                                                 memberHit.location,
+                                                                 result);
+            } else if (ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleMetadata(state,
+                                                                                         projectIndex,
+                                                                                         memberHit.moduleName,
+                                                                                         &intermediateMetadata)) {
+                hoverCreated = create_intermediate_module_member_hover(state,
+                                                                       &intermediateMetadata,
+                                                                       memberHit.memberName,
+                                                                       sourceKind,
+                                                                       memberHit.location,
+                                                                       result);
+            } else if (ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleFunction(state,
+                                                                                         projectIndex,
+                                                                                         memberHit.moduleName,
+                                                                                         &intermediateFunction) &&
+                       intermediateFunction != ZR_NULL) {
+                hoverCreated = create_compiled_module_member_hover(state,
+                                                                   intermediateFunction,
+                                                                   memberHit.memberName,
+                                                                   sourceKind,
+                                                                   memberHit.location,
+                                                                   result);
+            }
+            if (binarySource != ZR_NULL) {
+                ZrCore_Io_ReadSourceFree(state->global, binarySource);
+            }
+            ZrLanguageServer_LspModuleMetadata_FreeIntermediateModuleMetadata(state, &intermediateMetadata);
+            if (intermediateFunction != ZR_NULL) {
+                ZrCore_Function_Free(state, intermediateFunction);
+            }
+            if (hoverCreated) {
+                ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+                return ZR_TRUE;
+            }
+        }
+
+        if (resolved.nativeDescriptor != ZR_NULL) {
+            ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+            return create_native_member_hover(state,
+                                              resolved.nativeDescriptor,
+                                              memberHit.memberName,
+                                              sourceKind,
+                                              memberHit.location,
+                                              result);
         }
     }
 
     if (ZrLanguageServer_LspProject_FindImportBindingHit(analyzer->ast, &bindings, fileRange, &binding, &bindingRange) &&
         binding != ZR_NULL) {
+        SZrLspResolvedImportedModule resolved;
         TZrChar buffer[ZR_LSP_TEXT_BUFFER_LENGTH];
+
+        ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(state,
+                                                                 analyzer,
+                                                                 projectIndex,
+                                                                 binding->moduleName,
+                                                                 &resolved);
         snprintf(buffer,
                  sizeof(buffer),
-                 "module <%s>",
+                 "module <%s>\n\nSource: %s",
                  project_feature_get_string_text(binding->moduleName) != ZR_NULL
                      ? project_feature_get_string_text(binding->moduleName)
-                     : "");
+                     : "",
+                 ZrLanguageServer_LspModuleMetadata_SourceKindLabel(resolved.sourceKind));
         ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
         return create_hover_from_markdown(state, buffer, bindingRange, result);
     }

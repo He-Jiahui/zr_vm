@@ -152,6 +152,10 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         }
     }
 
+    if (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || ps->lexer->t.token == ZR_TK_PRO) {
+        parse_access_modifier(ps);
+    }
+
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
         ZrParser_Lexer_Next(ps->lexer);
     }

@@ -39,7 +39,7 @@ TZrDebugSignal ZrCore_Debug_TraceExecution(struct SZrState *state, const TZrInst
     ZR_TODO_PARAMETER(state);
     ZR_TODO_PARAMETER(programCounter);
 
-    return 0;
+    return ZR_DEBUG_SIGNAL_NONE;
 }
 
 ZR_NO_RETURN void ZrCore_Debug_RunError(struct SZrState *state, TZrNativeString format, ...) {
@@ -153,7 +153,7 @@ void ZrCore_Debug_HookReturn(struct SZrState *state, struct SZrCallInfo *callInf
         transferStart = (TZrUInt32)(stackPointer - callInfo->functionBase.valuePointer);
         ZrCore_Debug_Hook(state,
                           ZR_DEBUG_HOOK_EVENT_RETURN,
-                          (TZrUInt32)-1,
+                          ZR_RUNTIME_DEBUG_HOOK_LINE_NONE,
                           transferStart,
                           (TZrUInt32)resultCount);
         callInfo->functionBase.valuePointer -= totalArgumentsCount;
@@ -409,11 +409,14 @@ ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, st
         TZrUInt32 accessModifier = protoInfo->accessModifier;
         TZrUInt32 inheritsCount = protoInfo->inheritsCount;
         TZrUInt32 membersCount = protoInfo->membersCount;
+        TZrUInt32 decoratorsCount = protoInfo->decoratorsCount;
 
         // 计算当前prototype数据的大小
         TZrSize inheritArraySize = inheritsCount * sizeof(TZrUInt32);
+        TZrSize decoratorArraySize = decoratorsCount * sizeof(TZrUInt32);
         TZrSize membersArraySize = membersCount * sizeof(SZrCompiledMemberInfo);
-        TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + membersArraySize;
+        TZrSize currentPrototypeSize =
+                sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + decoratorArraySize + membersArraySize;
 
         if (remainingDataSize < currentPrototypeSize) {
             fprintf(output, "// Error: Insufficient data for prototype %u (size: %zu, expected: %zu)\n",
@@ -487,7 +490,8 @@ ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, st
         fprintf(output, "  access: %s (%u),\n", accessName, (unsigned int) accessModifier);
 
         // 计算成员数据的起始位置
-        const TZrByte *membersData = (const TZrByte *) (currentPos + sizeof(SZrCompiledPrototypeInfo) + inheritArraySize);
+        const TZrByte *membersData =
+                (const TZrByte *)(currentPos + sizeof(SZrCompiledPrototypeInfo) + inheritArraySize + decoratorArraySize);
 
         fprintf(output, "  members: [\n");
 

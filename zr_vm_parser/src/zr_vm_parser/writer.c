@@ -10,6 +10,7 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/reflection.h"
+#include "zr_vm_core/runtime_decorator.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/debug.h"
@@ -174,6 +175,14 @@ ZR_PARSER_API TZrUInt64 ZrParser_Writer_GetSerializableNativeHelperId(FZrNativeF
 
     if (function == ZrCore_Reflection_TypeOfNativeEntry) {
         return ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF;
+    }
+
+    if (function == ZrCore_RuntimeDecorator_ApplyNativeEntry) {
+        return ZR_IO_NATIVE_HELPER_RUNTIME_DECORATOR_APPLY;
+    }
+
+    if (function == ZrCore_RuntimeDecorator_ApplyMemberNativeEntry) {
+        return ZR_IO_NATIVE_HELPER_RUNTIME_MEMBER_DECORATOR_APPLY;
     }
 
     return ZR_IO_NATIVE_HELPER_NONE;
@@ -600,8 +609,10 @@ static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *
             const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *) currentPos;
             TZrUInt32 inheritsCount = protoInfo->inheritsCount;
             TZrUInt32 membersCount = protoInfo->membersCount;
+            TZrUInt32 decoratorsCount = protoInfo->decoratorsCount;
             TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) +
                                            inheritsCount * sizeof(TZrUInt32) +
+                                           decoratorsCount * sizeof(TZrUInt32) +
                                            membersCount * sizeof(SZrCompiledMemberInfo);
             if (remainingDataSize < currentPrototypeSize) {
                 break;
@@ -643,8 +654,10 @@ static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *
                 const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *) currentPos;
                 TZrUInt32 inheritsCount = protoInfo->inheritsCount;
                 TZrUInt32 membersCount = protoInfo->membersCount;
+                TZrUInt32 decoratorsCount = protoInfo->decoratorsCount;
                 TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) +
                                                inheritsCount * sizeof(TZrUInt32) +
+                                               decoratorsCount * sizeof(TZrUInt32) +
                                                membersCount * sizeof(SZrCompiledMemberInfo);
                 if (remainingDataSize < currentPrototypeSize) {
                     break;
@@ -671,8 +684,10 @@ static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *
                 const SZrCompiledPrototypeInfo *protoInfo = (const SZrCompiledPrototypeInfo *) currentPos;
                 TZrUInt32 inheritsCount = protoInfo->inheritsCount;
                 TZrUInt32 membersCount = protoInfo->membersCount;
+                TZrUInt32 decoratorsCount = protoInfo->decoratorsCount;
                 TZrSize currentPrototypeSize = sizeof(SZrCompiledPrototypeInfo) +
                                                inheritsCount * sizeof(TZrUInt32) +
+                                               decoratorsCount * sizeof(TZrUInt32) +
                                                membersCount * sizeof(SZrCompiledMemberInfo);
                 if (remainingDataSize < currentPrototypeSize) {
                     break;
@@ -784,7 +799,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFile(SZrState *state, SZrFuncti
     
     // 写入文件头（.SOURCE格式）
     // SIGNATURE (4 bytes)
-    fwrite(ZR_IO_SOURCE_SIGNATURE, 1, 4, file);
+    fwrite(ZR_IO_SOURCE_SIGNATURE, sizeof(TZrUInt8), ZR_IO_SOURCE_SIGNATURE_LENGTH, file);
     
     // VERSION_MAJOR (4 bytes)
     TZrUInt32 versionMajor = ZR_VM_MAJOR_VERSION;
@@ -823,8 +838,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFile(SZrState *state, SZrFuncti
     fwrite(&debug, sizeof(TZrUInt8), 1, file);
     
     // OPT (3 bytes)
-    TZrUInt8 opt[3] = {ZR_FALSE, ZR_FALSE, ZR_FALSE};
-    fwrite(opt, sizeof(TZrUInt8), 3, file);
+    TZrUInt8 opt[ZR_IO_SOURCE_HEADER_OPT_BYTES] = {ZR_FALSE, ZR_FALSE, ZR_FALSE};
+    fwrite(opt, sizeof(TZrUInt8), ZR_IO_SOURCE_HEADER_OPT_BYTES, file);
     
     // MODULES_LENGTH (8 bytes)
     TZrUInt64 modulesLength = 1;

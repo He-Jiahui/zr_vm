@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define ZR_LSP_SIGNATURE_BINDING_INDEX_NONE ((TZrInt32)-1)
+
 typedef enum EZrLspCallContextKind {
     ZR_LSP_CALL_CONTEXT_NONE = 0,
     ZR_LSP_CALL_CONTEXT_FUNCTION_CALL,
@@ -1239,7 +1241,7 @@ static void signature_free_temporary_member_info(SZrState *state, SZrTypeMemberI
 
 static TZrInt32 signature_find_generic_binding_index(const SZrArray *genericParameters, SZrString *typeName) {
     if (genericParameters == ZR_NULL || typeName == ZR_NULL) {
-        return -1;
+        return ZR_LSP_SIGNATURE_BINDING_INDEX_NONE;
     }
 
     for (TZrSize index = 0; index < genericParameters->length; index++) {
@@ -1252,7 +1254,7 @@ static TZrInt32 signature_find_generic_binding_index(const SZrArray *genericPara
         }
     }
 
-    return -1;
+    return ZR_LSP_SIGNATURE_BINDING_INDEX_NONE;
 }
 
 static TZrBool signature_substitute_receiver_generic_type(SZrState *state,
@@ -1268,7 +1270,7 @@ static TZrBool signature_substitute_receiver_generic_type(SZrState *state,
     }
 
     bindingIndex = signature_find_generic_binding_index(genericParameters, sourceType->typeName);
-    if (bindingIndex >= 0 && sourceType->elementTypes.length == 0) {
+    if (bindingIndex != ZR_LSP_SIGNATURE_BINDING_INDEX_NONE && sourceType->elementTypes.length == 0) {
         SZrInferredType *bindingType =
             (SZrInferredType *)ZrCore_Array_Get((SZrArray *)bindingTypes, (TZrSize)bindingIndex);
         if (bindingType == ZR_NULL) {
@@ -2143,7 +2145,7 @@ cleanup:
 
 static TZrInt32 signature_find_binding_index(const SZrArray *bindings, SZrString *typeName) {
     if (bindings == ZR_NULL || typeName == ZR_NULL) {
-        return -1;
+        return ZR_LSP_SIGNATURE_BINDING_INDEX_NONE;
     }
 
     for (TZrSize index = 0; index < bindings->length; index++) {
@@ -2156,7 +2158,7 @@ static TZrInt32 signature_find_binding_index(const SZrArray *bindings, SZrString
         }
     }
 
-    return -1;
+    return ZR_LSP_SIGNATURE_BINDING_INDEX_NONE;
 }
 
 static TZrBool signature_initialize_bindings(SZrState *state,
@@ -2278,7 +2280,7 @@ static TZrBool signature_unify_binding_from_types(SZrState *state,
     }
 
     bindingIndex = signature_find_binding_index(bindings, expectedType->typeName);
-    if (bindingIndex >= 0 && expectedType->elementTypes.length == 0) {
+    if (bindingIndex != ZR_LSP_SIGNATURE_BINDING_INDEX_NONE && expectedType->elementTypes.length == 0) {
         SZrLspGenericBinding *binding =
             (SZrLspGenericBinding *)ZrCore_Array_Get(bindings, (TZrSize)bindingIndex);
         if (binding == ZR_NULL) {

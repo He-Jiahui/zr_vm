@@ -43,6 +43,7 @@ void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode 
     info.allowBoxedConstruction = ZR_TRUE;
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
     ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(cs->state, &info.decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
 
     if (structDecl->members != ZR_NULL) {
@@ -115,6 +116,7 @@ void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *d
     info.allowBoxedConstruction = ZR_TRUE;
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 1);
     ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 1);
+    ZrCore_Array_Init(cs->state, &info.decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
 
     if (enumDecl->baseType != ZR_NULL) {
@@ -247,8 +249,8 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrString *ffiModuleName;
     SZrString *loadLibraryName;
     SZrString *getSymbolName;
-    TZrUInt32 ffiModuleSlot = (TZrUInt32)-1;
-    TZrUInt32 librarySlot = (TZrUInt32)-1;
+    TZrUInt32 ffiModuleSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 librarySlot = ZR_PARSER_SLOT_NONE;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -358,7 +360,7 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 ZrCore_Value_InitAsRawObject(cs->state, &symbolArguments[0], ZR_CAST_RAW_OBJECT_AS_SUPER(entryName));
                 symbolArguments[0].type = ZR_VALUE_TYPE_STRING;
 
-                if (ffiModuleSlot == (TZrUInt32)-1) {
+                if (ffiModuleSlot == ZR_PARSER_SLOT_NONE) {
                     SZrString *hiddenFfiName = create_hidden_extern_local_name(cs, "ffi");
                     SZrString *hiddenLibraryName = create_hidden_extern_local_name(cs, "library");
                     SZrTypeValue loadArguments[1];

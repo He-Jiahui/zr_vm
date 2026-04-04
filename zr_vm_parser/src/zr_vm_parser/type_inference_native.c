@@ -145,6 +145,7 @@ static void native_module_info_init_prototype(SZrState *state,
                       &info->genericParameters,
                       sizeof(SZrTypeGenericParameterInfo),
                       ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    ZrCore_Array_Init(state, &info->decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(state, &info->members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     info->extendsTypeName = ZR_NULL;
     info->enumValueTypeName = ZR_NULL;

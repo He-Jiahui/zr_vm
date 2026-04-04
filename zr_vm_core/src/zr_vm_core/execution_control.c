@@ -6,6 +6,10 @@
 
 #include <string.h>
 
+#define ZR_EXCEPTION_HANDLER_STACK_INITIAL_CAPACITY 8U
+#define ZR_EXCEPTION_HANDLER_STACK_GROWTH_FACTOR 2U
+#define ZR_SCOPE_CLEANUP_CLOSED_COUNT_NONE ((TZrSize)0)
+
 static SZrVmExceptionHandlerState *execution_find_top_handler_for_callinfo(SZrState *state, SZrCallInfo *callInfo);
 static SZrFunction *execution_call_info_function(SZrState *state, SZrCallInfo *callInfo);
 static TZrStackValuePointer execution_resolve_meta_scratch_base(TZrStackValuePointer savedStackTop,
@@ -13,12 +17,12 @@ static TZrStackValuePointer execution_resolve_meta_scratch_base(TZrStackValuePoi
                                                                 const SZrCallInfo *savedCallInfo);
 
 TZrSize close_scope_cleanup_registrations(SZrState *state, TZrSize cleanupCount) {
-    TZrSize closedCount = 0;
+    TZrSize closedCount = ZR_SCOPE_CLEANUP_CLOSED_COUNT_NONE;
     TZrMemoryOffset savedStackTopOffset;
     SZrCallInfo *currentCallInfo;
 
     if (state == ZR_NULL || cleanupCount == 0) {
-        return 0;
+        return ZR_SCOPE_CLEANUP_CLOSED_COUNT_NONE;
     }
 
     savedStackTopOffset = ZrCore_Stack_SavePointerAsOffset(state, state->stackTop.valuePointer);
@@ -51,7 +55,7 @@ TZrBool execution_invoke_meta_call(SZrState *state,
                                    TZrSize argumentCount,
                                    TZrStackValuePointer *outMetaBase,
                                    TZrStackValuePointer *outSavedStackTop) {
-    SZrTypeValue stableArguments[2];
+    SZrTypeValue stableArguments[ZR_META_CALL_MAX_ARGUMENTS];
     SZrFunctionStackAnchor savedStackTopAnchor;
     TZrStackValuePointer scratchBase;
     TZrStackValuePointer metaBase;
@@ -66,12 +70,12 @@ TZrBool execution_invoke_meta_call(SZrState *state,
     }
 
     if (state == ZR_NULL || meta == ZR_NULL || meta->function == ZR_NULL || arg0 == ZR_NULL || argumentCount == 0 ||
-        argumentCount > 2) {
+        argumentCount > ZR_META_CALL_MAX_ARGUMENTS) {
         return ZR_FALSE;
     }
 
     stableArguments[0] = *arg0;
-    if (argumentCount > 1) {
+    if (argumentCount > ZR_META_CALL_UNARY_ARGUMENT_COUNT) {
         if (arg1 == ZR_NULL) {
             return ZR_FALSE;
         }
@@ -79,15 +83,15 @@ TZrBool execution_invoke_meta_call(SZrState *state,
     }
 
     ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
-    metaBase = ZrCore_Function_ReserveScratchSlots(state, 1 + argumentCount, scratchBase);
+    metaBase = ZrCore_Function_ReserveScratchSlots(state, ZR_META_CALL_SLOT_COUNT(argumentCount), scratchBase);
 
     ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-    ZrCore_Stack_CopyValue(state, metaBase + 1, &stableArguments[0]);
-    if (argumentCount > 1) {
-        ZrCore_Stack_CopyValue(state, metaBase + 2, &stableArguments[1]);
+    ZrCore_Stack_CopyValue(state, ZR_META_CALL_SELF_SLOT(metaBase), &stableArguments[0]);
+    if (argumentCount > ZR_META_CALL_UNARY_ARGUMENT_COUNT) {
+        ZrCore_Stack_CopyValue(state, ZR_META_CALL_SECOND_ARGUMENT_SLOT(metaBase), &stableArguments[1]);
     }
 
-    state->stackTop.valuePointer = metaBase + 1 + argumentCount;
+    state->stackTop.valuePointer = ZR_META_CALL_STACK_TOP(metaBase, argumentCount);
     if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
     }
@@ -138,9 +142,11 @@ static TZrBool execution_exception_handler_stack_ensure_capacity(SZrState *state
         return ZR_TRUE;
     }
 
-    newCapacity = state->exceptionHandlerStackCapacity > 0 ? state->exceptionHandlerStackCapacity : 8;
+    newCapacity = state->exceptionHandlerStackCapacity > 0
+                      ? state->exceptionHandlerStackCapacity
+                      : ZR_EXCEPTION_HANDLER_STACK_INITIAL_CAPACITY;
     while (newCapacity < minCapacity) {
-        newCapacity *= 2;
+        newCapacity *= ZR_EXCEPTION_HANDLER_STACK_GROWTH_FACTOR;
     }
 
     bytes = newCapacity * sizeof(SZrVmExceptionHandlerState);

@@ -15,6 +15,7 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/raw_object.h"
+#include "zr_vm_core/runtime_decorator.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
@@ -119,6 +120,9 @@ static ZR_FORCE_INLINE EZrMetaType compiler_resolve_meta_type_name(SZrString *me
     if (strcmp(metaNameText, "close") == 0) {
         return ZR_META_CLOSE;
     }
+    if (strcmp(metaNameText, "decorate") == 0) {
+        return ZR_META_DECORATE;
+    }
 
     return ZR_META_ENUM_MAX;
 }
@@ -138,6 +142,9 @@ typedef struct SZrCompiledPrototypeInfo {
     TZrUInt32 inheritsCount;
     TZrUInt32 membersCount;
     TZrUInt64 protocolMask;
+    TZrUInt32 hasDecoratorMetadata;
+    TZrUInt32 decoratorMetadataConstantIndex;
+    TZrUInt32 decoratorsCount;
 } SZrCompiledPrototypeInfo;
 
 typedef struct SZrCompiledMemberInfo {
@@ -194,11 +201,21 @@ TZrBool compiler_copy_range_to_raw(SZrCompilerState *cs,
                                           TZrSize elementSize) ;
 
 TZrBool compiler_copy_function_exception_metadata_slice(SZrCompilerState *cs,
-                                                               SZrFunction *function,
-                                                               TZrSize executionStart,
-                                                               TZrSize catchStart,
-                                                               TZrSize handlerStart,
-                                                               SZrAstNode *sourceNode) ;
+                                                                SZrFunction *function,
+                                                                TZrSize executionStart,
+                                                                TZrSize catchStart,
+                                                                TZrSize handlerStart,
+                                                                SZrAstNode *sourceNode) ;
+
+TZrBool compiler_assemble_final_function(SZrCompilerState *cs,
+                                                SZrFunction *function,
+                                                SZrAstNode *sourceNode,
+                                                TZrBool copyCurrentFunctionBuffers,
+                                                TZrBool preserveExistingSignature) ;
+
+TZrBool compiler_attach_detached_function_prototype_context(SZrState *state,
+                                                                   SZrFunction *detachedFunction,
+                                                                   SZrFunction *entryFunction) ;
 
 void emit_instruction(SZrCompilerState *cs, TZrInstruction instruction) ;
 
@@ -269,6 +286,18 @@ TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name)
 void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) ;
 
 TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) ;
+TZrBool emit_runtime_decorator_applications(SZrCompilerState *cs,
+                                            SZrAstNodeArray *decorators,
+                                            TZrUInt32 targetSlot,
+                                            TZrBool persistTarget,
+                                            SZrFileRange location) ;
+
+TZrBool emit_runtime_member_decorator_applications(SZrCompilerState *cs,
+                                                   SZrAstNodeArray *decorators,
+                                                   SZrString *typeName,
+                                                   SZrString *memberName,
+                                                   EZrRuntimeDecoratorTargetKind targetKind,
+                                                   SZrFileRange location) ;
 
 void emit_object_field_assignment_from_expression(SZrCompilerState *cs,
                                                          TZrUInt32 objectSlot,

@@ -33,6 +33,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldLocalVarLength = cs->localVars.length;
     TZrSize oldConstantLength = cs->constants.length;
     TZrSize oldClosureVarLength = cs->closureVars.length;
+    TZrSize oldChildFunctionLength = cs->childFunctions.length;
+    TZrSize oldChildFunctionNameMapLength = cs->childFunctionNameMap.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     TZrSize oldConstLocalVarLength = cs->constLocalVars.length;
@@ -153,6 +155,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     cs->localVars.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    cs->childFunctions.length = 0;
+    cs->childFunctionNameMap.length = 0;
     cs->cachedNullConstantIndex = 0;
     cs->hasCachedNullConstantIndex = ZR_FALSE;
     
@@ -301,6 +305,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         cs->localVars.length = oldLocalVarLength;
         cs->constants.length = oldConstantLength;
         cs->closureVars.length = oldClosureVarLength;
+        cs->childFunctions.length = oldChildFunctionLength;
+        cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
@@ -353,6 +359,22 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
             newFunc->closureValueLength = (TZrUInt32)cs->closureVarCount;
         }
     }
+
+    if (cs->childFunctions.length > 0) {
+        TZrSize childFuncSize = cs->childFunctions.length * sizeof(SZrFunction);
+        newFunc->childFunctionList =
+                (struct SZrFunction *)ZrCore_Memory_RawMallocWithType(global, childFuncSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->childFunctionList != ZR_NULL) {
+            SZrFunction **srcArray = (SZrFunction **)cs->childFunctions.head;
+            for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
+                if (srcArray[i] != ZR_NULL) {
+                    newFunc->childFunctionList[i] = *srcArray[i];
+                }
+            }
+            newFunc->childFunctionLength = (TZrUInt32)cs->childFunctions.length;
+            ZrCore_Function_RebindConstantFunctionValuesToChildren(newFunc);
+        }
+    }
     
     // 设置函数元数据
     newFunc->stackSize = (TZrUInt32)cs->stackSlotCount;
@@ -398,10 +420,16 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     cs->localVars.length = oldLocalVarLength;
     cs->constants.length = oldConstantLength;
     cs->closureVars.length = oldClosureVarLength;
+    cs->childFunctions.length = oldChildFunctionLength;
+    cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
     cs->isInConstructor = oldIsInConstructor;
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = oldConstLocalVarLength;
     cs->constParameters.length = oldConstParameterLength;
+
+    if (oldFunction != ZR_NULL) {
+        ZrCore_Array_Push(cs->state, &cs->childFunctions, &newFunc);
+    }
 
     // 4. 在父函数上下文中生成 CREATE_CLOSURE。
     // Lambda 运行时值属于外层函数，常量索引和结果槽也必须从外层函数分配。

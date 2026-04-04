@@ -526,7 +526,7 @@ restore:
     return isFunctionDeclaration;
 }
 
-// 语法：%compileTime function/variable/statement/expression
+// 语法：%compileTime function/variable/class/struct/statement/expression
 
 SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
     SZrFileRange startLoc;
@@ -570,6 +570,12 @@ SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
         // 编译期变量声明：%compileTime var name = value;
         declType = ZR_COMPILE_TIME_VARIABLE;
         declaration = parse_variable_declaration(ps);
+    } else if (ps->lexer->t.token == ZR_TK_CLASS) {
+        declType = ZR_COMPILE_TIME_CLASS;
+        declaration = parse_class_declaration(ps);
+    } else if (ps->lexer->t.token == ZR_TK_STRUCT) {
+        declType = ZR_COMPILE_TIME_STRUCT;
+        declaration = parse_struct_declaration(ps);
     } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
         if (is_compile_time_function_declaration(ps)) {
             // 函数声明：%compileTime functionName(...) { ... }

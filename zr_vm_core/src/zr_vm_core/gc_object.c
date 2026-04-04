@@ -4,6 +4,9 @@
 
 #include "gc_internal.h"
 
+#define ZR_GC_IGNORE_REGISTRY_INITIAL_CAPACITY ((TZrSize)8)
+#define ZR_GC_IGNORE_REGISTRY_GROWTH_FACTOR ((TZrSize)2)
+
 TZrBool garbage_collector_ignore_registry_contains(SZrGarbageCollector *collector, SZrRawObject *object) {
     if (collector == ZR_NULL || object == ZR_NULL || collector->ignoredObjects == ZR_NULL) {
         return ZR_FALSE;
@@ -34,9 +37,11 @@ TZrBool garbage_collector_ensure_ignore_registry_capacity(SZrGlobalState *global
         return ZR_TRUE;
     }
 
-    newCapacity = collector->ignoredObjectCapacity > 0 ? collector->ignoredObjectCapacity : 8;
+    newCapacity = collector->ignoredObjectCapacity > 0
+                      ? collector->ignoredObjectCapacity
+                      : ZR_GC_IGNORE_REGISTRY_INITIAL_CAPACITY;
     while (newCapacity < minCapacity) {
-        newCapacity *= 2;
+        newCapacity *= ZR_GC_IGNORE_REGISTRY_GROWTH_FACTOR;
     }
 
     newBytes = newCapacity * sizeof(SZrRawObject *);

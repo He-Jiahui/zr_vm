@@ -410,8 +410,10 @@ SZrFileRange get_current_token_location(SZrParserState *ps) {
     }
 
     tokenLength = get_current_token_length(ps);
-    endOffset = ps->lexer->currentChar == -1 ? ps->lexer->currentPos
-                                             : (ps->lexer->currentPos > 0 ? ps->lexer->currentPos - 1 : 0);
+    endOffset = ps->lexer->currentChar == ZR_PARSER_LEXER_EOZ ? ps->lexer->currentPos
+                                                              : (ps->lexer->currentPos > 0
+                                                                         ? ps->lexer->currentPos - 1
+                                                                         : 0);
     if (endOffset > ps->lexer->sourceLength) {
         endOffset = ps->lexer->sourceLength;
     }

@@ -19,6 +19,34 @@ static SZrAstNode *create_type_node_from_type_info(SZrParserState *ps, SZrType *
     return typeNode;
 }
 
+static TZrBool parse_decorator_pseudo_type_annotation(SZrParserState *ps, SZrType **outType, TZrBool noGeneric) {
+    SZrType *innerType;
+
+    if (outType != ZR_NULL) {
+        *outType = ZR_NULL;
+    }
+
+    if (ps == ZR_NULL || outType == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "type")) {
+        report_error(ps, "Expected ownership qualifier after '%' in type annotation");
+        return ZR_FALSE;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    innerType = noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
+    if (innerType == ZR_NULL) {
+        report_error(ps, "Expected decorator reflection target after '%type' in type annotation");
+        return ZR_FALSE;
+    }
+
+    *outType = innerType;
+    return ZR_TRUE;
+}
+
 static TZrBool token_can_start_type_argument(EZrToken token) {
     return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST || token == ZR_TK_LBRACKET || token == ZR_TK_PERCENT;
 }
@@ -212,6 +240,21 @@ SZrType *parse_type(SZrParserState *ps) {
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
         SZrType *innerType;
 
+        if (peek_token(ps) == ZR_TK_IDENTIFIER) {
+            SZrParserCursor cursor;
+            save_parser_cursor(ps, &cursor);
+            ZrParser_Lexer_Next(ps->lexer);
+            if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "type")) {
+                restore_parser_cursor(ps, &cursor);
+                if (parse_decorator_pseudo_type_annotation(ps, &innerType, ZR_FALSE)) {
+                    return innerType;
+                }
+                ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                return ZR_NULL;
+            }
+            restore_parser_cursor(ps, &cursor);
+        }
+
         ZrParser_Lexer_Next(ps->lexer);
         if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
             !try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier)) {
@@ -328,6 +371,21 @@ SZrType *parse_type_no_generic(SZrParserState *ps) {
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
         SZrType *innerType;
+
+        if (peek_token(ps) == ZR_TK_IDENTIFIER) {
+            SZrParserCursor cursor;
+            save_parser_cursor(ps, &cursor);
+            ZrParser_Lexer_Next(ps->lexer);
+            if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "type")) {
+                restore_parser_cursor(ps, &cursor);
+                if (parse_decorator_pseudo_type_annotation(ps, &innerType, ZR_TRUE)) {
+                    return innerType;
+                }
+                ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                return ZR_NULL;
+            }
+            restore_parser_cursor(ps, &cursor);
+        }
 
         ZrParser_Lexer_Next(ps->lexer);
         if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||

@@ -102,11 +102,11 @@ static void compile_default_fixed_array_initialization(SZrCompilerState *cs,
 static TZrTypeId resolve_using_resource_type_id(SZrCompilerState *cs, SZrAstNode *resource) {
     SZrInferredType inferredType;
     TZrBool hasInferredType = ZR_FALSE;
-    TZrTypeId typeId = 0;
+    TZrTypeId typeId = ZR_SEMANTIC_ID_INVALID;
     EZrSemanticTypeKind semanticKind = ZR_SEMANTIC_TYPE_KIND_REFERENCE;
 
     if (cs == ZR_NULL || resource == ZR_NULL || cs->semanticContext == ZR_NULL) {
-        return 0;
+        return ZR_SEMANTIC_ID_INVALID;
     }
 
     ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
@@ -147,7 +147,7 @@ static TZrSymbolId register_using_resource_symbol(SZrCompilerState *cs, SZrAstNo
     if (cs == ZR_NULL || resource == ZR_NULL || cs->semanticContext == ZR_NULL ||
         resource->type != ZR_AST_IDENTIFIER_LITERAL ||
         resource->data.identifier.name == ZR_NULL) {
-        return 0;
+        return ZR_SEMANTIC_ID_INVALID;
     }
 
     typeId = resolve_using_resource_type_id(cs, resource);
@@ -155,7 +155,7 @@ static TZrSymbolId register_using_resource_symbol(SZrCompilerState *cs, SZrAstNo
                                     resource->data.identifier.name,
                                     ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
                                     typeId,
-                                    0,
+                                    ZR_SEMANTIC_ID_INVALID,
                                     resource,
                                     resource->location);
 }
@@ -205,7 +205,7 @@ static TZrBool compile_using_resource_slot(SZrCompilerState *cs, SZrAstNode *res
 
     if (resource->type == ZR_AST_IDENTIFIER_LITERAL && resource->data.identifier.name != ZR_NULL) {
         existingLocalSlot = find_local_var(cs, resource->data.identifier.name);
-        if (existingLocalSlot != (TZrUInt32)-1) {
+        if (existingLocalSlot != ZR_PARSER_SLOT_NONE) {
             *slot = existingLocalSlot;
             return ZR_TRUE;
         }
@@ -569,8 +569,8 @@ static void compile_block_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
     SZrUsingStatement *stmt;
-    TZrLifetimeRegionId regionId = 0;
-    TZrSymbolId symbolId = 0;
+    TZrLifetimeRegionId regionId = ZR_SEMANTIC_ID_INVALID;
+    TZrSymbolId symbolId = ZR_SEMANTIC_ID_INVALID;
     TZrUInt32 resourceSlot = 0;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {

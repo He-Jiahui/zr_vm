@@ -117,6 +117,8 @@ static int test_aot_runtime_options_require_aot_execution_mode(void) {
     char *argv1[] = {"zr_vm_cli", "demo.zrp", "--require-aot-path"};
     char *argv2[] = {"zr_vm_cli", "demo.zrp", "--execution-mode", "binary", "--require-aot-path"};
     char *argv3[] = {"zr_vm_cli", "demo.zrp", "--execution-mode", "aot_c", "--emit-executed-via"};
+    char *argv4[] = {"zr_vm_cli", "--compile", "demo.zrp", "--emit-executed-via"};
+    char *argv5[] = {"zr_vm_cli", "--compile", "demo.zrp", "--execution-mode", "aot_c"};
     char error[256];
     SZrCliCommand command;
 
@@ -132,6 +134,16 @@ static int test_aot_runtime_options_require_aot_execution_mode(void) {
                     "emit executed_via should be accepted on aot run");
     CLI_ASSERT_INT_EQ(ZR_CLI_MODE_RUN_PROJECT, command.mode, "mode should stay run project");
     CLI_ASSERT_INT_EQ(ZR_CLI_EXECUTION_MODE_AOT_C, command.executionMode, "run execution mode should be aot_c");
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(4, argv4, &command, error, sizeof(error)),
+                    "--emit-executed-via without an active run path should fail");
+    CLI_ASSERT_TRUE(strstr(error, "active run path") != ZR_NULL,
+                    "emit executed_via compile-only error should mention active run path");
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(5, argv5, &command, error, sizeof(error)),
+                    "--execution-mode without compile --run should fail");
+    CLI_ASSERT_TRUE(strstr(error, "active run path") != ZR_NULL,
+                    "execution mode compile-only error should mention active run path");
     return 0;
 }
 

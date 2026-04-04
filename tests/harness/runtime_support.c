@@ -5,6 +5,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/exception.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/stack.h"
 
 typedef struct ZrTestsRuntimeExecuteRequest {
@@ -83,16 +84,25 @@ static void zr_tests_runtime_execute_body(SZrState *state, TZrPtr arguments) {
     TZrStackValuePointer base;
     SZrFunctionStackAnchor baseAnchor;
     SZrTypeValue *closureValue;
+    TZrBool ignoredFunction = ZR_FALSE;
+    TZrBool ignoredClosure = ZR_FALSE;
 
     if (state == ZR_NULL || request == ZR_NULL || request->function == ZR_NULL) {
         return;
     }
 
+    ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(state,
+                                                           ZR_CAST_RAW_OBJECT_AS_SUPER(request->function));
     closure = ZrCore_Closure_New(state, 0);
     if (closure == ZR_NULL) {
+        if (ignoredFunction) {
+            ZrCore_GarbageCollector_UnignoreObject(state->global,
+                                                   ZR_CAST_RAW_OBJECT_AS_SUPER(request->function));
+        }
         return;
     }
 
+    ignoredClosure = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closure->function = request->function;
     request->closure = closure;
     ZrCore_Closure_InitValue(state, closure);
@@ -106,6 +116,14 @@ static void zr_tests_runtime_execute_body(SZrState *state, TZrPtr arguments) {
     closureValue->isGarbageCollectable = ZR_TRUE;
     closureValue->isNative = ZR_FALSE;
     state->stackTop.valuePointer++;
+
+    if (ignoredClosure) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    }
+    if (ignoredFunction) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global,
+                                               ZR_CAST_RAW_OBJECT_AS_SUPER(request->function));
+    }
 
     request->resultBase = ZrCore_Function_CallAndRestoreAnchor(state, &baseAnchor, 1);
     request->callCompleted = (TZrBool)(state->threadStatus == ZR_THREAD_STATUS_FINE);

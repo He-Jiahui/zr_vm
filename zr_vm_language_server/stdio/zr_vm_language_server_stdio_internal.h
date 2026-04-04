@@ -102,6 +102,7 @@ int update_document_contents(SZrStdioServer *server,
                              const char *content,
                              size_t contentLength,
                              TZrSize version);
+int update_document_contents_from_disk(SZrStdioServer *server, SZrString *uri);
 
 void handle_request_message(SZrStdioServer *server,
                             const cJSON *id,

@@ -998,7 +998,7 @@ const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
         const char *placeholderStr = string_to_cstr(g_wasm_state, placeholder);
 
         cJSON_AddItemToObject(data, ZR_LSP_FIELD_RANGE, serialize_lsp_range(range));
-        cJSON_AddStringToObject(data, "placeholder", placeholderStr != ZR_NULL ? placeholderStr : "");
+        cJSON_AddStringToObject(data, ZR_LSP_FIELD_PLACEHOLDER, placeholderStr != ZR_NULL ? placeholderStr : "");
         if (placeholderStr != ZR_NULL) {
             free_cstr(g_wasm_state, placeholderStr);
         }

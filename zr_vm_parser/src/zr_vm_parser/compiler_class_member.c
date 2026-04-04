@@ -99,6 +99,8 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     TZrSize oldLocalVarLength = cs->localVars.length;
     TZrSize oldConstantLength = cs->constants.length;
     TZrSize oldClosureVarLength = cs->closureVars.length;
+    TZrSize oldChildFunctionLength = cs->childFunctions.length;
+    TZrSize oldChildFunctionNameMapLength = cs->childFunctionNameMap.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     TZrInstruction *savedParentInstructions = ZR_NULL;
@@ -202,6 +204,8 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     cs->localVars.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    cs->childFunctions.length = 0;
+    cs->childFunctionNameMap.length = 0;
     cs->cachedNullConstantIndex = 0;
     cs->hasCachedNullConstantIndex = ZR_FALSE;
 
@@ -375,6 +379,8 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         cs->localVars.length = oldLocalVarLength;
         cs->constants.length = oldConstantLength;
         cs->closureVars.length = oldClosureVarLength;
+        cs->childFunctions.length = oldChildFunctionLength;
+        cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = 0;
@@ -426,6 +432,22 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         }
     }
 
+    if (cs->childFunctions.length > 0) {
+        TZrSize childFuncSize = cs->childFunctions.length * sizeof(SZrFunction);
+        newFunc->childFunctionList =
+                (struct SZrFunction *)ZrCore_Memory_RawMallocWithType(global, childFuncSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->childFunctionList != ZR_NULL) {
+            SZrFunction **srcArray = (SZrFunction **)cs->childFunctions.head;
+            for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
+                if (srcArray[i] != ZR_NULL) {
+                    newFunc->childFunctionList[i] = *srcArray[i];
+                }
+            }
+            newFunc->childFunctionLength = (TZrUInt32)cs->childFunctions.length;
+            ZrCore_Function_RebindConstantFunctionValuesToChildren(newFunc);
+        }
+    }
+
     newFunc->stackSize = (TZrUInt32)cs->maxStackSlotCount;
     newFunc->parameterCount = (TZrUInt16)parameterCount;
     newFunc->hasVariableArguments = ZR_FALSE;
@@ -470,6 +492,8 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     cs->localVars.length = oldLocalVarLength;
     cs->constants.length = oldConstantLength;
     cs->closureVars.length = oldClosureVarLength;
+    cs->childFunctions.length = oldChildFunctionLength;
+    cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
     cs->isInConstructor = oldIsInConstructor;
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = 0;

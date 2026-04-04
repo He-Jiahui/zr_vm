@@ -99,6 +99,11 @@ static void assert_decorator_leaf_name(SZrState *state, SZrAstNode *decoratorNod
 }
 
 void test_extern_delegate_parameter_decorator_flags_parsing(void);
+void test_top_level_class_decorator_parsing(void);
+void test_compile_time_class_decorator_parsing(void);
+void test_compile_time_public_class_decorator_parsing(void);
+void test_compile_time_struct_decorator_parsing(void);
+void test_compile_time_function_decorator_parsing(void);
 
 void test_extern_delegate_parameter_decorator_flags_parsing(void) {
     SZrExternParserTestTimer timer;
@@ -153,6 +158,317 @@ void test_extern_delegate_parameter_decorator_flags_parsing(void) {
 
     assert_decorator_leaf_name(state, paramNode->data.parameter.decorators->nodes[0], "out");
     assert_decorator_leaf_name(state, paramNode->data.parameter.decorators->nodes[1], "inout");
+
+    ZrParser_Ast_Free(state, ast);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_top_level_class_decorator_parsing(void) {
+    SZrExternParserTestTimer timer;
+    const char *testSummary = "Top Level Class Decorator Parsing";
+    const char *source =
+            "#singleton#\n"
+            "class SingletonClass {\n"
+            "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *classDecl;
+    SZrAstNode *decoratorNode;
+    SZrAstNode *expr;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "top_level_class_decorator.zr", 28);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+    classDecl = get_script_statement(ast, 0);
+    TEST_ASSERT_NOT_NULL(classDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, classDecl->type);
+    TEST_ASSERT_EQUAL_STRING("SingletonClass", identifier_native(classDecl->data.classDeclaration.name));
+    TEST_ASSERT_NOT_NULL(classDecl->data.classDeclaration.decorators);
+    TEST_ASSERT_EQUAL_INT(1, (int)classDecl->data.classDeclaration.decorators->count);
+
+    decoratorNode = classDecl->data.classDeclaration.decorators->nodes[0];
+    TEST_ASSERT_NOT_NULL(decoratorNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_DECORATOR_EXPRESSION, decoratorNode->type);
+    expr = decoratorNode->data.decoratorExpression.expr;
+    TEST_ASSERT_NOT_NULL(expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, expr->type);
+    TEST_ASSERT_EQUAL_STRING("singleton", identifier_node_native(state, expr));
+
+    ZrParser_Ast_Free(state, ast);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_compile_time_class_decorator_parsing(void) {
+    SZrExternParserTestTimer timer;
+    const char *testSummary = "Compile Time Class Decorator Parsing";
+    const char *source =
+            "%compileTime class Serializable {\n"
+            "    @decorate(target: %type Class): DecoratorPatch {\n"
+            "        return { metadata: { serializable: true } };\n"
+            "    }\n"
+            "}\n"
+            "\n"
+            "#Serializable#\n"
+            "class User {\n"
+            "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *compileTimeDecl;
+    SZrAstNode *decoratedClassDecl;
+    SZrAstNode *decoratorNode;
+    SZrAstNode *expr;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "compile_time_class_decorator.zr", 31);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+    compileTimeDecl = get_script_statement(ast, 0);
+    TEST_ASSERT_NOT_NULL(compileTimeDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_COMPILE_TIME_DECLARATION, compileTimeDecl->type);
+    TEST_ASSERT_NOT_NULL(compileTimeDecl->data.compileTimeDeclaration.declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, compileTimeDecl->data.compileTimeDeclaration.declaration->type);
+    TEST_ASSERT_EQUAL_STRING("Serializable",
+                             identifier_native(
+                                     compileTimeDecl->data.compileTimeDeclaration.declaration->data.classDeclaration.name));
+
+    decoratedClassDecl = get_script_statement(ast, 1);
+    TEST_ASSERT_NOT_NULL(decoratedClassDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, decoratedClassDecl->type);
+    TEST_ASSERT_EQUAL_STRING("User", identifier_native(decoratedClassDecl->data.classDeclaration.name));
+    TEST_ASSERT_NOT_NULL(decoratedClassDecl->data.classDeclaration.decorators);
+    TEST_ASSERT_EQUAL_INT(1, (int)decoratedClassDecl->data.classDeclaration.decorators->count);
+
+    decoratorNode = decoratedClassDecl->data.classDeclaration.decorators->nodes[0];
+    TEST_ASSERT_NOT_NULL(decoratorNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_DECORATOR_EXPRESSION, decoratorNode->type);
+    expr = decoratorNode->data.decoratorExpression.expr;
+    TEST_ASSERT_NOT_NULL(expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, expr->type);
+    TEST_ASSERT_EQUAL_STRING("Serializable", identifier_node_native(state, expr));
+
+    ZrParser_Ast_Free(state, ast);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_compile_time_public_class_decorator_parsing(void) {
+    SZrExternParserTestTimer timer;
+    const char *testSummary = "Compile Time Public Class Decorator Parsing";
+    const char *source =
+            "%compileTime class Serializable {\n"
+            "    @decorate(target: %type Class): DecoratorPatch {\n"
+            "        return { metadata: { serializable: true } };\n"
+            "    }\n"
+            "}\n"
+            "\n"
+            "#Serializable#\n"
+            "pub class User {\n"
+            "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *decoratedClassDecl;
+    SZrAstNode *decoratorNode;
+    SZrAstNode *expr;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "compile_time_public_class_decorator.zr", 38);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+    decoratedClassDecl = get_script_statement(ast, 1);
+    TEST_ASSERT_NOT_NULL(decoratedClassDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, decoratedClassDecl->type);
+    TEST_ASSERT_EQUAL_INT(ZR_ACCESS_PUBLIC, decoratedClassDecl->data.classDeclaration.accessModifier);
+    TEST_ASSERT_EQUAL_STRING("User", identifier_native(decoratedClassDecl->data.classDeclaration.name));
+    TEST_ASSERT_NOT_NULL(decoratedClassDecl->data.classDeclaration.decorators);
+    TEST_ASSERT_EQUAL_INT(1, (int)decoratedClassDecl->data.classDeclaration.decorators->count);
+
+    decoratorNode = decoratedClassDecl->data.classDeclaration.decorators->nodes[0];
+    TEST_ASSERT_NOT_NULL(decoratorNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_DECORATOR_EXPRESSION, decoratorNode->type);
+    expr = decoratorNode->data.decoratorExpression.expr;
+    TEST_ASSERT_NOT_NULL(expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, expr->type);
+    TEST_ASSERT_EQUAL_STRING("Serializable", identifier_node_native(state, expr));
+
+    ZrParser_Ast_Free(state, ast);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_compile_time_struct_decorator_parsing(void) {
+    SZrExternParserTestTimer timer;
+    const char *testSummary = "Compile Time Struct Decorator Parsing";
+    const char *source =
+            "%compileTime struct Packed {\n"
+            "    @decorate(target: %type Struct): DecoratorPatch {\n"
+            "        return { metadata: { packed: true } };\n"
+            "    }\n"
+            "}\n"
+            "\n"
+            "#Packed#\n"
+            "struct Packet {\n"
+            "    var id: int = 1;\n"
+            "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *compileTimeDecl;
+    SZrAstNode *decoratedStructDecl;
+    SZrAstNode *decoratorNode;
+    SZrAstNode *expr;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "compile_time_struct_decorator.zr", 32);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+    compileTimeDecl = get_script_statement(ast, 0);
+    TEST_ASSERT_NOT_NULL(compileTimeDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_COMPILE_TIME_DECLARATION, compileTimeDecl->type);
+    TEST_ASSERT_EQUAL_INT(ZR_COMPILE_TIME_STRUCT, compileTimeDecl->data.compileTimeDeclaration.declarationType);
+    TEST_ASSERT_NOT_NULL(compileTimeDecl->data.compileTimeDeclaration.declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, compileTimeDecl->data.compileTimeDeclaration.declaration->type);
+    TEST_ASSERT_EQUAL_STRING("Packed",
+                             identifier_native(
+                                     compileTimeDecl->data.compileTimeDeclaration.declaration->data.structDeclaration.name));
+
+    decoratedStructDecl = get_script_statement(ast, 1);
+    TEST_ASSERT_NOT_NULL(decoratedStructDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, decoratedStructDecl->type);
+    TEST_ASSERT_EQUAL_STRING("Packet", identifier_native(decoratedStructDecl->data.structDeclaration.name));
+    TEST_ASSERT_NOT_NULL(decoratedStructDecl->data.structDeclaration.decorators);
+    TEST_ASSERT_EQUAL_INT(1, (int)decoratedStructDecl->data.structDeclaration.decorators->count);
+
+    decoratorNode = decoratedStructDecl->data.structDeclaration.decorators->nodes[0];
+    TEST_ASSERT_NOT_NULL(decoratorNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_DECORATOR_EXPRESSION, decoratorNode->type);
+    expr = decoratorNode->data.decoratorExpression.expr;
+    TEST_ASSERT_NOT_NULL(expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, expr->type);
+    TEST_ASSERT_EQUAL_STRING("Packed", identifier_node_native(state, expr));
+
+    ZrParser_Ast_Free(state, ast);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+void test_compile_time_function_decorator_parsing(void) {
+    SZrExternParserTestTimer timer;
+    const char *testSummary = "Compile Time Function Decorator Parsing";
+    const char *source =
+            "%compileTime decorate(target: %type Class, version: int = 7): DecoratorPatch {\n"
+            "    return { metadata: { version: version } };\n"
+            "}\n"
+            "\n"
+            "#decorate(version: 11)#\n"
+            "class User {\n"
+            "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *compileTimeDecl;
+    SZrAstNode *decoratedClassDecl;
+    SZrAstNode *decoratorNode;
+    SZrAstNode *expr;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "compile_time_function_decorator.zr", 34);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+    compileTimeDecl = get_script_statement(ast, 0);
+    TEST_ASSERT_NOT_NULL(compileTimeDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_COMPILE_TIME_DECLARATION, compileTimeDecl->type);
+    TEST_ASSERT_EQUAL_INT(ZR_COMPILE_TIME_FUNCTION, compileTimeDecl->data.compileTimeDeclaration.declarationType);
+    TEST_ASSERT_NOT_NULL(compileTimeDecl->data.compileTimeDeclaration.declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, compileTimeDecl->data.compileTimeDeclaration.declaration->type);
+    TEST_ASSERT_EQUAL_STRING("decorate",
+                             identifier_native(
+                                     compileTimeDecl->data.compileTimeDeclaration.declaration->data.functionDeclaration.name));
+
+    decoratedClassDecl = get_script_statement(ast, 1);
+    TEST_ASSERT_NOT_NULL(decoratedClassDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, decoratedClassDecl->type);
+    TEST_ASSERT_EQUAL_STRING("User", identifier_native(decoratedClassDecl->data.classDeclaration.name));
+    TEST_ASSERT_NOT_NULL(decoratedClassDecl->data.classDeclaration.decorators);
+    TEST_ASSERT_EQUAL_INT(1, (int)decoratedClassDecl->data.classDeclaration.decorators->count);
+
+    decoratorNode = decoratedClassDecl->data.classDeclaration.decorators->nodes[0];
+    TEST_ASSERT_NOT_NULL(decoratorNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_DECORATOR_EXPRESSION, decoratorNode->type);
+    expr = decoratorNode->data.decoratorExpression.expr;
+    TEST_ASSERT_NOT_NULL(expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, expr->type);
+    TEST_ASSERT_NOT_NULL(expr->data.primaryExpression.property);
+    TEST_ASSERT_EQUAL_STRING("decorate",
+                             identifier_node_native(state, expr->data.primaryExpression.property));
+    TEST_ASSERT_NOT_NULL(expr->data.primaryExpression.members);
+    TEST_ASSERT_EQUAL_INT(1, (int)expr->data.primaryExpression.members->count);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_CALL, expr->data.primaryExpression.members->nodes[0]->type);
 
     ZrParser_Ast_Free(state, ast);
     timer.endTime = clock();

@@ -115,6 +115,7 @@ typedef struct SZrCompilerState {
     SZrTypeEnvironment *compileTimeTypeEnv;   // 编译期类型环境
     SZrArray compileTimeVariables;            // 编译期变量表（SZrCompileTimeVariable*）
     SZrArray compileTimeFunctions;            // 编译期函数表（SZrCompileTimeFunction*）
+    SZrArray compileTimeDecoratorClasses;     // 编译期装饰器类表（SZrCompileTimeDecoratorClass*）
     TZrBool isInCompileTimeContext;             // 是否在编译期上下文中
     
     // 构造函数上下文
@@ -148,6 +149,19 @@ typedef struct SZrCompileTimeFunction {
     SZrArray paramTypes;                   // 参数类型数组（SZrInferredType）
     SZrFileRange location;                  // 声明位置
 } SZrCompileTimeFunction;
+
+typedef struct SZrCompileTimeDecoratorClass {
+    SZrString *name;                       // 装饰器类名
+    SZrAstNode *declaration;               // ClassDeclaration / StructDeclaration
+    SZrAstNode *decorateMethod;            // @decorate 元方法节点
+    SZrAstNode *constructorMethod;         // @constructor 元方法节点（可选）
+    TZrBool isStructDecorator;             // 是否来自 %compileTime struct
+    SZrFileRange location;                 // 声明位置
+} SZrCompileTimeDecoratorClass;
+
+typedef struct SZrTypeDecoratorInfo {
+    SZrString *name;                       // 装饰器名称
+} SZrTypeDecoratorInfo;
 
 // 作用域信息
 typedef struct SZrScope {
@@ -233,6 +247,9 @@ typedef struct SZrTypePrototypeInfo {
     SZrArray implements;                // 实现/扩展的接口引用（SZrString* 数组）
     SZrArray genericParameters;         // 泛型参数信息（SZrTypeGenericParameterInfo）
     SZrArray members;                   // 成员信息（字段、方法等，存储 SZrTypeMemberInfo）
+    SZrArray decorators;                // 类型级 decorator 记录（SZrTypeDecoratorInfo）
+    TZrBool hasDecoratorMetadata;       // 是否存在 compile-time decorator metadata
+    SZrTypeValue decoratorMetadataValue; // compile-time decorator metadata 常量值
     SZrString *enumValueTypeName;       // enum 底层值类型
     TZrBool allowValueConstruction;     // 是否允许 $Type(...)
     TZrBool allowBoxedConstruction;     // 是否允许 new Type(...)
@@ -367,6 +384,13 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_EvaluateCompileTimeExpression(SZrCompile
 ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateRuntimeProjectionValue(SZrCompilerState *cs,
                                                              const SZrTypeValue *value,
                                                              SZrFileRange location);
+
+ZR_PARSER_API TZrBool ZrParser_Compiler_ApplyCompileTimeTypeDecorators(SZrCompilerState *cs,
+                                                                       SZrAstNode *typeNode,
+                                                                       SZrAstNodeArray *decorators,
+                                                                       SZrTypePrototypeInfo *info);
+ZR_PARSER_API TZrBool ZrParser_Compiler_IsCompileTimeDecorator(SZrCompilerState *cs,
+                                                               SZrAstNode *decoratorNode);
 
 // 编译源代码为函数（封装了从解析到编译的全流程）
 // 这是提供给 globalState 的统一接口

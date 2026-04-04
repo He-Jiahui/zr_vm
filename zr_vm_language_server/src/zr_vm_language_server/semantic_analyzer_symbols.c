@@ -490,6 +490,44 @@ static SZrInferredType *create_named_object_type_info(SZrState *state,
     return typeInfo;
 }
 
+static void register_enum_member_symbol(SZrState *state,
+                                        SZrSemanticAnalyzer *analyzer,
+                                        SZrString *enumTypeName,
+                                        SZrAstNode *memberNode) {
+    SZrInferredType *typeInfo;
+    SZrSymbol *symbol = ZR_NULL;
+    SZrString *memberName;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || enumTypeName == ZR_NULL || memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_ENUM_MEMBER || memberNode->data.enumMember.name == ZR_NULL) {
+        return;
+    }
+
+    memberName = memberNode->data.enumMember.name->name;
+    if (memberName == ZR_NULL) {
+        return;
+    }
+
+    typeInfo = create_named_object_type_info(state, enumTypeName);
+    ZrLanguageServer_SymbolTable_AddSymbolEx(state,
+                                             analyzer->symbolTable,
+                                             ZR_SYMBOL_ENUM_MEMBER,
+                                             memberName,
+                                             memberNode->location,
+                                             typeInfo,
+                                             ZR_ACCESS_PUBLIC,
+                                             memberNode,
+                                             &symbol);
+    if (symbol != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
+                                                                  symbol,
+                                                                  ZR_SEMANTIC_SYMBOL_KIND_FIELD,
+                                                                  typeInfo,
+                                                                  ZR_SEMANTIC_TYPE_KIND_VALUE);
+        ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
+    }
+}
+
 static SZrString *get_inherited_type_name(SZrAstNode *classNode) {
     SZrAstNode *inheritNode;
 
@@ -866,7 +904,93 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, wrappedNode);
             return;
         }
-        
+
+        case ZR_AST_EXTERN_BLOCK:
+            collect_symbols_from_node_array(state, analyzer, node->data.externBlock.declarations);
+            return;
+
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION: {
+            SZrExternFunctionDeclaration *funcDecl = &node->data.externFunctionDeclaration;
+            SZrString *name = funcDecl->name != ZR_NULL ? funcDecl->name->name : ZR_NULL;
+            SZrSymbol *symbol = ZR_NULL;
+            SZrInferredType *returnType;
+
+            if (name == ZR_NULL) {
+                return;
+            }
+
+            returnType = create_type_info_from_type_node(state, analyzer, funcDecl->returnType);
+            ZrLanguageServer_SymbolTable_AddSymbolEx(state,
+                                                     analyzer->symbolTable,
+                                                     ZR_SYMBOL_FUNCTION,
+                                                     name,
+                                                     node->location,
+                                                     returnType,
+                                                     ZR_ACCESS_PUBLIC,
+                                                     node,
+                                                     &symbol);
+            ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
+                                                                      symbol,
+                                                                      ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                                                                      returnType,
+                                                                      ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+            ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
+
+            collect_function_like_scope(state,
+                                        analyzer,
+                                        node,
+                                        funcDecl->params,
+                                        ZR_NULL,
+                                        ZR_NULL,
+                                        ZR_TRUE,
+                                        ZR_FALSE,
+                                        ZR_FALSE,
+                                        ZR_NULL,
+                                        ZR_NULL);
+            return;
+        }
+
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION: {
+            SZrExternDelegateDeclaration *delegateDecl = &node->data.externDelegateDeclaration;
+            SZrString *name = delegateDecl->name != ZR_NULL ? delegateDecl->name->name : ZR_NULL;
+            SZrSymbol *symbol = ZR_NULL;
+            SZrInferredType *delegateTypeInfo;
+
+            if (name == ZR_NULL) {
+                return;
+            }
+
+            delegateTypeInfo = create_named_object_type_info(state, name);
+            ZrLanguageServer_SymbolTable_AddSymbolEx(state,
+                                                     analyzer->symbolTable,
+                                                     ZR_SYMBOL_FUNCTION,
+                                                     name,
+                                                     node->location,
+                                                     delegateTypeInfo,
+                                                     ZR_ACCESS_PUBLIC,
+                                                     node,
+                                                     &symbol);
+            ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
+                                                                      symbol,
+                                                                      ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                                                                      delegateTypeInfo,
+                                                                      ZR_SEMANTIC_TYPE_KIND_REFERENCE);
+            ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
+
+            collect_function_like_scope(state,
+                                        analyzer,
+                                        node,
+                                        delegateDecl->params,
+                                        ZR_NULL,
+                                        ZR_NULL,
+                                        ZR_TRUE,
+                                        ZR_FALSE,
+                                        ZR_FALSE,
+                                        ZR_NULL,
+                                        ZR_NULL);
+            return;
+        }
+
         case ZR_AST_CLASS_DECLARATION: {
             SZrClassDeclaration *classDecl = &node->data.classDeclaration;
             SZrSymbol *symbol = ZR_NULL;
@@ -1215,6 +1339,52 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                 }
             }
             break;
+        }
+
+        case ZR_AST_ENUM_DECLARATION: {
+            SZrEnumDeclaration *enumDecl = &node->data.enumDeclaration;
+            SZrString *name = enumDecl->name != ZR_NULL ? enumDecl->name->name : ZR_NULL;
+            SZrSymbol *symbol = ZR_NULL;
+
+            if (name != ZR_NULL) {
+                ZrLanguageServer_SymbolTable_AddSymbolEx(state,
+                                                         analyzer->symbolTable,
+                                                         ZR_SYMBOL_ENUM,
+                                                         name,
+                                                         node->location,
+                                                         ZR_NULL,
+                                                         enumDecl->accessModifier,
+                                                         node,
+                                                         &symbol);
+                if (analyzer->compilerState != ZR_NULL &&
+                    analyzer->compilerState->typeEnv != ZR_NULL) {
+                    ZrParser_TypeEnvironment_RegisterType(state, analyzer->compilerState->typeEnv, name);
+                }
+                ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
+                                                                          symbol,
+                                                                          ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                                                                          ZR_NULL,
+                                                                          ZR_SEMANTIC_TYPE_KIND_VALUE);
+                ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
+            }
+
+            if (enumDecl->members != ZR_NULL && name != ZR_NULL) {
+                for (TZrSize memberIndex = 0; memberIndex < enumDecl->members->count; memberIndex++) {
+                    SZrAstNode *memberNode = enumDecl->members->nodes[memberIndex];
+                    if (memberNode == ZR_NULL) {
+                        continue;
+                    }
+
+                    register_enum_member_symbol(state, analyzer, name, memberNode);
+                    if (memberNode->type == ZR_AST_ENUM_MEMBER &&
+                        memberNode->data.enumMember.value != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                                analyzer,
+                                                                                memberNode->data.enumMember.value);
+                    }
+                }
+            }
+            return;
         }
 
         case ZR_AST_LAMBDA_EXPRESSION:

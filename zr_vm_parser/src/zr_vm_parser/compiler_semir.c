@@ -6,6 +6,12 @@
 
 #include "compiler_internal.h"
 
+#define ZR_SEMIR_TYPE_TABLE_DEFAULT_ENTRY_COUNT 1U
+#define ZR_SEMIR_TYPE_TABLE_DEFAULT_INDEX 0U
+#define ZR_SEMIR_OWNERSHIP_STATE_TABLE_CAPACITY 8U
+#define ZR_SEMIR_OWNERSHIP_STATE_INDEX_FIRST 0U
+#define ZR_SEMIR_DEOPT_ID_FIRST (ZR_RUNTIME_SEMIR_DEOPT_ID_NONE + 1U)
+
 typedef struct SZrSemIrMappedInstruction {
     TZrUInt32 opcode;
     TZrUInt32 effectKind;
@@ -209,7 +215,7 @@ static TZrUInt32 semir_ensure_type_entry(SZrFunctionTypedTypeRef *typeTable,
     TZrUInt32 index;
 
     if (typeTable == ZR_NULL || ioCount == ZR_NULL || typeRef == ZR_NULL) {
-        return 0;
+        return ZR_SEMIR_TYPE_TABLE_DEFAULT_INDEX;
     }
 
     for (index = 0; index < *ioCount; index++) {
@@ -231,7 +237,7 @@ static TZrUInt32 semir_find_type_index_for_slot(const SZrFunction *function,
     TZrUInt32 typeIndex;
 
     if (function == ZR_NULL || typeTable == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
-        return 0;
+        return ZR_SEMIR_TYPE_TABLE_DEFAULT_INDEX;
     }
 
     for (bindingIndex = 0; bindingIndex < function->typedLocalBindingLength; bindingIndex++) {
@@ -247,7 +253,7 @@ static TZrUInt32 semir_find_type_index_for_slot(const SZrFunction *function,
         }
     }
 
-    return 0;
+    return ZR_SEMIR_TYPE_TABLE_DEFAULT_INDEX;
 }
 
 static TZrUInt32 semir_ensure_ownership_state(TZrUInt32 *stateTable,
@@ -256,7 +262,7 @@ static TZrUInt32 semir_ensure_ownership_state(TZrUInt32 *stateTable,
     TZrUInt32 index;
 
     if (stateTable == ZR_NULL || ioCount == ZR_NULL) {
-        return 0;
+        return ZR_SEMIR_OWNERSHIP_STATE_INDEX_FIRST;
     }
 
     for (index = 0; index < *ioCount; index++) {
@@ -387,7 +393,7 @@ static TZrBool semir_allocate_type_table(SZrState *state,
     }
 
     global = state->global;
-    typeCapacity = function->typedLocalBindingLength + 1;
+    typeCapacity = function->typedLocalBindingLength + ZR_SEMIR_TYPE_TABLE_DEFAULT_ENTRY_COUNT;
     typeTable = (SZrFunctionTypedTypeRef *)ZrCore_Memory_RawMallocWithType(
             global,
             sizeof(SZrFunctionTypedTypeRef) * typeCapacity,
@@ -433,7 +439,7 @@ static TZrBool semir_build_for_single_function(SZrState *state, SZrFunction *fun
     SZrGlobalState *global;
     TZrUInt32 semirInstructionCount = 0;
     TZrUInt32 deoptCount = 0;
-    TZrUInt32 ownershipStates[8] = {0};
+    TZrUInt32 ownershipStates[ZR_SEMIR_OWNERSHIP_STATE_TABLE_CAPACITY] = {0};
     TZrUInt32 ownershipCount = 0;
     SZrFunctionTypedTypeRef *typeTable = ZR_NULL;
     TZrUInt32 typeCount = 0;
@@ -441,7 +447,7 @@ static TZrBool semir_build_for_single_function(SZrState *state, SZrFunction *fun
     SZrSemIrInstruction *instructionTable = ZR_NULL;
     SZrSemIrDeoptEntry *deoptTable = ZR_NULL;
     TZrUInt32 semirIndex = 0;
-    TZrUInt32 nextDeoptId = 1;
+    TZrUInt32 nextDeoptId = ZR_SEMIR_DEOPT_ID_FIRST;
     TZrUInt32 index;
 
     if (state == ZR_NULL || function == ZR_NULL || state->global == ZR_NULL) {
@@ -534,7 +540,7 @@ static TZrBool semir_build_for_single_function(SZrState *state, SZrFunction *fun
 
     for (index = 0; index < function->instructionsLength; index++) {
         SZrSemIrMappedInstruction mapped;
-        TZrUInt32 deoptId = 0;
+        TZrUInt32 deoptId = ZR_RUNTIME_SEMIR_DEOPT_ID_NONE;
 
         if (!(semir_match_meta_accessor_call(function, index, &mapped) ||
               semir_map_exec_instruction(&function->instructionsList[index], &mapped))) {
@@ -551,7 +557,7 @@ static TZrBool semir_build_for_single_function(SZrState *state, SZrFunction *fun
         }
 
         if (mapped.needsDeopt && function->semIrDeoptTable != ZR_NULL) {
-            TZrUInt32 deoptIndex = nextDeoptId - 1;
+            TZrUInt32 deoptIndex = nextDeoptId - ZR_SEMIR_DEOPT_ID_FIRST;
             deoptId = nextDeoptId++;
             function->semIrDeoptTable[deoptIndex].deoptId = deoptId;
             function->semIrDeoptTable[deoptIndex].execInstructionIndex = index;

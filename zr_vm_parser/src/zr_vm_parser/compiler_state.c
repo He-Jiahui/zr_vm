@@ -142,6 +142,10 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
                       &cs->compileTimeFunctions,
                       sizeof(SZrCompileTimeFunction*),
                       ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &cs->compileTimeDecoratorClasses,
+                      sizeof(SZrCompileTimeDecoratorClass *),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
     cs->isInCompileTimeContext = ZR_FALSE;
     
     // 初始化构造函数上下文
@@ -315,6 +319,10 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                     }
                     ZrCore_Array_Free(state, &info->genericParameters);
                 }
+                if (info->decorators.isValid && info->decorators.head != ZR_NULL &&
+                    info->decorators.capacity > 0 && info->decorators.elementSize > 0) {
+                    ZrCore_Array_Free(state, &info->decorators);
+                }
                 // 释放 members 数组
                 if (info->members.isValid && info->members.head != ZR_NULL &&
                     info->members.capacity > 0 && info->members.elementSize > 0) {
@@ -443,6 +451,23 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
             }
         }
         ZrCore_Array_Free(state, &cs->compileTimeFunctions);
+    }
+
+    if (cs->compileTimeDecoratorClasses.isValid &&
+        cs->compileTimeDecoratorClasses.head != ZR_NULL &&
+        cs->compileTimeDecoratorClasses.capacity > 0 &&
+        cs->compileTimeDecoratorClasses.elementSize > 0) {
+        for (TZrSize i = 0; i < cs->compileTimeDecoratorClasses.length; i++) {
+            SZrCompileTimeDecoratorClass **classPtr =
+                    (SZrCompileTimeDecoratorClass **)ZrCore_Array_Get(&cs->compileTimeDecoratorClasses, i);
+            if (classPtr != ZR_NULL && *classPtr != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              *classPtr,
+                                              sizeof(SZrCompileTimeDecoratorClass),
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+        }
+        ZrCore_Array_Free(state, &cs->compileTimeDecoratorClasses);
     }
     
     // 释放编译期类型环境

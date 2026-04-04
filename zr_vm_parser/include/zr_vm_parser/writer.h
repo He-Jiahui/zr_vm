@@ -14,6 +14,11 @@ typedef struct SZrAotWriterOptions {
     const TZrChar *moduleName;
     const TZrChar *sourceHash;
     const TZrChar *zroHash;
+    TZrUInt32 inputKind;
+    const TZrChar *inputHash;
+    const TZrByte *embeddedModuleBlob;
+    TZrSize embeddedModuleBlobLength;
+    TZrBool requireExecutableLowering;
 } SZrAotWriterOptions;
 
 // 写入二进制文件 (.zro)

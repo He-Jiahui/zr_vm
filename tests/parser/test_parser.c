@@ -191,6 +191,11 @@ void tearDown(void) {
 }
 
 void test_extern_delegate_parameter_decorator_flags_parsing(void);
+void test_top_level_class_decorator_parsing(void);
+void test_compile_time_class_decorator_parsing(void);
+void test_compile_time_public_class_decorator_parsing(void);
+void test_compile_time_struct_decorator_parsing(void);
+void test_compile_time_function_decorator_parsing(void);
 
 // ==================== 基础测试 ====================
 
@@ -2338,6 +2343,11 @@ int main(void) {
     RUN_TEST(test_function_declaration);
     RUN_TEST(test_extern_block_parsing);
     RUN_TEST(test_extern_delegate_parameter_decorator_flags_parsing);
+    RUN_TEST(test_top_level_class_decorator_parsing);
+    RUN_TEST(test_compile_time_class_decorator_parsing);
+    RUN_TEST(test_compile_time_public_class_decorator_parsing);
+    RUN_TEST(test_compile_time_struct_decorator_parsing);
+    RUN_TEST(test_compile_time_function_decorator_parsing);
     RUN_TEST(test_extern_single_declaration_normalizes_to_block);
     RUN_TEST(test_struct_declaration);
     RUN_TEST(test_field_scoped_using_field_parsing);

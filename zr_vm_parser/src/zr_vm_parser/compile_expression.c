@@ -511,6 +511,154 @@ static TZrBool is_const_variable(SZrCompilerState *cs, SZrString *name, SZrArray
     return ZR_FALSE;
 }
 
+static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
+                                                       SZrPrimaryExpression *primary,
+                                                       TZrUInt32 *outObjectSlot,
+                                                       SZrString **ioRootTypeName,
+                                                       TZrBool *ioRootIsTypeReference,
+                                                       EZrOwnershipQualifier *ioRootOwnershipQualifier) {
+    TZrUInt32 currentSlot;
+    SZrString *rootTypeName;
+    TZrBool rootIsTypeReference;
+    EZrOwnershipQualifier rootOwnershipQualifier;
+
+    if (cs == ZR_NULL || primary == ZR_NULL || outObjectSlot == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    if (primary->property == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Primary expression property is null", (SZrFileRange){0});
+        return ZR_FALSE;
+    }
+
+    ZrParser_Expression_Compile(cs, primary->property);
+    if (cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    currentSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+    rootTypeName = ioRootTypeName != ZR_NULL ? *ioRootTypeName : ZR_NULL;
+    rootIsTypeReference = ioRootIsTypeReference != ZR_NULL ? *ioRootIsTypeReference : ZR_FALSE;
+    rootOwnershipQualifier =
+            ioRootOwnershipQualifier != ZR_NULL ? *ioRootOwnershipQualifier : ZR_OWNERSHIP_QUALIFIER_NONE;
+
+    resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
+    rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
+    if (cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    if (primary->members != ZR_NULL && primary->members->count > 1) {
+        for (TZrSize memberIndex = 0; memberIndex + 1 < primary->members->count; memberIndex++) {
+            SZrAstNode *memberNode = primary->members->nodes[memberIndex];
+            SZrMemberExpression *memberExpr;
+            SZrString *memberName = ZR_NULL;
+            SZrTypeMemberInfo *typeMember = ZR_NULL;
+            SZrTypeMemberInfo *getterAccessor = ZR_NULL;
+            TZrBool isStaticMember = ZR_FALSE;
+
+            if (memberNode == ZR_NULL) {
+                continue;
+            }
+
+            if (memberNode->type != ZR_AST_MEMBER_EXPRESSION) {
+                ZrParser_Compiler_Error(cs,
+                                        "Assignment targets only support member-access prefixes",
+                                        memberNode->location);
+                return ZR_FALSE;
+            }
+
+            memberExpr = &memberNode->data.memberExpression;
+            if (!memberExpr->computed && memberExpr->property != ZR_NULL &&
+                memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
+                memberName = memberExpr->property->data.identifier.name;
+            }
+
+            if (rootTypeName != ZR_NULL && memberName != ZR_NULL) {
+                typeMember = find_compiler_type_member(cs, rootTypeName, memberName);
+                if (typeMember != ZR_NULL && typeMember->isStatic) {
+                    isStaticMember = ZR_TRUE;
+                }
+
+                getterAccessor = find_hidden_property_accessor_member(cs, rootTypeName, memberName, ZR_FALSE);
+                if (!can_use_property_accessor(rootIsTypeReference, getterAccessor)) {
+                    getterAccessor = ZR_NULL;
+                }
+            }
+
+            if (getterAccessor != ZR_NULL && memberName != ZR_NULL && !memberExpr->computed) {
+                if (!emit_property_getter_call(cs, currentSlot, memberName, getterAccessor->isStatic, memberNode->location)) {
+                    return ZR_FALSE;
+                }
+                rootTypeName = getterAccessor->returnTypeName;
+                rootIsTypeReference = getterAccessor->isStatic &&
+                                      rootTypeName != ZR_NULL &&
+                                      find_compiler_type_prototype(cs, rootTypeName) != ZR_NULL;
+                rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                continue;
+            }
+
+            if (!memberExpr->computed) {
+                SZrString *memberSymbol = resolve_member_expression_symbol(cs, memberExpr);
+                TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, memberSymbol);
+
+                if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
+                    ZrParser_Compiler_Error(cs, "Failed to register assignment member symbol", memberNode->location);
+                    return ZR_FALSE;
+                }
+
+                emit_instruction(cs,
+                                 create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                                                      (TZrUInt16)currentSlot,
+                                                      (TZrUInt16)currentSlot,
+                                                      (TZrUInt16)memberId));
+            } else {
+                TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, currentSlot + 1);
+                if (keySlot == ZR_PARSER_SLOT_NONE) {
+                    return ZR_FALSE;
+                }
+
+                emit_instruction(cs,
+                                 create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX),
+                                                      (TZrUInt16)currentSlot,
+                                                      (TZrUInt16)currentSlot,
+                                                      (TZrUInt16)keySlot));
+                collapse_stack_to_slot(cs, currentSlot);
+            }
+
+            if (typeMember != ZR_NULL &&
+                (typeMember->memberType == ZR_AST_STRUCT_FIELD ||
+                 typeMember->memberType == ZR_AST_CLASS_FIELD)) {
+                rootTypeName = typeMember->fieldTypeName;
+                rootOwnershipQualifier = typeMember->ownershipQualifier;
+                rootIsTypeReference = isStaticMember &&
+                                      rootTypeName != ZR_NULL &&
+                                      find_compiler_type_prototype(cs, rootTypeName) != ZR_NULL;
+            } else if (typeMember != ZR_NULL) {
+                rootTypeName = ZR_NULL;
+                rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                rootIsTypeReference = ZR_FALSE;
+            } else if (!isStaticMember) {
+                rootTypeName = ZR_NULL;
+                rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                rootIsTypeReference = ZR_FALSE;
+            }
+        }
+    }
+
+    if (ioRootTypeName != ZR_NULL) {
+        *ioRootTypeName = rootTypeName;
+    }
+    if (ioRootIsTypeReference != ZR_NULL) {
+        *ioRootIsTypeReference = rootIsTypeReference;
+    }
+    if (ioRootOwnershipQualifier != ZR_NULL) {
+        *ioRootOwnershipQualifier = rootOwnershipQualifier;
+    }
+    *outObjectSlot = currentSlot;
+    return ZR_TRUE;
+}
+
 // 编译赋值表达式
 static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node) {
     EZrInstructionCode assignmentConversionOpcode = ZR_INSTRUCTION_ENUM(ENUM_MAX);
@@ -584,7 +732,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
         
         TZrUInt32 localVarIndex = find_local_var(cs, name);
         
-        if (localVarIndex != (TZrUInt32)-1) {
+        if (localVarIndex != ZR_PARSER_SLOT_NONE) {
             // 简单赋值
             if (strcmp(op, "=") == 0) {
                 TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)localVarIndex, (TZrInt32)rightSlot);
@@ -628,7 +776,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
         } else {
             // 查找闭包变量
             TZrUInt32 closureVarIndex = find_closure_var(cs, name);
-            if (closureVarIndex != (TZrUInt32)-1) {
+            if (closureVarIndex != ZR_PARSER_INDEX_NONE) {
                 // 获取闭包变量信息以检查 inStack 标志
                 SZrFunctionClosureVariable *closureVar = (SZrFunctionClosureVariable *)ZrCore_Array_Get(&cs->closureVars, closureVarIndex);
                 TZrBool useUpval = (closureVar != ZR_NULL && closureVar->inStack);
@@ -756,18 +904,25 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 SZrAstNode *lastMember = primary->members->nodes[primary->members->count - 1];
                 if (lastMember != ZR_NULL && lastMember->type == ZR_AST_MEMBER_EXPRESSION) {
                     // 编译整个 primary expression 以获取对象和键
-                    // 先编译基础属性（对象）
                     if (primary->property != ZR_NULL) {
-                        ZrParser_Expression_Compile(cs, primary->property);
-                        TZrUInt32 objSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
-                        
+                        TZrUInt32 objSlot = ZR_PARSER_SLOT_NONE;
+                        SZrString *rootTypeName = ZR_NULL;
+                        TZrBool rootIsTypeReference = ZR_FALSE;
+                        EZrOwnershipQualifier rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+
+                        if (!compile_assignment_target_member_prefix(cs,
+                                                                     primary,
+                                                                     &objSlot,
+                                                                     &rootTypeName,
+                                                                     &rootIsTypeReference,
+                                                                     &rootOwnershipQualifier)) {
+                            return;
+                        }
+
                         // 处理成员访问链，获取最后一个成员访问的键
                         SZrMemberExpression *memberExpr = &lastMember->data.memberExpression;
                         if (memberExpr->property != ZR_NULL) {
-                            SZrString *rootTypeName = ZR_NULL;
-                            TZrBool rootIsTypeReference = ZR_FALSE;
                             TZrBool targetsThis = ZR_FALSE;
-                            resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
 
                             if (primary->property != ZR_NULL &&
                                 primary->property->type == ZR_AST_IDENTIFIER_LITERAL &&
@@ -833,7 +988,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                     }
 
                                     if (emit_property_setter_call(cs, objSlot, fieldName, setterAccessor->isStatic,
-                                                                  rightSlot, node->location) == (TZrUInt32)-1) {
+                                                                  rightSlot, node->location) == ZR_PARSER_SLOT_NONE) {
                                         return;
                                     }
                                     return;
@@ -858,7 +1013,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                 if (typeMember != ZR_NULL || declaredCurrentTypeField) {
                                     TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, memberSymbol);
 
-                                    if (memberId == (TZrUInt32)-1) {
+                                    if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
                                         ZrParser_Compiler_Error(cs, "Failed to register assignment member symbol", node->location);
                                         return;
                                     }
@@ -899,7 +1054,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                     }
                                 } else {
                                     TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, objSlot + 1);
-                                    if (keySlot == (TZrUInt32)-1) {
+                                    if (keySlot == ZR_PARSER_SLOT_NONE) {
                                         return;
                                     }
 
@@ -942,7 +1097,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                 }
                             } else {
                                 TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, objSlot + 1);
-                                if (keySlot == (TZrUInt32)-1) {
+                                if (keySlot == ZR_PARSER_SLOT_NONE) {
                                     return;
                                 }
 
@@ -1118,7 +1273,7 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     add_pending_jump(cs, jumpIfIndex, elseLabelId);
     
     // 编译 then 分支
-    if (compile_expression_into_slot(cs, consequent, resultSlot) == (TZrUInt32)-1) {
+    if (compile_expression_into_slot(cs, consequent, resultSlot) == ZR_PARSER_SLOT_NONE) {
         return;
     }
     
@@ -1132,7 +1287,7 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     resolve_label(cs, elseLabelId);
     
     // 编译 else 分支
-    if (compile_expression_into_slot(cs, alternate, resultSlot) == (TZrUInt32)-1) {
+    if (compile_expression_into_slot(cs, alternate, resultSlot) == ZR_PARSER_SLOT_NONE) {
         return;
     }
     

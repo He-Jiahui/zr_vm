@@ -277,6 +277,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core(zr_vm_char_and_type_cast_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_reference_manifest_contracts_test
+            ${CMAKE_SOURCE_DIR}/tests/reference/test_reference_manifest_contracts.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
+    target_include_directories(zr_vm_reference_manifest_contracts_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_reference_manifest_contracts_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_lexer_parser_compiler_execution_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_lexer_parser_compiler_execution.c
     )
@@ -626,6 +636,7 @@ if (TARGET zr_vm_parser_test AND
         TARGET zr_vm_tail_call_pipeline_test AND
         TARGET zr_vm_compiler_regressions_test AND
         TARGET zr_vm_char_and_type_cast_test AND
+        TARGET zr_vm_reference_manifest_contracts_test AND
         TARGET zr_vm_lexer_parser_compiler_execution_test AND
         TARGET zr_vm_prototype_test AND
         TARGET zr_vm_const_keyword_test AND
@@ -635,10 +646,10 @@ if (TARGET zr_vm_parser_test AND
         TARGET zr_vm_compile_time_test AND
         TARGET zr_vm_scripts_test)
     set(language_pipeline_executables
-            "$<TARGET_FILE:zr_vm_parser_test>;$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_type_inference_test>;$<TARGET_FILE:zr_vm_compiler_features_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_execbc_aot_pipeline_test>;$<TARGET_FILE:zr_vm_dynamic_iteration_pipeline_test>;$<TARGET_FILE:zr_vm_meta_call_pipeline_test>;$<TARGET_FILE:zr_vm_tail_call_pipeline_test>;$<TARGET_FILE:zr_vm_compiler_regressions_test>;$<TARGET_FILE:zr_vm_char_and_type_cast_test>;$<TARGET_FILE:zr_vm_lexer_parser_compiler_execution_test>;$<TARGET_FILE:zr_vm_prototype_test>;$<TARGET_FILE:zr_vm_const_keyword_test>;$<TARGET_FILE:zr_vm_exceptions_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_named_arguments_test>;$<TARGET_FILE:zr_vm_compile_time_test>;$<TARGET_FILE:zr_vm_scripts_test>"
+            "$<TARGET_FILE:zr_vm_parser_test>;$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_type_inference_test>;$<TARGET_FILE:zr_vm_compiler_features_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_execbc_aot_pipeline_test>;$<TARGET_FILE:zr_vm_dynamic_iteration_pipeline_test>;$<TARGET_FILE:zr_vm_meta_call_pipeline_test>;$<TARGET_FILE:zr_vm_tail_call_pipeline_test>;$<TARGET_FILE:zr_vm_compiler_regressions_test>;$<TARGET_FILE:zr_vm_char_and_type_cast_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_lexer_parser_compiler_execution_test>;$<TARGET_FILE:zr_vm_prototype_test>;$<TARGET_FILE:zr_vm_const_keyword_test>;$<TARGET_FILE:zr_vm_exceptions_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_named_arguments_test>;$<TARGET_FILE:zr_vm_compile_time_test>;$<TARGET_FILE:zr_vm_scripts_test>"
     )
     set(language_pipeline_smoke_executables
-            "$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_compiler_features_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_execbc_aot_pipeline_test>;$<TARGET_FILE:zr_vm_dynamic_iteration_pipeline_test>;$<TARGET_FILE:zr_vm_meta_call_pipeline_test>;$<TARGET_FILE:zr_vm_tail_call_pipeline_test>;$<TARGET_FILE:zr_vm_char_and_type_cast_test>;$<TARGET_FILE:zr_vm_module_system_test>"
+            "$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_compiler_features_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_execbc_aot_pipeline_test>;$<TARGET_FILE:zr_vm_dynamic_iteration_pipeline_test>;$<TARGET_FILE:zr_vm_meta_call_pipeline_test>;$<TARGET_FILE:zr_vm_tail_call_pipeline_test>;$<TARGET_FILE:zr_vm_char_and_type_cast_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_module_system_test>"
     )
     set(language_pipeline_core_executables "${language_pipeline_executables}")
     set(language_pipeline_stress_executables "${language_pipeline_executables}")

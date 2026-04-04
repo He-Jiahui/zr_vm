@@ -737,7 +737,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariable(SZrState *state, SZrTypeEnviro
                                  name,
                                  ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
                                  typeId,
-                                 0,
+                                 ZR_SEMANTIC_ID_INVALID,
                                  ZR_NULL,
                                  location);
     }
@@ -947,7 +947,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterType(SZrState *state, SZrTypeEnvironmen
                                  typeName,
                                  ZR_SEMANTIC_SYMBOL_KIND_TYPE,
                                  typeId,
-                                 0,
+                                 ZR_SEMANTIC_ID_INVALID,
                                  ZR_NULL,
                                  location);
     }

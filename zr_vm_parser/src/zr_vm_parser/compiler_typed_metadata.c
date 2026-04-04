@@ -68,6 +68,38 @@ static TZrBool typed_type_ref_from_ast_type(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static SZrFunctionTypeInfo *find_callable_binding_info(SZrCompilerState *cs, SZrString *name) {
+    SZrFunctionTypeInfo *functionInfo = ZR_NULL;
+
+    if (cs == ZR_NULL || cs->typeEnv == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (ZrParser_TypeEnvironment_LookupFunction(cs->typeEnv, name, &functionInfo)) {
+        return functionInfo;
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool typed_type_ref_from_callable_binding(SZrCompilerState *cs,
+                                                    SZrString *name,
+                                                    SZrFunctionTypedTypeRef *outType) {
+    SZrFunctionTypeInfo *functionInfo;
+
+    if (cs == ZR_NULL || outType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    functionInfo = find_callable_binding_info(cs, name);
+    if (functionInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typed_type_ref_from_inferred(outType, &functionInfo->returnType);
+    return ZR_TRUE;
+}
+
 static SZrAstNode *find_script_function_declaration_by_name(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || name == ZR_NULL || cs->scriptAst->type != ZR_AST_SCRIPT ||
         cs->scriptAst->data.script.statements == ZR_NULL) {
@@ -423,6 +455,7 @@ static TZrBool build_function_like_export_symbol(SZrCompilerState *cs,
                                                  SZrAstNodeArray *params,
                                                  SZrType *returnType,
                                                  SZrFunctionTypedExportSymbol *outSymbol) {
+    SZrFunctionTypeInfo *functionInfo;
     TZrUInt32 parameterCount = 0;
 
     if (cs == ZR_NULL || exportedVar == ZR_NULL || outSymbol == ZR_NULL) {
@@ -434,12 +467,22 @@ static TZrBool build_function_like_export_symbol(SZrCompilerState *cs,
     outSymbol->stackSlot = exportedVar->stackSlot;
     outSymbol->accessModifier = (TZrUInt8)exportedVar->accessModifier;
     outSymbol->symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
+    functionInfo = find_callable_binding_info(cs, exportedVar->name);
 
-    if (!typed_type_ref_from_ast_type(cs, returnType, &outSymbol->valueType)) {
+    if (returnType != ZR_NULL) {
+        if (!typed_type_ref_from_ast_type(cs, returnType, &outSymbol->valueType)) {
+            return ZR_FALSE;
+        }
+    } else if (!typed_type_ref_from_callable_binding(cs, exportedVar->name, &outSymbol->valueType) &&
+               !typed_type_ref_from_ast_type(cs, ZR_NULL, &outSymbol->valueType)) {
         return ZR_FALSE;
     }
 
-    parameterCount = params != ZR_NULL ? (TZrUInt32)params->count : 0;
+    if (params != ZR_NULL) {
+        parameterCount = (TZrUInt32)params->count;
+    } else if (functionInfo != ZR_NULL) {
+        parameterCount = (TZrUInt32)functionInfo->paramTypes.length;
+    }
     outSymbol->parameterCount = parameterCount;
     if (parameterCount == 0) {
         return ZR_TRUE;
@@ -455,7 +498,8 @@ static TZrBool build_function_like_export_symbol(SZrCompilerState *cs,
     }
 
     for (TZrUInt32 index = 0; index < parameterCount; index++) {
-        SZrAstNode *paramNode = params->nodes[index];
+        SZrAstNode *paramNode =
+                (params != ZR_NULL && index < params->count) ? params->nodes[index] : ZR_NULL;
         SZrParameter *parameter;
 
         typed_type_ref_init_unknown(&outSymbol->parameterTypes[index]);
@@ -465,11 +509,32 @@ static TZrBool build_function_like_export_symbol(SZrCompilerState *cs,
 
         parameter = &paramNode->data.parameter;
         if (parameter->typeInfo == ZR_NULL) {
+            if (functionInfo != ZR_NULL && index < functionInfo->paramTypes.length) {
+                const SZrInferredType *paramType =
+                        (const SZrInferredType *)ZrCore_Array_Get(&functionInfo->paramTypes, index);
+                if (paramType != ZR_NULL) {
+                    typed_type_ref_from_inferred(&outSymbol->parameterTypes[index], paramType);
+                }
+            }
             continue;
         }
 
         if (!typed_type_ref_from_ast_type(cs, parameter->typeInfo, &outSymbol->parameterTypes[index])) {
             return ZR_FALSE;
+        }
+    }
+
+    if ((params == ZR_NULL || params->count == 0) &&
+        functionInfo != ZR_NULL &&
+        functionInfo->paramTypes.length > 0) {
+        for (TZrUInt32 index = 0;
+             index < parameterCount && index < functionInfo->paramTypes.length;
+             index++) {
+            const SZrInferredType *paramType =
+                    (const SZrInferredType *)ZrCore_Array_Get(&functionInfo->paramTypes, index);
+            if (paramType != ZR_NULL) {
+                typed_type_ref_from_inferred(&outSymbol->parameterTypes[index], paramType);
+            }
         }
     }
 

@@ -15,7 +15,7 @@ TZrBool extern_compiler_emit_get_member_to_slot(SZrCompilerState *cs,
     }
 
     memberId = compiler_get_or_add_member_entry(cs, memberName);
-    if (memberId == (TZrUInt32)-1) {
+    if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
         return ZR_FALSE;
     }
 
@@ -38,7 +38,7 @@ TZrBool extern_compiler_emit_import_module_to_local(SZrCompilerState *cs,
     }
 
     importSlot = ZrParser_Compiler_EmitImportModuleExpression(cs, moduleName, location);
-    if (importSlot == (TZrUInt32)-1) {
+    if (importSlot == ZR_PARSER_SLOT_NONE) {
         return ZR_FALSE;
     }
 

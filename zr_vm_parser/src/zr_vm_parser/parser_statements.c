@@ -31,6 +31,65 @@ static SZrAstNode *try_parse_prefixed_function_declaration(SZrParserState *ps) {
     return ZR_NULL;
 }
 
+static TZrBool parser_function_declaration_starts_here(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    EZrToken token;
+    EZrToken lookahead;
+    TZrBool isFunction = ZR_FALSE;
+
+    if (ps == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    token = ps->lexer->t.token;
+    if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO) {
+        parse_access_modifier(ps);
+        token = ps->lexer->t.token;
+    }
+
+    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+        isFunction = ZR_TRUE;
+    } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
+        lookahead = peek_token(ps);
+        isFunction = lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN;
+    }
+
+    restore_parser_cursor(ps, &cursor);
+    return isFunction;
+}
+
+static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrBool savedSuppressErrorOutput;
+    SZrAstNode *funcDecl;
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    savedSuppressErrorOutput = ps->suppressErrorOutput;
+    ps->suppressErrorOutput = ZR_TRUE;
+    ps->hasError = ZR_FALSE;
+    ps->errorMessage = ZR_NULL;
+
+    funcDecl = parse_function_declaration(ps);
+    ps->suppressErrorOutput = savedSuppressErrorOutput;
+    if (funcDecl != ZR_NULL && !ps->hasError) {
+        ps->hasError = cursor.hasError;
+        ps->errorMessage = cursor.errorMessage;
+        return funcDecl;
+    }
+
+    if (funcDecl != ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, funcDecl);
+    }
+
+    restore_parser_cursor(ps, &cursor);
+    return ZR_NULL;
+}
+
 SZrAstNode *parse_block(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange endLoc;
@@ -897,6 +956,11 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             ps->lexer->lookaheadLine = savedLookaheadLine;
             ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
         }
+
+        if (parser_function_declaration_starts_here(ps)) {
+            return parse_function_declaration(ps);
+        }
+
         // 根据下一个 token 调用相应的解析函数（它们会自己解析可见性修饰符）
         switch (nextToken) {
             case ZR_TK_VAR:
@@ -1082,36 +1146,56 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             }
             // 检查是否是装饰器（# ... #），后面应该跟 class/struct/function 等
             if (token == ZR_TK_SHARP) {
-                // 解析装饰器，然后检查后面的声明类型
-                // 先解析装饰器表达式，然后查看下一个 token
-                SZrAstNode *decorator = parse_decorator_expression(ps);
+                SZrParserCursor cursor;
+                SZrAstNode *decorator;
+                EZrToken nextToken;
+                EZrToken declarationToken = ZR_TK_EOS;
+                TZrBool decoratorStartsFunction = ZR_FALSE;
+
+                // 先向前看装饰器后面的声明类型，再回到起点让声明解析函数处理装饰器本身。
+                save_parser_cursor(ps, &cursor);
+                decorator = parse_decorator_expression(ps);
                 if (decorator == ZR_NULL) {
+                    restore_parser_cursor(ps, &cursor);
                     return ZR_NULL;
                 }
-                // 检查下一个 token 是否是声明类型
-                EZrToken nextToken = ps->lexer->t.token;
+                nextToken = ps->lexer->t.token;
+                decoratorStartsFunction = parser_function_declaration_starts_here(ps);
+                if (nextToken == ZR_TK_PUB || nextToken == ZR_TK_PRI || nextToken == ZR_TK_PRO) {
+                    declarationToken = peek_token(ps);
+                }
+                ZrParser_Ast_Free(ps->state, decorator);
+                restore_parser_cursor(ps, &cursor);
+
                 if (nextToken == ZR_TK_CLASS) {
-                    // 类声明会处理装饰器，但我们已经解析了一个，需要回退
-                    // 更好的方法是让类声明解析函数处理所有装饰器
-                    // 这里我们需要回退并让类声明解析函数处理
-                    // TODO: 暂时先释放装饰器，让类声明解析函数重新解析
-                    ZrParser_Ast_Free(ps->state, decorator);
                     return parse_class_declaration(ps);
                 } else if (nextToken == ZR_TK_STRUCT) {
-                    ZrParser_Ast_Free(ps->state, decorator);
                     return parse_struct_declaration(ps);
-                } else if (nextToken == ZR_TK_IDENTIFIER || nextToken == ZR_TK_TEST) {
-                    // 可能是函数声明
-                    EZrToken lookahead = peek_token(ps);
-                    if ((nextToken == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) ||
-                        lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN) {
-                        ZrParser_Ast_Free(ps->state, decorator);
-                        return parse_function_declaration(ps);
+                } else if (nextToken == ZR_TK_PUB || nextToken == ZR_TK_PRI || nextToken == ZR_TK_PRO) {
+                    if (declarationToken == ZR_TK_CLASS) {
+                        return parse_class_declaration(ps);
+                    } else if (declarationToken == ZR_TK_STRUCT) {
+                        return parse_struct_declaration(ps);
+                    }
+                }
+
+                if (decoratorStartsFunction) {
+                    return parse_function_declaration(ps);
+                }
+
+                {
+                    SZrAstNode *decoratedFunction = try_parse_function_declaration_from_current(ps);
+                    if (decoratedFunction != ZR_NULL) {
+                        return decoratedFunction;
                     }
                 }
                 // 如果后面不是声明，则作为表达式语句处理
                 // 但装饰器表达式通常不应该单独出现，这里可能需要错误处理
                 // TODO: 暂时先返回装饰器作为表达式语句
+                decorator = parse_decorator_expression(ps);
+                if (decorator == ZR_NULL) {
+                    return ZR_NULL;
+                }
                 SZrAstNode *stmt = create_ast_node(ps, ZR_AST_EXPRESSION_STATEMENT, decorator->location);
                 if (stmt != ZR_NULL) {
                     stmt->data.expressionStatement.expr = decorator;

@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compile_time_executor_internal.h"
 
 static void compiler_struct_append_parameter_type(SZrCompilerState *cs,
                                                   SZrArray *parameterTypes,
@@ -565,6 +566,15 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.isImportedNative = ZR_FALSE;
     info.allowValueConstruction = ZR_TRUE;
     info.allowBoxedConstruction = ZR_TRUE;
+    info.hasDecoratorMetadata = ZR_FALSE;
+    ZrCore_Value_ResetAsNull(&info.decoratorMetadataValue);
+
+    if (!ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(cs, node, node->location)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
     
     // 初始化继承数组
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
@@ -575,6 +585,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                       structDecl->generic != ZR_NULL && structDecl->generic->params != ZR_NULL
                               ? structDecl->generic->params->count
                               : 1);
+    ZrCore_Array_Init(cs->state, &info.decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
     compiler_collect_generic_parameter_info(cs, &info.genericParameters, structDecl->generic);
     
     // 处理继承关系
@@ -851,6 +862,13 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
     
+    if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(cs, node, structDecl->decorators, &info)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
+
     // 将 prototype 信息添加到数组
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
     

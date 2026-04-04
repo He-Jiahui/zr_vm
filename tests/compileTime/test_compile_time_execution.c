@@ -1058,6 +1058,199 @@ static void test_compile_time_import_deep_member_call_projection(void) {
     TEST_DIVIDER();
 }
 
+static void test_compile_time_object_member_assignment_projects_mutation(void) {
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Compile-Time Execution - Object Member Assignment";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "%module \"test\";\n"
+                "%compileTime mark(target: Object): void {\n"
+                "    target.metadata.instrumented = true;\n"
+                "}\n"
+                "%compileTime var target = { metadata: {} };\n"
+                "%compileTime {\n"
+                "    mark(target);\n"
+                "}\n"
+                "var runtimeValue = target.metadata.instrumented ? 1 : 0;\n"
+                "%test(\"test\") {\n"
+                "    return runtimeValue;\n"
+                "}\n";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        sourceName = ZrCore_String_Create(state, "test_compile_time_object_member_assignment.zr", 46);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+// 测试16: 编译期类装饰器将 metadata 投影到运行时反射
+static void test_compile_time_class_decorator_projects_metadata_to_runtime_reflection(void) {
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Compile-Time Execution - Class Decorator Reflection Metadata";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "%module \"test\";\n"
+                "%compileTime class Serializable {\n"
+                "    @decorate(target: %type Class): DecoratorPatch {\n"
+                "        return { metadata: { serializable: true } };\n"
+                "    }\n"
+                "}\n"
+                "#Serializable#\n"
+                "class User {\n"
+                "    pub var id: int = 1;\n"
+                "}\n"
+                "%test(\"test\") {\n"
+                "    var info = %type(User);\n"
+                "    if (info.metadata == null) {\n"
+                "        return 0;\n"
+                "    }\n"
+                "    return info.metadata.serializable ? 1 : 0;\n"
+                "}\n";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        sourceName = ZrCore_String_Create(state, "test_compile_time_class_decorator_reflection.zr", 47);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_function_decorator_projects_metadata_to_runtime_reflection(void) {
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Compile-Time Execution - Function Decorator Reflection Metadata";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "%module \"test\";\n"
+                "%compileTime decorate(target: %type Class, version: int = 7): DecoratorPatch {\n"
+                "    return { metadata: { version: version } };\n"
+                "}\n"
+                "#decorate#\n"
+                "class User {\n"
+                "    pub var id: int = 1;\n"
+                "}\n"
+                "#decorate(version: 11)#\n"
+                "class Admin {\n"
+                "    pub var id: int = 2;\n"
+                "}\n"
+                "%test(\"test\") {\n"
+                "    var userInfo = %type(User);\n"
+                "    var adminInfo = %type(Admin);\n"
+                "    return userInfo.metadata.version + adminInfo.metadata.version;\n"
+                "}\n";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        sourceName = ZrCore_String_Create(state, "test_compile_time_function_decorator_reflection.zr", 50);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 18, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_struct_decorator_projects_metadata_to_runtime_reflection(void) {
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Compile-Time Execution - Struct Decorator Reflection Metadata";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "%module \"test\";\n"
+                "%compileTime struct Packed {\n"
+                "    @decorate(target: %type Struct): DecoratorPatch {\n"
+                "        return { metadata: { packed: true } };\n"
+                "    }\n"
+                "}\n"
+                "#Packed#\n"
+                "struct Packet {\n"
+                "    pub var id: int = 1;\n"
+                "}\n"
+                "%test(\"test\") {\n"
+                "    var info = %type(Packet);\n"
+                "    return info.metadata.packed ? 1 : 0;\n"
+                "}\n";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        sourceName = ZrCore_String_Create(state, "test_compile_time_struct_decorator_reflection.zr", 48);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // 主函数
 int main(void) {
     UNITY_BEGIN();
@@ -1081,6 +1274,10 @@ int main(void) {
     RUN_TEST(test_compile_time_import_member_call_projection);
     RUN_TEST(test_compile_time_projection_rejects_function_ref_leak);
     RUN_TEST(test_compile_time_import_deep_member_call_projection);
+    RUN_TEST(test_compile_time_object_member_assignment_projects_mutation);
+    RUN_TEST(test_compile_time_class_decorator_projects_metadata_to_runtime_reflection);
+    RUN_TEST(test_compile_time_function_decorator_projects_metadata_to_runtime_reflection);
+    RUN_TEST(test_compile_time_struct_decorator_projects_metadata_to_runtime_reflection);
     
     return UNITY_END();
 }

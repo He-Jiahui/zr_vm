@@ -94,6 +94,86 @@ function(project_case_matches_tier tiers out_var)
     endif()
 endfunction()
 
+function(project_case_requires_zroless_aot run_args out_var)
+    set(args ${run_args})
+    list(FIND args "--execution-mode" execution_mode_flag_index)
+    list(FIND args "aot_c" execution_mode_value_index)
+    list(FIND args "--require-aot-path" require_aot_path_index)
+
+    if (execution_mode_flag_index EQUAL -1 OR execution_mode_value_index EQUAL -1 OR require_aot_path_index EQUAL -1)
+        set(${out_var} FALSE PARENT_SCOPE)
+    else ()
+        set(${out_var} TRUE PARENT_SCOPE)
+    endif ()
+endfunction()
+
+function(project_backup_and_remove_zro_files case_name project_file backup_dir_var)
+    get_filename_component(project_dir "${project_file}" DIRECTORY)
+    set(binary_dir "${project_dir}/bin")
+    set(backup_dir "${PROJECT_FIXTURES_DIR}/.run_backup/${case_name}")
+    file(GLOB_RECURSE zro_files "${binary_dir}/*.zro")
+
+    file(REMOVE_RECURSE "${backup_dir}")
+    if (zro_files STREQUAL "")
+        set(${backup_dir_var} "" PARENT_SCOPE)
+        return()
+    endif()
+
+    foreach(zro_file IN LISTS zro_files)
+        file(RELATIVE_PATH relative_zro "${project_dir}" "${zro_file}")
+        set(backup_file "${backup_dir}/${relative_zro}")
+        get_filename_component(backup_parent "${backup_file}" DIRECTORY)
+        file(MAKE_DIRECTORY "${backup_parent}")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${zro_file}" "${backup_file}"
+            RESULT_VARIABLE copy_result
+            OUTPUT_VARIABLE copy_stdout
+            ERROR_VARIABLE copy_stderr
+        )
+        if (NOT copy_stdout STREQUAL "")
+            message("${copy_stdout}")
+        endif()
+        if (NOT copy_stderr STREQUAL "")
+            message("${copy_stderr}")
+        endif()
+        if (NOT copy_result EQUAL 0)
+            message(FATAL_ERROR "Project case '${case_name}' failed while backing up '${relative_zro}'.")
+        endif()
+        file(REMOVE "${zro_file}")
+    endforeach()
+
+    set(${backup_dir_var} "${backup_dir}" PARENT_SCOPE)
+endfunction()
+
+function(project_restore_zro_files project_file backup_dir)
+    get_filename_component(project_dir "${project_file}" DIRECTORY)
+    file(GLOB_RECURSE backup_files "${backup_dir}/*.zro")
+
+    foreach(backup_file IN LISTS backup_files)
+        file(RELATIVE_PATH relative_zro "${backup_dir}" "${backup_file}")
+        set(restored_file "${project_dir}/${relative_zro}")
+        get_filename_component(restored_parent "${restored_file}" DIRECTORY)
+        file(MAKE_DIRECTORY "${restored_parent}")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${backup_file}" "${restored_file}"
+            RESULT_VARIABLE copy_result
+            OUTPUT_VARIABLE copy_stdout
+            ERROR_VARIABLE copy_stderr
+        )
+        if (NOT copy_stdout STREQUAL "")
+            message("${copy_stdout}")
+        endif()
+        if (NOT copy_stderr STREQUAL "")
+            message("${copy_stderr}")
+        endif()
+        if (NOT copy_result EQUAL 0)
+            message(FATAL_ERROR "Failed while restoring '${relative_zro}' from '${backup_dir}'.")
+        endif()
+    endforeach()
+
+    file(REMOVE_RECURSE "${backup_dir}")
+endfunction()
+
 function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel prepare_aot_c prepare_aot_llvm)
     set(prepare_source "${PROJECT_FIXTURES_DIR}/${prepare_source_rel}")
     set(prepare_output "${PROJECT_FIXTURES_DIR}/${prepare_output_rel}")
@@ -107,6 +187,7 @@ function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel pre
     set(temp_source_file "${temp_source_dir}/${module_name}.zr")
     set(temp_compiled_output "${temp_binary_dir}/${module_name}${prepare_output_ext}")
     set(compile_command "${CLI_EXE}" "--compile" "${temp_project_file}")
+    set(copy_all_outputs OFF)
 
     if (prepare_output_ext STREQUAL ".zri")
         list(APPEND compile_command "--intermediate")
@@ -131,7 +212,33 @@ function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel pre
         file(MAKE_DIRECTORY "${temp_binary_dir}/aot_llvm/lib")
     endif()
     file(MAKE_DIRECTORY "${prepare_output_dir}")
-    file(COPY_FILE "${prepare_source}" "${temp_source_file}" ONLY_IF_DIFFERENT)
+    if (IS_DIRECTORY "${prepare_source}")
+        set(copy_all_outputs ON)
+        file(REMOVE_RECURSE "${temp_source_dir}")
+        file(MAKE_DIRECTORY "${temp_source_dir}")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory "${prepare_source}" "${temp_source_dir}"
+            RESULT_VARIABLE copy_source_result
+            OUTPUT_VARIABLE copy_source_stdout
+            ERROR_VARIABLE copy_source_stderr
+        )
+
+        if (NOT copy_source_stdout STREQUAL "")
+            message("${copy_source_stdout}")
+        endif()
+
+        if (NOT copy_source_stderr STREQUAL "")
+            message("${copy_source_stderr}")
+        endif()
+
+        if (NOT copy_source_result EQUAL 0)
+            file(REMOVE_RECURSE "${temp_project_root}")
+            message(FATAL_ERROR "Project case '${case_name}' failed while copying fixture directory '${prepare_source_rel}'.")
+        endif()
+    else()
+        file(MAKE_DIRECTORY "${temp_source_dir}")
+        file(COPY_FILE "${prepare_source}" "${temp_source_file}" ONLY_IF_DIFFERENT)
+    endif()
     file(WRITE "${temp_project_file}"
             "{\n"
             "  \"name\": \"${case_name}_fixture\",\n"
@@ -166,19 +273,49 @@ function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel pre
         message(FATAL_ERROR "Project case '${case_name}' did not produce fixture output '${temp_compiled_output}'.")
     endif()
 
-    execute_process(
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${temp_compiled_output}" "${prepare_output}"
-        RESULT_VARIABLE copy_result
-        OUTPUT_VARIABLE copy_stdout
-        ERROR_VARIABLE copy_stderr
-    )
+    if (copy_all_outputs)
+        file(GLOB prepared_outputs "${temp_binary_dir}/*${prepare_output_ext}")
+        foreach(prepared_output IN LISTS prepared_outputs)
+            execute_process(
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${prepared_output}" "${prepare_output_dir}"
+                RESULT_VARIABLE copy_result
+                OUTPUT_VARIABLE copy_stdout
+                ERROR_VARIABLE copy_stderr
+            )
 
-    if (NOT copy_stdout STREQUAL "")
-        message("${copy_stdout}")
-    endif()
+            if (NOT copy_stdout STREQUAL "")
+                message("${copy_stdout}")
+            endif()
 
-    if (NOT copy_stderr STREQUAL "")
-        message("${copy_stderr}")
+            if (NOT copy_stderr STREQUAL "")
+                message("${copy_stderr}")
+            endif()
+
+            if (NOT copy_result EQUAL 0)
+                file(REMOVE_RECURSE "${temp_project_root}")
+                message(FATAL_ERROR "Project case '${case_name}' failed while copying prepared fixture set '${prepare_source_rel}'.")
+            endif()
+        endforeach()
+    else()
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${temp_compiled_output}" "${prepare_output}"
+            RESULT_VARIABLE copy_result
+            OUTPUT_VARIABLE copy_stdout
+            ERROR_VARIABLE copy_stderr
+        )
+
+        if (NOT copy_stdout STREQUAL "")
+            message("${copy_stdout}")
+        endif()
+
+        if (NOT copy_stderr STREQUAL "")
+            message("${copy_stderr}")
+        endif()
+
+        if (NOT copy_result EQUAL 0)
+            file(REMOVE_RECURSE "${temp_project_root}")
+            message(FATAL_ERROR "Project case '${case_name}' failed while copying prepared fixture '${prepare_output_rel}'.")
+        endif()
     endif()
 
     if (prepare_aot_c)
@@ -340,6 +477,12 @@ function(run_project_case case_name)
         endif()
     endif()
 
+    project_case_requires_zroless_aot("${run_args}" remove_runtime_zro_files)
+    set(zro_backup_dir "")
+    if (remove_runtime_zro_files)
+        project_backup_and_remove_zro_files("${case_name}" "${project_file}" zro_backup_dir)
+    endif()
+
     set(run_command "${CLI_EXE}")
     if (NOT run_args STREQUAL "")
         list(APPEND run_command ${run_args})
@@ -353,6 +496,10 @@ function(run_project_case case_name)
         OUTPUT_VARIABLE project_stdout
         ERROR_VARIABLE project_stderr
     )
+
+    if (NOT zro_backup_dir STREQUAL "")
+        project_restore_zro_files("${project_file}" "${zro_backup_dir}")
+    endif()
 
     set(project_output "${project_stdout}${project_stderr}")
 
@@ -408,12 +555,14 @@ endfunction()
 
 register_project_case("hello_world" "hello_world/hello_world.zrp" "hello world" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("import_basic" "import_basic/import_basic.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "" "" "" "")
+register_project_case("decorator_import" "decorator_import/decorator_import.zrp" "31" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes" "classes/classes.zrp" "61" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes_full" "classes_full/classes_full.zrp" "127" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes_static" "classes_static/classes_static.zrp" "82" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes_super" "classes_super/classes_super.zrp" "42" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("classes_properties" "classes_properties/classes_properties.zrp" "40" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("import_binary" "import_binary/import_binary.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "import_binary/fixtures/greet_binary_source.zr" "import_binary/bin/greet.zro" "" "")
+register_project_case("decorator_import_binary" "decorator_import_binary/decorator_import_binary.zrp" "31" "${COMMON_FAIL_REGEX}" "decorator_import_binary/fixtures/decorated_user_module" "decorator_import_binary/bin/decorated_user.zro" "" "")
 register_project_case("import_pub_function" "import_pub_function/import_pub_function.zrp" "7123" "${COMMON_FAIL_REGEX}|null" "" "" "" "")
 register_project_case("import_capture_native" "import_capture_native/import_capture_native.zrp" "7005" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("import_capture_vector3" "import_capture_vector3/import_capture_vector3.zrp" "5" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
@@ -435,12 +584,14 @@ register_project_case("aot_eh_tail_gc_stress" "aot_eh_tail_gc_stress/aot_eh_tail
 
 set_project_case_metadata("hello_world" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("import_basic" "smoke;core;stress" "" "OFF")
+set_project_case_metadata("decorator_import" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("classes" "core;stress" "" "OFF")
 set_project_case_metadata("classes_full" "core;stress" "" "OFF")
 set_project_case_metadata("classes_static" "core;stress" "" "OFF")
 set_project_case_metadata("classes_super" "core;stress" "" "OFF")
 set_project_case_metadata("classes_properties" "core;stress" "" "OFF")
 set_project_case_metadata("import_binary" "smoke;core;stress" "" "OFF")
+set_project_case_metadata("decorator_import_binary" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("import_pub_function" "core;stress" "" "OFF")
 set_project_case_metadata("import_capture_native" "core;stress" "" "OFF")
 set_project_case_metadata("import_capture_vector3" "core;stress" "" "OFF")
@@ -464,7 +615,7 @@ set_project_case_metadata("aot_module_graph_pipeline_aot_c" "smoke;core;stress" 
 set_project_case_execution("aot_module_graph_pipeline_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "ON" "OFF")
 register_project_case("aot_dynamic_meta_ownership_lab_aot_c" "aot_dynamic_meta_ownership_lab/aot_dynamic_meta_ownership_lab.zrp" "AOT_DYNAMIC_META_OWNERSHIP_LAB_PASS" "${COMMON_FAIL_REGEX}|Function value is NULL" "" "" "" "")
 register_project_case("aot_eh_tail_gc_stress_aot_c" "aot_eh_tail_gc_stress/aot_eh_tail_gc_stress.zrp" "AOT_EH_TAIL_GC_STRESS_PASS" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
-set_project_case_metadata("aot_dynamic_meta_ownership_lab_aot_c" "core;stress" "executed_via=aot_c" "ON")
+set_project_case_metadata("aot_dynamic_meta_ownership_lab_aot_c" "stress" "executed_via=aot_c" "ON")
 set_project_case_metadata("aot_eh_tail_gc_stress_aot_c" "stress" "executed_via=aot_c" "ON")
 set_project_case_execution("aot_dynamic_meta_ownership_lab_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "OFF" "OFF")
 set_project_case_execution("aot_eh_tail_gc_stress_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "OFF" "OFF")

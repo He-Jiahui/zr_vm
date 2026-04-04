@@ -12,6 +12,8 @@
 struct SZrState;
 struct SZrGlobalState;
 
+#define ZR_HASH_SET_CAPACITY_GROWTH_FACTOR ((TZrSize)2)
+
 // MSVC 不支持在数组下标中使用逗号运算符，使用内联函数替代
 ZR_FORCE_INLINE TZrSize zr_hash_mod_inline(TZrUInt64 hash, TZrSize capacity) {
     ZR_ASSERT((capacity & (capacity - 1)) == 0);
@@ -61,7 +63,7 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_Add(struct SZrState *state, 
         return ZR_NULL;
     }
     if (set->elementCount + 1 > set->resizeThreshold &&
-        !ZrCore_HashSet_Rehash(state, set, set->capacity << 1)) {
+        !ZrCore_HashSet_Rehash(state, set, set->capacity * ZR_HASH_SET_CAPACITY_GROWTH_FACTOR)) {
         return ZR_NULL;
     }
 
@@ -94,7 +96,7 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_AddRawObject(struct SZrState
         return ZR_NULL;
     }
     if (set->elementCount + 1 > set->resizeThreshold &&
-        !ZrCore_HashSet_Rehash(state, set, set->capacity << 1)) {
+        !ZrCore_HashSet_Rehash(state, set, set->capacity * ZR_HASH_SET_CAPACITY_GROWTH_FACTOR)) {
         return ZR_NULL;
     }
 

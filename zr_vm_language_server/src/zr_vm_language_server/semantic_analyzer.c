@@ -3,9 +3,11 @@
 //
 
 #include "semantic_analyzer_internal.h"
-#include "zr_vm_library/native_registry.h"
+#include "lsp_module_metadata.h"
 
 #include <stdarg.h>
+
+#define ZR_LSP_NATIVE_MODULE_COMPLETION_MAX_DEPTH ((TZrSize)4)
 
 static TZrBool semantic_source_uri_equals(SZrString *left, SZrString *right) {
     TZrNativeString leftText;
@@ -146,14 +148,21 @@ static const SZrType *semantic_find_type_info_at_position(const SZrType *typeInf
     return semantic_file_range_contains_position(typeInfo->name->location, position) ? typeInfo : ZR_NULL;
 }
 
-static TZrBool semantic_symbol_is_type_position_candidate(EZrSymbolType type) {
-    switch (type) {
+static TZrBool semantic_symbol_is_type_position_candidate(SZrSymbol *symbol) {
+    if (symbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (symbol->type) {
         case ZR_SYMBOL_CLASS:
         case ZR_SYMBOL_STRUCT:
         case ZR_SYMBOL_INTERFACE:
         case ZR_SYMBOL_ENUM:
         case ZR_SYMBOL_PARAMETER:
             return ZR_TRUE;
+        case ZR_SYMBOL_FUNCTION:
+            return symbol->astNode != ZR_NULL &&
+                   symbol->astNode->type == ZR_AST_EXTERN_DELEGATE_DECLARATION;
         default:
             return ZR_FALSE;
     }
@@ -196,7 +205,7 @@ static SZrSymbol *semantic_lookup_type_symbol_at_position(SZrState *state,
     }
 
     symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, typeName, position);
-    if (symbol != ZR_NULL && semantic_symbol_is_type_position_candidate(symbol->type)) {
+    if (symbol != ZR_NULL && semantic_symbol_is_type_position_candidate(symbol)) {
         return symbol;
     }
 
@@ -207,7 +216,7 @@ static SZrSymbol *semantic_lookup_type_symbol_at_position(SZrState *state,
             SZrSymbol **candidatePtr = (SZrSymbol **)ZrCore_Array_Get(&candidates, index);
             if (candidatePtr != ZR_NULL &&
                 *candidatePtr != ZR_NULL &&
-                semantic_symbol_is_type_position_candidate((*candidatePtr)->type)) {
+                semantic_symbol_is_type_position_candidate(*candidatePtr)) {
                 symbol = *candidatePtr;
                 break;
             }
@@ -558,10 +567,102 @@ static const TZrChar *semantic_symbol_kind_text(EZrSymbolType type) {
         case ZR_SYMBOL_FIELD: return "field";
         case ZR_SYMBOL_PARAMETER: return "parameter";
         case ZR_SYMBOL_ENUM: return "enum";
+        case ZR_SYMBOL_ENUM_MEMBER: return "enum member";
         case ZR_SYMBOL_INTERFACE: return "interface";
         case ZR_SYMBOL_MODULE: return "module";
         default: return "variable";
     }
+}
+
+static TZrBool semantic_file_range_contains_range(SZrFileRange outer, SZrFileRange inner) {
+    if (!semantic_source_uri_equals(outer.source, inner.source)) {
+        return ZR_FALSE;
+    }
+
+    if (outer.start.offset > 0 && outer.end.offset > 0 &&
+        inner.start.offset > 0 && inner.end.offset > 0) {
+        return outer.start.offset <= inner.start.offset && inner.end.offset <= outer.end.offset;
+    }
+
+    return (outer.start.line < inner.start.line ||
+            (outer.start.line == inner.start.line && outer.start.column <= inner.start.column)) &&
+           (inner.end.line < outer.end.line ||
+            (inner.end.line == outer.end.line && inner.end.column <= outer.end.column));
+}
+
+static TZrBool semantic_range_is_declared_in_extern_block(SZrAstNode *node, SZrFileRange range) {
+    if (node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_SCRIPT:
+            if (node->data.script.statements != ZR_NULL && node->data.script.statements->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.script.statements->count; index++) {
+                    if (semantic_range_is_declared_in_extern_block(node->data.script.statements->nodes[index], range)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            return node->data.compileTimeDeclaration.declaration != ZR_NULL &&
+                   semantic_range_is_declared_in_extern_block(node->data.compileTimeDeclaration.declaration, range);
+
+        case ZR_AST_BLOCK:
+            if (node->data.block.body != ZR_NULL && node->data.block.body->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.block.body->count; index++) {
+                    if (semantic_range_is_declared_in_extern_block(node->data.block.body->nodes[index], range)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_EXTERN_BLOCK:
+            if (node->data.externBlock.declarations != ZR_NULL &&
+                node->data.externBlock.declarations->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.externBlock.declarations->count; index++) {
+                    SZrAstNode *declaration = node->data.externBlock.declarations->nodes[index];
+                    if (declaration != ZR_NULL &&
+                        semantic_file_range_contains_range(declaration->location, range)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool semantic_symbol_is_ffi_extern(SZrSemanticAnalyzer *analyzer, SZrSymbol *symbol) {
+    if (analyzer == ZR_NULL || symbol == ZR_NULL || symbol->astNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (symbol->astNode->type == ZR_AST_EXTERN_FUNCTION_DECLARATION ||
+        symbol->astNode->type == ZR_AST_EXTERN_DELEGATE_DECLARATION) {
+        return ZR_TRUE;
+    }
+
+    return analyzer->ast != ZR_NULL &&
+           semantic_range_is_declared_in_extern_block(analyzer->ast, symbol->astNode->location);
+}
+
+static const TZrChar *semantic_symbol_kind_text_for_symbol(SZrSemanticAnalyzer *analyzer, SZrSymbol *symbol) {
+    if (semantic_symbol_is_ffi_extern(analyzer, symbol)) {
+        if (symbol->astNode != ZR_NULL && symbol->astNode->type == ZR_AST_EXTERN_FUNCTION_DECLARATION) {
+            return "extern function";
+        }
+        if (symbol->astNode != ZR_NULL && symbol->astNode->type == ZR_AST_EXTERN_DELEGATE_DECLARATION) {
+            return "extern delegate";
+        }
+    }
+
+    return semantic_symbol_kind_text(symbol != ZR_NULL ? symbol->type : ZR_SYMBOL_VARIABLE);
 }
 
 static const TZrChar *semantic_access_modifier_text(EZrAccessModifier accessModifier) {
@@ -947,6 +1048,50 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
             return ZR_TRUE;
         }
 
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION: {
+            SZrExternFunctionDeclaration *funcDecl = &node->data.externFunctionDeclaration;
+            if (funcDecl->name == ZR_NULL || funcDecl->name->name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            offset = semantic_buffer_append(buffer,
+                                            bufferSize,
+                                            offset,
+                                            "%s",
+                                            semantic_string_native(funcDecl->name->name));
+            offset = semantic_append_parameter_list(state,
+                                                    compilerState,
+                                                    buffer,
+                                                    bufferSize,
+                                                    offset,
+                                                    funcDecl->params);
+            semantic_format_type_from_ast(state, compilerState, funcDecl->returnType, typeBuffer, sizeof(typeBuffer));
+            offset = semantic_buffer_append(buffer, bufferSize, offset, ": %s", typeBuffer);
+            return ZR_TRUE;
+        }
+
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION: {
+            SZrExternDelegateDeclaration *delegateDecl = &node->data.externDelegateDeclaration;
+            if (delegateDecl->name == ZR_NULL || delegateDecl->name->name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            offset = semantic_buffer_append(buffer,
+                                            bufferSize,
+                                            offset,
+                                            "delegate %s",
+                                            semantic_string_native(delegateDecl->name->name));
+            offset = semantic_append_parameter_list(state,
+                                                    compilerState,
+                                                    buffer,
+                                                    bufferSize,
+                                                    offset,
+                                                    delegateDecl->params);
+            semantic_format_type_from_ast(state, compilerState, delegateDecl->returnType, typeBuffer, sizeof(typeBuffer));
+            offset = semantic_buffer_append(buffer, bufferSize, offset, ": %s", typeBuffer);
+            return ZR_TRUE;
+        }
+
         case ZR_AST_CLASS_METHOD: {
             SZrClassMethod *method = &node->data.classMethod;
             if (method->name == ZR_NULL || method->name->name == ZR_NULL) {
@@ -1227,20 +1372,95 @@ static void semantic_append_symbol_completion(SZrState *state,
                                     symbol->typeInfo);
 }
 
-static const ZrLibModuleDescriptor *semantic_resolve_native_module_descriptor(SZrState *state,
-                                                                              const TZrChar *moduleName) {
-    if (state == ZR_NULL || state->global == ZR_NULL || moduleName == ZR_NULL) {
-        return ZR_NULL;
+static const TZrChar *semantic_module_exported_prototype_kind(EZrObjectPrototypeType type) {
+    switch (type) {
+        case ZR_OBJECT_PROTOTYPE_TYPE_CLASS:
+            return "class";
+        case ZR_OBJECT_PROTOTYPE_TYPE_STRUCT:
+            return "struct";
+        case ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE:
+            return "interface";
+        case ZR_OBJECT_PROTOTYPE_TYPE_MODULE:
+            return "module";
+        default:
+            return ZR_NULL;
+    }
+}
+
+static void semantic_append_module_prototype_completions(SZrState *state,
+                                                         SZrSemanticAnalyzer *analyzer,
+                                                         const SZrTypePrototypeInfo *modulePrototype,
+                                                         SZrArray *result) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || modulePrototype == ZR_NULL || result == ZR_NULL) {
+        return;
     }
 
-    return ZrLibrary_NativeRegistry_FindModule(state->global, moduleName);
+    for (TZrSize index = 0; index < modulePrototype->members.length; index++) {
+        const SZrTypeMemberInfo *member =
+            (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&modulePrototype->members, index);
+        const TZrChar *kind = ZR_NULL;
+        const TZrChar *detailText = "object";
+        TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
+
+        if (member == ZR_NULL || member->name == ZR_NULL || member->isMetaMethod) {
+            continue;
+        }
+
+        if (member->memberType == ZR_AST_CLASS_METHOD || member->memberType == ZR_AST_STRUCT_METHOD) {
+            kind = "function";
+            detailText = semantic_string_native(member->returnTypeName);
+            snprintf(detail,
+                     sizeof(detail),
+                     "%s(...): %s",
+                     semantic_string_native(member->name),
+                     detailText != ZR_NULL ? detailText : "object");
+        } else {
+            const SZrTypePrototypeInfo *exportedType =
+                member->fieldTypeName != ZR_NULL
+                    ? ZrLanguageServer_LspModuleMetadata_FindTypePrototype(analyzer,
+                                                                          semantic_string_native(member->fieldTypeName))
+                    : ZR_NULL;
+
+            if (exportedType != ZR_NULL) {
+                kind = semantic_module_exported_prototype_kind(exportedType->type);
+            }
+            if (kind == ZR_NULL && member->memberType == ZR_AST_CLASS_PROPERTY) {
+                kind = "property";
+            }
+            if (kind == ZR_NULL) {
+                kind = "field";
+            }
+
+            detailText = member->fieldTypeName != ZR_NULL
+                             ? semantic_string_native(member->fieldTypeName)
+                             : "object";
+            snprintf(detail,
+                     sizeof(detail),
+                     "%s %s",
+                     kind,
+                     detailText != ZR_NULL ? detailText : "object");
+        }
+
+        semantic_append_completion_item(state,
+                                        result,
+                                        semantic_string_native(member->name),
+                                        kind != ZR_NULL ? kind : "symbol",
+                                        detail,
+                                        ZR_NULL);
+    }
+}
+
+static const ZrLibModuleDescriptor *semantic_resolve_native_module_descriptor(SZrState *state,
+                                                                              const TZrChar *moduleName) {
+    return ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleDescriptor(state, moduleName, ZR_NULL);
 }
 
 static void semantic_append_native_module_descriptor_completions(SZrState *state,
                                                                  const ZrLibModuleDescriptor *descriptor,
                                                                  SZrArray *result,
                                                                  TZrSize depth) {
-    if (state == ZR_NULL || descriptor == ZR_NULL || result == ZR_NULL || depth > 4) {
+    if (state == ZR_NULL || descriptor == ZR_NULL || result == ZR_NULL ||
+        depth > ZR_LSP_NATIVE_MODULE_COMPLETION_MAX_DEPTH) {
         return;
     }
 
@@ -1316,14 +1536,16 @@ static void semantic_append_native_module_descriptor_completions(SZrState *state
 }
 
 static void semantic_append_imported_module_completions(SZrState *state,
+                                                        SZrSemanticAnalyzer *analyzer,
                                                         SZrAstNode *node,
                                                         SZrArray *result) {
     const ZrLibModuleDescriptor *descriptor;
+    const SZrTypePrototypeInfo *modulePrototype;
     TZrNativeString moduleText;
     TZrSize moduleLength;
     TZrChar moduleName[ZR_LSP_TEXT_BUFFER_LENGTH];
 
-    if (state == ZR_NULL || node == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL || result == ZR_NULL) {
         return;
     }
 
@@ -1332,6 +1554,7 @@ static void semantic_append_imported_module_completions(SZrState *state,
             if (node->data.script.statements != ZR_NULL && node->data.script.statements->nodes != ZR_NULL) {
                 for (TZrSize index = 0; index < node->data.script.statements->count; index++) {
                     semantic_append_imported_module_completions(state,
+                                                                analyzer,
                                                                 node->data.script.statements->nodes[index],
                                                                 result);
                 }
@@ -1342,6 +1565,7 @@ static void semantic_append_imported_module_completions(SZrState *state,
             if (node->data.block.body != ZR_NULL && node->data.block.body->nodes != ZR_NULL) {
                 for (TZrSize index = 0; index < node->data.block.body->count; index++) {
                     semantic_append_imported_module_completions(state,
+                                                                analyzer,
                                                                 node->data.block.body->nodes[index],
                                                                 result);
                 }
@@ -1349,11 +1573,11 @@ static void semantic_append_imported_module_completions(SZrState *state,
             return;
 
         case ZR_AST_FUNCTION_DECLARATION:
-            semantic_append_imported_module_completions(state, node->data.functionDeclaration.body, result);
+            semantic_append_imported_module_completions(state, analyzer, node->data.functionDeclaration.body, result);
             return;
 
         case ZR_AST_TEST_DECLARATION:
-            semantic_append_imported_module_completions(state, node->data.testDeclaration.body, result);
+            semantic_append_imported_module_completions(state, analyzer, node->data.testDeclaration.body, result);
             return;
 
         case ZR_AST_VARIABLE_DECLARATION:
@@ -1374,6 +1598,12 @@ static void semantic_append_imported_module_completions(SZrState *state,
 
             memcpy(moduleName, moduleText, moduleLength);
             moduleName[moduleLength] = '\0';
+            modulePrototype = ZrLanguageServer_LspModuleMetadata_FindTypePrototype(analyzer, moduleName);
+            if (modulePrototype != ZR_NULL) {
+                semantic_append_module_prototype_completions(state, analyzer, modulePrototype, result);
+                return;
+            }
+
             descriptor = semantic_resolve_native_module_descriptor(state, moduleName);
             semantic_append_native_module_descriptor_completions(state, descriptor, result, 0);
             return;
@@ -1626,6 +1856,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
     const TZrChar *kindText;
     const TZrChar *typeText;
     const TZrChar *accessText;
+    const TZrChar *sourceText = ZR_NULL;
     TZrChar signatureBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
     TZrChar resolvedTypeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
     const SZrType *hoverTypeInfo = ZR_NULL;
@@ -1647,8 +1878,11 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
         return ZR_FALSE;
     }
 
-    kindText = semantic_symbol_kind_text(symbol->type);
+    kindText = semantic_symbol_kind_text_for_symbol(analyzer, symbol);
     accessText = semantic_access_modifier_text(symbol->accessModifier);
+    if (semantic_symbol_is_ffi_extern(analyzer, symbol)) {
+        sourceText = "ffi extern";
+    }
     hoverTypeInfo = semantic_find_type_node_at_position(analyzer->ast, position);
     if (hoverTypeInfo != ZR_NULL &&
         analyzer->compilerState != ZR_NULL &&
@@ -1685,6 +1919,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
                      signatureBuffer,
                      accessText);
         }
+        if (sourceText != ZR_NULL) {
+            semantic_buffer_append(buffer, sizeof(buffer), strlen(buffer), "\nSource: %s", sourceText);
+        }
         *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->selectionRange, symbol->typeInfo);
         return *result != ZR_NULL;
     }
@@ -1710,6 +1947,10 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
                  nameStr,
                  typeText != ZR_NULL ? typeText : "object",
                  accessText);
+    }
+
+    if (sourceText != ZR_NULL) {
+        semantic_buffer_append(buffer, sizeof(buffer), strlen(buffer), "\nSource: %s", sourceText);
     }
 
     *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->selectionRange, symbol->typeInfo);
@@ -1746,7 +1987,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetCompletions(SZrState *state,
     ZrCore_Array_Free(state, &visibleSymbols);
 
     if (analyzer->ast != ZR_NULL) {
-        semantic_append_imported_module_completions(state, analyzer->ast, result);
+        semantic_append_imported_module_completions(state, analyzer, analyzer->ast, result);
     }
 
     return ZR_TRUE;

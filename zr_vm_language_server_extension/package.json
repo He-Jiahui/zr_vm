@@ -13,6 +13,7 @@
   ],
   "activationEvents": [
     "onLanguage:zr",
+    "onLanguage:zr-project",
     "onCommand:zr.restartLanguageServer"
   ],
   "main": "./out/extension.js",
@@ -29,6 +30,26 @@
           ".zr"
         ],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "zr-project",
+        "aliases": [
+          "ZR Project",
+          "zrp"
+        ],
+        "extensions": [
+          ".zrp"
+        ]
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "*.zrp",
+        "url": "./schemas/zrp.schema.json"
+      },
+      {
+        "fileMatch": "**/*.zrp",
+        "url": "./schemas/zrp.schema.json"
       }
     ],
     "grammars": [

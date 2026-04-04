@@ -2251,6 +2251,488 @@ static void test_lsp_document_highlights_resolve_super_constructor(SZrState *sta
     TEST_PASS(timer, "LSP Document Highlights Resolve Super Constructor");
 }
 
+static void test_lsp_definition_resolves_decorator_target(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "#singleton#\n"
+        "class SingletonClass {\n"
+        "    #trace#\n"
+        "    pub run(): int {\n"
+        "        return 1;\n"
+        "    }\n"
+        "}\n";
+    SZrLspPosition classDecoratorPosition;
+    SZrLspPosition methodDecoratorPosition;
+    SZrLspPosition classNamePosition;
+    SZrLspPosition methodNamePosition;
+    SZrArray definitions;
+
+    TEST_START("LSP Definition Resolves Decorator Target");
+    TEST_INFO("Decorator definition",
+              "Goto definition on a decorator token should jump to the decorated class or method");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Definition Resolves Decorator Target", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///decorator_definition.zr", 32);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Definition Resolves Decorator Target", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Definition Resolves Decorator Target", "Failed to update document");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "#singleton#", 0, 1, &classDecoratorPosition) ||
+        !lsp_find_position_for_substring(content, "#trace#", 0, 1, &methodDecoratorPosition) ||
+        !lsp_find_position_for_substring(content, "SingletonClass", 0, 0, &classNamePosition) ||
+        !lsp_find_position_for_substring(content, "run(): int", 0, 0, &methodNamePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Definition Resolves Decorator Target", "Failed to compute decorator target positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 2);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, classDecoratorPosition, &definitions) ||
+        !location_array_contains_position(&definitions, classNamePosition.line, classNamePosition.character)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Definition Resolves Decorator Target",
+                  "Definition on #singleton# should jump to the decorated class");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &definitions);
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 2);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, methodDecoratorPosition, &definitions) ||
+        !location_array_contains_position(&definitions, methodNamePosition.line, methodNamePosition.character)) {
+        TZrChar reason[256];
+        SZrLspLocation **firstLocationPtr =
+            definitions.length > 0 ? (SZrLspLocation **)ZrCore_Array_Get(&definitions, 0) : ZR_NULL;
+        SZrLspLocation *firstLocation = firstLocationPtr != ZR_NULL ? *firstLocationPtr : ZR_NULL;
+        snprintf(reason,
+                 sizeof(reason),
+                 "Definition on #trace# should jump to the decorated method (count=%zu first=%d:%d-%d:%d)",
+                 (size_t)definitions.length,
+                 firstLocation != ZR_NULL ? firstLocation->range.start.line : -1,
+                 firstLocation != ZR_NULL ? firstLocation->range.start.character : -1,
+                 firstLocation != ZR_NULL ? firstLocation->range.end.line : -1,
+                 firstLocation != ZR_NULL ? firstLocation->range.end.character : -1);
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Definition Resolves Decorator Target", reason);
+        return;
+    }
+
+    ZrCore_Array_Free(state, &definitions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Definition Resolves Decorator Target");
+}
+
+static void test_lsp_hover_describes_decorator_target(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "#singleton#\n"
+        "class SingletonClass {\n"
+        "    pub var value: int = 0;\n"
+        "}\n";
+    SZrLspPosition decoratorPosition;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP Hover Describes Decorator Target");
+    TEST_INFO("Decorator hover",
+              "Hover on a decorator token should describe the decorator category and decorated declaration");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Hover Describes Decorator Target", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///decorator_hover.zr", 27);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Hover Describes Decorator Target", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Hover Describes Decorator Target", "Failed to update document");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "#singleton#", 0, 1, &decoratorPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Hover Describes Decorator Target", "Failed to compute decorator position");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, decoratorPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "Decorator: singleton") ||
+        !hover_contains_text(hover, "Category: decorator") ||
+        !hover_contains_text(hover, "Target: class SingletonClass")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover Describes Decorator Target",
+                  "Hover on #singleton# should describe the decorator name, category, and decorated class");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Hover Describes Decorator Target");
+}
+
+static void test_lsp_hover_describes_meta_method_category(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class Foo {\n"
+        "    pub @constructor(seed: int) {\n"
+        "    }\n"
+        "}\n";
+    SZrLspPosition metaMethodPosition;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP Hover Describes Meta Method Category");
+    TEST_INFO("Meta method hover",
+              "Hover on an @meta-method token should describe its category and applicable declaration shape");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Hover Describes Meta Method Category", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///meta_method_hover.zr", 29);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Hover Describes Meta Method Category", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Hover Describes Meta Method Category", "Failed to update document");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "@constructor", 0, 1, &metaMethodPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Hover Describes Meta Method Category", "Failed to compute meta method position");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, metaMethodPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "Meta Method: @constructor") ||
+        !hover_contains_text(hover, "Category: lifecycle") ||
+        !hover_contains_text(hover, "Applicable To: class/struct meta function")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover Describes Meta Method Category",
+                  "Hover on @constructor should describe its lifecycle category and applicable targets");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Hover Describes Meta Method Category");
+}
+
+static void test_lsp_extern_function_navigation_and_signature_help(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "%extern(\"fixture\") {\n"
+        "    NativeAdd(lhs: i32, rhs: i32): i32;\n"
+        "}\n"
+        "func use(): i32 {\n"
+        "    var sum = NativeAdd(1, 2);\n"
+        "    return NativeAdd(sum, 3);\n"
+        "}\n";
+    SZrLspPosition definitionPosition;
+    SZrLspPosition firstCallPosition;
+    SZrLspPosition secondCallPosition;
+    SZrLspPosition signaturePosition;
+    SZrLspPosition completionPosition;
+    SZrArray definitions;
+    SZrArray references;
+    SZrArray highlights;
+    SZrArray completions;
+    SZrLspSignatureHelp *help = ZR_NULL;
+
+    TEST_START("LSP Extern Function Navigation And Signature Help");
+    TEST_INFO("Extern function semantic integration",
+              "Extern function declarations should participate in completion, hover-independent definition/reference tracking, document highlights, and signature help");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Extern Function Navigation And Signature Help",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///extern_function_navigation.zr", 38);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "NativeAdd(lhs: i32, rhs: i32): i32;", 0, 0, &definitionPosition) ||
+        !lsp_find_position_for_substring(content, "NativeAdd(1, 2)", 0, 0, &firstCallPosition) ||
+        !lsp_find_position_for_substring(content, "NativeAdd(sum, 3)", 0, 0, &secondCallPosition) ||
+        !lsp_find_position_for_substring(content, "NativeAdd(1, 2)", 0, 10, &signaturePosition) ||
+        !lsp_find_position_for_substring(content, "return NativeAdd(sum, 3);", 0, 7, &completionPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Function Navigation And Signature Help",
+                  "Failed to prepare extern function test fixture positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, firstCallPosition, &definitions) ||
+        !location_array_contains_position(&definitions, definitionPosition.line, definitionPosition.character)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Function Navigation And Signature Help",
+                  "Goto definition on an extern function call should jump to the source extern declaration");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
+    if (!ZrLanguageServer_Lsp_FindReferences(state, context, uri, firstCallPosition, ZR_TRUE, &references) ||
+        !location_array_contains_position(&references, definitionPosition.line, definitionPosition.character) ||
+        !location_array_contains_position(&references, firstCallPosition.line, firstCallPosition.character) ||
+        !location_array_contains_position(&references, secondCallPosition.line, secondCallPosition.character)) {
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Function Navigation And Signature Help",
+                  "Extern function references should include the declaration and every call usage");
+        return;
+    }
+    ZrCore_Array_Free(state, &references);
+
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 8);
+    if (!ZrLanguageServer_Lsp_GetDocumentHighlights(state, context, uri, firstCallPosition, &highlights) ||
+        !highlight_array_contains_position(&highlights, definitionPosition.line, definitionPosition.character) ||
+        !highlight_array_contains_position(&highlights, firstCallPosition.line, firstCallPosition.character) ||
+        !highlight_array_contains_position(&highlights, secondCallPosition.line, secondCallPosition.character)) {
+        ZrCore_Array_Free(state, &highlights);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Function Navigation And Signature Help",
+                  "Document highlights for an extern function should share the same declaration and usage target set");
+        return;
+    }
+    ZrCore_Array_Free(state, &highlights);
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, signaturePosition, &help) ||
+        help == ZR_NULL ||
+        !signature_help_contains_text(help, "NativeAdd(lhs: i32, rhs: i32): i32") ||
+        help->activeParameter != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Function Navigation And Signature Help",
+                  "Signature help for an extern function call should come from the registered extern signature");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, completionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "NativeAdd")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Function Navigation And Signature Help",
+                  "Completion inside source code should expose the extern function symbol");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Extern Function Navigation And Signature Help");
+}
+
+static void test_lsp_extern_type_symbols_surface_hover_and_definition(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "%extern(\"fixture\") {\n"
+        "    delegate Callback(value: i32): void;\n"
+        "    struct NativePoint {\n"
+        "        var x: i32;\n"
+        "    }\n"
+        "    #zr.ffi.underlying(\"i32\")#\n"
+        "    enum Mode {\n"
+        "        #zr.ffi.value(0)# Off,\n"
+        "        #zr.ffi.value(1)# On\n"
+        "    }\n"
+        "}\n"
+        "func apply(cb: Callback, point: NativePoint): Mode {\n"
+        "    return Mode.On;\n"
+        "}\n";
+    SZrLspPosition callbackDeclPosition;
+    SZrLspPosition callbackUsePosition;
+    SZrLspPosition pointDeclPosition;
+    SZrLspPosition pointUsePosition;
+    SZrLspPosition modeDeclPosition;
+    SZrLspPosition modeUsePosition;
+    SZrLspPosition completionPosition;
+    SZrArray definitions;
+    SZrArray references;
+    SZrArray completions;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP Extern Type Symbols Surface Hover And Definition");
+    TEST_INFO("Extern type semantic integration",
+              "Extern delegate/struct/enum declarations should become navigable source symbols with stable hover and completion");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Extern Type Symbols Surface Hover And Definition",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///extern_type_symbols.zr", 31);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "delegate Callback(value: i32): void;", 0, 0, &callbackDeclPosition) ||
+        !lsp_find_position_for_substring(content, "cb: Callback", 0, 4, &callbackUsePosition) ||
+        !lsp_find_position_for_substring(content, "struct NativePoint", 0, 0, &pointDeclPosition) ||
+        !lsp_find_position_for_substring(content, "point: NativePoint", 0, 7, &pointUsePosition) ||
+        !lsp_find_position_for_substring(content, "enum Mode", 0, 0, &modeDeclPosition) ||
+        !lsp_find_position_for_substring(content, "): Mode", 0, 3, &modeUsePosition) ||
+        !lsp_find_position_for_substring(content, "return Mode.On;", 0, 7, &completionPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Type Symbols Surface Hover And Definition",
+                  "Failed to prepare extern type test fixture positions");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, callbackUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "Callback") ||
+        !hover_contains_text(hover, "extern") ||
+        !hover_contains_text(hover, "Source: ffi extern")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Type Symbols Surface Hover And Definition",
+                  "Hover on an extern delegate type usage should describe the delegate and surface the ffi source origin");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, pointUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "NativePoint") ||
+        !hover_contains_text(hover, "struct") ||
+        !hover_contains_text(hover, "Source: ffi extern")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Type Symbols Surface Hover And Definition",
+                  "Hover on an extern struct type usage should resolve through the same ffi source-symbol path");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, modeUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "Mode") ||
+        !hover_contains_text(hover, "enum") ||
+        !hover_contains_text(hover, "Source: ffi extern")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Type Symbols Surface Hover And Definition",
+                  "Hover on an extern enum type usage should surface the enum symbol and ffi source origin");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, callbackUsePosition, &definitions) ||
+        !location_array_contains_position(&definitions, callbackDeclPosition.line, callbackDeclPosition.character)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Type Symbols Surface Hover And Definition",
+                  "Goto definition on an extern delegate type usage should jump to the source extern declaration");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, pointUsePosition, &definitions) ||
+        !location_array_contains_position(&definitions, pointDeclPosition.line, pointDeclPosition.character)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Type Symbols Surface Hover And Definition",
+                  "Goto definition on an extern struct type usage should jump to the source struct declaration");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, modeUsePosition, &definitions) ||
+        !location_array_contains_position(&definitions, modeDeclPosition.line, modeDeclPosition.character)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Type Symbols Surface Hover And Definition",
+                  "Goto definition on an extern enum type usage should jump to the source enum declaration");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
+    if (!ZrLanguageServer_Lsp_FindReferences(state, context, uri, pointUsePosition, ZR_TRUE, &references) ||
+        !location_array_contains_position(&references, pointDeclPosition.line, pointDeclPosition.character) ||
+        !location_array_contains_position(&references, pointUsePosition.line, pointUsePosition.character)) {
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Type Symbols Surface Hover And Definition",
+                  "Extern struct type references should include both declaration and annotation usage");
+        return;
+    }
+    ZrCore_Array_Free(state, &references);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, completionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "Callback") ||
+        !completion_array_contains_label(&completions, "NativePoint") ||
+        !completion_array_contains_label(&completions, "Mode")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Type Symbols Surface Hover And Definition",
+                  "Completion should list extern delegate/struct/enum symbols from the unified source-symbol path");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Extern Type Symbols Surface Hover And Definition");
+}
+
 static void test_lsp_completion_lists_directives_and_meta_methods(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -2426,6 +2908,21 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_document_highlights_resolve_super_constructor(state);
+    TEST_DIVIDER();
+
+    test_lsp_definition_resolves_decorator_target(state);
+    TEST_DIVIDER();
+
+    test_lsp_hover_describes_decorator_target(state);
+    TEST_DIVIDER();
+
+    test_lsp_hover_describes_meta_method_category(state);
+    TEST_DIVIDER();
+
+    test_lsp_extern_function_navigation_and_signature_help(state);
+    TEST_DIVIDER();
+
+    test_lsp_extern_type_symbols_surface_hover_and_definition(state);
     TEST_DIVIDER();
 
     test_lsp_completion_lists_directives_and_meta_methods(state);

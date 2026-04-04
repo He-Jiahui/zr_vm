@@ -68,6 +68,10 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->compileTimeFunctionInfoLength = 0;
     function->testInfos = ZR_NULL;
     function->testInfoLength = 0;
+    function->hasDecoratorMetadata = ZR_FALSE;
+    ZrCore_Value_ResetAsNull(&function->decoratorMetadataValue);
+    function->decoratorNames = ZR_NULL;
+    function->decoratorCount = 0;
     function->memberEntries = ZR_NULL;
     function->memberEntryLength = 0;
     function->functionName = ZR_NULL;  // 函数名，匿名函数为 ZR_NULL
@@ -90,19 +94,96 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->semIrDeoptTableLength = 0;
     function->callSiteCaches = ZR_NULL;
     function->callSiteCacheLength = 0;
+    function->runtimeDecoratorMetadata = ZR_NULL;
+    function->runtimeDecoratorDecorators = ZR_NULL;
     return function;
 }
 
 static TZrBool function_matches_inline_child(const SZrFunction *left, const SZrFunction *right) {
+    TZrBool sameFunctionName;
+
     if (left == ZR_NULL || right == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    return left->functionName == right->functionName &&
+    sameFunctionName = left->functionName == right->functionName ||
+                       (left->functionName != ZR_NULL && right->functionName != ZR_NULL &&
+                        ZrCore_String_Equal(left->functionName, right->functionName));
+
+    return sameFunctionName &&
            left->parameterCount == right->parameterCount &&
            left->instructionsLength == right->instructionsLength &&
            left->lineInSourceStart == right->lineInSourceStart &&
            left->lineInSourceEnd == right->lineInSourceEnd;
+}
+
+static const SZrFunction *function_resolve_closure_target_from_constant(const SZrTypeValue *constant) {
+    SZrRawObject *rawObject;
+
+    if (constant == ZR_NULL || constant->value.object == ZR_NULL ||
+        (constant->type != ZR_VALUE_TYPE_FUNCTION && constant->type != ZR_VALUE_TYPE_CLOSURE)) {
+        return ZR_NULL;
+    }
+
+    rawObject = constant->value.object;
+    if (rawObject->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+        return ZR_CAST(const SZrFunction *, rawObject);
+    }
+
+    if (rawObject->type == ZR_RAW_OBJECT_TYPE_CLOSURE && !constant->isNative) {
+        const SZrClosure *closure = ZR_CAST(const SZrClosure *, rawObject);
+        return closure != ZR_NULL ? closure->function : ZR_NULL;
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool function_child_graph_contains_target(const SZrFunction *function, const SZrFunction *target) {
+    if (function == ZR_NULL || target == ZR_NULL || function->childFunctionList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+        const SZrFunction *childFunction = &function->childFunctionList[childIndex];
+        if (childFunction == target || function_child_graph_contains_target(childFunction, target)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool function_validate_create_closure_targets_in_child_graph_recursive(const SZrFunction *function) {
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 instructionIndex = 0; instructionIndex < function->instructionsLength; instructionIndex++) {
+        const TZrInstruction *instruction = &function->instructionsList[instructionIndex];
+        EZrInstructionCode opcode = (EZrInstructionCode) instruction->instruction.operationCode;
+
+        if (opcode == ZR_INSTRUCTION_ENUM(CREATE_CLOSURE)) {
+            TZrUInt32 constantIndex = instruction->instruction.operand.operand1[0];
+            const SZrFunction *targetFunction;
+
+            if (function->constantValueList == ZR_NULL || constantIndex >= function->constantValueLength) {
+                return ZR_FALSE;
+            }
+
+            targetFunction = function_resolve_closure_target_from_constant(&function->constantValueList[constantIndex]);
+            if (targetFunction == ZR_NULL || !function_child_graph_contains_target(function, targetFunction)) {
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+        if (!function_validate_create_closure_targets_in_child_graph_recursive(&function->childFunctionList[childIndex])) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
 }
 
 void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *function) {
@@ -152,6 +233,10 @@ void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *functio
             break;
         }
     }
+}
+
+TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(const SZrFunction *function) {
+    return function_validate_create_closure_targets_in_child_graph_recursive(function);
 }
 
 void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
@@ -239,6 +324,12 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
         ZrCore_Memory_RawFreeWithType(global,
                                       function->testInfos,
                                       sizeof(SZrFunctionTestInfo) * function->testInfoLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->decoratorNames != ZR_NULL && function->decoratorCount > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->decoratorNames,
+                                      sizeof(SZrString *) * function->decoratorCount,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     if (function->memberEntries != ZR_NULL && function->memberEntryLength > 0) {
@@ -586,7 +677,11 @@ static ZR_FORCE_INLINE TZrSize function_pre_call_native(struct SZrState *state,
     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
     if (ZR_UNLIKELY(state->debugHookSignal & ZR_DEBUG_HOOK_MASK_CALL)) {
         TZrInt32 argumentsCount = ZR_CAST_INT(state->stackTop.valuePointer - stackPointer);
-        ZrCore_Debug_Hook(state, ZR_DEBUG_HOOK_EVENT_CALL, (TZrUInt32)-1, 1, (TZrUInt32)argumentsCount);
+        ZrCore_Debug_Hook(state,
+                          ZR_DEBUG_HOOK_EVENT_CALL,
+                          ZR_RUNTIME_DEBUG_HOOK_LINE_NONE,
+                          1,
+                          (TZrUInt32)argumentsCount);
     }
     ZR_THREAD_UNLOCK(state);
     returnCount = function(state);

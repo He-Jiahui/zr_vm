@@ -6,6 +6,16 @@
 #define ZR_META_CONF_H
 #include "zr_vm_common/zr_common_conf.h"
 
+#define ZR_META_CALL_UNARY_ARGUMENT_COUNT 1U
+#define ZR_META_CALL_MAX_ARGUMENTS 2U
+#define ZR_META_CALL_SELF_SLOT_OFFSET ZR_META_CALL_UNARY_ARGUMENT_COUNT
+#define ZR_META_CALL_SECOND_ARGUMENT_SLOT_OFFSET ZR_META_CALL_MAX_ARGUMENTS
+
+#define ZR_META_CALL_SELF_SLOT(BASE) ((BASE) + ZR_META_CALL_SELF_SLOT_OFFSET)
+#define ZR_META_CALL_SECOND_ARGUMENT_SLOT(BASE) ((BASE) + ZR_META_CALL_SECOND_ARGUMENT_SLOT_OFFSET)
+#define ZR_META_CALL_SLOT_COUNT(ARGUMENT_COUNT) (ZR_META_CALL_SELF_SLOT_OFFSET + (ARGUMENT_COUNT))
+#define ZR_META_CALL_STACK_TOP(BASE, ARGUMENT_COUNT) ((BASE) + ZR_META_CALL_SLOT_COUNT(ARGUMENT_COUNT))
+
 #define ZR_META_DECLARE(Z)                                                                                             \
     Z(CONSTRUCTOR)                                                                                                     \
     Z(DESTRUCTOR)                                                                                                      \
@@ -33,7 +43,8 @@
     Z(BIT_NOT)                                                                                                         \
     Z(GET_ITEM)                                                                                                        \
     Z(SET_ITEM)                                                                                                        \
-    Z(CLOSE)
+    Z(CLOSE)                                                                                                           \
+    Z(DECORATE)
 
 
 #define ZR_META_ENUM(META) ZR_META_##META

@@ -85,10 +85,10 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
         return;
     }
 
-    context->nextTypeId = 1;
-    context->nextSymbolId = 1;
-    context->nextOverloadSetId = 1;
-    context->nextLifetimeRegionId = 1;
+    context->nextTypeId = ZR_SEMANTIC_ID_FIRST;
+    context->nextSymbolId = ZR_SEMANTIC_ID_FIRST;
+    context->nextOverloadSetId = ZR_SEMANTIC_ID_FIRST;
+    context->nextLifetimeRegionId = ZR_SEMANTIC_ID_FIRST;
     for (i = 0; i < context->types.length; i++) {
         SZrSemanticTypeRecord *record =
             (SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, i);
@@ -112,28 +112,28 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
 
 TZrTypeId ZrParser_Semantic_ReserveTypeId(SZrSemanticContext *context) {
     if (context == ZR_NULL) {
-        return 0;
+        return ZR_SEMANTIC_ID_INVALID;
     }
     return context->nextTypeId++;
 }
 
 TZrSymbolId ZrParser_Semantic_ReserveSymbolId(SZrSemanticContext *context) {
     if (context == ZR_NULL) {
-        return 0;
+        return ZR_SEMANTIC_ID_INVALID;
     }
     return context->nextSymbolId++;
 }
 
 TZrOverloadSetId ZrParser_Semantic_ReserveOverloadSetId(SZrSemanticContext *context) {
     if (context == ZR_NULL) {
-        return 0;
+        return ZR_SEMANTIC_ID_INVALID;
     }
     return context->nextOverloadSetId++;
 }
 
 TZrLifetimeRegionId ZrParser_Semantic_ReserveLifetimeRegionId(SZrSemanticContext *context) {
     if (context == ZR_NULL) {
-        return 0;
+        return ZR_SEMANTIC_ID_INVALID;
     }
     return context->nextLifetimeRegionId++;
 }
@@ -178,7 +178,7 @@ TZrTypeId ZrParser_Semantic_RegisterInferredType(SZrSemanticContext *context,
     SZrSemanticTypeRecord record;
 
     if (context == ZR_NULL || type == ZR_NULL) {
-        return 0;
+        return ZR_SEMANTIC_ID_INVALID;
     }
 
     for (i = 0; i < context->types.length; i++) {
@@ -212,7 +212,7 @@ TZrTypeId ZrParser_Semantic_RegisterNamedType(SZrSemanticContext *context,
     SZrSemanticTypeRecord record;
 
     if (context == ZR_NULL || name == ZR_NULL) {
-        return 0;
+        return ZR_SEMANTIC_ID_INVALID;
     }
 
     for (i = 0; i < context->types.length; i++) {
@@ -245,7 +245,7 @@ TZrSymbolId ZrParser_Semantic_RegisterSymbol(SZrSemanticContext *context,
     SZrSemanticSymbolRecord record;
 
     if (context == ZR_NULL || name == ZR_NULL) {
-        return 0;
+        return ZR_SEMANTIC_ID_INVALID;
     }
 
     record.id = ZrParser_Semantic_ReserveSymbolId(context);
@@ -266,7 +266,7 @@ TZrOverloadSetId ZrParser_Semantic_GetOrCreateOverloadSet(SZrSemanticContext *co
     SZrSemanticOverloadSetRecord record;
 
     if (context == ZR_NULL || name == ZR_NULL) {
-        return 0;
+        return ZR_SEMANTIC_ID_INVALID;
     }
 
     for (i = 0; i < context->overloadSets.length; i++) {
@@ -290,7 +290,9 @@ TZrBool ZrParser_Semantic_AddOverloadMember(SZrSemanticContext *context,
                                   TZrSymbolId symbolId) {
     TZrSize i;
 
-    if (context == ZR_NULL || overloadSetId == 0 || symbolId == 0) {
+    if (context == ZR_NULL ||
+        overloadSetId == ZR_SEMANTIC_ID_INVALID ||
+        symbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
 

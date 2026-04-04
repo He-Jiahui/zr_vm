@@ -14,6 +14,10 @@
 
 #include <string.h>
 
+#define ZR_LSP_SYMBOL_POSITION_COMPARE_LESS (-1)
+#define ZR_LSP_SYMBOL_POSITION_COMPARE_EQUAL 0
+#define ZR_LSP_SYMBOL_POSITION_COMPARE_GREATER 1
+
 static TZrBool source_uri_equals(SZrString *left, SZrString *right) {
     TZrNativeString leftText;
     TZrNativeString rightText;
@@ -105,27 +109,27 @@ static TZrBool is_symbol_in_range(SZrFileRange symbolRange, SZrFileRange queryRa
 static int compare_file_position(SZrFilePosition left, SZrFilePosition right) {
     if (left.offset > 0 && right.offset > 0) {
         if (left.offset < right.offset) {
-            return -1;
+            return ZR_LSP_SYMBOL_POSITION_COMPARE_LESS;
         }
         if (left.offset > right.offset) {
-            return 1;
+            return ZR_LSP_SYMBOL_POSITION_COMPARE_GREATER;
         }
-        return 0;
+        return ZR_LSP_SYMBOL_POSITION_COMPARE_EQUAL;
     }
 
     if (left.line < right.line) {
-        return -1;
+        return ZR_LSP_SYMBOL_POSITION_COMPARE_LESS;
     }
     if (left.line > right.line) {
-        return 1;
+        return ZR_LSP_SYMBOL_POSITION_COMPARE_GREATER;
     }
     if (left.column < right.column) {
-        return -1;
+        return ZR_LSP_SYMBOL_POSITION_COMPARE_LESS;
     }
     if (left.column > right.column) {
-        return 1;
+        return ZR_LSP_SYMBOL_POSITION_COMPARE_GREATER;
     }
-    return 0;
+    return ZR_LSP_SYMBOL_POSITION_COMPARE_EQUAL;
 }
 
 static SZrFileRange get_symbol_match_range(SZrSymbol *symbol) {

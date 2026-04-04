@@ -34,4 +34,10 @@ ZR_CORE_API void ZrCore_Reflection_AttachPrototypeRuntimeMetadata(struct SZrStat
                                                                   struct SZrObjectModule *module,
                                                                   struct SZrFunction *entryFunction);
 
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(
+        struct SZrState *state,
+        struct SZrObjectPrototype *prototype,
+        struct SZrString *memberName,
+        TZrUInt32 targetKind);
+
 #endif // ZR_VM_CORE_REFLECTION_H

@@ -6,7 +6,7 @@
 
 TZrUInt32 allocate_local_var(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || cs->hasError || name == ZR_NULL) {
-        return 0;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     TZrUInt32 stackSlot = (TZrUInt32)cs->stackSlotCount;
@@ -58,8 +58,8 @@ TZrSize ZrParser_Compiler_GetLocalStackFloor(const SZrCompilerState *cs) {
 TZrUInt32 compiler_get_cached_null_constant_index(SZrCompilerState *cs) {
     SZrTypeValue nullValue;
 
-    if (cs == ZR_NULL) {
-        return 0;
+    if (cs == ZR_NULL || cs->hasError) {
+        return ZR_PARSER_INDEX_NONE;
     }
 
     if (cs->hasCachedNullConstantIndex) {
@@ -114,7 +114,7 @@ void ZrParser_Compiler_TrimStackBy(SZrCompilerState *cs, TZrSize amount) {
 // 查找局部变量
 TZrUInt32 find_local_var(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || name == ZR_NULL) {
-        return (TZrUInt32) -1;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     // 从当前作用域开始查找
@@ -134,13 +134,13 @@ TZrUInt32 find_local_var(SZrCompilerState *cs, SZrString *name) {
         }
     }
 
-    return (TZrUInt32) -1;
+    return ZR_PARSER_SLOT_NONE;
 }
 
 // 查找闭包变量
 TZrUInt32 find_closure_var(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || name == ZR_NULL) {
-        return (TZrUInt32) -1;
+        return ZR_PARSER_INDEX_NONE;
     }
 
     // 在闭包变量数组中查找
@@ -154,18 +154,18 @@ TZrUInt32 find_closure_var(SZrCompilerState *cs, SZrString *name) {
         }
     }
 
-    return (TZrUInt32) -1;
+    return ZR_PARSER_INDEX_NONE;
 }
 
 // 分配闭包变量
 TZrUInt32 allocate_closure_var(SZrCompilerState *cs, SZrString *name, TZrBool inStack) {
     if (cs == ZR_NULL || name == ZR_NULL) {
-        return 0;
+        return ZR_PARSER_INDEX_NONE;
     }
 
     // 检查是否已存在
     TZrUInt32 existingIndex = find_closure_var(cs, name);
-    if (existingIndex != (TZrUInt32) -1) {
+    if (existingIndex != ZR_PARSER_INDEX_NONE) {
         return existingIndex;
     }
 
@@ -183,12 +183,12 @@ TZrUInt32 allocate_closure_var(SZrCompilerState *cs, SZrString *name, TZrBool in
 }
 
 // 查找子函数索引（在当前编译器的 childFunctions 中通过函数名查找）
-// 返回子函数在 childFunctions 数组中的索引，如果未找到返回 (TZrUInt32)-1
+// 返回子函数在 childFunctions 数组中的索引，如果未找到返回 ZR_PARSER_INDEX_NONE
 // 注意：这个函数用于在编译时查找子函数索引
 // 通过编译时建立的函数名到索引的映射来查找，不依赖遍历比较函数名
 TZrUInt32 find_child_function_index(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || name == ZR_NULL) {
-        return (TZrUInt32) -1;
+        return ZR_PARSER_INDEX_NONE;
     }
     
     // 遍历函数名映射数组，查找匹配的函数名
@@ -204,18 +204,18 @@ TZrUInt32 find_child_function_index(SZrCompilerState *cs, SZrString *name) {
         }
     }
     
-    return (TZrUInt32) -1;
+    return ZR_PARSER_INDEX_NONE;
 }
 
 // 生成函数引用路径常量
 // 用于在编译函数调用时，如果是子函数调用，生成引用路径常量
 // targetFunction: 目标函数（子函数）
-// 返回：常量池索引（存储引用路径常量），失败返回0
+// 返回：常量池索引（存储引用路径常量），失败返回 ZR_PARSER_INDEX_NONE
 // 注意：生成的路径格式为：[ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX, childIndex]
 //       如果目标函数在parent中，则：[ZR_CONSTANT_REF_STEP_PARENT, ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX, childIndex]
 TZrUInt32 generate_function_reference_path_constant(SZrCompilerState *cs, TZrUInt32 childFunctionIndex) {
-    if (cs == ZR_NULL || childFunctionIndex == (TZrUInt32)-1) {
-        return 0;
+    if (cs == ZR_NULL || childFunctionIndex == ZR_PARSER_INDEX_NONE) {
+        return ZR_PARSER_INDEX_NONE;
     }
     
     // 生成引用路径：直接子函数引用
@@ -223,7 +223,7 @@ TZrUInt32 generate_function_reference_path_constant(SZrCompilerState *cs, TZrUIn
     TZrUInt32 pathDepth = 2;
     TZrUInt32 *pathSteps = (TZrUInt32 *)ZrCore_Memory_RawMalloc(cs->state->global, pathDepth * sizeof(TZrUInt32));
     if (pathSteps == ZR_NULL) {
-        return 0;
+        return ZR_PARSER_INDEX_NONE;
     }
     
     pathSteps[0] = ZR_CONSTANT_REF_STEP_TO_UINT32(ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX);
@@ -235,7 +235,7 @@ TZrUInt32 generate_function_reference_path_constant(SZrCompilerState *cs, TZrUIn
     TZrByte *serializedData = (TZrByte *)ZrCore_Memory_RawMalloc(cs->state->global, serializedSize);
     if (serializedData == ZR_NULL) {
         ZrCore_Memory_RawFree(cs->state->global, pathSteps, pathDepth * sizeof(TZrUInt32));
-        return 0;
+        return ZR_PARSER_INDEX_NONE;
     }
     
     // 写入路径深度和步骤
@@ -247,7 +247,7 @@ TZrUInt32 generate_function_reference_path_constant(SZrCompilerState *cs, TZrUIn
     if (serializedString == ZR_NULL) {
         ZrCore_Memory_RawFree(cs->state->global, serializedData, serializedSize);
         ZrCore_Memory_RawFree(cs->state->global, pathSteps, pathDepth * sizeof(TZrUInt32));
-        return 0;
+        return ZR_PARSER_INDEX_NONE;
     }
     
     // 将字符串存储到常量池
@@ -267,7 +267,7 @@ TZrUInt32 generate_function_reference_path_constant(SZrCompilerState *cs, TZrUIn
 // 分配栈槽
 TZrUInt32 allocate_stack_slot(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
-        return 0;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     TZrUInt32 slot = (TZrUInt32) cs->stackSlotCount;

@@ -19,38 +19,41 @@ declare void @ZrCore_Ownership_ReleaseValue(ptr, ptr)
 ; [9] OWN_UPGRADE exec=70 type=9 effect=9 dst=14 op0=15 op1=0 deopt=0
 ; [10] DYN_TAIL_CALL exec=2 type=0 effect=0 dst=2 op0=2 op1=1 deopt=1
 @zr_aot_module_name = private unnamed_addr constant [5 x i8] c"main\00"
-@zr_aot_source_hash = private unnamed_addr constant [17 x i8] c"b183ebc8741d44a7\00"
-@zr_aot_zro_hash = private unnamed_addr constant [17 x i8] c"b17dfee1737faf80\00"
+@zr_aot_input_hash = private unnamed_addr constant [17 x i8] c"b183ebc8741d44a7\00"
 @zr_aot_runtime_contract_0 = private unnamed_addr constant [17 x i8] c"dispatch.precall\00"
 @zr_aot_runtime_contract_1 = private unnamed_addr constant [16 x i8] c"ownership.share\00"
 @zr_aot_runtime_contract_2 = private unnamed_addr constant [15 x i8] c"ownership.weak\00"
 @zr_aot_runtime_contract_3 = private unnamed_addr constant [18 x i8] c"ownership.upgrade\00"
 @zr_aot_runtime_contract_4 = private unnamed_addr constant [18 x i8] c"ownership.release\00"
 @zr_aot_runtime_contracts = private constant [6 x ptr] [ptr @zr_aot_runtime_contract_0, ptr @zr_aot_runtime_contract_1, ptr @zr_aot_runtime_contract_2, ptr @zr_aot_runtime_contract_3, ptr @zr_aot_runtime_contract_4, ptr null]
-%ZrAotCompiledModuleV1 = type { i32, i32, ptr, ptr, ptr, ptr, ptr }
+%ZrAotCompiledModule = type { i32, i32, ptr, i32, ptr, ptr, ptr, i64, ptr, i32, ptr }
 define i64 @zr_aot_entry(ptr %state) {
 entry:
   %ret = call i64 @ZrLibrary_AotRuntime_InvokeActiveShim(ptr %state, i32 2)
   ret i64 %ret
 }
 
-@zr_aot_module = private constant %ZrAotCompiledModuleV1 {
-  i32 1,
+@zr_aot_module = private constant %ZrAotCompiledModule {
+  i32 2,
   i32 2,
   ptr @zr_aot_module_name,
-  ptr @zr_aot_source_hash,
-  ptr @zr_aot_zro_hash,
+  i32 1,
+  ptr @zr_aot_input_hash,
   ptr @zr_aot_runtime_contracts,
+  ptr null,
+  i64 0,
+  ptr null,
+  i32 0,
   ptr @zr_aot_entry
 }
 
-; export-symbol: ZrVm_GetAotCompiledModule_v1
+; export-symbol: ZrVm_GetAotCompiledModule
 ; descriptor.moduleName = main
-; descriptor.sourceHash = b183ebc8741d44a7
-; descriptor.zroHash = b17dfee1737faf80
+; descriptor.inputKind = 1
+; descriptor.inputHash = b183ebc8741d44a7
 ; descriptor.backendKind = llvm
 declare i64 @ZrLibrary_AotRuntime_InvokeActiveShim(ptr, i32)
-define ptr @ZrVm_GetAotCompiledModule_v1() {
+define ptr @ZrVm_GetAotCompiledModule() {
 entry_export:
   ret ptr @zr_aot_module
 }

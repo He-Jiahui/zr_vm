@@ -15,6 +15,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_common/zr_string_conf.h"
+#include "zr_vm_common/zr_type_conf.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -1235,36 +1236,36 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
 static void get_type_range(EZrValueType baseType, TZrInt64 *minValue, TZrInt64 *maxValue) {
     switch (baseType) {
         case ZR_VALUE_TYPE_INT8:
-            *minValue = -128;
-            *maxValue = 127;
+            *minValue = ZR_TYPE_RANGE_INT8_MIN;
+            *maxValue = ZR_TYPE_RANGE_INT8_MAX;
             break;
         case ZR_VALUE_TYPE_INT16:
-            *minValue = -32768;
-            *maxValue = 32767;
+            *minValue = ZR_TYPE_RANGE_INT16_MIN;
+            *maxValue = ZR_TYPE_RANGE_INT16_MAX;
             break;
         case ZR_VALUE_TYPE_INT32:
-            *minValue = -2147483648LL;
-            *maxValue = 2147483647LL;
+            *minValue = ZR_TYPE_RANGE_INT32_MIN;
+            *maxValue = ZR_TYPE_RANGE_INT32_MAX;
             break;
         case ZR_VALUE_TYPE_INT64:
-            *minValue = INT64_MIN;
-            *maxValue = INT64_MAX;
+            *minValue = ZR_TYPE_RANGE_INT64_MIN;
+            *maxValue = ZR_TYPE_RANGE_INT64_MAX;
             break;
         case ZR_VALUE_TYPE_UINT8:
             *minValue = 0;
-            *maxValue = 255;
+            *maxValue = ZR_TYPE_RANGE_UINT8_MAX;
             break;
         case ZR_VALUE_TYPE_UINT16:
             *minValue = 0;
-            *maxValue = 65535;
+            *maxValue = ZR_TYPE_RANGE_UINT16_MAX;
             break;
         case ZR_VALUE_TYPE_UINT32:
             *minValue = 0;
-            *maxValue = 4294967295LL;
+            *maxValue = ZR_TYPE_RANGE_UINT32_MAX;
             break;
         case ZR_VALUE_TYPE_UINT64:
             *minValue = 0;
-            *maxValue = 18446744073709551615ULL;
+            *maxValue = ZR_TYPE_RANGE_UINT64_MAX;
             break;
         default:
             *minValue = 0;

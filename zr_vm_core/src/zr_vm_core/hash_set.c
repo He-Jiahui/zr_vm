@@ -7,6 +7,9 @@
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/memory.h"
 
+#define ZR_HASH_SET_MAX_LOAD_NUMERATOR ((TZrSize)3)
+#define ZR_HASH_SET_MAX_LOAD_DENOMINATOR ((TZrSize)4)
+
 void ZrCore_HashSet_Deconstruct(struct SZrState *state, SZrHashSet *set) {
     SZrGlobalState *global = state->global;
     const TZrSize elementSize = sizeof(TZrPtr);
@@ -25,7 +28,6 @@ void ZrCore_HashSet_Deconstruct(struct SZrState *state, SZrHashSet *set) {
 }
 
 TZrBool ZrCore_HashSet_Rehash(SZrState *state, SZrHashSet *set, TZrSize newCapacity) {
-    SZrGlobalState *global = state->global;
     ZR_ASSERT(set != NULL && newCapacity > set->capacity);
     const TZrSize elementSize = sizeof(TZrPtr);
     TZrSize oldCapacity = set->capacity;
@@ -45,7 +47,7 @@ TZrBool ZrCore_HashSet_Rehash(SZrState *state, SZrHashSet *set, TZrSize newCapac
     set->buckets = newBuckets;
     set->capacity = newCapacity;
     set->bucketSize = newBucketCount;
-    set->resizeThreshold = newCapacity * 3 / 4;
+    set->resizeThreshold = newCapacity * ZR_HASH_SET_MAX_LOAD_NUMERATOR / ZR_HASH_SET_MAX_LOAD_DENOMINATOR;
     ZrCore_Memory_RawSet(set->buckets + oldCapacity, 0, newBucketCount - oldBucketCount);
     for (TZrSize i = 0; i < oldCapacity; i++) {
         SZrHashKeyValuePair *objectPtr = newBuckets[i];

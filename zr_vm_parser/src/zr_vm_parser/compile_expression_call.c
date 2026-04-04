@@ -258,7 +258,7 @@ void compile_import_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     if (ZrParser_Compiler_EmitImportModuleExpression(cs, modulePathNode->data.stringLiteral.value, node->location) ==
-        (TZrUInt32)-1 &&
+        ZR_PARSER_SLOT_NONE &&
         !cs->hasError) {
         ZrParser_Compiler_Error(cs, "Failed to compile import expression", node->location);
     }
@@ -282,7 +282,7 @@ void compile_type_query_expression(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    if (ZrParser_Compiler_EmitTypeQueryExpression(cs, typeQueryExpr->operand, node->location) == (TZrUInt32)-1 &&
+    if (ZrParser_Compiler_EmitTypeQueryExpression(cs, typeQueryExpr->operand, node->location) == ZR_PARSER_SLOT_NONE &&
         !cs->hasError) {
         ZrParser_Compiler_Error(cs, "Failed to compile type query expression", node->location);
     }
@@ -304,7 +304,7 @@ void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     SZrPrimaryExpression *primary = &node->data.primaryExpression;
-    TZrUInt32 currentSlot = (TZrUInt32)-1;
+    TZrUInt32 currentSlot = ZR_PARSER_SLOT_NONE;
     SZrString *rootTypeName = ZR_NULL;
     TZrBool rootIsTypeReference = ZR_FALSE;
     EZrOwnershipQualifier rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
@@ -407,7 +407,7 @@ void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     op = constructExpr->isNew ? "new" : "$";
-    if (emit_shorthand_constructor_instance(cs, op, typeName, constructExpr->args, node->location) == (TZrUInt32)-1 &&
+    if (emit_shorthand_constructor_instance(cs, op, typeName, constructExpr->args, node->location) == ZR_PARSER_SLOT_NONE &&
         !cs->hasError) {
         ZrParser_Compiler_Error(cs, "Failed to compile construct expression", node->location);
         return;

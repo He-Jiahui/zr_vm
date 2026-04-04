@@ -637,6 +637,7 @@ static void init_test_type_prototype(SZrState *state,
     ZrCore_Array_Init(state, &info->inherits, sizeof(SZrString *), 2);
     ZrCore_Array_Init(state, &info->implements, sizeof(SZrString *), 2);
     ZrCore_Array_Init(state, &info->genericParameters, sizeof(SZrTypeGenericParameterInfo), 2);
+    ZrCore_Array_Init(state, &info->decorators, sizeof(SZrTypeDecoratorInfo), 1);
     ZrCore_Array_Init(state, &info->members, sizeof(SZrTypeMemberInfo), 4);
 }
 
