@@ -31,6 +31,7 @@ void native_binding_init_call_context_layout(ZrLibCallContext *context,
 
     if (!usesReceiver) {
         context->argumentBase = functionBase + 1;
+        context->argumentValues = ZR_NULL;
         context->argumentCount = rawArgumentCount;
         context->selfValue = ZR_NULL;
         return;
@@ -38,6 +39,7 @@ void native_binding_init_call_context_layout(ZrLibCallContext *context,
 
     context->selfValue = rawArgumentCount > 0 ? ZrCore_Stack_GetValue(functionBase + 1) : ZR_NULL;
     context->argumentBase = rawArgumentCount > 0 ? functionBase + 2 : functionBase + 1;
+    context->argumentValues = ZR_NULL;
     context->argumentCount = rawArgumentCount > 0 ? rawArgumentCount - 1 : 0;
 }
 

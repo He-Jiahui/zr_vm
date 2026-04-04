@@ -280,7 +280,7 @@ TZrBool concat_values_to_destination(SZrState *state,
     savedStackTopOffset = ZrCore_Stack_SavePointerAsOffset(state, savedStackTop);
     currentCallInfo = state->callInfoList;
     tempBase = currentCallInfo != ZR_NULL ? currentCallInfo->functionTop.valuePointer : savedStackTop;
-    tempBase = ZrCore_Function_CheckStackAndGc(state, 2, tempBase);
+    tempBase = ZrCore_Function_ReserveScratchSlots(state, 2, tempBase);
     if (currentCallInfo != ZR_NULL) {
         tempBase = currentCallInfo->functionTop.valuePointer;
     }

@@ -28,7 +28,7 @@ static TZrBool is_generic_argument_terminator(EZrToken token) {
 }
 
 static SZrAstNodeArray *parse_type_list(SZrParserState *ps) {
-    SZrAstNodeArray *types = ZrParser_AstNodeArray_New(ps->state, 4);
+    SZrAstNodeArray *types = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (types == ZR_NULL) {
         return ZR_NULL;
     }
@@ -89,7 +89,7 @@ SZrAstNodeArray *parse_generic_argument_list(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LESS_THAN);
     ZrParser_Lexer_Next(ps->lexer);
 
-    params = ZrParser_AstNodeArray_New(ps->state, 4);
+    params = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (params == ZR_NULL) {
         return ZR_NULL;
     }
@@ -688,7 +688,7 @@ SZrGenericDeclaration *parse_generic_declaration(SZrParserState *ps, TZrBool all
     expect_token(ps, ZR_TK_LESS_THAN);
     ZrParser_Lexer_Next(ps->lexer);
 
-    params = ZrParser_AstNodeArray_New(ps->state, 4);
+    params = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (params == ZR_NULL) {
         return ZR_NULL;
     }
@@ -793,7 +793,7 @@ SZrAstNode *parse_destructuring_object(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACE);
     ZrParser_Lexer_Next(ps->lexer);
 
-    SZrAstNodeArray *keys = ZrParser_AstNodeArray_New(ps->state, 4);
+    SZrAstNodeArray *keys = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (keys == ZR_NULL) {
         return ZR_NULL;
     }
@@ -840,7 +840,7 @@ SZrAstNode *parse_destructuring_array(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACKET);
     ZrParser_Lexer_Next(ps->lexer);
 
-    SZrAstNodeArray *keys = ZrParser_AstNodeArray_New(ps->state, 4);
+    SZrAstNodeArray *keys = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (keys == ZR_NULL) {
         return ZR_NULL;
     }
@@ -985,7 +985,7 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
 // 解析参数列表
 
 SZrAstNodeArray *parse_parameter_list(SZrParserState *ps) {
-    SZrAstNodeArray *params = ZrParser_AstNodeArray_New(ps->state, 4);
+    SZrAstNodeArray *params = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (params == ZR_NULL) {
         return ZR_NULL;
     }

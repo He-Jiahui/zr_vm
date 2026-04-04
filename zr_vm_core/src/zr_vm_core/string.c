@@ -430,7 +430,12 @@ static SZrString *string_create_short(SZrState *state, TZrNativeString string, T
     {
         // create a new string
         SZrString *newString = string_object_create(state, string, length, hash);
-        ZrCore_HashSet_AddRawObject(state, &stringTable->stringHashSet, &newString->super);
+        if (newString == ZR_NULL) {
+            return ZR_NULL;
+        }
+        if (ZrCore_HashSet_AddRawObject(state, &stringTable->stringHashSet, &newString->super) == ZR_NULL) {
+            return ZR_NULL;
+        }
         return newString;
     }
 }

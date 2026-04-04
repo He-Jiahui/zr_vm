@@ -146,6 +146,49 @@ static TZrStackValuePointer object_resolve_call_scratch_base(TZrStackValuePointe
     return base;
 }
 
+static TZrBool object_pin_value_object(SZrState *state, const SZrTypeValue *value, TZrBool *addedByCaller) {
+    SZrRawObject *object;
+
+    if (addedByCaller != ZR_NULL) {
+        *addedByCaller = ZR_FALSE;
+    }
+
+    if (state == ZR_NULL || state->global == ZR_NULL || value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
+        return ZR_TRUE;
+    }
+
+    object = ZrCore_Value_GetRawObject(value);
+    if (object == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (ZrCore_GarbageCollector_IsObjectIgnored(state->global, object)) {
+        return ZR_TRUE;
+    }
+
+    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
+        return ZR_FALSE;
+    }
+
+    if (addedByCaller != ZR_NULL) {
+        *addedByCaller = ZR_TRUE;
+    }
+    return ZR_TRUE;
+}
+
+static void object_unpin_value_object(SZrGlobalState *global, const SZrTypeValue *value, TZrBool addedByCaller) {
+    SZrRawObject *object;
+
+    if (!addedByCaller || global == ZR_NULL || value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
+        return;
+    }
+
+    object = ZrCore_Value_GetRawObject(value);
+    if (object != ZR_NULL) {
+        ZrCore_GarbageCollector_UnignoreObject(global, object);
+    }
+}
+
 static TZrBool object_call_value(SZrState *state,
                                  const SZrTypeValue *callable,
                                  const SZrTypeValue *receiver,
@@ -154,21 +197,30 @@ static TZrBool object_call_value(SZrState *state,
                                  SZrTypeValue *result) {
     SZrTypeValue stableCallable;
     SZrTypeValue stableReceiver;
-    SZrTypeValue inlineArguments[8];
+    SZrTypeValue inlineArguments[ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY];
     SZrTypeValue *stableArguments = ZR_NULL;
+    TZrBool inlineArgumentPinAdded[ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY];
+    TZrBool *argumentPinAdded = ZR_NULL;
     TZrBool freeStableArguments = ZR_FALSE;
+    TZrBool freeArgumentPinAdded = ZR_FALSE;
+    TZrBool callablePinAdded = ZR_FALSE;
+    TZrBool receiverPinAdded = ZR_FALSE;
     TZrSize stableArgumentsBytes = 0;
+    TZrSize argumentPinAddedBytes = 0;
     TZrStackValuePointer savedStackTop;
     SZrCallInfo *savedCallInfo;
     TZrSize totalArguments;
     TZrSize scratchSlots;
     TZrStackValuePointer base;
+    TZrStackValuePointer resultStackSlot;
     SZrFunctionStackAnchor savedStackTopAnchor;
     SZrFunctionStackAnchor baseAnchor;
     SZrFunctionStackAnchor callInfoBaseAnchor;
     SZrFunctionStackAnchor callInfoTopAnchor;
     SZrFunctionStackAnchor callInfoReturnAnchor;
+    SZrFunctionStackAnchor resultAnchor;
     TZrBool hasAnchoredReturnDestination = ZR_FALSE;
+    TZrBool hasResultAnchor = ZR_FALSE;
     TZrSize index;
 
     if (state == ZR_NULL || callable == ZR_NULL || result == ZR_NULL) {
@@ -176,6 +228,7 @@ static TZrBool object_call_value(SZrState *state,
     }
 
     stableCallable = *callable;
+    memset(inlineArgumentPinAdded, 0, sizeof(inlineArgumentPinAdded));
     if (receiver != ZR_NULL) {
         stableReceiver = *receiver;
     }
@@ -184,8 +237,9 @@ static TZrBool object_call_value(SZrState *state,
             return ZR_FALSE;
         }
 
-        if (argumentCount <= (sizeof(inlineArguments) / sizeof(inlineArguments[0]))) {
+        if (argumentCount <= ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY) {
             stableArguments = inlineArguments;
+            argumentPinAdded = inlineArgumentPinAdded;
         } else {
             stableArgumentsBytes = argumentCount * sizeof(SZrTypeValue);
             stableArguments = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(state->global,
@@ -195,10 +249,81 @@ static TZrBool object_call_value(SZrState *state,
                 return ZR_FALSE;
             }
             freeStableArguments = ZR_TRUE;
+
+            argumentPinAddedBytes = argumentCount * sizeof(TZrBool);
+            argumentPinAdded = (TZrBool *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                          argumentPinAddedBytes,
+                                                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            if (argumentPinAdded == ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              stableArguments,
+                                              stableArgumentsBytes,
+                                              ZR_MEMORY_NATIVE_TYPE_OBJECT);
+                return ZR_FALSE;
+            }
+            freeArgumentPinAdded = ZR_TRUE;
         }
 
+        memset(argumentPinAdded, 0, argumentCount * sizeof(TZrBool));
         for (index = 0; index < argumentCount; index++) {
             stableArguments[index] = arguments[index];
+        }
+    }
+
+    if (!object_pin_value_object(state, &stableCallable, &callablePinAdded)) {
+        if (freeArgumentPinAdded) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          argumentPinAdded,
+                                          argumentPinAddedBytes,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        }
+        if (freeStableArguments) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          stableArguments,
+                                          stableArgumentsBytes,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        }
+        return ZR_FALSE;
+    }
+
+    if (receiver != ZR_NULL && !object_pin_value_object(state, &stableReceiver, &receiverPinAdded)) {
+        object_unpin_value_object(state->global, &stableCallable, callablePinAdded);
+        if (freeArgumentPinAdded) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          argumentPinAdded,
+                                          argumentPinAddedBytes,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        }
+        if (freeStableArguments) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          stableArguments,
+                                          stableArgumentsBytes,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        }
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < argumentCount; index++) {
+        if (!object_pin_value_object(state, &stableArguments[index], &argumentPinAdded[index])) {
+            while (index > 0) {
+                index--;
+                object_unpin_value_object(state->global, &stableArguments[index], argumentPinAdded[index]);
+            }
+            object_unpin_value_object(state->global, receiver != ZR_NULL ? &stableReceiver : ZR_NULL, receiverPinAdded);
+            object_unpin_value_object(state->global, &stableCallable, callablePinAdded);
+            if (freeArgumentPinAdded) {
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              argumentPinAdded,
+                                              argumentPinAddedBytes,
+                                              ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            }
+            if (freeStableArguments) {
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              stableArguments,
+                                              stableArgumentsBytes,
+                                              ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            }
+            return ZR_FALSE;
         }
     }
 
@@ -208,6 +333,12 @@ static TZrBool object_call_value(SZrState *state,
     totalArguments = argumentCount + (receiver != ZR_NULL ? 1 : 0);
     scratchSlots = 1 + totalArguments;
     base = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
+    resultStackSlot = ZR_CAST(TZrStackValuePointer, result);
+
+    if (resultStackSlot >= state->stackBase.valuePointer && resultStackSlot < state->stackTail.valuePointer) {
+        ZrCore_Function_StackAnchorInit(state, resultStackSlot, &resultAnchor);
+        hasResultAnchor = ZR_TRUE;
+    }
 
     ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
     ZrCore_Function_StackAnchorInit(state, base, &baseAnchor);
@@ -221,7 +352,7 @@ static TZrBool object_call_value(SZrState *state,
         }
     }
 
-    ZrCore_Function_CheckStackAndGc(state, scratchSlots, base);
+    ZrCore_Function_ReserveScratchSlots(state, scratchSlots, base);
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
     if (savedCallInfo != ZR_NULL) {
@@ -253,6 +384,16 @@ static TZrBool object_call_value(SZrState *state,
         }
     }
 
+    for (index = argumentCount; index > 0; index--) {
+        object_unpin_value_object(state->global,
+                                  &stableArguments[index - 1],
+                                  argumentPinAdded[index - 1]);
+    }
+    object_unpin_value_object(state->global,
+                              receiver != ZR_NULL ? &stableReceiver : ZR_NULL,
+                              receiverPinAdded);
+    object_unpin_value_object(state->global, &stableCallable, callablePinAdded);
+
     base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     if (savedCallInfo != ZR_NULL) {
@@ -261,6 +402,9 @@ static TZrBool object_call_value(SZrState *state,
         if (hasAnchoredReturnDestination) {
             savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
         }
+    }
+    if (hasResultAnchor) {
+        result = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &resultAnchor));
     }
 
     if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
@@ -274,6 +418,12 @@ static TZrBool object_call_value(SZrState *state,
                                           stableArgumentsBytes,
                                           ZR_MEMORY_NATIVE_TYPE_OBJECT);
         }
+        if (freeArgumentPinAdded) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          argumentPinAdded,
+                                          argumentPinAddedBytes,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        }
         return ZR_TRUE;
     }
 
@@ -283,6 +433,12 @@ static TZrBool object_call_value(SZrState *state,
         ZrCore_Memory_RawFreeWithType(state->global,
                                       stableArguments,
                                       stableArgumentsBytes,
+                                      ZR_MEMORY_NATIVE_TYPE_OBJECT);
+    }
+    if (freeArgumentPinAdded) {
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      argumentPinAdded,
+                                      argumentPinAddedBytes,
                                       ZR_MEMORY_NATIVE_TYPE_OBJECT);
     }
     return ZR_FALSE;
@@ -476,6 +632,10 @@ void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZr
     SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, nodeMap, key);
     if (pair == ZR_NULL) {
         pair = ZrCore_HashSet_Add(state, nodeMap, key);
+        if (pair == ZR_NULL) {
+            ZrCore_Log_Error(state, "failed to allocate object storage entry");
+            return;
+        }
     }
     ZrCore_Value_Copy(state, &pair->value, value);
     object->memberVersion++;
@@ -655,6 +815,9 @@ void ZrCore_StructPrototype_AddField(SZrState *state, SZrStructPrototype *protot
     SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &prototype->keyOffsetMap, &key);
     if (pair == ZR_NULL) {
         pair = ZrCore_HashSet_Add(state, &prototype->keyOffsetMap, &key);
+        if (pair == ZR_NULL) {
+            return;
+        }
     }
     ZrCore_Value_Copy(state, &pair->value, &value);
 }

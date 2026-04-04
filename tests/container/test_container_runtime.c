@@ -206,6 +206,49 @@ static void test_container_fixed_array_runtime_supports_nested_independent_manag
     TEST_DIVIDER();
 }
 
+static void test_container_fixed_array_runtime_preserves_numeric_items_across_helper_calls(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Fixed Array Foreach Preserves Numeric Items Across Helper Calls";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    const char *source =
+            "labelFor(value: int) {\n"
+            "    if (value % 2 == 0) {\n"
+            "        return \"even\";\n"
+            "    }\n"
+            "    return \"odd\";\n"
+            "}\n"
+            "var xs: int[3] = [1, 2, 3];\n"
+            "var total = 0;\n"
+            "for (var item in xs) {\n"
+            "    var label = labelFor(item);\n"
+            "    if (label == \"even\") {\n"
+            "        total = total + 10;\n"
+            "    }\n"
+            "    total = total + item;\n"
+            "}\n"
+            "return total;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_fixed_array_helper_call_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(16, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 static void test_container_array_runtime_supports_capacity_growth_and_structural_equality(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Supports Capacity Growth And Structural Equality";
@@ -692,6 +735,160 @@ static void test_container_linked_list_runtime_remove_first_preserves_pair_value
     TEST_DIVIDER();
 }
 
+static void test_container_set_to_map_runtime_preserves_bucket_values_in_fresh_state(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Set To Map Composite Preserves Bucket Values";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var seen = new container.Set<Pair<int, string>>();\n"
+            "seen.add(new container.Pair<int, string>(3, \"odd_hi\"));\n"
+            "seen.add(new container.Pair<int, string>(1, \"odd_lo\"));\n"
+            "seen.add(new container.Pair<int, string>(2, \"even\"));\n"
+            "seen.add(new container.Pair<int, string>(4, \"even\"));\n"
+            "var buckets = new container.Map<string, Array<int>>();\n"
+            "for (var pair in seen) {\n"
+            "    var label = <string> pair.second;\n"
+            "    var value = <int> pair.first;\n"
+            "    var bucket = buckets[label];\n"
+            "    if (bucket == null) {\n"
+            "        bucket = new container.Array<int>();\n"
+            "        buckets[label] = bucket;\n"
+            "    }\n"
+            "    bucket.add(value);\n"
+            "}\n"
+            "var oddLo: Array<int> = buckets[\"odd_lo\"];\n"
+            "var oddHi: Array<int> = buckets[\"odd_hi\"];\n"
+            "var even: Array<int> = buckets[\"even\"];\n"
+            "var total = 0;\n"
+            "if (oddLo != null) {\n"
+            "    for (var item in oddLo) {\n"
+            "        total = total + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "if (oddHi != null) {\n"
+            "    for (var item in oddHi) {\n"
+            "        total = total + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "if (even != null) {\n"
+            "    for (var item in even) {\n"
+            "        total = total + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "return total + (oddLo == null ? 0 : oddLo.length) * 100 + (oddHi == null ? 0 : oddHi.length) * 10 + (even == null ? 0 : even.length);\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_set_to_map_composite_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(122, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_linked_set_map_runtime_preserves_native_call_arguments_in_fresh_state(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Linked Set Map Composite Preserves Native Call Arguments";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "labelFor(value: int) {\n"
+            "    if (value % 2 == 0) {\n"
+            "        return \"even\";\n"
+            "    }\n"
+            "    if (value > 2) {\n"
+            "        return \"odd_hi\";\n"
+            "    }\n"
+            "    return \"odd_lo\";\n"
+            "}\n"
+            "var fixedValues: int[6] = [3, 1, 3, 2, 4, 2];\n"
+            "var queue = new container.LinkedList<Pair<string, int>>();\n"
+            "var seen = new container.Set<Pair<int, string>>();\n"
+            "var buckets = new container.Map<string, Array<int>>();\n"
+            "for (var item in fixedValues) {\n"
+            "    var numeric = <int> item;\n"
+            "    queue.addLast(new container.Pair<string, int>(labelFor(numeric), numeric));\n"
+            "}\n"
+            "while (queue.count > 0) {\n"
+            "    var head = queue.first;\n"
+            "    var task = head.value;\n"
+            "    var next = head.next;\n"
+            "    if (next != null) {\n"
+            "        next.previous = null;\n"
+            "        queue.first = next;\n"
+            "    } else {\n"
+            "        queue.first = null;\n"
+            "        queue.last = null;\n"
+            "    }\n"
+            "    head.next = null;\n"
+            "    head.previous = null;\n"
+            "    queue.count = queue.count - 1;\n"
+            "    seen.add(new container.Pair<int, string>(<int> task.second, <string> task.first));\n"
+            "}\n"
+            "for (var pair in seen) {\n"
+            "    var label = <string> pair.second;\n"
+            "    var value = <int> pair.first;\n"
+            "    var bucket = buckets[label];\n"
+            "    if (bucket == null) {\n"
+            "        bucket = new container.Array<int>();\n"
+            "        buckets[label] = bucket;\n"
+            "    }\n"
+            "    bucket.add(value);\n"
+            "}\n"
+            "var oddLo: Array<int> = buckets[\"odd_lo\"];\n"
+            "var oddHi: Array<int> = buckets[\"odd_hi\"];\n"
+            "var even: Array<int> = buckets[\"even\"];\n"
+            "var oddLoLen = oddLo == null ? 0 : oddLo.length;\n"
+            "var oddHiLen = oddHi == null ? 0 : oddHi.length;\n"
+            "var evenLen = even == null ? 0 : even.length;\n"
+            "var oddLoSum = 0;\n"
+            "var oddHiSum = 0;\n"
+            "if (oddLo != null) {\n"
+            "    for (var item in oddLo) {\n"
+            "        oddLoSum = oddLoSum + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "if (oddHi != null) {\n"
+            "    for (var item in oddHi) {\n"
+            "        oddHiSum = oddHiSum + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "return seen.count * 100 + oddLoLen * 10 + oddHiLen + evenLen + oddLoSum + oddHiSum;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_linked_set_map_composite_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(417, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 static void test_reference_object_member_vs_string_index_fixture_separates_member_and_index_contracts(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Reference Object Fixture - Member And String Index Stay Separate";
@@ -1039,6 +1236,7 @@ int main(void) {
     RUN_TEST(test_container_fixed_array_runtime_supports_mutation_and_iteration);
     RUN_TEST(test_container_fixed_array_runtime_reiterates_managed_elements_without_corrupting_iterator_state);
     RUN_TEST(test_container_fixed_array_runtime_supports_nested_independent_managed_iterators);
+    RUN_TEST(test_container_fixed_array_runtime_preserves_numeric_items_across_helper_calls);
     RUN_TEST(test_container_array_runtime_supports_capacity_growth_and_structural_equality);
     RUN_TEST(test_container_array_runtime_clear_preserves_capacity_and_missing_item_returns_null);
     RUN_TEST(test_container_array_runtime_accepts_unary_negation_in_constructor_arguments);
@@ -1052,6 +1250,8 @@ int main(void) {
     RUN_TEST(test_container_linked_list_runtime_detaches_removed_and_cleared_nodes);
     RUN_TEST(test_container_linked_list_runtime_empty_removals_return_null);
     RUN_TEST(test_container_linked_list_runtime_remove_first_preserves_pair_values_across_typed_function_boundary);
+    RUN_TEST(test_container_set_to_map_runtime_preserves_bucket_values_in_fresh_state);
+    RUN_TEST(test_container_linked_set_map_runtime_preserves_native_call_arguments_in_fresh_state);
     RUN_TEST(test_reference_object_member_vs_string_index_fixture_separates_member_and_index_contracts);
     RUN_TEST(test_reference_object_missing_member_vs_missing_key_fixture_preserves_member_error_boundary);
     RUN_TEST(test_reference_object_array_map_plain_index_fixture_keeps_contract_specific_miss_semantics);

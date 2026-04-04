@@ -13,6 +13,7 @@
 #include "zr_vm_common/zr_constant_reference_conf.h"
 #include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_common/zr_gc_internal_conf.h"
+#include "zr_vm_common/zr_hash_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_log_conf.h"

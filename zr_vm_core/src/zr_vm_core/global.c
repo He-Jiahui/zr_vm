@@ -130,7 +130,7 @@ static void global_state_init_builtin_exception_types(SZrState *state, SZrGlobal
 }
 
 SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAllocationArguments, TZrUInt64 uniqueNumber,
-                                 SZrCallbackGlobal *callbacks) {
+                                  SZrCallbackGlobal *callbacks) {
     SZrGlobalState *global =
             allocator(userAllocationArguments, ZR_NULL, 0, sizeof(SZrGlobalState), ZR_MEMORY_NATIVE_TYPE_GLOBAL);
     if (global == ZR_NULL) {
@@ -156,6 +156,8 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
 
     // io
     global->sourceLoader = ZR_NULL;
+    global->aotModuleLoader = ZR_NULL;
+    global->aotModuleLoaderUserData = ZR_NULL;
     global->nativeModuleLoader = ZR_NULL;
     global->nativeModuleLoaderUserData = ZR_NULL;
 
@@ -182,6 +184,8 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
 
     // loader
     global->sourceLoader = ZR_NULL;
+    global->aotModuleLoader = ZR_NULL;
+    global->aotModuleLoaderUserData = ZR_NULL;
     global->nativeModuleLoader = ZR_NULL;
     global->nativeModuleLoaderUserData = ZR_NULL;
     
@@ -318,6 +322,17 @@ void ZrCore_GlobalState_SetNativeModuleLoader(SZrGlobalState *global,
 
     global->nativeModuleLoader = loader;
     global->nativeModuleLoaderUserData = userData;
+}
+
+void ZrCore_GlobalState_SetAotModuleLoader(SZrGlobalState *global,
+                                           FZrAotModuleLoader loader,
+                                           TZrPtr userData) {
+    if (global == ZR_NULL) {
+        return;
+    }
+
+    global->aotModuleLoader = loader;
+    global->aotModuleLoaderUserData = userData;
 }
 
 

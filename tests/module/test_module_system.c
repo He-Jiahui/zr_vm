@@ -568,6 +568,12 @@ typedef struct {
     clock_t endTime;
 } SZrTestTimer;
 
+typedef struct ZrTestAllocatorFailureConfig {
+    TZrBool armed;
+    TZrBool fired;
+    EZrMemoryNativeType failType;
+} ZrTestAllocatorFailureConfig;
+
 // 测试日志宏（符合测试规范）
 #define TEST_START(summary)                                                                                            \
     do {                                                                                                               \
@@ -609,9 +615,14 @@ typedef struct {
 
 // 简单的测试分配器
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
-    ZR_UNUSED_PARAMETER(userData);
+    ZrTestAllocatorFailureConfig *failureConfig = (ZrTestAllocatorFailureConfig *)userData;
     ZR_UNUSED_PARAMETER(originalSize);
-    ZR_UNUSED_PARAMETER(flag);
+
+    if (pointer == ZR_NULL && newSize > 0 && failureConfig != ZR_NULL && failureConfig->armed && !failureConfig->fired &&
+        (EZrMemoryNativeType)flag == failureConfig->failType) {
+        failureConfig->fired = ZR_TRUE;
+        return ZR_NULL;
+    }
 
     if (newSize == 0) {
         if (pointer != ZR_NULL && (TZrPtr) pointer >= (TZrPtr) 0x1000) {
@@ -631,10 +642,9 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     }
 }
 
-// 创建测试用的SZrState
-static SZrState *create_test_state(void) {
+static SZrState *create_test_state_with_allocator_context(TZrPtr allocatorUserData) {
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
+    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, allocatorUserData, 12345, &callbacks);
     if (!global)
         return ZR_NULL;
 
@@ -648,6 +658,11 @@ static SZrState *create_test_state(void) {
     }
 
     return mainState;
+}
+
+// 创建测试用的SZrState
+static SZrState *create_test_state(void) {
+    return create_test_state_with_allocator_context(ZR_NULL);
 }
 
 static TZrBool register_probe_native_module(SZrState *state) {
@@ -2671,6 +2686,67 @@ static void test_native_enum_construction_returns_runtime_enum_instance(void) {
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, enumNameField->value.object), "On"));
 
         ZrCore_Function_Free(state, entryFunction);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_native_binding_helpers_root_fresh_values_across_gc_retry(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Binding Helpers Root Fresh Values Across Gc Retry";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        ZrTestAllocatorFailureConfig failureConfig = {0};
+        SZrState *state = create_test_state_with_allocator_context(&failureConfig);
+        SZrObject *targetObject;
+        SZrObject *sourceObject;
+        SZrObject *targetArray;
+        SZrObject *arraySourceObject;
+        SZrTypeValue sourceValue;
+        SZrTypeValue arrayValue;
+        const SZrTypeValue *capturedField;
+        const SZrTypeValue *capturedEntry;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        targetObject = ZrLib_Object_New(state);
+        sourceObject = ZrLib_Object_New(state);
+        targetArray = ZrLib_Array_New(state);
+        arraySourceObject = ZrLib_Object_New(state);
+        TEST_ASSERT_NOT_NULL(targetObject);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        TEST_ASSERT_NOT_NULL(targetArray);
+        TEST_ASSERT_NOT_NULL(arraySourceObject);
+
+        ZrLib_Value_SetObject(state, &sourceValue, sourceObject, ZR_VALUE_TYPE_OBJECT);
+        failureConfig.failType = ZR_MEMORY_NATIVE_TYPE_HASH_PAIR;
+        failureConfig.armed = ZR_TRUE;
+        failureConfig.fired = ZR_FALSE;
+        ZrLib_Object_SetFieldCString(state, targetObject, "captured", &sourceValue);
+        TEST_ASSERT_TRUE(failureConfig.fired);
+
+        capturedField = ZrLib_Object_GetFieldCString(state, targetObject, "captured");
+        TEST_ASSERT_NOT_NULL(capturedField);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, capturedField->type);
+        TEST_ASSERT_EQUAL_PTR(sourceObject, ZR_CAST_OBJECT(state, capturedField->value.object));
+
+        ZrLib_Value_SetObject(state, &arrayValue, arraySourceObject, ZR_VALUE_TYPE_OBJECT);
+        failureConfig.armed = ZR_TRUE;
+        failureConfig.fired = ZR_FALSE;
+        TEST_ASSERT_TRUE(ZrLib_Array_PushValue(state, targetArray, &arrayValue));
+        TEST_ASSERT_TRUE(failureConfig.fired);
+
+        capturedEntry = get_array_entry_value(state, targetArray, 0);
+        TEST_ASSERT_NOT_NULL(capturedEntry);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, capturedEntry->type);
+        TEST_ASSERT_EQUAL_PTR(arraySourceObject, ZR_CAST_OBJECT(state, capturedEntry->value.object));
+
         destroy_test_state(state);
     }
 
@@ -4839,25 +4915,28 @@ int main(void) {
     // 23. native runtime 注册 enum 静态成员和 interface 继承链
     RUN_TEST(test_native_module_runtime_registers_enum_members_and_interface_inheritance);
 
-    // 24. native enum 构造在 runtime 返回正确实例
+    // 24. native binding helper 在 GC retry 中仍保活 fresh object/value
+    RUN_TEST(test_native_binding_helpers_root_fresh_values_across_gc_retry);
+
+    // 25. native enum 构造在 runtime 返回正确实例
     RUN_TEST(test_native_enum_construction_returns_runtime_enum_instance);
 
-    // 25. zr.container 导出泛型接口/类型以及约束元数据
+    // 26. zr.container 导出泛型接口/类型以及约束元数据
     RUN_TEST(test_container_module_exports_generic_interfaces_and_constraints);
 
-    // 26. zr.container Array runtime 支持 add 和 [] 访问
+    // 27. zr.container Array runtime 支持 add 和 [] 访问
     RUN_TEST(test_container_array_runtime_supports_add_and_computed_index_access);
 
-    // 27. 原生 fixed array 通过 foreach 迭代
+    // 28. 原生 fixed array 通过 foreach 迭代
     RUN_TEST(test_container_fixed_array_runtime_supports_foreach_iteration);
 
-    // 28. zr.container Array 通过 foreach 迭代
+    // 29. zr.container Array 通过 foreach 迭代
     RUN_TEST(test_container_array_runtime_supports_foreach_iteration);
 
-    // 29. zr.container Map runtime 支持键访问
+    // 30. zr.container Map runtime 支持键访问
     RUN_TEST(test_container_map_runtime_supports_computed_key_access);
 
-    // 30. zr.container Set runtime 保持唯一性
+    // 31. zr.container Set runtime 保持唯一性
     RUN_TEST(test_container_set_runtime_enforces_uniqueness);
 
     // 31. zr.container LinkedList runtime 维护首尾节点

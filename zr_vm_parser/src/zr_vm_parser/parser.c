@@ -58,7 +58,7 @@ SZrAstNode *parse_script(SZrParserState *ps) {
     }
 
     // 解析语句列表
-    SZrAstNodeArray *statements = ZrParser_AstNodeArray_New(ps->state, 16);
+    SZrAstNodeArray *statements = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
     if (statements == ZR_NULL) {
         report_error(ps, "Failed to allocate statement array");
         return ZR_NULL;

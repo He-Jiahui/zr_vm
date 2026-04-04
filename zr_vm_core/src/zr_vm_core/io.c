@@ -149,6 +149,36 @@ static void io_read_function_local_variables(SZrIo *io, SZrIoFunctionLocalVariab
     }
 }
 
+static void io_read_function_closure_variables(SZrIo *io, SZrIoFunctionClosureVariable *variables, TZrSize count) {
+    for (TZrSize i = 0; i < count; i++) {
+        SZrIoFunctionClosureVariable *variable = &variables[i];
+        variable->name = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->inStack, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->index, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->valueType, TZrUInt32);
+    }
+}
+
+static void io_read_function_catch_clauses(SZrIo *io, SZrIoFunctionCatchClause *clauses, TZrSize count) {
+    for (TZrSize i = 0; i < count; i++) {
+        clauses[i].typeName = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, clauses[i].targetInstructionOffset, TZrUInt64);
+    }
+}
+
+static void io_read_function_exception_handlers(SZrIo *io,
+                                                SZrIoFunctionExceptionHandler *handlers,
+                                                TZrSize count) {
+    for (TZrSize i = 0; i < count; i++) {
+        ZR_IO_READ_NATIVE_TYPE(io, handlers[i].protectedStartInstructionOffset, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, handlers[i].finallyTargetInstructionOffset, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, handlers[i].afterFinallyInstructionOffset, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, handlers[i].catchClauseStartIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, handlers[i].catchClauseCount, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, handlers[i].hasFinally, TZrUInt8);
+    }
+}
+
 static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count);
 static void io_read_function_constant_variables(SZrIo *io, SZrIoFunctionConstantVariable *variables, TZrSize count) {
     SZrGlobalState *global = io->state->global;
@@ -542,6 +572,38 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
             io_read_function_local_variables(io, function->localVariables, function->localVariablesLength);
         } else {
             function->localVariables = ZR_NULL;
+        }
+        ZR_IO_READ_NATIVE_TYPE(io, function->closureVariablesLength, TZrSize);
+        if (function->closureVariablesLength > 0) {
+            function->closureVariables = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionClosureVariable) *
+                                                                                  function->closureVariablesLength);
+            if (function->closureVariables != ZR_NULL) {
+                io_read_function_closure_variables(io, function->closureVariables, function->closureVariablesLength);
+            }
+        } else {
+            function->closureVariables = ZR_NULL;
+        }
+        ZR_IO_READ_NATIVE_TYPE(io, function->catchClauseCount, TZrSize);
+        if (function->catchClauseCount > 0) {
+            function->catchClauses = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionCatchClause) *
+                                                                      function->catchClauseCount);
+            if (function->catchClauses != ZR_NULL) {
+                io_read_function_catch_clauses(io, function->catchClauses, function->catchClauseCount);
+            }
+        } else {
+            function->catchClauses = ZR_NULL;
+        }
+        ZR_IO_READ_NATIVE_TYPE(io, function->exceptionHandlerCount, TZrSize);
+        if (function->exceptionHandlerCount > 0) {
+            function->exceptionHandlers = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionExceptionHandler) *
+                                                                           function->exceptionHandlerCount);
+            if (function->exceptionHandlers != ZR_NULL) {
+                io_read_function_exception_handlers(io,
+                                                    function->exceptionHandlers,
+                                                    function->exceptionHandlerCount);
+            }
+        } else {
+            function->exceptionHandlers = ZR_NULL;
         }
         ZR_IO_READ_NATIVE_TYPE(io, function->constantVariablesLength, TZrSize);
         if (function->constantVariablesLength > 0) {

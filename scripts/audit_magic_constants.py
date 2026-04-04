@@ -741,6 +741,46 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
         meaning="Module entry reflection hash salting must come from a named runtime hash constant.",
     ),
     AuditRule(
+        name="core gc managed-memory drift divisor",
+        path="zr_vm_core/src/zr_vm_core/gc_cycle.c",
+        pattern=r"estimatedMemories\s*/\s*10",
+        target="ZR_GC_MANAGED_MEMORY_DRIFT_TOLERANCE_DIVISOR",
+        layer="common",
+        meaning="GC managed-memory drift reconciliation must use a named tolerance divisor from zr_gc_internal_conf.h.",
+    ),
+    AuditRule(
+        name="core gc full-inc debt credit",
+        path="zr_vm_core/src/zr_vm_core/gc_cycle.c",
+        pattern=r"AddDebtSpace\(global,\s*-2000\)",
+        target="ZR_GC_DEBT_CREDIT_BYTES",
+        layer="common",
+        meaning="GC full-inc cleanup debt credit must come from a named GC-internal budget constant.",
+    ),
+    AuditRule(
+        name="core gc idle debt credit",
+        path="zr_vm_core/src/zr_vm_core/gc.c",
+        pattern=r"AddDebtSpace\(global,\s*-2000\)",
+        target="ZR_GC_DEBT_CREDIT_BYTES",
+        layer="common",
+        meaning="GC idle-step debt credit must come from a named GC-internal budget constant.",
+    ),
+    AuditRule(
+        name="core native-call error-handler overflow ratio",
+        path="zr_vm_core/src/zr_vm_core/function.c",
+        pattern=r"ZR_VM_MAX_NATIVE_CALL_STACK\s*\)\s*/\s*10\s*\*\s*11",
+        target="ZR_NATIVE_CALL_STACK_ERROR_HANDLER_GUARD_DIVISOR / ZR_NATIVE_CALL_STACK_ERROR_HANDLER_GUARD_MULTIPLIER",
+        layer="common",
+        meaning="Native stack overflow escalation while handling errors must come from named runtime guard ratio constants.",
+    ),
+    AuditRule(
+        name="core object inline-call argument capacity",
+        path="zr_vm_core/src/zr_vm_core/object.c",
+        pattern=r"inlineArguments\s*\[\s*8\s*\]|inlineArgumentPinAdded\s*\[\s*8\s*\]|argumentCount\s*<=\s*8\b",
+        target="ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY",
+        layer="common",
+        meaning="Object-call inline scratch argument staging must come from a named runtime capacity limit.",
+    ),
+    AuditRule(
         name="lsp stdio json-rpc request error codes",
         path="zr_vm_language_server/stdio/stdio_requests.c",
         pattern=r"-32601|-32602",
@@ -749,12 +789,103 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
         meaning="stdio request dispatch must not hard-code JSON-RPC method-not-found and invalid-params error codes.",
     ),
     AuditRule(
+        name="lsp stdio initialize sync-kind and trigger literals",
+        path="zr_vm_language_server/stdio/stdio_requests.c",
+        pattern=r"ZR_LSP_FIELD_CHANGE,\s*2\b|cJSON_CreateString\(\"\\.\"\)|cJSON_CreateString\(\":\"\)|"
+        r"cJSON_CreateString\(\"\(\"\)|cJSON_CreateString\(\",\"\)",
+        target="ZR_LSP_TEXT_DOCUMENT_SYNC_KIND_INCREMENTAL / ZR_LSP_*_TRIGGER_CHARACTER_*",
+        layer="module",
+        meaning="stdio initialize capabilities must reuse named text-document sync enums and trigger-character constants.",
+    ),
+    AuditRule(
+        name="lsp stdio transport protocol keys and header prefix",
+        path="zr_vm_language_server/stdio/stdio_transport.c",
+        pattern=r"\"jsonrpc\"|\"2\\.0\"|\"id\"|\"result\"|\"error\"|\"method\"|\"params\"|\"code\"|\"message\"|Content-Length:",
+        target="ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX / ZR_LSP_JSON_RPC_FIELD_* / ZR_LSP_JSON_RPC_VERSION",
+        layer="module",
+        meaning="stdio transport must not reintroduce raw JSON-RPC field names, protocol version, or content-length header prefixes.",
+    ),
+    AuditRule(
+        name="lsp stdio message envelope keys",
+        path="zr_vm_language_server/stdio/zr_vm_language_server_stdio.c",
+        pattern=r"\"method\"|\"id\"|\"params\"",
+        target="ZR_LSP_JSON_RPC_FIELD_METHOD / ZR_LSP_JSON_RPC_FIELD_ID / ZR_LSP_JSON_RPC_FIELD_PARAMS",
+        layer="module",
+        meaning="stdio request parsing must reuse named JSON-RPC envelope field constants from zr_vm_language_server/conf.h.",
+    ),
+    AuditRule(
+        name="lsp stdio json payload field and markup literals",
+        path="zr_vm_language_server/stdio/stdio_json.c",
+        pattern=r"\"line\"|\"character\"|\"start\"|\"end\"|\"uri\"|\"range\"|\"name\"|\"kind\"|\"location\"|"
+        r"\"containerName\"|\"severity\"|\"source\"|\"zr\"|\"message\"|\"code\"|\"label\"|\"detail\"|"
+        r"\"markdown\"|\"value\"|\"documentation\"|\"insertText\"|\"snippet\"|\"insertTextFormat\"|"
+        r"\"contents\"|\"parameters\"|\"signatures\"|\"activeSignature\"|\"activeParameter\"",
+        target="ZR_LSP_FIELD_* / ZR_LSP_MARKUP_KIND_MARKDOWN / ZR_LSP_INSERT_TEXT_FORMAT_KIND_SNIPPET / ZR_LSP_DIAGNOSTIC_SOURCE_NAME",
+        layer="module",
+        meaning="stdio JSON serializers and parsers must reuse named LSP payload field, markup-kind, and diagnostic-source constants.",
+    ),
+    AuditRule(
+        name="lsp stdio completion insert-text-format numeric literals",
+        path="zr_vm_language_server/stdio/stdio_json.c",
+        pattern=r"insertTextFormat\s*=\s*1\b|insertTextFormat\s*=\s*2\b",
+        target="ZR_LSP_INSERT_TEXT_FORMAT_PLAIN_TEXT / ZR_LSP_INSERT_TEXT_FORMAT_SNIPPET",
+        layer="module",
+        meaning="Completion serialization must reuse named LSP insert-text-format protocol enums.",
+    ),
+    AuditRule(
+        name="lsp stdio document field and notification literals",
+        path="zr_vm_language_server/stdio/stdio_documents.c",
+        pattern=r"\"text\"|\"range\"|\"uri\"|\"version\"|\"diagnostics\"|\"textDocument\"|\"position\"|"
+        r"\"textDocument/publishDiagnostics\"",
+        target="ZR_LSP_FIELD_* / ZR_LSP_METHOD_TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS",
+        layer="module",
+        meaning="stdio document sync helpers must reuse named LSP document field keys and publishDiagnostics method constants.",
+    ),
+    AuditRule(
+        name="lsp stdio request payload field literals",
+        path="zr_vm_language_server/stdio/stdio_requests.c",
+        pattern=r"\"range\"|\"newText\"|\"changes\"|\"textDocument\"|\"text\"|\"version\"|\"contentChanges\"|"
+        r"\"context\"|\"includeDeclaration\"|\"query\"|\"tokenTypes\"|\"tokenModifiers\"|\"data\"|"
+        r"\"placeholder\"|\"newName\"|\"openClose\"|\"change\"|\"includeText\"|\"save\"|"
+        r"\"resolveProvider\"|\"triggerCharacters\"|\"prepareProvider\"|\"textDocumentSync\"|"
+        r"\"completionProvider\"|\"hoverProvider\"|\"signatureHelpProvider\"|\"definitionProvider\"|"
+        r"\"referencesProvider\"|\"renameProvider\"|\"documentSymbolProvider\"|"
+        r"\"workspaceSymbolProvider\"|\"documentHighlightProvider\"|\"legend\"|\"full\"|"
+        r"\"semanticTokensProvider\"|\"supported\"|\"changeNotifications\"|\"workspaceFolders\"|"
+        r"\"workspace\"|\"capabilities\"|\"serverInfo\"|\"name\"",
+        target="ZR_LSP_FIELD_* / ZR_LSP_SERVER_NAME / ZR_LSP_SERVER_VERSION",
+        layer="module",
+        meaning="stdio request handlers must reuse named LSP request/response payload field and server metadata constants.",
+    ),
+    AuditRule(
+        name="lsp stdio request and notification method literals",
+        path="zr_vm_language_server/stdio/stdio_requests.c",
+        pattern=r"\"initialize\"|\"shutdown\"|\"initialized\"|\"exit\"|\"\$/cancelRequest\"|"
+        r"\"textDocument/completion\"|\"textDocument/hover\"|\"textDocument/signatureHelp\"|"
+        r"\"textDocument/definition\"|\"textDocument/references\"|\"textDocument/documentSymbol\"|"
+        r"\"workspace/symbol\"|\"textDocument/documentHighlight\"|\"textDocument/semanticTokens/full\"|"
+        r"\"textDocument/prepareRename\"|\"textDocument/rename\"|\"workspace/didChangeConfiguration\"|"
+        r"\"workspace/didChangeWatchedFiles\"|\"workspace/didChangeWorkspaceFolders\"|"
+        r"\"textDocument/didOpen\"|\"textDocument/didChange\"|\"textDocument/didClose\"|\"textDocument/didSave\"",
+        target="ZR_LSP_METHOD_*",
+        layer="module",
+        meaning="stdio request and notification dispatch must reuse named LSP method constants from zr_vm_language_server/conf.h.",
+    ),
+    AuditRule(
         name="lsp completion-item kind raw protocol codes",
         path="zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c",
         pattern=r"kindValue\s*=\s*(1|2|3|5|6|7|8|9|10|13|21|22)\s*;",
         target="EZrLspCompletionItemKind",
         layer="module",
         meaning="Completion item kind mappings should be inventoried behind named LSP protocol constants or enums.",
+    ),
+    AuditRule(
+        name="lsp completion plain-text format literal",
+        path="zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c",
+        pattern=r"ZrCore_String_Create\(\s*state,\s*\"plaintext\"\s*,\s*9\s*\)",
+        target="ZR_LSP_INSERT_TEXT_FORMAT_KIND_PLAINTEXT",
+        layer="module",
+        meaning="Completion-item plain-text insertTextFormat tags should reuse a named LSP format string constant.",
     ),
     AuditRule(
         name="lsp symbol kind raw protocol codes",
@@ -840,10 +971,75 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     AuditRule(
         name="parser primary-expression helper buffers and capacities",
         path="zr_vm_parser/src/zr_vm_parser/parser_expression_primary.c",
-        pattern=r"ZrCore_Array_Init\(ps->state,\s*names,\s*sizeof\(SZrString \*\),\s*4\)|errorMsg\s*\[\s*256\s*\]",
+        pattern=r"ZrCore_Array_Init\(ps->state,\s*names,\s*sizeof\(SZrString \*\),\s*4\)|"
+        r"ZrParser_AstNodeArray_New\(ps->state,\s*4\)|errorMsg\s*\[\s*256\s*\]",
         target="ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_ERROR_BUFFER_LENGTH",
         layer="common",
         meaning="Primary-expression named-argument helpers must use parser capacity tiers and diagnostic buffer constants.",
+    ),
+    AuditRule(
+        name="parser module and block statement capacities",
+        path="zr_vm_parser/src/zr_vm_parser/parser.c",
+        pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*16\)",
+        target="ZR_PARSER_INITIAL_CAPACITY_MEDIUM",
+        layer="common",
+        meaning="Parser root/module statement collections must reuse parser capacity tiers.",
+    ),
+    AuditRule(
+        name="parser class member collection capacity",
+        path="zr_vm_parser/src/zr_vm_parser/parser_class.c",
+        pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*8\)",
+        target="ZR_PARSER_INITIAL_CAPACITY_SMALL",
+        layer="common",
+        meaning="Class member parsing collections must reuse parser capacity tiers.",
+    ),
+    AuditRule(
+        name="parser extern member and declaration capacities",
+        path="zr_vm_parser/src/zr_vm_parser/parser_extern.c",
+        pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*(4|8)\)",
+        target="ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_INITIAL_CAPACITY_SMALL",
+        layer="common",
+        meaning="Extern parser member, declaration, and instruction collections must reuse parser capacity tiers.",
+    ),
+    AuditRule(
+        name="parser interface member collection capacity",
+        path="zr_vm_parser/src/zr_vm_parser/parser_interface.c",
+        pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*8\)",
+        target="ZR_PARSER_INITIAL_CAPACITY_SMALL",
+        layer="common",
+        meaning="Interface member parsing collections must reuse parser capacity tiers.",
+    ),
+    AuditRule(
+        name="parser literal collection capacities",
+        path="zr_vm_parser/src/zr_vm_parser/parser_literals.c",
+        pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*(4|8)\)",
+        target="ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_INITIAL_CAPACITY_SMALL",
+        layer="common",
+        meaning="Literal parser segment, element, and property collections must reuse parser capacity tiers.",
+    ),
+    AuditRule(
+        name="parser statement collection capacities",
+        path="zr_vm_parser/src/zr_vm_parser/parser_statements.c",
+        pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*(4|8)\)",
+        target="ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_INITIAL_CAPACITY_SMALL",
+        layer="common",
+        meaning="Statement parser block and switch-case collections must reuse parser capacity tiers.",
+    ),
+    AuditRule(
+        name="parser struct member collection capacity",
+        path="zr_vm_parser/src/zr_vm_parser/parser_struct.c",
+        pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*8\)",
+        target="ZR_PARSER_INITIAL_CAPACITY_SMALL",
+        layer="common",
+        meaning="Struct member parsing collections must reuse parser capacity tiers.",
+    ),
+    AuditRule(
+        name="parser type collection capacities",
+        path="zr_vm_parser/src/zr_vm_parser/parser_types.c",
+        pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*4\)",
+        target="ZR_PARSER_INITIAL_CAPACITY_TINY",
+        layer="common",
+        meaning="Type parser parameter and key collections must reuse parser capacity tiers.",
     ),
     AuditRule(
         name="parser ast default capacity and growth factor",
@@ -860,6 +1056,22 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
         target="ZR_PARSER_DYNAMIC_CAPACITY_GROWTH_FACTOR / ZR_PARSER_TYPE_NAME_BUFFER_LENGTH",
         layer="common",
         meaning="Lexer save-buffer expansion and displayed snippet buffers must come from zr_parser_conf.h.",
+    ),
+    AuditRule(
+        name="parser lexer diagnostic snippet window",
+        path="zr_vm_parser/src/zr_vm_parser/lexer.c",
+        pattern=r"column\s*>\s*20\b|snippetStart\s*=\s*pos\s*-\s*20\b|displayColumn\s*=\s*21\b|lineEnd\s*-\s*pos\s*<\s*20\b",
+        target="ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS / ZR_PARSER_ERROR_SNIPPET_FOCUS_COLUMN",
+        layer="common",
+        meaning="Lexer diagnostic snippet window geometry must come from zr_parser_conf.h.",
+    ),
+    AuditRule(
+        name="parser-state diagnostic snippet window",
+        path="zr_vm_parser/src/zr_vm_parser/parser_state.c",
+        pattern=r"column\s*>\s*20\b|snippetStart\s*=\s*pos\s*-\s*20\b|displayColumn\s*=\s*21\b|lineEnd\s*-\s*pos\s*<\s*20\b",
+        target="ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS / ZR_PARSER_ERROR_SNIPPET_FOCUS_COLUMN",
+        layer="common",
+        meaning="Parser-state diagnostic snippet window geometry must come from zr_parser_conf.h.",
     ),
     AuditRule(
         name="parser class-support diagnostics",
@@ -918,6 +1130,22 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
         meaning="Parser extern diagnostics must come from zr_parser_conf.h.",
     ),
     AuditRule(
+        name="core gc shutdown full-collect guard",
+        path="zr_vm_core/src/zr_vm_core/gc.c",
+        pattern=r"maxIterations\s*=\s*1000\b",
+        target="ZR_GC_SHUTDOWN_FULL_COLLECTION_ITERATION_LIMIT",
+        layer="common",
+        meaning="GC shutdown full-collection iteration guard must come from zr_gc_internal_conf.h.",
+    ),
+    AuditRule(
+        name="core value debug string limits",
+        path="zr_vm_core/src/zr_vm_core/value.c",
+        pattern=r"#define\s+MAX_DEBUG_BUFFER_SIZE\b|MAX_ELEMENTS_TO_SHOW\s*=\s*10\b|buffer\s*\[\s*2048\s*\]",
+        target="ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH / ZR_RUNTIME_DEBUG_COLLECTION_PREVIEW_MAX",
+        layer="common",
+        meaning="Value debug-string preview limits must come from zr_runtime_limits_conf.h.",
+    ),
+    AuditRule(
         name="core object prototype capacity literals",
         path="zr_vm_core/src/zr_vm_core/object.c",
         pattern=r"managedFieldCapacity\s*>\s*0\s*\?\s*prototype->managedFieldCapacity\s*:\s*4|newCapacity\s*\*=\s*2|"
@@ -925,6 +1153,30 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
         target="ZR_RUNTIME_OBJECT_PROTOTYPE_INITIAL_CAPACITY / ZR_RUNTIME_OBJECT_PROTOTYPE_GROWTH_FACTOR",
         layer="common",
         meaning="Runtime object-prototype capacity policy must come from zr_runtime_limits_conf.h.",
+    ),
+    AuditRule(
+        name="cli compiler stable-hash file constants",
+        path="zr_vm_cli/src/zr_vm_cli/compiler.c",
+        pattern=r"chunk\s*\[\s*4096\s*\]|hash\s*=\s*1469598103934665603ULL|hash\s*\*=\s*1099511628211ULL",
+        target="zr_hash_conf.h",
+        layer="common",
+        meaning="CLI file hashing must reuse the shared stable-hash buffer size and FNV-1a constants.",
+    ),
+    AuditRule(
+        name="cli project stable-hash constants",
+        path="zr_vm_cli/src/zr_vm_cli/project.c",
+        pattern=r"hash\s*=\s*1469598103934665603ULL|hash\s*\*=\s*1099511628211ULL|\"%016llx\"",
+        target="zr_hash_conf.h",
+        layer="common",
+        meaning="CLI manifest hashing and hex formatting must reuse shared stable-hash constants.",
+    ),
+    AuditRule(
+        name="library aot runtime stable-hash constants",
+        path="zr_vm_library/src/zr_vm_library/aot_runtime.c",
+        pattern=r"chunk\s*\[\s*4096\s*\]|hash\s*=\s*1469598103934665603ULL|hash\s*\*=\s*1099511628211ULL|\"%016llx\"|sourceHash\s*\[\s*32\s*\]|zroHash\s*\[\s*32\s*\]",
+        target="zr_hash_conf.h",
+        layer="common",
+        meaning="AOT runtime artifact hashing must reuse shared stable-hash constants and hash-buffer sizing.",
     ),
     AuditRule(
         name="lsp stdio header-line buffer",
@@ -949,6 +1201,16 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
         target="ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY",
         layer="module",
         meaning="WASM semantic-token export must reuse the named semantic-token initial capacity.",
+    ),
+    AuditRule(
+        name="lsp wasm protocol payload field literals",
+        path="zr_vm_language_server/wasm/wasm_exports.cpp",
+        pattern=r"\"line\"|\"character\"|\"start\"|\"end\"|\"range\"|\"uri\"|\"name\"|\"kind\"|"
+        r"\"containerName\"|\"documentation\"|\"insertText\"|\"insertTextFormat\"|\"contents\"|"
+        r"\"value\"|\"location\"|\"severity\"|\"message\"|\"code\"|\"label\"|\"detail\"|\"markdown\"",
+        target="ZR_LSP_FIELD_* / ZR_LSP_MARKUP_KIND_MARKDOWN",
+        layer="module",
+        meaning="WASM LSP serializers must reuse the same named protocol field and markup constants as stdio serializers.",
     ),
 )
 

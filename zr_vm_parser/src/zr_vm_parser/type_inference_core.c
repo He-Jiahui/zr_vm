@@ -522,6 +522,222 @@ static SZrTypePrototypeInfo *find_compiler_type_prototype_inference_exact(SZrCom
     return ZR_NULL;
 }
 
+static SZrAstNode *find_type_declaration_inference(SZrCompilerState *cs, SZrString *typeName) {
+    SZrScript *script;
+
+    if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (cs->scriptAst->type != ZR_AST_SCRIPT) {
+        return ZR_NULL;
+    }
+
+    script = &cs->scriptAst->data.script;
+    if (script->statements == ZR_NULL || script->statements->nodes == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < script->statements->count; index++) {
+        SZrAstNode *statement = script->statements->nodes[index];
+
+        if (statement == ZR_NULL) {
+            continue;
+        }
+
+        switch (statement->type) {
+            case ZR_AST_STRUCT_DECLARATION:
+                if (statement->data.structDeclaration.name != ZR_NULL &&
+                    statement->data.structDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(statement->data.structDeclaration.name->name, typeName)) {
+                    return statement;
+                }
+                break;
+
+            case ZR_AST_CLASS_DECLARATION:
+                if (statement->data.classDeclaration.name != ZR_NULL &&
+                    statement->data.classDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(statement->data.classDeclaration.name->name, typeName)) {
+                    return statement;
+                }
+                break;
+
+            case ZR_AST_INTERFACE_DECLARATION:
+                if (statement->data.interfaceDeclaration.name != ZR_NULL &&
+                    statement->data.interfaceDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(statement->data.interfaceDeclaration.name->name, typeName)) {
+                    return statement;
+                }
+                break;
+
+            case ZR_AST_ENUM_DECLARATION:
+                if (statement->data.enumDeclaration.name != ZR_NULL &&
+                    statement->data.enumDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(statement->data.enumDeclaration.name->name, typeName)) {
+                    return statement;
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrString *resolve_source_declaration_lookup_type_name_inference(SZrCompilerState *cs, SZrString *typeName) {
+    SZrString *baseName = ZR_NULL;
+    SZrArray argumentTypeNames;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Array_Construct(&argumentTypeNames);
+    if (try_parse_generic_instance_type_name(cs->state, typeName, &baseName, &argumentTypeNames)) {
+        ZrCore_Array_Free(cs->state, &argumentTypeNames);
+        return baseName != ZR_NULL ? baseName : typeName;
+    }
+
+    return typeName;
+}
+
+static TZrBool resolve_type_name_from_target_node_inference(SZrCompilerState *cs,
+                                                            SZrAstNode *node,
+                                                            SZrString **outTypeName) {
+    SZrAstNode *targetNode = node;
+    SZrInferredType inferredType;
+
+    if (outTypeName != ZR_NULL) {
+        *outTypeName = ZR_NULL;
+    }
+    if (cs == ZR_NULL || node == ZR_NULL || outTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (targetNode->type == ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION) {
+        targetNode = targetNode->data.prototypeReferenceExpression.target;
+    }
+    if (targetNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (targetNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+        *outTypeName = targetNode->data.identifier.name;
+        return *outTypeName != ZR_NULL;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    if (targetNode->type == ZR_AST_TYPE) {
+        if (!ZrParser_AstTypeToInferredType_Convert(cs, &targetNode->data.type, &inferredType)) {
+            ZrParser_InferredType_Free(cs->state, &inferredType);
+            return ZR_FALSE;
+        }
+    } else if (!ZrParser_ExpressionType_Infer(cs, targetNode, &inferredType)) {
+        ZrParser_InferredType_Free(cs->state, &inferredType);
+        return ZR_FALSE;
+    }
+
+    *outTypeName = inferredType.typeName;
+    ZrParser_InferredType_Free(cs->state, &inferredType);
+    return *outTypeName != ZR_NULL;
+}
+
+static TZrBool resolve_source_type_declaration_target_inference(SZrCompilerState *cs,
+                                                                SZrAstNode *node,
+                                                                SZrString **outTypeName,
+                                                                EZrObjectPrototypeType *outPrototypeType,
+                                                                TZrBool *outAllowValueConstruction,
+                                                                TZrBool *outAllowBoxedConstruction) {
+    SZrString *resolvedTypeName = ZR_NULL;
+    SZrString *lookupTypeName;
+    SZrAstNode *declarationNode;
+
+    if (outTypeName != ZR_NULL) {
+        *outTypeName = ZR_NULL;
+    }
+    if (outPrototypeType != ZR_NULL) {
+        *outPrototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
+    }
+    if (outAllowValueConstruction != ZR_NULL) {
+        *outAllowValueConstruction = ZR_FALSE;
+    }
+    if (outAllowBoxedConstruction != ZR_NULL) {
+        *outAllowBoxedConstruction = ZR_FALSE;
+    }
+    if (cs == ZR_NULL || node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!resolve_type_name_from_target_node_inference(cs, node, &resolvedTypeName) || resolvedTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    lookupTypeName = resolve_source_declaration_lookup_type_name_inference(cs, resolvedTypeName);
+    if (lookupTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    declarationNode = find_type_declaration_inference(cs, lookupTypeName);
+    if (declarationNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (outTypeName != ZR_NULL) {
+        *outTypeName = resolvedTypeName;
+    }
+
+    switch (declarationNode->type) {
+        case ZR_AST_STRUCT_DECLARATION:
+            if (outPrototypeType != ZR_NULL) {
+                *outPrototypeType = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
+            }
+            if (outAllowValueConstruction != ZR_NULL) {
+                *outAllowValueConstruction = ZR_TRUE;
+            }
+            if (outAllowBoxedConstruction != ZR_NULL) {
+                *outAllowBoxedConstruction = ZR_TRUE;
+            }
+            return ZR_TRUE;
+
+        case ZR_AST_CLASS_DECLARATION:
+            if (outPrototypeType != ZR_NULL) {
+                *outPrototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
+            }
+            if (outAllowValueConstruction != ZR_NULL) {
+                *outAllowValueConstruction = ZR_TRUE;
+            }
+            if (outAllowBoxedConstruction != ZR_NULL) {
+                *outAllowBoxedConstruction = ZR_TRUE;
+            }
+            return ZR_TRUE;
+
+        case ZR_AST_INTERFACE_DECLARATION:
+            if (outPrototypeType != ZR_NULL) {
+                *outPrototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE;
+            }
+            return ZR_TRUE;
+
+        case ZR_AST_ENUM_DECLARATION:
+            if (outPrototypeType != ZR_NULL) {
+                *outPrototypeType = ZR_OBJECT_PROTOTYPE_TYPE_ENUM;
+            }
+            if (outAllowValueConstruction != ZR_NULL) {
+                *outAllowValueConstruction = ZR_TRUE;
+            }
+            if (outAllowBoxedConstruction != ZR_NULL) {
+                *outAllowBoxedConstruction = ZR_TRUE;
+            }
+            return ZR_TRUE;
+
+        default:
+            break;
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool protocol_id_from_base_name(SZrString *baseName, EZrProtocolId *outProtocolId) {
     if (outProtocolId != ZR_NULL) {
         *outProtocolId = ZR_PROTOCOL_ID_NONE;
@@ -723,13 +939,19 @@ static TZrBool prototype_implements_protocol_recursive(SZrCompilerState *cs,
                                                        EZrProtocolId protocolId,
                                                        const SZrArray *constraintArgumentTypeNames,
                                                        TZrUInt32 depth) {
+    SZrArray implementsSnapshot;
+    SZrArray inheritsSnapshot;
+
     if (cs == ZR_NULL || prototype == ZR_NULL || protocolId == ZR_PROTOCOL_ID_NONE ||
         depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
         return ZR_FALSE;
     }
 
-    for (TZrSize index = 0; index < prototype->implements.length; index++) {
-        SZrString **implementedNamePtr = (SZrString **)ZrCore_Array_Get(&prototype->implements, index);
+    implementsSnapshot = prototype->implements;
+    inheritsSnapshot = prototype->inherits;
+
+    for (TZrSize index = 0; index < implementsSnapshot.length; index++) {
+        SZrString **implementedNamePtr = (SZrString **)ZrCore_Array_Get(&implementsSnapshot, index);
         SZrTypePrototypeInfo *implementedPrototype;
         EZrProtocolId implementedProtocolId = ZR_PROTOCOL_ID_NONE;
         SZrArray boundArgumentTypeNames;
@@ -756,8 +978,8 @@ static TZrBool prototype_implements_protocol_recursive(SZrCompilerState *cs,
         }
     }
 
-    for (TZrSize index = 0; index < prototype->inherits.length; index++) {
-        SZrString **inheritNamePtr = (SZrString **)ZrCore_Array_Get(&prototype->inherits, index);
+    for (TZrSize index = 0; index < inheritsSnapshot.length; index++) {
+        SZrString **inheritNamePtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, index);
         SZrTypePrototypeInfo *superPrototype;
         EZrProtocolId inheritedProtocolId = ZR_PROTOCOL_ID_NONE;
         SZrArray boundArgumentTypeNames;
@@ -791,6 +1013,9 @@ static TZrBool prototype_satisfies_named_constraint_recursive(SZrCompilerState *
                                                               SZrTypePrototypeInfo *prototype,
                                                               SZrString *constraintTypeName,
                                                               TZrUInt32 depth) {
+    SZrArray implementsSnapshot;
+    SZrArray inheritsSnapshot;
+
     if (cs == ZR_NULL || prototype == ZR_NULL || constraintTypeName == ZR_NULL ||
         depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
         return ZR_FALSE;
@@ -800,8 +1025,11 @@ static TZrBool prototype_satisfies_named_constraint_recursive(SZrCompilerState *
         return ZR_TRUE;
     }
 
-    for (TZrSize index = 0; index < prototype->implements.length; index++) {
-        SZrString **implementedNamePtr = (SZrString **)ZrCore_Array_Get(&prototype->implements, index);
+    implementsSnapshot = prototype->implements;
+    inheritsSnapshot = prototype->inherits;
+
+    for (TZrSize index = 0; index < implementsSnapshot.length; index++) {
+        SZrString **implementedNamePtr = (SZrString **)ZrCore_Array_Get(&implementsSnapshot, index);
         SZrTypePrototypeInfo *implementedPrototype;
 
         if (implementedNamePtr == ZR_NULL || *implementedNamePtr == ZR_NULL) {
@@ -823,8 +1051,8 @@ static TZrBool prototype_satisfies_named_constraint_recursive(SZrCompilerState *
         }
     }
 
-    for (TZrSize index = 0; index < prototype->inherits.length; index++) {
-        SZrString **inheritNamePtr = (SZrString **)ZrCore_Array_Get(&prototype->inherits, index);
+    for (TZrSize index = 0; index < inheritsSnapshot.length; index++) {
+        SZrString **inheritNamePtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, index);
         SZrTypePrototypeInfo *superPrototype;
 
         if (inheritNamePtr == ZR_NULL || *inheritNamePtr == ZR_NULL) {
@@ -1048,13 +1276,19 @@ static TZrBool prototype_bind_protocol_argument_recursive(SZrCompilerState *cs,
                                                           TZrUInt32 argumentIndex,
                                                           SZrInferredType *outType,
                                                           TZrUInt32 depth) {
+    SZrArray implementsSnapshot;
+    SZrArray inheritsSnapshot;
+
     if (cs == ZR_NULL || prototype == ZR_NULL || outType == ZR_NULL ||
         depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
         return ZR_FALSE;
     }
 
-    for (TZrSize index = 0; index < prototype->implements.length; index++) {
-        SZrString **implementedNamePtr = (SZrString **)ZrCore_Array_Get(&prototype->implements, index);
+    implementsSnapshot = prototype->implements;
+    inheritsSnapshot = prototype->inherits;
+
+    for (TZrSize index = 0; index < implementsSnapshot.length; index++) {
+        SZrString **implementedNamePtr = (SZrString **)ZrCore_Array_Get(&implementsSnapshot, index);
         SZrTypePrototypeInfo *implementedPrototype;
 
         if (implementedNamePtr == ZR_NULL || *implementedNamePtr == ZR_NULL) {
@@ -1078,8 +1312,8 @@ static TZrBool prototype_bind_protocol_argument_recursive(SZrCompilerState *cs,
         }
     }
 
-    for (TZrSize index = 0; index < prototype->inherits.length; index++) {
-        SZrString **inheritNamePtr = (SZrString **)ZrCore_Array_Get(&prototype->inherits, index);
+    for (TZrSize index = 0; index < inheritsSnapshot.length; index++) {
+        SZrString **inheritNamePtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, index);
         SZrTypePrototypeInfo *superPrototype;
 
         if (inheritNamePtr == ZR_NULL || *inheritNamePtr == ZR_NULL) {
@@ -2348,10 +2582,17 @@ TZrBool infer_prototype_reference_type(SZrCompilerState *cs,
         if (cs->hasError) {
             return ZR_FALSE;
         }
-        ZrParser_Compiler_Error(cs,
-                        "Prototype reference target must resolve to a registered prototype",
-                        node->location);
-        return ZR_FALSE;
+        if (!resolve_source_type_declaration_target_inference(cs,
+                                                              node,
+                                                              &typeName,
+                                                              ZR_NULL,
+                                                              ZR_NULL,
+                                                              ZR_NULL)) {
+            ZrParser_Compiler_Error(cs,
+                            "Prototype reference target must resolve to a registered prototype",
+                            node->location);
+            return ZR_FALSE;
+        }
     }
 
     return inferred_type_from_type_name(cs, typeName, result);
@@ -2364,6 +2605,9 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
     SZrTypePrototypeInfo *prototype = ZR_NULL;
     SZrString *typeName = ZR_NULL;
     EZrOwnershipBuiltinKind builtinKind;
+    EZrObjectPrototypeType resolvedPrototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
+    TZrBool allowValueConstruction = ZR_FALSE;
+    TZrBool allowBoxedConstruction = ZR_FALSE;
 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
         node->type != ZR_AST_CONSTRUCT_EXPRESSION) {
@@ -2420,23 +2664,34 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
         if (cs->hasError) {
             return ZR_FALSE;
         }
-        ZrParser_Compiler_Error(cs,
-                        "Construct target must resolve to a registered prototype",
-                        node->location);
-        return ZR_FALSE;
+        if (!resolve_source_type_declaration_target_inference(cs,
+                                                              construct->target,
+                                                              &typeName,
+                                                              &resolvedPrototypeType,
+                                                              &allowValueConstruction,
+                                                              &allowBoxedConstruction)) {
+            ZrParser_Compiler_Error(cs,
+                            "Construct target must resolve to a registered prototype",
+                            node->location);
+            return ZR_FALSE;
+        }
+    } else {
+        resolvedPrototypeType = prototype->type;
+        allowValueConstruction = prototype->allowValueConstruction;
+        allowBoxedConstruction = prototype->allowBoxedConstruction;
     }
 
-    if (prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {
+    if (resolvedPrototypeType == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {
         ZrParser_Compiler_Error(cs, "Interfaces cannot be constructed", node->location);
         return ZR_FALSE;
     }
 
-    if (!construct->isNew && !prototype->allowValueConstruction) {
+    if (!construct->isNew && !allowValueConstruction) {
         ZrParser_Compiler_Error(cs, "Prototype does not allow value construction", node->location);
         return ZR_FALSE;
     }
 
-    if (construct->isNew && !prototype->allowBoxedConstruction) {
+    if (construct->isNew && !allowBoxedConstruction) {
         ZrParser_Compiler_Error(cs, "Prototype does not allow boxed construction", node->location);
         return ZR_FALSE;
     }

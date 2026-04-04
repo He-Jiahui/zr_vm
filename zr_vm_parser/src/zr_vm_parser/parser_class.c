@@ -84,7 +84,7 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     ZrParser_Lexer_Next(ps->lexer);
 
     // 解析成员列表
-    SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, 8);
+    SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (members == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         ZrParser_AstNodeArray_Free(ps->state, inherits);

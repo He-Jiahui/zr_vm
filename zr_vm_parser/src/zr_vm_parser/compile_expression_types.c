@@ -179,33 +179,46 @@ SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrStri
     return ZR_NULL;
 }
 
-static SZrTypeMemberInfo *find_compiler_type_member_recursive(SZrCompilerState *cs, SZrTypePrototypeInfo *info,
+static SZrTypeMemberInfo *find_compiler_type_member_recursive(SZrCompilerState *cs, SZrString *typeName,
                                                               SZrString *memberName, TZrUInt32 depth) {
-    if (cs == ZR_NULL || info == ZR_NULL || memberName == ZR_NULL ||
+    SZrTypePrototypeInfo *info;
+    SZrArray membersSnapshot;
+    SZrArray inheritsSnapshot;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL || memberName == ZR_NULL ||
         depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
         return ZR_NULL;
     }
 
-    for (TZrSize i = 0; i < info->members.length; i++) {
-        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, i);
+    info = find_compiler_type_prototype(cs, typeName);
+    if (info == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    /* Generic prototype materialization may grow cs->typePrototypes, so keep shallow snapshots of the
+     * member/inheritance arrays instead of dereferencing info after recursive lookups. */
+    membersSnapshot = info->members;
+    inheritsSnapshot = info->inherits;
+
+    for (TZrSize i = 0; i < membersSnapshot.length; i++) {
+        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&membersSnapshot, i);
         if (memberInfo != ZR_NULL && memberInfo->name != ZR_NULL && ZrCore_String_Equal(memberInfo->name, memberName)) {
             return memberInfo;
         }
     }
 
-    for (TZrSize i = 0; i < info->inherits.length; i++) {
-        SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&info->inherits, i);
+    for (TZrSize i = 0; i < inheritsSnapshot.length; i++) {
+        SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, i);
         if (inheritTypeNamePtr == ZR_NULL || *inheritTypeNamePtr == ZR_NULL) {
             continue;
         }
 
-        SZrTypePrototypeInfo *superInfo = find_compiler_type_prototype(cs, *inheritTypeNamePtr);
-        if (superInfo == ZR_NULL || superInfo == info) {
+        if (ZrCore_String_Equal(*inheritTypeNamePtr, typeName)) {
             continue;
         }
 
-        SZrTypeMemberInfo *inheritedMember =
-                find_compiler_type_member_recursive(cs, superInfo, memberName, depth + 1);
+        SZrTypeMemberInfo *inheritedMember = find_compiler_type_member_recursive(
+            cs, *inheritTypeNamePtr, memberName, depth + 1);
         if (inheritedMember != ZR_NULL) {
             return inheritedMember;
         }
@@ -215,12 +228,11 @@ static SZrTypeMemberInfo *find_compiler_type_member_recursive(SZrCompilerState *
 }
 
 SZrTypeMemberInfo *find_compiler_type_member(SZrCompilerState *cs, SZrString *typeName, SZrString *memberName) {
-    SZrTypePrototypeInfo *info = find_compiler_type_prototype(cs, typeName);
-    if (info == ZR_NULL || memberName == ZR_NULL) {
+    if (typeName == ZR_NULL || memberName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    return find_compiler_type_member_recursive(cs, info, memberName, 0);
+    return find_compiler_type_member_recursive(cs, typeName, memberName, 0);
 }
 
 static TZrBool type_name_is_registered_prototype(SZrCompilerState *cs, SZrString *typeName) {
@@ -229,36 +241,46 @@ static TZrBool type_name_is_registered_prototype(SZrCompilerState *cs, SZrString
 }
 
 static const SZrTypeMemberInfo *find_compiler_type_meta_member_recursive(SZrCompilerState *cs,
-                                                                         SZrTypePrototypeInfo *info,
+                                                                         SZrString *typeName,
                                                                          EZrMetaType metaType,
                                                                          TZrUInt32 depth) {
-    if (cs == ZR_NULL || info == ZR_NULL || metaType >= ZR_META_ENUM_MAX ||
+    SZrTypePrototypeInfo *info;
+    SZrArray membersSnapshot;
+    SZrArray inheritsSnapshot;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL || metaType >= ZR_META_ENUM_MAX ||
         depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
         return ZR_NULL;
     }
 
-    for (TZrSize i = 0; i < info->members.length; i++) {
-        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, i);
+    info = find_compiler_type_prototype(cs, typeName);
+    if (info == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    membersSnapshot = info->members;
+    inheritsSnapshot = info->inherits;
+
+    for (TZrSize i = 0; i < membersSnapshot.length; i++) {
+        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&membersSnapshot, i);
         if (memberInfo != ZR_NULL && memberInfo->isMetaMethod && memberInfo->metaType == metaType) {
             return memberInfo;
         }
     }
 
-    for (TZrSize i = 0; i < info->inherits.length; i++) {
-        SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&info->inherits, i);
-        SZrTypePrototypeInfo *superInfo;
+    for (TZrSize i = 0; i < inheritsSnapshot.length; i++) {
+        SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, i);
         const SZrTypeMemberInfo *inheritedMember;
 
         if (inheritTypeNamePtr == ZR_NULL || *inheritTypeNamePtr == ZR_NULL) {
             continue;
         }
 
-        superInfo = find_compiler_type_prototype(cs, *inheritTypeNamePtr);
-        if (superInfo == ZR_NULL || superInfo == info) {
+        if (ZrCore_String_Equal(*inheritTypeNamePtr, typeName)) {
             continue;
         }
 
-        inheritedMember = find_compiler_type_meta_member_recursive(cs, superInfo, metaType, depth + 1);
+        inheritedMember = find_compiler_type_meta_member_recursive(cs, *inheritTypeNamePtr, metaType, depth + 1);
         if (inheritedMember != ZR_NULL) {
             return inheritedMember;
         }
@@ -270,13 +292,11 @@ static const SZrTypeMemberInfo *find_compiler_type_meta_member_recursive(SZrComp
 static const SZrTypeMemberInfo *find_compiler_type_meta_member(SZrCompilerState *cs,
                                                                SZrString *typeName,
                                                                EZrMetaType metaType) {
-    SZrTypePrototypeInfo *info = find_compiler_type_prototype(cs, typeName);
-
-    if (info == ZR_NULL) {
+    if (typeName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    return find_compiler_type_meta_member_recursive(cs, info, metaType, 0);
+    return find_compiler_type_meta_member_recursive(cs, typeName, metaType, 0);
 }
 
 static TZrBool type_has_constructor(SZrCompilerState *cs, SZrString *typeName) {

@@ -38,8 +38,8 @@ static cJSON *create_workspace_edit(SZrArray *locations, SZrString *newName) {
 
             textEdit = cJSON_CreateObject();
             if (uriEdits != NULL && textEdit != NULL) {
-                cJSON_AddItemToObject(textEdit, "range", serialize_range((*locationPtr)->range));
-                cJSON_AddStringToObject(textEdit, "newText", newNameText != NULL ? newNameText : "");
+                cJSON_AddItemToObject(textEdit, ZR_LSP_FIELD_RANGE, serialize_range((*locationPtr)->range));
+                cJSON_AddStringToObject(textEdit, ZR_LSP_FIELD_NEW_TEXT, newNameText != NULL ? newNameText : "");
                 cJSON_AddItemToArray(uriEdits, textEdit);
             } else {
                 cJSON_Delete(textEdit);
@@ -49,7 +49,7 @@ static cJSON *create_workspace_edit(SZrArray *locations, SZrString *newName) {
         }
     }
 
-    cJSON_AddItemToObject(edit, "changes", changes);
+    cJSON_AddItemToObject(edit, ZR_LSP_FIELD_CHANGES, changes);
     free(newNameText);
     return edit;
 }
@@ -67,13 +67,13 @@ static int handle_did_open(SZrStdioServer *server, const cJSON *params) {
         return 0;
     }
 
-    textDocument = get_object_item(params, "textDocument");
-    textJson = get_object_item(textDocument, "text");
+    textDocument = get_object_item(params, ZR_LSP_FIELD_TEXT_DOCUMENT);
+    textJson = get_object_item(textDocument, ZR_LSP_FIELD_TEXT);
     if (!cJSON_IsString((cJSON *)textJson)) {
         return 0;
     }
 
-    versionJson = get_object_item(textDocument, "version");
+    versionJson = get_object_item(textDocument, ZR_LSP_FIELD_VERSION);
     version = parse_size_value(versionJson, 0);
     text = cJSON_GetStringValue((cJSON *)textJson);
     if (text == NULL) {
@@ -101,9 +101,9 @@ static int handle_did_change(SZrStdioServer *server, const cJSON *params) {
         return 0;
     }
 
-    textDocument = get_object_item(params, "textDocument");
-    versionJson = get_object_item(textDocument, "version");
-    changes = get_object_item(params, "contentChanges");
+    textDocument = get_object_item(params, ZR_LSP_FIELD_TEXT_DOCUMENT);
+    versionJson = get_object_item(textDocument, ZR_LSP_FIELD_VERSION);
+    changes = get_object_item(params, ZR_LSP_FIELD_CONTENT_CHANGES);
     if (!cJSON_IsArray((cJSON *)changes)) {
         return 0;
     }
@@ -171,7 +171,7 @@ static int handle_did_save(SZrStdioServer *server, const cJSON *params) {
         return 0;
     }
 
-    textJson = get_object_item(params, "text");
+    textJson = get_object_item(params, ZR_LSP_FIELD_TEXT);
     if (cJSON_IsString((cJSON *)textJson)) {
         const char *text = cJSON_GetStringValue((cJSON *)textJson);
         fileVersion = get_file_version_for_uri(server, uri);
@@ -283,8 +283,8 @@ static cJSON *handle_references_request(SZrStdioServer *server, const cJSON *par
         return NULL;
     }
 
-    contextJson = get_object_item(params, "context");
-    includeDeclarationJson = get_object_item(contextJson, "includeDeclaration");
+    contextJson = get_object_item(params, ZR_LSP_FIELD_CONTEXT);
+    includeDeclarationJson = get_object_item(contextJson, ZR_LSP_FIELD_INCLUDE_DECLARATION);
     if (cJSON_IsBool((cJSON *)includeDeclarationJson)) {
         includeDeclaration = cJSON_IsTrue((cJSON *)includeDeclarationJson) ? ZR_TRUE : ZR_FALSE;
     }
@@ -334,7 +334,7 @@ static cJSON *handle_workspace_symbols_request(SZrStdioServer *server, const cJS
         return NULL;
     }
 
-    queryJson = get_object_item(params, "query");
+    queryJson = get_object_item(params, ZR_LSP_FIELD_QUERY);
     if (cJSON_IsString((cJSON *)queryJson)) {
         const char *text = cJSON_GetStringValue((cJSON *)queryJson);
         if (text != NULL) {
@@ -395,8 +395,8 @@ static cJSON *create_semantic_token_legend_json(void) {
         }
     }
 
-    cJSON_AddItemToObject(legend, "tokenTypes", types);
-    cJSON_AddItemToObject(legend, "tokenModifiers", modifiers);
+    cJSON_AddItemToObject(legend, ZR_LSP_FIELD_TOKEN_TYPES, types);
+    cJSON_AddItemToObject(legend, ZR_LSP_FIELD_TOKEN_MODIFIERS, modifiers);
     return legend;
 }
 
@@ -417,7 +417,7 @@ static cJSON *serialize_semantic_tokens_result(SZrArray *tokens) {
         }
     }
 
-    cJSON_AddItemToObject(result, "data", data);
+    cJSON_AddItemToObject(result, ZR_LSP_FIELD_DATA, data);
     return result;
 }
 
@@ -471,8 +471,8 @@ static cJSON *handle_prepare_rename_request(SZrStdioServer *server, const cJSON 
     }
 
     placeholderText = zr_string_to_c_string(placeholder);
-    cJSON_AddItemToObject(result, "range", serialize_range(range));
-    cJSON_AddStringToObject(result, "placeholder", placeholderText != NULL ? placeholderText : "");
+    cJSON_AddItemToObject(result, ZR_LSP_FIELD_RANGE, serialize_range(range));
+    cJSON_AddStringToObject(result, ZR_LSP_FIELD_PLACEHOLDER, placeholderText != NULL ? placeholderText : "");
     free(placeholderText);
     return result;
 }
@@ -491,7 +491,7 @@ static cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params)
         return NULL;
     }
 
-    newNameJson = get_object_item(params, "newName");
+    newNameJson = get_object_item(params, ZR_LSP_FIELD_NEW_NAME);
     if (!cJSON_IsString((cJSON *)newNameJson)) {
         return NULL;
     }
@@ -575,44 +575,56 @@ static cJSON *handle_initialize_request(void) {
         return NULL;
     }
 
-    cJSON_AddBoolToObject(textDocumentSync, "openClose", 1);
-    cJSON_AddNumberToObject(textDocumentSync, "change", 2);
-    cJSON_AddBoolToObject(saveOptions, "includeText", 0);
-    cJSON_AddItemToObject(textDocumentSync, "save", saveOptions);
+    cJSON_AddBoolToObject(textDocumentSync, ZR_LSP_FIELD_OPEN_CLOSE, 1);
+    cJSON_AddNumberToObject(textDocumentSync, ZR_LSP_FIELD_CHANGE, ZR_LSP_TEXT_DOCUMENT_SYNC_KIND_INCREMENTAL);
+    cJSON_AddBoolToObject(saveOptions, ZR_LSP_FIELD_INCLUDE_TEXT, 0);
+    cJSON_AddItemToObject(textDocumentSync, ZR_LSP_FIELD_SAVE, saveOptions);
 
-    cJSON_AddItemToArray(triggerCharacters, cJSON_CreateString("."));
-    cJSON_AddItemToArray(triggerCharacters, cJSON_CreateString(":"));
-    cJSON_AddBoolToObject(completionProvider, "resolveProvider", 0);
-    cJSON_AddItemToObject(completionProvider, "triggerCharacters", triggerCharacters);
-    cJSON_AddItemToArray(signatureTriggerCharacters, cJSON_CreateString("("));
-    cJSON_AddItemToArray(signatureTriggerCharacters, cJSON_CreateString(","));
-    cJSON_AddItemToObject(signatureHelpProvider, "triggerCharacters", signatureTriggerCharacters);
+    cJSON_AddItemToArray(
+        triggerCharacters,
+        cJSON_CreateString(ZR_LSP_COMPLETION_TRIGGER_CHARACTER_MEMBER_ACCESS)
+    );
+    cJSON_AddItemToArray(
+        triggerCharacters,
+        cJSON_CreateString(ZR_LSP_COMPLETION_TRIGGER_CHARACTER_NAMESPACE_ACCESS)
+    );
+    cJSON_AddBoolToObject(completionProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 0);
+    cJSON_AddItemToObject(completionProvider, ZR_LSP_FIELD_TRIGGER_CHARACTERS, triggerCharacters);
+    cJSON_AddItemToArray(
+        signatureTriggerCharacters,
+        cJSON_CreateString(ZR_LSP_SIGNATURE_TRIGGER_CHARACTER_OPEN_PAREN)
+    );
+    cJSON_AddItemToArray(
+        signatureTriggerCharacters,
+        cJSON_CreateString(ZR_LSP_SIGNATURE_TRIGGER_CHARACTER_ARGUMENT_SEPARATOR)
+    );
+    cJSON_AddItemToObject(signatureHelpProvider, ZR_LSP_FIELD_TRIGGER_CHARACTERS, signatureTriggerCharacters);
 
-    cJSON_AddBoolToObject(renameProvider, "prepareProvider", 1);
+    cJSON_AddBoolToObject(renameProvider, ZR_LSP_FIELD_PREPARE_PROVIDER, 1);
 
-    cJSON_AddItemToObject(capabilities, "textDocumentSync", textDocumentSync);
-    cJSON_AddItemToObject(capabilities, "completionProvider", completionProvider);
-    cJSON_AddBoolToObject(capabilities, "hoverProvider", 1);
-    cJSON_AddItemToObject(capabilities, "signatureHelpProvider", signatureHelpProvider);
-    cJSON_AddBoolToObject(capabilities, "definitionProvider", 1);
-    cJSON_AddBoolToObject(capabilities, "referencesProvider", 1);
-    cJSON_AddItemToObject(capabilities, "renameProvider", renameProvider);
-    cJSON_AddBoolToObject(capabilities, "documentSymbolProvider", 1);
-    cJSON_AddBoolToObject(capabilities, "workspaceSymbolProvider", 1);
-    cJSON_AddBoolToObject(capabilities, "documentHighlightProvider", 1);
-    cJSON_AddItemToObject(semanticTokensProvider, "legend", semanticLegend);
-    cJSON_AddBoolToObject(semanticTokensProvider, "full", 1);
-    cJSON_AddItemToObject(capabilities, "semanticTokensProvider", semanticTokensProvider);
-    cJSON_AddBoolToObject(workspaceFolders, "supported", 1);
-    cJSON_AddBoolToObject(workspaceFolders, "changeNotifications", 1);
-    cJSON_AddItemToObject(workspace, "workspaceFolders", workspaceFolders);
-    cJSON_AddItemToObject(capabilities, "workspace", workspace);
+    cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_TEXT_DOCUMENT_SYNC, textDocumentSync);
+    cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_COMPLETION_PROVIDER, completionProvider);
+    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_HOVER_PROVIDER, 1);
+    cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_SIGNATURE_HELP_PROVIDER, signatureHelpProvider);
+    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_DEFINITION_PROVIDER, 1);
+    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_REFERENCES_PROVIDER, 1);
+    cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_RENAME_PROVIDER, renameProvider);
+    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_SYMBOL_PROVIDER, 1);
+    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_WORKSPACE_SYMBOL_PROVIDER, 1);
+    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_HIGHLIGHT_PROVIDER, 1);
+    cJSON_AddItemToObject(semanticTokensProvider, ZR_LSP_FIELD_LEGEND, semanticLegend);
+    cJSON_AddBoolToObject(semanticTokensProvider, ZR_LSP_FIELD_FULL, 1);
+    cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_SEMANTIC_TOKENS_PROVIDER, semanticTokensProvider);
+    cJSON_AddBoolToObject(workspaceFolders, ZR_LSP_FIELD_SUPPORTED, 1);
+    cJSON_AddBoolToObject(workspaceFolders, ZR_LSP_FIELD_CHANGE_NOTIFICATIONS, 1);
+    cJSON_AddItemToObject(workspace, ZR_LSP_FIELD_WORKSPACE_FOLDERS, workspaceFolders);
+    cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_WORKSPACE, workspace);
 
-    cJSON_AddStringToObject(serverInfo, "name", "zr_vm_language_server_stdio");
-    cJSON_AddStringToObject(serverInfo, "version", "0.0.1");
+    cJSON_AddStringToObject(serverInfo, ZR_LSP_FIELD_NAME, ZR_LSP_SERVER_NAME);
+    cJSON_AddStringToObject(serverInfo, ZR_LSP_FIELD_VERSION, ZR_LSP_SERVER_VERSION);
 
-    cJSON_AddItemToObject(result, "capabilities", capabilities);
-    cJSON_AddItemToObject(result, "serverInfo", serverInfo);
+    cJSON_AddItemToObject(result, ZR_LSP_FIELD_CAPABILITIES, capabilities);
+    cJSON_AddItemToObject(result, ZR_LSP_FIELD_SERVER_INFO, serverInfo);
     return result;
 }
 
@@ -626,39 +638,39 @@ void handle_request_message(SZrStdioServer *server,
         return;
     }
 
-    if (strcmp(method, "initialize") == 0) {
+    if (strcmp(method, ZR_LSP_METHOD_INITIALIZE) == 0) {
         result = handle_initialize_request();
         send_result_response(id, result != NULL ? result : cJSON_CreateNull());
         return;
     }
 
-    if (strcmp(method, "shutdown") == 0) {
+    if (strcmp(method, ZR_LSP_METHOD_SHUTDOWN) == 0) {
         server->shutdownRequested = ZR_TRUE;
         send_result_response(id, NULL);
         return;
     }
 
-    if (strcmp(method, "textDocument/completion") == 0) {
+    if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_COMPLETION) == 0) {
         result = handle_completion_request(server, params);
-    } else if (strcmp(method, "textDocument/hover") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_HOVER) == 0) {
         result = handle_hover_request(server, params);
-    } else if (strcmp(method, "textDocument/signatureHelp") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SIGNATURE_HELP) == 0) {
         result = handle_signature_help_request(server, params);
-    } else if (strcmp(method, "textDocument/definition") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DEFINITION) == 0) {
         result = handle_definition_request(server, params);
-    } else if (strcmp(method, "textDocument/references") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES) == 0) {
         result = handle_references_request(server, params);
-    } else if (strcmp(method, "textDocument/documentSymbol") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_SYMBOL) == 0) {
         result = handle_document_symbols_request(server, params);
-    } else if (strcmp(method, "workspace/symbol") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL) == 0) {
         result = handle_workspace_symbols_request(server, params);
-    } else if (strcmp(method, "textDocument/documentHighlight") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT) == 0) {
         result = handle_document_highlights_request(server, params);
-    } else if (strcmp(method, "textDocument/semanticTokens/full") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL) == 0) {
         result = handle_semantic_tokens_full_request(server, params);
-    } else if (strcmp(method, "textDocument/prepareRename") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_PREPARE_RENAME) == 0) {
         result = handle_prepare_rename_request(server, params);
-    } else if (strcmp(method, "textDocument/rename") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_RENAME) == 0) {
         result = handle_rename_request(server, params);
     } else {
         send_error_response(id, ZR_LSP_JSON_RPC_METHOD_NOT_FOUND_CODE, "Method not found");
@@ -688,23 +700,23 @@ void handle_notification_message(SZrStdioServer *server,
         return;
     }
 
-    if (strcmp(method, "initialized") == 0 ||
-        strcmp(method, "workspace/didChangeConfiguration") == 0 ||
-        strcmp(method, "workspace/didChangeWatchedFiles") == 0 ||
-        strcmp(method, "workspace/didChangeWorkspaceFolders") == 0 ||
-        strcmp(method, "$/cancelRequest") == 0) {
+    if (strcmp(method, ZR_LSP_METHOD_INITIALIZED) == 0 ||
+        strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_CONFIGURATION) == 0 ||
+        strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WATCHED_FILES) == 0 ||
+        strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS) == 0 ||
+        strcmp(method, ZR_LSP_METHOD_CANCEL_REQUEST) == 0) {
         return;
     }
 
-    if (strcmp(method, "textDocument/didOpen") == 0) {
+    if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_OPEN) == 0) {
         handle_did_open(server, params);
-    } else if (strcmp(method, "textDocument/didChange") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_CHANGE) == 0) {
         handle_did_change(server, params);
-    } else if (strcmp(method, "textDocument/didClose") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_CLOSE) == 0) {
         handle_did_close(server, params);
-    } else if (strcmp(method, "textDocument/didSave") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_SAVE) == 0) {
         handle_did_save(server, params);
-    } else if (strcmp(method, "exit") == 0) {
+    } else if (strcmp(method, ZR_LSP_METHOD_EXIT) == 0) {
         if (outShouldExit != NULL) {
             *outShouldExit = 1;
         }

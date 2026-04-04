@@ -897,6 +897,84 @@ static void test_lsp_semantic_tokens_cover_keywords_and_symbols(SZrState *state)
     TEST_PASS(timer, "LSP Semantic Tokens Cover Keywords And Symbols");
 }
 
+static void test_lsp_native_value_constructor_members_surface_hover_and_completion(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    const TZrChar *content =
+        "var math = %import(\"zr.math\");\n"
+        "runImpl() {\n"
+        "    return $math.Vector3(4.0, 5.0, 6.0).y;\n"
+        "}\n";
+    SZrString *uri;
+    SZrLspPosition completionPosition;
+    SZrLspPosition hoverPosition;
+    SZrArray completions;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP Native Value Constructor Members Surface Hover And Completion");
+    TEST_INFO("Native value constructors",
+              "Direct $module.Type(...) receivers should expose native member completion and field hover");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state,
+                               "file:///native_value_constructor_members.zr",
+                               strlen("file:///native_value_constructor_members.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Value Constructor Members Surface Hover And Completion",
+                  "Failed to prepare native value constructor source");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, ").y", 0, 2, &completionPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Value Constructor Members Surface Hover And Completion",
+                  "Failed to compute completion position for native value member");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, completionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "x") ||
+        !completion_array_contains_label(&completions, "y") ||
+        !completion_array_contains_label(&completions, "z")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Value Constructor Members Surface Hover And Completion",
+                  "Expected $math.Vector3(...). completion to list Vector3 fields");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    if (!lsp_find_position_for_substring(content, ").y", 0, 2, &hoverPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Value Constructor Members Surface Hover And Completion",
+                  "Failed to compute hover position for native value field");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, hoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "field") ||
+        !hover_contains_text(hover, "y") ||
+        !hover_contains_text(hover, "float") ||
+        !hover_contains_text(hover, "Vector3")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Value Constructor Members Surface Hover And Completion",
+                  "Hover on $math.Vector3(...).y should expose the native field type and receiver");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Native Value Constructor Members Surface Hover And Completion");
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;
@@ -937,6 +1015,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_cover_keywords_and_symbols(state);
+    TEST_DIVIDER();
+
+    test_lsp_native_value_constructor_members_surface_hover_and_completion(state);
     TEST_DIVIDER();
 
     ZrCore_GlobalState_Free(global);

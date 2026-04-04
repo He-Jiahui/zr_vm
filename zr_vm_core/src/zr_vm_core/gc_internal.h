@@ -46,6 +46,7 @@ void garbage_collector_run_generational_step(SZrState *state);
 
 void garbage_collector_mark_object(SZrState *state, SZrRawObject *object);
 void garbage_collector_mark_value(SZrState *state, SZrTypeValue *value);
+TZrSize garbage_collector_mark_string_roots(SZrState *state);
 void garbage_collector_link_to_gray_list(SZrRawObject *object, SZrRawObject **list);
 void garbage_collector_to_gc_list_and_mark_wait_to_scan(SZrRawObject *object, SZrRawObject **list);
 

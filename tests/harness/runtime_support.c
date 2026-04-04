@@ -45,7 +45,7 @@ static TZrBool zr_tests_runtime_try_invoke_unhandled_handler(SZrState *state, TZ
 
     returnValue = ZrCore_Stack_GetValue(callBase);
     if (handled != ZR_NULL && returnValue != ZR_NULL && ZR_VALUE_IS_TYPE_BOOL(returnValue->type)) {
-        *handled = returnValue->value.nativeObject.nativeBool;
+        *handled = (TZrBool)(returnValue->value.nativeObject.nativeBool != 0);
     }
     return ZR_TRUE;
 }

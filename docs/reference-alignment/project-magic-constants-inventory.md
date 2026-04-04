@@ -1,6 +1,7 @@
 ---
 related_code:
   - zr_vm_common/include/zr_vm_common.h
+  - zr_vm_common/include/zr_vm_common/zr_hash_conf.h
   - zr_vm_common/include/zr_vm_common/zr_runtime_limits_conf.h
   - zr_vm_common/include/zr_vm_common/zr_gc_internal_conf.h
   - zr_vm_common/include/zr_vm_common/zr_parser_conf.h
@@ -26,10 +27,13 @@ related_code:
   - zr_vm_core/include/zr_vm_core/stack.h
   - zr_vm_core/include/zr_vm_core/module.h
   - zr_vm_core/src/zr_vm_core/gc_internal.h
+  - zr_vm_core/src/zr_vm_core/gc.c
   - zr_vm_core/src/zr_vm_core/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/module_loader.c
   - zr_vm_parser/src/zr_vm_parser/lexer.c
+  - zr_vm_parser/src/zr_vm_parser/parser_state.c
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/compiler_instruction.c
   - zr_vm_parser/src/zr_vm_parser/compiler_state.c
@@ -49,6 +53,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/meta.c
   - zr_vm_core/src/zr_vm_core/value.c
   - zr_vm_core/src/zr_vm_core/reflection.c
+  - zr_vm_core/src/zr_vm_core/object.c
   - zr_vm_core/src/zr_vm_core/module_prototype.c
   - zr_vm_lib_math/include/zr_vm_lib_math/conf.h
   - zr_vm_lib_math/include/zr_vm_lib_math/math_common.h
@@ -72,6 +77,13 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/compiler_quickening.c
   - zr_vm_parser/include/zr_vm_parser/lexer.h
+  - zr_vm_parser/src/zr_vm_parser/parser_class.c
+  - zr_vm_parser/src/zr_vm_parser/parser_extern.c
+  - zr_vm_parser/src/zr_vm_parser/parser_interface.c
+  - zr_vm_parser/src/zr_vm_parser/parser_literals.c
+  - zr_vm_parser/src/zr_vm_parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/parser_struct.c
+  - zr_vm_parser/src/zr_vm_parser/parser_types.c
   - zr_vm_language_server/include/zr_vm_language_server/conf.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_interface_support.c
@@ -89,12 +101,15 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/lsp_project_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_tokens.c
   - zr_vm_language_server/stdio/stdio_requests.c
+  - zr_vm_language_server/stdio/stdio_transport.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
   - zr_vm_language_server/stdio/stdio_documents.c
+  - zr_vm_language_server/stdio/stdio_json.c
   - zr_vm_language_server/wasm/wasm_exports.cpp
   - scripts/audit_magic_constants.py
 implementation_files:
   - zr_vm_common/include/zr_vm_common.h
+  - zr_vm_common/include/zr_vm_common/zr_hash_conf.h
   - zr_vm_common/include/zr_vm_common/zr_runtime_limits_conf.h
   - zr_vm_common/include/zr_vm_common/zr_gc_internal_conf.h
   - zr_vm_common/include/zr_vm_common/zr_parser_conf.h
@@ -106,6 +121,7 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/native_binding.c
   - zr_vm_library/src/zr_vm_library/native_binding_dispatch.c
   - zr_vm_library/src/zr_vm_library/native_binding_internal.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_cli/include/zr_vm_cli/conf.h
   - zr_vm_cli/src/zr_vm_cli/project.c
   - zr_vm_cli/src/zr_vm_cli/app.c
@@ -113,7 +129,10 @@ implementation_files:
   - zr_vm_cli/src/zr_vm_cli/project.h
   - zr_vm_cli/src/zr_vm_cli/repl.c
   - zr_vm_cli/src/zr_vm_cli/command.h
+  - zr_vm_core/src/zr_vm_core/gc.c
   - zr_vm_core/src/zr_vm_core/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/debug.c
   - zr_vm_core/src/zr_vm_core/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/meta.c
@@ -125,8 +144,18 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/gc_sweep.c
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_core/src/zr_vm_core/reflection.c
+  - zr_vm_core/src/zr_vm_core/object.c
   - zr_vm_core/src/zr_vm_core/module_prototype.c
+  - zr_vm_parser/src/zr_vm_parser/lexer.c
+  - zr_vm_parser/src/zr_vm_parser/parser_state.c
   - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser_class.c
+  - zr_vm_parser/src/zr_vm_parser/parser_extern.c
+  - zr_vm_parser/src/zr_vm_parser/parser_interface.c
+  - zr_vm_parser/src/zr_vm_parser/parser_literals.c
+  - zr_vm_parser/src/zr_vm_parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/parser_struct.c
+  - zr_vm_parser/src/zr_vm_parser/parser_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler_state.c
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/compiler_quickening.c
@@ -159,7 +188,12 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
+  - zr_vm_language_server/stdio/stdio_json.c
   - zr_vm_language_server/stdio/stdio_requests.c
+  - zr_vm_language_server/stdio/stdio_transport.c
+  - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
+  - zr_vm_language_server/stdio/stdio_documents.c
+  - zr_vm_language_server/wasm/wasm_exports.cpp
   - scripts/audit_magic_constants.py
 plan_sources:
   - user: 2026-04-04 implement 项目级魔法数与常量收敛计划
@@ -196,18 +230,23 @@ doc_type: inventory
 | `ZR_GC_DEFAULT_SWEEP_SLICE_BUDGET` | `zr_vm_core/src/zr_vm_core/gc_internal.h` | 默认 sweep slice budget | `zr_gc_internal_conf.h` | 是 |
 | `ZR_GC_FINALIZER_BATCH_MAX` | `zr_vm_core/src/zr_vm_core/gc_internal.h` | 单批 finalizer 最大个数 | `zr_gc_internal_conf.h` | 是 |
 | `ZR_GC_FINALIZER_WORK_COST` | `zr_vm_core/src/zr_vm_core/gc_internal.h` | finalizer work 成本折算 | `zr_gc_internal_conf.h` | 是 |
+| `ZR_GC_DEBT_CREDIT_BYTES` | `zr_vm_core/src/zr_vm_core/gc.c`, `zr_vm_core/src/zr_vm_core/gc_cycle.c` | 增量/idle GC 步进后回冲 debt 的字节额度 | `zr_gc_internal_conf.h` | 是 |
+| `ZR_GC_MANAGED_MEMORY_DRIFT_TOLERANCE_DIVISOR` | `zr_vm_core/src/zr_vm_core/gc_cycle.c` | GC 估算 managed memory 与真实对象大小偏差的重校准阈值分母 | `zr_gc_internal_conf.h` | 是 |
 | `ZR_GC_GRAY_LIST_DUPLICATE_SCAN_LIMIT` | `zr_vm_core/src/zr_vm_core/gc_mark.c` | gray list 重复检测保护上限 | `zr_gc_internal_conf.h` | 是 |
 | `ZR_GC_PROPAGATE_ALL_ITERATION_LIMIT` | `zr_vm_core/src/zr_vm_core/gc_mark.c` | mark propagate 全量循环保护上限 | `zr_gc_internal_conf.h` | 是 |
 | `ZR_GC_RUN_UNTIL_STATE_ITERATION_LIMIT` | `zr_vm_core/src/zr_vm_core/gc_cycle.c` | `run_until_state` 循环保护上限 | `zr_gc_internal_conf.h` | 是 |
 | `ZR_GC_GENERATIONAL_FULL_SWEEP_ITERATION_LIMIT` | `zr_vm_core/src/zr_vm_core/gc_cycle.c` | generational full sweep 循环保护上限 | `zr_gc_internal_conf.h` | 是 |
+| `ZR_GC_SHUTDOWN_FULL_COLLECTION_ITERATION_LIMIT` | `zr_vm_core/src/zr_vm_core/gc.c` | 全局状态析构期间 full GC 推进循环的保护上限 | `zr_gc_internal_conf.h` | 是 |
 | `ZR_PARSER_LEXER_BUFFER_INITIAL_SIZE` | `zr_vm_parser/src/zr_vm_parser/lexer.c` | lexer 初始缓冲大小 | `zr_parser_conf.h` | 是 |
 | `ZR_PARSER_MAX_CONSECUTIVE_ERRORS` | `zr_vm_parser/src/zr_vm_parser/parser.c` | parser 最大连续错误数 | `zr_parser_conf.h` | 是 |
 | `ZR_PARSER_MAX_RECOVERY_SKIP_TOKENS` | `zr_vm_parser/src/zr_vm_parser/parser.c` | parser 恢复阶段最大跳过 token 数 | `zr_parser_conf.h` | 是 |
 | `ZR_PARSER_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH` | `zr_vm_parser/src/zr_vm_parser/compiler_instruction.c` | compile-time value 投影到 runtime 的递归深度上限 | `zr_parser_conf.h` | 是 |
 | `ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH` | `zr_vm_parser/src/zr_vm_parser/compile_expression_types.c`, `zr_vm_parser/src/zr_vm_parser/type_inference_core.c` | 类型原型/成员递归查找保护上限 | `zr_parser_conf.h` | 是 |
-| `ZR_PARSER_DYNAMIC_CAPACITY_GROWTH_FACTOR / ZR_PARSER_INITIAL_CAPACITY_PAIR / ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_INITIAL_CAPACITY_SMALL / ZR_PARSER_INITIAL_CAPACITY_MEDIUM / ZR_PARSER_INITIAL_CAPACITY_LARGE / ZR_PARSER_INSTRUCTION_INITIAL_CAPACITY` | `zr_vm_parser/src/zr_vm_parser/compiler_state.c`, `compiler_class.c`, `compiler_struct.c`, `compiler_interface.c`, `compiler_extern_declaration.c`, `type_inference_import_metadata.c`, `type_inference_native.c`, `type_system.c`, `semantic.c`, `compile_time_executor_support.c`, `compiler_closure.c`, `compiler_bindings.c`, `parser_expression_primary.c`, `ast.c`, `lexer.c` | parser 编译器状态、局部 collection 初始容量分层，以及 AST/lexer 共享动态扩容倍率 | `zr_parser_conf.h` | 是 |
+| `ZR_PARSER_DYNAMIC_CAPACITY_GROWTH_FACTOR / ZR_PARSER_INITIAL_CAPACITY_PAIR / ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_INITIAL_CAPACITY_SMALL / ZR_PARSER_INITIAL_CAPACITY_MEDIUM / ZR_PARSER_INITIAL_CAPACITY_LARGE / ZR_PARSER_INSTRUCTION_INITIAL_CAPACITY` | `zr_vm_parser/src/zr_vm_parser/compiler_state.c`, `compiler_class.c`, `compiler_struct.c`, `compiler_interface.c`, `compiler_extern_declaration.c`, `type_inference_import_metadata.c`, `type_inference_native.c`, `type_system.c`, `semantic.c`, `compile_time_executor_support.c`, `compiler_closure.c`, `compiler_bindings.c`, `parser.c`, `parser_class.c`, `parser_extern.c`, `parser_expression_primary.c`, `parser_interface.c`, `parser_literals.c`, `parser_statements.c`, `parser_struct.c`, `parser_types.c`, `ast.c`, `lexer.c` | parser 编译器状态、语法树/块/成员/参数 collection 初始容量分层，以及 AST/lexer 共享动态扩容倍率 | `zr_parser_conf.h` | 是 |
 | `ZR_PARSER_ARRAY_SIZE_BUFFER_LENGTH / ZR_PARSER_INTEGER_BUFFER_LENGTH / ZR_PARSER_GENERATED_NAME_BUFFER_LENGTH / ZR_PARSER_TYPE_NAME_BUFFER_LENGTH / ZR_PARSER_DETAIL_BUFFER_LENGTH / ZR_PARSER_ERROR_BUFFER_LENGTH / ZR_PARSER_TEXT_BUFFER_LENGTH / ZR_PARSER_DECLARATION_BUFFER_LENGTH` | `zr_vm_parser/src/zr_vm_parser/type_inference_core.c`, `compiler_class.c`, `compiler_struct.c`, `type_inference_native.c`, `compile_time_executor_support.c`, `type_inference.c`, `parser_state.c`, `writer_intermediate.c`, `compiler_extern_helpers.c`, `compile_statement.c`, `type_inference_generic_calls.c`, `type_inference_passing_modes.c`, `compiler_class_support.c`, `compiler_generic_semantics.c`, `compile_expression.c`, `compile_expression_call.c`, `compile_time_executor.c`, `parser_declarations.c`, `parser_extern.c`, `parser_expression_primary.c`, `lexer.c` | parser synthetic name、类型名、细节文本、通用诊断、声明文本、snippet 与 typed metadata 输出的共享缓冲区上限 | `zr_parser_conf.h` | 是 |
-| `ZR_RUNTIME_SMALL_TEXT_BUFFER_LENGTH / ZR_RUNTIME_MEMBER_NAME_BUFFER_LENGTH / ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH / ZR_RUNTIME_DIAGNOSTIC_BUFFER_LENGTH / ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH / ZR_RUNTIME_ERROR_BUFFER_LENGTH / ZR_RUNTIME_REFLECTION_FORMAT_BUFFER_LENGTH / ZR_RUNTIME_OBJECT_PROTOTYPE_INITIAL_CAPACITY / ZR_RUNTIME_OBJECT_PROTOTYPE_GROWTH_FACTOR / ZR_RUNTIME_PROTOTYPE_INHERIT_INITIAL_CAPACITY` | `zr_vm_core/src/zr_vm_core/debug.c`, `execution_dispatch.c`, `meta.c`, `value.c`, `reflection.c`, `object.c`, `module_prototype.c` | core 运行时错误、反射格式化、对象原型成员表扩容策略与原型继承解析的共享 buffer/容量上限 | `zr_runtime_limits_conf.h` | 是 |
+| `ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS / ZR_PARSER_ERROR_SNIPPET_FOCUS_COLUMN` | `zr_vm_parser/src/zr_vm_parser/lexer.c`, `zr_vm_parser/src/zr_vm_parser/parser_state.c` | parser 诊断 snippet 左右上下文窗口和 caret 对齐列 | `zr_parser_conf.h` | 是 |
+| `ZR_RUNTIME_SMALL_TEXT_BUFFER_LENGTH / ZR_RUNTIME_MEMBER_NAME_BUFFER_LENGTH / ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH / ZR_RUNTIME_DIAGNOSTIC_BUFFER_LENGTH / ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH / ZR_RUNTIME_ERROR_BUFFER_LENGTH / ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH / ZR_RUNTIME_DEBUG_COLLECTION_PREVIEW_MAX / ZR_RUNTIME_REFLECTION_FORMAT_BUFFER_LENGTH / ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY / ZR_RUNTIME_OBJECT_PROTOTYPE_INITIAL_CAPACITY / ZR_RUNTIME_OBJECT_PROTOTYPE_GROWTH_FACTOR / ZR_RUNTIME_PROTOTYPE_INHERIT_INITIAL_CAPACITY / ZR_NATIVE_CALL_STACK_ERROR_HANDLER_GUARD_DIVISOR / ZR_NATIVE_CALL_STACK_ERROR_HANDLER_GUARD_MULTIPLIER` | `zr_vm_core/src/zr_vm_core/debug.c`, `execution_dispatch.c`, `meta.c`, `value.c`, `reflection.c`, `object.c`, `module_prototype.c`, `function.c` | core 运行时错误、调试字符串预览、反射格式化、对象调用 inline scratch 参数容量、对象原型成员表扩容策略、error-handler 二次 native 栈保护比例，以及原型继承解析的共享 buffer/容量上限 | `zr_runtime_limits_conf.h` | 是 |
+| `ZR_STABLE_HASH_FILE_CHUNK_BUFFER_LENGTH / ZR_STABLE_HASH_HEX_BUFFER_LENGTH / ZR_STABLE_HASH_HEX_PRINTF_FORMAT / ZR_STABLE_HASH_FNV1A64_OFFSET_BASIS / ZR_STABLE_HASH_FNV1A64_PRIME` | `zr_vm_cli/src/zr_vm_cli/compiler.c`, `zr_vm_cli/src/zr_vm_cli/project.c`, `zr_vm_library/src/zr_vm_library/aot_runtime.c` | CLI 增量 manifest 与 AOT runtime 工件比对共用的稳定哈希 chunk 大小、FNV-1a 参数、hex 缓冲和格式化约定 | `zr_hash_conf.h` | 是 |
 | `ZR_VM_NATIVE_RUNTIME_ABI_VERSION` | `zr_vm_library/include/zr_vm_library/native_binding.h` | native runtime ABI 版本 | `zr_abi_conf.h` | 是 |
 | `ZR_VM_NATIVE_PLUGIN_ABI_VERSION` | `zr_vm_library/include/zr_vm_library/native_registry.h` | native plugin ABI 版本 | `zr_abi_conf.h` | 是 |
 | `ZR_NATIVE_MODULE_INFO_VERSION` | `zr_vm_core/include/zr_vm_core/module.h` | native module metadata version | `zr_abi_conf.h` | 是 |
@@ -242,7 +281,6 @@ doc_type: inventory
 | `ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY` | `zr_vm_library/src/zr_vm_library/native_binding_dispatch.c` | native 调用稳定参数数组的 inline 容量阈值 | `zr_vm_library/conf.h` | 否 |
 | `ZR_LIBRARY_NATIVE_REGISTRY_ERROR_BUFFER_LENGTH` | `zr_vm_library/src/zr_vm_library/native_binding_internal.h` | native registry 最近错误消息缓冲区长度 | `zr_vm_library/conf.h` | 否 |
 | `ZR_CLI_ERROR_BUFFER_LENGTH` | `zr_vm_cli/src/zr_vm_cli/app.c`, `zr_vm_cli/src/zr_vm_cli/compiler.c` | CLI 命令解析与项目编译错误缓冲区长度 | `zr_vm_cli/conf.h` | 否 |
-| `ZR_CLI_SOURCE_HASH_HEX_LENGTH` | `zr_vm_cli/src/zr_vm_cli/compiler.c`, `zr_vm_cli/src/zr_vm_cli/project.h` | CLI 增量 manifest 的源码哈希缓冲区长度 | `zr_vm_cli/conf.h` | 否 |
 | `ZR_CLI_COLLECTION_INITIAL_CAPACITY / ZR_CLI_SMALL_COLLECTION_INITIAL_CAPACITY / ZR_CLI_COLLECTION_GROWTH_FACTOR` | `zr_vm_cli/src/zr_vm_cli/compiler.c`, `zr_vm_cli/src/zr_vm_cli/project.c` | CLI 模块图、manifest 与字符串列表的初始容量和扩容倍率 | `zr_vm_cli/conf.h` | 否 |
 | `ZR_CLI_REPL_LINE_BUFFER_LENGTH / ZR_CLI_REPL_BUFFER_INITIAL_CAPACITY` | `zr_vm_cli/src/zr_vm_cli/repl.c` | CLI REPL 单行输入和累积提交缓冲区上限 | `zr_vm_cli/conf.h` | 否 |
 | `ZR_LSP_PROJECT_INDEX_INITIAL_CAPACITY` / `ZR_LSP_ARRAY_INITIAL_CAPACITY` / `ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY` / `ZR_LSP_LARGE_ARRAY_INITIAL_CAPACITY` | `zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c`, `symbol_table.c`, `reference_tracker.c`, `lsp_project*.c`, `wasm_exports.cpp` | LSP 上下文、结果集、索引与跟踪器的初始容量 | `zr_vm_language_server/conf.h` | 否 |
@@ -255,6 +293,8 @@ doc_type: inventory
 | `ZR_LSP_STDIO_HEADER_BUFFER_LENGTH` | `zr_vm_language_server/stdio/stdio_transport.c` | stdio transport 读取 JSON-RPC 头部行的缓存上限 | `zr_vm_language_server/conf.h` | 否 |
 | `ZR_LSP_COMMENT_SCAN_LINE_LIMIT / ZR_LSP_COMMENT_BUFFER_LENGTH` | `zr_vm_language_server/src/zr_vm_language_server/lsp_interface_support.c` | LSP 注释回溯扫描行数与注释缓存上限 | `zr_vm_language_server/conf.h` | 否 |
 | `ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY` | `zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_tokens.c`, `zr_vm_language_server/stdio/stdio_requests.c`, `zr_vm_language_server/wasm/wasm_exports.cpp` | semantic tokens 中间结果数组在 core/LSP/stdio/wasm 各入口共享的初始容量 | `zr_vm_language_server/conf.h` | 否 |
+| `ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX / ZR_LSP_JSON_RPC_FIELD_JSONRPC / ZR_LSP_JSON_RPC_VERSION / ZR_LSP_JSON_RPC_FIELD_ID / ZR_LSP_JSON_RPC_FIELD_METHOD / ZR_LSP_JSON_RPC_FIELD_PARAMS / ZR_LSP_JSON_RPC_FIELD_RESULT / ZR_LSP_JSON_RPC_FIELD_ERROR / ZR_LSP_JSON_RPC_FIELD_CODE / ZR_LSP_JSON_RPC_FIELD_MESSAGE` | `zr_vm_language_server/stdio/stdio_transport.c`, `zr_vm_language_server/stdio/zr_vm_language_server_stdio.c` | stdio JSON-RPC 报文封装/解析使用的协议字段名、版本字符串与 Content-Length 头前缀 | `zr_vm_language_server/conf.h` | 否 |
+| `ZR_LSP_FIELD_* / ZR_LSP_METHOD_* / ZR_LSP_MARKUP_KIND_MARKDOWN / ZR_LSP_INSERT_TEXT_FORMAT_KIND_PLAINTEXT / ZR_LSP_INSERT_TEXT_FORMAT_KIND_SNIPPET / ZR_LSP_COMPLETION_TRIGGER_CHARACTER_* / ZR_LSP_SIGNATURE_TRIGGER_CHARACTER_* / ZR_LSP_TEXT_DOCUMENT_SYNC_KIND_INCREMENTAL / ZR_LSP_INSERT_TEXT_FORMAT_PLAIN_TEXT / ZR_LSP_INSERT_TEXT_FORMAT_SNIPPET / ZR_LSP_DIAGNOSTIC_SOURCE_NAME / ZR_LSP_SERVER_NAME / ZR_LSP_SERVER_VERSION` | `zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c`, `zr_vm_language_server/stdio/stdio_json.c`, `zr_vm_language_server/stdio/stdio_documents.c`, `zr_vm_language_server/stdio/stdio_requests.c`, `zr_vm_language_server/wasm/wasm_exports.cpp` | stdio 与 wasm LSP serializer、document sync、initialize capability、completion insertTextFormat 映射、request/notification dispatch 共用的协议字段名、method 名、markup kind、trigger character、sync kind、format tag/enum、diagnostic source 与 server metadata 常量 | `zr_vm_language_server/conf.h` | 否 |
 | `EZrLspCompletionItemKind` | `zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c` | completion item `kind` 字段使用的 LSP 协议编号枚举 | `zr_vm_language_server/conf.h` | 否 |
 | `EZrLspSymbolKind` | `zr_vm_language_server/src/zr_vm_language_server/lsp_interface_support.c` | symbol information `kind` 字段使用的 LSP 协议编号枚举 | `zr_vm_language_server/conf.h` | 否 |
 | `ZR_LSP_JSON_RPC_PARSE_ERROR_CODE` / `ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE` | `zr_vm_language_server/stdio/zr_vm_language_server_stdio.c` | stdio JSON-RPC 协议错误码 | `zr_vm_language_server/conf.h` | 否 |
@@ -268,6 +308,8 @@ doc_type: inventory
   - 现在只是 `ZR_VM_PATH_LENGTH_MAX` 的别名
 - `ZR_LIBRARY_BINARY_FILE_EXT`
   - 现在只是 `ZR_VM_BINARY_MODULE_FILE_EXTENSION` 的别名
+- `ZR_CLI_SOURCE_HASH_HEX_LENGTH`
+  - 现在只是 `ZR_STABLE_HASH_HEX_BUFFER_LENGTH` 的别名
 
 ## 明确不纳入 `conf` 的对象
 
@@ -295,7 +337,7 @@ doc_type: inventory
 
 ## 当前 audit backlog
 
-最新一次 `python scripts/audit_magic_constants.py --json` 结果为 `109 migrated checks / 0 migrated failures / 0 backlog checks / 0 backlog hits`。本轮按顺序完成了 parser 剩余 buffer 与 `4/8/16/*2`、`zr_vm_core/object.c` prototype 容量策略、以及 LSP `stdio_transport.c` / `stdio_requests.c` / `wasm_exports.cpp` 的迁移；`migrated` 继续负责拦截这些已经完成迁移的常量回流，而显式定义绑定豁免仍只在本文档留档，不转成失败项。
+最新一次 `python scripts/audit_magic_constants.py --json` 结果为 `139 migrated checks / 0 migrated failures / 0 backlog checks / 0 backlog hits`。在前一轮 `gc_cycle.c` managed-memory drift 阈值分母、`gc.c` / `gc_cycle.c` 共用 GC debt credit、`function.c` native error-handler 栈过载保护比例，以及 LSP stdio JSON-RPC envelope 常量迁移基础上，本轮继续完成了 parser `parser*.c` 的 AST 初始容量分层收敛、`object.c` inline call-argument scratch 容量收敛、`stdio_json.c` / `stdio_requests.c` 的 `insertTextFormat` / sync-kind / trigger-character 协议常量收敛，以及 `wasm_exports.cpp` LSP payload field/markup 常量对齐；`migrated` 继续负责拦截这些已经完成迁移的常量回流，而显式定义绑定豁免仍只在本文档留档，不转成失败项。
 
 ## 审计脚本
 

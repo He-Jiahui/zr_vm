@@ -4,9 +4,11 @@
 
 #include "zr_vm_parser/writer.h"
 
+#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/memory.h"
 
 #include <stdio.h>
+#include <string.h>
 
 typedef enum EZrAotRuntimeContract {
     ZR_AOT_RUNTIME_CONTRACT_NONE = 0,
@@ -218,37 +220,28 @@ static TZrBool backend_aot_build_module(SZrState *state, SZrFunction *function, 
 
 static void backend_aot_write_c_contracts(FILE *file, TZrUInt32 runtimeContracts) {
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_REFLECTION_TYPEOF) {
-        fprintf(file,
-                "extern TZrBool ZrCore_Reflection_TypeOfValue(struct SZrState *, struct SZrTypeValue *, struct "
-                "SZrTypeValue *);\n");
+        fprintf(file, "/* runtime contract: ZrCore_Reflection_TypeOfValue */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_FUNCTION_PRECALL) {
-        fprintf(file,
-                "extern void *ZrCore_Function_PreCall(struct SZrState *, void *, unsigned long long, void *);\n");
+        fprintf(file, "/* runtime contract: ZrCore_Function_PreCall */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE) {
-        fprintf(file, "extern TZrBool ZrCore_Ownership_NativeShared(struct SZrState *);\n");
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_NativeShared */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WEAK) {
-        fprintf(file, "extern TZrBool ZrCore_Ownership_NativeWeak(struct SZrState *);\n");
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_NativeWeak */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE) {
-        fprintf(file,
-                "extern TZrBool ZrCore_Ownership_UpgradeValue(struct SZrState *, struct SZrTypeValue *, struct "
-                "SZrTypeValue *);\n");
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_UpgradeValue */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE) {
-        fprintf(file, "extern void ZrCore_Ownership_ReleaseValue(struct SZrState *, struct SZrTypeValue *);\n");
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_ReleaseValue */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_ITER_INIT) {
-        fprintf(file,
-                "extern TZrBool ZrCore_Object_IterInit(struct SZrState *, struct SZrTypeValue *, struct "
-                "SZrTypeValue *);\n");
+        fprintf(file, "/* runtime contract: ZrCore_Object_IterInit */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_ITER_MOVE_NEXT) {
-        fprintf(file,
-                "extern TZrBool ZrCore_Object_IterMoveNext(struct SZrState *, struct SZrTypeValue *, struct "
-                "SZrTypeValue *);\n");
+        fprintf(file, "/* runtime contract: ZrCore_Object_IterMoveNext */\n");
     }
 }
 
@@ -305,11 +298,131 @@ static void backend_aot_write_instruction_listing(FILE *file,
     }
 }
 
-ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFile(SZrState *state,
-                                                    SZrFunction *function,
-                                                    const TZrChar *filename) {
+static const TZrChar *backend_aot_option_text(const SZrAotWriterOptions *options,
+                                              const TZrChar *candidate,
+                                              const TZrChar *fallback) {
+    ZR_UNUSED_PARAMETER(options);
+    return (candidate != ZR_NULL && candidate[0] != '\0') ? candidate : fallback;
+}
+
+static const TZrChar *backend_aot_runtime_contract_name(TZrUInt32 contractBit) {
+    switch (contractBit) {
+        case ZR_AOT_RUNTIME_CONTRACT_REFLECTION_TYPEOF:
+            return "reflection.typeof";
+        case ZR_AOT_RUNTIME_CONTRACT_FUNCTION_PRECALL:
+            return "dispatch.precall";
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE:
+            return "ownership.share";
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WEAK:
+            return "ownership.weak";
+        case ZR_AOT_RUNTIME_CONTRACT_ITER_INIT:
+            return "iter.init";
+        case ZR_AOT_RUNTIME_CONTRACT_ITER_MOVE_NEXT:
+            return "iter.move_next";
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE:
+            return "ownership.upgrade";
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE:
+            return "ownership.release";
+        case ZR_AOT_RUNTIME_CONTRACT_NONE:
+        default:
+            return "none";
+    }
+}
+
+static void backend_aot_write_runtime_contract_array_c(FILE *file, TZrUInt32 runtimeContracts) {
+    TZrUInt32 contractBit;
+
+    fprintf(file, "static const TZrChar *const zr_aot_runtime_contracts[] = {\n");
+    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE; contractBit <<= 1) {
+        if ((runtimeContracts & contractBit) == 0) {
+            continue;
+        }
+        fprintf(file, "    \"%s\",\n", backend_aot_runtime_contract_name(contractBit));
+    }
+    fprintf(file, "    ZR_NULL,\n");
+    fprintf(file, "};\n");
+}
+
+static void backend_aot_write_runtime_contract_array_llvm(FILE *file, TZrUInt32 runtimeContracts) {
+    TZrUInt32 contractBit;
+
+    fprintf(file, "; runtimeContracts:");
+    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE; contractBit <<= 1) {
+        if ((runtimeContracts & contractBit) == 0) {
+            continue;
+        }
+        fprintf(file, " %s", backend_aot_runtime_contract_name(contractBit));
+    }
+    fprintf(file, "\n");
+}
+
+static TZrUInt32 backend_aot_runtime_contract_count(TZrUInt32 runtimeContracts) {
+    TZrUInt32 contractBit;
+    TZrUInt32 count = 0;
+
+    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE; contractBit <<= 1) {
+        if ((runtimeContracts & contractBit) != 0) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static void backend_aot_write_runtime_contract_globals_llvm(FILE *file, TZrUInt32 runtimeContracts) {
+    TZrUInt32 contractBit;
+    TZrUInt32 contractCount;
+    TZrUInt32 contractIndex = 0;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    contractCount = backend_aot_runtime_contract_count(runtimeContracts);
+    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE; contractBit <<= 1) {
+        const TZrChar *contractName;
+
+        if ((runtimeContracts & contractBit) == 0) {
+            continue;
+        }
+
+        contractName = backend_aot_runtime_contract_name(contractBit);
+        fprintf(file,
+                "@zr_aot_runtime_contract_%u = private unnamed_addr constant [%llu x i8] c\"%s\\00\"\n",
+                (unsigned)contractIndex,
+                (unsigned long long)(strlen(contractName) + 1),
+                contractName);
+        contractIndex++;
+    }
+
+    fprintf(file, "@zr_aot_runtime_contracts = private constant [%u x ptr] [", (unsigned)(contractCount + 1));
+    contractIndex = 0;
+    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE; contractBit <<= 1) {
+        if ((runtimeContracts & contractBit) == 0) {
+            continue;
+        }
+
+        if (contractIndex > 0) {
+            fprintf(file, ", ");
+        }
+        fprintf(file, "ptr @zr_aot_runtime_contract_%u", (unsigned)contractIndex);
+        contractIndex++;
+    }
+    if (contractIndex > 0) {
+        fprintf(file, ", ");
+    }
+    fprintf(file, "ptr null]\n");
+}
+
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
+                                                               SZrFunction *function,
+                                                               const TZrChar *filename,
+                                                               const SZrAotWriterOptions *options) {
     SZrAotIrModule module;
     FILE *file;
+    const TZrChar *moduleName;
+    const TZrChar *sourceHash;
+    const TZrChar *zroHash;
 
     if (state == ZR_NULL || function == ZR_NULL || filename == ZR_NULL) {
         return ZR_FALSE;
@@ -325,19 +438,119 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFile(SZrState *state,
         return ZR_FALSE;
     }
 
+    moduleName = backend_aot_option_text(options, options != ZR_NULL ? options->moduleName : ZR_NULL, "__entry__");
+    sourceHash = backend_aot_option_text(options, options != ZR_NULL ? options->sourceHash : ZR_NULL, "unknown");
+    zroHash = backend_aot_option_text(options, options != ZR_NULL ? options->zroHash : ZR_NULL, "unknown");
+
     fprintf(file, "/* ZR AOT C Backend */\n");
     fprintf(file, "/* SemIR -> AOTIR textual lowering. */\n");
-    fprintf(file, "typedef int TZrBool;\n");
-    fprintf(file, "struct SZrState;\n");
-    fprintf(file, "struct SZrFunction;\n");
-    fprintf(file, "struct SZrTypeValue;\n");
+    fprintf(file, "#include \"zr_vm_common/zr_aot_abi.h\"\n");
+    fprintf(file, "#include \"zr_vm_library/aot_runtime.h\"\n");
     backend_aot_write_c_contracts(file, module.runtimeContracts);
     fprintf(file, "\n");
-    fprintf(file, "static TZrBool zr_aot_entry(struct SZrState *state, struct SZrFunction *function) {\n");
-    fprintf(file, "    (void)state;\n");
-    fprintf(file, "    (void)function;\n");
+    backend_aot_write_runtime_contract_array_c(file, module.runtimeContracts);
+    fprintf(file, "\n");
+    fprintf(file, "static TZrInt64 zr_aot_entry(struct SZrState *state) {\n");
     backend_aot_write_instruction_listing(file, "    // ", &module);
-    fprintf(file, "    return 1;\n");
+    fprintf(file, "    return ZrLibrary_AotRuntime_InvokeActiveShim(state, ZR_AOT_BACKEND_KIND_C);\n");
+    fprintf(file, "}\n");
+    fprintf(file, "\n");
+    fprintf(file, "static const ZrAotCompiledModuleV1 zr_aot_module = {\n");
+    fprintf(file, "    ZR_VM_AOT_ABI_VERSION,\n");
+    fprintf(file, "    ZR_AOT_BACKEND_KIND_C,\n");
+    fprintf(file, "    \"%s\",\n", moduleName);
+    fprintf(file, "    \"%s\",\n", sourceHash);
+    fprintf(file, "    \"%s\",\n", zroHash);
+    fprintf(file, "    zr_aot_runtime_contracts,\n");
+    fprintf(file, "    zr_aot_entry,\n");
+    fprintf(file, "};\n");
+    fprintf(file, "\n");
+    fprintf(file, "ZR_VM_AOT_EXPORT const ZrAotCompiledModuleV1 *ZrVm_GetAotCompiledModule_v1(void) {\n");
+    fprintf(file, "    return &zr_aot_module;\n");
+    fprintf(file, "}\n");
+
+    fclose(file);
+    backend_aot_release_module(state, &module);
+    return ZR_TRUE;
+}
+
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFile(SZrState *state,
+                                                    SZrFunction *function,
+                                                    const TZrChar *filename) {
+    return ZrParser_Writer_WriteAotCFileWithOptions(state, function, filename, ZR_NULL);
+}
+
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *state,
+                                                                  SZrFunction *function,
+                                                                  const TZrChar *filename,
+                                                                  const SZrAotWriterOptions *options) {
+    SZrAotIrModule module;
+    FILE *file;
+    const TZrChar *moduleName;
+    const TZrChar *sourceHash;
+    const TZrChar *zroHash;
+
+    if (state == ZR_NULL || function == ZR_NULL || filename == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!backend_aot_build_module(state, function, &module)) {
+        return ZR_FALSE;
+    }
+
+    file = fopen(filename, "wb");
+    if (file == ZR_NULL) {
+        backend_aot_release_module(state, &module);
+        return ZR_FALSE;
+    }
+
+    moduleName = backend_aot_option_text(options, options != ZR_NULL ? options->moduleName : ZR_NULL, "__entry__");
+    sourceHash = backend_aot_option_text(options, options != ZR_NULL ? options->sourceHash : ZR_NULL, "unknown");
+    zroHash = backend_aot_option_text(options, options != ZR_NULL ? options->zroHash : ZR_NULL, "unknown");
+
+    fprintf(file, "; ZR AOT LLVM Backend\n");
+    fprintf(file, "; SemIR -> AOTIR textual lowering.\n");
+    backend_aot_write_llvm_contracts(file, module.runtimeContracts);
+    backend_aot_write_runtime_contract_array_llvm(file, module.runtimeContracts);
+    fprintf(file, "\n");
+    backend_aot_write_instruction_listing(file, "; ", &module);
+    fprintf(file, "@zr_aot_module_name = private unnamed_addr constant [%llu x i8] c\"%s\\00\"\n",
+            (unsigned long long)(strlen(moduleName) + 1),
+            moduleName);
+    fprintf(file, "@zr_aot_source_hash = private unnamed_addr constant [%llu x i8] c\"%s\\00\"\n",
+            (unsigned long long)(strlen(sourceHash) + 1),
+            sourceHash);
+    fprintf(file, "@zr_aot_zro_hash = private unnamed_addr constant [%llu x i8] c\"%s\\00\"\n",
+            (unsigned long long)(strlen(zroHash) + 1),
+            zroHash);
+    backend_aot_write_runtime_contract_globals_llvm(file, module.runtimeContracts);
+    fprintf(file, "%%ZrAotCompiledModuleV1 = type { i32, i32, ptr, ptr, ptr, ptr, ptr }\n");
+    fprintf(file, "define i64 @zr_aot_entry(ptr %%state) {\n");
+    fprintf(file, "entry:\n");
+    fprintf(file, "  %%ret = call i64 @ZrLibrary_AotRuntime_InvokeActiveShim(ptr %%state, i32 %u)\n",
+            (unsigned)ZR_AOT_BACKEND_KIND_LLVM);
+    fprintf(file, "  ret i64 %%ret\n");
+    fprintf(file, "}\n");
+    fprintf(file, "\n");
+    fprintf(file, "@zr_aot_module = private constant %%ZrAotCompiledModuleV1 {\n");
+    fprintf(file, "  i32 %u,\n", (unsigned)ZR_VM_AOT_ABI_VERSION);
+    fprintf(file, "  i32 %u,\n", (unsigned)ZR_AOT_BACKEND_KIND_LLVM);
+    fprintf(file, "  ptr @zr_aot_module_name,\n");
+    fprintf(file, "  ptr @zr_aot_source_hash,\n");
+    fprintf(file, "  ptr @zr_aot_zro_hash,\n");
+    fprintf(file, "  ptr @zr_aot_runtime_contracts,\n");
+    fprintf(file, "  ptr @zr_aot_entry\n");
+    fprintf(file, "}\n");
+    fprintf(file, "\n");
+    fprintf(file, "; export-symbol: ZrVm_GetAotCompiledModule_v1\n");
+    fprintf(file, "; descriptor.moduleName = %s\n", moduleName);
+    fprintf(file, "; descriptor.sourceHash = %s\n", sourceHash);
+    fprintf(file, "; descriptor.zroHash = %s\n", zroHash);
+    fprintf(file, "; descriptor.backendKind = llvm\n");
+    fprintf(file, "declare i64 @ZrLibrary_AotRuntime_InvokeActiveShim(ptr, i32)\n");
+    fprintf(file, "define ptr @ZrVm_GetAotCompiledModule_v1() {\n");
+    fprintf(file, "entry_export:\n");
+    fprintf(file, "  ret ptr @zr_aot_module\n");
     fprintf(file, "}\n");
 
     fclose(file);
@@ -348,34 +561,5 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFile(SZrState *state,
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFile(SZrState *state,
                                                        SZrFunction *function,
                                                        const TZrChar *filename) {
-    SZrAotIrModule module;
-    FILE *file;
-
-    if (state == ZR_NULL || function == ZR_NULL || filename == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (!backend_aot_build_module(state, function, &module)) {
-        return ZR_FALSE;
-    }
-
-    file = fopen(filename, "wb");
-    if (file == ZR_NULL) {
-        backend_aot_release_module(state, &module);
-        return ZR_FALSE;
-    }
-
-    fprintf(file, "; ZR AOT LLVM Backend\n");
-    fprintf(file, "; SemIR -> AOTIR textual lowering.\n");
-    backend_aot_write_llvm_contracts(file, module.runtimeContracts);
-    fprintf(file, "\n");
-    backend_aot_write_instruction_listing(file, "; ", &module);
-    fprintf(file, "define i1 @zr_aot_entry(ptr %%state, ptr %%function) {\n");
-    fprintf(file, "entry:\n");
-    fprintf(file, "  ret i1 true\n");
-    fprintf(file, "}\n");
-
-    fclose(file);
-    backend_aot_release_module(state, &module);
-    return ZR_TRUE;
+    return ZrParser_Writer_WriteAotLlvmFileWithOptions(state, function, filename, ZR_NULL);
 }

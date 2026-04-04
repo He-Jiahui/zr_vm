@@ -250,67 +250,6 @@ static TZrBool io_runtime_populate_function(SZrState *state,
                                             const SZrIoFunction *source,
                                             SZrFunction *function);
 
-static TZrBool io_runtime_function_matches_inline_child(const SZrFunction *left, const SZrFunction *right) {
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    return left->functionName == right->functionName &&
-           left->parameterCount == right->parameterCount &&
-           left->instructionsLength == right->instructionsLength &&
-           left->lineInSourceStart == right->lineInSourceStart &&
-           left->lineInSourceEnd == right->lineInSourceEnd;
-}
-
-static void io_runtime_rebind_constant_function_values_to_children(SZrFunction *function) {
-    if (function == ZR_NULL || function->constantValueList == ZR_NULL || function->childFunctionList == ZR_NULL ||
-        function->childFunctionLength == 0) {
-        return;
-    }
-
-    for (TZrUInt32 constantIndex = 0; constantIndex < function->constantValueLength; constantIndex++) {
-        SZrTypeValue *constant = &function->constantValueList[constantIndex];
-        SZrRawObject *rawObject;
-        SZrFunction *constantFunction = ZR_NULL;
-
-        if ((constant->type != ZR_VALUE_TYPE_FUNCTION && constant->type != ZR_VALUE_TYPE_CLOSURE) ||
-            constant->value.object == ZR_NULL) {
-            continue;
-        }
-
-        rawObject = constant->value.object;
-        if (rawObject->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
-            constantFunction = ZR_CAST(SZrFunction *, rawObject);
-        } else if (rawObject->type == ZR_RAW_OBJECT_TYPE_CLOSURE && !constant->isNative) {
-            SZrClosure *closure = ZR_CAST(SZrClosure *, rawObject);
-            if (closure != ZR_NULL) {
-                constantFunction = closure->function;
-            }
-        }
-
-        if (constantFunction == ZR_NULL) {
-            continue;
-        }
-
-        for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
-            SZrFunction *childFunction = &function->childFunctionList[childIndex];
-            if (!io_runtime_function_matches_inline_child(constantFunction, childFunction)) {
-                continue;
-            }
-
-            if (rawObject->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
-                constant->value.object = ZR_CAST_RAW_OBJECT_AS_SUPER(childFunction);
-            } else if (rawObject->type == ZR_RAW_OBJECT_TYPE_CLOSURE && !constant->isNative) {
-                SZrClosure *closure = ZR_CAST(SZrClosure *, rawObject);
-                if (closure != ZR_NULL) {
-                    closure->function = childFunction;
-                }
-            }
-            break;
-        }
-    }
-}
-
 static TZrBool io_runtime_convert_constant(SZrState *state,
                                            const SZrIoFunctionConstantVariable *source,
                                            SZrTypeValue *destination) {
@@ -478,6 +417,70 @@ static TZrBool io_runtime_populate_function(SZrState *state,
                     (TZrMemoryOffset)source->localVariables[index].instructionEndIndex;
         }
         function->localVariableLength = (TZrUInt32)source->localVariablesLength;
+    }
+
+    if (source->closureVariablesLength > 0) {
+        TZrSize closureBytes = sizeof(SZrFunctionClosureVariable) * source->closureVariablesLength;
+        function->closureValueList =
+                (SZrFunctionClosureVariable *)ZrCore_Memory_RawMallocWithType(global,
+                                                                              closureBytes,
+                                                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->closureValueList == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        for (TZrSize index = 0; index < source->closureVariablesLength; index++) {
+            function->closureValueList[index].name = source->closureVariables[index].name;
+            function->closureValueList[index].inStack = source->closureVariables[index].inStack ? ZR_TRUE : ZR_FALSE;
+            function->closureValueList[index].index = source->closureVariables[index].index;
+            function->closureValueList[index].valueType = (EZrValueType)source->closureVariables[index].valueType;
+        }
+        function->closureValueLength = (TZrUInt32)source->closureVariablesLength;
+    }
+
+    if (source->catchClauseCount > 0) {
+        TZrSize catchBytes = sizeof(SZrFunctionCatchClauseInfo) * source->catchClauseCount;
+        function->catchClauseList =
+                (SZrFunctionCatchClauseInfo *)ZrCore_Memory_RawMallocWithType(global,
+                                                                              catchBytes,
+                                                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->catchClauseList == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        for (TZrSize index = 0; index < source->catchClauseCount; index++) {
+            function->catchClauseList[index].typeName = source->catchClauses[index].typeName;
+            function->catchClauseList[index].targetInstructionOffset =
+                    (TZrMemoryOffset)source->catchClauses[index].targetInstructionOffset;
+        }
+        function->catchClauseCount = (TZrUInt32)source->catchClauseCount;
+    }
+
+    if (source->exceptionHandlerCount > 0) {
+        TZrSize handlerBytes = sizeof(SZrFunctionExceptionHandlerInfo) * source->exceptionHandlerCount;
+        function->exceptionHandlerList =
+                (SZrFunctionExceptionHandlerInfo *)ZrCore_Memory_RawMallocWithType(global,
+                                                                                   handlerBytes,
+                                                                                   ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->exceptionHandlerList == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        for (TZrSize index = 0; index < source->exceptionHandlerCount; index++) {
+            function->exceptionHandlerList[index].protectedStartInstructionOffset =
+                    (TZrMemoryOffset)source->exceptionHandlers[index].protectedStartInstructionOffset;
+            function->exceptionHandlerList[index].finallyTargetInstructionOffset =
+                    (TZrMemoryOffset)source->exceptionHandlers[index].finallyTargetInstructionOffset;
+            function->exceptionHandlerList[index].afterFinallyInstructionOffset =
+                    (TZrMemoryOffset)source->exceptionHandlers[index].afterFinallyInstructionOffset;
+            function->exceptionHandlerList[index].catchClauseStartIndex =
+                    source->exceptionHandlers[index].catchClauseStartIndex;
+            function->exceptionHandlerList[index].catchClauseCount =
+                    source->exceptionHandlers[index].catchClauseCount;
+            function->exceptionHandlerList[index].hasFinally =
+                    source->exceptionHandlers[index].hasFinally ? ZR_TRUE : ZR_FALSE;
+        }
+        function->exceptionHandlerCount = (TZrUInt32)source->exceptionHandlerCount;
     }
 
     if (source->constantVariablesLength > 0) {
@@ -729,7 +732,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         function->childFunctionLength = (TZrUInt32)source->closuresLength;
     }
 
-    io_runtime_rebind_constant_function_values_to_children(function);
+    ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
 
     return ZR_TRUE;
 }

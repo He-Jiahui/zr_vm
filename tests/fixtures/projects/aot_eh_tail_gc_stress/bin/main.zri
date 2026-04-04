@@ -1,0 +1,420 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 64
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 42
+
+CONSTANTS (17):
+  [0] null
+  [1] native closure
+  [2] string: "zr.system"
+  [3] function
+  [4] function
+  [5] function
+  [6] string: "Box"
+  [7] string: "Loop"
+  [8] int: 12
+  [9] int: 0
+  [10] int: 10
+  [11] int: 1
+  [12] int: 1000
+  [13] string: "AOT_EH_TAIL_GC_STRESS_PASS"
+  [14] string: "call"
+  [15] function
+  [16] string: "int"
+
+LOCAL_VARIABLES (15):
+  [0] direct: offset_activate=0, offset_dead=111
+  [1] guarded: offset_activate=1, offset_dead=111
+  [2] system: offset_activate=6, offset_dead=111
+  [3] owner: offset_activate=15, offset_dead=111
+  [4] weak: offset_activate=20, offset_dead=111
+  [5] alias: offset_activate=25, offset_dead=111
+  [6] loop: offset_activate=27, offset_dead=111
+  [7] directValue: offset_activate=33, offset_dead=111
+  [8] metaValue: offset_activate=39, offset_dead=111
+  [9] guardedValue: offset_activate=43, offset_dead=111
+  [10] releasedOwner: offset_activate=44, offset_dead=111
+  [11] releasedAlias: offset_activate=45, offset_dead=111
+  [12] after: offset_activate=50, offset_dead=111
+  [13] spin: offset_activate=51, offset_dead=111
+  [14] checksum: offset_activate=72, offset_dead=111
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (15):
+    [0] direct: function
+    [1] guarded: function
+    [2] system: zr.system
+    [5] owner: Box
+    [6] weak: Box
+    [7] alias: Box
+    [8] loop: Loop
+    [9] directValue: int
+    [10] metaValue: object
+    [11] guardedValue: int
+    [12] releasedOwner: null
+    [13] releasedAlias: null
+    [14] after: Box
+    [15] spin: int
+    [27] checksum: object
+  EXPORTED_SYMBOLS (2):
+    fn direct(int, int): int
+    fn guarded(int): int
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (9):
+  [0] object
+  [1] function
+  [2] zr.system
+  [3] Box
+  [4] Box
+  [5] Box
+  [6] Loop
+  [7] int
+  [8] null
+
+OWNERSHIP_TABLE (4):
+  [0] Unique
+  [1] Shared
+  [2] Weak
+  [3] PlainGc
+
+EFFECT_TABLE (7):
+  [0] OWNERSHIP_TRANSITION inst=0 from=0 to=1
+  [1] OWNERSHIP_TRANSITION inst=1 from=1 to=2
+  [2] OWNERSHIP_TRANSITION inst=2 from=2 to=1
+  [3] DYNAMIC_RUNTIME inst=3 from=0 to=0
+  [4] OWNERSHIP_TRANSITION inst=4 from=1 to=3
+  [5] OWNERSHIP_TRANSITION inst=5 from=1 to=3
+  [6] OWNERSHIP_TRANSITION inst=6 from=2 to=1
+
+BLOCK_GRAPH (1):
+  [0] block=0 first=0 count=7
+
+SEMIR (7):
+  [0] OWN_SHARE exec=13 type=3 effect=0 dst=5 op0=6 op1=0 deopt=0
+  [1] OWN_WEAK exec=18 type=4 effect=1 dst=6 op0=7 op1=0 deopt=0
+  [2] OWN_UPGRADE exec=23 type=5 effect=2 dst=7 op0=8 op1=0 deopt=0
+  [3] META_CALL exec=36 type=0 effect=3 dst=10 op0=10 op1=2 deopt=1
+  [4] OWN_RELEASE exec=43 type=8 effect=4 dst=12 op0=5 op1=0 deopt=0
+  [5] OWN_RELEASE exec=44 type=8 effect=5 dst=13 op0=7 op1=0 deopt=0
+  [6] OWN_UPGRADE exec=48 type=5 effect=6 dst=14 op0=15 op1=0 deopt=0
+
+DEOPT_MAP (1):
+  [0] deopt=1 exec=36
+
+CALLSITE_CACHE_TABLE (1):
+  [0] kind=META_CALL inst=36 member=4294967295 deopt=1 args=2 hits=0 misses=0
+
+EH_TABLE (0):
+
+PROTOTYPES (2):
+// ========== PROTOTYPES FROM DATA (count: 2) ==========
+// --- Prototype 1 ---
+class Loop {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "call",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CALL (15),
+      functionConstantIndex: 15,
+      parameterCount: 2,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+class Box {
+  access: private (1),
+  members: [
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (111):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=0)
+  [2] GET_CONSTANT (extra=2, operand=1)
+  [3] GET_CONSTANT (extra=3, operand=2)
+  [4] FUNCTION_CALL (extra=2, operand1=2, operand2=1)
+  [5] GET_CONSTANT (extra=3, operand=0)
+  [6] CREATE_CLOSURE (extra=3)
+  [7] SET_STACK (extra=0, operand=3)
+  [8] CREATE_CLOSURE (extra=4)
+  [9] SET_STACK (extra=1, operand=4)
+  [10] CREATE_OBJECT (extra=5)
+  [11] OPCODE_21 (extra=5, operand2=393221, operand1=5, operand1_1=6)
+  [12] SET_STACK (extra=6, operand=5)
+  [13] OWN_SHARE (extra=5, operand1=6)
+  [14] GET_CONSTANT (extra=6, operand=0)
+  [15] GET_STACK (extra=8, operand=5)
+  [16] SET_STACK (extra=7, operand=8)
+  [17] GET_CONSTANT (extra=8, operand=0)
+  [18] OWN_WEAK (extra=6, operand1=7)
+  [19] GET_CONSTANT (extra=7, operand=0)
+  [20] GET_STACK (extra=9, operand=6)
+  [21] SET_STACK (extra=8, operand=9)
+  [22] GET_CONSTANT (extra=9, operand=0)
+  [23] OWN_UPGRADE (extra=7, operand1=8)
+  [24] GET_CONSTANT (extra=8, operand=0)
+  [25] CREATE_OBJECT (extra=8)
+  [26] OPCODE_21 (extra=8, operand2=458760, operand1=8, operand1_1=7)
+  [27] GET_STACK (extra=9, operand=0)
+  [28] GET_CONSTANT (extra=10, operand=8)
+  [29] GET_CONSTANT (extra=11, operand=9)
+  [30] FUNCTION_CALL (extra=9, operand1=9, operand2=2)
+  [31] GET_CONSTANT (extra=10, operand=0)
+  [32] GET_CONSTANT (extra=11, operand=0)
+  [33] GET_STACK (extra=10, operand=8)
+  [34] GET_CONSTANT (extra=11, operand=10)
+  [35] GET_CONSTANT (extra=12, operand=9)
+  [36] SUPER_META_CALL_CACHED (extra=10, operand1=10, operand2=0)
+  [37] GET_CONSTANT (extra=11, operand=0)
+  [38] GET_CONSTANT (extra=12, operand=0)
+  [39] GET_STACK (extra=11, operand=1)
+  [40] GET_CONSTANT (extra=12, operand=11)
+  [41] FUNCTION_CALL (extra=11, operand1=11, operand2=1)
+  [42] GET_CONSTANT (extra=12, operand=0)
+  [43] OWN_RELEASE (extra=12, operand1=5)
+  [44] OWN_RELEASE (extra=13, operand1=7)
+  [45] GET_STACK (extra=16, operand=6)
+  [46] SET_STACK (extra=15, operand=16)
+  [47] GET_CONSTANT (extra=16, operand=0)
+  [48] OWN_UPGRADE (extra=14, operand1=15)
+  [49] GET_CONSTANT (extra=15, operand=0)
+  [50] GET_CONSTANT (extra=15, operand=9)
+  [51] GET_STACK (extra=16, operand=15)
+  [52] GET_CONSTANT (extra=17, operand=12)
+  [53] LOGICAL_LESS_SIGNED (extra=18, operand1=16, operand2=17)
+  [54] JUMP_IF (extra=18, operand=8)
+  [55] GET_STACK (extra=19, operand=15)
+  [56] GET_CONSTANT (extra=20, operand=11)
+  [57] ADD_INT (extra=21, operand1=19, operand2=20)
+  [58] SET_STACK (extra=15, operand=21)
+  [59] GET_CONSTANT (extra=19, operand=0)
+  [60] GET_CONSTANT (extra=20, operand=0)
+  [61] GET_CONSTANT (extra=21, operand=0)
+  [62] JUMP (extra=0, operand=-12)
+  [63] GET_STACK (extra=19, operand=9)
+  [64] GET_STACK (extra=20, operand=10)
+  [65] ADD_INT (extra=21, operand1=19, operand2=20)
+  [66] GET_STACK (extra=22, operand=11)
+  [67] ADD_INT (extra=23, operand1=21, operand2=22)
+  [68] GET_STACK (extra=24, operand=15)
+  [69] GET_CONSTANT (extra=25, operand=12)
+  [70] DIV_SIGNED (extra=26, operand1=24, operand2=25)
+  [71] ADD_INT (extra=27, operand1=23, operand2=26)
+  [72] GET_STACK (extra=28, operand=12)
+  [73] GET_CONSTANT (extra=29, operand=0)
+  [74] LOGICAL_EQUAL (extra=30, operand1=28, operand2=29)
+  [75] SET_STACK (extra=31, operand=30)
+  [76] JUMP_IF (extra=30, operand=5)
+  [77] GET_STACK (extra=32, operand=13)
+  [78] GET_CONSTANT (extra=33, operand=0)
+  [79] LOGICAL_EQUAL (extra=34, operand1=32, operand2=33)
+  [80] SET_STACK (extra=31, operand=34)
+  [81] JUMP (extra=0, operand=0)
+  [82] SET_STACK (extra=35, operand=34)
+  [83] JUMP_IF (extra=34, operand=5)
+  [84] GET_STACK (extra=36, operand=14)
+  [85] GET_CONSTANT (extra=37, operand=0)
+  [86] LOGICAL_EQUAL (extra=38, operand1=36, operand2=37)
+  [87] SET_STACK (extra=35, operand=38)
+  [88] JUMP (extra=0, operand=0)
+  [89] JUMP_IF (extra=38, operand=17)
+  [90] GET_STACK (extra=39, operand=2)
+  [91] GET_MEMBER (extra=39, operand1=39, operand2=0)
+  [92] GET_MEMBER (extra=39, operand1=39, operand2=1)
+  [93] GET_CONSTANT (extra=40, operand=13)
+  [94] FUNCTION_CALL (extra=39, operand1=39, operand2=1)
+  [95] GET_CONSTANT (extra=40, operand=0)
+  [96] GET_CONSTANT (extra=39, operand=0)
+  [97] GET_STACK (extra=39, operand=2)
+  [98] GET_MEMBER (extra=39, operand1=39, operand2=0)
+  [99] GET_MEMBER (extra=39, operand1=39, operand2=1)
+  [100] GET_STACK (extra=40, operand=27)
+  [101] FUNCTION_CALL (extra=39, operand1=39, operand2=1)
+  [102] GET_CONSTANT (extra=40, operand=0)
+  [103] GET_CONSTANT (extra=39, operand=0)
+  [104] GET_STACK (extra=39, operand=27)
+  [105] FUNCTION_RETURN (extra=1, operand1=39, operand2=0)
+  [106] JUMP (extra=0, operand=0)
+  [107] GET_CONSTANT (extra=41, operand=11)
+  [108] NEG (extra=40, operand1=41)
+  [109] GET_CONSTANT (extra=41, operand=0)
+  [110] FUNCTION_RETURN (extra=1, operand1=40, operand2=0)
+
+CHILD_FUNCTIONS (2):
+  [0] FUNCTION:
+    NAME: direct
+    START_LINE: 12
+    END_LINE: 17
+    PARAMETERS: 2
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 11
+
+    CONSTANTS (3):
+      [0] int: 0
+      [1] int: 1
+      [2] null
+
+    LOCAL_VARIABLES (2):
+      [0] n: offset_activate=0, offset_dead=24
+      [1] acc: offset_activate=0, offset_dead=24
+
+    CLOSURE_VARIABLES (1):
+      [0] direct: in_stack=true, index=0, type=NULL
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (2):
+        [0] n: int
+        [1] acc: int
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (24):
+      [0] GET_STACK (extra=2, operand=0)
+      [1] GET_CONSTANT (extra=3, operand=0)
+      [2] OPCODE_59 (extra=4, operand1=2, operand2=3)
+      [3] OPCODE_79 (extra=4, operand=3)
+      [4] GET_STACK (extra=5, operand=1)
+      [5] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+      [6] OPCODE_78 (extra=0, operand=0)
+      [7] OPCODE_6 (extra=6)
+      [8] GET_STACK (extra=7, operand=0)
+      [9] GET_CONSTANT (extra=8, operand=1)
+      [10] SUB_INT (extra=9, operand1=7, operand2=8)
+      [11] SET_STACK (extra=7, operand=9)
+      [12] GET_CONSTANT (extra=8, operand=2)
+      [13] GET_CONSTANT (extra=9, operand=2)
+      [14] GET_STACK (extra=8, operand=1)
+      [15] GET_CONSTANT (extra=9, operand=1)
+      [16] ADD_INT (extra=10, operand1=8, operand2=9)
+      [17] SET_STACK (extra=8, operand=10)
+      [18] GET_CONSTANT (extra=9, operand=2)
+      [19] GET_CONSTANT (extra=10, operand=2)
+      [20] OPCODE_74 (extra=6, operand1=6, operand2=2)
+      [21] GET_CONSTANT (extra=7, operand=2)
+      [22] GET_CONSTANT (extra=8, operand=2)
+      [23] FUNCTION_RETURN (extra=1, operand1=6, operand2=0)
+
+  [1] FUNCTION:
+    NAME: guarded
+    START_LINE: 19
+    END_LINE: 33
+    PARAMETERS: 1
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 12
+
+    CONSTANTS (5):
+      [0] int: 0
+      [1] string: "boom"
+      [2] int: 7
+      [3] null
+      [4] int: 1
+
+    LOCAL_VARIABLES (3):
+      [0] flag: offset_activate=0, offset_dead=35
+      [1] marker: offset_activate=1, offset_dead=33
+      [2] e: offset_activate=26, offset_dead=31
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (3):
+        [0] flag: int
+        [1] marker: int
+        [7] e: object
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (2):
+      [0] protected_start=1 finally=0 after_finally=33 catches=0 count=1 has_finally=false
+      [1] protected_start=2 finally=16 after_finally=24 catches=1 count=0 has_finally=true
+
+    INSTRUCTIONS (35):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] OPCODE_89 (extra=0)
+      [2] OPCODE_89 (extra=1)
+      [3] GET_STACK (extra=2, operand=0)
+      [4] GET_CONSTANT (extra=3, operand=0)
+      [5] OPCODE_60 (extra=4, operand1=2, operand2=3)
+      [6] OPCODE_79 (extra=4, operand=3)
+      [7] GET_CONSTANT (extra=5, operand=1)
+      [8] OPCODE_91 (extra=5, operand=0)
+      [9] OPCODE_78 (extra=0, operand=0)
+      [10] GET_CONSTANT (extra=6, operand=0)
+      [11] OPCODE_94 (extra=6, operand2=13, operand1=13, operand1_1=0)
+      [12] OPCODE_78 (extra=0, operand=3)
+      [13] FUNCTION_RETURN (extra=1, operand1=6, operand2=0)
+      [14] OPCODE_90 (extra=1)
+      [15] OPCODE_78 (extra=0, operand=0)
+      [16] GET_STACK (extra=7, operand=1)
+      [17] GET_CONSTANT (extra=8, operand=2)
+      [18] ADD_INT (extra=9, operand1=7, operand2=8)
+      [19] SET_STACK (extra=1, operand=9)
+      [20] GET_CONSTANT (extra=7, operand=3)
+      [21] GET_CONSTANT (extra=8, operand=3)
+      [22] GET_CONSTANT (extra=9, operand=3)
+      [23] OPCODE_93 (extra=1)
+      [24] OPCODE_90 (extra=0)
+      [25] OPCODE_78 (extra=0, operand=7)
+      [26] OPCODE_92 (extra=7)
+      [27] GET_STACK (extra=8, operand=1)
+      [28] GET_CONSTANT (extra=9, operand=4)
+      [29] ADD_INT (extra=10, operand1=8, operand2=9)
+      [30] FUNCTION_RETURN (extra=1, operand1=10, operand2=0)
+      [31] OPCODE_90 (extra=0)
+      [32] OPCODE_78 (extra=0, operand=0)
+      [33] GET_CONSTANT (extra=11, operand=3)
+      [34] FUNCTION_RETURN (extra=1, operand1=11, operand2=0)
+
+

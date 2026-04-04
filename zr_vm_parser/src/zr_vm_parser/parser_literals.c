@@ -236,7 +236,7 @@ SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValu
         return ZR_NULL;
     }
 
-    segments = ZrParser_AstNodeArray_New(ps->state, 4);
+    segments = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (segments == ZR_NULL) {
         return ZR_NULL;
     }
@@ -465,7 +465,7 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACKET);
     ZrParser_Lexer_Next(ps->lexer);
 
-    SZrAstNodeArray *elements = ZrParser_AstNodeArray_New(ps->state, 8);
+    SZrAstNodeArray *elements = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (elements == ZR_NULL) {
         report_error(ps, "Failed to allocate array");
         return ZR_NULL;
@@ -523,7 +523,7 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACE);
     ZrParser_Lexer_Next(ps->lexer);
 
-    SZrAstNodeArray *properties = ZrParser_AstNodeArray_New(ps->state, 8);
+    SZrAstNodeArray *properties = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (properties == ZR_NULL) {
         report_error(ps, "Failed to allocate properties array");
         return ZR_NULL;

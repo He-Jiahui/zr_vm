@@ -33,7 +33,15 @@ static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
                                                 TZrBool requireDeopt);
 static TZrUInt32 function_count_callsite_cache_kind(const SZrFunction *function,
                                                     EZrFunctionCallSiteCacheKind kind);
+static void assert_runtime_function_matches_source_function(const SZrFunction *expected,
+                                                            const SZrFunction *actual);
 static SZrFunction *compile_cached_meta_and_dynamic_callsite_fixture(SZrState *state);
+static SZrFunction *compile_fixed_array_helper_roundtrip_fixture(SZrState *state);
+static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state);
+static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state);
+static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state);
+static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state);
+static SZrFunction *compile_set_to_map_roundtrip_fixture(SZrState *state);
 
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
@@ -161,6 +169,33 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     }
 
     return ZR_FALSE;
+}
+
+static void assert_runtime_function_matches_source_function(const SZrFunction *expected,
+                                                            const SZrFunction *actual) {
+    TZrUInt32 index;
+
+    TEST_ASSERT_NOT_NULL(expected);
+    TEST_ASSERT_NOT_NULL(actual);
+    TEST_ASSERT_EQUAL_UINT32(expected->stackSize, actual->stackSize);
+    TEST_ASSERT_EQUAL_UINT32(expected->instructionsLength, actual->instructionsLength);
+    TEST_ASSERT_EQUAL_UINT32(expected->parameterCount, actual->parameterCount);
+    TEST_ASSERT_EQUAL_UINT32(expected->childFunctionLength, actual->childFunctionLength);
+
+    for (index = 0; index < expected->instructionsLength; index++) {
+        const TZrInstruction *left = &expected->instructionsList[index];
+        const TZrInstruction *right = &actual->instructionsList[index];
+        TEST_ASSERT_EQUAL_UINT16(left->instruction.operationCode, right->instruction.operationCode);
+        TEST_ASSERT_EQUAL_UINT16(left->instruction.operandExtra, right->instruction.operandExtra);
+        TEST_ASSERT_EQUAL_UINT16(left->instruction.operand.operand1[0], right->instruction.operand.operand1[0]);
+        TEST_ASSERT_EQUAL_UINT16(left->instruction.operand.operand1[1], right->instruction.operand.operand1[1]);
+        TEST_ASSERT_EQUAL_INT32(left->instruction.operand.operand2[0], right->instruction.operand.operand2[0]);
+    }
+
+    for (index = 0; index < expected->childFunctionLength; index++) {
+        assert_runtime_function_matches_source_function(&expected->childFunctionList[index],
+                                                        &actual->childFunctionList[index]);
+    }
 }
 
 static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
@@ -417,7 +452,7 @@ static void test_aot_c_and_llvm_backends_emit_runtime_contract_artifacts(void) {
 
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "ZR AOT LLVM Backend"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "declare i1 @ZrCore_Reflection_TypeOfValue"));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "define i1 @zr_aot_entry"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "define i64 @zr_aot_entry"));
         TEST_ASSERT_NULL(strstr(llvmText, "declare i1 @ZrCore_Object_GetByIndex"));
 
         free(cText);
@@ -592,6 +627,392 @@ static void test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserve
         free(binaryBytes);
         free(intermediateText);
         remove(intermediatePath);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_binary_roundtrip_preserves_fixed_array_helper_argument_values(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Binary Roundtrip Preserves Fixed Array Helper Argument Values";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("binary roundtrip helper call",
+                 "Testing that .zro roundtrip keeps foreach item values intact when a helper function consumes the current fixed-array element");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *binaryPath = "fixed_array_helper_roundtrip_test.zro";
+        SZrFunction *function;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_fixed_array_helper_roundtrip_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(16, result);
+        result = 0;
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(16, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_binary_roundtrip_preserves_container_matrix_native_call_arguments(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Binary Roundtrip Preserves Container Matrix Native Call Arguments";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("binary roundtrip container/native path",
+                 "Testing that .zro roundtrip keeps helper-call arguments stable across imported container constructors, native methods, and nested generic values");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *binaryPath = "container_matrix_roundtrip_test.zro";
+        SZrFunction *function;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_container_matrix_roundtrip_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(417, result);
+        result = 0;
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        assert_runtime_function_matches_source_function(function, runtimeFunction);
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(417, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_binary_roundtrip_preserves_map_stored_array_iterable_contract(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Binary Roundtrip Preserves Map Stored Array Iterable Contract";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("binary roundtrip map/value iteration",
+                 "Testing that an imported container.Array stored inside container.Map still iterates after .zro roundtrip");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *binaryPath = "map_array_roundtrip_test.zro";
+        SZrFunction *function;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_map_array_roundtrip_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(23, result);
+        result = 0;
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(23, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_binary_roundtrip_preserves_linked_pair_helper_values(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Binary Roundtrip Preserves Linked Pair Helper Values";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("binary roundtrip linked-list pair path",
+                 "Testing that nested Pair construction and LinkedList storage keep helper-call values intact after .zro roundtrip");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *binaryPath = "linked_pair_roundtrip_test.zro";
+        SZrFunction *function;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_linked_pair_roundtrip_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(16, result);
+        result = 0;
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(16, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_binary_roundtrip_preserves_set_pair_hash_and_iteration(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Binary Roundtrip Preserves Set Pair Hash And Iteration";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("binary roundtrip set/pair path",
+                 "Testing that Set<Pair<int,string>> keeps duplicate elimination and iteration results after .zro roundtrip");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *binaryPath = "set_pair_roundtrip_test.zro";
+        SZrFunction *function;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_set_pair_roundtrip_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(410, result);
+        result = 0;
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(410, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_binary_roundtrip_preserves_set_to_map_bucket_values(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Binary Roundtrip Preserves Set To Map Bucket Values";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("binary roundtrip set->map bridge",
+                 "Testing that Set<Pair<int,string>> iteration can feed Map<string,Array<int>> buckets without corrupting numeric payloads after .zro roundtrip");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *binaryPath = "set_to_map_roundtrip_test.zro";
+        SZrFunction *function;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_set_to_map_roundtrip_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(122, result);
+        result = 0;
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        assert_runtime_function_matches_source_function(function, runtimeFunction);
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(122, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
         remove(binaryPath);
         ZrCore_Function_Free(state, function);
         ZrTests_Runtime_State_Destroy(state);
@@ -786,6 +1207,305 @@ static SZrFunction *compile_ownership_upgrade_release_fixture(SZrState *state) {
     }
 
     sourceName = ZrCore_String_Create(state, "ownership_upgrade_release_pipeline_test.zr", 41);
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_fixed_array_helper_roundtrip_fixture(SZrState *state) {
+    const char *source =
+            "labelFor(value: int) {\n"
+            "    if (value % 2 == 0) {\n"
+            "        return \"even\";\n"
+            "    }\n"
+            "    return \"odd\";\n"
+            "}\n"
+            "var xs: int[3] = [1, 2, 3];\n"
+            "var total = 0;\n"
+            "for (var item in xs) {\n"
+            "    var label = labelFor(item);\n"
+            "    if (label == \"even\") {\n"
+            "        total = total + 10;\n"
+            "    }\n"
+            "    total = total + item;\n"
+            "}\n"
+            "return total;\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "fixed_array_helper_roundtrip_fixture.zr",
+                                      strlen("fixed_array_helper_roundtrip_fixture.zr"));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state) {
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "labelFor(value: int) {\n"
+            "    if (value % 2 == 0) {\n"
+            "        return \"even\";\n"
+            "    }\n"
+            "    if (value > 2) {\n"
+            "        return \"odd_hi\";\n"
+            "    }\n"
+            "    return \"odd_lo\";\n"
+            "}\n"
+            "var fixedValues: int[6] = [3, 1, 3, 2, 4, 2];\n"
+            "var queue = new container.LinkedList<Pair<string, int>>();\n"
+            "var seen = new container.Set<Pair<int, string>>();\n"
+            "var buckets = new container.Map<string, Array<int>>();\n"
+            "for (var item in fixedValues) {\n"
+            "    var numeric = <int> item;\n"
+            "    queue.addLast(new container.Pair<string, int>(labelFor(numeric), numeric));\n"
+            "}\n"
+            "while (queue.count > 0) {\n"
+            "    var head = queue.first;\n"
+            "    var task = head.value;\n"
+            "    var next = head.next;\n"
+            "    if (next != null) {\n"
+            "        next.previous = null;\n"
+            "        queue.first = next;\n"
+            "    } else {\n"
+            "        queue.first = null;\n"
+            "        queue.last = null;\n"
+            "    }\n"
+            "    head.next = null;\n"
+            "    head.previous = null;\n"
+            "    queue.count = queue.count - 1;\n"
+            "    seen.add(new container.Pair<int, string>(<int> task.second, <string> task.first));\n"
+            "}\n"
+            "for (var pair in seen) {\n"
+            "    var label = <string> pair.second;\n"
+            "    var value = <int> pair.first;\n"
+            "    var bucket = buckets[label];\n"
+            "    if (bucket == null) {\n"
+            "        bucket = new container.Array<int>();\n"
+            "        buckets[label] = bucket;\n"
+            "    }\n"
+            "    bucket.add(value);\n"
+            "}\n"
+            "var oddLo: Array<int> = buckets[\"odd_lo\"];\n"
+            "var oddHi: Array<int> = buckets[\"odd_hi\"];\n"
+            "var even: Array<int> = buckets[\"even\"];\n"
+            "var oddLoLen = oddLo == null ? 0 : oddLo.length;\n"
+            "var oddHiLen = oddHi == null ? 0 : oddHi.length;\n"
+            "var evenLen = even == null ? 0 : even.length;\n"
+            "var oddLoSum = 0;\n"
+            "var oddHiSum = 0;\n"
+            "if (oddLo != null) {\n"
+            "    for (var item in oddLo) {\n"
+            "        oddLoSum = oddLoSum + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "if (oddHi != null) {\n"
+            "    for (var item in oddHi) {\n"
+            "        oddHiSum = oddHiSum + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "return seen.count * 100 + oddLoLen * 10 + oddHiLen + evenLen + oddLoSum + oddHiSum;\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (state->global == ZR_NULL || !ZrVmLibContainer_Register(state->global) || !ZrVmLibMath_Register(state->global) ||
+        !ZrVmLibSystem_Register(state->global) || !ZrVmLibFfi_Register(state->global)) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "container_matrix_roundtrip_fixture.zr",
+                                      strlen("container_matrix_roundtrip_fixture.zr"));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state) {
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var buckets = new container.Map<string, Array<int>>();\n"
+            "var bucket = new container.Array<int>();\n"
+            "bucket.add(1);\n"
+            "bucket.add(2);\n"
+            "buckets[\"a\"] = bucket;\n"
+            "var fetched: Array<int> = buckets[\"a\"];\n"
+            "var length = fetched == null ? 0 : fetched.length;\n"
+            "var sum = 0;\n"
+            "if (fetched != null) {\n"
+            "    for (var item in fetched) {\n"
+            "        sum = sum + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "return length * 10 + sum;\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (state->global == ZR_NULL || !ZrVmLibContainer_Register(state->global) || !ZrVmLibMath_Register(state->global) ||
+        !ZrVmLibSystem_Register(state->global) || !ZrVmLibFfi_Register(state->global)) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "map_array_roundtrip_fixture.zr",
+                                      strlen("map_array_roundtrip_fixture.zr"));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state) {
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "labelFor(value: int) {\n"
+            "    if (value % 2 == 0) {\n"
+            "        return \"even\";\n"
+            "    }\n"
+            "    return \"odd\";\n"
+            "}\n"
+            "var xs: int[3] = [1, 2, 3];\n"
+            "var queue = new container.LinkedList<Pair<string, int>>();\n"
+            "for (var item in xs) {\n"
+            "    queue.addLast(new container.Pair<string, int>(labelFor(item), item));\n"
+            "}\n"
+            "var total = 0;\n"
+            "while (queue.count > 0) {\n"
+            "    var head = queue.first;\n"
+            "    var pair = head.value;\n"
+            "    if (<string> pair.first == \"even\") {\n"
+            "        total = total + 10;\n"
+            "    }\n"
+            "    total = total + <int> pair.second;\n"
+            "    queue.removeFirst();\n"
+            "}\n"
+            "return total;\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (state->global == ZR_NULL || !ZrVmLibContainer_Register(state->global) || !ZrVmLibMath_Register(state->global) ||
+        !ZrVmLibSystem_Register(state->global) || !ZrVmLibFfi_Register(state->global)) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "linked_pair_roundtrip_fixture.zr",
+                                      strlen("linked_pair_roundtrip_fixture.zr"));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state) {
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var seen = new container.Set<Pair<int, string>>();\n"
+            "seen.add(new container.Pair<int, string>(3, \"odd_hi\"));\n"
+            "seen.add(new container.Pair<int, string>(1, \"odd_lo\"));\n"
+            "seen.add(new container.Pair<int, string>(2, \"even\"));\n"
+            "seen.add(new container.Pair<int, string>(4, \"even\"));\n"
+            "seen.add(new container.Pair<int, string>(2, \"even\"));\n"
+            "var total = seen.count * 100;\n"
+            "for (var pair in seen) {\n"
+            "    total = total + <int> pair.first;\n"
+            "}\n"
+            "return total;\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (state->global == ZR_NULL || !ZrVmLibContainer_Register(state->global) || !ZrVmLibMath_Register(state->global) ||
+        !ZrVmLibSystem_Register(state->global) || !ZrVmLibFfi_Register(state->global)) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "set_pair_roundtrip_fixture.zr",
+                                      strlen("set_pair_roundtrip_fixture.zr"));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_set_to_map_roundtrip_fixture(SZrState *state) {
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var seen = new container.Set<Pair<int, string>>();\n"
+            "seen.add(new container.Pair<int, string>(3, \"odd_hi\"));\n"
+            "seen.add(new container.Pair<int, string>(1, \"odd_lo\"));\n"
+            "seen.add(new container.Pair<int, string>(2, \"even\"));\n"
+            "seen.add(new container.Pair<int, string>(4, \"even\"));\n"
+            "var buckets = new container.Map<string, Array<int>>();\n"
+            "for (var pair in seen) {\n"
+            "    var label = <string> pair.second;\n"
+            "    var value = <int> pair.first;\n"
+            "    var bucket = buckets[label];\n"
+            "    if (bucket == null) {\n"
+            "        bucket = new container.Array<int>();\n"
+            "        buckets[label] = bucket;\n"
+            "    }\n"
+            "    bucket.add(value);\n"
+            "}\n"
+            "var oddLo: Array<int> = buckets[\"odd_lo\"];\n"
+            "var oddHi: Array<int> = buckets[\"odd_hi\"];\n"
+            "var even: Array<int> = buckets[\"even\"];\n"
+            "var total = 0;\n"
+            "if (oddLo != null) {\n"
+            "    for (var item in oddLo) {\n"
+            "        total = total + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "if (oddHi != null) {\n"
+            "    for (var item in oddHi) {\n"
+            "        total = total + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "if (even != null) {\n"
+            "    for (var item in even) {\n"
+            "        total = total + <int> item;\n"
+            "    }\n"
+            "}\n"
+            "return total + (oddLo == null ? 0 : oddLo.length) * 100 + (oddHi == null ? 0 : oddHi.length) * 10 + (even == null ? 0 : even.length);\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (state->global == ZR_NULL || !ZrVmLibContainer_Register(state->global) || !ZrVmLibMath_Register(state->global) ||
+        !ZrVmLibSystem_Register(state->global) || !ZrVmLibFfi_Register(state->global)) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "set_to_map_roundtrip_fixture.zr",
+                                      strlen("set_to_map_roundtrip_fixture.zr"));
     if (sourceName == ZR_NULL) {
         return ZR_NULL;
     }
@@ -1307,6 +2027,12 @@ int main(void) {
     RUN_TEST(test_aot_c_and_llvm_backends_emit_runtime_contract_artifacts);
     RUN_TEST(test_execbc_quickens_zero_arg_call_sites_without_changing_semir_contracts);
     RUN_TEST(test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserves_binary_metadata);
+    RUN_TEST(test_binary_roundtrip_preserves_fixed_array_helper_argument_values);
+    RUN_TEST(test_binary_roundtrip_preserves_map_stored_array_iterable_contract);
+    RUN_TEST(test_binary_roundtrip_preserves_linked_pair_helper_values);
+    RUN_TEST(test_binary_roundtrip_preserves_set_pair_hash_and_iteration);
+    RUN_TEST(test_binary_roundtrip_preserves_set_to_map_bucket_values);
+    RUN_TEST(test_binary_roundtrip_preserves_container_matrix_native_call_arguments);
     RUN_TEST(test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir_contracts);
     RUN_TEST(test_meta_access_semir_and_aot_use_dedicated_meta_get_set_opcodes);
     RUN_TEST(test_static_meta_access_quickens_to_static_callsite_cache_variants);

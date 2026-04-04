@@ -56,6 +56,11 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                            TZrSize contentLength,
                                                            TZrSize cursorOffset,
                                                            SZrArray *result);
+TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
+                                                              const TZrChar *content,
+                                                              TZrSize contentLength,
+                                                              TZrSize cursorOffset,
+                                                              SZrArray *result);
 SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyzer *analyzer,
                                                               SZrFileRange position);
 SZrFileVersion *ZrLanguageServer_Lsp_GetDocumentFileVersion(SZrLspContext *context, SZrString *uri);

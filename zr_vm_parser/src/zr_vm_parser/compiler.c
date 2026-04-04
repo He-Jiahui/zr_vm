@@ -747,6 +747,7 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
             }
         }
         func->childFunctionLength = (TZrUInt32) cs.childFunctions.length;
+        ZrCore_Function_RebindConstantFunctionValuesToChildren(func);
     }
 
     // 6. 复制导出变量信息（合并 pubVariables 和 proVariables）
@@ -967,6 +968,7 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
             }
         }
         func->childFunctionLength = (TZrUInt32) cs.childFunctions.length;
+        ZrCore_Function_RebindConstantFunctionValuesToChildren(func);
     }
 
     // 6. 复制导出变量信息（合并 pubVariables 和 proVariables）

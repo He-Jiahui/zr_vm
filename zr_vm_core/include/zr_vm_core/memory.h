@@ -31,6 +31,12 @@ ZR_CORE_API TZrPtr ZrCore_Memory_GcAndMalloc(SZrState *state, EZrMemoryNativeTyp
 
 ZR_CORE_API TZrPtr ZrCore_Memory_GcMalloc(SZrState *state, EZrMemoryNativeType type, TZrSize size);
 
+ZR_CORE_API TZrPtr ZrCore_Memory_GcReallocate(SZrState *state,
+                                              TZrPtr pointer,
+                                              TZrSize originalSize,
+                                              TZrSize newSize,
+                                              EZrMemoryNativeType type);
+
 ZR_FORCE_INLINE void ZrCore_Memory_RawSet(TZrPtr destination, TZrByte byte, TZrSize byteCount) {
     ZR_ASSERT(destination != ZR_NULL && byteCount != 0);
     memset(destination, byte, byteCount);

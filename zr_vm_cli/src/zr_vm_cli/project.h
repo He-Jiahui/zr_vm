@@ -24,8 +24,13 @@ typedef struct SZrCliStringList {
 typedef struct SZrCliManifestEntry {
     TZrChar moduleName[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar sourceHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
+    TZrChar zroHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
     TZrChar zroPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar zriPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar aotCSourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar aotCLibraryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar aotLlvmIrPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar aotLlvmLibraryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     SZrCliStringList imports;
 } SZrCliManifestEntry;
 
@@ -56,6 +61,22 @@ TZrBool ZrCli_Project_ResolveIntermediatePath(const SZrCliProjectContext *contex
                                               const TZrChar *moduleName,
                                               TZrChar *buffer,
                                               TZrSize bufferSize);
+TZrBool ZrCli_Project_ResolveAotCSourcePath(const SZrCliProjectContext *context,
+                                            const TZrChar *moduleName,
+                                            TZrChar *buffer,
+                                            TZrSize bufferSize);
+TZrBool ZrCli_Project_ResolveAotCLibraryPath(const SZrCliProjectContext *context,
+                                             const TZrChar *moduleName,
+                                             TZrChar *buffer,
+                                             TZrSize bufferSize);
+TZrBool ZrCli_Project_ResolveAotLlvmIrPath(const SZrCliProjectContext *context,
+                                           const TZrChar *moduleName,
+                                           TZrChar *buffer,
+                                           TZrSize bufferSize);
+TZrBool ZrCli_Project_ResolveAotLlvmLibraryPath(const SZrCliProjectContext *context,
+                                                const TZrChar *moduleName,
+                                                TZrChar *buffer,
+                                                TZrSize bufferSize);
 TZrBool ZrCli_Project_OpenFileIo(SZrState *state, const TZrChar *path, TZrBool isBinary, SZrIo *io);
 
 TZrBool ZrCli_Project_EnsureParentDirectory(const TZrChar *filePath);

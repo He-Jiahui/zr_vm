@@ -349,6 +349,52 @@ static void test_named_function_finally_closure_and_sibling_function_metadata(vo
     TEST_DIVIDER();
 }
 
+static void test_return_from_catch_discards_frame_exception_handlers(void) {
+    SZrTestTimer timer = {0};
+    const TZrChar *source =
+            "guarded(flag: int) {\n"
+            "    var marker = 0;\n"
+            "    try {\n"
+            "        try {\n"
+            "            if (flag != 0) {\n"
+            "                throw \"boom\";\n"
+            "            }\n"
+            "            return 0;\n"
+            "        } finally {\n"
+            "            marker = marker + 7;\n"
+            "        }\n"
+            "    } catch (e) {\n"
+            "        return marker + 1;\n"
+            "    }\n"
+            "}\n"
+            "var value = guarded(1);\n"
+            "var after = 0;\n"
+            "while (after < 3) {\n"
+            "    after = after + 1;\n"
+            "}\n"
+            "return value + after;\n";
+    TZrInt64 result = 0;
+    SZrState *state;
+
+    TEST_START("Return From Catch Discards Frame Exception Handlers");
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("catch return handler cleanup",
+              "Testing that returning from a catch after an inner finally leaves no stale handlers on the caller path.");
+
+    TEST_ASSERT_TRUE(execute_source_expect_int64(state, source, "catch_return_handler_cleanup.zr", &result));
+    TEST_ASSERT_EQUAL_INT64(11, result);
+
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Return From Catch Discards Frame Exception Handlers");
+    TEST_DIVIDER();
+}
+
 static void test_caught_error_exposes_stack_frames_in_throw_order(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
@@ -452,6 +498,7 @@ int main(void) {
     RUN_TEST(test_derived_exception_prefers_first_matching_catch_clause);
     RUN_TEST(test_finally_runs_for_normal_return_and_throw_paths);
     RUN_TEST(test_named_function_finally_closure_and_sibling_function_metadata);
+    RUN_TEST(test_return_from_catch_discards_frame_exception_handlers);
     RUN_TEST(test_caught_error_exposes_stack_frames_in_throw_order);
     RUN_TEST(test_test_declaration_no_longer_wraps_throw_into_zero_one_contract);
 

@@ -25,6 +25,55 @@ static TZrSize garbage_collector_mark_object_node_map(SZrState *state, SZrObject
     return work;
 }
 
+TZrSize garbage_collector_mark_string_roots(SZrState *state) {
+    SZrGlobalState *global;
+    TZrSize work = 0;
+
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return 0;
+    }
+
+    global = state->global;
+
+    if (global->memoryErrorMessage != ZR_NULL) {
+        garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->memoryErrorMessage));
+        work++;
+    }
+
+    for (TZrSize bucketIndex = 0; bucketIndex < ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT; bucketIndex++) {
+        for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH; depthIndex++) {
+            if (global->stringHashApiCache[bucketIndex][depthIndex] != ZR_NULL) {
+                garbage_collector_mark_object(
+                        state,
+                        ZR_CAST_RAW_OBJECT_AS_SUPER(global->stringHashApiCache[bucketIndex][depthIndex]));
+                work++;
+            }
+        }
+    }
+
+    for (TZrSize metaIndex = 0; metaIndex < ZR_META_ENUM_MAX; metaIndex++) {
+        if (global->metaFunctionName[metaIndex] != ZR_NULL) {
+            garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->metaFunctionName[metaIndex]));
+            work++;
+        }
+    }
+
+    if (global->stringTable != ZR_NULL && global->stringTable->stringHashSet.isValid &&
+        global->stringTable->stringHashSet.buckets != ZR_NULL) {
+        for (TZrSize bucketIndex = 0; bucketIndex < global->stringTable->stringHashSet.capacity; bucketIndex++) {
+            SZrHashKeyValuePair *pair = global->stringTable->stringHashSet.buckets[bucketIndex];
+
+            while (pair != ZR_NULL) {
+                garbage_collector_mark_value(state, &pair->key);
+                pair = pair->next;
+                work++;
+            }
+        }
+    }
+
+    return work;
+}
+
 void garbage_collector_mark_object(SZrState *state, SZrRawObject *object) {
     if (ZR_GC_IS_REFERENCED(object) || ZR_GC_IS_WAIT_TO_SCAN(object)) {
         return;
@@ -97,6 +146,10 @@ void ZrGarbageCollectorReallyMarkObject(SZrState *state, SZrRawObject *object) {
         case ZR_RAW_OBJECT_TYPE_CLOSURE: {
             if (object->isNative) {
                 SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, object);
+
+                if (closure->aotShimFunction != ZR_NULL) {
+                    garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure->aotShimFunction));
+                }
 
                 for (TZrSize i = 0; i < closure->closureValueCount; i++) {
                     if (closure->closureValuesExtend[i] != ZR_NULL) {
@@ -313,19 +366,32 @@ TZrSize ZrGarbageCollectorPropagateMark(SZrState *state) {
             }
 
             callInfo = threadState->callInfoList;
-            while (callInfo != ZR_NULL) {
-                if (callInfo->functionBase.valuePointer != ZR_NULL) {
-                    TZrStackValuePointer funcBase = callInfo->functionBase.valuePointer;
-                    TZrStackValuePointer funcTop = callInfo->next != ZR_NULL
-                                                           ? callInfo->next->functionBase.valuePointer
-                                                           : threadState->stackTop.valuePointer;
+            {
+                TZrStackValuePointer youngerFrameBase = ZR_NULL;
 
-                    while (funcBase < funcTop) {
-                        garbage_collector_mark_value(state, &funcBase->value);
-                        funcBase++;
+                while (callInfo != ZR_NULL) {
+                    if (callInfo->functionBase.valuePointer != ZR_NULL) {
+                        TZrStackValuePointer funcBase = callInfo->functionBase.valuePointer;
+                        TZrStackValuePointer funcTop = youngerFrameBase;
+
+                        if (funcTop == ZR_NULL) {
+                            funcTop = ZR_CALL_INFO_IS_VM(callInfo) && callInfo->functionTop.valuePointer != ZR_NULL
+                                              ? callInfo->functionTop.valuePointer
+                                              : threadState->stackTop.valuePointer;
+                        }
+
+                        if (funcTop != ZR_NULL && funcTop > funcBase) {
+                            while (funcBase < funcTop) {
+                                garbage_collector_mark_value(state, &funcBase->value);
+                                funcBase++;
+                                work++;
+                            }
+                        }
+
+                        youngerFrameBase = callInfo->functionBase.valuePointer;
                     }
+                    callInfo = callInfo->previous;
                 }
-                callInfo = callInfo->next;
             }
             break;
         }
@@ -408,6 +474,8 @@ void ZrGarbageCollectorRestartCollection(SZrState *state) {
         ZrCore_Value_IsGarbageCollectable(&global->unhandledExceptionHandler)) {
         garbage_collector_mark_value(state, &global->unhandledExceptionHandler);
     }
+
+    garbage_collector_mark_string_roots(state);
 
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         if (global->basicTypeObjectPrototype[i] != ZR_NULL) {

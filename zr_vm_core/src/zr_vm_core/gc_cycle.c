@@ -37,7 +37,8 @@ void garbage_collector_check_sizes(SZrState *state, SZrGlobalState *global) {
 
     TZrMemoryOffset estimatedMemories = global->garbageCollector->managedMemories;
     TZrMemoryOffset difference = actualMemories - estimatedMemories;
-    if (difference > estimatedMemories / 10 || difference < -estimatedMemories / 10) {
+    TZrMemoryOffset driftTolerance = estimatedMemories / ZR_GC_MANAGED_MEMORY_DRIFT_TOLERANCE_DIVISOR;
+    if (difference > driftTolerance || difference < -driftTolerance) {
         global->garbageCollector->managedMemories = actualMemories;
     }
 }
@@ -136,6 +137,8 @@ TZrSize garbage_collector_atomic(SZrState *state) {
         ZrCore_Value_IsGarbageCollectable(&global->unhandledExceptionHandler)) {
         garbage_collector_mark_value(state, &global->unhandledExceptionHandler);
     }
+
+    work += garbage_collector_mark_string_roots(state);
 
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         if (global->basicTypeObjectPrototype[i] != ZR_NULL) {
@@ -256,7 +259,7 @@ void garbage_collector_full_inc(SZrState *state, SZrGlobalState *global) {
     global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC;
     garbage_collector_run_until_state(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_END);
     garbage_collector_run_until_state(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED);
-    ZrCore_GarbageCollector_AddDebtSpace(global, -2000);
+    ZrCore_GarbageCollector_AddDebtSpace(global, -ZR_GC_DEBT_CREDIT_BYTES);
 }
 
 TZrBool gcrunning(SZrGlobalState *global) {

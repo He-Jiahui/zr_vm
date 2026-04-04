@@ -13,6 +13,7 @@
 
 struct SZrState;
 struct SZrClosureValue;
+struct SZrCallInfo;
 
 union TZrClosureLink {
     struct {
@@ -36,6 +37,7 @@ struct ZR_STRUCT_ALIGN SZrClosureNative {
     SZrRawObject super;
     // SZrRawObject *gcList;
     FZrNativeFunction nativeFunction;
+    struct SZrFunction *aotShimFunction;
     TZrSize closureValueCount;
     SZrTypeValue *closureValuesExtend[1];
 };
@@ -85,6 +87,12 @@ ZR_CORE_API TZrSize ZrCore_Closure_CloseRegisteredValues(struct SZrState *state,
 ZR_CORE_API void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *function,
                                       SZrClosureValue **closureValueList, TZrStackValuePointer base,
                                       TZrStackValuePointer closurePointer);
+
+ZR_CORE_API struct SZrFunction *ZrCore_Closure_GetMetadataFunctionFromValue(struct SZrState *state,
+                                                                            const SZrTypeValue *value);
+
+ZR_CORE_API struct SZrFunction *ZrCore_Closure_GetMetadataFunctionFromCallInfo(struct SZrState *state,
+                                                                               struct SZrCallInfo *callInfo);
 
 ZR_FORCE_INLINE TZrBool ZrCore_ClosureValue_IsClosed(SZrClosureValue *closureValue) {
     return closureValue->value.valuePointer == ZR_CAST_STACK_VALUE(&closureValue->link.closedValue);

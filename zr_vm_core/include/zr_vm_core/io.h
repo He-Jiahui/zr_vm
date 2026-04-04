@@ -73,6 +73,29 @@ struct SZrIoFunctionLocalVariable {
 
 typedef struct SZrIoFunctionLocalVariable SZrIoFunctionLocalVariable;
 
+struct SZrIoFunctionClosureVariable {
+    struct SZrString *name;
+    TZrUInt8 inStack;
+    TZrUInt32 index;
+    TZrUInt32 valueType;
+};
+
+typedef struct SZrIoFunctionClosureVariable SZrIoFunctionClosureVariable;
+
+typedef struct SZrIoFunctionCatchClause {
+    struct SZrString *typeName;
+    TZrUInt64 targetInstructionOffset;
+} SZrIoFunctionCatchClause;
+
+typedef struct SZrIoFunctionExceptionHandler {
+    TZrUInt64 protectedStartInstructionOffset;
+    TZrUInt64 finallyTargetInstructionOffset;
+    TZrUInt64 afterFinallyInstructionOffset;
+    TZrUInt32 catchClauseStartIndex;
+    TZrUInt32 catchClauseCount;
+    TZrUInt8 hasFinally;
+} SZrIoFunctionExceptionHandler;
+
 struct SZrIoFunctionConstantVariable {
     EZrValueType type;
     TZrPureValue value;
@@ -252,6 +275,12 @@ struct SZrIoFunction {
     TZrInstruction *instructions;
     TZrSize localVariablesLength;
     SZrIoFunctionLocalVariable *localVariables;
+    TZrSize closureVariablesLength;
+    SZrIoFunctionClosureVariable *closureVariables;
+    TZrSize catchClauseCount;
+    SZrIoFunctionCatchClause *catchClauses;
+    TZrSize exceptionHandlerCount;
+    SZrIoFunctionExceptionHandler *exceptionHandlers;
     TZrSize constantVariablesLength;
     SZrIoFunctionConstantVariable *constantVariables;
     TZrSize exportedVariablesLength;

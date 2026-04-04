@@ -776,6 +776,117 @@ static void append_completion_item_for_native_name(SZrState *state,
     }
 }
 
+typedef struct SZrLspFixedCompletionDescriptor {
+    const TZrChar *label;
+    const TZrChar *kind;
+    const TZrChar *detail;
+} SZrLspFixedCompletionDescriptor;
+
+static const SZrLspFixedCompletionDescriptor g_lspDirectiveCompletions[] = {
+    {"%import", "keyword", "module import directive"},
+    {"%type", "keyword", "type query / reflection directive"},
+    {"%module", "keyword", "module declaration directive"},
+    {"%test", "keyword", "test declaration directive"},
+    {"%compileTime", "keyword", "compile-time declaration directive"},
+    {"%extern", "keyword", "FFI extern declaration directive"},
+    {"%unique", "keyword", "ownership qualifier"},
+    {"%shared", "keyword", "ownership qualifier"},
+    {"%weak", "keyword", "ownership qualifier"},
+    {"%borrowed", "keyword", "ownership qualifier"}
+};
+
+static const SZrLspFixedCompletionDescriptor g_lspMetaMethodCompletions[] = {
+    {"@constructor", "method", "lifecycle meta method"},
+    {"@destructor", "method", "lifecycle meta method"},
+    {"@close", "method", "lifecycle meta method"},
+    {"@add", "method", "arithmetic/operator meta method"},
+    {"@sub", "method", "arithmetic/operator meta method"},
+    {"@mul", "method", "arithmetic/operator meta method"},
+    {"@div", "method", "arithmetic/operator meta method"},
+    {"@mod", "method", "arithmetic/operator meta method"},
+    {"@pow", "method", "arithmetic/operator meta method"},
+    {"@neg", "method", "arithmetic/operator meta method"},
+    {"@compare", "method", "arithmetic/operator meta method"},
+    {"@shiftLeft", "method", "arithmetic/operator meta method"},
+    {"@shiftRight", "method", "arithmetic/operator meta method"},
+    {"@bitAnd", "method", "arithmetic/operator meta method"},
+    {"@bitOr", "method", "arithmetic/operator meta method"},
+    {"@bitXor", "method", "arithmetic/operator meta method"},
+    {"@bitNot", "method", "arithmetic/operator meta method"},
+    {"@toBool", "method", "conversion meta method"},
+    {"@toString", "method", "conversion meta method"},
+    {"@toInt", "method", "conversion meta method"},
+    {"@toUInt", "method", "conversion meta method"},
+    {"@toFloat", "method", "conversion meta method"},
+    {"@call", "method", "call/access meta method"},
+    {"@getter", "method", "call/access meta method"},
+    {"@setter", "method", "call/access meta method"},
+    {"@getItem", "method", "call/access meta method"},
+    {"@setItem", "method", "call/access meta method"}
+};
+
+static void append_fixed_completion_descriptors(SZrState *state,
+                                                SZrArray *result,
+                                                const SZrLspFixedCompletionDescriptor *descriptors,
+                                                TZrSize descriptorCount) {
+    if (state == ZR_NULL || result == ZR_NULL || descriptors == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < descriptorCount; index++) {
+        const SZrLspFixedCompletionDescriptor *descriptor = &descriptors[index];
+        SZrCompletionItem *item;
+
+        if (descriptor->label == ZR_NULL || descriptor->kind == ZR_NULL) {
+            continue;
+        }
+
+        item = ZrLanguageServer_CompletionItem_New(state,
+                                                   descriptor->label,
+                                                   descriptor->kind,
+                                                   descriptor->detail,
+                                                   ZR_NULL,
+                                                   ZR_NULL);
+        if (item != ZR_NULL) {
+            ZrCore_Array_Push(state, result, &item);
+        }
+    }
+}
+
+TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
+                                                              const TZrChar *content,
+                                                              TZrSize contentLength,
+                                                              TZrSize cursorOffset,
+                                                              SZrArray *result) {
+    TZrChar prefixChar;
+
+    if (state == ZR_NULL || content == ZR_NULL || result == ZR_NULL || cursorOffset == 0 ||
+        cursorOffset > contentLength) {
+        return ZR_FALSE;
+    }
+
+    prefixChar = content[cursorOffset - 1];
+    if (prefixChar == '%') {
+        append_fixed_completion_descriptors(state,
+                                            result,
+                                            g_lspDirectiveCompletions,
+                                            sizeof(g_lspDirectiveCompletions) /
+                                                sizeof(g_lspDirectiveCompletions[0]));
+        return result->length > 0;
+    }
+
+    if (prefixChar == '@') {
+        append_fixed_completion_descriptors(state,
+                                            result,
+                                            g_lspMetaMethodCompletions,
+                                            sizeof(g_lspMetaMethodCompletions) /
+                                                sizeof(g_lspMetaMethodCompletions[0]));
+        return result->length > 0;
+    }
+
+    return ZR_FALSE;
+}
+
 static void append_class_member_completions_recursive(SZrState *state,
                                                       SZrSemanticAnalyzer *analyzer,
                                                       SZrSymbol *classSymbol,
@@ -922,6 +1033,57 @@ static const ZrLibTypeDescriptor *find_native_type_descriptor_in_module(const Zr
     return ZR_NULL;
 }
 
+static const ZrLibTypeDescriptor *find_native_type_descriptor_across_modules(SZrState *state,
+                                                                             const TZrChar *typeName,
+                                                                             const ZrLibModuleDescriptor **outModule) {
+    static const TZrChar *builtinModules[] = {
+        "zr.math",
+        "zr.container",
+        "zr.system"
+    };
+    const ZrLibModuleDescriptor *module;
+    const ZrLibTypeDescriptor *typeDescriptor;
+    const TZrChar *lastDot;
+    TZrChar moduleName[ZR_LSP_TYPE_BUFFER_LENGTH];
+
+    if (outModule != ZR_NULL) {
+        *outModule = ZR_NULL;
+    }
+    if (state == ZR_NULL || state->global == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    lastDot = strrchr(typeName, '.');
+    if (lastDot != ZR_NULL && lastDot != typeName) {
+        TZrSize moduleLength = (TZrSize)(lastDot - typeName);
+        if (moduleLength > 0 && moduleLength < sizeof(moduleName)) {
+            memcpy(moduleName, typeName, moduleLength);
+            moduleName[moduleLength] = '\0';
+            module = ZrLibrary_NativeRegistry_FindModule(state->global, moduleName);
+            typeDescriptor = find_native_type_descriptor_in_module(module, typeName);
+            if (typeDescriptor != ZR_NULL) {
+                if (outModule != ZR_NULL) {
+                    *outModule = module;
+                }
+                return typeDescriptor;
+            }
+        }
+    }
+
+    for (TZrSize index = 0; index < sizeof(builtinModules) / sizeof(builtinModules[0]); index++) {
+        module = ZrLibrary_NativeRegistry_FindModule(state->global, builtinModules[index]);
+        typeDescriptor = find_native_type_descriptor_in_module(module, typeName);
+        if (typeDescriptor != ZR_NULL) {
+            if (outModule != ZR_NULL) {
+                *outModule = module;
+            }
+            return typeDescriptor;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static void append_native_type_descriptor_member_completions(SZrState *state,
                                                              const ZrLibModuleDescriptor *module,
                                                              const ZrLibTypeDescriptor *typeDescriptor,
@@ -993,8 +1155,7 @@ static TZrBool append_receiver_native_type_completions(SZrState *state,
         return ZR_FALSE;
     }
 
-    module = ZrLibrary_NativeRegistry_FindModule(state->global, "zr.container");
-    typeDescriptor = find_native_type_descriptor_in_module(module, typeName);
+    typeDescriptor = find_native_type_descriptor_across_modules(state, typeName, &module);
     if (typeDescriptor == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1311,9 +1472,9 @@ static const ZrLibFieldDescriptor *find_native_field_descriptor_recursive(const 
 }
 
 static const ZrLibMethodDescriptor *find_native_method_descriptor_recursive(const ZrLibModuleDescriptor *module,
-                                                                            const ZrLibTypeDescriptor *typeDescriptor,
-                                                                            const TZrChar *memberName,
-                                                                            TZrSize depth) {
+                                                                           const ZrLibTypeDescriptor *typeDescriptor,
+                                                                           const TZrChar *memberName,
+                                                                           TZrSize depth) {
     if (module == ZR_NULL || typeDescriptor == ZR_NULL || memberName == ZR_NULL ||
         depth > ZR_LSP_MEMBER_RECURSION_MAX_DEPTH) {
         return ZR_NULL;
@@ -1347,6 +1508,382 @@ static const ZrLibMethodDescriptor *find_native_method_descriptor_recursive(cons
     }
 
     return ZR_NULL;
+}
+
+static TZrBool receiver_range_contains_offset(SZrFileRange range, TZrSize offset) {
+    if (range.start.offset > 0 && range.end.offset > 0) {
+        return range.start.offset <= offset && offset <= range.end.offset;
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool receiver_build_primary_prefix(SZrAstNode *primaryNode,
+                                             TZrSize prefixMemberCount,
+                                             SZrAstNode *tempNode,
+                                             SZrPrimaryExpression *tempPrimary,
+                                             SZrAstNodeArray *tempMembers) {
+    SZrPrimaryExpression *originalPrimary;
+
+    if (primaryNode == ZR_NULL ||
+        primaryNode->type != ZR_AST_PRIMARY_EXPRESSION ||
+        tempNode == ZR_NULL ||
+        tempPrimary == ZR_NULL ||
+        tempMembers == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    originalPrimary = &primaryNode->data.primaryExpression;
+    memset(tempNode, 0, sizeof(*tempNode));
+    memset(tempPrimary, 0, sizeof(*tempPrimary));
+    memset(tempMembers, 0, sizeof(*tempMembers));
+
+    tempNode->type = ZR_AST_PRIMARY_EXPRESSION;
+    tempNode->location = primaryNode->location;
+    tempNode->data.primaryExpression = *tempPrimary;
+    tempNode->data.primaryExpression.property = originalPrimary->property;
+
+    if (prefixMemberCount > 0 && originalPrimary->members != ZR_NULL) {
+        tempMembers->nodes = originalPrimary->members->nodes;
+        tempMembers->count = prefixMemberCount;
+        tempMembers->capacity = prefixMemberCount;
+        tempNode->data.primaryExpression.members = tempMembers;
+    } else {
+        tempNode->data.primaryExpression.members = ZR_NULL;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool find_receiver_member_context_recursive(SZrAstNode *node,
+                                                      TZrSize cursorOffset,
+                                                      SZrAstNode **outPrimaryNode,
+                                                      TZrSize *outMemberIndex,
+                                                      SZrString **outMemberName) {
+    if (node == ZR_NULL || outPrimaryNode == ZR_NULL || outMemberIndex == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_SCRIPT:
+            if (node->data.script.statements != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.script.statements->count; index++) {
+                    if (find_receiver_member_context_recursive(node->data.script.statements->nodes[index],
+                                                               cursorOffset,
+                                                               outPrimaryNode,
+                                                               outMemberIndex,
+                                                               outMemberName)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_BLOCK:
+            if (node->data.block.body != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.block.body->count; index++) {
+                    if (find_receiver_member_context_recursive(node->data.block.body->nodes[index],
+                                                               cursorOffset,
+                                                               outPrimaryNode,
+                                                               outMemberIndex,
+                                                               outMemberName)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_FUNCTION_DECLARATION:
+            return find_receiver_member_context_recursive(node->data.functionDeclaration.body,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_TEST_DECLARATION:
+            return find_receiver_member_context_recursive(node->data.testDeclaration.body,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            return find_receiver_member_context_recursive(node->data.compileTimeDeclaration.declaration,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_CLASS_DECLARATION:
+            if (node->data.classDeclaration.members != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.classDeclaration.members->count; index++) {
+                    if (find_receiver_member_context_recursive(node->data.classDeclaration.members->nodes[index],
+                                                               cursorOffset,
+                                                               outPrimaryNode,
+                                                               outMemberIndex,
+                                                               outMemberName)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_STRUCT_DECLARATION:
+            if (node->data.structDeclaration.members != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.structDeclaration.members->count; index++) {
+                    if (find_receiver_member_context_recursive(node->data.structDeclaration.members->nodes[index],
+                                                               cursorOffset,
+                                                               outPrimaryNode,
+                                                               outMemberIndex,
+                                                               outMemberName)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_CLASS_METHOD:
+            return find_receiver_member_context_recursive(node->data.classMethod.body,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_CLASS_META_FUNCTION:
+            return find_receiver_member_context_recursive(node->data.classMetaFunction.body,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_STRUCT_METHOD:
+            return find_receiver_member_context_recursive(node->data.structMethod.body,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return find_receiver_member_context_recursive(node->data.structMetaFunction.body,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_CLASS_PROPERTY:
+            return find_receiver_member_context_recursive(node->data.classProperty.modifier,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_PROPERTY_GET:
+            return find_receiver_member_context_recursive(node->data.propertyGet.body,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_PROPERTY_SET:
+            return find_receiver_member_context_recursive(node->data.propertySet.body,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_VARIABLE_DECLARATION:
+            return find_receiver_member_context_recursive(node->data.variableDeclaration.value,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_RETURN_STATEMENT:
+            return find_receiver_member_context_recursive(node->data.returnStatement.expr,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_EXPRESSION_STATEMENT:
+            return find_receiver_member_context_recursive(node->data.expressionStatement.expr,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_ASSIGNMENT_EXPRESSION:
+            return find_receiver_member_context_recursive(node->data.assignmentExpression.left,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName) ||
+                   find_receiver_member_context_recursive(node->data.assignmentExpression.right,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_BINARY_EXPRESSION:
+            return find_receiver_member_context_recursive(node->data.binaryExpression.left,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName) ||
+                   find_receiver_member_context_recursive(node->data.binaryExpression.right,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_UNARY_EXPRESSION:
+            return find_receiver_member_context_recursive(node->data.unaryExpression.argument,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_FUNCTION_CALL:
+            if (node->data.functionCall.args != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.functionCall.args->count; index++) {
+                    if (find_receiver_member_context_recursive(node->data.functionCall.args->nodes[index],
+                                                               cursorOffset,
+                                                               outPrimaryNode,
+                                                               outMemberIndex,
+                                                               outMemberName)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_CONSTRUCT_EXPRESSION:
+            if (find_receiver_member_context_recursive(node->data.constructExpression.target,
+                                                       cursorOffset,
+                                                       outPrimaryNode,
+                                                       outMemberIndex,
+                                                       outMemberName)) {
+                return ZR_TRUE;
+            }
+            if (node->data.constructExpression.args != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.constructExpression.args->count; index++) {
+                    if (find_receiver_member_context_recursive(node->data.constructExpression.args->nodes[index],
+                                                               cursorOffset,
+                                                               outPrimaryNode,
+                                                               outMemberIndex,
+                                                               outMemberName)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_LAMBDA_EXPRESSION:
+            return find_receiver_member_context_recursive(node->data.lambdaExpression.block,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        case ZR_AST_PRIMARY_EXPRESSION:
+            if (node->data.primaryExpression.property != ZR_NULL &&
+                find_receiver_member_context_recursive(node->data.primaryExpression.property,
+                                                       cursorOffset,
+                                                       outPrimaryNode,
+                                                       outMemberIndex,
+                                                       outMemberName)) {
+                return ZR_TRUE;
+            }
+
+            if (node->data.primaryExpression.members != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.primaryExpression.members->count; index++) {
+                    SZrAstNode *memberNode = node->data.primaryExpression.members->nodes[index];
+
+                    if (memberNode != ZR_NULL &&
+                        memberNode->type == ZR_AST_MEMBER_EXPRESSION &&
+                        memberNode->data.memberExpression.property != ZR_NULL &&
+                        memberNode->data.memberExpression.property->type == ZR_AST_IDENTIFIER_LITERAL &&
+                        receiver_range_contains_offset(memberNode->data.memberExpression.property->location,
+                                                      cursorOffset)) {
+                        *outPrimaryNode = node;
+                        *outMemberIndex = index;
+                        if (outMemberName != ZR_NULL) {
+                            *outMemberName = memberNode->data.memberExpression.property->data.identifier.name;
+                        }
+                        return ZR_TRUE;
+                    }
+
+                    if (find_receiver_member_context_recursive(memberNode,
+                                                               cursorOffset,
+                                                               outPrimaryNode,
+                                                               outMemberIndex,
+                                                               outMemberName)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_MEMBER_EXPRESSION:
+            return find_receiver_member_context_recursive(node->data.memberExpression.property,
+                                                          cursorOffset,
+                                                          outPrimaryNode,
+                                                          outMemberIndex,
+                                                          outMemberName);
+
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool try_infer_receiver_type_text_from_ast(SZrState *state,
+                                                     SZrSemanticAnalyzer *analyzer,
+                                                     SZrAstNode *ast,
+                                                     TZrSize cursorOffset,
+                                                     TZrChar *buffer,
+                                                     TZrSize bufferSize) {
+    SZrAstNode *primaryNode = ZR_NULL;
+    TZrSize memberIndex = 0;
+    SZrAstNode *tempNode;
+    SZrPrimaryExpression tempPrimary;
+    SZrAstNodeArray tempMembers;
+    SZrInferredType receiverType;
+    const TZrChar *typeText;
+    TZrChar typeBuffer[ZR_LSP_TEXT_BUFFER_LENGTH];
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    buffer[0] = '\0';
+    if (!find_receiver_member_context_recursive(ast, cursorOffset, &primaryNode, &memberIndex, ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    tempNode = (SZrAstNode *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrAstNode));
+    if (tempNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(state, &receiverType, ZR_VALUE_TYPE_OBJECT);
+    memset(&tempPrimary, 0, sizeof(tempPrimary));
+    memset(&tempMembers, 0, sizeof(tempMembers));
+    if (!receiver_build_primary_prefix(primaryNode, memberIndex, tempNode, &tempPrimary, &tempMembers) ||
+        analyzer->compilerState == ZR_NULL ||
+        !ZrParser_ExpressionType_Infer(analyzer->compilerState, tempNode, &receiverType)) {
+        ZrParser_InferredType_Free(state, &receiverType);
+        ZrCore_Memory_RawFree(state->global, tempNode, sizeof(SZrAstNode));
+        return ZR_FALSE;
+    }
+
+    typeText = ZrParser_TypeNameString_Get(state, &receiverType, typeBuffer, sizeof(typeBuffer));
+    if (typeText != ZR_NULL && typeText[0] != '\0') {
+        snprintf(buffer, bufferSize, "%s", typeText);
+    }
+
+    ZrParser_InferredType_Free(state, &receiverType);
+    ZrCore_Memory_RawFree(state->global, tempNode, sizeof(SZrAstNode));
+    return buffer[0] != '\0';
 }
 
 SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *state,
@@ -1395,35 +1932,47 @@ SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *st
     while (receiverStart > 0 && native_hover_is_identifier_char(content[receiverStart - 1])) {
         receiverStart--;
     }
-    if (receiverEnd <= receiverStart ||
-        receiverEnd - receiverStart >= sizeof(receiverNameText) ||
-        memberEnd - memberStart >= sizeof(memberName)) {
+    if (memberEnd - memberStart >= sizeof(memberName)) {
         return ZR_NULL;
     }
 
-    memcpy(receiverNameText, content + receiverStart, receiverEnd - receiverStart);
-    receiverNameText[receiverEnd - receiverStart] = '\0';
     memcpy(memberName, content + memberStart, memberEnd - memberStart);
     memberName[memberEnd - memberStart] = '\0';
 
-    receiverName = ZrCore_String_Create(state,
-                                        (TZrNativeString)receiverNameText,
-                                        strlen(receiverNameText));
-    if (receiverName == ZR_NULL ||
-        !resolve_receiver_type_text(state,
-                                    analyzer,
-                                    ast,
-                                    receiverName,
-                                    receiverNameText,
-                                    strlen(receiverNameText),
-                                    cursorOffset,
-                                    receiverTypeText,
-                                    sizeof(receiverTypeText))) {
+    receiverTypeText[0] = '\0';
+    if (!try_infer_receiver_type_text_from_ast(state,
+                                               analyzer,
+                                               ast,
+                                               cursorOffset,
+                                               receiverTypeText,
+                                               sizeof(receiverTypeText)) &&
+        (receiverEnd <= receiverStart ||
+         receiverEnd - receiverStart >= sizeof(receiverNameText))) {
         return ZR_NULL;
     }
 
-    module = ZrLibrary_NativeRegistry_FindModule(state->global, "zr.container");
-    typeDescriptor = find_native_type_descriptor_in_module(module, receiverTypeText);
+    if (receiverTypeText[0] == '\0') {
+        memcpy(receiverNameText, content + receiverStart, receiverEnd - receiverStart);
+        receiverNameText[receiverEnd - receiverStart] = '\0';
+
+        receiverName = ZrCore_String_Create(state,
+                                            (TZrNativeString)receiverNameText,
+                                            strlen(receiverNameText));
+        if (receiverName == ZR_NULL ||
+            !resolve_receiver_type_text(state,
+                                        analyzer,
+                                        ast,
+                                        receiverName,
+                                        receiverNameText,
+                                        strlen(receiverNameText),
+                                        cursorOffset,
+                                        receiverTypeText,
+                                        sizeof(receiverTypeText))) {
+            return ZR_NULL;
+        }
+    }
+
+    typeDescriptor = find_native_type_descriptor_across_modules(state, receiverTypeText, &module);
     if (typeDescriptor == ZR_NULL) {
         return ZR_NULL;
     }
@@ -1912,6 +2461,26 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
 
     receiverLength = receiverEnd - receiverStart;
     if (receiverLength == 0) {
+        if (try_infer_receiver_type_text_from_ast(state,
+                                                  analyzer,
+                                                  ast,
+                                                  cursorOffset,
+                                                  receiverTypeName,
+                                                  sizeof(receiverTypeName))) {
+            const SZrTypePrototypeInfo *receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
+            if (receiverPrototype != ZR_NULL) {
+                append_type_prototype_member_completions(state,
+                                                         analyzer,
+                                                         receiverPrototype,
+                                                         ZR_FALSE,
+                                                         0,
+                                                         result);
+                if (result->length > 0) {
+                    return ZR_TRUE;
+                }
+            }
+            return append_receiver_native_type_completions(state, receiverTypeName, ZR_FALSE, result);
+        }
         return ZR_FALSE;
     }
 
@@ -1961,6 +2530,28 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
         if (receiverTypeName[0] != '\0' &&
             append_receiver_native_type_completions(state, receiverTypeName, ZR_FALSE, result)) {
             return ZR_TRUE;
+        }
+        if (try_infer_receiver_type_text_from_ast(state,
+                                                  analyzer,
+                                                  ast,
+                                                  cursorOffset,
+                                                  receiverTypeName,
+                                                  sizeof(receiverTypeName))) {
+            receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
+            if (receiverPrototype != ZR_NULL) {
+                append_type_prototype_member_completions(state,
+                                                         analyzer,
+                                                         receiverPrototype,
+                                                         ZR_FALSE,
+                                                         0,
+                                                         result);
+                if (result->length > 0) {
+                    return ZR_TRUE;
+                }
+            }
+            if (append_receiver_native_type_completions(state, receiverTypeName, ZR_FALSE, result)) {
+                return ZR_TRUE;
+            }
         }
     }
 

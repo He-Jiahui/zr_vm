@@ -4,7 +4,13 @@
 
 #include "execution_internal.h"
 
+#include <string.h>
+
 static SZrVmExceptionHandlerState *execution_find_top_handler_for_callinfo(SZrState *state, SZrCallInfo *callInfo);
+static SZrFunction *execution_call_info_function(SZrState *state, SZrCallInfo *callInfo);
+static TZrStackValuePointer execution_resolve_meta_scratch_base(TZrStackValuePointer savedStackTop,
+                                                                TZrStackValuePointer requestedScratchBase,
+                                                                const SZrCallInfo *savedCallInfo);
 
 TZrSize close_scope_cleanup_registrations(SZrState *state, TZrSize cleanupCount) {
     TZrSize closedCount = 0;
@@ -38,8 +44,7 @@ TZrSize close_scope_cleanup_registrations(SZrState *state, TZrSize cleanupCount)
 TZrBool execution_invoke_meta_call(SZrState *state,
                                    SZrCallInfo *savedCallInfo,
                                    TZrStackValuePointer savedStackTop,
-                                   TZrStackValuePointer scratchBase,
-                                   TZrBool reloadScratchFromFunctionTop,
+                                   TZrStackValuePointer requestedScratchBase,
                                    SZrMeta *meta,
                                    const SZrTypeValue *arg0,
                                    const SZrTypeValue *arg1,
@@ -48,7 +53,10 @@ TZrBool execution_invoke_meta_call(SZrState *state,
                                    TZrStackValuePointer *outSavedStackTop) {
     SZrTypeValue stableArguments[2];
     SZrFunctionStackAnchor savedStackTopAnchor;
+    TZrStackValuePointer scratchBase;
     TZrStackValuePointer metaBase;
+
+    scratchBase = execution_resolve_meta_scratch_base(savedStackTop, requestedScratchBase, savedCallInfo);
 
     if (outMetaBase != ZR_NULL) {
         *outMetaBase = scratchBase;
@@ -71,10 +79,7 @@ TZrBool execution_invoke_meta_call(SZrState *state,
     }
 
     ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
-    metaBase = ZrCore_Function_CheckStackAndGc(state, 1 + argumentCount, scratchBase);
-    if (reloadScratchFromFunctionTop && savedCallInfo != ZR_NULL) {
-        metaBase = savedCallInfo->functionTop.valuePointer;
-    }
+    metaBase = ZrCore_Function_ReserveScratchSlots(state, 1 + argumentCount, scratchBase);
 
     ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
     ZrCore_Stack_CopyValue(state, metaBase + 1, &stableArguments[0]);
@@ -99,33 +104,25 @@ TZrBool execution_invoke_meta_call(SZrState *state,
     return state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+static TZrStackValuePointer execution_resolve_meta_scratch_base(TZrStackValuePointer savedStackTop,
+                                                                TZrStackValuePointer requestedScratchBase,
+                                                                const SZrCallInfo *savedCallInfo) {
+    TZrStackValuePointer scratchBase = requestedScratchBase;
+
+    if (savedStackTop != ZR_NULL && (scratchBase == ZR_NULL || scratchBase < savedStackTop)) {
+        scratchBase = savedStackTop;
+    }
+
+    if (savedCallInfo != ZR_NULL &&
+        (scratchBase == ZR_NULL || scratchBase < savedCallInfo->functionTop.valuePointer)) {
+        scratchBase = savedCallInfo->functionTop.valuePointer;
+    }
+
+    return scratchBase;
+}
+
 static SZrFunction *execution_call_info_function(SZrState *state, SZrCallInfo *callInfo) {
-    SZrTypeValue *baseValue;
-
-    if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    baseValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
-    if (baseValue == ZR_NULL || baseValue->value.object == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (baseValue->type == ZR_VALUE_TYPE_CLOSURE) {
-        if (baseValue->isNative) {
-            return ZR_NULL;
-        }
-        SZrClosure *frameClosure = ZR_CAST_VM_CLOSURE(state, baseValue->value.object);
-        return frameClosure != ZR_NULL ? frameClosure->function : ZR_NULL;
-    }
-    if (baseValue->type == ZR_VALUE_TYPE_FUNCTION) {
-        if (baseValue->isNative) {
-            return ZR_NULL;
-        }
-        return ZR_CAST_FUNCTION(state, baseValue->value.object);
-    }
-
-    return ZR_NULL;
+    return ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
 }
 
 static TZrBool execution_exception_handler_stack_ensure_capacity(SZrState *state, TZrUInt32 minCapacity) {
@@ -242,7 +239,7 @@ void execution_pop_exception_handler(SZrState *state, SZrVmExceptionHandlerState
     state->exceptionHandlerStackLength--;
 }
 
-static void execution_pop_handlers_for_callinfo(SZrState *state, SZrCallInfo *callInfo) {
+void execution_discard_exception_handlers_for_callinfo(SZrState *state, SZrCallInfo *callInfo) {
     while (state != ZR_NULL && state->exceptionHandlerStackLength > 0 &&
            state->exceptionHandlerStack[state->exceptionHandlerStackLength - 1].callInfo == callInfo) {
         state->exceptionHandlerStackLength--;
@@ -443,7 +440,7 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
             execution_pop_exception_handler(state, handlerState);
         }
 
-        execution_pop_handlers_for_callinfo(state, callInfo);
+        execution_discard_exception_handlers_for_callinfo(state, callInfo);
         state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
         ZrCore_Closure_CloseClosure(state,
                                     callInfo->functionBase.valuePointer + 1,

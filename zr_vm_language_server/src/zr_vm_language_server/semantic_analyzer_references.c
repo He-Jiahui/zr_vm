@@ -217,6 +217,14 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
             break;
         }
 
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            if (node->data.compileTimeDeclaration.declaration != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.compileTimeDeclaration.declaration);
+            }
+            break;
+
         case ZR_AST_USING_STATEMENT: {
             SZrUsingStatement *usingStmt = &node->data.usingStatement;
             ZrLanguageServer_SemanticAnalyzer_RecordUsingCleanupStep(analyzer, usingStmt->resource);
@@ -439,6 +447,35 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
             break;
         }
 
+        case ZR_AST_CLASS_META_FUNCTION: {
+            SZrClassMetaFunction *classMetaFunction = &node->data.classMetaFunction;
+            if (classMetaFunction->params != ZR_NULL && classMetaFunction->params->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < classMetaFunction->params->count; i++) {
+                    if (classMetaFunction->params->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   classMetaFunction->params->nodes[i]);
+                    }
+                }
+            }
+            if (classMetaFunction->superArgs != ZR_NULL && classMetaFunction->superArgs->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < classMetaFunction->superArgs->count; i++) {
+                    if (classMetaFunction->superArgs->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   classMetaFunction->superArgs->nodes[i]);
+                    }
+                }
+            }
+            if (classMetaFunction->returnType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, classMetaFunction->returnType);
+            }
+            if (classMetaFunction->body != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, classMetaFunction->body);
+            }
+            break;
+        }
+
         case ZR_AST_CLASS_PROPERTY: {
             if (node->data.classProperty.modifier != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, node->data.classProperty.modifier);
@@ -514,6 +551,26 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
             break;
         }
 
+        case ZR_AST_STRUCT_META_FUNCTION: {
+            SZrStructMetaFunction *structMetaFunction = &node->data.structMetaFunction;
+            if (structMetaFunction->params != ZR_NULL && structMetaFunction->params->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < structMetaFunction->params->count; i++) {
+                    if (structMetaFunction->params->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   structMetaFunction->params->nodes[i]);
+                    }
+                }
+            }
+            if (structMetaFunction->returnType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, structMetaFunction->returnType);
+            }
+            if (structMetaFunction->body != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, structMetaFunction->body);
+            }
+            break;
+        }
+
         case ZR_AST_INTERFACE_DECLARATION: {
             SZrInterfaceDeclaration *interfaceDecl = &node->data.interfaceDeclaration;
             if (interfaceDecl->inherits != ZR_NULL && interfaceDecl->inherits->nodes != ZR_NULL) {
@@ -558,6 +615,23 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
         case ZR_AST_INTERFACE_PROPERTY_SIGNATURE:
             if (node->data.interfacePropertySignature.typeInfo != ZR_NULL) {
                 semantic_collect_references_from_type_info(state, analyzer, node->data.interfacePropertySignature.typeInfo);
+            }
+            break;
+
+        case ZR_AST_LAMBDA_EXPRESSION:
+            if (node->data.lambdaExpression.params != ZR_NULL && node->data.lambdaExpression.params->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < node->data.lambdaExpression.params->count; i++) {
+                    if (node->data.lambdaExpression.params->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   node->data.lambdaExpression.params->nodes[i]);
+                    }
+                }
+            }
+            if (node->data.lambdaExpression.block != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.lambdaExpression.block);
             }
             break;
 

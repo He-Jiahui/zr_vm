@@ -930,20 +930,7 @@ static void reflection_populate_parameters_from_function(SZrState *state,
 }
 
 static SZrFunction *reflection_extract_function_from_value(SZrState *state, const SZrTypeValue *value) {
-    if (state == ZR_NULL || value == ZR_NULL || value->value.object == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (value->type == ZR_VALUE_TYPE_FUNCTION && value->value.object->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
-        return ZR_CAST_FUNCTION(state, value->value.object);
-    }
-
-    if (value->type == ZR_VALUE_TYPE_CLOSURE && value->value.object->type == ZR_RAW_OBJECT_TYPE_CLOSURE && !value->isNative) {
-        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, value->value.object);
-        return closure != ZR_NULL ? closure->function : ZR_NULL;
-    }
-
-    return ZR_NULL;
+    return ZrCore_Closure_GetMetadataFunctionFromValue(state, value);
 }
 
 static SZrFunction *reflection_find_entry_function_from_stack(SZrState *state) {

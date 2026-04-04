@@ -596,6 +596,47 @@ static TZrBool location_array_contains_range(SZrArray *locations,
     return ZR_FALSE;
 }
 
+static TZrBool location_array_contains_position(SZrArray *locations,
+                                                TZrInt32 line,
+                                                TZrInt32 character) {
+    for (TZrSize index = 0; locations != ZR_NULL && index < locations->length; index++) {
+        SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, index);
+        if (locationPtr != ZR_NULL && *locationPtr != ZR_NULL) {
+            SZrLspRange range = (*locationPtr)->range;
+            TZrBool startsBefore = range.start.line < line ||
+                                   (range.start.line == line && range.start.character <= character);
+            TZrBool endsAfter = range.end.line > line ||
+                                (range.end.line == line && range.end.character >= character);
+            if (startsBefore && endsAfter) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool highlight_array_contains_position(SZrArray *highlights,
+                                                 TZrInt32 line,
+                                                 TZrInt32 character) {
+    for (TZrSize index = 0; highlights != ZR_NULL && index < highlights->length; index++) {
+        SZrLspDocumentHighlight **highlightPtr =
+            (SZrLspDocumentHighlight **)ZrCore_Array_Get(highlights, index);
+        if (highlightPtr != ZR_NULL && *highlightPtr != ZR_NULL) {
+            SZrLspRange range = (*highlightPtr)->range;
+            TZrBool startsBefore = range.start.line < line ||
+                                   (range.start.line == line && range.start.character <= character);
+            TZrBool endsAfter = range.end.line > line ||
+                                (range.end.line == line && range.end.character >= character);
+            if (startsBefore && endsAfter) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool completion_array_contains_label(SZrArray *completions, const TZrChar *label) {
     for (TZrSize index = 0; completions != ZR_NULL && index < completions->length; index++) {
         SZrLspCompletionItem **itemPtr =
@@ -1861,7 +1902,10 @@ static void test_lsp_signature_help_displays_closed_generic_instantiation(SZrSta
         "    box.shape(m);\n"
         "}\n";
     SZrLspPosition callArgumentPosition;
+    SZrLspPosition boxHoverPosition;
+    SZrLspPosition matrixHoverPosition;
     SZrLspSignatureHelp *help = ZR_NULL;
+    SZrLspHover *hover = ZR_NULL;
 
     TEST_START("LSP Signature Help Displays Closed Generic Instantiation");
     TEST_INFO("Signature Help", "Checking signature help closes receiver and const generic types at the call site");
@@ -1891,6 +1935,33 @@ static void test_lsp_signature_help_displays_closed_generic_instantiation(SZrSta
         return;
     }
 
+    if (!lsp_find_position_for_substring(content, "var box = new Box<int>();", 0, 4, &boxHoverPosition) ||
+        !lsp_find_position_for_substring(content, "var m = new Matrix<int, 2 + 2>();", 0, 4, &matrixHoverPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Signature Help Displays Closed Generic Instantiation", "Failed to compute local variable hover positions");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, boxHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "Resolved Type: Box<int>")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help Displays Closed Generic Instantiation",
+                  "Hover for the constructed box local should show the closed generic source type");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, matrixHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "Resolved Type: Matrix<int, 4>")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help Displays Closed Generic Instantiation",
+                  "Hover for the constructed matrix local should show the normalized closed const-generic source type");
+        return;
+    }
+
     if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, callArgumentPosition, &help) ||
         help == ZR_NULL ||
         help->signatures.length == 0 ||
@@ -1903,6 +1974,357 @@ static void test_lsp_signature_help_displays_closed_generic_instantiation(SZrSta
 
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Signature Help Displays Closed Generic Instantiation");
+}
+
+static void test_lsp_signature_help_resolves_super_constructor(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class BaseHero {\n"
+        "    pub @constructor(origin: int) {\n"
+        "    }\n"
+        "}\n"
+        "class BossHero: BaseHero {\n"
+        "    pub @constructor(seed: int) super(seed) {\n"
+        "    }\n"
+        "}\n";
+    SZrLspPosition superArgumentPosition;
+    SZrLspSignatureHelp *help = ZR_NULL;
+
+    TEST_START("LSP Signature Help Resolves Super Constructor");
+    TEST_INFO("Super constructor signature help",
+              "The derived constructor should surface the base constructor signature at super(...) call sites");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Signature Help Resolves Super Constructor", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///super_constructor_signature_help.zr", 42);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Signature Help Resolves Super Constructor", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Signature Help Resolves Super Constructor", "Failed to update document");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "super(seed)", 0, 7, &superArgumentPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Signature Help Resolves Super Constructor", "Failed to compute super call position");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, superArgumentPosition, &help) ||
+        help == ZR_NULL ||
+        !signature_help_contains_text(help, "origin: int") ||
+        signature_help_contains_text(help, "seed: int")) {
+        TZrChar reason[256];
+        const TZrChar *label = signature_help_first_label(help);
+
+        snprintf(reason,
+                 sizeof(reason),
+                 "Signature help at super(...) should come from the base constructor, not the derived constructor (label=%s)",
+                 label != ZR_NULL ? label : "<null>");
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help Resolves Super Constructor",
+                  reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Signature Help Resolves Super Constructor");
+}
+
+static void test_lsp_definition_resolves_super_constructor(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class BaseHero {\n"
+        "    pub @constructor(origin: int) {\n"
+        "    }\n"
+        "}\n"
+        "class BossHero: BaseHero {\n"
+        "    pub @constructor(seed: int) super(seed) {\n"
+        "    }\n"
+        "}\n";
+    SZrLspPosition superCallPosition;
+    SZrLspPosition baseConstructorPosition;
+    SZrArray definitions;
+
+    TEST_START("LSP Definition Resolves Super Constructor");
+    TEST_INFO("Super constructor definition",
+              "Goto definition on super(...) should jump to the base constructor declaration");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Definition Resolves Super Constructor", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///super_constructor_definition.zr", 38);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Definition Resolves Super Constructor", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Definition Resolves Super Constructor", "Failed to update document");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "super(seed)", 0, 0, &superCallPosition) ||
+        !lsp_find_position_for_substring(content, "@constructor(origin: int)", 0, 1, &baseConstructorPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Definition Resolves Super Constructor", "Failed to compute constructor navigation positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 1);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, superCallPosition, &definitions) ||
+        definitions.length == 0 ||
+        !location_array_contains_position(&definitions,
+                                          baseConstructorPosition.line,
+                                          baseConstructorPosition.character)) {
+        TZrChar reason[256];
+        SZrLspLocation **firstLocationPtr =
+            definitions.length > 0 ? (SZrLspLocation **)ZrCore_Array_Get(&definitions, 0) : ZR_NULL;
+        SZrLspLocation *firstLocation = firstLocationPtr != ZR_NULL ? *firstLocationPtr : ZR_NULL;
+        snprintf(reason,
+                 sizeof(reason),
+                 "Definition on super(...) should land on the base constructor declaration (count=%zu first=%d:%d-%d:%d)",
+                 (size_t)definitions.length,
+                 firstLocation != ZR_NULL ? firstLocation->range.start.line : -1,
+                 firstLocation != ZR_NULL ? firstLocation->range.start.character : -1,
+                 firstLocation != ZR_NULL ? firstLocation->range.end.line : -1,
+                 firstLocation != ZR_NULL ? firstLocation->range.end.character : -1);
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Definition Resolves Super Constructor",
+                  reason);
+        return;
+    }
+
+    ZrCore_Array_Free(state, &definitions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Definition Resolves Super Constructor");
+}
+
+static void test_lsp_references_resolve_super_constructor(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class BaseHero {\n"
+        "    pub @constructor(origin: int) {\n"
+        "    }\n"
+        "}\n"
+        "class BossHero: BaseHero {\n"
+        "    pub @constructor(seed: int) super(seed) {\n"
+        "    }\n"
+        "}\n";
+    SZrLspPosition superCallPosition;
+    SZrLspPosition baseConstructorPosition;
+    SZrArray references;
+
+    TEST_START("LSP References Resolve Super Constructor");
+    TEST_INFO("Super constructor references",
+              "Find references on super(...) should include the base constructor declaration and super call");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP References Resolve Super Constructor", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///super_constructor_references.zr", 38);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP References Resolve Super Constructor", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP References Resolve Super Constructor", "Failed to update document");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "super(seed)", 0, 0, &superCallPosition) ||
+        !lsp_find_position_for_substring(content, "@constructor(origin: int)", 0, 1, &baseConstructorPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP References Resolve Super Constructor", "Failed to compute reference positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_FindReferences(state, context, uri, superCallPosition, ZR_TRUE, &references) ||
+        references.length < 2 ||
+        !location_array_contains_position(&references, baseConstructorPosition.line, baseConstructorPosition.character) ||
+        !location_array_contains_position(&references, superCallPosition.line, superCallPosition.character)) {
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP References Resolve Super Constructor",
+                  "References on super(...) should include both the base constructor declaration and the super call");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &references);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP References Resolve Super Constructor");
+}
+
+static void test_lsp_document_highlights_resolve_super_constructor(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class BaseHero {\n"
+        "    pub @constructor(origin: int) {\n"
+        "    }\n"
+        "}\n"
+        "class BossHero: BaseHero {\n"
+        "    pub @constructor(seed: int) super(seed) {\n"
+        "    }\n"
+        "}\n";
+    SZrLspPosition superCallPosition;
+    SZrLspPosition baseConstructorPosition;
+    SZrArray highlights;
+
+    TEST_START("LSP Document Highlights Resolve Super Constructor");
+    TEST_INFO("Super constructor highlights",
+              "Document highlights on super(...) should include the base constructor declaration and super call");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Document Highlights Resolve Super Constructor", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///super_constructor_highlights.zr", 38);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Document Highlights Resolve Super Constructor", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Document Highlights Resolve Super Constructor", "Failed to update document");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "super(seed)", 0, 0, &superCallPosition) ||
+        !lsp_find_position_for_substring(content, "@constructor(origin: int)", 0, 1, &baseConstructorPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Document Highlights Resolve Super Constructor", "Failed to compute highlight positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 4);
+    if (!ZrLanguageServer_Lsp_GetDocumentHighlights(state, context, uri, superCallPosition, &highlights) ||
+        highlights.length < 2 ||
+        !highlight_array_contains_position(&highlights, baseConstructorPosition.line, baseConstructorPosition.character) ||
+        !highlight_array_contains_position(&highlights, superCallPosition.line, superCallPosition.character)) {
+        ZrCore_Array_Free(state, &highlights);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Document Highlights Resolve Super Constructor",
+                  "Document highlights on super(...) should include both the base constructor declaration and the super call");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &highlights);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Document Highlights Resolve Super Constructor");
+}
+
+static void test_lsp_completion_lists_directives_and_meta_methods(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    const TZrChar *content =
+        "%compileTime var sentinel = 1;\n"
+        "class Foo {\n"
+        "    pub @constructor() { }\n"
+        "}\n";
+    SZrString *uri;
+    SZrLspPosition directivePosition;
+    SZrLspPosition metaPosition;
+    SZrArray completions;
+
+    TEST_START("LSP Completion Lists Directives And Meta Methods");
+    TEST_INFO("Directive/meta completion",
+              "Typing % or @ should offer reserved directives and meta method categories");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state,
+                               "file:///directive_meta_completion.zr",
+                               strlen("file:///directive_meta_completion.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Completion Lists Directives And Meta Methods", "Failed to prepare completion source");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "%compileTime", 0, 1, &directivePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Completion Lists Directives And Meta Methods", "Failed to compute directive completion position");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, directivePosition, &completions) ||
+        !completion_array_contains_label(&completions, "%import") ||
+        !completion_array_contains_label(&completions, "%compileTime") ||
+        !completion_array_contains_label(&completions, "%test") ||
+        !completion_array_contains_label(&completions, "%extern") ||
+        !completion_array_contains_label(&completions, "%type")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Completion Lists Directives And Meta Methods",
+                  "Expected % completion to list language directives");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    if (!lsp_find_position_for_substring(content, "@constructor", 0, 1, &metaPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Completion Lists Directives And Meta Methods", "Failed to compute meta completion position");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, metaPosition, &completions) ||
+        !completion_array_contains_label(&completions, "@constructor") ||
+        !completion_array_contains_label(&completions, "@destructor") ||
+        !completion_array_contains_label(&completions, "@close") ||
+        !completion_array_contains_label(&completions, "@add") ||
+        !completion_array_contains_label(&completions, "@toString")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Completion Lists Directives And Meta Methods",
+                  "Expected @ completion to list lifecycle and operator meta methods");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Completion Lists Directives And Meta Methods");
 }
 
 // 主测试函数
@@ -1992,6 +2414,21 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_signature_help_displays_closed_generic_instantiation(state);
+    TEST_DIVIDER();
+
+    test_lsp_signature_help_resolves_super_constructor(state);
+    TEST_DIVIDER();
+
+    test_lsp_definition_resolves_super_constructor(state);
+    TEST_DIVIDER();
+
+    test_lsp_references_resolve_super_constructor(state);
+    TEST_DIVIDER();
+
+    test_lsp_document_highlights_resolve_super_constructor(state);
+    TEST_DIVIDER();
+
+    test_lsp_completion_lists_directives_and_meta_methods(state);
     TEST_DIVIDER();
     
     // 清理

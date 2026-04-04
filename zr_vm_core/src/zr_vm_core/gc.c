@@ -64,7 +64,7 @@ void ZrCore_GarbageCollector_Free(SZrGlobalState *global, SZrGarbageCollector *c
         if (stateObject != ZR_NULL &&
             stateObject->type < ZR_RAW_OBJECT_TYPE_CLOSURE_ENUM_MAX &&
             stateObject->type != ZR_RAW_OBJECT_TYPE_INVALID) {
-            TZrSize maxIterations = 1000;
+            TZrSize maxIterations = ZR_GC_SHUTDOWN_FULL_COLLECTION_ITERATION_LIMIT;
             TZrSize iterationCount = 0;
 
             global->garbageCollector->waitToScanObjectList = ZR_NULL;
@@ -240,7 +240,7 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
         if (collector->gcDebtSize > 0) {
             collector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_RUNNING;
         } else {
-            ZrCore_GarbageCollector_AddDebtSpace(global, -2000);
+            ZrCore_GarbageCollector_AddDebtSpace(global, -ZR_GC_DEBT_CREDIT_BYTES);
             collector->gcLastCompletedRunningStatus = collector->gcRunningStatus;
             return;
         }

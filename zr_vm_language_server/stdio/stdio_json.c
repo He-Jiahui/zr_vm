@@ -6,8 +6,8 @@ cJSON *serialize_position(SZrLspPosition position) {
         return NULL;
     }
 
-    cJSON_AddNumberToObject(json, "line", position.line);
-    cJSON_AddNumberToObject(json, "character", position.character);
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_LINE, position.line);
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_CHARACTER, position.character);
     return json;
 }
 
@@ -17,8 +17,8 @@ cJSON *serialize_range(SZrLspRange range) {
         return NULL;
     }
 
-    cJSON_AddItemToObject(json, "start", serialize_position(range.start));
-    cJSON_AddItemToObject(json, "end", serialize_position(range.end));
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_START, serialize_position(range.start));
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_END, serialize_position(range.end));
     return json;
 }
 
@@ -37,12 +37,12 @@ cJSON *serialize_location(const SZrLspLocation *location) {
 
     uriText = zr_string_to_c_string(location->uri);
     if (uriText != NULL) {
-        cJSON_AddStringToObject(json, "uri", uriText);
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_URI, uriText);
         free(uriText);
     } else {
-        cJSON_AddNullToObject(json, "uri");
+        cJSON_AddNullToObject(json, ZR_LSP_FIELD_URI);
     }
-    cJSON_AddItemToObject(json, "range", serialize_range(location->range));
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_range(location->range));
     return json;
 }
 
@@ -62,16 +62,16 @@ cJSON *serialize_symbol_information(const SZrLspSymbolInformation *info) {
 
     nameText = zr_string_to_c_string(info->name);
     if (nameText != NULL) {
-        cJSON_AddStringToObject(json, "name", nameText);
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_NAME, nameText);
         free(nameText);
     }
-    cJSON_AddNumberToObject(json, "kind", info->kind);
-    cJSON_AddItemToObject(json, "location", serialize_location(&info->location));
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_KIND, info->kind);
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_LOCATION, serialize_location(&info->location));
 
     if (info->containerName != ZR_NULL) {
         containerText = zr_string_to_c_string(info->containerName);
         if (containerText != NULL) {
-            cJSON_AddStringToObject(json, "containerName", containerText);
+            cJSON_AddStringToObject(json, ZR_LSP_FIELD_CONTAINER_NAME, containerText);
             free(containerText);
         }
     }
@@ -93,20 +93,20 @@ cJSON *serialize_diagnostic(const SZrLspDiagnostic *diagnostic) {
         return NULL;
     }
 
-    cJSON_AddItemToObject(json, "range", serialize_range(diagnostic->range));
-    cJSON_AddNumberToObject(json, "severity", diagnostic->severity);
-    cJSON_AddStringToObject(json, "source", "zr");
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_range(diagnostic->range));
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_SEVERITY, diagnostic->severity);
+    cJSON_AddStringToObject(json, ZR_LSP_FIELD_SOURCE, ZR_LSP_DIAGNOSTIC_SOURCE_NAME);
 
     messageText = zr_string_to_c_string(diagnostic->message);
     if (messageText != NULL) {
-        cJSON_AddStringToObject(json, "message", messageText);
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_MESSAGE, messageText);
         free(messageText);
     }
 
     if (diagnostic->code != ZR_NULL) {
         codeText = zr_string_to_c_string(diagnostic->code);
         if (codeText != NULL) {
-            cJSON_AddStringToObject(json, "code", codeText);
+            cJSON_AddStringToObject(json, ZR_LSP_FIELD_CODE, codeText);
             free(codeText);
         }
     }
@@ -117,7 +117,7 @@ cJSON *serialize_diagnostic(const SZrLspDiagnostic *diagnostic) {
 cJSON *serialize_completion_item(const SZrLspCompletionItem *item) {
     cJSON *json;
     char *text;
-    int insertTextFormat = 1;
+    int insertTextFormat = ZR_LSP_INSERT_TEXT_FORMAT_PLAIN_TEXT;
 
     if (item == NULL) {
         return cJSON_CreateNull();
@@ -130,15 +130,15 @@ cJSON *serialize_completion_item(const SZrLspCompletionItem *item) {
 
     text = zr_string_to_c_string(item->label);
     if (text != NULL) {
-        cJSON_AddStringToObject(json, "label", text);
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_LABEL, text);
         free(text);
     }
-    cJSON_AddNumberToObject(json, "kind", item->kind);
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_KIND, item->kind);
 
     if (item->detail != ZR_NULL) {
         text = zr_string_to_c_string(item->detail);
         if (text != NULL) {
-            cJSON_AddStringToObject(json, "detail", text);
+            cJSON_AddStringToObject(json, ZR_LSP_FIELD_DETAIL, text);
             free(text);
         }
     }
@@ -147,9 +147,9 @@ cJSON *serialize_completion_item(const SZrLspCompletionItem *item) {
         cJSON *documentation = cJSON_CreateObject();
         text = zr_string_to_c_string(item->documentation);
         if (documentation != NULL && text != NULL) {
-            cJSON_AddStringToObject(documentation, "kind", "markdown");
-            cJSON_AddStringToObject(documentation, "value", text);
-            cJSON_AddItemToObject(json, "documentation", documentation);
+            cJSON_AddStringToObject(documentation, ZR_LSP_FIELD_KIND, ZR_LSP_MARKUP_KIND_MARKDOWN);
+            cJSON_AddStringToObject(documentation, ZR_LSP_FIELD_VALUE, text);
+            cJSON_AddItemToObject(json, ZR_LSP_FIELD_DOCUMENTATION, documentation);
         } else {
             cJSON_Delete(documentation);
         }
@@ -159,7 +159,7 @@ cJSON *serialize_completion_item(const SZrLspCompletionItem *item) {
     if (item->insertText != ZR_NULL) {
         text = zr_string_to_c_string(item->insertText);
         if (text != NULL) {
-            cJSON_AddStringToObject(json, "insertText", text);
+            cJSON_AddStringToObject(json, ZR_LSP_FIELD_INSERT_TEXT, text);
             free(text);
         }
     }
@@ -167,13 +167,13 @@ cJSON *serialize_completion_item(const SZrLspCompletionItem *item) {
     if (item->insertTextFormat != ZR_NULL) {
         text = zr_string_to_c_string(item->insertTextFormat);
         if (text != NULL) {
-            if (strcmp(text, "snippet") == 0) {
-                insertTextFormat = 2;
+            if (strcmp(text, ZR_LSP_INSERT_TEXT_FORMAT_KIND_SNIPPET) == 0) {
+                insertTextFormat = ZR_LSP_INSERT_TEXT_FORMAT_SNIPPET;
             }
             free(text);
         }
     }
-    cJSON_AddNumberToObject(json, "insertTextFormat", insertTextFormat);
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_INSERT_TEXT_FORMAT, insertTextFormat);
 
     return json;
 }
@@ -200,12 +200,12 @@ cJSON *serialize_hover(const SZrLspHover *hover) {
                 text = zr_string_to_c_string(*textPtr);
             }
         }
-        cJSON_AddStringToObject(contents, "kind", "markdown");
-        cJSON_AddStringToObject(contents, "value", text != NULL ? text : "");
-        cJSON_AddItemToObject(json, "contents", contents);
+        cJSON_AddStringToObject(contents, ZR_LSP_FIELD_KIND, ZR_LSP_MARKUP_KIND_MARKDOWN);
+        cJSON_AddStringToObject(contents, ZR_LSP_FIELD_VALUE, text != NULL ? text : "");
+        cJSON_AddItemToObject(json, ZR_LSP_FIELD_CONTENTS, contents);
     }
 
-    cJSON_AddItemToObject(json, "range", serialize_range(hover->range));
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_range(hover->range));
     free(text);
     return json;
 }
@@ -225,8 +225,8 @@ static cJSON *serialize_markdown_content(SZrString *value) {
 
     json = cJSON_CreateObject();
     if (json != NULL) {
-        cJSON_AddStringToObject(json, "kind", "markdown");
-        cJSON_AddStringToObject(json, "value", text);
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_KIND, ZR_LSP_MARKUP_KIND_MARKDOWN);
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_VALUE, text);
     }
 
     free(text);
@@ -267,13 +267,13 @@ cJSON *serialize_signature_help(const SZrLspSignatureHelp *help) {
             continue;
         }
 
-        cJSON_AddStringToObject(signatureJson, "label", labelText);
+        cJSON_AddStringToObject(signatureJson, ZR_LSP_FIELD_LABEL, labelText);
         free(labelText);
 
         if ((*signaturePtr)->documentation != ZR_NULL) {
             cJSON *documentation = serialize_markdown_content((*signaturePtr)->documentation);
             if (documentation != NULL) {
-                cJSON_AddItemToObject(signatureJson, "documentation", documentation);
+                cJSON_AddItemToObject(signatureJson, ZR_LSP_FIELD_DOCUMENTATION, documentation);
             }
         }
 
@@ -298,28 +298,28 @@ cJSON *serialize_signature_help(const SZrLspSignatureHelp *help) {
                         continue;
                     }
 
-                    cJSON_AddStringToObject(parameterJson, "label", parameterLabel);
+                    cJSON_AddStringToObject(parameterJson, ZR_LSP_FIELD_LABEL, parameterLabel);
                     free(parameterLabel);
 
                     if ((*parameterPtr)->documentation != ZR_NULL) {
                         cJSON *documentation = serialize_markdown_content((*parameterPtr)->documentation);
                         if (documentation != NULL) {
-                            cJSON_AddItemToObject(parameterJson, "documentation", documentation);
+                            cJSON_AddItemToObject(parameterJson, ZR_LSP_FIELD_DOCUMENTATION, documentation);
                         }
                     }
 
                     cJSON_AddItemToArray(parameters, parameterJson);
                 }
-                cJSON_AddItemToObject(signatureJson, "parameters", parameters);
+                cJSON_AddItemToObject(signatureJson, ZR_LSP_FIELD_PARAMETERS, parameters);
             }
         }
 
         cJSON_AddItemToArray(signatures, signatureJson);
     }
 
-    cJSON_AddItemToObject(json, "signatures", signatures);
-    cJSON_AddNumberToObject(json, "activeSignature", help->activeSignature);
-    cJSON_AddNumberToObject(json, "activeParameter", help->activeParameter);
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_SIGNATURES, signatures);
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_ACTIVE_SIGNATURE, help->activeSignature);
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_ACTIVE_PARAMETER, help->activeParameter);
     return json;
 }
 
@@ -329,8 +329,8 @@ cJSON *serialize_document_highlight(const SZrLspDocumentHighlight *highlight) {
         return NULL;
     }
 
-    cJSON_AddItemToObject(json, "range", serialize_range(highlight->range));
-    cJSON_AddNumberToObject(json, "kind", highlight->kind);
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_range(highlight->range));
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_KIND, highlight->kind);
     return json;
 }
 
@@ -525,8 +525,8 @@ int parse_position(const cJSON *json, SZrLspPosition *outPosition) {
         return 0;
     }
 
-    line = cJSON_GetObjectItemCaseSensitive((cJSON *)json, "line");
-    character = cJSON_GetObjectItemCaseSensitive((cJSON *)json, "character");
+    line = get_object_item(json, ZR_LSP_FIELD_LINE);
+    character = get_object_item(json, ZR_LSP_FIELD_CHARACTER);
     if (!cJSON_IsNumber(line) || !cJSON_IsNumber(character)) {
         return 0;
     }
@@ -544,8 +544,8 @@ int parse_range(const cJSON *json, SZrLspRange *outRange) {
         return 0;
     }
 
-    start = cJSON_GetObjectItemCaseSensitive((cJSON *)json, "start");
-    end = cJSON_GetObjectItemCaseSensitive((cJSON *)json, "end");
+    start = get_object_item(json, ZR_LSP_FIELD_START);
+    end = get_object_item(json, ZR_LSP_FIELD_END);
     if (!parse_position(start, &outRange->start) || !parse_position(end, &outRange->end)) {
         return 0;
     }

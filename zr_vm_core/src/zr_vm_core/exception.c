@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
@@ -216,32 +217,7 @@ static TZrMemoryOffset exception_compute_instruction_offset(const SZrCallInfo *c
 }
 
 static SZrFunction *exception_call_info_function(SZrState *state, SZrCallInfo *callInfo) {
-    SZrTypeValue *baseValue;
-
-    if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    baseValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
-    if (baseValue == ZR_NULL || baseValue->value.object == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (baseValue->type == ZR_VALUE_TYPE_CLOSURE) {
-        if (baseValue->isNative) {
-            return ZR_NULL;
-        }
-        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, baseValue->value.object);
-        return closure != ZR_NULL ? closure->function : ZR_NULL;
-    }
-    if (baseValue->type == ZR_VALUE_TYPE_FUNCTION) {
-        if (baseValue->isNative) {
-            return ZR_NULL;
-        }
-        return ZR_CAST_FUNCTION(state, baseValue->value.object);
-    }
-
-    return ZR_NULL;
+    return ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
 }
 
 static void exception_set_message_field_from_value(SZrState *state, SZrObject *object, const SZrTypeValue *value) {
@@ -345,9 +321,22 @@ static TZrBool exception_apply_error_fields(SZrState *state,
                                             SZrCallInfo *throwCallInfo) {
     SZrObject *frames;
     SZrTypeValue value;
+    SZrTypeValue stableMessageSource;
+    SZrTypeValue stableExceptionValue;
+    const SZrTypeValue *messageSourceStablePtr = ZR_NULL;
+    const SZrTypeValue *exceptionValueStablePtr = ZR_NULL;
 
     if (state == ZR_NULL || errorObject == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (messageSource != ZR_NULL) {
+        stableMessageSource = *messageSource;
+        messageSourceStablePtr = &stableMessageSource;
+    }
+    if (exceptionValue != ZR_NULL) {
+        stableExceptionValue = *exceptionValue;
+        exceptionValueStablePtr = &stableExceptionValue;
     }
 
     frames = exception_capture_stack_frames(state, throwCallInfo);
@@ -358,10 +347,10 @@ static TZrBool exception_apply_error_fields(SZrState *state,
     ZrCore_Value_InitAsRawObject(state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(frames));
     value.type = ZR_VALUE_TYPE_ARRAY;
     exception_set_object_field_cstring(state, errorObject, "stacks", &value);
-    exception_set_message_field_from_value(state, errorObject, messageSource);
+    exception_set_message_field_from_value(state, errorObject, messageSourceStablePtr);
 
-    if (exceptionValue != ZR_NULL) {
-        exception_set_object_field_cstring(state, errorObject, "exception", exceptionValue);
+    if (exceptionValueStablePtr != ZR_NULL) {
+        exception_set_object_field_cstring(state, errorObject, "exception", exceptionValueStablePtr);
     } else {
         ZrCore_Value_ResetAsNull(&value);
         exception_set_object_field_cstring(state, errorObject, "exception", &value);

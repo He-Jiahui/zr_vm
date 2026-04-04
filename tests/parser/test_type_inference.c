@@ -391,8 +391,6 @@ static SZrCompilerState *create_test_compiler_state(SZrState *state) {
     return cs;
 }
 
-void enter_scope(SZrCompilerState *cs);
-
 // 销毁测试用的编译器状态
 static void destroy_test_compiler_state(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
@@ -413,6 +411,22 @@ static void destroy_test_compiler_state(SZrCompilerState *cs) {
     free(cs);
 }
 
+static void ensure_test_root_scope(SZrCompilerState *cs) {
+    SZrScope scope;
+
+    TEST_ASSERT_NOT_NULL(cs);
+    TEST_ASSERT_NOT_NULL(cs->state);
+
+    if (cs->scopeStack.length != 0) {
+        return;
+    }
+
+    memset(&scope, 0, sizeof(scope));
+    scope.startVarIndex = cs->localVarCount;
+    scope.parentCompiler = cs->currentFunction != ZR_NULL ? cs : ZR_NULL;
+    ZrCore_Array_Push(cs->state, &cs->scopeStack, &scope);
+}
+
 static void compile_test_top_level_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TEST_ASSERT_NOT_NULL(cs);
     TEST_ASSERT_NOT_NULL(node);
@@ -424,7 +438,7 @@ static void compile_test_top_level_statement(SZrCompilerState *cs, SZrAstNode *n
 
     cs->isScriptLevel = ZR_TRUE;
     if (cs->scopeStack.length == 0) {
-        enter_scope(cs);
+        ensure_test_root_scope(cs);
     }
 
     switch (node->type) {
@@ -2908,6 +2922,66 @@ static void test_type_inference_source_generic_class_boxed_new_returns_closed_re
     TEST_DIVIDER();
 }
 
+static void test_type_inference_source_class_boxed_new_succeeds_without_prior_declaration_compile(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Source Class Boxed New Succeeds Without Prior Declaration Compile";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class BaseHero {\n"
+                "    pub @constructor(seed: int) { }\n"
+                "}\n"
+                "class BossHero: BaseHero {\n"
+                "    pub @constructor(seed: int) super(seed) { }\n"
+                "}\n"
+                "new BossHero(30);";
+        SZrString *sourceName =
+                ZrCore_String_Create(state,
+                                     "source_class_new_without_compile_type_test.zr",
+                                     strlen("source_class_new_without_compile_type_test.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        expr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("BossHero", ZrCore_String_GetNativeString(result.typeName));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_source_generic_class_member_substitutes_closed_field_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Generic Class Member Substitutes Closed Field Type";
@@ -3079,6 +3153,61 @@ static void test_type_inference_source_const_generic_boxed_new_returns_closed_re
 
         closedPrototype = find_test_type_prototype(cs, "Matrix<int, 4>");
         TEST_ASSERT_NOT_NULL(closedPrototype);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_const_generic_boxed_new_succeeds_without_prior_declaration_compile(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Source Const Generic Boxed New Succeeds Without Prior Declaration Compile";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class Matrix<T, const N: int> { var rows: Array<T>[N]; }\n"
+                "new Matrix<int, 2 + 2>();";
+        SZrString *sourceName =
+                ZrCore_String_Create(state,
+                                     "source_const_generic_new_without_compile_type_test.zr",
+                                     strlen("source_const_generic_new_without_compile_type_test.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Matrix<int, 4>", ZrCore_String_GetNativeString(result.typeName));
 
         ZrParser_InferredType_Free(state, &result);
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -5057,9 +5186,11 @@ int main(void) {
     RUN_TEST(test_type_inference_native_generic_boxed_new_returns_closed_registered_type);
     RUN_TEST(test_type_inference_native_generic_constraint_mismatch_is_rejected);
     RUN_TEST(test_type_inference_source_generic_class_boxed_new_returns_closed_registered_type);
+    RUN_TEST(test_type_inference_source_class_boxed_new_succeeds_without_prior_declaration_compile);
     RUN_TEST(test_type_inference_source_generic_class_member_substitutes_closed_field_type);
     RUN_TEST(test_type_inference_source_generic_struct_boxed_new_returns_closed_registered_type);
     RUN_TEST(test_type_inference_source_const_generic_boxed_new_returns_closed_registered_type);
+    RUN_TEST(test_type_inference_source_const_generic_boxed_new_succeeds_without_prior_declaration_compile);
     RUN_TEST(test_type_inference_source_generic_function_supports_explicit_arguments_and_inference);
     RUN_TEST(test_type_inference_source_generic_function_reports_explicit_arity_mismatch);
     RUN_TEST(test_type_inference_source_generic_function_reports_cannot_infer_type_argument);

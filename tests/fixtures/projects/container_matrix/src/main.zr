@@ -21,7 +21,7 @@ if (queueStage.queueExpected != 313248) {
 if (dedupeStage.dedupeExpected != 4631) {
     return -20;
 }
-if (aggregateStage.aggregateExpected != 633) {
+if (aggregateStage.aggregateExpected != 635) {
     return -30;
 }
 
@@ -48,7 +48,9 @@ while (queue.count > 0) {
     head.next = null;
     head.previous = null;
     queue.count = queue.count - 1;
-    seen.add(new container.Pair<int, string>(<int> task.second, <string> task.first));
+    var taskValue = <int> task.second;
+    var taskLabel = <string> task.first;
+    seen.add(new container.Pair<int, string>(taskValue, taskLabel));
 }
 
 for (var pair in seen) {

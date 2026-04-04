@@ -157,6 +157,24 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
     }
 
     global = state->global;
+    if (global->aotModuleLoader != ZR_NULL) {
+        struct SZrObjectModule *aotModule =
+                global->aotModuleLoader(state, path, global->aotModuleLoaderUserData);
+        if (aotModule != ZR_NULL) {
+            if (aotModule->fullPath == ZR_NULL || aotModule->moduleName == ZR_NULL) {
+                TZrUInt64 aotPathHash = ZrCore_Module_CalculatePathHash(state, path);
+                ZrCore_Module_SetInfo(state, aotModule, path, aotPathHash, path);
+            }
+
+            ZrCore_Module_AddToCache(state, path, aotModule);
+            return aotModule;
+        }
+
+        if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+            return ZR_NULL;
+        }
+    }
+
     if (global->nativeModuleLoader != ZR_NULL) {
         struct SZrObjectModule *nativeModule =
                 global->nativeModuleLoader(state, path, global->nativeModuleLoaderUserData);
@@ -266,6 +284,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
 
     savedStackTop = state->stackTop.valuePointer;
     callBase = ZrCore_Function_CheckStackAndAnchor(state, 1, savedStackTop, savedStackTop, &callBaseAnchor);
+    ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(callBase));
     ZrCore_Stack_SetRawObjectValue(state, callBase, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     state->stackTop.valuePointer = callBase + 1;
     callBase = ZrCore_Function_CallAndRestoreAnchor(state, &callBaseAnchor, 0);

@@ -33,7 +33,7 @@ typedef struct SZrHashSet SZrHashSet;
 ZR_FORCE_INLINE void ZrCore_HashSet_Construct(SZrHashSet *set) { set->isValid = ZR_FALSE; }
 ZR_CORE_API void ZrCore_HashSet_Deconstruct(struct SZrState *state, SZrHashSet *set);
 
-ZR_CORE_API void ZrCore_HashSet_Rehash(struct SZrState *state, SZrHashSet *set, TZrSize newCapacity);
+ZR_CORE_API TZrBool ZrCore_HashSet_Rehash(struct SZrState *state, SZrHashSet *set, TZrSize newCapacity);
 
 ZR_FORCE_INLINE void ZrCore_HashSet_Init(struct SZrState *state, SZrHashSet *set, TZrSize capacityLog2) {
     ZR_ASSERT(set != NULL && capacityLog2 != 0);
@@ -42,8 +42,8 @@ ZR_FORCE_INLINE void ZrCore_HashSet_Init(struct SZrState *state, SZrHashSet *set
     set->elementCount = 0;
     set->capacity = 0;
     set->resizeThreshold = 0;
-    ZrCore_HashSet_Rehash(state, set, capacity);
-    set->isValid = ZR_TRUE;
+    set->bucketSize = 0;
+    set->isValid = ZrCore_HashSet_Rehash(state, set, capacity);
 }
 
 ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_GetBucket(SZrHashSet *set, TZrUInt64 hash) {
@@ -52,14 +52,27 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_GetBucket(SZrHashSet *set, T
 // add unique element, we do not check duplicated element
 ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_Add(struct SZrState *state, SZrHashSet *set,
                                                   const SZrTypeValue *element) {
-    SZrGlobalState *global = state->global;
-    if (set->elementCount + 1 > set->resizeThreshold) {
-        ZrCore_HashSet_Rehash(state, set, set->capacity << 1);
+    SZrHashKeyValuePair *object;
+    SZrHashKeyValuePair *hashElement;
+    TZrUInt64 hash;
+
+    if (state == ZR_NULL || set == ZR_NULL || element == ZR_NULL || !set->isValid || set->buckets == ZR_NULL ||
+        set->capacity == 0) {
+        return ZR_NULL;
     }
-    TZrUInt64 hash = ZrCore_Value_GetHash(state, element);
-    SZrHashKeyValuePair *object = ZrCore_HashSet_GetBucket(set, hash);
-    SZrHashKeyValuePair *hashElement = (SZrHashKeyValuePair *)
-            ZrCore_Memory_RawMallocWithType(global, sizeof(SZrHashKeyValuePair), ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+    if (set->elementCount + 1 > set->resizeThreshold &&
+        !ZrCore_HashSet_Rehash(state, set, set->capacity << 1)) {
+        return ZR_NULL;
+    }
+
+    hash = ZrCore_Value_GetHash(state, element);
+    object = ZrCore_HashSet_GetBucket(set, hash);
+    hashElement = (SZrHashKeyValuePair *)ZrCore_Memory_GcMalloc(state,
+                                                                ZR_MEMORY_NATIVE_TYPE_HASH_PAIR,
+                                                                sizeof(SZrHashKeyValuePair));
+    if (hashElement == ZR_NULL) {
+        return ZR_NULL;
+    }
     ZrCore_Value_ResetAsNull(&hashElement->key);
     ZrCore_Value_ResetAsNull(&hashElement->value);
     ZrCore_Value_Copy(state, &hashElement->key, element);
@@ -72,15 +85,27 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_Add(struct SZrState *state, 
 // we will also mark value as element
 ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_AddRawObject(struct SZrState *state, SZrHashSet *set,
                                                            SZrRawObject *element) {
-    SZrGlobalState *global = state->global;
-    if (set->elementCount + 1 > set->resizeThreshold) {
-        ZrCore_HashSet_Rehash(state, set, set->capacity << 1);
+    SZrHashKeyValuePair *object;
+    SZrHashKeyValuePair *hashElement;
+    TZrUInt64 hash;
+
+    if (state == ZR_NULL || set == ZR_NULL || element == ZR_NULL || !set->isValid || set->buckets == ZR_NULL ||
+        set->capacity == 0) {
+        return ZR_NULL;
     }
-    TZrUInt64 hash = element->hash;
-    SZrHashKeyValuePair *object = ZrCore_HashSet_GetBucket(set, hash);
-    // todo: it should be managed by gc, how to bind it, stringTable and objectTable
-    SZrHashKeyValuePair *hashElement = (SZrHashKeyValuePair *)
-            ZrCore_Memory_RawMallocWithType(global, sizeof(SZrHashKeyValuePair), ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+    if (set->elementCount + 1 > set->resizeThreshold &&
+        !ZrCore_HashSet_Rehash(state, set, set->capacity << 1)) {
+        return ZR_NULL;
+    }
+
+    hash = element->hash;
+    object = ZrCore_HashSet_GetBucket(set, hash);
+    hashElement = (SZrHashKeyValuePair *)ZrCore_Memory_GcMalloc(state,
+                                                                ZR_MEMORY_NATIVE_TYPE_HASH_PAIR,
+                                                                sizeof(SZrHashKeyValuePair));
+    if (hashElement == ZR_NULL) {
+        return ZR_NULL;
+    }
     ZrCore_Value_ResetAsNull(&hashElement->key);
     ZrCore_Value_ResetAsNull(&hashElement->value);
     ZrCore_Value_InitAsRawObject(state, &hashElement->key, element);
@@ -92,6 +117,10 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_AddRawObject(struct SZrState
 }
 
 ZR_FORCE_INLINE SZrTypeValue ZrCore_HashSet_Remove(struct SZrState *state, SZrHashSet *set, const SZrTypeValue *element) {
+    if (state == ZR_NULL || set == ZR_NULL || element == ZR_NULL || !set->isValid || set->buckets == ZR_NULL ||
+        set->capacity == 0) {
+        return state != ZR_NULL && state->global != ZR_NULL ? state->global->nullValue : (SZrTypeValue){0};
+    }
     TZrUInt64 hash = ZrCore_Value_GetHash(state, element);
     SZrHashKeyValuePair *object = ZrCore_HashSet_GetBucket(set, hash);
     SZrHashKeyValuePair *prev = ZR_NULL;
@@ -117,6 +146,10 @@ ZR_FORCE_INLINE SZrTypeValue ZrCore_HashSet_Remove(struct SZrState *state, SZrHa
 
 ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_Find(struct SZrState *state, SZrHashSet *set,
                                                    const SZrTypeValue *element) {
+    if (state == ZR_NULL || set == ZR_NULL || element == ZR_NULL || !set->isValid || set->buckets == ZR_NULL ||
+        set->capacity == 0) {
+        return ZR_NULL;
+    }
     TZrUInt64 hash = ZrCore_Value_GetHash(state, element);
     SZrHashKeyValuePair *object = ZrCore_HashSet_GetBucket(set, hash);
     while (object != ZR_NULL) {

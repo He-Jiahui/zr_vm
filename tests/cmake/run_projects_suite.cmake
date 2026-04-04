@@ -27,6 +27,23 @@ endif ()
 set(COMMON_FAIL_REGEX "failed to load project|project execution failed|failed to stringify project result|Compiler Error|Run Error")
 set(PROJECT_CASE_NAMES "")
 
+if (DEFINED CMAKE_SHARED_LIBRARY_SUFFIX AND NOT CMAKE_SHARED_LIBRARY_SUFFIX STREQUAL "")
+    set(PROJECT_SHARED_LIB_SUFFIX "${CMAKE_SHARED_LIBRARY_SUFFIX}")
+elseif (WIN32)
+    set(PROJECT_SHARED_LIB_SUFFIX ".dll")
+elseif (APPLE)
+    set(PROJECT_SHARED_LIB_SUFFIX ".dylib")
+else ()
+    set(PROJECT_SHARED_LIB_SUFFIX ".so")
+endif ()
+
+find_program(PROJECT_AOT_LLVM_HOST_TOOL NAMES clang clang-cl)
+if (PROJECT_AOT_LLVM_HOST_TOOL)
+    set(PROJECT_AOT_LLVM_HOST_AVAILABLE ON)
+else ()
+    set(PROJECT_AOT_LLVM_HOST_AVAILABLE OFF)
+endif ()
+
 function(register_project_case name project_rel pass_regex fail_regex prepare_source_rel prepare_output_rel required_file_rel required_file_regex)
     set(PROJECT_CASE_NAMES "${PROJECT_CASE_NAMES};${name}" PARENT_SCOPE)
     set("PROJECT_CASE_PROJECT_${name}" "${project_rel}" PARENT_SCOPE)
@@ -39,12 +56,23 @@ function(register_project_case name project_rel pass_regex fail_regex prepare_so
     set("PROJECT_CASE_TIERS_${name}" "core" PARENT_SCOPE)
     set("PROJECT_CASE_EXECUTED_VIA_REGEX_${name}" "" PARENT_SCOPE)
     set("PROJECT_CASE_REQUIRE_AOT_PATH_${name}" "OFF" PARENT_SCOPE)
+    set("PROJECT_CASE_COMPILE_ARGS_${name}" "" PARENT_SCOPE)
+    set("PROJECT_CASE_RUN_ARGS_${name}" "" PARENT_SCOPE)
+    set("PROJECT_CASE_PREPARE_AOT_C_${name}" "OFF" PARENT_SCOPE)
+    set("PROJECT_CASE_PREPARE_AOT_LLVM_${name}" "OFF" PARENT_SCOPE)
 endfunction()
 
 function(set_project_case_metadata name tiers executed_via_regex require_aot_path)
     set("PROJECT_CASE_TIERS_${name}" "${tiers}" PARENT_SCOPE)
     set("PROJECT_CASE_EXECUTED_VIA_REGEX_${name}" "${executed_via_regex}" PARENT_SCOPE)
     set("PROJECT_CASE_REQUIRE_AOT_PATH_${name}" "${require_aot_path}" PARENT_SCOPE)
+endfunction()
+
+function(set_project_case_execution name compile_args run_args prepare_aot_c prepare_aot_llvm)
+    set("PROJECT_CASE_COMPILE_ARGS_${name}" "${compile_args}" PARENT_SCOPE)
+    set("PROJECT_CASE_RUN_ARGS_${name}" "${run_args}" PARENT_SCOPE)
+    set("PROJECT_CASE_PREPARE_AOT_C_${name}" "${prepare_aot_c}" PARENT_SCOPE)
+    set("PROJECT_CASE_PREPARE_AOT_LLVM_${name}" "${prepare_aot_llvm}" PARENT_SCOPE)
 endfunction()
 
 function(project_case_matches_tier tiers out_var)
@@ -66,7 +94,7 @@ function(project_case_matches_tier tiers out_var)
     endif()
 endfunction()
 
-function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel)
+function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel prepare_aot_c prepare_aot_llvm)
     set(prepare_source "${PROJECT_FIXTURES_DIR}/${prepare_source_rel}")
     set(prepare_output "${PROJECT_FIXTURES_DIR}/${prepare_output_rel}")
     get_filename_component(module_name "${prepare_output}" NAME_WE)
@@ -83,9 +111,25 @@ function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel)
     if (prepare_output_ext STREQUAL ".zri")
         list(APPEND compile_command "--intermediate")
     endif()
+    if (prepare_aot_c)
+        list(APPEND compile_command "--emit-aot-c")
+    endif()
+    if (prepare_aot_llvm)
+        list(APPEND compile_command "--emit-aot-llvm")
+    endif()
 
     file(REMOVE_RECURSE "${temp_project_root}")
+    file(MAKE_DIRECTORY "${temp_project_root}")
     file(MAKE_DIRECTORY "${temp_source_dir}")
+    file(MAKE_DIRECTORY "${temp_binary_dir}")
+    if (prepare_aot_c)
+        file(MAKE_DIRECTORY "${temp_binary_dir}/aot_c/src")
+        file(MAKE_DIRECTORY "${temp_binary_dir}/aot_c/lib")
+    endif()
+    if (prepare_aot_llvm)
+        file(MAKE_DIRECTORY "${temp_binary_dir}/aot_llvm/ir")
+        file(MAKE_DIRECTORY "${temp_binary_dir}/aot_llvm/lib")
+    endif()
     file(MAKE_DIRECTORY "${prepare_output_dir}")
     file(COPY_FILE "${prepare_source}" "${temp_source_file}" ONLY_IF_DIFFERENT)
     file(WRITE "${temp_project_file}"
@@ -137,6 +181,102 @@ function(run_fixture_prepare case_name prepare_source_rel prepare_output_rel)
         message("${copy_stderr}")
     endif()
 
+    if (prepare_aot_c)
+        set(temp_aot_source "${temp_binary_dir}/aot_c/src/${module_name}.c")
+        set(temp_aot_library "${temp_binary_dir}/aot_c/lib/zrvm_aot_${module_name}${PROJECT_SHARED_LIB_SUFFIX}")
+        set(final_aot_source "${prepare_output_dir}/aot_c/src/${module_name}.c")
+        set(final_aot_library "${prepare_output_dir}/aot_c/lib/zrvm_aot_${module_name}${PROJECT_SHARED_LIB_SUFFIX}")
+
+        if (NOT EXISTS "${temp_aot_source}" OR NOT EXISTS "${temp_aot_library}")
+            file(REMOVE_RECURSE "${temp_project_root}")
+            message(FATAL_ERROR "Project case '${case_name}' did not produce AOT artifacts for prepared fixture '${module_name}'.")
+        endif()
+
+        file(MAKE_DIRECTORY "${prepare_output_dir}/aot_c/src")
+        file(MAKE_DIRECTORY "${prepare_output_dir}/aot_c/lib")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${temp_aot_source}" "${final_aot_source}"
+            RESULT_VARIABLE copy_aot_source_result
+            OUTPUT_VARIABLE copy_aot_source_stdout
+            ERROR_VARIABLE copy_aot_source_stderr
+        )
+        if (NOT copy_aot_source_stdout STREQUAL "")
+            message("${copy_aot_source_stdout}")
+        endif()
+        if (NOT copy_aot_source_stderr STREQUAL "")
+            message("${copy_aot_source_stderr}")
+        endif()
+        if (NOT copy_aot_source_result EQUAL 0)
+            file(REMOVE_RECURSE "${temp_project_root}")
+            message(FATAL_ERROR "Project case '${case_name}' failed while copying prepared AOT source for '${module_name}'.")
+        endif()
+
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${temp_aot_library}" "${final_aot_library}"
+            RESULT_VARIABLE copy_aot_library_result
+            OUTPUT_VARIABLE copy_aot_library_stdout
+            ERROR_VARIABLE copy_aot_library_stderr
+        )
+        if (NOT copy_aot_library_stdout STREQUAL "")
+            message("${copy_aot_library_stdout}")
+        endif()
+        if (NOT copy_aot_library_stderr STREQUAL "")
+            message("${copy_aot_library_stderr}")
+        endif()
+        if (NOT copy_aot_library_result EQUAL 0)
+            file(REMOVE_RECURSE "${temp_project_root}")
+            message(FATAL_ERROR "Project case '${case_name}' failed while copying prepared AOT library for '${module_name}'.")
+        endif()
+    endif()
+
+    if (prepare_aot_llvm)
+        set(temp_aot_llvm_ir "${temp_binary_dir}/aot_llvm/ir/${module_name}.ll")
+        set(temp_aot_llvm_library "${temp_binary_dir}/aot_llvm/lib/zrvm_aot_${module_name}${PROJECT_SHARED_LIB_SUFFIX}")
+        set(final_aot_llvm_ir "${prepare_output_dir}/aot_llvm/ir/${module_name}.ll")
+        set(final_aot_llvm_library "${prepare_output_dir}/aot_llvm/lib/zrvm_aot_${module_name}${PROJECT_SHARED_LIB_SUFFIX}")
+
+        if (NOT EXISTS "${temp_aot_llvm_ir}" OR NOT EXISTS "${temp_aot_llvm_library}")
+            file(REMOVE_RECURSE "${temp_project_root}")
+            message(FATAL_ERROR "Project case '${case_name}' did not produce AOT LLVM artifacts for prepared fixture '${module_name}'.")
+        endif()
+
+        file(MAKE_DIRECTORY "${prepare_output_dir}/aot_llvm/ir")
+        file(MAKE_DIRECTORY "${prepare_output_dir}/aot_llvm/lib")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${temp_aot_llvm_ir}" "${final_aot_llvm_ir}"
+            RESULT_VARIABLE copy_aot_llvm_ir_result
+            OUTPUT_VARIABLE copy_aot_llvm_ir_stdout
+            ERROR_VARIABLE copy_aot_llvm_ir_stderr
+        )
+        if (NOT copy_aot_llvm_ir_stdout STREQUAL "")
+            message("${copy_aot_llvm_ir_stdout}")
+        endif()
+        if (NOT copy_aot_llvm_ir_stderr STREQUAL "")
+            message("${copy_aot_llvm_ir_stderr}")
+        endif()
+        if (NOT copy_aot_llvm_ir_result EQUAL 0)
+            file(REMOVE_RECURSE "${temp_project_root}")
+            message(FATAL_ERROR "Project case '${case_name}' failed while copying prepared AOT LLVM IR for '${module_name}'.")
+        endif()
+
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${temp_aot_llvm_library}" "${final_aot_llvm_library}"
+            RESULT_VARIABLE copy_aot_llvm_library_result
+            OUTPUT_VARIABLE copy_aot_llvm_library_stdout
+            ERROR_VARIABLE copy_aot_llvm_library_stderr
+        )
+        if (NOT copy_aot_llvm_library_stdout STREQUAL "")
+            message("${copy_aot_llvm_library_stdout}")
+        endif()
+        if (NOT copy_aot_llvm_library_stderr STREQUAL "")
+            message("${copy_aot_llvm_library_stderr}")
+        endif()
+        if (NOT copy_aot_llvm_library_result EQUAL 0)
+            file(REMOVE_RECURSE "${temp_project_root}")
+            message(FATAL_ERROR "Project case '${case_name}' failed while copying prepared AOT LLVM library for '${module_name}'.")
+        endif()
+    endif()
+
     file(REMOVE_RECURSE "${temp_project_root}")
 
     if (NOT copy_result EQUAL 0)
@@ -155,6 +295,10 @@ function(run_project_case case_name)
     set(case_tiers "${PROJECT_CASE_TIERS_${case_name}}")
     set(executed_via_regex "${PROJECT_CASE_EXECUTED_VIA_REGEX_${case_name}}")
     set(require_aot_path "${PROJECT_CASE_REQUIRE_AOT_PATH_${case_name}}")
+    set(compile_args "${PROJECT_CASE_COMPILE_ARGS_${case_name}}")
+    set(run_args "${PROJECT_CASE_RUN_ARGS_${case_name}}")
+    set(prepare_aot_c "${PROJECT_CASE_PREPARE_AOT_C_${case_name}}")
+    set(prepare_aot_llvm "${PROJECT_CASE_PREPARE_AOT_LLVM_${case_name}}")
     set(project_file "${PROJECT_FIXTURES_DIR}/${project_rel}")
     project_case_matches_tier("${case_tiers}" run_case)
 
@@ -165,15 +309,45 @@ function(run_project_case case_name)
     message("---- ${case_name}")
 
     if (NOT prepare_source_rel STREQUAL "" AND NOT prepare_output_rel STREQUAL "")
-        run_fixture_prepare("${case_name}" "${prepare_source_rel}" "${prepare_output_rel}")
+        run_fixture_prepare("${case_name}" "${prepare_source_rel}" "${prepare_output_rel}" "${prepare_aot_c}" "${prepare_aot_llvm}")
     endif()
 
     if (NOT required_file_rel STREQUAL "")
         file(REMOVE "${REPO_ROOT}/${required_file_rel}")
     endif()
 
+    if (NOT compile_args STREQUAL "")
+        set(compile_command "${CLI_EXE}" "--compile" "${project_file}")
+        list(APPEND compile_command ${compile_args})
+        execute_process(
+            COMMAND ${compile_command}
+            WORKING_DIRECTORY "${REPO_ROOT}"
+            RESULT_VARIABLE compile_result
+            OUTPUT_VARIABLE compile_stdout
+            ERROR_VARIABLE compile_stderr
+        )
+
+        if (NOT compile_stdout STREQUAL "")
+            message("${compile_stdout}")
+        endif()
+
+        if (NOT compile_stderr STREQUAL "")
+            message("${compile_stderr}")
+        endif()
+
+        if (NOT compile_result EQUAL 0)
+            message(FATAL_ERROR "Project case '${case_name}' compile step failed with exit code ${compile_result}.")
+        endif()
+    endif()
+
+    set(run_command "${CLI_EXE}")
+    if (NOT run_args STREQUAL "")
+        list(APPEND run_command ${run_args})
+    endif()
+    list(APPEND run_command "${project_file}")
+
     execute_process(
-        COMMAND "${CLI_EXE}" "${project_file}"
+        COMMAND ${run_command}
         WORKING_DIRECTORY "${REPO_ROOT}"
         RESULT_VARIABLE project_result
         OUTPUT_VARIABLE project_stdout
@@ -252,7 +426,9 @@ register_project_case("native_numeric_pipeline_banner" "native_numeric_pipeline/
 register_project_case("native_numeric_pipeline_result" "native_numeric_pipeline/native_numeric_pipeline.zrp" "214" "${COMMON_FAIL_REGEX}|\\[closure\\]|null" "" "" "tests/fixtures/projects/native_numeric_pipeline/bin/out/report.txt" "checksum=214")
 register_project_case("native_numeric_pipeline_probe" "native_numeric_pipeline/native_numeric_pipeline_probe.zrp" "probe:vmState" "${COMMON_FAIL_REGEX}|\\[closure\\]" "" "" "" "")
 register_project_case("container_matrix_banner" "container_matrix/container_matrix.zrp" "CONTAINER_MATRIX_PASS" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
-register_project_case("container_matrix_result" "container_matrix/container_matrix.zrp" "633" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+register_project_case("container_matrix_result" "container_matrix/container_matrix.zrp" "635" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+register_project_case("hello_world_aot_c" "hello_world/hello_world.zrp" "hello world" "${COMMON_FAIL_REGEX}" "" "" "" "")
+register_project_case("import_basic_aot_c" "import_basic/import_basic.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("aot_module_graph_pipeline" "aot_module_graph_pipeline/aot_module_graph_pipeline.zrp" "AOT_MODULE_GRAPH_PIPELINE_PASS[\n]+102" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "aot_module_graph_pipeline/fixtures/graph_binary_stage_source.zr" "aot_module_graph_pipeline/bin/graph_binary_stage.zro" "" "")
 register_project_case("aot_dynamic_meta_ownership_lab" "aot_dynamic_meta_ownership_lab/aot_dynamic_meta_ownership_lab.zrp" "AOT_DYNAMIC_META_OWNERSHIP_LAB_PASS[\n]+29" "${COMMON_FAIL_REGEX}|Function value is NULL" "" "" "" "")
 register_project_case("aot_eh_tail_gc_stress" "aot_eh_tail_gc_stress/aot_eh_tail_gc_stress.zrp" "AOT_EH_TAIL_GC_STRESS_PASS[\n]+31" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
@@ -281,6 +457,41 @@ set_project_case_metadata("container_matrix_result" "smoke;core;stress" "" "OFF"
 set_project_case_metadata("aot_module_graph_pipeline" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("aot_dynamic_meta_ownership_lab" "core;stress" "" "OFF")
 set_project_case_metadata("aot_eh_tail_gc_stress" "stress" "" "OFF")
+
+register_project_case("aot_module_graph_pipeline_aot_c" "aot_module_graph_pipeline/aot_module_graph_pipeline.zrp" "AOT_MODULE_GRAPH_PIPELINE_PASS[
+\n]+102" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "aot_module_graph_pipeline/fixtures/graph_binary_stage_source.zr" "aot_module_graph_pipeline/bin/graph_binary_stage.zro" "" "")
+set_project_case_metadata("aot_module_graph_pipeline_aot_c" "smoke;core;stress" "executed_via=aot_c" "ON")
+set_project_case_execution("aot_module_graph_pipeline_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "ON" "OFF")
+register_project_case("aot_dynamic_meta_ownership_lab_aot_c" "aot_dynamic_meta_ownership_lab/aot_dynamic_meta_ownership_lab.zrp" "AOT_DYNAMIC_META_OWNERSHIP_LAB_PASS" "${COMMON_FAIL_REGEX}|Function value is NULL" "" "" "" "")
+register_project_case("aot_eh_tail_gc_stress_aot_c" "aot_eh_tail_gc_stress/aot_eh_tail_gc_stress.zrp" "AOT_EH_TAIL_GC_STRESS_PASS" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+set_project_case_metadata("aot_dynamic_meta_ownership_lab_aot_c" "core;stress" "executed_via=aot_c" "ON")
+set_project_case_metadata("aot_eh_tail_gc_stress_aot_c" "stress" "executed_via=aot_c" "ON")
+set_project_case_execution("aot_dynamic_meta_ownership_lab_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "OFF" "OFF")
+set_project_case_execution("aot_eh_tail_gc_stress_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "OFF" "OFF")
+
+set_project_case_metadata("hello_world_aot_c" "smoke;core;stress" "executed_via=aot_c" "ON")
+set_project_case_metadata("import_basic_aot_c" "smoke;core;stress" "executed_via=aot_c" "ON")
+set_project_case_execution("hello_world_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "OFF" "OFF")
+set_project_case_execution("import_basic_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "OFF" "OFF")
+
+if (PROJECT_AOT_LLVM_HOST_AVAILABLE)
+    register_project_case("hello_world_aot_llvm" "hello_world/hello_world.zrp" "hello world" "${COMMON_FAIL_REGEX}" "" "" "" "")
+    register_project_case("import_basic_aot_llvm" "import_basic/import_basic.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "" "" "" "")
+    register_project_case("aot_module_graph_pipeline_aot_llvm" "aot_module_graph_pipeline/aot_module_graph_pipeline.zrp" "AOT_MODULE_GRAPH_PIPELINE_PASS[
+\n]+102" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "aot_module_graph_pipeline/fixtures/graph_binary_stage_source.zr" "aot_module_graph_pipeline/bin/graph_binary_stage.zro" "" "")
+    set_project_case_metadata("hello_world_aot_llvm" "smoke;core;stress" "executed_via=aot_llvm" "ON")
+    set_project_case_metadata("import_basic_aot_llvm" "smoke;core;stress" "executed_via=aot_llvm" "ON")
+    set_project_case_metadata("aot_module_graph_pipeline_aot_llvm" "smoke;core;stress" "executed_via=aot_llvm" "ON")
+    set_project_case_execution("hello_world_aot_llvm" "--emit-aot-llvm" "--execution-mode;aot_llvm;--require-aot-path;--emit-executed-via" "OFF" "OFF")
+    set_project_case_execution("import_basic_aot_llvm" "--emit-aot-llvm" "--execution-mode;aot_llvm;--require-aot-path;--emit-executed-via" "OFF" "OFF")
+    set_project_case_execution("aot_module_graph_pipeline_aot_llvm" "--emit-aot-llvm" "--execution-mode;aot_llvm;--require-aot-path;--emit-executed-via" "OFF" "ON")
+    register_project_case("aot_dynamic_meta_ownership_lab_aot_llvm" "aot_dynamic_meta_ownership_lab/aot_dynamic_meta_ownership_lab.zrp" "AOT_DYNAMIC_META_OWNERSHIP_LAB_PASS" "${COMMON_FAIL_REGEX}|Function value is NULL" "" "" "" "")
+    register_project_case("aot_eh_tail_gc_stress_aot_llvm" "aot_eh_tail_gc_stress/aot_eh_tail_gc_stress.zrp" "AOT_EH_TAIL_GC_STRESS_PASS" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+    set_project_case_metadata("aot_dynamic_meta_ownership_lab_aot_llvm" "core;stress" "executed_via=aot_llvm" "ON")
+    set_project_case_metadata("aot_eh_tail_gc_stress_aot_llvm" "stress" "executed_via=aot_llvm" "ON")
+    set_project_case_execution("aot_dynamic_meta_ownership_lab_aot_llvm" "--emit-aot-llvm" "--execution-mode;aot_llvm;--require-aot-path;--emit-executed-via" "OFF" "OFF")
+    set_project_case_execution("aot_eh_tail_gc_stress_aot_llvm" "--emit-aot-llvm" "--execution-mode;aot_llvm;--require-aot-path;--emit-executed-via" "OFF" "OFF")
+endif ()
 
 message("==========")
 message("Running suite: projects")

@@ -37,6 +37,10 @@ typedef struct SZrObjectModule *(*FZrNativeModuleLoader)(struct SZrState *state,
                                                          struct SZrString *moduleName,
                                                          TZrPtr userData);
 
+typedef struct SZrObjectModule *(*FZrAotModuleLoader)(struct SZrState *state,
+                                                      struct SZrString *moduleName,
+                                                      TZrPtr userData);
+
 struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Memory
     FZrAllocator allocator;
@@ -76,6 +80,8 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
 
     // IO
     FZrIoLoadSource sourceLoader;
+    FZrAotModuleLoader aotModuleLoader;
+    TZrPtr aotModuleLoaderUserData;
     FZrNativeModuleLoader nativeModuleLoader;
     TZrPtr nativeModuleLoaderUserData;
     
@@ -119,6 +125,10 @@ ZR_CORE_API void ZrCore_GlobalState_SetCompileSource(SZrGlobalState *global,
 ZR_CORE_API void ZrCore_GlobalState_SetNativeModuleLoader(SZrGlobalState *global,
                                                           FZrNativeModuleLoader loader,
                                                           TZrPtr userData);
+
+ZR_CORE_API void ZrCore_GlobalState_SetAotModuleLoader(SZrGlobalState *global,
+                                                       FZrAotModuleLoader loader,
+                                                       TZrPtr userData);
 
 ZR_CORE_API void ZrCore_GlobalState_Free(SZrGlobalState *global);
 

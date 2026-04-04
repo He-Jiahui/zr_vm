@@ -5,6 +5,8 @@
 #include "execution_internal.h"
 
 #include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
 
 static SZrString *execution_resolve_member_symbol(SZrClosure *closure, TZrUInt16 memberId) {
     if (closure == ZR_NULL || closure->function == ZR_NULL ||
@@ -191,6 +193,12 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         UPDATE_BASE(CALL_INFO);                                                                                        \
     } while (0)
 
+#define RELOAD_DESTINATION_AFTER_PROTECT(CALL_INFO, INSTRUCTION)                                                       \
+    do {                                                                                                               \
+        UPDATE_BASE(CALL_INFO);                                                                                        \
+        destination = destinationIsRet ? &ret : &BASE(E(INSTRUCTION))->value;                                         \
+    } while (0)
+
 #define ZrCore_Debug_RunError(STATE, ...)                                                                              \
     do {                                                                                                               \
         SAVE_PC((STATE), callInfo);                                                                                    \
@@ -307,17 +315,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       callInfo->functionTop.valuePointer,
-                                                       ZR_TRUE,
-                                                       meta,
-                                                       opA,
-                                                       ZR_NULL,
-                                                       1,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              callInfo->functionTop.valuePointer,
+                                                                              meta,
+                                                                              opA,
+                                                                              ZR_NULL,
+                                                                              1,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             if (returnValue->type == ZR_VALUE_TYPE_BOOL) {
                                 ZrCore_Value_Copy(state, destination, returnValue);
@@ -368,17 +377,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       callInfo->functionTop.valuePointer,
-                                                       ZR_TRUE,
-                                                       meta,
-                                                       opA,
-                                                       ZR_NULL,
-                                                       1,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              callInfo->functionTop.valuePointer,
+                                                                              meta,
+                                                                              opA,
+                                                                              ZR_NULL,
+                                                                              1,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             if (ZR_VALUE_IS_TYPE_INT(returnValue->type)) {
                                 ZrCore_Value_Copy(state, destination, returnValue);
@@ -420,17 +430,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       callInfo->functionTop.valuePointer,
-                                                       ZR_TRUE,
-                                                       meta,
-                                                       opA,
-                                                       ZR_NULL,
-                                                       1,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              callInfo->functionTop.valuePointer,
+                                                                              meta,
+                                                                              opA,
+                                                                              ZR_NULL,
+                                                                              1,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             if (ZR_VALUE_IS_TYPE_INT(returnValue->type)) {
                                 ZrCore_Value_Copy(state, destination, returnValue);
@@ -472,17 +483,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       callInfo->functionTop.valuePointer,
-                                                       ZR_TRUE,
-                                                       meta,
-                                                       opA,
-                                                       ZR_NULL,
-                                                       1,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              callInfo->functionTop.valuePointer,
+                                                                              meta,
+                                                                              opA,
+                                                                              ZR_NULL,
+                                                                              1,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             if (ZR_VALUE_IS_TYPE_FLOAT(returnValue->type)) {
                                 ZrCore_Value_Copy(state, destination, returnValue);
@@ -559,17 +571,18 @@ LZrReturning: {
                             PROTECT_E(state, callInfo, {
                                 TZrStackValuePointer metaBase = ZR_NULL;
                                 TZrStackValuePointer restoredStackTop = savedStackTop;
-                                if (execution_invoke_meta_call(state,
-                                                               savedCallInfo,
-                                                               savedStackTop,
-                                                               savedStackTop,
-                                                               ZR_FALSE,
-                                                               meta,
-                                                               opA,
-                                                               typeNameValue,
-                                                               2,
-                                                               &metaBase,
-                                                               &restoredStackTop)) {
+                                TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                                      savedCallInfo,
+                                                                                      savedStackTop,
+                                                                                      savedStackTop,
+                                                                                      meta,
+                                                                                      opA,
+                                                                                      typeNameValue,
+                                                                                      2,
+                                                                                      &metaBase,
+                                                                                      &restoredStackTop);
+                                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                                if (metaCallSucceeded) {
                                     SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                                     ZrCore_Value_Copy(state, destination, returnValue);
                                 } else {
@@ -637,17 +650,18 @@ LZrReturning: {
                             PROTECT_E(state, callInfo, {
                                 TZrStackValuePointer metaBase = ZR_NULL;
                                 TZrStackValuePointer restoredStackTop = savedStackTop;
-                                if (execution_invoke_meta_call(state,
-                                                               savedCallInfo,
-                                                               savedStackTop,
-                                                               savedStackTop,
-                                                               ZR_FALSE,
-                                                               meta,
-                                                               opA,
-                                                               typeNameValue,
-                                                               2,
-                                                               &metaBase,
-                                                               &restoredStackTop)) {
+                                TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                                      savedCallInfo,
+                                                                                      savedStackTop,
+                                                                                      savedStackTop,
+                                                                                      meta,
+                                                                                      opA,
+                                                                                      typeNameValue,
+                                                                                      2,
+                                                                                      &metaBase,
+                                                                                      &restoredStackTop);
+                                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                                if (metaCallSucceeded) {
                                     SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                                     ZrCore_Value_Copy(state, destination, returnValue);
                                 } else {
@@ -717,17 +731,18 @@ LZrReturning: {
                         PROTECT_E(state, callInfo, {
                             TZrStackValuePointer metaBase = ZR_NULL;
                             TZrStackValuePointer restoredStackTop = savedStackTop;
-                            if (execution_invoke_meta_call(state,
-                                                           savedCallInfo,
-                                                           savedStackTop,
-                                                           savedStackTop,
-                                                           ZR_FALSE,
-                                                           meta,
-                                                           opA,
-                                                           opB,
-                                                           2,
-                                                           &metaBase,
-                                                           &restoredStackTop)) {
+                            TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                                  savedCallInfo,
+                                                                                  savedStackTop,
+                                                                                  savedStackTop,
+                                                                                  meta,
+                                                                                  opA,
+                                                                                  opB,
+                                                                                  2,
+                                                                                  &metaBase,
+                                                                                  &restoredStackTop);
+                            RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                            if (metaCallSucceeded) {
                                 SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                                 ZrCore_Value_Copy(state, destination, returnValue);
                             } else {
@@ -797,17 +812,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
-                                                       meta,
-                                                       opA,
-                                                       opB,
-                                                       2,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              savedStackTop,
+                                                                              meta,
+                                                                              opA,
+                                                                              opB,
+                                                                              2,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
@@ -851,17 +867,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
-                                                       meta,
-                                                       opA,
-                                                       opB,
-                                                       2,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              savedStackTop,
+                                                                              meta,
+                                                                              opA,
+                                                                              opB,
+                                                                              2,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
@@ -921,17 +938,18 @@ LZrReturning: {
                         PROTECT_E(state, callInfo, {
                             TZrStackValuePointer metaBase = ZR_NULL;
                             TZrStackValuePointer restoredStackTop = savedStackTop;
-                            if (execution_invoke_meta_call(state,
-                                                           savedCallInfo,
-                                                           savedStackTop,
-                                                           savedStackTop,
-                                                           ZR_FALSE,
-                                                           meta,
-                                                           opA,
-                                                           ZR_NULL,
-                                                           1,
-                                                           &metaBase,
-                                                           &restoredStackTop)) {
+                            TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                                  savedCallInfo,
+                                                                                  savedStackTop,
+                                                                                  savedStackTop,
+                                                                                  meta,
+                                                                                  opA,
+                                                                                  ZR_NULL,
+                                                                                  1,
+                                                                                  &metaBase,
+                                                                                  &restoredStackTop);
+                            RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                            if (metaCallSucceeded) {
                                 SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                                 ZrCore_Value_Copy(state, destination, returnValue);
                             } else {
@@ -957,17 +975,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
-                                                       meta,
-                                                       opA,
-                                                       opB,
-                                                       2,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              savedStackTop,
+                                                                              meta,
+                                                                              opA,
+                                                                              opB,
+                                                                              2,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
@@ -1032,17 +1051,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
-                                                       meta,
-                                                       opA,
-                                                       opB,
-                                                       2,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              savedStackTop,
+                                                                              meta,
+                                                                              opA,
+                                                                              opB,
+                                                                              2,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
@@ -1109,17 +1129,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
-                                                       meta,
-                                                       opA,
-                                                       opB,
-                                                       2,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              savedStackTop,
+                                                                              meta,
+                                                                              opA,
+                                                                              opB,
+                                                                              2,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
@@ -1189,17 +1210,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
-                                                       meta,
-                                                       opA,
-                                                       opB,
-                                                       2,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              savedStackTop,
+                                                                              meta,
+                                                                              opA,
+                                                                              opB,
+                                                                              2,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
@@ -1232,17 +1254,18 @@ LZrReturning: {
                     PROTECT_E(state, callInfo, {
                         TZrStackValuePointer metaBase = ZR_NULL;
                         TZrStackValuePointer restoredStackTop = savedStackTop;
-                        if (execution_invoke_meta_call(state,
-                                                       savedCallInfo,
-                                                       savedStackTop,
-                                                       savedStackTop,
-                                                       ZR_FALSE,
-                                                       meta,
-                                                       opA,
-                                                       opB,
-                                                       2,
-                                                       &metaBase,
-                                                       &restoredStackTop)) {
+                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                              savedCallInfo,
+                                                                              savedStackTop,
+                                                                              savedStackTop,
+                                                                              meta,
+                                                                              opA,
+                                                                              opB,
+                                                                              2,
+                                                                              &metaBase,
+                                                                              &restoredStackTop);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (metaCallSucceeded) {
                             SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
                             ZrCore_Value_Copy(state, destination, returnValue);
                         } else {
@@ -1968,6 +1991,7 @@ LZrReturning: {
 
                 // save its program counter
                 callInfo->context.context.programCounter = programCounter;
+                execution_discard_exception_handlers_for_callinfo(state, callInfo);
 
                 if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
                     state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
@@ -1978,6 +2002,7 @@ LZrReturning: {
                                       callInfo->functionBase.valuePointer + 1,
                                       ZR_THREAD_STATUS_INVALID,
                                       ZR_FALSE);
+                UPDATE_BASE(callInfo);
 
                 // 如果是可变参数函数，需要调整 functionBase 指针
                 // 参考 Lua: if (nparams1) ci->func.p -= ci->u.l.nextraargs + nparams1;

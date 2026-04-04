@@ -66,6 +66,12 @@ if (NOT ZR_VM_LIBFFI_FOUND AND WIN32 AND MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             VERBATIM
     )
 
+    if (MSVC)
+        set(zr_vm_libffi_saved_c_flags "${CMAKE_C_FLAGS}")
+        string(REGEX REPLACE "(^| )[/-]W[0-4]( |$)" " /W0 " CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+        string(STRIP "${CMAKE_C_FLAGS}" CMAKE_C_FLAGS)
+    endif ()
+
     add_library(zr_vm_libffi_vendor STATIC
             ${ZR_VM_LIBFFI_VENDOR_ROOT}/src/prep_cif.c
             ${ZR_VM_LIBFFI_VENDOR_ROOT}/src/types.c
@@ -74,6 +80,12 @@ if (NOT ZR_VM_LIBFFI_FOUND AND WIN32 AND MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             ${ZR_VM_LIBFFI_VENDOR_ROOT}/src/x86/ffiw64.c
             ${ZR_VM_LIBFFI_ASM_OUTPUT}
     )
+
+    if (MSVC)
+        set(CMAKE_C_FLAGS "${zr_vm_libffi_saved_c_flags}")
+        unset(zr_vm_libffi_saved_c_flags)
+    endif ()
+
     set_source_files_properties(${ZR_VM_LIBFFI_ASM_OUTPUT} PROPERTIES GENERATED TRUE LANGUAGE ASM_MASM)
     target_include_directories(zr_vm_libffi_vendor
             PUBLIC
@@ -89,7 +101,6 @@ if (NOT ZR_VM_LIBFFI_FOUND AND WIN32 AND MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             FFI_BUILDING=1
             X86_WIN64=1
     )
-    target_compile_options(zr_vm_libffi_vendor PRIVATE "$<$<COMPILE_LANGUAGE:C>:/W0>")
     set_target_properties(zr_vm_libffi_vendor PROPERTIES OUTPUT_NAME zr_vm_libffi_vendor)
 
     set(ZR_VM_LIBFFI_FOUND ON)

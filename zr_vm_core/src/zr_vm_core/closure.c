@@ -15,6 +15,7 @@ SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closu
             ZrCore_RawObject_New(state, ZR_VALUE_TYPE_CLOSURE,
                            sizeof(SZrClosureNative) + sizeof(SZrClosureValue *) * closureValueCount, ZR_TRUE);
     SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, object);
+    closure->aotShimFunction = ZR_NULL;
     closure->closureValueCount = closureValueCount;
     if (closureValueCount > 0) {
         ZrCore_Memory_RawSet(closure->closureValuesExtend, 0, sizeof(SZrClosureValue *) * closureValueCount);
@@ -104,7 +105,7 @@ static void closure_value_call_close_meta(SZrState *state, SZrTypeValue *value, 
     if (meta == ZR_NULL || meta->function == ZR_NULL) {
         return;
     }
-    top.valuePointer = ZrCore_Function_CheckStackAndGc(state, 3, top.valuePointer);
+    top.valuePointer = ZrCore_Function_ReserveScratchSlots(state, 3, top.valuePointer);
     ZrCore_Stack_SetRawObjectValue(state, top.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
     ZrCore_Stack_CopyValue(state, top.valuePointer + 1, value);
     ZrCore_Stack_CopyValue(state, top.valuePointer + 2, error);
@@ -251,6 +252,39 @@ void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *func
         ZrCore_RawObject_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure),
                            ZR_CAST_RAW_OBJECT_AS_SUPER(closure->closureValuesExtend[i]));
     }
+}
+
+SZrFunction *ZrCore_Closure_GetMetadataFunctionFromValue(struct SZrState *state, const SZrTypeValue *value) {
+    if (state == ZR_NULL || value == ZR_NULL || value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (value->type == ZR_VALUE_TYPE_FUNCTION) {
+        return value->isNative ? ZR_NULL : ZR_CAST_FUNCTION(state, value->value.object);
+    }
+
+    if (value->type != ZR_VALUE_TYPE_CLOSURE) {
+        return ZR_NULL;
+    }
+
+    if (value->isNative) {
+        SZrClosureNative *nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, value->value.object);
+        return nativeClosure != ZR_NULL ? nativeClosure->aotShimFunction : ZR_NULL;
+    }
+
+    {
+        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, value->value.object);
+        return closure != ZR_NULL ? closure->function : ZR_NULL;
+    }
+}
+
+SZrFunction *ZrCore_Closure_GetMetadataFunctionFromCallInfo(struct SZrState *state, struct SZrCallInfo *callInfo) {
+    if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_Closure_GetMetadataFunctionFromValue(state,
+                                                       ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer));
 }
 
 

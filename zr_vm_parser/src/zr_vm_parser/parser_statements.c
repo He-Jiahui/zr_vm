@@ -37,7 +37,7 @@ SZrAstNode *parse_block(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACE);
     ZrParser_Lexer_Next(ps->lexer);
 
-    SZrAstNodeArray *statements = ZrParser_AstNodeArray_New(ps->state, 8);
+    SZrAstNodeArray *statements = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (statements == ZR_NULL) {
         report_error(ps, "Failed to allocate statement array");
         return ZR_NULL;
@@ -134,7 +134,7 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACE);
     ZrParser_Lexer_Next(ps->lexer);
 
-    SZrAstNodeArray *cases = ZrParser_AstNodeArray_New(ps->state, 4);
+    SZrAstNodeArray *cases = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     SZrAstNode *defaultCase = ZR_NULL;
 
     // 解析 switch cases

@@ -252,6 +252,52 @@ static void write_function_local_variables(FILE *file, SZrFunction *function) {
     }
 }
 
+static void write_function_closure_variables(SZrState *state, FILE *file, SZrFunction *function) {
+    TZrUInt64 closureLength = function->closureValueLength;
+    fwrite(&closureLength, sizeof(TZrUInt64), 1, file);
+
+    for (TZrUInt64 i = 0; i < closureLength; i++) {
+        SZrFunctionClosureVariable *closure = &function->closureValueList[i];
+        TZrUInt8 inStack = closure->inStack ? 1 : 0;
+        TZrUInt32 index = closure->index;
+        TZrUInt32 valueType = (TZrUInt32)closure->valueType;
+
+        write_string_with_length(state, file, closure->name);
+        fwrite(&inStack, sizeof(TZrUInt8), 1, file);
+        fwrite(&index, sizeof(TZrUInt32), 1, file);
+        fwrite(&valueType, sizeof(TZrUInt32), 1, file);
+    }
+}
+
+static void write_function_exception_metadata(SZrState *state, FILE *file, SZrFunction *function) {
+    TZrUInt64 catchClauseCount = function->catchClauseCount;
+    TZrUInt64 exceptionHandlerCount = function->exceptionHandlerCount;
+
+    fwrite(&catchClauseCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 i = 0; i < catchClauseCount; i++) {
+        SZrFunctionCatchClauseInfo *clause = &function->catchClauseList[i];
+        TZrUInt64 targetInstructionOffset = (TZrUInt64)clause->targetInstructionOffset;
+        write_string_with_length(state, file, clause->typeName);
+        fwrite(&targetInstructionOffset, sizeof(TZrUInt64), 1, file);
+    }
+
+    fwrite(&exceptionHandlerCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 i = 0; i < exceptionHandlerCount; i++) {
+        SZrFunctionExceptionHandlerInfo *handler = &function->exceptionHandlerList[i];
+        TZrUInt64 protectedStartInstructionOffset = (TZrUInt64)handler->protectedStartInstructionOffset;
+        TZrUInt64 finallyTargetInstructionOffset = (TZrUInt64)handler->finallyTargetInstructionOffset;
+        TZrUInt64 afterFinallyInstructionOffset = (TZrUInt64)handler->afterFinallyInstructionOffset;
+        TZrUInt8 hasFinally = handler->hasFinally ? 1 : 0;
+
+        fwrite(&protectedStartInstructionOffset, sizeof(TZrUInt64), 1, file);
+        fwrite(&finallyTargetInstructionOffset, sizeof(TZrUInt64), 1, file);
+        fwrite(&afterFinallyInstructionOffset, sizeof(TZrUInt64), 1, file);
+        fwrite(&handler->catchClauseStartIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&handler->catchClauseCount, sizeof(TZrUInt32), 1, file);
+        fwrite(&hasFinally, sizeof(TZrUInt8), 1, file);
+    }
+}
+
 static void write_function_constant(FILE *file, SZrState *state, SZrTypeValue *constant) {
     TZrUInt32 type = (TZrUInt32) constant->type;
     TZrUInt64 startLineConst = 0;
@@ -677,6 +723,8 @@ static TZrBool write_io_function(SZrState *state, FILE *file, SZrFunction *funct
     }
 
     write_function_local_variables(file, function);
+    write_function_closure_variables(state, file, function);
+    write_function_exception_metadata(state, file, function);
 
     {
         TZrUInt64 constantsLength = function->constantValueLength;

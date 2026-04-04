@@ -28,6 +28,12 @@ function(cli_assert_success case_name result_code output_text)
     endif()
 endfunction()
 
+function(cli_assert_failure case_name result_code output_text)
+    if (${result_code} EQUAL 0)
+        message(FATAL_ERROR "CLI case '${case_name}' unexpectedly succeeded.\nOutput:\n${${output_text}}")
+    endif()
+endfunction()
+
 function(cli_assert_contains case_name text_value expected)
     string(FIND "${${text_value}}" "${expected}" match_index)
     if (match_index EQUAL -1)
@@ -129,6 +135,23 @@ if (NOT CLI_REQUESTED_TIER STREQUAL "")
 endif()
 message("==========")
 
+if (DEFINED CMAKE_SHARED_LIBRARY_SUFFIX AND NOT CMAKE_SHARED_LIBRARY_SUFFIX STREQUAL "")
+    set(CLI_SHARED_LIB_SUFFIX "${CMAKE_SHARED_LIBRARY_SUFFIX}")
+elseif (WIN32)
+    set(CLI_SHARED_LIB_SUFFIX ".dll")
+elseif (APPLE)
+    set(CLI_SHARED_LIB_SUFFIX ".dylib")
+else ()
+    set(CLI_SHARED_LIB_SUFFIX ".so")
+endif ()
+
+find_program(CLI_AOT_LLVM_HOST_TOOL NAMES clang clang-cl)
+if (CLI_AOT_LLVM_HOST_TOOL)
+    set(CLI_AOT_LLVM_HOST_AVAILABLE ON)
+else ()
+    set(CLI_AOT_LLVM_HOST_AVAILABLE OFF)
+endif ()
+
 cli_case_matches_tier("smoke;core;stress" run_help)
 if (run_help)
     message("---- help")
@@ -174,6 +197,83 @@ if (run_compile_intermediate)
     endif()
     if (NOT EXISTS "${compile_intermediate_dir}/bin/main.zri")
         message(FATAL_ERROR "compile_intermediate did not create main.zri")
+    endif()
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_compile_aot_c)
+if (run_compile_aot_c)
+    message("---- compile_aot_c_and_run")
+    cli_copy_fixture("hello_world" compile_aot_c_dir)
+    file(REMOVE_RECURSE "${compile_aot_c_dir}/bin")
+    cli_run("compile_aot_c"
+            compile_aot_c_output
+            compile_aot_c_result
+            "${CLI_EXE}"
+            "--compile"
+            "${compile_aot_c_dir}/hello_world.zrp"
+            "--emit-aot-c")
+    cli_assert_success("compile_aot_c" compile_aot_c_result compile_aot_c_output)
+    if (NOT EXISTS "${compile_aot_c_dir}/bin/main.zro")
+        message(FATAL_ERROR "compile_aot_c did not create main.zro")
+    endif()
+    if (NOT EXISTS "${compile_aot_c_dir}/bin/aot_c/src/main.c")
+        message(FATAL_ERROR "compile_aot_c did not create AOT C source")
+    endif()
+    if (NOT EXISTS "${compile_aot_c_dir}/bin/aot_c/lib/zrvm_aot_main${CLI_SHARED_LIB_SUFFIX}")
+        message(FATAL_ERROR "compile_aot_c did not create AOT shared library")
+    endif()
+
+    cli_run("run_aot_c"
+            run_aot_c_output
+            run_aot_c_result
+            "${CLI_EXE}"
+            "--execution-mode"
+            "aot_c"
+            "--require-aot-path"
+            "--emit-executed-via"
+            "${compile_aot_c_dir}/hello_world.zrp")
+    cli_assert_success("run_aot_c" run_aot_c_result run_aot_c_output)
+    cli_assert_contains("run_aot_c" run_aot_c_output "hello world")
+    cli_assert_contains("run_aot_c" run_aot_c_output "executed_via=aot_c")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_compile_aot_llvm)
+if (run_compile_aot_llvm)
+    message("---- compile_aot_llvm_and_run")
+    cli_copy_fixture("hello_world" compile_aot_llvm_dir)
+    file(REMOVE_RECURSE "${compile_aot_llvm_dir}/bin")
+    cli_run("compile_aot_llvm"
+            compile_aot_llvm_output
+            compile_aot_llvm_result
+            "${CLI_EXE}"
+            "--compile"
+            "${compile_aot_llvm_dir}/hello_world.zrp"
+            "--emit-aot-llvm")
+    if (compile_aot_llvm_result EQUAL 0)
+        if (NOT EXISTS "${compile_aot_llvm_dir}/bin/main.zro")
+            message(FATAL_ERROR "compile_aot_llvm did not create main.zro")
+        endif()
+        if (NOT EXISTS "${compile_aot_llvm_dir}/bin/aot_llvm/ir/main.ll")
+            message(FATAL_ERROR "compile_aot_llvm did not create AOT LLVM IR")
+        endif()
+        if (NOT EXISTS "${compile_aot_llvm_dir}/bin/aot_llvm/lib/zrvm_aot_main${CLI_SHARED_LIB_SUFFIX}")
+            message(FATAL_ERROR "compile_aot_llvm did not create AOT LLVM shared library")
+        endif()
+
+        cli_run("run_aot_llvm"
+                run_aot_llvm_output
+                run_aot_llvm_result
+                "${CLI_EXE}"
+                "--execution-mode"
+                "aot_llvm"
+                "--require-aot-path"
+                "--emit-executed-via"
+                "${compile_aot_llvm_dir}/hello_world.zrp")
+        cli_assert_success("run_aot_llvm" run_aot_llvm_result run_aot_llvm_output)
+        cli_assert_contains("run_aot_llvm" run_aot_llvm_output "hello world")
+        cli_assert_contains("run_aot_llvm" run_aot_llvm_output "executed_via=aot_llvm")
+    else ()
+        cli_assert_contains("compile_aot_llvm" compile_aot_llvm_output "AOT LLVM host adapter unavailable")
     endif()
 endif()
 
@@ -225,6 +325,46 @@ if (run_aot_module_graph_roundtrip)
     cli_assert_success("aot_module_graph_pipeline_run" aot_graph_run_result aot_graph_run_output)
     cli_assert_contains("aot_module_graph_pipeline_run" aot_graph_run_output "AOT_MODULE_GRAPH_PIPELINE_PASS")
     cli_assert_contains("aot_module_graph_pipeline_run" aot_graph_run_output "102")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_aot_module_graph_llvm_missing_import)
+if (run_aot_module_graph_llvm_missing_import AND CLI_AOT_LLVM_HOST_AVAILABLE)
+    message("---- aot_module_graph_pipeline_llvm_missing_import")
+    cli_copy_fixture("aot_module_graph_pipeline" aot_graph_llvm_missing_dir)
+    file(REMOVE_RECURSE "${aot_graph_llvm_missing_dir}/bin")
+    cli_prepare_binary_module("aot_module_graph_pipeline_llvm_missing_import"
+                              "${aot_graph_llvm_missing_dir}"
+                              "fixtures/graph_binary_stage_source.zr"
+                              "graph_binary_stage")
+
+    cli_run("aot_module_graph_pipeline_llvm_missing_compile"
+            aot_graph_llvm_missing_compile_output
+            aot_graph_llvm_missing_compile_result
+            "${CLI_EXE}"
+            "--compile"
+            "${aot_graph_llvm_missing_dir}/aot_module_graph_pipeline.zrp"
+            "--emit-aot-llvm")
+    cli_assert_success("aot_module_graph_pipeline_llvm_missing_compile"
+                       aot_graph_llvm_missing_compile_result
+                       aot_graph_llvm_missing_compile_output)
+
+    cli_run("aot_module_graph_pipeline_llvm_missing_run"
+            aot_graph_llvm_missing_run_output
+            aot_graph_llvm_missing_run_result
+            "${CLI_EXE}"
+            "--execution-mode"
+            "aot_llvm"
+            "--require-aot-path"
+            "--emit-executed-via"
+            "${aot_graph_llvm_missing_dir}/aot_module_graph_pipeline.zrp")
+    cli_assert_failure("aot_module_graph_pipeline_llvm_missing_run"
+                       aot_graph_llvm_missing_run_result
+                       aot_graph_llvm_missing_run_output)
+    cli_assert_contains("aot_module_graph_pipeline_llvm_missing_run"
+                        aot_graph_llvm_missing_run_output
+                        "missing AOT artifacts for module 'graph_binary_stage'")
+elseif (run_aot_module_graph_llvm_missing_import)
+    message("---- aot_module_graph_pipeline_llvm_missing_import (skipped: AOT LLVM host adapter unavailable)")
 endif()
 
 cli_case_matches_tier("core;stress" run_incremental)

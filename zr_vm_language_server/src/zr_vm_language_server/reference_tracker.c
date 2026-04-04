@@ -47,6 +47,68 @@ static TZrBool source_uri_equals(SZrString *left, SZrString *right) {
            memcmp(leftText, rightText, leftLength) == 0;
 }
 
+static TZrBool range_contains_position(SZrFileRange range, SZrFileRange position) {
+    TZrBool startMatch;
+    TZrBool endMatch;
+
+    if (!source_uri_equals(range.source, position.source)) {
+        return ZR_FALSE;
+    }
+
+    if (range.start.offset > 0 && range.end.offset > 0 &&
+        position.start.offset > 0 && position.end.offset > 0) {
+        return range.start.offset <= position.start.offset &&
+               position.end.offset <= range.end.offset;
+    }
+
+    startMatch = (range.start.line < position.start.line) ||
+                 (range.start.line == position.start.line &&
+                  range.start.column <= position.start.column);
+    endMatch = (position.end.line < range.end.line) ||
+               (position.end.line == range.end.line &&
+                position.end.column <= range.end.column);
+    return startMatch && endMatch;
+}
+
+static TZrSize range_span_score(SZrFileRange range) {
+    if (range.start.offset > 0 && range.end.offset >= range.start.offset) {
+        return range.end.offset - range.start.offset;
+    }
+
+    if (range.end.line < range.start.line) {
+        return (TZrSize)-1;
+    }
+
+    return (TZrSize)(range.end.line - range.start.line) * 4096 +
+           (TZrSize)(range.end.column >= range.start.column
+                         ? range.end.column - range.start.column
+                         : 0);
+}
+
+static TZrBool reference_is_better_match(SZrReference *candidate, SZrReference *best) {
+    TZrSize candidateSpan;
+    TZrSize bestSpan;
+
+    if (candidate == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (best == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    candidateSpan = range_span_score(candidate->location);
+    bestSpan = range_span_score(best->location);
+    if (candidateSpan != bestSpan) {
+        return candidateSpan < bestSpan;
+    }
+
+    if (candidate->type != best->type) {
+        return candidate->type != ZR_REFERENCE_DEFINITION;
+    }
+
+    return ZR_FALSE;
+}
+
 // 创建引用追踪器
 SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, SZrSymbolTable *symbolTable) {
     if (state == ZR_NULL || symbolTable == ZR_NULL) {
@@ -257,47 +319,24 @@ TZrSize ZrLanguageServer_ReferenceTracker_GetReferenceCount(SZrReferenceTracker 
 // 查找位置处的引用
 SZrReference *ZrLanguageServer_ReferenceTracker_FindReferenceAt(SZrReferenceTracker *tracker,
                                                  SZrFileRange position) {
+    SZrReference *bestReference = ZR_NULL;
+
     if (tracker == ZR_NULL) {
         return ZR_NULL;
     }
     
-    // 遍历所有引用查找匹配的位置
     for (TZrSize i = 0; i < tracker->allReferences.length; i++) {
         SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(&tracker->allReferences, i);
         if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
             SZrReference *ref = *refPtr;
-            // 实现精确的位置比较
-            // 检查位置是否完全匹配或包含在引用范围内
-            SZrFileRange refRange = ref->location;
-            SZrFileRange posRange = position;
-            
-            // 首先检查源文件是否相同
-            if (!source_uri_equals(refRange.source, posRange.source)) {
-                continue;
-            }
-            
-            // 检查位置是否在引用范围内（包含边界）
-            // 位置在引用范围内：ref.start <= pos.start && pos.end <= ref.end
-            TZrBool startMatch = (refRange.start.offset <= posRange.start.offset);
-            TZrBool endMatch = (posRange.end.offset <= refRange.end.offset);
-            
-            // 如果offset为0，使用行号和列号比较
-            if (refRange.start.offset == 0 && posRange.start.offset == 0) {
-                startMatch = (refRange.start.line < posRange.start.line) ||
-                            (refRange.start.line == posRange.start.line && 
-                             refRange.start.column <= posRange.start.column);
-                endMatch = (posRange.end.line < refRange.end.line) ||
-                          (posRange.end.line == refRange.end.line && 
-                           posRange.end.column <= refRange.end.column);
-            }
-            
-            if (startMatch && endMatch) {
-                return ref;
+            if (range_contains_position(ref->location, position) &&
+                reference_is_better_match(ref, bestReference)) {
+                bestReference = ref;
             }
         }
     }
     
-    return ZR_NULL;
+    return bestReference;
 }
 
 // 获取符号的所有引用位置

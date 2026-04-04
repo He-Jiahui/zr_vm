@@ -24,7 +24,7 @@ void ZrCore_HashSet_Deconstruct(struct SZrState *state, SZrHashSet *set) {
     set->isValid = ZR_FALSE;
 }
 
-void ZrCore_HashSet_Rehash(SZrState *state, SZrHashSet *set, TZrSize newCapacity) {
+TZrBool ZrCore_HashSet_Rehash(SZrState *state, SZrHashSet *set, TZrSize newCapacity) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(set != NULL && newCapacity > set->capacity);
     const TZrSize elementSize = sizeof(TZrPtr);
@@ -33,7 +33,14 @@ void ZrCore_HashSet_Rehash(SZrState *state, SZrHashSet *set, TZrSize newCapacity
     TZrSize newBucketCount = newCapacity * elementSize;
     SZrHashKeyValuePair **oldBuckets = set->buckets;
     SZrHashKeyValuePair **newBuckets = ZR_CAST_HASH_KEY_VALUE_PAIR_PTR(
-            ZrCore_Memory_Allocate(global, oldBuckets, oldBucketCount, newBucketCount, ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET));
+            ZrCore_Memory_GcReallocate(state,
+                                       oldBuckets,
+                                       oldBucketCount,
+                                       newBucketCount,
+                                       ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET));
+    if (newBuckets == ZR_NULL) {
+        return ZR_FALSE;
+    }
     oldBuckets = ZR_NULL;
     set->buckets = newBuckets;
     set->capacity = newCapacity;
@@ -52,4 +59,5 @@ void ZrCore_HashSet_Rehash(SZrState *state, SZrHashSet *set, TZrSize newCapacity
             objectPtr = next;
         }
     }
+    return ZR_TRUE;
 }

@@ -51,7 +51,7 @@ static EZrOwnershipBuiltinKind ownership_builtin_kind_from_flags(EZrOwnershipQua
 }
 
 SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNames) {
-    SZrAstNodeArray *args = ZrParser_AstNodeArray_New(ps->state, 4);
+    SZrAstNodeArray *args = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (args == ZR_NULL) {
         if (argNames != ZR_NULL) {
             *argNames = ZR_NULL;

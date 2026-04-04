@@ -448,20 +448,20 @@ void get_line_snippet(SZrParserState *ps, TZrChar *buffer, TZrSize bufferSize, T
         lineEnd++;
     }
 
-    // 计算要显示的起始和结束位置（前后各20个字符）
+    // 计算要显示的起始和结束位置（前后各固定上下文字符）
     TZrSize snippetStart = lineStart;
     TZrSize snippetEnd = lineEnd;
     TZrInt32 displayColumn = column;
 
-    // 如果列号大于20，向前移动起始位置
-    if (column > 20) {
-        snippetStart = pos - 20;
-        displayColumn = 21; // 错误位置在显示的第21个字符
+    // 如果列号大于上下文半径，向前移动起始位置
+    if (column > (TZrInt32)ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS) {
+        snippetStart = pos - ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS;
+        displayColumn = (TZrInt32)ZR_PARSER_ERROR_SNIPPET_FOCUS_COLUMN;
     }
 
-    // 如果剩余字符少于20，向后扩展
-    if (lineEnd - pos < 20) {
-        TZrSize needed = 20 - (lineEnd - pos);
+    // 如果剩余字符少于上下文半径，向后扩展
+    if (lineEnd - pos < ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS) {
+        TZrSize needed = ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS - (lineEnd - pos);
         if (snippetStart >= needed) {
             snippetStart -= needed;
             displayColumn += (TZrInt32)needed;

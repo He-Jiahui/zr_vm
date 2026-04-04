@@ -6,6 +6,8 @@
 #include "type_inference_internal.h"
 #include "zr_vm_core/io.h"
 
+#include <stdio.h>
+
 static TZrBool refill_import_io(SZrIo *io) {
     SZrState *state;
     TZrSize readSize = 0;
@@ -662,7 +664,6 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
         return ZR_FALSE;
     }
     moduleNameLength = strlen(moduleNameText);
-
     ZrCore_Io_Init(cs->state, &io, ZR_NULL, ZR_NULL, ZR_NULL);
     loaderSuccess = global->sourceLoader(cs->state, moduleNameText, ZR_NULL, &io);
     if (!loaderSuccess) {

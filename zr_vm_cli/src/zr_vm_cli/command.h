@@ -12,12 +12,24 @@ typedef enum EZrCliMode {
     ZR_CLI_MODE_COMPILE_PROJECT = 3
 } EZrCliMode;
 
+typedef enum EZrCliExecutionMode {
+    ZR_CLI_EXECUTION_MODE_INTERP = 0,
+    ZR_CLI_EXECUTION_MODE_BINARY = 1,
+    ZR_CLI_EXECUTION_MODE_AOT_C = 2,
+    ZR_CLI_EXECUTION_MODE_AOT_LLVM = 3
+} EZrCliExecutionMode;
+
 typedef struct SZrCliCommand {
     EZrCliMode mode;
+    EZrCliExecutionMode executionMode;
     const TZrChar *projectPath;
     TZrBool runAfterCompile;
     TZrBool emitIntermediate;
     TZrBool incremental;
+    TZrBool emitAotC;
+    TZrBool emitAotLlvm;
+    TZrBool requireAotPath;
+    TZrBool emitExecutedVia;
 } SZrCliCommand;
 
 TZrBool ZrCli_Command_Parse(int argc,

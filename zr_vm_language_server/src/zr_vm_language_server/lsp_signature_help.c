@@ -6,9 +6,19 @@
 #include <stdio.h>
 #include <string.h>
 
+typedef enum EZrLspCallContextKind {
+    ZR_LSP_CALL_CONTEXT_NONE = 0,
+    ZR_LSP_CALL_CONTEXT_FUNCTION_CALL,
+    ZR_LSP_CALL_CONTEXT_SUPER_CONSTRUCTOR_CALL
+} EZrLspCallContextKind;
+
 typedef struct SZrLspCallContext {
+    EZrLspCallContextKind kind;
+    SZrAstNode *ownerTypeNode;
     SZrAstNode *primaryNode;
     SZrAstNode *callNode;
+    SZrAstNode *metaFunctionNode;
+    SZrAstNodeArray *argumentNodes;
     TZrSize callMemberIndex;
     TZrSize span;
 } SZrLspCallContext;
@@ -441,14 +451,54 @@ static void signature_append_parameter_label(SZrState *state,
                             typeBuffer[0] != '\0' ? typeBuffer : "object");
 }
 
+static SZrGenericDeclaration *signature_method_generic_declaration(SZrAstNode *declarationNode) {
+    if (declarationNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (declarationNode->type) {
+        case ZR_AST_CLASS_METHOD:
+            return declarationNode->data.classMethod.generic;
+
+        case ZR_AST_STRUCT_METHOD:
+            return declarationNode->data.structMethod.generic;
+
+        default:
+            return ZR_NULL;
+    }
+}
+
+static SZrAstNodeArray *signature_method_parameter_nodes(SZrAstNode *declarationNode) {
+    if (declarationNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (declarationNode->type) {
+        case ZR_AST_CLASS_METHOD:
+            return declarationNode->data.classMethod.params;
+
+        case ZR_AST_STRUCT_METHOD:
+            return declarationNode->data.structMethod.params;
+
+        case ZR_AST_CLASS_META_FUNCTION:
+            return declarationNode->data.classMetaFunction.params;
+
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return declarationNode->data.structMetaFunction.params;
+
+        default:
+            return ZR_NULL;
+    }
+}
+
 static TZrBool signature_build_label_from_method(SZrState *state,
                                                  SZrTypeMemberInfo *memberInfo,
                                                  const SZrResolvedCallSignature *resolvedSignature,
                                                  TZrChar *buffer,
                                                  TZrSize bufferSize) {
     SZrAstNode *declarationNode;
-    SZrGenericDeclaration *genericDecl = ZR_NULL;
-    SZrAstNodeArray *params = ZR_NULL;
+    SZrGenericDeclaration *genericDecl;
+    SZrAstNodeArray *params;
     TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
     TZrSize offset = 0;
 
@@ -458,18 +508,13 @@ static TZrBool signature_build_label_from_method(SZrState *state,
 
     buffer[0] = '\0';
     declarationNode = memberInfo->declarationNode;
-    if (declarationNode != ZR_NULL && declarationNode->type == ZR_AST_CLASS_METHOD) {
-        genericDecl = declarationNode->data.classMethod.generic;
-        params = declarationNode->data.classMethod.params;
-    } else if (declarationNode != ZR_NULL && declarationNode->type == ZR_AST_STRUCT_METHOD) {
-        genericDecl = declarationNode->data.structMethod.generic;
-        params = declarationNode->data.structMethod.params;
-    }
+    genericDecl = signature_method_generic_declaration(declarationNode);
+    params = signature_method_parameter_nodes(declarationNode);
 
     signature_buffer_append(buffer,
                             bufferSize,
                             &offset,
-                            "%s",
+                            memberInfo->isMetaMethod ? "@%s" : "%s",
                             signature_string_native(memberInfo->name));
     signature_append_generic_declaration(state, genericDecl, buffer, bufferSize, &offset);
     signature_buffer_append(buffer, bufferSize, &offset, "(");
@@ -602,6 +647,32 @@ static TZrInt32 signature_active_parameter_index(SZrFunctionCall *call, SZrFileP
     return activeIndex;
 }
 
+static TZrInt32 signature_active_parameter_index_for_arguments(SZrAstNodeArray *args, SZrFilePosition position) {
+    TZrInt32 activeIndex = 0;
+
+    if (args == ZR_NULL || args->count == 0) {
+        return 0;
+    }
+
+    for (TZrSize index = 0; index < args->count; index++) {
+        SZrAstNode *argNode = args->nodes[index];
+        if (argNode == ZR_NULL) {
+            continue;
+        }
+
+        if (position.offset >= argNode->location.start.offset &&
+            position.offset <= argNode->location.end.offset) {
+            return (TZrInt32)index;
+        }
+
+        if (position.offset > argNode->location.end.offset) {
+            activeIndex = (TZrInt32)index + 1;
+        }
+    }
+
+    return activeIndex;
+}
+
 static void signature_update_best_context(SZrLspCallContext *best,
                                           SZrAstNode *primaryNode,
                                           SZrAstNode *callNode,
@@ -613,10 +684,99 @@ static void signature_update_best_context(SZrLspCallContext *best,
     }
 
     span = signature_call_context_span(callNode);
-    if (best->callNode == ZR_NULL || span <= best->span) {
+    if (best->kind == ZR_LSP_CALL_CONTEXT_NONE || span <= best->span) {
+        best->kind = ZR_LSP_CALL_CONTEXT_FUNCTION_CALL;
+        best->ownerTypeNode = ZR_NULL;
         best->primaryNode = primaryNode;
         best->callNode = callNode;
+        best->metaFunctionNode = ZR_NULL;
+        best->argumentNodes = callNode->data.functionCall.args;
         best->callMemberIndex = callMemberIndex;
+        best->span = span;
+    }
+}
+
+static SZrFileRange signature_super_call_context_range(SZrAstNode *metaFunctionNode) {
+    SZrFileRange range;
+
+    memset(&range, 0, sizeof(range));
+    if (metaFunctionNode != ZR_NULL) {
+        range = metaFunctionNode->location;
+    }
+    if (metaFunctionNode == ZR_NULL || metaFunctionNode->type != ZR_AST_CLASS_META_FUNCTION) {
+        return range;
+    }
+
+    if (metaFunctionNode->data.classMetaFunction.superArgs != ZR_NULL &&
+        metaFunctionNode->data.classMetaFunction.superArgs->count > 0 &&
+        metaFunctionNode->data.classMetaFunction.superArgs->nodes != ZR_NULL &&
+        metaFunctionNode->data.classMetaFunction.superArgs->nodes[0] != ZR_NULL) {
+        SZrAstNode *lastArgNode =
+            metaFunctionNode->data.classMetaFunction.superArgs
+                ->nodes[metaFunctionNode->data.classMetaFunction.superArgs->count - 1];
+        range.start = metaFunctionNode->data.classMetaFunction.superArgs->nodes[0]->location.start;
+        if (range.start.offset >= 6) {
+            range.start.offset -= 6;
+        }
+        if (range.start.column >= 6) {
+            range.start.column -= 6;
+        }
+        range.end = lastArgNode != ZR_NULL ? lastArgNode->location.end : range.end;
+    } else if (metaFunctionNode->data.classMetaFunction.body != ZR_NULL) {
+        range.end = metaFunctionNode->data.classMetaFunction.body->location.start;
+    }
+
+    return range;
+}
+
+static TZrBool signature_super_call_matches_position(SZrAstNode *metaFunctionNode, SZrFileRange position) {
+    SZrClassMetaFunction *metaFunction;
+    SZrFileRange superRange;
+
+    if (metaFunctionNode == ZR_NULL || metaFunctionNode->type != ZR_AST_CLASS_META_FUNCTION) {
+        return ZR_FALSE;
+    }
+
+    metaFunction = &metaFunctionNode->data.classMetaFunction;
+    if (!metaFunction->hasSuperCall) {
+        return ZR_FALSE;
+    }
+
+    superRange = signature_super_call_context_range(metaFunctionNode);
+    if (signature_range_contains_position(superRange, position)) {
+        return ZR_TRUE;
+    }
+
+    if (metaFunction->superArgs != ZR_NULL) {
+        for (TZrSize index = 0; index < metaFunction->superArgs->count; index++) {
+            SZrAstNode *argNode = metaFunction->superArgs->nodes[index];
+            if (argNode != ZR_NULL && signature_range_contains_position(argNode->location, position)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void signature_update_best_super_context(SZrLspCallContext *best,
+                                                SZrAstNode *ownerTypeNode,
+                                                SZrAstNode *metaFunctionNode) {
+    TZrSize span;
+
+    if (best == ZR_NULL || ownerTypeNode == ZR_NULL || metaFunctionNode == ZR_NULL) {
+        return;
+    }
+
+    span = signature_range_span(signature_super_call_context_range(metaFunctionNode));
+    if (best->kind == ZR_LSP_CALL_CONTEXT_NONE || span <= best->span) {
+        best->kind = ZR_LSP_CALL_CONTEXT_SUPER_CONSTRUCTOR_CALL;
+        best->ownerTypeNode = ownerTypeNode;
+        best->primaryNode = ZR_NULL;
+        best->callNode = ZR_NULL;
+        best->metaFunctionNode = metaFunctionNode;
+        best->argumentNodes = metaFunctionNode->data.classMetaFunction.superArgs;
+        best->callMemberIndex = 0;
         best->span = span;
     }
 }
@@ -696,7 +856,21 @@ static void signature_find_call_context_in_node(SZrAstNode *node,
             break;
 
         case ZR_AST_CLASS_DECLARATION:
-            signature_find_call_context_in_array(node->data.classDeclaration.members, position, best);
+            if (node->data.classDeclaration.members != ZR_NULL &&
+                node->data.classDeclaration.members->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.classDeclaration.members->count; index++) {
+                    SZrAstNode *memberNode = node->data.classDeclaration.members->nodes[index];
+                    if (memberNode == ZR_NULL) {
+                        continue;
+                    }
+
+                    if (memberNode->type == ZR_AST_CLASS_META_FUNCTION &&
+                        signature_super_call_matches_position(memberNode, position)) {
+                        signature_update_best_super_context(best, node, memberNode);
+                    }
+                    signature_find_call_context_in_node(memberNode, position, best);
+                }
+            }
             break;
 
         case ZR_AST_STRUCT_DECLARATION:
@@ -711,6 +885,17 @@ static void signature_find_call_context_in_node(SZrAstNode *node,
         case ZR_AST_STRUCT_METHOD:
             signature_find_call_context_in_array(node->data.structMethod.params, position, best);
             signature_find_call_context_in_node(node->data.structMethod.body, position, best);
+            break;
+
+        case ZR_AST_CLASS_META_FUNCTION:
+            signature_find_call_context_in_array(node->data.classMetaFunction.params, position, best);
+            signature_find_call_context_in_array(node->data.classMetaFunction.superArgs, position, best);
+            signature_find_call_context_in_node(node->data.classMetaFunction.body, position, best);
+            break;
+
+        case ZR_AST_STRUCT_META_FUNCTION:
+            signature_find_call_context_in_array(node->data.structMetaFunction.params, position, best);
+            signature_find_call_context_in_node(node->data.structMetaFunction.body, position, best);
             break;
 
         case ZR_AST_EXPRESSION_STATEMENT:
@@ -1638,6 +1823,185 @@ static SZrAstNode *signature_find_method_declaration_in_type(SZrAstNode *typeDec
     return ZR_NULL;
 }
 
+static SZrAstNode *signature_find_constructor_declaration_in_type(SZrAstNode *typeDeclarationNode) {
+    SZrAstNodeArray *members = ZR_NULL;
+
+    if (typeDeclarationNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (typeDeclarationNode->type == ZR_AST_CLASS_DECLARATION) {
+        members = typeDeclarationNode->data.classDeclaration.members;
+    } else if (typeDeclarationNode->type == ZR_AST_STRUCT_DECLARATION) {
+        members = typeDeclarationNode->data.structDeclaration.members;
+    }
+
+    if (members == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < members->count; index++) {
+        SZrAstNode *memberNode = members->nodes[index];
+
+        if (memberNode == ZR_NULL) {
+            continue;
+        }
+
+        if (memberNode->type == ZR_AST_CLASS_META_FUNCTION &&
+            memberNode->data.classMetaFunction.meta != ZR_NULL &&
+            signature_string_matches_text(memberNode->data.classMetaFunction.meta->name, "constructor", 11)) {
+            return memberNode;
+        }
+
+        if (memberNode->type == ZR_AST_STRUCT_META_FUNCTION &&
+            memberNode->data.structMetaFunction.meta != ZR_NULL &&
+            signature_string_matches_text(memberNode->data.structMetaFunction.meta->name, "constructor", 11)) {
+            return memberNode;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool signature_prepare_ast_specialized_receiver_constructor(SZrState *state,
+                                                                      SZrCompilerState *compilerState,
+                                                                      SZrAstNode *rootNode,
+                                                                      const SZrInferredType *receiverType,
+                                                                      SZrTypeMemberInfo **resolvedMemberInfo,
+                                                                      SZrTypeMemberInfo *temporaryMemberInfo) {
+    SZrString *baseName = ZR_NULL;
+    SZrArray argumentTypeNames;
+    SZrArray bindingTypes;
+    SZrArray typeGenericParameters;
+    SZrArray rawParameterTypes;
+    SZrAstNode *typeDeclarationNode;
+    SZrAstNode *memberDeclarationNode;
+    SZrGenericDeclaration *typeGeneric = ZR_NULL;
+    SZrAstNodeArray *params = ZR_NULL;
+    SZrType *returnType = ZR_NULL;
+    SZrString *memberName = ZR_NULL;
+    const TZrChar *baseNameText;
+    TZrBool success = ZR_FALSE;
+
+    if (resolvedMemberInfo != ZR_NULL) {
+        *resolvedMemberInfo = ZR_NULL;
+    }
+    if (state == ZR_NULL || compilerState == ZR_NULL || rootNode == ZR_NULL || receiverType == ZR_NULL ||
+        receiverType->typeName == ZR_NULL || resolvedMemberInfo == ZR_NULL || temporaryMemberInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Construct(&argumentTypeNames);
+    ZrCore_Array_Construct(&bindingTypes);
+    ZrCore_Array_Construct(&typeGenericParameters);
+    ZrCore_Array_Construct(&rawParameterTypes);
+
+    if (!try_parse_generic_instance_type_name(state, receiverType->typeName, &baseName, &argumentTypeNames)) {
+        baseName = receiverType->typeName;
+    }
+
+    baseNameText = signature_string_native(baseName);
+    typeDeclarationNode =
+        signature_find_type_declaration_recursive(rootNode, baseNameText, strlen(baseNameText));
+    memberDeclarationNode = signature_find_constructor_declaration_in_type(typeDeclarationNode);
+    if (typeDeclarationNode == ZR_NULL || memberDeclarationNode == ZR_NULL) {
+        goto cleanup;
+    }
+
+    if (typeDeclarationNode->type == ZR_AST_CLASS_DECLARATION) {
+        typeGeneric = typeDeclarationNode->data.classDeclaration.generic;
+    } else if (typeDeclarationNode->type == ZR_AST_STRUCT_DECLARATION) {
+        typeGeneric = typeDeclarationNode->data.structDeclaration.generic;
+    }
+
+    if (memberDeclarationNode->type == ZR_AST_CLASS_META_FUNCTION) {
+        memberName = memberDeclarationNode->data.classMetaFunction.meta != ZR_NULL
+                         ? memberDeclarationNode->data.classMetaFunction.meta->name
+                         : ZR_NULL;
+        params = memberDeclarationNode->data.classMetaFunction.params;
+        returnType = memberDeclarationNode->data.classMetaFunction.returnType;
+    } else if (memberDeclarationNode->type == ZR_AST_STRUCT_META_FUNCTION) {
+        memberName = memberDeclarationNode->data.structMetaFunction.meta != ZR_NULL
+                         ? memberDeclarationNode->data.structMetaFunction.meta->name
+                         : ZR_NULL;
+        params = memberDeclarationNode->data.structMetaFunction.params;
+        returnType = memberDeclarationNode->data.structMetaFunction.returnType;
+    } else {
+        goto cleanup;
+    }
+
+    memset(temporaryMemberInfo, 0, sizeof(*temporaryMemberInfo));
+    temporaryMemberInfo->memberType = memberDeclarationNode->type;
+    temporaryMemberInfo->name = memberName;
+    temporaryMemberInfo->declarationNode = memberDeclarationNode;
+    temporaryMemberInfo->isMetaMethod = ZR_TRUE;
+    temporaryMemberInfo->metaType = ZR_META_CONSTRUCTOR;
+    ZrCore_Array_Construct(&temporaryMemberInfo->parameterTypes);
+    ZrCore_Array_Construct(&temporaryMemberInfo->genericParameters);
+    ZrCore_Array_Construct(&temporaryMemberInfo->parameterPassingModes);
+
+    if (!signature_collect_generic_parameter_infos_from_ast(state, &typeGenericParameters, typeGeneric) ||
+        !signature_collect_parameter_passing_modes_from_ast(state,
+                                                            params,
+                                                            &temporaryMemberInfo->parameterPassingModes) ||
+        !signature_collect_parameter_types_from_ast(compilerState, params, &rawParameterTypes) ||
+        !signature_build_receiver_binding_types(compilerState, &argumentTypeNames, &bindingTypes)) {
+        goto cleanup;
+    }
+
+    if (rawParameterTypes.length > 0) {
+        ZrCore_Array_Init(state,
+                          &temporaryMemberInfo->parameterTypes,
+                          sizeof(SZrInferredType),
+                          rawParameterTypes.length);
+        for (TZrSize index = 0; index < rawParameterTypes.length; index++) {
+            SZrInferredType *sourceType = (SZrInferredType *)ZrCore_Array_Get(&rawParameterTypes, index);
+            SZrInferredType resolvedType;
+
+            if (sourceType == ZR_NULL) {
+                continue;
+            }
+
+            ZrParser_InferredType_Init(state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
+            if (!signature_substitute_receiver_generic_type(state,
+                                                            &typeGenericParameters,
+                                                            &bindingTypes,
+                                                            sourceType,
+                                                            &resolvedType)) {
+                ZrParser_InferredType_Free(state, &resolvedType);
+                goto cleanup;
+            }
+            ZrCore_Array_Push(state, &temporaryMemberInfo->parameterTypes, &resolvedType);
+        }
+    }
+
+    if (returnType != ZR_NULL) {
+        temporaryMemberInfo->returnTypeName = signature_create_type_name_from_ast_type(compilerState, returnType);
+        if (!signature_build_specialized_type_name(compilerState,
+                                                   temporaryMemberInfo->returnTypeName,
+                                                   &typeGenericParameters,
+                                                   &bindingTypes,
+                                                   &temporaryMemberInfo->returnTypeName)) {
+            goto cleanup;
+        }
+    }
+
+    *resolvedMemberInfo = temporaryMemberInfo;
+    success = ZR_TRUE;
+
+cleanup:
+    if (argumentTypeNames.isValid && argumentTypeNames.head != ZR_NULL) {
+        ZrCore_Array_Free(state, &argumentTypeNames);
+    }
+    free_inferred_type_array(state, &bindingTypes);
+    signature_free_generic_parameter_infos(state, &typeGenericParameters);
+    free_inferred_type_array(state, &rawParameterTypes);
+    if (!success) {
+        signature_free_temporary_member_info(state, temporaryMemberInfo);
+    }
+    return success;
+}
+
 static TZrBool signature_prepare_ast_specialized_receiver_member(SZrState *state,
                                                                  SZrCompilerState *compilerState,
                                                                  SZrAstNode *rootNode,
@@ -2262,6 +2626,186 @@ static TZrBool signature_populate_help_from_label(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool signature_resolve_direct_base_type(SZrState *state,
+                                                  SZrCompilerState *compilerState,
+                                                  SZrAstNode *ownerTypeNode,
+                                                  SZrInferredType *result) {
+    SZrAstNode *inheritNode;
+
+    if (result != ZR_NULL) {
+        ZrParser_InferredType_Init(state, result, ZR_VALUE_TYPE_OBJECT);
+    }
+    if (state == ZR_NULL || compilerState == ZR_NULL || ownerTypeNode == ZR_NULL || result == ZR_NULL ||
+        ownerTypeNode->type != ZR_AST_CLASS_DECLARATION ||
+        ownerTypeNode->data.classDeclaration.inherits == ZR_NULL ||
+        ownerTypeNode->data.classDeclaration.inherits->count == 0) {
+        return ZR_FALSE;
+    }
+
+    inheritNode = ownerTypeNode->data.classDeclaration.inherits->nodes[0];
+    if (inheritNode == ZR_NULL || inheritNode->type != ZR_AST_TYPE) {
+        return ZR_FALSE;
+    }
+
+    return ZrParser_AstTypeToInferredType_Convert(compilerState, &inheritNode->data.type, result) &&
+           result->typeName != ZR_NULL;
+}
+
+static const SZrTypeMemberInfo *signature_find_type_meta_member_recursive(SZrCompilerState *compilerState,
+                                                                          SZrTypePrototypeInfo *prototype,
+                                                                          EZrMetaType metaType,
+                                                                          TZrUInt32 depth) {
+    if (compilerState == ZR_NULL || prototype == ZR_NULL || depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < prototype->members.length; index++) {
+        const SZrTypeMemberInfo *memberInfo =
+            (const SZrTypeMemberInfo *)ZrCore_Array_Get(&prototype->members, index);
+        if (memberInfo != ZR_NULL && memberInfo->isMetaMethod && memberInfo->metaType == metaType) {
+            return memberInfo;
+        }
+    }
+
+    for (TZrSize index = 0; index < prototype->inherits.length; index++) {
+        SZrString **superNamePtr = (SZrString **)ZrCore_Array_Get(&prototype->inherits, index);
+        SZrTypePrototypeInfo *superPrototype;
+        const SZrTypeMemberInfo *resolvedMember;
+
+        if (superNamePtr == ZR_NULL || *superNamePtr == ZR_NULL) {
+            continue;
+        }
+
+        superPrototype = find_compiler_type_prototype_inference(compilerState, *superNamePtr);
+        if (superPrototype == ZR_NULL || superPrototype == prototype) {
+            continue;
+        }
+
+        resolvedMember =
+            signature_find_type_meta_member_recursive(compilerState, superPrototype, metaType, depth + 1);
+        if (resolvedMember != ZR_NULL) {
+            return resolvedMember;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const SZrTypeMemberInfo *signature_find_type_meta_member(SZrCompilerState *compilerState,
+                                                                SZrString *typeName,
+                                                                EZrMetaType metaType) {
+    SZrTypePrototypeInfo *prototype;
+
+    if (compilerState == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ensure_generic_instance_type_prototype(compilerState, typeName);
+    prototype = find_compiler_type_prototype_inference(compilerState, typeName);
+    if (prototype == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return signature_find_type_meta_member_recursive(compilerState, prototype, metaType, 0);
+}
+
+static TZrBool signature_resolve_super_constructor_help(SZrState *state,
+                                                        SZrSemanticAnalyzer *analyzer,
+                                                        SZrCompilerState *compilerState,
+                                                        SZrLspCallContext *context,
+                                                        SZrFilePosition position,
+                                                        SZrLspSignatureHelp **result) {
+    SZrInferredType baseType;
+    const SZrTypeMemberInfo *constructorInfo;
+    SZrTypeMemberInfo temporaryConstructorInfo;
+    SZrFunctionCall superCall;
+    SZrResolvedCallSignature resolvedSignature;
+    TZrChar labelBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+    TZrBool resolved = ZR_FALSE;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || compilerState == ZR_NULL || context == ZR_NULL ||
+        result == ZR_NULL || context->kind != ZR_LSP_CALL_CONTEXT_SUPER_CONSTRUCTOR_CALL ||
+        context->ownerTypeNode == ZR_NULL || context->metaFunctionNode == ZR_NULL ||
+        context->metaFunctionNode->type != ZR_AST_CLASS_META_FUNCTION) {
+        return ZR_FALSE;
+    }
+
+    if (!signature_resolve_direct_base_type(state, compilerState, context->ownerTypeNode, &baseType)) {
+        return ZR_FALSE;
+    }
+
+    memset(&temporaryConstructorInfo, 0, sizeof(temporaryConstructorInfo));
+    constructorInfo = signature_find_type_meta_member(compilerState, baseType.typeName, ZR_META_CONSTRUCTOR);
+    if (constructorInfo == ZR_NULL &&
+        !signature_prepare_ast_specialized_receiver_constructor(state,
+                                                                compilerState,
+                                                                analyzer->ast,
+                                                                &baseType,
+                                                                (SZrTypeMemberInfo **)&constructorInfo,
+                                                                &temporaryConstructorInfo)) {
+        ZrParser_InferredType_Free(state, &baseType);
+        return ZR_FALSE;
+    }
+
+    memset(&superCall, 0, sizeof(superCall));
+    superCall.args = context->argumentNodes;
+    superCall.hasNamedArgs = ZR_FALSE;
+    superCall.genericArguments = ZR_NULL;
+    superCall.argNames = ZR_NULL;
+
+    memset(&resolvedSignature, 0, sizeof(resolvedSignature));
+    ZrParser_InferredType_Init(state, &resolvedSignature.returnType, ZR_VALUE_TYPE_OBJECT);
+    ZrCore_Array_Construct(&resolvedSignature.parameterTypes);
+    ZrCore_Array_Construct(&resolvedSignature.parameterPassingModes);
+
+    if (resolve_generic_member_call_signature_detailed(compilerState,
+                                                       constructorInfo,
+                                                       &superCall,
+                                                       &resolvedSignature,
+                                                       ZR_NULL,
+                                                       0) == ZR_GENERIC_CALL_RESOLVE_OK) {
+        resolved = ZR_TRUE;
+    } else {
+        resolved = signature_resolve_member_call_signature_locally(state,
+                                                                   analyzer,
+                                                                   compilerState,
+                                                                   (SZrTypeMemberInfo *)constructorInfo,
+                                                                   &superCall,
+                                                                   position.offset,
+                                                                   &resolvedSignature);
+    }
+
+    if (!resolved ||
+        !signature_build_label_from_method(state,
+                                           (SZrTypeMemberInfo *)constructorInfo,
+                                           &resolvedSignature,
+                                           labelBuffer,
+                                           sizeof(labelBuffer))) {
+        free_resolved_call_signature(state, &resolvedSignature);
+        signature_free_temporary_member_info(state, &temporaryConstructorInfo);
+        ZrParser_InferredType_Free(state, &baseType);
+        return ZR_FALSE;
+    }
+
+    if (!signature_populate_help_from_label(state,
+                                            labelBuffer,
+                                            signature_method_parameter_nodes(constructorInfo->declarationNode),
+                                            &resolvedSignature,
+                                            signature_active_parameter_index_for_arguments(context->argumentNodes,
+                                                                                          position),
+                                            result)) {
+        free_resolved_call_signature(state, &resolvedSignature);
+        signature_free_temporary_member_info(state, &temporaryConstructorInfo);
+        ZrParser_InferredType_Free(state, &baseType);
+        return ZR_FALSE;
+    }
+
+    free_resolved_call_signature(state, &resolvedSignature);
+    signature_free_temporary_member_info(state, &temporaryConstructorInfo);
+    ZrParser_InferredType_Free(state, &baseType);
+    return ZR_TRUE;
+}
+
 static TZrBool signature_resolve_function_help(SZrState *state,
                                                SZrCompilerState *compilerState,
                                                SZrLspCallContext *context,
@@ -2456,13 +3000,7 @@ static TZrBool signature_resolve_method_help(SZrState *state,
 
     if (!signature_populate_help_from_label(state,
                                             labelBuffer,
-                                            memberInfo->declarationNode != ZR_NULL &&
-                                                    (memberInfo->declarationNode->type == ZR_AST_CLASS_METHOD ||
-                                                     memberInfo->declarationNode->type == ZR_AST_STRUCT_METHOD)
-                                                ? (memberInfo->declarationNode->type == ZR_AST_CLASS_METHOD
-                                                       ? memberInfo->declarationNode->data.classMethod.params
-                                                       : memberInfo->declarationNode->data.structMethod.params)
-                                                : ZR_NULL,
+                                            signature_method_parameter_nodes(memberInfo->declarationNode),
                                             &resolvedSignature,
                                             signature_active_parameter_index(&context->callNode->data.functionCall, position),
                                             result)) {
@@ -2506,6 +3044,20 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     memset(&callContext, 0, sizeof(callContext));
     signature_find_call_context_in_node(analyzer->ast, fileRange, &callContext);
+    if (callContext.kind == ZR_LSP_CALL_CONTEXT_NONE) {
+        return ZR_FALSE;
+    }
+
+    if (callContext.kind == ZR_LSP_CALL_CONTEXT_SUPER_CONSTRUCTOR_CALL) {
+        return signature_resolve_super_constructor_help(state,
+                                                        analyzer,
+                                                        analyzer->compilerState,
+                                                        &callContext,
+                                                        filePosition,
+                                                        result) &&
+               *result != ZR_NULL;
+    }
+
     if (callContext.callNode == ZR_NULL || callContext.primaryNode == ZR_NULL) {
         return ZR_FALSE;
     }

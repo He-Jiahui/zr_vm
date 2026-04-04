@@ -156,8 +156,7 @@ TZrBool execution_meta_set_cached_static_member(SZrState *state,
 TZrBool execution_invoke_meta_call(SZrState *state,
                                    SZrCallInfo *savedCallInfo,
                                    TZrStackValuePointer savedStackTop,
-                                   TZrStackValuePointer scratchBase,
-                                   TZrBool reloadScratchFromFunctionTop,
+                                   TZrStackValuePointer requestedScratchBase,
                                    SZrMeta *meta,
                                    const SZrTypeValue *arg0,
                                    const SZrTypeValue *arg1,
@@ -175,6 +174,7 @@ const SZrFunctionExceptionHandlerInfo *execution_lookup_exception_handler_info(
         const SZrVmExceptionHandlerState *handlerState,
         SZrFunction **outFunction);
 void execution_pop_exception_handler(SZrState *state, SZrVmExceptionHandlerState *handlerState);
+void execution_discard_exception_handlers_for_callinfo(SZrState *state, SZrCallInfo *callInfo);
 TZrBool execution_try_reuse_tail_call_frame(SZrState *state,
                                             SZrCallInfo *callInfo,
                                             TZrStackValuePointer functionPointer);

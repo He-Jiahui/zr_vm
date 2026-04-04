@@ -350,6 +350,10 @@ ZR_CORE_API void ZrCore_Function_CheckNativeStack(struct SZrState *state);
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CheckStackAndGc(struct SZrState *state, TZrSize size,
                                                            TZrStackValuePointer stackPointer);
 
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_ReserveScratchSlots(struct SZrState *state,
+                                                               TZrSize size,
+                                                               TZrStackValuePointer scratchBase);
+
 ZR_CORE_API void ZrCore_Function_Call(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount);
 
 ZR_CORE_API void ZrCore_Function_CallWithoutYield(struct SZrState *state, TZrStackValuePointer stackPointer,
@@ -361,6 +365,8 @@ ZR_CORE_API void ZrCore_Function_StackAnchorInit(struct SZrState *state,
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_StackAnchorRestore(struct SZrState *state,
                                                               const SZrFunctionStackAnchor *anchor);
+
+ZR_CORE_API void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *function);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CheckStackAndAnchor(struct SZrState *state,
                                                                TZrSize size,

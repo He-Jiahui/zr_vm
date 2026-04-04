@@ -27,13 +27,27 @@ static TZrInt64 zr_container_linked_list_iterator_move_next_native(SZrState *sta
 
 static SZrObjectPrototype *zr_container_iterator_runtime_prototype(SZrState *state,
                                                                    FZrNativeFunction moveNextFunction) {
+    static const SZrGlobalState *cachedGlobal = ZR_NULL;
+    static const void *cachedGarbageCollector = ZR_NULL;
+    static const void *cachedStringTable = ZR_NULL;
     static SZrObjectPrototype *arrayIteratorPrototype = ZR_NULL;
     static SZrObjectPrototype *linkedIteratorPrototype = ZR_NULL;
     static SZrString *currentMemberName = ZR_NULL;
     SZrObjectPrototype **slot;
 
-    if (state == ZR_NULL || moveNextFunction == ZR_NULL) {
+    if (state == ZR_NULL || state->global == ZR_NULL || moveNextFunction == ZR_NULL) {
         return ZR_NULL;
+    }
+
+    if (cachedGlobal != state->global ||
+        cachedGarbageCollector != state->global->garbageCollector ||
+        cachedStringTable != state->global->stringTable) {
+        cachedGlobal = state->global;
+        cachedGarbageCollector = state->global->garbageCollector;
+        cachedStringTable = state->global->stringTable;
+        arrayIteratorPrototype = ZR_NULL;
+        linkedIteratorPrototype = ZR_NULL;
+        currentMemberName = ZR_NULL;
     }
 
     if (moveNextFunction == zr_container_array_iterator_move_next_native) {
@@ -56,18 +70,21 @@ static SZrObjectPrototype *zr_container_iterator_runtime_prototype(SZrState *sta
         if (prototypeName == ZR_NULL) {
             return ZR_NULL;
         }
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(prototypeName));
 
         if (currentMemberName == ZR_NULL) {
             currentMemberName = ZrCore_String_CreateFromNative(state, "current");
             if (currentMemberName == ZR_NULL) {
                 return ZR_NULL;
             }
+            ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(currentMemberName));
         }
 
         *slot = ZrCore_ObjectPrototype_New(state, prototypeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
         if (*slot == ZR_NULL) {
             return ZR_NULL;
         }
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(*slot));
 
         closure = ZrCore_ClosureNative_New(state, 0);
         if (closure == ZR_NULL) {

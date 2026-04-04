@@ -94,6 +94,7 @@ typedef struct ZrLibCallContext {
     struct SZrObjectPrototype *constructTargetPrototype;
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argumentBase;
+    SZrTypeValue *argumentValues;
     TZrSize argumentCount;
     SZrTypeValue *selfValue;
 } ZrLibCallContext;
@@ -322,12 +323,12 @@ ZR_LIBRARY_API TZrBool ZrLib_CallContext_ReadArray(const ZrLibCallContext *conte
 ZR_LIBRARY_API TZrBool ZrLib_CallContext_ReadFunction(const ZrLibCallContext *context,
                                                       TZrSize index,
                                                       SZrTypeValue **outValue);
-ZR_LIBRARY_API void ZrLib_CallContext_RaiseTypeError(const ZrLibCallContext *context,
-                                                     TZrSize index,
-                                                     const TZrChar *expectedType);
-ZR_LIBRARY_API void ZrLib_CallContext_RaiseArityError(const ZrLibCallContext *context,
-                                                      TZrSize minArgumentCount,
-                                                      TZrSize maxArgumentCount);
+ZR_LIBRARY_API ZR_NO_RETURN void ZrLib_CallContext_RaiseTypeError(const ZrLibCallContext *context,
+                                                                  TZrSize index,
+                                                                  const TZrChar *expectedType);
+ZR_LIBRARY_API ZR_NO_RETURN void ZrLib_CallContext_RaiseArityError(const ZrLibCallContext *context,
+                                                                   TZrSize minArgumentCount,
+                                                                   TZrSize maxArgumentCount);
 
 ZR_LIBRARY_API TZrBool ZrLib_TempValueRoot_Begin(SZrState *state, ZrLibTempValueRoot *root);
 ZR_LIBRARY_API TZrBool ZrLib_CallContext_BeginTempValueRoot(const ZrLibCallContext *context,

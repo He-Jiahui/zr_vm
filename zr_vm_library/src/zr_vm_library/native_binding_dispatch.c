@@ -1,5 +1,8 @@
 #include "native_binding_internal.h"
 
+#include "zr_vm_core/gc.h"
+#include "zr_vm_core/ownership.h"
+
 TZrBool native_binding_auto_check_arity(const ZrLibCallContext *context) {
     if (context == ZR_NULL) {
         return ZR_FALSE;
@@ -26,17 +29,80 @@ TZrBool native_binding_auto_check_arity(const ZrLibCallContext *context) {
     return ZR_TRUE;
 }
 
+static TZrBool native_binding_pin_value_object(SZrState *state, const SZrTypeValue *value, TZrBool *addedByCaller) {
+    SZrRawObject *object;
+
+    if (addedByCaller != ZR_NULL) {
+        *addedByCaller = ZR_FALSE;
+    }
+
+    if (state == ZR_NULL || state->global == ZR_NULL || value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
+        return ZR_TRUE;
+    }
+
+    object = ZrCore_Value_GetRawObject(value);
+    if (object == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (ZrCore_GarbageCollector_IsObjectIgnored(state->global, object)) {
+        return ZR_TRUE;
+    }
+
+    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
+        return ZR_FALSE;
+    }
+
+    if (addedByCaller != ZR_NULL) {
+        *addedByCaller = ZR_TRUE;
+    }
+    return ZR_TRUE;
+}
+
+static void native_binding_unpin_value_object(SZrGlobalState *global,
+                                              const SZrTypeValue *value,
+                                              TZrBool addedByCaller) {
+    SZrRawObject *object;
+
+    if (!addedByCaller || global == ZR_NULL || value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
+        return;
+    }
+
+    object = ZrCore_Value_GetRawObject(value);
+    if (object != ZR_NULL) {
+        ZrCore_GarbageCollector_UnignoreObject(global, object);
+    }
+}
+
 TZrInt64 native_binding_dispatcher(SZrState *state) {
     ZrLibrary_NativeRegistryState *registry;
     TZrStackValuePointer functionBase;
     SZrFunctionStackAnchor functionBaseAnchor;
+    SZrFunctionStackAnchor stableBaseAnchor;
+    SZrFunctionStackAnchor callInfoTopAnchor;
     SZrTypeValue *closureValue;
     SZrClosureNative *closure;
     ZrLibBindingEntry *entry;
     ZrLibCallContext context;
     SZrTypeValue result;
+    SZrTypeValue stableSelfCopy;
+    SZrTypeValue inlineArgumentCopies[ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY];
+    SZrTypeValue *stableArgumentCopies;
+    TZrBool inlineArgumentPinAdded[ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY];
+    TZrBool *argumentPinAdded;
     TZrSize rawArgumentCount;
+    TZrSize stableArgumentCopyBytes;
+    TZrSize argumentPinAddedBytes;
+    TZrSize stableSlotCount;
+    TZrStackValuePointer stableBase;
+    TZrSize copiedArgumentCount;
+    TZrBool hasSavedCallInfoTop;
+    TZrBool hasCopiedSelf;
+    TZrBool selfPinAdded;
+    TZrBool freeStableArgumentCopies;
+    TZrBool freeArgumentPinAdded;
     TZrBool success;
+    TZrSize index;
 
     if (state == ZR_NULL || state->global == ZR_NULL || state->callInfoList == ZR_NULL) {
         return 0;
@@ -55,7 +121,6 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
     if (entry == ZR_NULL) {
         return 0;
     }
-
     rawArgumentCount = (TZrSize)(state->stackTop.valuePointer - (functionBase + 1));
 
     memset(&context, 0, sizeof(context));
@@ -71,7 +136,6 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
     context.metaMethodDescriptor =
             entry->bindingKind == ZR_LIB_RESOLVED_BINDING_META_METHOD ? entry->descriptor.metaMethodDescriptor : ZR_NULL;
     context.functionBase = functionBase;
-
     native_binding_init_call_context_layout(&context, functionBase, rawArgumentCount);
 
     if (context.selfValue != ZR_NULL &&
@@ -90,6 +154,149 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
         return 0;
     }
 
+    stableArgumentCopies = inlineArgumentCopies;
+    argumentPinAdded = inlineArgumentPinAdded;
+    stableArgumentCopyBytes = 0;
+    argumentPinAddedBytes = 0;
+    freeStableArgumentCopies = ZR_FALSE;
+    freeArgumentPinAdded = ZR_FALSE;
+    stableSlotCount = context.argumentCount + (context.selfValue != ZR_NULL ? 1u : 0u);
+    hasSavedCallInfoTop = ZR_FALSE;
+    stableBase = state->stackTop.valuePointer;
+    copiedArgumentCount = 0;
+    hasCopiedSelf = ZR_FALSE;
+    selfPinAdded = ZR_FALSE;
+
+    if (context.selfValue != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(&stableSelfCopy);
+        ZrCore_Value_Copy(state, &stableSelfCopy, context.selfValue);
+        hasCopiedSelf = ZR_TRUE;
+    }
+    if (context.argumentCount > 0) {
+        if (context.argumentCount > ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY) {
+            stableArgumentCopyBytes = context.argumentCount * sizeof(SZrTypeValue);
+            stableArgumentCopies = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                                   stableArgumentCopyBytes,
+                                                                                   ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            if (stableArgumentCopies == ZR_NULL) {
+                return 0;
+            }
+            freeStableArgumentCopies = ZR_TRUE;
+        }
+        if (context.argumentCount > ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY) {
+            argumentPinAddedBytes = context.argumentCount * sizeof(TZrBool);
+            argumentPinAdded = (TZrBool *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                          argumentPinAddedBytes,
+                                                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            if (argumentPinAdded == ZR_NULL) {
+                if (freeStableArgumentCopies) {
+                    ZrCore_Memory_RawFreeWithType(state->global,
+                                                  stableArgumentCopies,
+                                                  stableArgumentCopyBytes,
+                                                  ZR_MEMORY_NATIVE_TYPE_OBJECT);
+                }
+                return 0;
+            }
+            freeArgumentPinAdded = ZR_TRUE;
+        }
+        memset(argumentPinAdded, 0, context.argumentCount * sizeof(TZrBool));
+
+        for (index = 0; index < context.argumentCount; index++) {
+            ZrCore_Value_ResetAsNull(&stableArgumentCopies[index]);
+            stableArgumentCopies[index] = *ZrCore_Stack_GetValue(context.argumentBase + index);
+            copiedArgumentCount++;
+        }
+    }
+
+    if (!native_binding_pin_value_object(state, context.selfValue != ZR_NULL ? &stableSelfCopy : ZR_NULL, &selfPinAdded)) {
+        for (index = copiedArgumentCount; index > 0; index--) {
+            ZrCore_Ownership_ReleaseValue(state, &stableArgumentCopies[index - 1]);
+        }
+        if (hasCopiedSelf) {
+            ZrCore_Ownership_ReleaseValue(state, &stableSelfCopy);
+        }
+        if (freeStableArgumentCopies) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          stableArgumentCopies,
+                                          stableArgumentCopyBytes,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        }
+        if (freeArgumentPinAdded) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          argumentPinAdded,
+                                          argumentPinAddedBytes,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        }
+        return 0;
+    }
+    for (index = 0; index < context.argumentCount; index++) {
+        if (!native_binding_pin_value_object(state, &stableArgumentCopies[index], &argumentPinAdded[index])) {
+            while (index > 0) {
+                index--;
+                native_binding_unpin_value_object(state->global, &stableArgumentCopies[index], argumentPinAdded[index]);
+            }
+            native_binding_unpin_value_object(state->global, &stableSelfCopy, selfPinAdded);
+            for (index = copiedArgumentCount; index > 0; index--) {
+                ZrCore_Ownership_ReleaseValue(state, &stableArgumentCopies[index - 1]);
+            }
+            if (hasCopiedSelf) {
+                ZrCore_Ownership_ReleaseValue(state, &stableSelfCopy);
+            }
+            if (freeStableArgumentCopies) {
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              stableArgumentCopies,
+                                              stableArgumentCopyBytes,
+                                              ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            }
+            if (freeArgumentPinAdded) {
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              argumentPinAdded,
+                                              argumentPinAddedBytes,
+                                              ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            }
+            return 0;
+        }
+    }
+
+    if (stableSlotCount > 0) {
+        ZrCore_Function_StackAnchorInit(state, stableBase, &stableBaseAnchor);
+        if (state->callInfoList->functionTop.valuePointer != ZR_NULL) {
+            ZrCore_Function_StackAnchorInit(state, state->callInfoList->functionTop.valuePointer, &callInfoTopAnchor);
+            hasSavedCallInfoTop = ZR_TRUE;
+        }
+
+        stableBase = ZrCore_Function_CheckStackAndAnchor(state, stableSlotCount, stableBase, stableBase, &stableBaseAnchor);
+        functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
+        stableBase = ZrCore_Function_StackAnchorRestore(state, &stableBaseAnchor);
+        if (hasSavedCallInfoTop) {
+            state->callInfoList->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+        }
+
+        context.functionBase = functionBase;
+        if (context.selfValue != ZR_NULL) {
+            ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(stableBase));
+            ZrCore_Stack_CopyValue(state, stableBase, &stableSelfCopy);
+            context.selfValue = &stableSelfCopy;
+        }
+        if (context.argumentCount > 0) {
+            TZrStackValuePointer stableArgumentBase = stableBase + (context.selfValue != ZR_NULL ? 1 : 0);
+            for (index = 0; index < context.argumentCount; index++) {
+                ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(stableArgumentBase + index));
+                ZrCore_Stack_CopyValue(state, stableArgumentBase + index, &stableArgumentCopies[index]);
+            }
+            context.argumentBase = stableArgumentBase;
+            context.argumentValues = stableArgumentCopies;
+        } else {
+            context.argumentBase = stableBase + (context.selfValue != ZR_NULL ? 1 : 0);
+            context.argumentValues = ZR_NULL;
+        }
+
+        state->stackTop.valuePointer = stableBase + stableSlotCount;
+        if (state->callInfoList->functionTop.valuePointer == ZR_NULL ||
+            state->callInfoList->functionTop.valuePointer < state->stackTop.valuePointer) {
+            state->callInfoList->functionTop.valuePointer = state->stackTop.valuePointer;
+        }
+    }
     success = ZR_FALSE;
     if (context.functionDescriptor != ZR_NULL && context.functionDescriptor->callback != ZR_NULL) {
         success = context.functionDescriptor->callback(&context, &result);
@@ -104,6 +311,36 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
             return 0;
         }
         ZrLib_Value_SetNull(&result);
+    }
+
+    for (index = context.argumentCount; index > 0; index--) {
+        native_binding_unpin_value_object(state->global,
+                                          &stableArgumentCopies[index - 1],
+                                          argumentPinAdded[index - 1]);
+    }
+    native_binding_unpin_value_object(state->global,
+                                      context.selfValue != ZR_NULL ? &stableSelfCopy : ZR_NULL,
+                                      selfPinAdded);
+    for (index = copiedArgumentCount; index > 0; index--) {
+        ZrCore_Ownership_ReleaseValue(state, &stableArgumentCopies[index - 1]);
+    }
+    if (hasCopiedSelf) {
+        ZrCore_Ownership_ReleaseValue(state, &stableSelfCopy);
+    }
+    if (freeStableArgumentCopies) {
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      stableArgumentCopies,
+                                      stableArgumentCopyBytes,
+                                      ZR_MEMORY_NATIVE_TYPE_OBJECT);
+    }
+    if (freeArgumentPinAdded) {
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      argumentPinAdded,
+                                      argumentPinAddedBytes,
+                                      ZR_MEMORY_NATIVE_TYPE_OBJECT);
+    }
+    if (hasSavedCallInfoTop) {
+        state->callInfoList->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
     }
 
     functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
@@ -133,6 +370,9 @@ SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSiz
     if (context == ZR_NULL || index >= context->argumentCount) {
         return ZR_NULL;
     }
+    if (context->argumentValues != ZR_NULL) {
+        return &context->argumentValues[index];
+    }
     return ZrCore_Stack_GetValue(context->argumentBase + index);
 }
 
@@ -154,13 +394,14 @@ TZrBool ZrLib_CallContext_CheckArity(const ZrLibCallContext *context,
     if (context->argumentCount < minArgumentCount ||
         (maxArgumentCount != UINT16_MAX && context->argumentCount > maxArgumentCount)) {
         ZrLib_CallContext_RaiseArityError(context, minArgumentCount, maxArgumentCount);
-        return ZR_FALSE;
     }
 
     return ZR_TRUE;
 }
 
-void ZrLib_CallContext_RaiseTypeError(const ZrLibCallContext *context, TZrSize index, const TZrChar *expectedType) {
+ZR_NO_RETURN void ZrLib_CallContext_RaiseTypeError(const ZrLibCallContext *context,
+                                                   TZrSize index,
+                                                   const TZrChar *expectedType) {
     const TZrChar *callName = native_binding_call_name(context);
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     const TZrChar *actualType = native_binding_value_type_name(context != ZR_NULL ? context->state : ZR_NULL, value);
@@ -172,9 +413,9 @@ void ZrLib_CallContext_RaiseTypeError(const ZrLibCallContext *context, TZrSize i
                           actualType != ZR_NULL ? actualType : "value");
 }
 
-void ZrLib_CallContext_RaiseArityError(const ZrLibCallContext *context,
-                                       TZrSize minArgumentCount,
-                                       TZrSize maxArgumentCount) {
+ZR_NO_RETURN void ZrLib_CallContext_RaiseArityError(const ZrLibCallContext *context,
+                                                    TZrSize minArgumentCount,
+                                                    TZrSize maxArgumentCount) {
     const TZrChar *callName = native_binding_call_name(context);
     if (maxArgumentCount == UINT16_MAX) {
         ZrCore_Debug_RunError(context->state,
@@ -321,7 +562,6 @@ TZrBool ZrLib_CallContext_ReadInt(const ZrLibCallContext *context, TZrSize index
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
         ZrLib_CallContext_RaiseArityError(context, index + 1, UINT16_MAX);
-        return ZR_FALSE;
     }
 
     switch (value->type) {
@@ -349,7 +589,6 @@ TZrBool ZrLib_CallContext_ReadInt(const ZrLibCallContext *context, TZrSize index
             return ZR_TRUE;
         default:
             ZrLib_CallContext_RaiseTypeError(context, index, "int");
-            return ZR_FALSE;
     }
 }
 
@@ -357,7 +596,6 @@ TZrBool ZrLib_CallContext_ReadFloat(const ZrLibCallContext *context, TZrSize ind
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
         ZrLib_CallContext_RaiseArityError(context, index + 1, UINT16_MAX);
-        return ZR_FALSE;
     }
 
     switch (value->type) {
@@ -385,7 +623,6 @@ TZrBool ZrLib_CallContext_ReadFloat(const ZrLibCallContext *context, TZrSize ind
             return ZR_TRUE;
         default:
             ZrLib_CallContext_RaiseTypeError(context, index, "float");
-            return ZR_FALSE;
     }
 }
 
@@ -393,12 +630,10 @@ TZrBool ZrLib_CallContext_ReadBool(const ZrLibCallContext *context, TZrSize inde
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
         ZrLib_CallContext_RaiseArityError(context, index + 1, UINT16_MAX);
-        return ZR_FALSE;
     }
 
     if (value->type != ZR_VALUE_TYPE_BOOL) {
         ZrLib_CallContext_RaiseTypeError(context, index, "bool");
-        return ZR_FALSE;
     }
 
     if (outValue != ZR_NULL) {
@@ -411,12 +646,10 @@ TZrBool ZrLib_CallContext_ReadString(const ZrLibCallContext *context, TZrSize in
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
         ZrLib_CallContext_RaiseArityError(context, index + 1, UINT16_MAX);
-        return ZR_FALSE;
     }
 
     if (value->type != ZR_VALUE_TYPE_STRING) {
         ZrLib_CallContext_RaiseTypeError(context, index, "string");
-        return ZR_FALSE;
     }
 
     if (outValue != ZR_NULL) {
@@ -429,12 +662,10 @@ TZrBool ZrLib_CallContext_ReadObject(const ZrLibCallContext *context, TZrSize in
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
         ZrLib_CallContext_RaiseArityError(context, index + 1, UINT16_MAX);
-        return ZR_FALSE;
     }
 
     if (value->type != ZR_VALUE_TYPE_OBJECT && value->type != ZR_VALUE_TYPE_ARRAY) {
         ZrLib_CallContext_RaiseTypeError(context, index, "object");
-        return ZR_FALSE;
     }
 
     if (outValue != ZR_NULL) {
@@ -447,12 +678,10 @@ TZrBool ZrLib_CallContext_ReadArray(const ZrLibCallContext *context, TZrSize ind
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
         ZrLib_CallContext_RaiseArityError(context, index + 1, UINT16_MAX);
-        return ZR_FALSE;
     }
 
     if (value->type != ZR_VALUE_TYPE_ARRAY) {
         ZrLib_CallContext_RaiseTypeError(context, index, "array");
-        return ZR_FALSE;
     }
 
     if (outValue != ZR_NULL) {
@@ -465,14 +694,12 @@ TZrBool ZrLib_CallContext_ReadFunction(const ZrLibCallContext *context, TZrSize 
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
         ZrLib_CallContext_RaiseArityError(context, index + 1, UINT16_MAX);
-        return ZR_FALSE;
     }
 
     if (value->type != ZR_VALUE_TYPE_FUNCTION &&
         value->type != ZR_VALUE_TYPE_CLOSURE &&
         value->type != ZR_VALUE_TYPE_NATIVE_POINTER) {
         ZrLib_CallContext_RaiseTypeError(context, index, "function");
-        return ZR_FALSE;
     }
 
     if (outValue != ZR_NULL) {
@@ -536,6 +763,77 @@ void ZrLib_Value_SetNativePointer(SZrState *state, SZrTypeValue *value, TZrPtr p
     ZrCore_Value_InitAsNativePointer(state, value, pointerValue);
 }
 
+static EZrValueType native_binding_value_type_for_object(SZrObject *object) {
+    return object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY ? ZR_VALUE_TYPE_ARRAY
+                                                                                       : ZR_VALUE_TYPE_OBJECT;
+}
+
+static TZrBool native_binding_begin_rooted_object(SZrState *state, SZrObject *object, ZrLibTempValueRoot *root) {
+    if (state == ZR_NULL || object == ZR_NULL || root == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLib_TempValueRoot_Begin(state, root)) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLib_TempValueRoot_SetObject(root, object, native_binding_value_type_for_object(object))) {
+        ZrLib_TempValueRoot_End(root);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool native_binding_begin_rooted_value(SZrState *state,
+                                                 const SZrTypeValue *value,
+                                                 ZrLibTempValueRoot *root) {
+    if (state == ZR_NULL || value == ZR_NULL || root == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLib_TempValueRoot_Begin(state, root)) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLib_TempValueRoot_SetValue(root, value)) {
+        ZrLib_TempValueRoot_End(root);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool native_binding_begin_rooted_field_key(SZrState *state,
+                                                     const TZrChar *fieldName,
+                                                     ZrLibTempValueRoot *root) {
+    SZrString *fieldString;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || fieldName == ZR_NULL || root == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLib_TempValueRoot_Begin(state, root)) {
+        return ZR_FALSE;
+    }
+
+    fieldString = native_binding_create_string(state, fieldName);
+    if (fieldString == ZR_NULL) {
+        ZrLib_TempValueRoot_End(root);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    if (!ZrLib_TempValueRoot_SetValue(root, &key)) {
+        ZrLib_TempValueRoot_End(root);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
 SZrObject *ZrLib_Object_New(SZrState *state) {
     SZrObject *object;
     if (state == ZR_NULL) {
@@ -564,52 +862,110 @@ void ZrLib_Object_SetFieldCString(SZrState *state,
                                   SZrObject *object,
                                   const TZrChar *fieldName,
                                   const SZrTypeValue *value) {
-    SZrString *fieldString;
-    SZrTypeValue key;
+    ZrLibTempValueRoot objectRoot;
+    ZrLibTempValueRoot valueRoot;
+    ZrLibTempValueRoot keyRoot;
+    SZrTypeValue *stableObjectValue;
+    SZrTypeValue *stableValue;
+    SZrTypeValue *stableKeyValue;
 
     if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL) {
         return;
     }
 
-    fieldString = native_binding_create_string(state, fieldName);
-    if (fieldString == ZR_NULL) {
+    if (!native_binding_begin_rooted_object(state, object, &objectRoot)) {
+        return;
+    }
+    if (!native_binding_begin_rooted_value(state, value, &valueRoot)) {
+        ZrLib_TempValueRoot_End(&objectRoot);
+        return;
+    }
+    if (!native_binding_begin_rooted_field_key(state, fieldName, &keyRoot)) {
+        ZrLib_TempValueRoot_End(&valueRoot);
+        ZrLib_TempValueRoot_End(&objectRoot);
         return;
     }
 
-    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
-    key.type = ZR_VALUE_TYPE_STRING;
-    ZrCore_Object_SetValue(state, object, &key, value);
+    stableObjectValue = ZrLib_TempValueRoot_Value(&objectRoot);
+    stableValue = ZrLib_TempValueRoot_Value(&valueRoot);
+    stableKeyValue = ZrLib_TempValueRoot_Value(&keyRoot);
+    if (stableObjectValue != ZR_NULL && stableObjectValue->value.object != ZR_NULL && stableValue != ZR_NULL &&
+        stableKeyValue != ZR_NULL) {
+        ZrCore_Object_SetValue(state,
+                               ZR_CAST_OBJECT(state, stableObjectValue->value.object),
+                               stableKeyValue,
+                               stableValue);
+    }
+
+    ZrLib_TempValueRoot_End(&keyRoot);
+    ZrLib_TempValueRoot_End(&valueRoot);
+    ZrLib_TempValueRoot_End(&objectRoot);
 }
 
 const SZrTypeValue *ZrLib_Object_GetFieldCString(SZrState *state,
                                                  SZrObject *object,
                                                  const TZrChar *fieldName) {
-    SZrString *fieldString;
-    SZrTypeValue key;
+    ZrLibTempValueRoot objectRoot;
+    ZrLibTempValueRoot keyRoot;
+    SZrTypeValue *stableObjectValue;
+    SZrTypeValue *stableKeyValue;
+    const SZrTypeValue *result = ZR_NULL;
 
     if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    fieldString = native_binding_create_string(state, fieldName);
-    if (fieldString == ZR_NULL) {
+    if (!native_binding_begin_rooted_object(state, object, &objectRoot)) {
+        return ZR_NULL;
+    }
+    if (!native_binding_begin_rooted_field_key(state, fieldName, &keyRoot)) {
+        ZrLib_TempValueRoot_End(&objectRoot);
         return ZR_NULL;
     }
 
-    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
-    key.type = ZR_VALUE_TYPE_STRING;
-    return ZrCore_Object_GetValue(state, object, &key);
+    stableObjectValue = ZrLib_TempValueRoot_Value(&objectRoot);
+    stableKeyValue = ZrLib_TempValueRoot_Value(&keyRoot);
+    if (stableObjectValue != ZR_NULL && stableObjectValue->value.object != ZR_NULL && stableKeyValue != ZR_NULL) {
+        result = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, stableObjectValue->value.object), stableKeyValue);
+    }
+
+    ZrLib_TempValueRoot_End(&keyRoot);
+    ZrLib_TempValueRoot_End(&objectRoot);
+    return result;
 }
 
 TZrBool ZrLib_Array_PushValue(SZrState *state, SZrObject *array, const SZrTypeValue *value) {
+    ZrLibTempValueRoot arrayRoot;
+    ZrLibTempValueRoot valueRoot;
+    SZrTypeValue *stableArrayValue;
+    SZrTypeValue *stableValue;
     SZrTypeValue key;
 
     if (state == ZR_NULL || array == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)ZrLib_Array_Length(array));
-    ZrCore_Object_SetValue(state, array, &key, value);
+    if (!native_binding_begin_rooted_object(state, array, &arrayRoot)) {
+        return ZR_FALSE;
+    }
+    if (!native_binding_begin_rooted_value(state, value, &valueRoot)) {
+        ZrLib_TempValueRoot_End(&arrayRoot);
+        return ZR_FALSE;
+    }
+
+    stableArrayValue = ZrLib_TempValueRoot_Value(&arrayRoot);
+    stableValue = ZrLib_TempValueRoot_Value(&valueRoot);
+    if (stableArrayValue == ZR_NULL || stableArrayValue->value.object == ZR_NULL || stableValue == ZR_NULL) {
+        ZrLib_TempValueRoot_End(&valueRoot);
+        ZrLib_TempValueRoot_End(&arrayRoot);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)ZrLib_Array_Length(ZR_CAST_OBJECT(state, stableArrayValue->value.object)));
+    ZrCore_Object_SetValue(state, ZR_CAST_OBJECT(state, stableArrayValue->value.object), &key, stableValue);
+
+    ZrLib_TempValueRoot_End(&valueRoot);
+    ZrLib_TempValueRoot_End(&arrayRoot);
     return ZR_TRUE;
 }
 
@@ -800,7 +1156,7 @@ TZrBool ZrLib_CallValue(SZrState *state,
         }
     }
 
-    ZrCore_Function_CheckStackAndGc(state, scratchSlots, base);
+    ZrCore_Function_ReserveScratchSlots(state, scratchSlots, base);
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
     if (savedCallInfo != ZR_NULL) {

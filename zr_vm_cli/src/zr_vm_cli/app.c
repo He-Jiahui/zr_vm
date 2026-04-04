@@ -27,7 +27,7 @@ int ZrCli_App_Run(int argc, char **argv) {
             return ZrCli_Repl_Run();
 
         case ZR_CLI_MODE_RUN_PROJECT:
-            return ZrCli_Runtime_RunProjectSourceFirst(command.projectPath);
+            return ZrCli_Runtime_RunProject(&command);
 
         case ZR_CLI_MODE_COMPILE_PROJECT: {
             int compileResult = ZrCli_Compiler_CompileProject(&command);
@@ -35,7 +35,7 @@ int ZrCli_App_Run(int argc, char **argv) {
                 return compileResult;
             }
             if (command.runAfterCompile) {
-                return ZrCli_Runtime_RunProjectBinaryFirst(command.projectPath);
+                return ZrCli_Runtime_RunProject(&command);
             }
             return 0;
         }

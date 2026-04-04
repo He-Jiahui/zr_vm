@@ -59,6 +59,9 @@ void ZrCore_Module_AddPubExport(SZrState *state,
     pair = ZrCore_HashSet_Find(state, &module->proNodeMap, &key);
     if (pair == ZR_NULL) {
         pair = ZrCore_HashSet_Add(state, &module->proNodeMap, &key);
+        if (pair == ZR_NULL) {
+            return;
+        }
     }
     ZrCore_Value_Copy(state, &pair->value, value);
 }
@@ -78,6 +81,9 @@ void ZrCore_Module_AddProExport(SZrState *state,
     pair = ZrCore_HashSet_Find(state, &module->proNodeMap, &key);
     if (pair == ZR_NULL) {
         pair = ZrCore_HashSet_Add(state, &module->proNodeMap, &key);
+        if (pair == ZR_NULL) {
+            return;
+        }
     }
     ZrCore_Value_Copy(state, &pair->value, value);
 }

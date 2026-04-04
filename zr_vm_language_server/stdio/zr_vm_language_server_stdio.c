@@ -204,17 +204,17 @@ int main(void) {
             continue;
         }
 
-        methodJson = get_object_item(message, "method");
+        methodJson = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_METHOD);
         if (!cJSON_IsString((cJSON *)methodJson)) {
-            id = get_object_item(message, "id");
+            id = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_ID);
             send_error_response(id, ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE, "Invalid Request");
             cJSON_Delete(message);
             continue;
         }
 
         method = cJSON_GetStringValue((cJSON *)methodJson);
-        id = get_object_item(message, "id");
-        params = get_object_item(message, "params");
+        id = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_ID);
+        params = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_PARAMS);
 
         if (id != NULL) {
             handle_request_message(&server, id, method, params);

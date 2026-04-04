@@ -86,7 +86,7 @@ SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     ZrParser_Lexer_Next(ps->lexer);
 
     // 解析成员列表
-    SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, 8);
+    SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (members == ZR_NULL) {
         if (decorators != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, decorators);
@@ -337,7 +337,7 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
 
-    declarations = ZrParser_AstNodeArray_New(ps->state, 4);
+    declarations = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (declarations == ZR_NULL) {
         return ZR_NULL;
     }
@@ -657,7 +657,7 @@ SZrAstNode *parse_intermediate_instruction(SZrParserState *ps) {
 
     // 解析参数列表（参数之间用空格分隔，lexer 已经处理了空白）
     // 语法：name value1 value2 ... ;
-    SZrAstNodeArray *values = ZrParser_AstNodeArray_New(ps->state, 4);
+    SZrAstNodeArray *values = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (values == ZR_NULL) {
         return ZR_NULL;
     }
@@ -900,7 +900,7 @@ SZrAstNode *parse_intermediate_statement(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACE);
     consume_token(ps, ZR_TK_LBRACE);
 
-    SZrAstNodeArray *instructions = ZrParser_AstNodeArray_New(ps->state, 8);
+    SZrAstNodeArray *instructions = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (instructions == ZR_NULL) {
         return ZR_NULL;
     }
@@ -946,7 +946,7 @@ SZrAstNode *parse_generator_expression(SZrParserState *ps) {
 
     // 解析块内容（语句列表），不期望 { 和 }
     SZrFileRange blockStartLoc = get_current_location(ps);
-    SZrAstNodeArray *statements = ZrParser_AstNodeArray_New(ps->state, 8);
+    SZrAstNodeArray *statements = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (statements == ZR_NULL) {
         report_error(ps, "Failed to allocate statement array");
         return ZR_NULL;

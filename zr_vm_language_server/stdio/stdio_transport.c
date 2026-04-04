@@ -22,7 +22,7 @@ void send_json_message(cJSON *message) {
     }
 
     payloadLength = strlen(payload);
-    fprintf(stdout, "Content-Length: %zu\r\n\r\n", payloadLength);
+    fprintf(stdout, "%s %zu\r\n\r\n", ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX, payloadLength);
     fwrite(payload, 1, payloadLength, stdout);
     fflush(stdout);
 
@@ -38,12 +38,12 @@ void send_result_response(const cJSON *id, cJSON *result) {
         return;
     }
 
-    cJSON_AddStringToObject(message, "jsonrpc", "2.0");
-    cJSON_AddItemToObject(message, "id", duplicate_id(id));
+    cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_JSONRPC, ZR_LSP_JSON_RPC_VERSION);
+    cJSON_AddItemToObject(message, ZR_LSP_JSON_RPC_FIELD_ID, duplicate_id(id));
     if (result == NULL) {
-        cJSON_AddNullToObject(message, "result");
+        cJSON_AddNullToObject(message, ZR_LSP_JSON_RPC_FIELD_RESULT);
     } else {
-        cJSON_AddItemToObject(message, "result", result);
+        cJSON_AddItemToObject(message, ZR_LSP_JSON_RPC_FIELD_RESULT, result);
     }
 
     send_json_message(message);
@@ -59,11 +59,12 @@ void send_error_response(const cJSON *id, int code, const char *messageText) {
         return;
     }
 
-    cJSON_AddStringToObject(message, "jsonrpc", "2.0");
-    cJSON_AddItemToObject(message, "id", duplicate_id(id));
-    cJSON_AddNumberToObject(errorObject, "code", code);
-    cJSON_AddStringToObject(errorObject, "message", messageText != NULL ? messageText : "Unknown error");
-    cJSON_AddItemToObject(message, "error", errorObject);
+    cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_JSONRPC, ZR_LSP_JSON_RPC_VERSION);
+    cJSON_AddItemToObject(message, ZR_LSP_JSON_RPC_FIELD_ID, duplicate_id(id));
+    cJSON_AddNumberToObject(errorObject, ZR_LSP_JSON_RPC_FIELD_CODE, code);
+    cJSON_AddStringToObject(
+            errorObject, ZR_LSP_JSON_RPC_FIELD_MESSAGE, messageText != NULL ? messageText : "Unknown error");
+    cJSON_AddItemToObject(message, ZR_LSP_JSON_RPC_FIELD_ERROR, errorObject);
 
     send_json_message(message);
 }
@@ -76,12 +77,12 @@ void send_notification(const char *method, cJSON *params) {
         return;
     }
 
-    cJSON_AddStringToObject(message, "jsonrpc", "2.0");
-    cJSON_AddStringToObject(message, "method", method);
+    cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_JSONRPC, ZR_LSP_JSON_RPC_VERSION);
+    cJSON_AddStringToObject(message, ZR_LSP_JSON_RPC_FIELD_METHOD, method);
     if (params == NULL) {
-        cJSON_AddNullToObject(message, "params");
+        cJSON_AddNullToObject(message, ZR_LSP_JSON_RPC_FIELD_PARAMS);
     } else {
-        cJSON_AddItemToObject(message, "params", params);
+        cJSON_AddItemToObject(message, ZR_LSP_JSON_RPC_FIELD_PARAMS, params);
     }
 
     send_json_message(message);
@@ -105,8 +106,9 @@ char *read_message_payload(size_t *outLength) {
             break;
         }
 
-        if (starts_with_case_insensitive(headerLine, "Content-Length:")) {
-            const char *valueText = skip_spaces(headerLine + strlen("Content-Length:"));
+        if (starts_with_case_insensitive(headerLine, ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX)) {
+            const char *valueText =
+                    skip_spaces(headerLine + strlen(ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX));
             contentLength = (size_t)strtoul(valueText, NULL, 10);
         }
     }

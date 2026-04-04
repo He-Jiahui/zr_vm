@@ -8,6 +8,349 @@
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 
+static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suffix);
+
+static TZrBool lsp_file_range_contains_position(SZrFileRange range, SZrFileRange position) {
+    if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
+        range.source != ZR_NULL &&
+        position.source != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (range.start.offset > 0 && range.end.offset > 0 &&
+        position.start.offset > 0 && position.end.offset > 0) {
+        return range.start.offset <= position.start.offset &&
+               position.end.offset <= range.end.offset;
+    }
+
+    return (range.start.line < position.start.line ||
+            (range.start.line == position.start.line &&
+             range.start.column <= position.start.column)) &&
+           (position.end.line < range.end.line ||
+            (position.end.line == range.end.line &&
+             position.end.column <= range.end.column));
+}
+
+static SZrFileRange lsp_super_call_context_range(SZrAstNode *metaFunctionNode) {
+    SZrFileRange range;
+
+    memset(&range, 0, sizeof(range));
+    if (metaFunctionNode != ZR_NULL) {
+        range = metaFunctionNode->location;
+    }
+    if (metaFunctionNode == ZR_NULL || metaFunctionNode->type != ZR_AST_CLASS_META_FUNCTION) {
+        return range;
+    }
+
+    if (metaFunctionNode->data.classMetaFunction.superArgs != ZR_NULL &&
+        metaFunctionNode->data.classMetaFunction.superArgs->count > 0 &&
+        metaFunctionNode->data.classMetaFunction.superArgs->nodes != ZR_NULL &&
+        metaFunctionNode->data.classMetaFunction.superArgs->nodes[0] != ZR_NULL) {
+        SZrAstNode *lastArgNode =
+            metaFunctionNode->data.classMetaFunction.superArgs
+                ->nodes[metaFunctionNode->data.classMetaFunction.superArgs->count - 1];
+        range.start = metaFunctionNode->data.classMetaFunction.superArgs->nodes[0]->location.start;
+        if (range.start.offset >= 6) {
+            range.start.offset -= 6;
+        }
+        if (range.start.column >= 6) {
+            range.start.column -= 6;
+        }
+        range.end = lastArgNode != ZR_NULL ? lastArgNode->location.end : range.end;
+    } else if (metaFunctionNode->data.classMetaFunction.body != ZR_NULL) {
+        range.end = metaFunctionNode->data.classMetaFunction.body->location.start;
+    }
+
+    return range;
+}
+
+static TZrBool lsp_super_call_matches_position(SZrAstNode *metaFunctionNode, SZrFileRange position) {
+    SZrClassMetaFunction *metaFunction;
+    SZrFileRange superRange;
+
+    if (metaFunctionNode == ZR_NULL || metaFunctionNode->type != ZR_AST_CLASS_META_FUNCTION) {
+        return ZR_FALSE;
+    }
+
+    metaFunction = &metaFunctionNode->data.classMetaFunction;
+    if (!metaFunction->hasSuperCall) {
+        return ZR_FALSE;
+    }
+
+    superRange = lsp_super_call_context_range(metaFunctionNode);
+    if (lsp_file_range_contains_position(superRange, position)) {
+        return ZR_TRUE;
+    }
+
+    if (metaFunction->superArgs != ZR_NULL) {
+        for (TZrSize index = 0; index < metaFunction->superArgs->count; index++) {
+            SZrAstNode *argNode = metaFunction->superArgs->nodes[index];
+            if (argNode != ZR_NULL && lsp_file_range_contains_position(argNode->location, position)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool lsp_find_super_constructor_context(SZrAstNode *node,
+                                                  SZrFileRange position,
+                                                  SZrAstNode **ownerTypeNode,
+                                                  SZrAstNode **metaFunctionNode) {
+    if (ownerTypeNode != ZR_NULL) {
+        *ownerTypeNode = ZR_NULL;
+    }
+    if (metaFunctionNode != ZR_NULL) {
+        *metaFunctionNode = ZR_NULL;
+    }
+    if (node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_SCRIPT:
+            if (node->data.script.statements != ZR_NULL && node->data.script.statements->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.script.statements->count; index++) {
+                    if (lsp_find_super_constructor_context(node->data.script.statements->nodes[index],
+                                                           position,
+                                                           ownerTypeNode,
+                                                           metaFunctionNode)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            break;
+
+        case ZR_AST_BLOCK:
+            if (node->data.block.body != ZR_NULL && node->data.block.body->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.block.body->count; index++) {
+                    if (lsp_find_super_constructor_context(node->data.block.body->nodes[index],
+                                                           position,
+                                                           ownerTypeNode,
+                                                           metaFunctionNode)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            break;
+
+        case ZR_AST_CLASS_DECLARATION:
+            if (node->data.classDeclaration.members != ZR_NULL &&
+                node->data.classDeclaration.members->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.classDeclaration.members->count; index++) {
+                    SZrAstNode *memberNode = node->data.classDeclaration.members->nodes[index];
+                    if (memberNode == ZR_NULL) {
+                        continue;
+                    }
+
+                    if (memberNode->type == ZR_AST_CLASS_META_FUNCTION &&
+                        lsp_super_call_matches_position(memberNode, position)) {
+                        if (ownerTypeNode != ZR_NULL) {
+                            *ownerTypeNode = node;
+                        }
+                        if (metaFunctionNode != ZR_NULL) {
+                            *metaFunctionNode = memberNode;
+                        }
+                        return ZR_TRUE;
+                    }
+
+                    if (lsp_find_super_constructor_context(memberNode, position, ownerTypeNode, metaFunctionNode)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrString *lsp_get_direct_base_declaration_name(SZrAstNode *ownerTypeNode) {
+    SZrAstNode *inheritNode;
+
+    if (ownerTypeNode == ZR_NULL ||
+        ownerTypeNode->type != ZR_AST_CLASS_DECLARATION ||
+        ownerTypeNode->data.classDeclaration.inherits == ZR_NULL ||
+        ownerTypeNode->data.classDeclaration.inherits->count == 0) {
+        return ZR_NULL;
+    }
+
+    inheritNode = ownerTypeNode->data.classDeclaration.inherits->nodes[0];
+    if (inheritNode == ZR_NULL || inheritNode->type != ZR_AST_TYPE || inheritNode->data.type.name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (inheritNode->data.type.name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return inheritNode->data.type.name->data.identifier.name;
+    }
+
+    if (inheritNode->data.type.name->type == ZR_AST_GENERIC_TYPE &&
+        inheritNode->data.type.name->data.genericType.name != ZR_NULL) {
+        return inheritNode->data.type.name->data.genericType.name->name;
+    }
+
+    return ZR_NULL;
+}
+
+static SZrAstNode *lsp_find_type_declaration_recursive(SZrAstNode *node, SZrString *typeName) {
+    if (node == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (node->type) {
+        case ZR_AST_SCRIPT:
+            if (node->data.script.statements != ZR_NULL && node->data.script.statements->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.script.statements->count; index++) {
+                    SZrAstNode *resolved =
+                        lsp_find_type_declaration_recursive(node->data.script.statements->nodes[index], typeName);
+                    if (resolved != ZR_NULL) {
+                        return resolved;
+                    }
+                }
+            }
+            break;
+
+        case ZR_AST_BLOCK:
+            if (node->data.block.body != ZR_NULL && node->data.block.body->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.block.body->count; index++) {
+                    SZrAstNode *resolved =
+                        lsp_find_type_declaration_recursive(node->data.block.body->nodes[index], typeName);
+                    if (resolved != ZR_NULL) {
+                        return resolved;
+                    }
+                }
+            }
+            break;
+
+        case ZR_AST_CLASS_DECLARATION:
+            if (node->data.classDeclaration.name != ZR_NULL &&
+                node->data.classDeclaration.name->name != ZR_NULL &&
+                ZrCore_String_Equal(node->data.classDeclaration.name->name, typeName)) {
+                return node;
+            }
+            break;
+
+        case ZR_AST_STRUCT_DECLARATION:
+            if (node->data.structDeclaration.name != ZR_NULL &&
+                node->data.structDeclaration.name->name != ZR_NULL &&
+                ZrCore_String_Equal(node->data.structDeclaration.name->name, typeName)) {
+                return node;
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    return ZR_NULL;
+}
+
+static SZrAstNode *lsp_find_constructor_declaration_in_type(SZrAstNode *typeDeclarationNode) {
+    SZrAstNodeArray *members = ZR_NULL;
+
+    if (typeDeclarationNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (typeDeclarationNode->type == ZR_AST_CLASS_DECLARATION) {
+        members = typeDeclarationNode->data.classDeclaration.members;
+    } else if (typeDeclarationNode->type == ZR_AST_STRUCT_DECLARATION) {
+        members = typeDeclarationNode->data.structDeclaration.members;
+    }
+
+    if (members == ZR_NULL || members->nodes == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < members->count; index++) {
+        SZrAstNode *memberNode = members->nodes[index];
+        if (memberNode == ZR_NULL) {
+            continue;
+        }
+
+        if (memberNode->type == ZR_AST_CLASS_META_FUNCTION &&
+            memberNode->data.classMetaFunction.meta != ZR_NULL &&
+            memberNode->data.classMetaFunction.meta->name != ZR_NULL &&
+            lsp_string_ends_with_native(memberNode->data.classMetaFunction.meta->name, "constructor")) {
+            return memberNode;
+        }
+
+        if (memberNode->type == ZR_AST_STRUCT_META_FUNCTION &&
+            memberNode->data.structMetaFunction.meta != ZR_NULL &&
+            memberNode->data.structMetaFunction.meta->name != ZR_NULL &&
+            lsp_string_ends_with_native(memberNode->data.structMetaFunction.meta->name, "constructor")) {
+            return memberNode;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool lsp_try_append_super_constructor_definition(SZrState *state,
+                                                           SZrLspContext *context,
+                                                           SZrString *uri,
+                                                           SZrLspPosition position,
+                                                           SZrArray *result) {
+    SZrSemanticAnalyzer *analyzer;
+    SZrFileVersion *fileVersion;
+    SZrFilePosition filePos;
+    SZrFileRange fileRange;
+    SZrAstNode *ownerTypeNode = ZR_NULL;
+    SZrAstNode *metaFunctionNode = ZR_NULL;
+    SZrString *baseTypeName;
+    SZrAstNode *baseTypeDeclaration;
+    SZrAstNode *baseConstructorDeclaration;
+    SZrLspLocation *location;
+
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL || fileVersion == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    filePos = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
+    fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
+    if (!lsp_find_super_constructor_context(analyzer->ast, fileRange, &ownerTypeNode, &metaFunctionNode) ||
+        ownerTypeNode == ZR_NULL || metaFunctionNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    baseTypeName = lsp_get_direct_base_declaration_name(ownerTypeNode);
+    if (baseTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    baseTypeDeclaration = lsp_find_type_declaration_recursive(analyzer->ast, baseTypeName);
+    baseConstructorDeclaration = lsp_find_constructor_declaration_in_type(baseTypeDeclaration);
+    if (baseConstructorDeclaration == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!result->isValid) {
+        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 1);
+    }
+
+    location = (SZrLspLocation *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspLocation));
+    if (location == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    location->uri = baseConstructorDeclaration->location.source != ZR_NULL
+                        ? baseConstructorDeclaration->location.source
+                        : uri;
+    location->range = ZrLanguageServer_LspRange_FromFileRange(baseConstructorDeclaration->location);
+    ZrCore_Array_Push(state, result, &location);
+    return ZR_TRUE;
+}
+
 static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suffix) {
     TZrNativeString text;
     TZrSize length;
@@ -426,14 +769,21 @@ TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL && analyzer->ast != ZR_NULL) {
-        hasReceiverCompletions = ZrLanguageServer_Lsp_ProjectTryCollectImportCompletions(state,
-                                                                                         context,
-                                                                                         uri,
-                                                                                         fileVersion->content,
-                                                                                         fileVersion->contentLength,
-                                                                                         filePos.offset,
-                                                                                         fileRange,
-                                                                                         &completions);
+        hasReceiverCompletions = ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(state,
+                                                                                        fileVersion->content,
+                                                                                        fileVersion->contentLength,
+                                                                                        filePos.offset,
+                                                                                        &completions);
+        if (!hasReceiverCompletions) {
+            hasReceiverCompletions = ZrLanguageServer_Lsp_ProjectTryCollectImportCompletions(state,
+                                                                                             context,
+                                                                                             uri,
+                                                                                             fileVersion->content,
+                                                                                             fileVersion->contentLength,
+                                                                                             filePos.offset,
+                                                                                             fileRange,
+                                                                                             &completions);
+        }
         if (!hasReceiverCompletions) {
             hasReceiverCompletions = ZrLanguageServer_Lsp_TryCollectReceiverCompletions(state,
                                                                                         analyzer,
@@ -513,7 +863,11 @@ TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
                 lspItem->detail = item->detail;
                 lspItem->documentation = item->documentation;
                 lspItem->insertText = item->label;
-                lspItem->insertTextFormat = ZrCore_String_Create(state, "plaintext", 9);
+                lspItem->insertTextFormat = ZrCore_String_Create(
+                    state,
+                    ZR_LSP_INSERT_TEXT_FORMAT_KIND_PLAINTEXT,
+                    sizeof(ZR_LSP_INSERT_TEXT_FORMAT_KIND_PLAINTEXT) - 1
+                );
                 
                 ZrCore_Array_Push(state, result, &lspItem);
             }
@@ -628,6 +982,10 @@ TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
     }
     
     if (ZrLanguageServer_Lsp_ProjectTryGetDefinition(state, context, uri, position, result)) {
+        return ZR_TRUE;
+    }
+
+    if (lsp_try_append_super_constructor_definition(state, context, uri, position, result)) {
         return ZR_TRUE;
     }
 

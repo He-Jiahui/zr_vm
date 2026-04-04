@@ -14,12 +14,17 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_symbols.c
+  - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
 plan_sources:
   - user: 2026-03-28 实现“ZR 全目标回归强化与 Field-Scoped using 语义计划”
+  - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
   - .codex/plans/ZR 全目标回归强化与 Field-Scoped using 语义计划.md
 tests:
   - tests/parser/test_parser.c
   - tests/language_server/test_semantic_analyzer.c
+  - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_project_features.c
   - tests/parser/test_compiler_features.c
   - tests/module/test_module_system.c
 doc_type: category-index
@@ -58,6 +63,10 @@ doc_type: category-index
   - `class`/`struct` 字段级 `using var` 语法
   - `static using` 非法诊断
   - cleanup plan 与 prototype metadata 的传播路径
+- `lsp-semantic-resolution-and-native-imports.md`
+  - `this` / `super` / `%compileTime` / `%test` / lambda 的局部符号命中规则
+  - reference tracker 的“最窄范围优先”策略
+  - `%import("zr.math")` 如何在语义分析阶段预热 native metadata，支撑 `$math.Vector3(...).y`
 
 ## 阅读顺序
 
@@ -66,5 +75,6 @@ doc_type: category-index
 3. 然后看 `dynamic-meta-tail-call-semir-execbc-aot.md`，了解 dynamic/meta 调用在 tail-site 上的稳定语义契约。
 4. 再看 `call-site-quickening-meta-access-semir-aot.md`，了解 zero-arg/cached call-site quickening、meta access PIC、以及 child artifact 对齐规则。
 5. 再看 `ownership-upgrade-release-semir-aot.md`，了解 weak upgrade 和显式 owner release 的稳定语义边界。
-6. 最后看 `field-scoped-using.md`，了解字段生命周期语义。
-7. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+6. 再看 `field-scoped-using.md`，了解字段生命周期语义。
+7. 最后看 `lsp-semantic-resolution-and-native-imports.md`，了解 language server 如何消费 parser/native import metadata 并稳定命中局部语义引用。
+8. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

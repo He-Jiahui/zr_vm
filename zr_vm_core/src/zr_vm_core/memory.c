@@ -22,6 +22,20 @@ TZrPtr ZrCore_Memory_GcAndMalloc(SZrState *state, EZrMemoryNativeType type, TZrS
     return ZR_NULL;
 }
 
+static TZrPtr zr_core_memory_gc_and_reallocate(SZrState *state,
+                                               TZrPtr pointer,
+                                               TZrSize originalSize,
+                                               TZrSize newSize,
+                                               EZrMemoryNativeType type) {
+    SZrGlobalState *global = state->global;
+
+    if (ZrCore_GlobalState_IsInitialized(global) && !global->garbageCollector->isImmediateGcFlag) {
+        ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+        return ZrCore_Memory_Allocate(global, pointer, originalSize, newSize, type);
+    }
+    return ZR_NULL;
+}
+
 TZrPtr ZrCore_Memory_GcMalloc(SZrState *state, EZrMemoryNativeType type, TZrSize size) {
     ZR_ASSERT(size > 0);
     SZrGlobalState *global = state->global;
@@ -35,6 +49,29 @@ TZrPtr ZrCore_Memory_GcMalloc(SZrState *state, EZrMemoryNativeType type, TZrSize
     }
     global->garbageCollector->gcDebtSize += (TZrMemoryOffset) size;
     return pointer;
+}
+
+TZrPtr ZrCore_Memory_GcReallocate(SZrState *state,
+                                  TZrPtr pointer,
+                                  TZrSize originalSize,
+                                  TZrSize newSize,
+                                  EZrMemoryNativeType type) {
+    SZrGlobalState *global;
+    TZrPtr result;
+
+    ZR_ASSERT(state != ZR_NULL);
+    global = state->global;
+    result = ZrCore_Memory_Allocate(global, pointer, originalSize, newSize, type);
+    if (ZR_UNLIKELY(result == ZR_NULL && newSize > 0)) {
+        result = zr_core_memory_gc_and_reallocate(state, pointer, originalSize, newSize, type);
+        if (result == ZR_NULL) {
+            ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        }
+    }
+    if (result != ZR_NULL && newSize > originalSize) {
+        global->garbageCollector->gcDebtSize += (TZrMemoryOffset)(newSize - originalSize);
+    }
+    return result;
 }
 
 /*

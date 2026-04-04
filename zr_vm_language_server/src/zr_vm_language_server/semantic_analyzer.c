@@ -284,6 +284,16 @@ static const SZrType *semantic_find_type_node_at_position(SZrAstNode *node, SZrF
                            ? semantic_find_type_node_at_position(node->data.functionDeclaration.body, position)
                            : ZR_NULL;
 
+        case ZR_AST_TEST_DECLARATION:
+            return node->data.testDeclaration.body != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.testDeclaration.body, position)
+                           : ZR_NULL;
+
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            return node->data.compileTimeDeclaration.declaration != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.compileTimeDeclaration.declaration, position)
+                           : ZR_NULL;
+
         case ZR_AST_CLASS_DECLARATION:
             if (node->data.classDeclaration.inherits != ZR_NULL && node->data.classDeclaration.inherits->nodes != ZR_NULL) {
                 for (TZrSize index = 0; index < node->data.classDeclaration.inherits->count; index++) {
@@ -338,6 +348,58 @@ static const SZrType *semantic_find_type_node_at_position(SZrAstNode *node, SZrF
                            ? semantic_find_type_node_at_position(node->data.classMethod.body, position)
                            : ZR_NULL;
 
+        case ZR_AST_CLASS_META_FUNCTION:
+            if (node->data.classMetaFunction.params != ZR_NULL &&
+                node->data.classMetaFunction.params->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.classMetaFunction.params->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.classMetaFunction.params->nodes[index],
+                                                                position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            if (node->data.classMetaFunction.returnType != ZR_NULL) {
+                const SZrType *typeInfo =
+                        semantic_find_type_info_at_position(node->data.classMetaFunction.returnType, position);
+                if (typeInfo != ZR_NULL) {
+                    return typeInfo;
+                }
+            }
+            return node->data.classMetaFunction.body != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.classMetaFunction.body, position)
+                           : ZR_NULL;
+
+        case ZR_AST_CLASS_PROPERTY:
+            return node->data.classProperty.modifier != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.classProperty.modifier, position)
+                           : ZR_NULL;
+
+        case ZR_AST_PROPERTY_GET:
+            if (node->data.propertyGet.targetType != ZR_NULL) {
+                const SZrType *typeInfo =
+                        semantic_find_type_info_at_position(node->data.propertyGet.targetType, position);
+                if (typeInfo != ZR_NULL) {
+                    return typeInfo;
+                }
+            }
+            return node->data.propertyGet.body != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.propertyGet.body, position)
+                           : ZR_NULL;
+
+        case ZR_AST_PROPERTY_SET:
+            if (node->data.propertySet.targetType != ZR_NULL) {
+                const SZrType *typeInfo =
+                        semantic_find_type_info_at_position(node->data.propertySet.targetType, position);
+                if (typeInfo != ZR_NULL) {
+                    return typeInfo;
+                }
+            }
+            return node->data.propertySet.body != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.propertySet.body, position)
+                           : ZR_NULL;
+
         case ZR_AST_INTERFACE_DECLARATION:
             if (node->data.interfaceDeclaration.inherits != ZR_NULL &&
                 node->data.interfaceDeclaration.inherits->nodes != ZR_NULL) {
@@ -387,6 +449,21 @@ static const SZrType *semantic_find_type_node_at_position(SZrAstNode *node, SZrF
         case ZR_AST_PARAMETER:
             return node->data.parameter.typeInfo != ZR_NULL
                            ? semantic_find_type_info_at_position(node->data.parameter.typeInfo, position)
+                           : ZR_NULL;
+
+        case ZR_AST_LAMBDA_EXPRESSION:
+            if (node->data.lambdaExpression.params != ZR_NULL && node->data.lambdaExpression.params->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.lambdaExpression.params->count; index++) {
+                    const SZrType *nestedType =
+                            semantic_find_type_node_at_position(node->data.lambdaExpression.params->nodes[index],
+                                                                position);
+                    if (nestedType != ZR_NULL) {
+                        return nestedType;
+                    }
+                }
+            }
+            return node->data.lambdaExpression.block != ZR_NULL
+                           ? semantic_find_type_node_at_position(node->data.lambdaExpression.block, position)
                            : ZR_NULL;
 
         case ZR_AST_EXPRESSION_STATEMENT:
@@ -1615,14 +1692,25 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
     typeText = (symbol->typeInfo != ZR_NULL)
                ? ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer))
                : kindText;
-    snprintf(buffer,
-             sizeof(buffer),
-             "**%s**: %.*s\n\nType: %s\nAccess: %s",
-             kindText,
-             (int)nameLen,
-             nameStr,
-             typeText != ZR_NULL ? typeText : "object",
-             accessText);
+    if (symbol->typeInfo != ZR_NULL) {
+        snprintf(buffer,
+                 sizeof(buffer),
+                 "**%s**: %.*s\n\nResolved Type: %s\nAccess: %s",
+                 kindText,
+                 (int)nameLen,
+                 nameStr,
+                 typeText != ZR_NULL ? typeText : "object",
+                 accessText);
+    } else {
+        snprintf(buffer,
+                 sizeof(buffer),
+                 "**%s**: %.*s\n\nType: %s\nAccess: %s",
+                 kindText,
+                 (int)nameLen,
+                 nameStr,
+                 typeText != ZR_NULL ? typeText : "object",
+                 accessText);
+    }
 
     *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->selectionRange, symbol->typeInfo);
     return *result != ZR_NULL;

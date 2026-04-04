@@ -26,14 +26,14 @@ static char *apply_single_change(SZrString *uri,
         return NULL;
     }
 
-    textJson = cJSON_GetObjectItemCaseSensitive((cJSON *)change, "text");
+    textJson = get_object_item(change, ZR_LSP_FIELD_TEXT);
     if (!cJSON_IsString(textJson)) {
         return NULL;
     }
 
     replacement = cJSON_GetStringValue(textJson);
     replacementLength = replacement != NULL ? strlen(replacement) : 0;
-    rangeJson = cJSON_GetObjectItemCaseSensitive((cJSON *)change, "range");
+    rangeJson = get_object_item(change, ZR_LSP_FIELD_RANGE);
 
     if (rangeJson != NULL && !cJSON_IsNull(rangeJson)) {
         SZrLspRange lspRange;
@@ -149,12 +149,12 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     fileVersion = get_file_version_for_uri(server, uri);
 
     if (params != NULL) {
-        cJSON_AddStringToObject(params, "uri", uriText != NULL ? uriText : "");
+        cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI, uriText != NULL ? uriText : "");
         if (fileVersion != ZR_NULL) {
-            cJSON_AddNumberToObject(params, "version", (double)fileVersion->version);
+            cJSON_AddNumberToObject(params, ZR_LSP_FIELD_VERSION, (double)fileVersion->version);
         }
-        cJSON_AddItemToObject(params, "diagnostics", diagnosticsJson);
-        send_notification("textDocument/publishDiagnostics", params);
+        cJSON_AddItemToObject(params, ZR_LSP_FIELD_DIAGNOSTICS, diagnosticsJson);
+        send_notification(ZR_LSP_METHOD_TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS, params);
     } else {
         cJSON_Delete(diagnosticsJson);
     }
@@ -177,9 +177,9 @@ void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri) {
     uriText = zr_string_to_c_string(uri);
 
     if (params != NULL && diagnostics != NULL) {
-        cJSON_AddStringToObject(params, "uri", uriText != NULL ? uriText : "");
-        cJSON_AddItemToObject(params, "diagnostics", diagnostics);
-        send_notification("textDocument/publishDiagnostics", params);
+        cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI, uriText != NULL ? uriText : "");
+        cJSON_AddItemToObject(params, ZR_LSP_FIELD_DIAGNOSTICS, diagnostics);
+        send_notification(ZR_LSP_METHOD_TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS, params);
     } else {
         cJSON_Delete(params);
         cJSON_Delete(diagnostics);
@@ -214,8 +214,8 @@ int get_uri_from_text_document(SZrStdioServer *server,
         return 0;
     }
 
-    textDocument = get_object_item(params, "textDocument");
-    uriJson = get_object_item(textDocument, "uri");
+    textDocument = get_object_item(params, ZR_LSP_FIELD_TEXT_DOCUMENT);
+    uriJson = get_object_item(textDocument, ZR_LSP_FIELD_URI);
     if (!cJSON_IsString((cJSON *)uriJson)) {
         return 0;
     }
@@ -241,7 +241,7 @@ int get_uri_and_position(SZrStdioServer *server,
         return 0;
     }
 
-    positionJson = get_object_item(params, "position");
+    positionJson = get_object_item(params, ZR_LSP_FIELD_POSITION);
     return parse_position(positionJson, outPosition);
 }
 
