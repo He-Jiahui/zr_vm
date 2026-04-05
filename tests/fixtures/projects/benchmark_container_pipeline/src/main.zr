@@ -1,0 +1,86 @@
+var system = %import("zr.system");
+var container = %import("zr.container");
+
+labelFor(value: int) {
+    if (value % 2 == 0) {
+        return "even";
+    }
+    if (value > 128) {
+        return "odd_hi";
+    }
+    return "odd_lo";
+}
+
+var queue = new container.LinkedList<Pair<string, int>>();
+var seen = new container.Set<Pair<int, string>>();
+var buckets = new container.Map<string, Array<int>>();
+
+var seed = 41;
+var index = 0;
+while (index < 1024) {
+    seed = (seed * 29 + 17 + index) % 257;
+    queue.addLast(new container.Pair<string, int>(labelFor(seed), seed));
+    index = index + 1;
+}
+
+while (queue.count > 0) {
+    var head = queue.first;
+    var task = head.value;
+    var next = head.next;
+    if (next != null) {
+        next.previous = null;
+        queue.first = next;
+    } else {
+        queue.first = null;
+        queue.last = null;
+    }
+    head.next = null;
+    head.previous = null;
+    queue.count = queue.count - 1;
+    var taskValue = <int> task.second;
+    var taskLabel = <string> task.first;
+    seen.add(new container.Pair<int, string>(taskValue, taskLabel));
+}
+
+for (var pair in seen) {
+    var label = <string> pair.second;
+    var value = <int> pair.first;
+    var bucket = buckets[label];
+    if (bucket == null) {
+        bucket = new container.Array<int>();
+        buckets[label] = bucket;
+    }
+    bucket.add(value);
+}
+
+var oddLo: Array<int> = buckets["odd_lo"];
+var oddHi: Array<int> = buckets["odd_hi"];
+var even: Array<int> = buckets["even"];
+var oddLoSum = 0;
+var oddHiSum = 0;
+var evenSum = 0;
+var uniqueCount = 0;
+
+if (oddLo != null) {
+    for (var item in oddLo) {
+        oddLoSum = oddLoSum + <int> item;
+        uniqueCount = uniqueCount + 1;
+    }
+}
+
+if (oddHi != null) {
+    for (var item in oddHi) {
+        oddHiSum = oddHiSum + <int> item;
+        uniqueCount = uniqueCount + 1;
+    }
+}
+
+if (even != null) {
+    for (var item in even) {
+        evenSum = evenSum + <int> item;
+        uniqueCount = uniqueCount + 1;
+    }
+}
+
+system.console.printLine("BENCH_CONTAINER_PIPELINE_PASS");
+return evenSum * 100 + oddHiSum * 10 + oddLoSum + uniqueCount;

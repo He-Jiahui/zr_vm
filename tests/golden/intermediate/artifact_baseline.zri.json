@@ -1,0 +1,38 @@
+{
+	"startLine":	1,
+	"endLine":	12,
+	"parameterCount":	0,
+	"hasVariableArguments":	false,
+	"stackSize":	3,
+	"instructionsLength":	5,
+	"constantValueLength":	2,
+	"localVariableLength":	2,
+	"constants":	[{
+			"index":	0,
+			"type":	15
+		}, {
+			"index":	1,
+			"type":	15
+		}],
+	"instructions":	[{
+			"index":	0,
+			"opcode":	80,
+			"operandExtra":	0
+		}, {
+			"index":	1,
+			"opcode":	80,
+			"operandExtra":	1
+		}, {
+			"index":	2,
+			"opcode":	0,
+			"operandExtra":	2
+		}, {
+			"index":	3,
+			"opcode":	109,
+			"operandExtra":	2
+		}, {
+			"index":	4,
+			"opcode":	75,
+			"operandExtra":	1
+		}]
+}

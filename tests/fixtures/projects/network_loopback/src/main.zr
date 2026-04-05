@@ -1,0 +1,38 @@
+var network = %import("zr.network");
+
+var tcp = network.tcp;
+var udp = network.udp;
+
+var listener = tcp.listen("127.0.0.1", 0);
+var client = tcp.connect("127.0.0.1", listener.port());
+var server = listener.accept(3000);
+
+var ping = "ping";
+var pong = "pong";
+var echo = "echo";
+
+var wrotePing = client.write(ping);
+var readPing = server.read(16, 3000);
+var wrotePong = server.write(pong);
+var readPong = client.read(16, 3000);
+
+var socket = udp.bind("127.0.0.1", 0);
+var sentEcho = socket.send("127.0.0.1", socket.port(), echo);
+var packet = socket.receive(16, 3000);
+
+server.close();
+client.close();
+listener.close();
+socket.close();
+
+if (wrotePing != 4 || wrotePong != 4 || sentEcho != 4) {
+    return "NETWORK_LOOPBACK_FAIL write";
+}
+if (readPing != ping || readPong != pong) {
+    return "NETWORK_LOOPBACK_FAIL tcp";
+}
+if (packet == null || packet.payload != echo || packet.length != 4) {
+    return "NETWORK_LOOPBACK_FAIL udp";
+}
+
+return "NETWORK_LOOPBACK_PASS " + readPing + " " + readPong + " " + packet.payload;

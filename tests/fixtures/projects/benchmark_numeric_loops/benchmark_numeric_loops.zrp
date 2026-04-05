@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_numeric_loops",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

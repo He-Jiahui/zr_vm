@@ -12,6 +12,7 @@
 #include "zr_vm_core/stack.h"
 
 struct SZrGlobalState;
+struct SZrFunction;
 
 typedef enum EZrVmExceptionHandlerPhase {
     ZR_VM_EXCEPTION_HANDLER_PHASE_TRY = 0,
@@ -91,6 +92,13 @@ struct ZR_STRUCT_ALIGN SZrState {
     TZrUInt32 debugHookCount;
     volatile FZrDebugHook debugHook;
     volatile TZrDebugSignal debugHookSignal;
+    volatile FZrDebugTraceObserver debugTraceObserver;
+    TZrPtr debugTraceUserData;
+    struct SZrFunction *debugLastFunction;
+    TZrUInt32 debugLastLine;
+    TZrUInt32 aotObservationMask;
+    TZrBool hasAotObservationPolicyOverride;
+    TZrBool aotPublishAllInstructions;
     
     // 运行时检查标志
     TZrBool enableRuntimeBoundsCheck;   // 启用运行时边界检查

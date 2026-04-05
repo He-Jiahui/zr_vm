@@ -8,7 +8,7 @@ FUNCTION: <anonymous>
   HAS_VAR_ARGS: false
   STACK_SIZE: 16
 
-CONSTANTS (36):
+CONSTANTS (30):
   [0] null
   [1] function
   [2] function
@@ -31,20 +31,14 @@ CONSTANTS (36):
   [19] native closure
   [20] string: "MarkClass"
   [21] string: "decorate"
-  [22] function
-  [23] string: "void"
-  [24] string: "MarkField"
-  [25] function
-  [26] string: "MarkMethod"
-  [27] function
-  [28] string: "MarkProperty"
-  [29] function
-  [30] string: "User"
-  [31] string: "int"
-  [32] string: "_value"
-  [33] function
-  [34] string: "__get_value"
-  [35] function
+  [22] string: "void"
+  [23] string: "MarkField"
+  [24] string: "MarkMethod"
+  [25] string: "MarkProperty"
+  [26] string: "User"
+  [27] string: "int"
+  [28] string: "_value"
+  [29] string: "__get_value"
 
 LOCAL_VARIABLES (7):
   [0] markFunction: offset_activate=0, offset_dead=84
@@ -102,7 +96,7 @@ class MarkClass {
       static: false,
       isMetaMethod: true,
       metaType: DECORATE (27),
-      functionConstantIndex: 22,
+      functionConstantIndex: 1,
       parameterCount: 1,
       returnType: "void"
     }
@@ -120,7 +114,7 @@ class MarkField {
       static: false,
       isMetaMethod: true,
       metaType: DECORATE (27),
-      functionConstantIndex: 25,
+      functionConstantIndex: 3,
       parameterCount: 1,
       returnType: "void"
     }
@@ -138,7 +132,7 @@ class MarkMethod {
       static: false,
       isMetaMethod: true,
       metaType: DECORATE (27),
-      functionConstantIndex: 27,
+      functionConstantIndex: 4,
       parameterCount: 1,
       returnType: "void"
     }
@@ -156,7 +150,7 @@ class MarkProperty {
       static: false,
       isMetaMethod: true,
       metaType: DECORATE (27),
-      functionConstantIndex: 29,
+      functionConstantIndex: 5,
       parameterCount: 1,
       returnType: "void"
     }
@@ -191,7 +185,7 @@ class User {
       access: public (0),
       static: false,
       isMetaMethod: false,
-      functionConstantIndex: 33,
+      functionConstantIndex: 6,
       parameterCount: 1,
       returnType: "int"
     },
@@ -201,7 +195,7 @@ class User {
       access: public (0),
       static: false,
       isMetaMethod: false,
-      functionConstantIndex: 35,
+      functionConstantIndex: 7,
       parameterCount: 0,
       returnType: "int"
     }

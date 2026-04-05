@@ -101,6 +101,12 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(
 ZR_LANGUAGE_SERVER_API SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *analyzer,
                                                                  SZrFileRange position);
 
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(
+    SZrState *state,
+    SZrSemanticAnalyzer *analyzer,
+    SZrFileRange position,
+    SZrInferredType *outType);
+
 // 获取悬停信息
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
                                                              SZrSemanticAnalyzer *analyzer,

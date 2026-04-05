@@ -55,6 +55,8 @@ SZrState *ZrTests_Runtime_State_Create(FZrPanicHandlingFunction panicHandler);
 
 void ZrTests_Runtime_State_Destroy(SZrState *state);
 
+TZrBool ZrTests_Runtime_Function_ExecuteCaptureFailure(SZrState *state, SZrFunction *function, SZrTypeValue *result);
+
 TZrBool ZrTests_Runtime_Function_Execute(SZrState *state, SZrFunction *function, SZrTypeValue *result);
 
 TZrBool ZrTests_Runtime_Function_ExecuteExpectInt64(SZrState *state, SZrFunction *function, TZrInt64 *result);

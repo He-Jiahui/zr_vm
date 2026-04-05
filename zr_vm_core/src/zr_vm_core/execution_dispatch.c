@@ -212,6 +212,11 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if ((STATE)->hasCurrentException && execution_unwind_exception_to_handler((STATE), &(CALL_INFO))) {           \
             goto LZrReturning;                                                                                         \
         }                                                                                                              \
+        if ((CALL_INFO) != ZR_NULL &&                                                                                  \
+            (((STATE)->stackTop.valuePointer < (CALL_INFO)->functionBase.valuePointer + 1) ||                         \
+             ((STATE)->stackTop.valuePointer > (CALL_INFO)->functionTop.valuePointer))) {                             \
+            (STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer;                                    \
+        }                                                                                                              \
         UPDATE_BASE(CALL_INFO);                                                                                        \
         UPDATE_TRAP(CALL_INFO);                                                                                        \
     } while (0)

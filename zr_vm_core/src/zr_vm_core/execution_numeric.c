@@ -337,5 +337,69 @@ TZrBool try_builtin_add(SZrState *state,
     return ZR_FALSE;
 }
 
+TZrBool ZrCore_Execution_Add(SZrState *state,
+                             SZrCallInfo *callInfo,
+                             SZrTypeValue *destination,
+                             const SZrTypeValue *opA,
+                             const SZrTypeValue *opB) {
+    SZrTypeValue builtinResult;
+    SZrTypeValue stableLeft;
+    SZrMeta *meta;
+    TZrStackValuePointer savedStackTop;
+    TZrStackValuePointer metaBase = ZR_NULL;
+    TZrStackValuePointer restoredStackTop = ZR_NULL;
+    SZrCallInfo *savedCallInfo;
+    TZrBool metaCallSucceeded;
+
+    if (state == ZR_NULL || destination == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_ResetAsNull(&builtinResult);
+    if (try_builtin_add(state, &builtinResult, opA, opB)) {
+        ZrCore_Value_Copy(state, destination, &builtinResult);
+        return ZR_TRUE;
+    }
+
+    stableLeft = *opA;
+    meta = ZrCore_Value_GetMeta(state, &stableLeft, ZR_META_ADD);
+    if (meta == ZR_NULL || meta->function == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(destination);
+        return ZR_TRUE;
+    }
+
+    savedStackTop = state->stackTop.valuePointer;
+    savedCallInfo = callInfo != ZR_NULL ? callInfo : state->callInfoList;
+    restoredStackTop = savedStackTop;
+    metaCallSucceeded = execution_invoke_meta_call(state,
+                                                   savedCallInfo,
+                                                   savedStackTop,
+                                                   savedStackTop,
+                                                   meta,
+                                                   opA,
+                                                   opB,
+                                                   ZR_META_CALL_MAX_ARGUMENTS,
+                                                   &metaBase,
+                                                   &restoredStackTop);
+
+    state->stackTop.valuePointer = restoredStackTop;
+    state->callInfoList = savedCallInfo;
+
+    if (!metaCallSucceeded) {
+        if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+            return ZR_FALSE;
+        }
+        ZrCore_Value_ResetAsNull(destination);
+        return ZR_TRUE;
+    }
+
+    if (metaBase != ZR_NULL && ZrCore_Stack_GetValue(metaBase) != ZR_NULL) {
+        ZrCore_Value_Copy(state, destination, ZrCore_Stack_GetValue(metaBase));
+    } else {
+        ZrCore_Value_ResetAsNull(destination);
+    }
+    return ZR_TRUE;
+}
+
 // 辅助函数：查找类型原型（从当前模块或全局模块注册表）
 // 返回找到的原型对象，如果未找到返回 ZR_NULL

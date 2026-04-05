@@ -33,8 +33,6 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldLocalVarLength = cs->localVars.length;
     TZrSize oldConstantLength = cs->constants.length;
     TZrSize oldClosureVarLength = cs->closureVars.length;
-    TZrSize oldChildFunctionLength = cs->childFunctions.length;
-    TZrSize oldChildFunctionNameMapLength = cs->childFunctionNameMap.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     TZrSize oldConstLocalVarLength = cs->constLocalVars.length;
@@ -43,6 +41,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     SZrFunctionLocalVariable *savedParentLocalVars = ZR_NULL;
     SZrTypeValue *savedParentConstants = ZR_NULL;
     SZrFunctionClosureVariable *savedParentClosureVars = ZR_NULL;
+    SZrCompilerArraySnapshot savedParentChildFunctions = {0};
+    SZrCompilerArraySnapshot savedParentChildFunctionNameMap = {0};
     TZrSize savedParentInstructionsSize = oldInstructionLength * sizeof(TZrInstruction);
     TZrSize savedParentLocalVarsSize = oldLocalVarLength * sizeof(SZrFunctionLocalVariable);
     TZrSize savedParentConstantsSize = oldConstantLength * sizeof(SZrTypeValue);
@@ -111,6 +111,51 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         }
         memcpy(savedParentClosureVars, cs->closureVars.head, savedParentClosureVarsSize);
     }
+
+    if (!compiler_capture_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions)) {
+        if (savedParentInstructions != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentLocalVars != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentLocalVars, savedParentLocalVarsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentConstants != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentConstants, savedParentConstantsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentClosureVars != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentClosureVars, savedParentClosureVarsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        ZrParser_Compiler_Error(cs, "Failed to backup parent child functions for lambda expression", node->location);
+        return;
+    }
+
+    if (!compiler_capture_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap)) {
+        if (savedParentInstructions != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentLocalVars != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentLocalVars, savedParentLocalVarsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentConstants != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentConstants, savedParentConstantsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentClosureVars != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentClosureVars, savedParentClosureVarsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        compiler_release_array_snapshot(cs, &savedParentChildFunctions);
+        ZrParser_Compiler_Error(cs,
+                                "Failed to backup parent child function name map for lambda expression",
+                                node->location);
+        return;
+    }
     
     // 创建新的函数对象
     cs->isInConstructor = ZR_FALSE;
@@ -136,6 +181,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
             ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentClosureVars, savedParentClosureVarsSize,
                                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
         }
+        compiler_release_array_snapshot(cs, &savedParentChildFunctions);
+        compiler_release_array_snapshot(cs, &savedParentChildFunctionNameMap);
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
@@ -305,8 +352,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         cs->localVars.length = oldLocalVarLength;
         cs->constants.length = oldConstantLength;
         cs->closureVars.length = oldClosureVarLength;
-        cs->childFunctions.length = oldChildFunctionLength;
-        cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
+        compiler_restore_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions);
+        compiler_restore_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap);
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
@@ -420,8 +467,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     cs->localVars.length = oldLocalVarLength;
     cs->constants.length = oldConstantLength;
     cs->closureVars.length = oldClosureVarLength;
-    cs->childFunctions.length = oldChildFunctionLength;
-    cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
+    compiler_restore_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions);
+    compiler_restore_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap);
     cs->isInConstructor = oldIsInConstructor;
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = oldConstLocalVarLength;

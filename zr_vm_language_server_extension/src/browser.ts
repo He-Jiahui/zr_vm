@@ -4,6 +4,7 @@ import {
     LanguageClientOptions,
     Trace,
 } from 'vscode-languageclient/browser';
+import { registerWebDebugSupportUnavailable } from './debug/webSupport';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
 
 const CONFIG_SECTION = 'zr.languageServer';
@@ -20,6 +21,7 @@ type LanguageServerMode = 'auto' | 'native' | 'web';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     context.subscriptions.push(registerZrpJsonSupport());
+    context.subscriptions.push(...registerWebDebugSupportUnavailable());
 
     context.subscriptions.push(
         vscode.commands.registerCommand(RESTART_COMMAND, async () => {

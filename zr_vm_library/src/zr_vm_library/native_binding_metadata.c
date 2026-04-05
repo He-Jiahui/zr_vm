@@ -1,5 +1,57 @@
 #include "native_binding_internal.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/reflection.h"
+
+typedef struct ZrNativeMetadataPin {
+    SZrRawObject *object;
+    TZrBool addedByCaller;
+} ZrNativeMetadataPin;
+
+static TZrBool native_metadata_pin_raw_object(SZrState *state,
+                                              SZrRawObject *object,
+                                              ZrNativeMetadataPin *pin) {
+    if (pin != ZR_NULL) {
+        pin->object = object;
+        pin->addedByCaller = ZR_FALSE;
+    }
+
+    if (state == ZR_NULL || state->global == ZR_NULL || object == ZR_NULL || pin == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrCore_GarbageCollector_IsObjectIgnored(state->global, object)) {
+        return ZR_TRUE;
+    }
+
+    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
+        pin->object = ZR_NULL;
+        return ZR_FALSE;
+    }
+
+    pin->addedByCaller = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+static TZrBool native_metadata_pin_object(SZrState *state, SZrObject *object, ZrNativeMetadataPin *pin) {
+    if (object == ZR_NULL || pin == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return native_metadata_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), pin);
+}
+
+static void native_metadata_unpin_object(SZrGlobalState *global, ZrNativeMetadataPin *pin) {
+    if (global == ZR_NULL || pin == ZR_NULL || pin->object == ZR_NULL) {
+        return;
+    }
+
+    if (pin->addedByCaller) {
+        ZrCore_GarbageCollector_UnignoreObject(global, pin->object);
+    }
+
+    pin->object = ZR_NULL;
+    pin->addedByCaller = ZR_FALSE;
+}
 
 void native_metadata_set_value_field(SZrState *state,
                                             SZrObject *object,
@@ -16,6 +68,15 @@ void native_metadata_set_string_field(SZrState *state,
                                              const TZrChar *fieldName,
                                              const TZrChar *value) {
     SZrTypeValue fieldValue;
+    ZrNativeMetadataPin objectPin = {0};
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return;
+    }
+
+    if (!native_metadata_pin_object(state, object, &objectPin)) {
+        return;
+    }
 
     if (value == ZR_NULL) {
         ZrLib_Value_SetNull(&fieldValue);
@@ -23,6 +84,18 @@ void native_metadata_set_string_field(SZrState *state,
         ZrLib_Value_SetString(state, &fieldValue, value);
     }
     native_metadata_set_value_field(state, object, fieldName, &fieldValue);
+    native_metadata_unpin_object(state->global, &objectPin);
+}
+
+static void native_metadata_set_optional_string_field(SZrState *state,
+                                                      SZrObject *object,
+                                                      const TZrChar *fieldName,
+                                                      const TZrChar *value) {
+    if (value == ZR_NULL || value[0] == '\0') {
+        return;
+    }
+
+    native_metadata_set_string_field(state, object, fieldName, value);
 }
 
 void native_metadata_set_int_field(SZrState *state,
@@ -138,13 +211,14 @@ SZrObject *native_metadata_make_string_array(SZrState *state,
                                                     const TZrChar *const *values,
                                                     TZrSize valueCount) {
     SZrObject *array;
+    ZrNativeMetadataPin arrayPin = {0};
 
     if (state == ZR_NULL) {
         return ZR_NULL;
     }
 
     array = ZrLib_Array_New(state);
-    if (array == ZR_NULL) {
+    if (array == ZR_NULL || !native_metadata_pin_object(state, array, &arrayPin)) {
         return ZR_NULL;
     }
 
@@ -154,6 +228,7 @@ SZrObject *native_metadata_make_string_array(SZrState *state,
         }
     }
 
+    native_metadata_unpin_object(state->global, &arrayPin);
     return array;
 }
 
@@ -197,13 +272,14 @@ static SZrObject *native_metadata_make_parameter_array(SZrState *state,
                                                        const ZrLibParameterDescriptor *parameters,
                                                        TZrSize parameterCount) {
     SZrObject *array;
+    ZrNativeMetadataPin arrayPin = {0};
 
     if (state == ZR_NULL) {
         return ZR_NULL;
     }
 
     array = ZrLib_Array_New(state);
-    if (array == ZR_NULL) {
+    if (array == ZR_NULL || !native_metadata_pin_object(state, array, &arrayPin)) {
         return ZR_NULL;
     }
 
@@ -216,6 +292,7 @@ static SZrObject *native_metadata_make_parameter_array(SZrState *state,
         }
     }
 
+    native_metadata_unpin_object(state->global, &arrayPin);
     return array;
 }
 
@@ -224,16 +301,23 @@ static SZrObject *native_metadata_make_generic_parameter_entry(SZrState *state,
     SZrObject *object;
     SZrObject *constraintsArray;
     SZrTypeValue constraintsValue;
+    ZrNativeMetadataPin objectPin = {0};
+    ZrNativeMetadataPin constraintsPin = {0};
 
     if (state == ZR_NULL || descriptor == ZR_NULL) {
         return ZR_NULL;
     }
 
     object = ZrLib_Object_New(state);
+    if (object == ZR_NULL || !native_metadata_pin_object(state, object, &objectPin)) {
+        return ZR_NULL;
+    }
+
     constraintsArray = native_metadata_make_string_array(state,
                                                          descriptor->constraintTypeNames,
                                                          descriptor->constraintTypeCount);
-    if (object == ZR_NULL || constraintsArray == ZR_NULL) {
+    if (constraintsArray == ZR_NULL || !native_metadata_pin_object(state, constraintsArray, &constraintsPin)) {
+        native_metadata_unpin_object(state->global, &objectPin);
         return ZR_NULL;
     }
 
@@ -241,6 +325,8 @@ static SZrObject *native_metadata_make_generic_parameter_entry(SZrState *state,
     native_metadata_set_string_field(state, object, "documentation", descriptor->documentation);
     ZrLib_Value_SetObject(state, &constraintsValue, constraintsArray, ZR_VALUE_TYPE_ARRAY);
     native_metadata_set_value_field(state, object, "constraints", &constraintsValue);
+    native_metadata_unpin_object(state->global, &constraintsPin);
+    native_metadata_unpin_object(state->global, &objectPin);
     return object;
 }
 
@@ -248,13 +334,14 @@ static SZrObject *native_metadata_make_generic_parameter_array(SZrState *state,
                                                                const ZrLibGenericParameterDescriptor *parameters,
                                                                TZrSize parameterCount) {
     SZrObject *array;
+    ZrNativeMetadataPin arrayPin = {0};
 
     if (state == ZR_NULL) {
         return ZR_NULL;
     }
 
     array = ZrLib_Array_New(state);
-    if (array == ZR_NULL) {
+    if (array == ZR_NULL || !native_metadata_pin_object(state, array, &arrayPin)) {
         return ZR_NULL;
     }
 
@@ -267,26 +354,93 @@ static SZrObject *native_metadata_make_generic_parameter_array(SZrState *state,
         }
     }
 
+    native_metadata_unpin_object(state->global, &arrayPin);
+    return array;
+}
+
+static SZrObject *native_metadata_make_type_hint_entry(SZrState *state, const ZrLibTypeHintDescriptor *descriptor) {
+    SZrObject *object;
+    ZrNativeMetadataPin objectPin = {0};
+
+    if (state == ZR_NULL || descriptor == ZR_NULL || descriptor->symbolName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = ZrLib_Object_New(state);
+    if (object == ZR_NULL || !native_metadata_pin_object(state, object, &objectPin)) {
+        return ZR_NULL;
+    }
+
+    native_metadata_set_string_field(state, object, "symbolName", descriptor->symbolName);
+    native_metadata_set_string_field(state, object, "symbolKind", descriptor->symbolKind);
+    native_metadata_set_string_field(state, object, "signature", descriptor->signature);
+    native_metadata_set_string_field(state, object, "documentation", descriptor->documentation);
+    native_metadata_unpin_object(state->global, &objectPin);
+    return object;
+}
+
+static SZrObject *native_metadata_make_type_hint_array(SZrState *state,
+                                                       const ZrLibTypeHintDescriptor *descriptors,
+                                                       TZrSize descriptorCount) {
+    SZrObject *array;
+    ZrNativeMetadataPin arrayPin = {0};
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    array = ZrLib_Array_New(state);
+    if (array == ZR_NULL || !native_metadata_pin_object(state, array, &arrayPin)) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < descriptorCount; index++) {
+        SZrObject *entry = native_metadata_make_type_hint_entry(state, &descriptors[index]);
+        if (entry != ZR_NULL) {
+            SZrTypeValue entryValue;
+            ZrLib_Value_SetObject(state, &entryValue, entry, ZR_VALUE_TYPE_OBJECT);
+            ZrLib_Array_PushValue(state, array, &entryValue);
+        }
+    }
+
+    native_metadata_unpin_object(state->global, &arrayPin);
     return array;
 }
 
 SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodDescriptor *descriptor) {
     SZrObject *object;
     SZrObject *parametersArray;
+    SZrObject *genericParametersArray;
     SZrTypeValue parametersValue;
+    SZrTypeValue genericParametersValue;
     TZrBool hasParameterMetadata;
+    ZrNativeMetadataPin objectPin = {0};
+    ZrNativeMetadataPin parametersPin = {0};
+    ZrNativeMetadataPin genericParametersPin = {0};
 
     if (state == ZR_NULL || descriptor == ZR_NULL || descriptor->name == ZR_NULL) {
         return ZR_NULL;
     }
 
     object = ZrLib_Object_New(state);
+    if (object == ZR_NULL || !native_metadata_pin_object(state, object, &objectPin)) {
+        return ZR_NULL;
+    }
+
     hasParameterMetadata = descriptor->parameters != ZR_NULL ||
                            (descriptor->minArgumentCount == 0 && descriptor->maxArgumentCount == 0);
     parametersArray = hasParameterMetadata
                               ? native_metadata_make_parameter_array(state, descriptor->parameters, descriptor->parameterCount)
                               : ZR_NULL;
-    if (object == ZR_NULL || (hasParameterMetadata && parametersArray == ZR_NULL)) {
+    genericParametersArray = native_metadata_make_generic_parameter_array(state,
+                                                                          descriptor->genericParameters,
+                                                                          descriptor->genericParameterCount);
+    if ((hasParameterMetadata && parametersArray == ZR_NULL) || genericParametersArray == ZR_NULL ||
+        (hasParameterMetadata && !native_metadata_pin_object(state, parametersArray, &parametersPin)) ||
+        !native_metadata_pin_object(state, genericParametersArray, &genericParametersPin)) {
+        native_metadata_unpin_object(state->global, &genericParametersPin);
+        native_metadata_unpin_object(state->global, &parametersPin);
+        native_metadata_unpin_object(state->global, &objectPin);
         return ZR_NULL;
     }
 
@@ -301,27 +455,49 @@ SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodD
         ZrLib_Value_SetObject(state, &parametersValue, parametersArray, ZR_VALUE_TYPE_ARRAY);
         native_metadata_set_value_field(state, object, "parameters", &parametersValue);
     }
+    ZrLib_Value_SetObject(state, &genericParametersValue, genericParametersArray, ZR_VALUE_TYPE_ARRAY);
+    native_metadata_set_value_field(state, object, "genericParameters", &genericParametersValue);
+    native_metadata_unpin_object(state->global, &genericParametersPin);
+    native_metadata_unpin_object(state->global, &parametersPin);
+    native_metadata_unpin_object(state->global, &objectPin);
     return object;
 }
 
 SZrObject *native_metadata_make_meta_method_entry(SZrState *state,
-                                                         const ZrLibMetaMethodDescriptor *descriptor) {
+                                                          const ZrLibMetaMethodDescriptor *descriptor) {
     SZrObject *object;
     SZrObject *parametersArray;
+    SZrObject *genericParametersArray;
     SZrTypeValue parametersValue;
+    SZrTypeValue genericParametersValue;
     TZrBool hasParameterMetadata;
+    ZrNativeMetadataPin objectPin = {0};
+    ZrNativeMetadataPin parametersPin = {0};
+    ZrNativeMetadataPin genericParametersPin = {0};
 
     if (state == ZR_NULL || descriptor == ZR_NULL || descriptor->metaType >= ZR_META_ENUM_MAX) {
         return ZR_NULL;
     }
 
     object = ZrLib_Object_New(state);
+    if (object == ZR_NULL || !native_metadata_pin_object(state, object, &objectPin)) {
+        return ZR_NULL;
+    }
+
     hasParameterMetadata = descriptor->parameters != ZR_NULL ||
                            (descriptor->minArgumentCount == 0 && descriptor->maxArgumentCount == 0);
     parametersArray = hasParameterMetadata
                               ? native_metadata_make_parameter_array(state, descriptor->parameters, descriptor->parameterCount)
                               : ZR_NULL;
-    if (object == ZR_NULL || (hasParameterMetadata && parametersArray == ZR_NULL)) {
+    genericParametersArray = native_metadata_make_generic_parameter_array(state,
+                                                                          descriptor->genericParameters,
+                                                                          descriptor->genericParameterCount);
+    if ((hasParameterMetadata && parametersArray == ZR_NULL) || genericParametersArray == ZR_NULL ||
+        (hasParameterMetadata && !native_metadata_pin_object(state, parametersArray, &parametersPin)) ||
+        !native_metadata_pin_object(state, genericParametersArray, &genericParametersPin)) {
+        native_metadata_unpin_object(state->global, &genericParametersPin);
+        native_metadata_unpin_object(state->global, &parametersPin);
+        native_metadata_unpin_object(state->global, &objectPin);
         return ZR_NULL;
     }
 
@@ -335,26 +511,48 @@ SZrObject *native_metadata_make_meta_method_entry(SZrState *state,
         ZrLib_Value_SetObject(state, &parametersValue, parametersArray, ZR_VALUE_TYPE_ARRAY);
         native_metadata_set_value_field(state, object, "parameters", &parametersValue);
     }
+    ZrLib_Value_SetObject(state, &genericParametersValue, genericParametersArray, ZR_VALUE_TYPE_ARRAY);
+    native_metadata_set_value_field(state, object, "genericParameters", &genericParametersValue);
+    native_metadata_unpin_object(state->global, &genericParametersPin);
+    native_metadata_unpin_object(state->global, &parametersPin);
+    native_metadata_unpin_object(state->global, &objectPin);
     return object;
 }
 
 SZrObject *native_metadata_make_function_entry(SZrState *state, const ZrLibFunctionDescriptor *descriptor) {
     SZrObject *object;
     SZrObject *parametersArray;
+    SZrObject *genericParametersArray;
     SZrTypeValue parametersValue;
+    SZrTypeValue genericParametersValue;
     TZrBool hasParameterMetadata;
+    ZrNativeMetadataPin objectPin = {0};
+    ZrNativeMetadataPin parametersPin = {0};
+    ZrNativeMetadataPin genericParametersPin = {0};
 
     if (state == ZR_NULL || descriptor == ZR_NULL || descriptor->name == ZR_NULL) {
         return ZR_NULL;
     }
 
     object = ZrLib_Object_New(state);
+    if (object == ZR_NULL || !native_metadata_pin_object(state, object, &objectPin)) {
+        return ZR_NULL;
+    }
+
     hasParameterMetadata = descriptor->parameters != ZR_NULL ||
                            (descriptor->minArgumentCount == 0 && descriptor->maxArgumentCount == 0);
     parametersArray = hasParameterMetadata
                               ? native_metadata_make_parameter_array(state, descriptor->parameters, descriptor->parameterCount)
                               : ZR_NULL;
-    if (object == ZR_NULL || (hasParameterMetadata && parametersArray == ZR_NULL)) {
+    genericParametersArray = native_metadata_make_generic_parameter_array(state,
+                                                                          descriptor->genericParameters,
+                                                                          descriptor->genericParameterCount);
+    if ((hasParameterMetadata && parametersArray == ZR_NULL) || genericParametersArray == ZR_NULL ||
+        (hasParameterMetadata && !native_metadata_pin_object(state, parametersArray, &parametersPin)) ||
+        !native_metadata_pin_object(state, genericParametersArray, &genericParametersPin)) {
+        native_metadata_unpin_object(state->global, &genericParametersPin);
+        native_metadata_unpin_object(state->global, &parametersPin);
+        native_metadata_unpin_object(state->global, &objectPin);
         return ZR_NULL;
     }
 
@@ -367,6 +565,11 @@ SZrObject *native_metadata_make_function_entry(SZrState *state, const ZrLibFunct
         ZrLib_Value_SetObject(state, &parametersValue, parametersArray, ZR_VALUE_TYPE_ARRAY);
         native_metadata_set_value_field(state, object, "parameters", &parametersValue);
     }
+    ZrLib_Value_SetObject(state, &genericParametersValue, genericParametersArray, ZR_VALUE_TYPE_ARRAY);
+    native_metadata_set_value_field(state, object, "genericParameters", &genericParametersValue);
+    native_metadata_unpin_object(state->global, &genericParametersPin);
+    native_metadata_unpin_object(state->global, &parametersPin);
+    native_metadata_unpin_object(state->global, &objectPin);
     return object;
 }
 
@@ -446,24 +649,76 @@ SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescr
     SZrObject *genericParametersArray;
     TZrSize index;
     SZrTypeValue arrayValue;
+    ZrNativeMetadataPin objectPin = {0};
+    ZrNativeMetadataPin fieldsPin = {0};
+    ZrNativeMetadataPin methodsPin = {0};
+    ZrNativeMetadataPin metaMethodsPin = {0};
+    ZrNativeMetadataPin implementsPin = {0};
+    ZrNativeMetadataPin enumMembersPin = {0};
+    ZrNativeMetadataPin genericParametersPin = {0};
 
     if (state == ZR_NULL || descriptor == ZR_NULL || descriptor->name == ZR_NULL) {
         return ZR_NULL;
     }
 
     object = ZrLib_Object_New(state);
+    if (object == ZR_NULL || !native_metadata_pin_object(state, object, &objectPin)) {
+        return ZR_NULL;
+    }
+
     fieldsArray = ZrLib_Array_New(state);
+    if (fieldsArray == ZR_NULL || !native_metadata_pin_object(state, fieldsArray, &fieldsPin)) {
+        native_metadata_unpin_object(state->global, &objectPin);
+        return ZR_NULL;
+    }
+
     methodsArray = ZrLib_Array_New(state);
+    if (methodsArray == ZR_NULL || !native_metadata_pin_object(state, methodsArray, &methodsPin)) {
+        native_metadata_unpin_object(state->global, &fieldsPin);
+        native_metadata_unpin_object(state->global, &objectPin);
+        return ZR_NULL;
+    }
+
     metaMethodsArray = ZrLib_Array_New(state);
+    if (metaMethodsArray == ZR_NULL || !native_metadata_pin_object(state, metaMethodsArray, &metaMethodsPin)) {
+        native_metadata_unpin_object(state->global, &methodsPin);
+        native_metadata_unpin_object(state->global, &fieldsPin);
+        native_metadata_unpin_object(state->global, &objectPin);
+        return ZR_NULL;
+    }
+
     implementsArray = native_metadata_make_string_array(state,
                                                         descriptor->implementsTypeNames,
                                                         descriptor->implementsTypeCount);
+    if (implementsArray == ZR_NULL || !native_metadata_pin_object(state, implementsArray, &implementsPin)) {
+        native_metadata_unpin_object(state->global, &metaMethodsPin);
+        native_metadata_unpin_object(state->global, &methodsPin);
+        native_metadata_unpin_object(state->global, &fieldsPin);
+        native_metadata_unpin_object(state->global, &objectPin);
+        return ZR_NULL;
+    }
+
     enumMembersArray = ZrLib_Array_New(state);
+    if (enumMembersArray == ZR_NULL || !native_metadata_pin_object(state, enumMembersArray, &enumMembersPin)) {
+        native_metadata_unpin_object(state->global, &implementsPin);
+        native_metadata_unpin_object(state->global, &metaMethodsPin);
+        native_metadata_unpin_object(state->global, &methodsPin);
+        native_metadata_unpin_object(state->global, &fieldsPin);
+        native_metadata_unpin_object(state->global, &objectPin);
+        return ZR_NULL;
+    }
+
     genericParametersArray = native_metadata_make_generic_parameter_array(state,
                                                                           descriptor->genericParameters,
                                                                           descriptor->genericParameterCount);
-    if (object == ZR_NULL || fieldsArray == ZR_NULL || methodsArray == ZR_NULL || metaMethodsArray == ZR_NULL ||
-        implementsArray == ZR_NULL || enumMembersArray == ZR_NULL || genericParametersArray == ZR_NULL) {
+    if (genericParametersArray == ZR_NULL ||
+        !native_metadata_pin_object(state, genericParametersArray, &genericParametersPin)) {
+        native_metadata_unpin_object(state->global, &enumMembersPin);
+        native_metadata_unpin_object(state->global, &implementsPin);
+        native_metadata_unpin_object(state->global, &metaMethodsPin);
+        native_metadata_unpin_object(state->global, &methodsPin);
+        native_metadata_unpin_object(state->global, &fieldsPin);
+        native_metadata_unpin_object(state->global, &objectPin);
         return ZR_NULL;
     }
 
@@ -475,6 +730,11 @@ SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescr
     native_metadata_set_bool_field(state, object, "allowBoxedConstruction", native_descriptor_allows_boxed_construction(descriptor));
     native_metadata_set_int_field(state, object, "protocolMask", (TZrInt64)descriptor->protocolMask);
     native_metadata_set_string_field(state, object, "constructorSignature", descriptor->constructorSignature);
+    native_metadata_set_optional_string_field(state, object, "ffiLoweringKind", descriptor->ffiLoweringKind);
+    native_metadata_set_optional_string_field(state, object, "ffiViewTypeName", descriptor->ffiViewTypeName);
+    native_metadata_set_optional_string_field(state, object, "ffiUnderlyingTypeName", descriptor->ffiUnderlyingTypeName);
+    native_metadata_set_optional_string_field(state, object, "ffiOwnerMode", descriptor->ffiOwnerMode);
+    native_metadata_set_optional_string_field(state, object, "ffiReleaseHook", descriptor->ffiReleaseHook);
 
     for (index = 0; index < descriptor->fieldCount; index++) {
         SZrObject *fieldEntry = native_metadata_make_field_entry(state, &descriptor->fields[index]);
@@ -525,6 +785,13 @@ SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescr
     ZrLib_Value_SetObject(state, &arrayValue, genericParametersArray, ZR_VALUE_TYPE_ARRAY);
     native_metadata_set_value_field(state, object, "genericParameters", &arrayValue);
 
+    native_metadata_unpin_object(state->global, &genericParametersPin);
+    native_metadata_unpin_object(state->global, &enumMembersPin);
+    native_metadata_unpin_object(state->global, &implementsPin);
+    native_metadata_unpin_object(state->global, &metaMethodsPin);
+    native_metadata_unpin_object(state->global, &methodsPin);
+    native_metadata_unpin_object(state->global, &fieldsPin);
+    native_metadata_unpin_object(state->global, &objectPin);
     return object;
 }
 
@@ -536,20 +803,62 @@ SZrObject *native_metadata_make_module_info(SZrState *state,
     SZrObject *constantsArray;
     SZrObject *typesArray;
     SZrObject *modulesArray;
+    SZrObject *typeHintsArray;
     TZrSize index;
     SZrTypeValue arrayValue;
+    ZrNativeMetadataPin objectPin = {0};
+    ZrNativeMetadataPin functionsPin = {0};
+    ZrNativeMetadataPin constantsPin = {0};
+    ZrNativeMetadataPin typesPin = {0};
+    ZrNativeMetadataPin modulesPin = {0};
+    ZrNativeMetadataPin typeHintsPin = {0};
 
     if (state == ZR_NULL || descriptor == ZR_NULL || descriptor->moduleName == ZR_NULL) {
         return ZR_NULL;
     }
 
     object = ZrLib_Object_New(state);
+    if (object == ZR_NULL || !native_metadata_pin_object(state, object, &objectPin)) {
+        return ZR_NULL;
+    }
+
     functionsArray = ZrLib_Array_New(state);
+    if (functionsArray == ZR_NULL || !native_metadata_pin_object(state, functionsArray, &functionsPin)) {
+        native_metadata_unpin_object(state->global, &objectPin);
+        return ZR_NULL;
+    }
+
     constantsArray = ZrLib_Array_New(state);
+    if (constantsArray == ZR_NULL || !native_metadata_pin_object(state, constantsArray, &constantsPin)) {
+        native_metadata_unpin_object(state->global, &functionsPin);
+        native_metadata_unpin_object(state->global, &objectPin);
+        return ZR_NULL;
+    }
+
     typesArray = ZrLib_Array_New(state);
+    if (typesArray == ZR_NULL || !native_metadata_pin_object(state, typesArray, &typesPin)) {
+        native_metadata_unpin_object(state->global, &constantsPin);
+        native_metadata_unpin_object(state->global, &functionsPin);
+        native_metadata_unpin_object(state->global, &objectPin);
+        return ZR_NULL;
+    }
+
     modulesArray = ZrLib_Array_New(state);
-    if (object == ZR_NULL || functionsArray == ZR_NULL || constantsArray == ZR_NULL ||
-        typesArray == ZR_NULL || modulesArray == ZR_NULL) {
+    if (modulesArray == ZR_NULL || !native_metadata_pin_object(state, modulesArray, &modulesPin)) {
+        native_metadata_unpin_object(state->global, &typesPin);
+        native_metadata_unpin_object(state->global, &constantsPin);
+        native_metadata_unpin_object(state->global, &functionsPin);
+        native_metadata_unpin_object(state->global, &objectPin);
+        return ZR_NULL;
+    }
+
+    typeHintsArray = native_metadata_make_type_hint_array(state, descriptor->typeHints, descriptor->typeHintCount);
+    if (typeHintsArray == ZR_NULL || !native_metadata_pin_object(state, typeHintsArray, &typeHintsPin)) {
+        native_metadata_unpin_object(state->global, &modulesPin);
+        native_metadata_unpin_object(state->global, &typesPin);
+        native_metadata_unpin_object(state->global, &constantsPin);
+        native_metadata_unpin_object(state->global, &functionsPin);
+        native_metadata_unpin_object(state->global, &objectPin);
         return ZR_NULL;
     }
 
@@ -620,7 +929,15 @@ SZrObject *native_metadata_make_module_info(SZrState *state,
     native_metadata_set_value_field(state, object, "types", &arrayValue);
     ZrLib_Value_SetObject(state, &arrayValue, modulesArray, ZR_VALUE_TYPE_ARRAY);
     native_metadata_set_value_field(state, object, "modules", &arrayValue);
+    ZrLib_Value_SetObject(state, &arrayValue, typeHintsArray, ZR_VALUE_TYPE_ARRAY);
+    native_metadata_set_value_field(state, object, "typeHints", &arrayValue);
 
+    native_metadata_unpin_object(state->global, &typeHintsPin);
+    native_metadata_unpin_object(state->global, &modulesPin);
+    native_metadata_unpin_object(state->global, &typesPin);
+    native_metadata_unpin_object(state->global, &constantsPin);
+    native_metadata_unpin_object(state->global, &functionsPin);
+    native_metadata_unpin_object(state->global, &objectPin);
     return object;
 }
 
@@ -685,6 +1002,10 @@ TZrBool native_registry_add_function(SZrState *state,
         return ZR_FALSE;
     }
 
+    native_binding_trace_import("[zr_native_import] add_function begin module=%s name=%s\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                functionDescriptor->name);
+
     if (!native_binding_make_callable_value(state,
                                             registry,
                                             ZR_LIB_RESOLVED_BINDING_FUNCTION,
@@ -693,15 +1014,27 @@ TZrBool native_registry_add_function(SZrState *state,
                                             ZR_NULL,
                                             functionDescriptor,
                                             &value)) {
+        native_binding_trace_import("[zr_native_import] add_function failed module=%s name=%s reason=make_callable\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    functionDescriptor->name);
         return ZR_FALSE;
     }
 
     name = native_binding_create_string(state, functionDescriptor->name);
     if (name == ZR_NULL) {
+        native_binding_trace_import("[zr_native_import] add_function failed module=%s name=%s reason=create_name\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    functionDescriptor->name);
         return ZR_FALSE;
     }
 
+    native_binding_trace_import("[zr_native_import] add_function export module=%s name=%s\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                functionDescriptor->name);
     ZrCore_Module_AddPubExport(state, module, name, &value);
+    native_binding_trace_import("[zr_native_import] add_function success module=%s name=%s\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                functionDescriptor->name);
     return ZR_TRUE;
 }
 
@@ -824,6 +1157,13 @@ TZrBool native_registry_add_methods(SZrState *state,
         return ZR_FALSE;
     }
 
+    native_binding_trace_import("[zr_native_import] add_methods begin module=%s type=%s methods=%llu meta=%llu prototype=%p\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
+                                (unsigned long long)typeDescriptor->methodCount,
+                                (unsigned long long)typeDescriptor->metaMethodCount,
+                                (void *)prototype);
+
     for (index = 0; index < typeDescriptor->methodCount; index++) {
         const ZrLibMethodDescriptor *methodDescriptor = &typeDescriptor->methods[index];
         SZrTypeValue methodValue;
@@ -833,6 +1173,13 @@ TZrBool native_registry_add_methods(SZrState *state,
         if (methodDescriptor->name == ZR_NULL || methodDescriptor->callback == ZR_NULL) {
             continue;
         }
+
+        native_binding_trace_import("[zr_native_import] add_methods method module=%s type=%s index=%llu name=%s static=%d\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
+                                    (unsigned long long)index,
+                                    methodDescriptor->name,
+                                    methodDescriptor->isStatic ? 1 : 0);
 
         if (!native_binding_make_callable_value(state,
                                                 registry,
@@ -880,6 +1227,12 @@ TZrBool native_registry_add_methods(SZrState *state,
             continue;
         }
 
+        native_binding_trace_import("[zr_native_import] add_methods meta module=%s type=%s index=%llu meta=%d\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
+                                    (unsigned long long)index,
+                                    (int)metaDescriptor->metaType);
+
         if (!native_binding_make_callable_value(state,
                                                 registry,
                                                 ZR_LIB_RESOLVED_BINDING_META_METHOD,
@@ -914,6 +1267,9 @@ TZrBool native_registry_add_methods(SZrState *state,
         }
     }
 
+    native_binding_trace_import("[zr_native_import] add_methods success module=%s type=%s\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>");
     return ZR_TRUE;
 }
 
@@ -1014,6 +1370,36 @@ void native_registry_attach_type_runtime_metadata(SZrState *state,
                                              &prototype->super,
                                              kNativeAllowBoxedConstructionFieldName,
                                              native_descriptor_allows_boxed_construction(typeDescriptor));
+    if (typeDescriptor->ffiLoweringKind != ZR_NULL) {
+        native_registry_set_hidden_string_metadata(state,
+                                                   &prototype->super,
+                                                   kNativeFfiLoweringKindFieldName,
+                                                   typeDescriptor->ffiLoweringKind);
+    }
+    if (typeDescriptor->ffiViewTypeName != ZR_NULL) {
+        native_registry_set_hidden_string_metadata(state,
+                                                   &prototype->super,
+                                                   kNativeFfiViewTypeFieldName,
+                                                   typeDescriptor->ffiViewTypeName);
+    }
+    if (typeDescriptor->ffiUnderlyingTypeName != ZR_NULL) {
+        native_registry_set_hidden_string_metadata(state,
+                                                   &prototype->super,
+                                                   kNativeFfiUnderlyingTypeFieldName,
+                                                   typeDescriptor->ffiUnderlyingTypeName);
+    }
+    if (typeDescriptor->ffiOwnerMode != ZR_NULL) {
+        native_registry_set_hidden_string_metadata(state,
+                                                   &prototype->super,
+                                                   kNativeFfiOwnerModeFieldName,
+                                                   typeDescriptor->ffiOwnerMode);
+    }
+    if (typeDescriptor->ffiReleaseHook != ZR_NULL) {
+        native_registry_set_hidden_string_metadata(state,
+                                                   &prototype->super,
+                                                   kNativeFfiReleaseHookFieldName,
+                                                   typeDescriptor->ffiReleaseHook);
+    }
 
     if (typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
         native_registry_set_hidden_string_metadata(state,
@@ -1075,23 +1461,48 @@ TZrBool native_registry_add_type(SZrState *state,
         return ZR_FALSE;
     }
 
+    native_binding_trace_import("[zr_native_import] add_type begin module=%s type=%s fields=%llu methods=%llu meta=%llu prototype_type=%d\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor->name,
+                                (unsigned long long)typeDescriptor->fieldCount,
+                                (unsigned long long)typeDescriptor->methodCount,
+                                (unsigned long long)typeDescriptor->metaMethodCount,
+                                (int)typeDescriptor->prototypeType);
+
     typeName = native_binding_create_string(state, typeDescriptor->name);
     if (typeName == ZR_NULL) {
+        native_binding_trace_import("[zr_native_import] add_type failed module=%s type=%s reason=create_type_name\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    typeDescriptor->name);
         return ZR_FALSE;
     }
 
     expectedPrototypeType = typeDescriptor->prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID
                                     ? typeDescriptor->prototypeType
                                     : ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
-    prototype = ZrLib_Type_FindPrototype(state, typeDescriptor->name);
+    prototype = native_registry_get_module_prototype(state, module, typeDescriptor->name);
+    native_binding_trace_import("[zr_native_import] add_type lookup module=%s type=%s existing_prototype=%p expected_type=%d\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor->name,
+                                (void *)prototype,
+                                (int)expectedPrototypeType);
     if (prototype != ZR_NULL &&
         expectedPrototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID &&
         prototype->type != expectedPrototypeType) {
+        native_binding_trace_import("[zr_native_import] add_type failed module=%s type=%s reason=prototype_type_mismatch actual=%d expected=%d\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    typeDescriptor->name,
+                                    (int)prototype->type,
+                                    (int)expectedPrototypeType);
         return ZR_FALSE;
     }
 
     if (prototype == ZR_NULL && typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
         prototype = (SZrObjectPrototype *)ZrCore_StructPrototype_New(state, typeName);
+        native_binding_trace_import("[zr_native_import] add_type created_struct module=%s type=%s prototype=%p\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    typeDescriptor->name,
+                                    (void *)prototype);
         if (prototype != ZR_NULL) {
             SZrStructPrototype *structPrototype = (SZrStructPrototype *)prototype;
             for (index = 0; index < typeDescriptor->fieldCount; index++) {
@@ -1108,29 +1519,62 @@ TZrBool native_registry_add_type(SZrState *state,
         prototype = ZrCore_ObjectPrototype_New(state,
                                                typeName,
                                                expectedPrototypeType);
+        native_binding_trace_import("[zr_native_import] add_type created_object module=%s type=%s prototype=%p\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    typeDescriptor->name,
+                                    (void *)prototype);
     }
 
     if (prototype == ZR_NULL) {
+        native_binding_trace_import("[zr_native_import] add_type failed module=%s type=%s reason=create_prototype\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    typeDescriptor->name);
         return ZR_FALSE;
     }
 
+    native_binding_trace_import("[zr_native_import] add_type attach_runtime module=%s type=%s prototype=%p\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor->name,
+                                (void *)prototype);
     native_registry_attach_type_runtime_metadata(state, typeDescriptor, prototype);
+    native_binding_trace_import("[zr_native_import] add_type attach_protocols module=%s type=%s\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor->name);
     native_registry_add_declared_protocols(prototype, typeDescriptor);
+    native_binding_trace_import("[zr_native_import] add_type attach_fields module=%s type=%s\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor->name);
     native_registry_add_field_descriptors(state, prototype, typeDescriptor);
+    native_binding_trace_import("[zr_native_import] add_type attach_reflection module=%s type=%s\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor->name);
     ZrCore_Reflection_AttachPrototypeRuntimeMetadata(state, prototype, module, ZR_NULL);
 
     if (!native_registry_add_methods(state, registry, moduleDescriptor, typeDescriptor, prototype)) {
+        native_binding_trace_import("[zr_native_import] add_type failed module=%s type=%s reason=add_methods\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    typeDescriptor->name);
         return ZR_FALSE;
     }
 
     if (!native_registry_add_enum_members(state, prototype, typeDescriptor)) {
+        native_binding_trace_import("[zr_native_import] add_type failed module=%s type=%s reason=add_enum_members\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    typeDescriptor->name);
         return ZR_FALSE;
     }
 
     ZrCore_Value_InitAsRawObject(state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
     prototypeValue.type = ZR_VALUE_TYPE_OBJECT;
+    native_binding_trace_import("[zr_native_import] add_type export module=%s type=%s prototype=%p\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor->name,
+                                (void *)prototype);
     ZrCore_Module_AddPubExport(state, module, typeName, &prototypeValue);
     native_binding_register_prototype_in_global_scope(state, typeName, &prototypeValue);
+    native_binding_trace_import("[zr_native_import] add_type success module=%s type=%s\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor->name);
     return ZR_TRUE;
 }
 

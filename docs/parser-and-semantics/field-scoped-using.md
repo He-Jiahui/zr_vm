@@ -6,10 +6,12 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
   - zr_vm_core/include/zr_vm_core/constant_reference.h
   - zr_vm_core/include/zr_vm_core/object.h
   - zr_vm_core/src/zr_vm_core/object.c
+  - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/module.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
@@ -18,18 +20,23 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
   - zr_vm_core/include/zr_vm_core/constant_reference.h
   - zr_vm_core/include/zr_vm_core/object.h
   - zr_vm_core/src/zr_vm_core/object.c
+  - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/module.c
 plan_sources:
   - user: 2026-03-28 实现“ZR 全目标回归强化与 Field-Scoped using 语义计划”
   - .codex/plans/ZR 全目标回归强化与 Field-Scoped using 语义计划.md
+  - user: 2026-04-06 struct 值类型与 native wrapper 分层方案
 tests:
   - tests/parser/test_parser.c
   - tests/language_server/test_semantic_analyzer.c
   - tests/parser/test_compiler_features.c
+  - tests/parser/test_type_inference.c
+  - tests/parser/test_prototype.c
   - tests/module/test_module_system.c
 doc_type: module-detail
 ---
@@ -120,6 +127,22 @@ class Holder {
 
 这样运行时后续如果要做实例释放、字段覆盖或 struct value cleanup，就可以直接从 prototype 读取字段生命周期描述，而不需要重新猜测字段语义。
 
+## Move-Only Struct Consequence
+
+field-scoped `using` 不只是 runtime cleanup 标记，它也直接改变 struct 的复制语义。
+
+当前类型系统把下列 struct 视为 move-only：
+
+- 含 `using var field: ...`
+- 或字段本身带不可复制 ownership 语义（例如 unique-owned field）
+
+对应约束是：
+
+- 普通赋值不允许对这类 struct 做隐式复制
+- 普通按值函数实参也不允许对这类 struct 做隐式复制
+
+而普通可复制 struct 仍然保留值语义，只是运行时复制路径已经改成 boxed struct deep-clone，而不是普通 object 引用别名。
+
 ## 当前验证覆盖
 
 已补的回归点：
@@ -133,6 +156,10 @@ class Holder {
 - compiler
   - prototypeData 持久化 managed-field 元数据
   - `static using` 在编译阶段被拒绝
+- type inference / ownership
+  - 含 `using` 字段的 struct 被视为 move-only
+  - move-only struct 的 assignment / by-value argument copy 在编译期被拒绝
+  - 可复制 struct 的普通赋值会深拷贝 boxed struct storage，而不是共享同一对象
 - module/runtime metadata
   - prototypeData 重新加载后可恢复结构体字段偏移和 managed-field 表
 

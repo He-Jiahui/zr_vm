@@ -151,6 +151,8 @@ typedef struct SZrCompileTimeFunction {
     SZrInferredType returnType;            // 返回类型
     SZrArray paramTypes;                   // 参数类型数组（SZrInferredType）
     SZrArray paramNames;                   // 参数名称数组（SZrString*）
+    SZrArray paramHasDefaultValues;        // 参数默认值存在标记（TZrBool）
+    SZrArray paramDefaultValues;           // 参数默认值（SZrTypeValue）
     SZrString *runtimeProjectionModuleName; // binary import 时回落到的模块路径
     SZrString *runtimeProjectionExportName; // binary import 时回落到的 pro export 名称
     TZrBool isRuntimeProjection;            // 是否为 runtime callable projection
@@ -169,6 +171,7 @@ typedef struct SZrCompileTimeDecoratorClass {
 typedef struct SZrImportedCompileTimeModule {
     SZrString *moduleName;                 // 逻辑模块路径
     SZrAstNode *scriptAst;                 // imported module AST（保持声明节点存活）
+    SZrArray compileTimeVariables;         // SZrFunctionCompileTimeVariableInfo*
     SZrArray compileTimeFunctions;         // SZrCompileTimeFunction*
     SZrArray compileTimeDecoratorClasses;  // SZrCompileTimeDecoratorClass*
 } SZrImportedCompileTimeModule;
@@ -300,6 +303,9 @@ typedef struct SZrTypeMemberInfo {
     TZrUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
     TZrUInt32 parameterCount;             // 参数数量
     SZrArray parameterTypes;              // 参数类型数组（SZrInferredType）
+    SZrArray parameterNames;              // 参数名称数组（SZrString*）
+    SZrArray parameterHasDefaultValues;   // 参数默认值存在标记（TZrBool）
+    SZrArray parameterDefaultValues;      // 参数默认值数组（SZrTypeValue）
     SZrArray genericParameters;           // 泛型参数信息（SZrTypeGenericParameterInfo）
     SZrArray parameterPassingModes;       // 参数传递模式（EZrParameterPassingMode）
     SZrArray decorators;                  // 成员级 compile-time decorator 记录（SZrTypeDecoratorInfo）

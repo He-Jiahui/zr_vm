@@ -286,7 +286,6 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         }
         ZrCore_Array_Free(state, &cs->typeEnvStack);
     }
-    
     // 释放当前类型环境
     if (cs->typeEnv != ZR_NULL) {
         ZrParser_TypeEnvironment_Free(state, cs->typeEnv);
@@ -352,6 +351,27 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                                 }
                             }
                             ZrCore_Array_Free(state, &memberInfo->parameterTypes);
+                        }
+                        if (memberInfo != ZR_NULL &&
+                            memberInfo->parameterNames.isValid &&
+                            memberInfo->parameterNames.head != ZR_NULL &&
+                            memberInfo->parameterNames.capacity > 0 &&
+                            memberInfo->parameterNames.elementSize > 0) {
+                            ZrCore_Array_Free(state, &memberInfo->parameterNames);
+                        }
+                        if (memberInfo != ZR_NULL &&
+                            memberInfo->parameterHasDefaultValues.isValid &&
+                            memberInfo->parameterHasDefaultValues.head != ZR_NULL &&
+                            memberInfo->parameterHasDefaultValues.capacity > 0 &&
+                            memberInfo->parameterHasDefaultValues.elementSize > 0) {
+                            ZrCore_Array_Free(state, &memberInfo->parameterHasDefaultValues);
+                        }
+                        if (memberInfo != ZR_NULL &&
+                            memberInfo->parameterDefaultValues.isValid &&
+                            memberInfo->parameterDefaultValues.head != ZR_NULL &&
+                            memberInfo->parameterDefaultValues.capacity > 0 &&
+                            memberInfo->parameterDefaultValues.elementSize > 0) {
+                            ZrCore_Array_Free(state, &memberInfo->parameterDefaultValues);
                         }
                         if (memberInfo != ZR_NULL &&
                             memberInfo->genericParameters.isValid &&
@@ -425,7 +445,6 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         }
         ZrCore_Array_Free(state, &cs->compileTimeVariables);
     }
-    
     // 释放 const 变量跟踪数组
     if (cs->constLocalVars.isValid && cs->constLocalVars.head != ZR_NULL && 
         cs->constLocalVars.capacity > 0 && cs->constLocalVars.elementSize > 0) {
@@ -469,13 +488,24 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                     func->paramNames.elementSize > 0) {
                     ZrCore_Array_Free(state, &func->paramNames);
                 }
+                if (func->paramHasDefaultValues.isValid &&
+                    func->paramHasDefaultValues.head != ZR_NULL &&
+                    func->paramHasDefaultValues.capacity > 0 &&
+                    func->paramHasDefaultValues.elementSize > 0) {
+                    ZrCore_Array_Free(state, &func->paramHasDefaultValues);
+                }
+                if (func->paramDefaultValues.isValid &&
+                    func->paramDefaultValues.head != ZR_NULL &&
+                    func->paramDefaultValues.capacity > 0 &&
+                    func->paramDefaultValues.elementSize > 0) {
+                    ZrCore_Array_Free(state, &func->paramDefaultValues);
+                }
                 // 释放函数结构体本身（字符串和AST节点由GC管理）
                 ZrCore_Memory_RawFreeWithType(state->global, func, sizeof(SZrCompileTimeFunction), ZR_MEMORY_NATIVE_TYPE_ARRAY);
             }
         }
         ZrCore_Array_Free(state, &cs->compileTimeFunctions);
     }
-
     if (cs->compileTimeDecoratorClasses.isValid &&
         cs->compileTimeDecoratorClasses.head != ZR_NULL &&
         cs->compileTimeDecoratorClasses.capacity > 0 &&
@@ -545,12 +575,48 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                         func->paramNames.elementSize > 0) {
                         ZrCore_Array_Free(state, &func->paramNames);
                     }
+                    if (func->paramHasDefaultValues.isValid &&
+                        func->paramHasDefaultValues.head != ZR_NULL &&
+                        func->paramHasDefaultValues.capacity > 0 &&
+                        func->paramHasDefaultValues.elementSize > 0) {
+                        ZrCore_Array_Free(state, &func->paramHasDefaultValues);
+                    }
+                    if (func->paramDefaultValues.isValid &&
+                        func->paramDefaultValues.head != ZR_NULL &&
+                        func->paramDefaultValues.capacity > 0 &&
+                        func->paramDefaultValues.elementSize > 0) {
+                        ZrCore_Array_Free(state, &func->paramDefaultValues);
+                    }
                     ZrCore_Memory_RawFreeWithType(state->global,
                                                   func,
                                                   sizeof(SZrCompileTimeFunction),
                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 }
                 ZrCore_Array_Free(state, &module->compileTimeFunctions);
+            }
+
+            if (module->compileTimeVariables.isValid &&
+                module->compileTimeVariables.head != ZR_NULL &&
+                module->compileTimeVariables.capacity > 0 &&
+                module->compileTimeVariables.elementSize > 0) {
+                for (TZrSize j = 0; j < module->compileTimeVariables.length; j++) {
+                    SZrFunctionCompileTimeVariableInfo **infoPtr =
+                            (SZrFunctionCompileTimeVariableInfo **)ZrCore_Array_Get(&module->compileTimeVariables, j);
+                    if (infoPtr != ZR_NULL && *infoPtr != ZR_NULL) {
+                        if ((*infoPtr)->pathBindings != ZR_NULL && (*infoPtr)->pathBindingCount > 0) {
+                            ZrCore_Memory_RawFreeWithType(state->global,
+                                                          (*infoPtr)->pathBindings,
+                                                          sizeof(SZrFunctionCompileTimePathBinding) *
+                                                                  (*infoPtr)->pathBindingCount,
+                                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+                        }
+                        ZrCore_Memory_RawFreeWithType(state->global,
+                                                      *infoPtr,
+                                                      sizeof(SZrFunctionCompileTimeVariableInfo),
+                                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+                    }
+                }
+                ZrCore_Array_Free(state, &module->compileTimeVariables);
             }
 
             if (module->compileTimeDecoratorClasses.isValid &&

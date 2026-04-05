@@ -7,6 +7,7 @@
 
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
 
@@ -21,8 +22,17 @@ typedef struct SZrAotWriterOptions {
     TZrBool requireExecutableLowering;
 } SZrAotWriterOptions;
 
+typedef struct SZrBinaryWriterOptions {
+    const TZrChar *moduleName;
+    const TZrChar *moduleHash;
+} SZrBinaryWriterOptions;
+
 // 写入二进制文件 (.zro)
 // 将编译后的函数写入二进制格式文件，符合 zr_io_conf.h 中定义的 .SOURCE 格式
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFileWithOptions(SZrState *state,
+                                                                 SZrFunction *function,
+                                                                 const TZrChar *filename,
+                                                                 const SZrBinaryWriterOptions *options);
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFile(SZrState *state, SZrFunction *function, const TZrChar *filename);
 
 // 将 native helper 函数指针映射为稳定的可序列化 helper id

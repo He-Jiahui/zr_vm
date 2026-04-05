@@ -136,6 +136,7 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     if (global == ZR_NULL) {
         return ZR_NULL;
     }
+    ZrCore_Memory_RawSet(global, 0, sizeof(SZrGlobalState));
     // when create and init global state, we make the global is not valid
     global->isValid = ZR_FALSE;
     global->allocator = allocator;
@@ -219,6 +220,9 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
 
 // 初始化基本类型对象原型
 static void global_state_init_basic_type_object_prototypes(SZrState *state, SZrGlobalState *global) {
+    if (state != ZR_NULL) {
+        state->global = global;
+    }
     // 为每个值类型创建 ObjectPrototype 对象
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         // 创建 ObjectPrototype 对象（ZrCore_Object_NewCustomized 已经设置了 internalType 并调用了 ZrCore_HashSet_Construct）
@@ -271,6 +275,8 @@ void ZrCore_GlobalState_InitRegistry(SZrState *state, SZrGlobalState *global) {
     if (global->registryInitialized) {
         return;
     }
+    state->global = global;
+    global->mainThreadState = state;
 
     SZrObject *object = ZrCore_Object_New(state, ZR_NULL);
     ZrCore_Object_Init(state, object);  // 初始化对象的 nodeMap

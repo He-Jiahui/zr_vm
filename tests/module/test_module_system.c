@@ -31,6 +31,8 @@
 #include "zr_vm_parser/writer.h"
 #include "test_support.h"
 
+TZrBool ZrVmLibFfi_Register(SZrGlobalState *global);
+
 // Unity 测试宏扩展 - 添加缺失的 UINT64 不等断言
 #ifndef TEST_ASSERT_NOT_EQUAL_UINT64
 #define TEST_ASSERT_NOT_EQUAL_UINT64(expected, actual)                                             TEST_ASSERT_NOT_EQUAL((expected), (actual))
@@ -2570,6 +2572,232 @@ static void test_native_module_info_exposes_enum_and_interface_descriptors(void)
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstImplementValue->value.object),
                                                "NativeStreamReadable"));
 
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_native_module_info_exposes_ffi_wrapper_lowering_metadata(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Module Info Exposes FFI Wrapper Lowering Metadata";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *module;
+        const SZrTypeValue *moduleInfoValue;
+        const SZrTypeValue *typesValue;
+        SZrObject *moduleInfo;
+        SZrObject *typesArray;
+        SZrObject *pointerEntry;
+        SZrObject *bufferEntry;
+        const SZrTypeValue *pointerLoweringValue;
+        const SZrTypeValue *pointerOwnerModeValue;
+        const SZrTypeValue *bufferLoweringValue;
+        const SZrTypeValue *bufferOwnerModeValue;
+        SZrObjectPrototype *pointerPrototype;
+        SZrObjectPrototype *bufferPrototype;
+        const SZrTypeValue *pointerPrototypeLoweringValue;
+        const SZrTypeValue *bufferPrototypeLoweringValue;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(ZrVmLibFfi_Register(state->global));
+
+        module = import_native_module(state, "zr.ffi");
+        TEST_ASSERT_NOT_NULL(module);
+
+        moduleInfoValue = get_module_export_value(state, module, ZR_NATIVE_MODULE_INFO_EXPORT_NAME);
+        TEST_ASSERT_NOT_NULL(moduleInfoValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, moduleInfoValue->type);
+
+        moduleInfo = ZR_CAST_OBJECT(state, moduleInfoValue->value.object);
+        TEST_ASSERT_NOT_NULL(moduleInfo);
+
+        typesValue = get_object_field_value(state, moduleInfo, "types");
+        TEST_ASSERT_NOT_NULL(typesValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, typesValue->type);
+
+        typesArray = ZR_CAST_OBJECT(state, typesValue->value.object);
+        TEST_ASSERT_NOT_NULL(typesArray);
+
+        pointerEntry = find_named_entry_in_array(state, typesArray, "name", "PointerHandle");
+        bufferEntry = find_named_entry_in_array(state, typesArray, "name", "BufferHandle");
+        TEST_ASSERT_NOT_NULL(pointerEntry);
+        TEST_ASSERT_NOT_NULL(bufferEntry);
+
+        pointerLoweringValue = get_object_field_value(state, pointerEntry, "ffiLoweringKind");
+        pointerOwnerModeValue = get_object_field_value(state, pointerEntry, "ffiOwnerMode");
+        bufferLoweringValue = get_object_field_value(state, bufferEntry, "ffiLoweringKind");
+        bufferOwnerModeValue = get_object_field_value(state, bufferEntry, "ffiOwnerMode");
+        TEST_ASSERT_NOT_NULL(pointerLoweringValue);
+        TEST_ASSERT_NOT_NULL(pointerOwnerModeValue);
+        TEST_ASSERT_NOT_NULL(bufferLoweringValue);
+        TEST_ASSERT_NOT_NULL(bufferOwnerModeValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, pointerLoweringValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, pointerOwnerModeValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, bufferLoweringValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, bufferOwnerModeValue->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, pointerLoweringValue->value.object), "pointer"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, pointerOwnerModeValue->value.object), "borrowed"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, bufferLoweringValue->value.object), "pointer"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, bufferOwnerModeValue->value.object), "owned"));
+
+        pointerPrototype = get_module_exported_prototype(state, module, "PointerHandle");
+        bufferPrototype = get_module_exported_prototype(state, module, "BufferHandle");
+        TEST_ASSERT_NOT_NULL(pointerPrototype);
+        TEST_ASSERT_NOT_NULL(bufferPrototype);
+
+        pointerPrototypeLoweringValue =
+                get_object_field_value(state, &pointerPrototype->super, "__zr_ffiLoweringKind");
+        bufferPrototypeLoweringValue =
+                get_object_field_value(state, &bufferPrototype->super, "__zr_ffiLoweringKind");
+        TEST_ASSERT_NOT_NULL(pointerPrototypeLoweringValue);
+        TEST_ASSERT_NOT_NULL(bufferPrototypeLoweringValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, pointerPrototypeLoweringValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, bufferPrototypeLoweringValue->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, pointerPrototypeLoweringValue->value.object),
+                                               "pointer"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, bufferPrototypeLoweringValue->value.object),
+                                               "pointer"));
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_source_module_wrapper_metadata_exposes_ffi_wrapper_fields_and_runtime_hidden_metadata(void) {
+    static const SZrModuleFixtureSource kFixtures[] = {
+            MODULE_FIXTURE_SOURCE_TEXT(
+                    "reflect_ffi_wrapper_metadata",
+                    "pub struct ModeHandleView {\n"
+                    "    pub var raw: i32 = 0;\n"
+                    "}\n"
+                    "\n"
+                    "#zr.ffi.lowering(\"handle_id\")#\n"
+                    "#zr.ffi.viewType(\"ModeHandleView\")#\n"
+                    "#zr.ffi.underlying(\"i32\")#\n"
+                    "#zr.ffi.ownerMode(\"borrowed\")#\n"
+                    "#zr.ffi.releaseHook(\"close_mode_handle\")#\n"
+                    "pub class ModeHandle {\n"
+                    "    pub var handleId: i32 = 1;\n"
+                    "}\n"),
+    };
+    SZrTestTimer timer;
+    const char *testSummary = "Source Module Wrapper Metadata Exposes FFI Wrapper Fields And Runtime Hidden Metadata";
+    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
+    TZrSize previousFixtureCount = g_module_fixture_source_count;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "var wrappers = %import(\"reflect_ffi_wrapper_metadata\");\n"
+                "return %type(wrappers.ModeHandle);\n";
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        SZrTypeValue result;
+        SZrObject *reflectionObject;
+        const SZrTypeValue *metadataValue;
+        SZrObject *metadataObject;
+        const SZrTypeValue *loweringValue;
+        const SZrTypeValue *viewTypeValue;
+        const SZrTypeValue *underlyingValue;
+        const SZrTypeValue *ownerModeValue;
+        const SZrTypeValue *releaseHookValue;
+        SZrString *modulePath;
+        SZrObjectModule *module;
+        SZrObjectPrototype *prototype;
+        const SZrTypeValue *prototypeLoweringValue;
+        const SZrTypeValue *prototypeViewTypeValue;
+        const SZrTypeValue *prototypeUnderlyingValue;
+        const SZrTypeValue *prototypeOwnerModeValue;
+        const SZrTypeValue *prototypeReleaseHookValue;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        g_module_fixture_sources = kFixtures;
+        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
+        state->global->sourceLoader = module_fixture_source_loader;
+
+        sourceName = ZrCore_String_Create(state, "type_source_ffi_wrapper_metadata_test.zr", 40);
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
+
+        reflectionObject = ZR_CAST_OBJECT(state, result.value.object);
+        TEST_ASSERT_NOT_NULL(reflectionObject);
+
+        metadataValue = get_object_field_value(state, reflectionObject, "metadata");
+        TEST_ASSERT_NOT_NULL(metadataValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, metadataValue->type);
+        metadataObject = ZR_CAST_OBJECT(state, metadataValue->value.object);
+        TEST_ASSERT_NOT_NULL(metadataObject);
+
+        loweringValue = get_object_field_value(state, metadataObject, "ffiLoweringKind");
+        viewTypeValue = get_object_field_value(state, metadataObject, "ffiViewTypeName");
+        underlyingValue = get_object_field_value(state, metadataObject, "ffiUnderlyingTypeName");
+        ownerModeValue = get_object_field_value(state, metadataObject, "ffiOwnerMode");
+        releaseHookValue = get_object_field_value(state, metadataObject, "ffiReleaseHook");
+        TEST_ASSERT_NOT_NULL(loweringValue);
+        TEST_ASSERT_NOT_NULL(viewTypeValue);
+        TEST_ASSERT_NOT_NULL(underlyingValue);
+        TEST_ASSERT_NOT_NULL(ownerModeValue);
+        TEST_ASSERT_NOT_NULL(releaseHookValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, loweringValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, viewTypeValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, underlyingValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, ownerModeValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, releaseHookValue->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, loweringValue->value.object), "handle_id"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, viewTypeValue->value.object), "ModeHandleView"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, underlyingValue->value.object), "i32"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, ownerModeValue->value.object), "borrowed"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, releaseHookValue->value.object),
+                                               "close_mode_handle"));
+
+        modulePath = ZrCore_String_Create(state, "reflect_ffi_wrapper_metadata", 28);
+        TEST_ASSERT_NOT_NULL(modulePath);
+        module = ZrCore_Module_ImportByPath(state, modulePath);
+        TEST_ASSERT_NOT_NULL(module);
+        prototype = get_module_exported_prototype(state, module, "ModeHandle");
+        TEST_ASSERT_NOT_NULL(prototype);
+
+        prototypeLoweringValue = get_object_field_value(state, &prototype->super, "__zr_ffiLoweringKind");
+        prototypeViewTypeValue = get_object_field_value(state, &prototype->super, "__zr_ffiViewTypeName");
+        prototypeUnderlyingValue = get_object_field_value(state, &prototype->super, "__zr_ffiUnderlyingTypeName");
+        prototypeOwnerModeValue = get_object_field_value(state, &prototype->super, "__zr_ffiOwnerMode");
+        prototypeReleaseHookValue = get_object_field_value(state, &prototype->super, "__zr_ffiReleaseHook");
+        TEST_ASSERT_NOT_NULL(prototypeLoweringValue);
+        TEST_ASSERT_NOT_NULL(prototypeViewTypeValue);
+        TEST_ASSERT_NOT_NULL(prototypeUnderlyingValue);
+        TEST_ASSERT_NOT_NULL(prototypeOwnerModeValue);
+        TEST_ASSERT_NOT_NULL(prototypeReleaseHookValue);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, prototypeLoweringValue->value.object),
+                                               "handle_id"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, prototypeViewTypeValue->value.object),
+                                               "ModeHandleView"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, prototypeUnderlyingValue->value.object),
+                                               "i32"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, prototypeOwnerModeValue->value.object),
+                                               "borrowed"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, prototypeReleaseHookValue->value.object),
+                                               "close_mode_handle"));
+
+        ZrCore_Function_Free(state, entryFunction);
+        state->global->sourceLoader = ZR_NULL;
+        g_module_fixture_sources = previousFixtures;
+        g_module_fixture_source_count = previousFixtureCount;
         destroy_test_state(state);
     }
 
@@ -6168,10 +6396,16 @@ int main(void) {
     // 22. native callable / generic descriptor 元信息完整暴露
     RUN_TEST(test_native_module_info_exposes_callable_parameters_and_generic_constraints);
 
-    // 23. native runtime 注册 enum 静态成员和 interface 继承链
+    // 23. zr.ffi wrapper lowering 元信息同时暴露到 module info 和 runtime prototype
+    RUN_TEST(test_native_module_info_exposes_ffi_wrapper_lowering_metadata);
+
+    // 24. source wrapper metadata 同时暴露到 %type metadata 和 runtime prototype hidden fields
+    RUN_TEST(test_source_module_wrapper_metadata_exposes_ffi_wrapper_fields_and_runtime_hidden_metadata);
+
+    // 25. native runtime 注册 enum 静态成员和 interface 继承链
     RUN_TEST(test_native_module_runtime_registers_enum_members_and_interface_inheritance);
 
-    // 24. native binding helper 在 GC retry 中仍保活 fresh object/value
+    // 26. native binding helper 在 GC retry 中仍保活 fresh object/value
     RUN_TEST(test_native_binding_helpers_root_fresh_values_across_gc_retry);
 
     // 25. native enum 构造在 runtime 返回正确实例

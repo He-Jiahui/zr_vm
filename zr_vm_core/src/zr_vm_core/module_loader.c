@@ -5,6 +5,12 @@
 #include "module_internal.h"
 #include "zr_vm_core/reflection.h"
 
+#include <stdio.h>
+
+static const TZrChar *module_loader_debug_string(SZrState *state, SZrString *value) {
+    return (state != ZR_NULL && value != ZR_NULL) ? ZrCore_String_GetNativeString(value) : "<null>";
+}
+
 static TZrBool refill_io_chunk(SZrIo *io) {
     SZrState *state;
     TZrSize readSize;

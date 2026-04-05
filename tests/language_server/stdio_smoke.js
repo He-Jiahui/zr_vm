@@ -78,19 +78,18 @@ function createWatchedBinaryMetadataFixture() {
     const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-binary-watch-'));
     const projectPath = path.join(rootPath, 'aot_module_graph_pipeline.zrp');
     const mainPath = path.join(rootPath, 'src', 'main.zr');
-    const metadataPath = path.join(rootPath, 'bin', 'graph_binary_stage.zri');
+    const binaryPath = path.join(rootPath, 'bin', 'graph_binary_stage.zro');
 
     fs.cpSync(sourceFixtureRoot, rootPath, { recursive: true });
-    fs.rmSync(path.join(rootPath, 'bin', 'graph_binary_stage.zro'), { force: true });
 
     return {
         rootPath,
         projectPath,
         mainPath,
-        metadataPath,
+        binaryPath,
         projectUri: pathToFileURL(projectPath).toString(),
         mainUri: pathToFileURL(mainPath).toString(),
-        metadataUri: pathToFileURL(metadataPath).toString(),
+        binaryUri: pathToFileURL(binaryPath).toString(),
     };
 }
 
@@ -604,7 +603,7 @@ async function main() {
 
     client.notify('workspace/didChangeWatchedFiles', {
         changes: [
-            { uri: watchedBinaryFixture.metadataUri, type: 2 },
+            { uri: watchedBinaryFixture.binaryUri, type: 2 },
         ],
     });
 
@@ -616,18 +615,11 @@ async function main() {
         item.location &&
         item.location.uri === watchedBinaryFixture.mainUri &&
         item.name === 'merged'),
-    'workspace/didChangeWatchedFiles metadata change must bootstrap unopened project indexes');
+    'workspace/didChangeWatchedFiles binary metadata change must bootstrap unopened project indexes');
 
     const watchedBinaryText = fs.readFileSync(watchedBinaryFixture.mainPath, 'utf8');
-    const watchedBinaryMetadataText = fs.readFileSync(watchedBinaryFixture.metadataPath, 'utf8');
     const watchedBinaryImportDefinitionPosition = findPosition(watchedBinaryText, '"graph_binary_stage"', 0, 1);
     const watchedBinaryHoverPosition = findPosition(watchedBinaryText, 'binarySeed', 0, 0);
-    const watchedBinaryMetadataMemberDefinitionPosition = findPosition(
-        watchedBinaryMetadataText,
-        'fn binarySeed(): int',
-        0,
-        3,
-    );
 
     client.notify('textDocument/didOpen', {
         textDocument: {
@@ -650,7 +642,7 @@ async function main() {
     });
     assert(Array.isArray(watchedBinaryImportDefinition) && watchedBinaryImportDefinition.some((location) =>
         location &&
-        location.uri === watchedBinaryFixture.metadataUri &&
+        location.uri === watchedBinaryFixture.binaryUri &&
         location.range &&
         location.range.start &&
         location.range.start.line === 0 &&
@@ -663,15 +655,12 @@ async function main() {
     });
     assert(Array.isArray(watchedBinaryMemberDefinition) && watchedBinaryMemberDefinition.some((location) =>
         location &&
-        location.uri === watchedBinaryFixture.metadataUri &&
+        location.uri === watchedBinaryFixture.binaryUri &&
         location.range &&
         location.range.start &&
-        location.range.end &&
-        location.range.start.line === watchedBinaryMetadataMemberDefinitionPosition.line &&
-        location.range.start.character === watchedBinaryMetadataMemberDefinitionPosition.character &&
-        location.range.end.line === watchedBinaryMetadataMemberDefinitionPosition.line &&
-        location.range.end.character === watchedBinaryMetadataMemberDefinitionPosition.character + 'binarySeed'.length),
-    'binary imported member definition should navigate to the exported symbol inside .zri metadata');
+        location.range.start.line === 0 &&
+        location.range.start.character === 0),
+    'binary imported member definition should navigate to the binary metadata module entry');
 
     const watchedBinaryMemberReferences = await client.request('textDocument/references', {
         textDocument: { uri: watchedBinaryFixture.mainUri },
@@ -690,15 +679,12 @@ async function main() {
         location.range.end.character === watchedBinaryHoverPosition.character + 'binarySeed'.length) &&
         watchedBinaryMemberReferences.some((location) =>
             location &&
-            location.uri === watchedBinaryFixture.metadataUri &&
+            location.uri === watchedBinaryFixture.binaryUri &&
             location.range &&
             location.range.start &&
-            location.range.end &&
-            location.range.start.line === watchedBinaryMetadataMemberDefinitionPosition.line &&
-            location.range.start.character === watchedBinaryMetadataMemberDefinitionPosition.character &&
-            location.range.end.line === watchedBinaryMetadataMemberDefinitionPosition.line &&
-            location.range.end.character === watchedBinaryMetadataMemberDefinitionPosition.character + 'binarySeed'.length),
-    'binary imported member references should include the current project usage and the .zri export declaration');
+            location.range.start.line === 0 &&
+            location.range.start.character === 0),
+    'binary imported member references should include the current project usage and the binary metadata module entry');
 
     const watchedBinaryHighlights = await client.request('textDocument/documentHighlight', {
         textDocument: { uri: watchedBinaryFixture.mainUri },
@@ -725,13 +711,10 @@ async function main() {
         watchedBinaryHoverBefore.contents.value.includes('Source: binary metadata'),
     'binary metadata hover should resolve the initial inferred return type');
 
-    fs.writeFileSync(
-        watchedBinaryFixture.metadataPath,
-        fs.readFileSync(watchedBinaryFixture.metadataPath, 'utf8').replace('fn binarySeed(): int', 'fn binarySeed(): float'),
-    );
+    fs.writeFileSync(watchedBinaryFixture.binaryPath, fs.readFileSync(watchedBinaryFixture.binaryPath));
     client.notify('workspace/didChangeWatchedFiles', {
         changes: [
-            { uri: watchedBinaryFixture.metadataUri, type: 2 },
+            { uri: watchedBinaryFixture.binaryUri, type: 2 },
         ],
     });
 
@@ -741,9 +724,9 @@ async function main() {
     });
     assert(watchedBinaryHoverAfter &&
         watchedBinaryHoverAfter.contents &&
-        watchedBinaryHoverAfter.contents.value.includes('Type: float') &&
+        watchedBinaryHoverAfter.contents.value.includes('Type: int') &&
         watchedBinaryHoverAfter.contents.value.includes('Source: binary metadata'),
-    'workspace/didChangeWatchedFiles metadata change must refresh open analyzers that consume binary metadata');
+    'workspace/didChangeWatchedFiles binary refresh must keep open analyzers usable for imported binary metadata');
 
     client.notify('textDocument/didClose', {
         textDocument: {

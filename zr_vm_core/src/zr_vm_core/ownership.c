@@ -9,6 +9,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 
@@ -17,6 +18,37 @@ static TZrBool ownership_value_has_object(const SZrTypeValue *value) {
            value->isGarbageCollectable &&
            !ZR_VALUE_IS_TYPE_NULL(value->type) &&
            value->value.object != ZR_NULL;
+}
+
+static TZrBool ownership_value_is_on_stack(const SZrState *state, const SZrTypeValue *value) {
+    TZrStackValuePointer stackPointer;
+
+    if (state == ZR_NULL || value == ZR_NULL || state->stackBase.valuePointer == ZR_NULL ||
+        state->stackTail.valuePointer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stackPointer = ZR_CAST_STACK_VALUE((TZrPtr)value);
+    return stackPointer >= state->stackBase.valuePointer && stackPointer < state->stackTail.valuePointer;
+}
+
+static SZrTypeValue *ownership_resolve_weak_ref_slot(SZrState *state, const SZrOwnershipWeakRef *weakRef) {
+    TZrStackValuePointer stackPointer;
+
+    if (weakRef == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (!weakRef->usesStackSlotOffset) {
+        return weakRef->slot;
+    }
+
+    if (state == ZR_NULL || state->stackBase.valuePointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    stackPointer = ZrCore_Stack_LoadOffsetToPointer(state, weakRef->stackSlotOffset);
+    return stackPointer != ZR_NULL ? ZrCore_Stack_GetValue(stackPointer) : ZR_NULL;
 }
 
 static void ownership_reset_value_storage(SZrTypeValue *value) {
@@ -159,8 +191,9 @@ static void ownership_expire_weak_refs(struct SZrState *state, SZrOwnershipContr
     control->weakRefs = ZR_NULL;
     while (weakRef != ZR_NULL) {
         SZrOwnershipWeakRef *next = weakRef->next;
-        if (weakRef->slot != ZR_NULL) {
-            ownership_reset_value_storage(weakRef->slot);
+        SZrTypeValue *slot = ownership_resolve_weak_ref_slot(state, weakRef);
+        if (slot != ZR_NULL) {
+            ownership_reset_value_storage(slot);
         }
         ownership_free_weak_ref(state, weakRef);
         weakRef = next;
@@ -187,6 +220,13 @@ static TZrBool ownership_register_weak_ref(struct SZrState *state,
 
     ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_WEAK, control);
     weakRef->slot = destination;
+    weakRef->stackSlotOffset = 0;
+    weakRef->usesStackSlotOffset = ZR_FALSE;
+    if (ownership_value_is_on_stack(state, destination)) {
+        weakRef->slot = ZR_NULL;
+        weakRef->stackSlotOffset = ZrCore_Stack_SavePointerAsOffset(state, ZR_CAST_STACK_VALUE((TZrPtr)destination));
+        weakRef->usesStackSlotOffset = ZR_TRUE;
+    }
     weakRef->control = control;
     weakRef->next = control->weakRefs;
     control->weakRefs = weakRef;
@@ -244,6 +284,36 @@ static void ownership_copy_plain_bits(SZrTypeValue *destination, const SZrTypeVa
     destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
     destination->ownershipControl = ZR_NULL;
     destination->ownershipWeakRef = ZR_NULL;
+}
+
+static TZrBool ownership_copy_plain_value(SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source) {
+    SZrObject *sourceObject;
+    SZrObject *clonedStruct;
+
+    if (destination == ZR_NULL || source == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (state != ZR_NULL &&
+        source->type == ZR_VALUE_TYPE_OBJECT &&
+        source->isGarbageCollectable &&
+        source->value.object != ZR_NULL) {
+        sourceObject = ZR_CAST_OBJECT(state, source->value.object);
+        if (sourceObject != ZR_NULL && sourceObject->internalType == ZR_OBJECT_INTERNAL_TYPE_STRUCT) {
+            clonedStruct = ZrCore_Object_CloneStruct(state, sourceObject);
+            if (clonedStruct == ZR_NULL) {
+                ownership_reset_value_storage(destination);
+                return ZR_FALSE;
+            }
+
+            ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(clonedStruct));
+            destination->type = ZR_VALUE_TYPE_OBJECT;
+            return ZR_TRUE;
+        }
+    }
+
+    ownership_copy_plain_bits(destination, source);
+    return ZR_TRUE;
 }
 
 static TZrBool ownership_prepare_destination(struct SZrState *state, SZrTypeValue *destination) {
@@ -566,7 +636,9 @@ void ZrCore_Ownership_AssignValue(struct SZrState *state,
 
     switch (source->ownershipKind) {
         case ZR_OWNERSHIP_VALUE_KIND_NONE:
-            ownership_copy_plain_bits(destination, source);
+            if (!ownership_copy_plain_value(state, destination, source)) {
+                ownership_reset_value_storage(destination);
+            }
             break;
         case ZR_OWNERSHIP_VALUE_KIND_SHARED:
             control = source->ownershipControl;

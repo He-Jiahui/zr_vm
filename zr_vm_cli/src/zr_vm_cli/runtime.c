@@ -7,6 +7,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
@@ -16,6 +17,10 @@
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
+
+#if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+#include "zr_vm_lib_debug/debug.h"
+#endif
 
 typedef struct ZrCliExecuteRequest {
     SZrFunction *function;
@@ -27,6 +32,7 @@ typedef struct ZrCliExecuteRequest {
 static void zr_cli_runtime_execute_body(SZrState *state, TZrPtr arguments) {
     ZrCliExecuteRequest *request = (ZrCliExecuteRequest *) arguments;
     SZrClosure *closure;
+    TZrBool ignoredClosure = ZR_FALSE;
     TZrStackValuePointer base;
     SZrFunctionStackAnchor anchor;
     SZrTypeValue *closureValue;
@@ -40,6 +46,7 @@ static void zr_cli_runtime_execute_body(SZrState *state, TZrPtr arguments) {
         return;
     }
 
+    ignoredClosure = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closure->function = request->function;
     request->closure = closure;
     ZrCore_Closure_InitValue(state, closure);
@@ -54,8 +61,34 @@ static void zr_cli_runtime_execute_body(SZrState *state, TZrPtr arguments) {
     closureValue->isNative = ZR_FALSE;
     state->stackTop.valuePointer++;
 
+    if (ignoredClosure) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    }
+
     request->resultBase = ZrCore_Function_CallAndRestoreAnchor(state, &anchor, 1);
     request->callCompleted = (TZrBool) (state->threadStatus == ZR_THREAD_STATUS_FINE);
+}
+
+static TZrBool zr_cli_runtime_capture_failure(SZrState *state, EZrThreadStatus status) {
+    EZrThreadStatus effectiveStatus;
+
+    if (state == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    effectiveStatus = status;
+    if (effectiveStatus == ZR_THREAD_STATUS_FINE && state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        effectiveStatus = state->threadStatus;
+    }
+    if (effectiveStatus == ZR_THREAD_STATUS_FINE) {
+        effectiveStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
+    }
+
+    if (!state->hasCurrentException) {
+        (void)ZrCore_Exception_NormalizeStatus(state, effectiveStatus);
+    }
+    state->threadStatus = effectiveStatus;
+    return ZR_FALSE;
 }
 
 static TZrBool zr_cli_runtime_handle_failure(SZrState *state, EZrThreadStatus status) {
@@ -101,6 +134,21 @@ static void zr_cli_runtime_emit_executed_via(const SZrCliCommand *command, const
     }
 }
 
+#if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+static void zr_cli_runtime_emit_debug_endpoint(const SZrCliCommand *command, ZrDebugAgent *agent) {
+    TZrChar endpoint[ZR_NETWORK_ENDPOINT_TEXT_CAPACITY];
+
+    if (command == ZR_NULL || !command->debugPrintEndpoint || agent == ZR_NULL) {
+        return;
+    }
+
+    if (ZrDebug_AgentGetEndpoint(agent, endpoint, sizeof(endpoint))) {
+        printf("debug_endpoint=%s\n", endpoint);
+        fflush(stdout);
+    }
+}
+#endif
+
 static TZrBool zr_cli_runtime_execute_function(SZrState *state, SZrFunction *function, SZrTypeValue *result) {
     ZrCliExecuteRequest request;
     EZrThreadStatus status;
@@ -112,20 +160,20 @@ static TZrBool zr_cli_runtime_execute_function(SZrState *state, SZrFunction *fun
     memset(&request, 0, sizeof(request));
     ZrCore_Value_ResetAsNull(result);
     request.function = function;
+    state->threadStatus = ZR_THREAD_STATUS_FINE;
     status = ZrCore_Exception_TryRun(state, zr_cli_runtime_execute_body, &request);
     if (status != ZR_THREAD_STATUS_FINE) {
         if (request.closure != ZR_NULL) {
             request.closure->function = ZR_NULL;
         }
-        state->threadStatus = status;
-        return ZR_FALSE;
+        return zr_cli_runtime_capture_failure(state, status);
     }
 
     if (!request.callCompleted || request.resultBase == ZR_NULL) {
         if (request.closure != ZR_NULL) {
             request.closure->function = ZR_NULL;
         }
-        return ZR_FALSE;
+        return zr_cli_runtime_capture_failure(state, state->threadStatus);
     }
 
     ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(request.resultBase));
@@ -150,6 +198,48 @@ static TZrBool zr_cli_runtime_print_result(SZrState *state, SZrTypeValue *result
 
     printf("%s\n", ZrCore_String_GetNativeString(resultString));
     return ZR_TRUE;
+}
+
+static void zr_cli_runtime_prepare_entry_module(SZrState *state,
+                                                SZrFunction *entryFunction,
+                                                const TZrChar *loadedEntryPath) {
+    SZrObjectModule *projectModule;
+    SZrString *modulePath;
+    TZrUInt64 pathHash;
+
+    if (state == ZR_NULL || entryFunction == ZR_NULL || loadedEntryPath == ZR_NULL || loadedEntryPath[0] == '\0') {
+        return;
+    }
+
+    projectModule = ZrCore_Module_Create(state);
+    if (projectModule == ZR_NULL) {
+        return;
+    }
+
+    modulePath = ZrCore_String_CreateFromNative(state, (TZrNativeString)loadedEntryPath);
+    pathHash = ZrCore_Module_CalculatePathHash(state, modulePath);
+    ZrCore_Module_SetInfo(state, projectModule, ZR_NULL, pathHash, modulePath);
+    ZrCore_Module_CreatePrototypesFromConstants(state, projectModule, entryFunction);
+}
+
+static TZrBool zr_cli_runtime_prepare_and_execute_entry(SZrState *state,
+                                                        SZrFunction *entryFunction,
+                                                        const TZrChar *loadedEntryPath,
+                                                        SZrTypeValue *result) {
+    TZrBool ignoredFunction = ZR_FALSE;
+    TZrBool success;
+
+    if (state == ZR_NULL || entryFunction == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
+    zr_cli_runtime_prepare_entry_module(state, entryFunction, loadedEntryPath);
+    success = zr_cli_runtime_execute_function(state, entryFunction, result);
+    if (ignoredFunction) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
+    }
+    return success;
 }
 
 static TZrBool zr_cli_runtime_load_entry_function(SZrState *state,
@@ -289,6 +379,95 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
         return 1;
     }
 
+#if !defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+    if (command->debugEnabled) {
+        fprintf(stderr, "debug agent support is not built into this CLI\n");
+        ZrLibrary_CommonState_CommonGlobalState_Free(global);
+        return 1;
+    }
+#else
+    if (command->debugEnabled &&
+        (command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_C ||
+         command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_LLVM)) {
+        fprintf(stderr, "zr debugger v1 only supports interp and binary execution modes\n");
+        ZrLibrary_CommonState_CommonGlobalState_Free(global);
+        return 1;
+    }
+
+    if (command->debugEnabled) {
+        ZrDebugAgentConfig debugConfig;
+        ZrDebugAgent *debugAgent = ZR_NULL;
+        TZrChar debugError[256];
+        TZrBool ignoredFunction = ZR_FALSE;
+
+        if (!ZrCli_ProjectContext_FromGlobal(&project, global, command->projectPath)) {
+            fprintf(stderr, "failed to resolve project context: %s\n", command->projectPath);
+            ZrLibrary_CommonState_CommonGlobalState_Free(global);
+            return 1;
+        }
+
+        if (command->executionMode == ZR_CLI_EXECUTION_MODE_BINARY) {
+            global->sourceLoader = zr_cli_runtime_binary_first_loader;
+        }
+
+        if (!zr_cli_runtime_load_entry_function(state,
+                                                &project,
+                                                command->executionMode == ZR_CLI_EXECUTION_MODE_BINARY,
+                                                &entryFunction,
+                                                loadedEntryPath,
+                                                sizeof(loadedEntryPath))) {
+            fprintf(stderr, "failed to load project entry: %s\n", project.entryModule);
+            ZrLibrary_CommonState_CommonGlobalState_Free(global);
+            return 1;
+        }
+
+        ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
+        zr_cli_runtime_prepare_entry_module(state, entryFunction, loadedEntryPath);
+
+        memset(&debugConfig, 0, sizeof(debugConfig));
+        debugConfig.address = command->debugAddress;
+        debugConfig.suspend_on_start = command->debugWait;
+        debugConfig.wait_for_client = command->debugWait;
+        debugConfig.auth_token = ZR_NULL;
+        debugConfig.stop_on_uncaught_exception = ZR_TRUE;
+
+        if (!ZrDebug_AgentStart(state,
+                                entryFunction,
+                                project.entryModule,
+                                &debugConfig,
+                                &debugAgent,
+                                debugError,
+                                sizeof(debugError))) {
+            fprintf(stderr, "failed to start debug agent: %s\n", debugError);
+            if (ignoredFunction) {
+                ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
+            }
+            ZrLibrary_CommonState_CommonGlobalState_Free(global);
+            return 1;
+        }
+
+        zr_cli_runtime_emit_debug_endpoint(command, debugAgent);
+        success = zr_cli_runtime_execute_function(state, entryFunction, &result);
+        if (!success) {
+            ZrDebug_NotifyException(debugAgent);
+        }
+        ZrDebug_NotifyTerminated(debugAgent, success);
+        ZrDebug_AgentStop(debugAgent);
+        if (ignoredFunction) {
+            ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
+        }
+        executedVia = zr_cli_runtime_mode_name(command->executionMode);
+
+        if (!success) {
+            zr_cli_runtime_handle_failure(state, state->threadStatus);
+            ZrLibrary_CommonState_CommonGlobalState_Free(global);
+            return 1;
+        }
+
+        goto zr_cli_runtime_finish;
+    }
+#endif
+
     switch (command->executionMode) {
         case ZR_CLI_EXECUTION_MODE_INTERP: {
             EZrThreadStatus status = ZrLibrary_Project_Run(state, &result);
@@ -311,17 +490,7 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
                 return 1;
             }
 
-            if (entryFunction != ZR_NULL) {
-                SZrObjectModule *projectModule = ZrCore_Module_Create(state);
-                if (projectModule != ZR_NULL) {
-                    SZrString *modulePath = ZrCore_String_CreateFromNative(state, loadedEntryPath);
-                    TZrUInt64 pathHash = ZrCore_Module_CalculatePathHash(state, modulePath);
-                    ZrCore_Module_SetInfo(state, projectModule, ZR_NULL, pathHash, modulePath);
-                    ZrCore_Module_CreatePrototypesFromConstants(state, projectModule, entryFunction);
-                }
-            }
-
-            success = zr_cli_runtime_execute_function(state, entryFunction, &result);
+            success = zr_cli_runtime_prepare_and_execute_entry(state, entryFunction, loadedEntryPath, &result);
             executedVia = "binary";
             break;
 
@@ -346,6 +515,8 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
         ZrLibrary_CommonState_CommonGlobalState_Free(global);
         return 1;
     }
+
+zr_cli_runtime_finish:
 
     if ((command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_C ||
          command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_LLVM) &&

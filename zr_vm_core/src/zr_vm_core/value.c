@@ -129,9 +129,10 @@ TZrBool ZrCore_Value_Equal(struct SZrState *state, SZrTypeValue *value1, SZrType
             result = value1->value.nativeObject.nativeDouble == value2->value.nativeObject.nativeDouble;
         } else if (ZR_VALUE_IS_TYPE_NATIVE(type1)) {
             result = value1->value.nativeObject.nativePointer == value2->value.nativeObject.nativePointer;
+        } else if (value1->isGarbageCollectable && value2->isGarbageCollectable) {
+            result = value1->value.object == value2->value.object;
         } else {
-            // todo: obj equal & struct equal
-            result = ZR_FALSE;
+            result = value1->value.nativeObject.nativeUInt64 == value2->value.nativeObject.nativeUInt64;
         }
     } else {
         result = ZR_FALSE;
@@ -188,7 +189,7 @@ SZrTypeValue *ZrCore_Value_GetStackOffsetValue(SZrState *state, TZrMemoryOffset 
         // as FUNCTION, while native bindings currently surface them as CLOSURE.
         SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, functionBaseValue->value.object);
         return (closureIndex <= (TZrMemoryOffset) closure->closureValueCount)
-                       ? closure->closureValuesExtend[closureIndex - 1]
+                       ? ZrCore_ClosureNative_GetCaptureValue(closure, closureIndex - 1)
                        : &global->nullValue;
     }
     // no such closure or closure is lightweight function

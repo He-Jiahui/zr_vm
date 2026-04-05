@@ -2,7 +2,14 @@
 #include "lsp_project_internal.h"
 
 #include "zr_vm_core/memory.h"
+#include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+#include <windows.h>
+#else
+#include <dirent.h>
+#endif
 
 static TZrInt32 project_navigation_hex_digit_to_value(TZrChar value) {
     if (value >= '0' && value <= '9') {
@@ -78,6 +85,46 @@ static TZrBool project_navigation_uri_to_native_path(SZrString *uri, TZrChar *bu
     return writeIndex > 0;
 }
 
+static const TZrChar *project_navigation_string_text(SZrString *value) {
+    if (value == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return value->shortStringLength < ZR_VM_LONG_STRING_FLAG
+               ? ZrCore_String_GetNativeStringShort(value)
+               : ZrCore_String_GetNativeString(value);
+}
+
+static SZrString *project_navigation_native_path_to_file_uri(SZrState *state, const TZrChar *path) {
+    TZrChar buffer[ZR_LIBRARY_MAX_PATH_LENGTH * 2];
+    TZrSize pathLength;
+    TZrSize writeIndex = 0;
+
+    if (state == ZR_NULL || path == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pathLength = strlen(path);
+    if (pathLength + 16 >= sizeof(buffer)) {
+        return ZR_NULL;
+    }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    memcpy(buffer, "file:///", 8);
+    writeIndex = 8;
+#else
+    memcpy(buffer, "file://", 7);
+    writeIndex = 7;
+#endif
+
+    for (TZrSize index = 0; index < pathLength && writeIndex + 1 < sizeof(buffer); index++) {
+        buffer[writeIndex++] = path[index] == '\\' ? '/' : path[index];
+    }
+
+    buffer[writeIndex] = '\0';
+    return ZrCore_String_Create(state, buffer, writeIndex);
+}
+
 static TZrBool append_lsp_location(SZrState *state, SZrArray *result, SZrString *uri, SZrFileRange range) {
     SZrLspLocation *location;
 
@@ -105,24 +152,19 @@ static SZrFileRange project_navigation_metadata_file_entry_range(SZrString *uri)
     return ZrParser_FileRange_Create(start, start, uri);
 }
 
-static SZrFileRange project_navigation_intermediate_symbol_range(SZrString *uri,
-                                                                 const SZrLspIntermediateExportSymbol *symbol) {
-    SZrFilePosition start;
-    SZrFilePosition end;
+static TZrBool project_navigation_position_is_module_entry(SZrLspPosition position) {
+    return position.line == 0 && position.character == 0;
+}
 
-    if (uri == ZR_NULL || symbol == ZR_NULL) {
-        return project_navigation_metadata_file_entry_range(uri);
+static TZrBool project_navigation_file_range_contains_position(SZrFileRange range, SZrFileRange position) {
+    if (range.start.offset > 0 && range.end.offset > 0 && position.start.offset > 0 && position.end.offset > 0) {
+        return range.start.offset <= position.start.offset && position.end.offset <= range.end.offset;
     }
 
-    start = ZrParser_FilePosition_Create(0,
-                                         symbol->declarationLine > 0 ? symbol->declarationLine : 1,
-                                         symbol->declarationStartColumn > 0 ? symbol->declarationStartColumn : 1);
-    end = ZrParser_FilePosition_Create(0,
-                                       symbol->declarationLine > 0 ? symbol->declarationLine : 1,
-                                       symbol->declarationEndColumn > symbol->declarationStartColumn
-                                           ? symbol->declarationEndColumn
-                                           : symbol->declarationStartColumn);
-    return ZrParser_FileRange_Create(start, end, uri);
+    return (range.start.line < position.start.line ||
+            (range.start.line == position.start.line && range.start.column <= position.start.column)) &&
+           (position.end.line < range.end.line ||
+            (position.end.line == range.end.line && position.end.column <= range.end.column));
 }
 
 static SZrSymbol *find_global_symbol_by_name(SZrSemanticAnalyzer *analyzer, SZrString *name, SZrString *uri) {
@@ -160,15 +202,7 @@ typedef struct SZrLspProjectResolvedExternalImportedMember {
     TZrBool hasDeclaration;
 } SZrLspProjectResolvedExternalImportedMember;
 
-typedef struct SZrLspProjectResolvedExternalMetadataDeclaration {
-    SZrLspProjectIndex *projectIndex;
-    SZrString *moduleName;
-    SZrString *memberName;
-    EZrLspImportedModuleSourceKind sourceKind;
-    SZrString *declarationUri;
-    SZrFileRange declarationRange;
-    TZrBool hasDeclaration;
-} SZrLspProjectResolvedExternalMetadataDeclaration;
+typedef SZrLspExternalMetadataDeclaration SZrLspProjectResolvedExternalMetadataDeclaration;
 
 static TZrBool append_symbol_references_from_tracker(SZrState *state,
                                                      SZrSemanticAnalyzer *analyzer,
@@ -230,6 +264,476 @@ static TZrBool append_imported_member_locations_from_analyzer(SZrState *state,
     return appended;
 }
 
+static TZrBool append_imported_module_locations_from_analyzer(SZrState *state,
+                                                              SZrSemanticAnalyzer *analyzer,
+                                                              SZrString *moduleName,
+                                                              SZrArray *result);
+static TZrBool append_import_binding_locations_from_analyzer(SZrState *state,
+                                                             SZrSemanticAnalyzer *analyzer,
+                                                             SZrString *moduleName,
+                                                             SZrArray *result);
+static TZrBool project_navigation_try_find_line_bounds(const TZrChar *content,
+                                                       TZrSize contentLength,
+                                                       TZrInt32 fileLine,
+                                                       TZrSize *outLineStart,
+                                                       TZrSize *outLineEnd) {
+    TZrInt32 currentLine = 1;
+    TZrSize lineStart = 0;
+
+    if (outLineStart != ZR_NULL) {
+        *outLineStart = 0;
+    }
+    if (outLineEnd != ZR_NULL) {
+        *outLineEnd = 0;
+    }
+    if (content == ZR_NULL || fileLine <= 0 || outLineStart == ZR_NULL || outLineEnd == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < contentLength; index++) {
+        if (currentLine == fileLine) {
+            TZrSize lineEnd = index;
+            while (lineEnd < contentLength && content[lineEnd] != '\n') {
+                lineEnd++;
+            }
+
+            *outLineStart = lineStart;
+            *outLineEnd = lineEnd;
+            return ZR_TRUE;
+        }
+
+        if (content[index] == '\n') {
+            currentLine++;
+            lineStart = index + 1;
+        }
+    }
+
+    if (currentLine == fileLine && lineStart <= contentLength) {
+        *outLineStart = lineStart;
+        *outLineEnd = contentLength;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrFileRange project_navigation_refine_import_module_path_location(const TZrChar *content,
+                                                                          TZrSize contentLength,
+                                                                          SZrFileRange range,
+                                                                          SZrString *moduleName) {
+    const TZrChar *moduleText;
+    TZrSize moduleLength;
+    TZrInt32 targetLine;
+    TZrSize lineStart = 0;
+    TZrSize lineEnd = 0;
+
+    moduleText = project_navigation_string_text(moduleName);
+    moduleLength = moduleText != ZR_NULL ? strlen(moduleText) : 0;
+    targetLine = range.start.line > 0 ? range.start.line : range.end.line;
+    if (content == ZR_NULL || moduleText == ZR_NULL || moduleLength == 0 || targetLine <= 0 ||
+        !project_navigation_try_find_line_bounds(content, contentLength, targetLine, &lineStart, &lineEnd) ||
+        lineEnd <= lineStart || lineEnd - lineStart < moduleLength) {
+        return range;
+    }
+
+    for (TZrSize index = lineStart; index + moduleLength <= lineEnd; index++) {
+        if (memcmp(content + index, moduleText, moduleLength) != 0) {
+            continue;
+        }
+
+        if ((index == lineStart || content[index - 1] != '"') ||
+            (index + moduleLength >= lineEnd || content[index + moduleLength] != '"')) {
+            continue;
+        }
+
+        range.start.offset = index;
+        range.end.offset = index + moduleLength;
+        range.start.line = targetLine;
+        range.end.line = targetLine;
+        range.start.column = (TZrInt32)(index - lineStart) + 1;
+        range.end.column = range.start.column + (TZrInt32)moduleLength;
+        return range;
+    }
+
+    return range;
+}
+
+static void project_navigation_refine_import_binding_target_locations(const TZrChar *content,
+                                                                      TZrSize contentLength,
+                                                                      SZrArray *bindings) {
+    if (content == ZR_NULL || bindings == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < bindings->length; index++) {
+        SZrLspImportBinding **bindingPtr =
+            (SZrLspImportBinding **)ZrCore_Array_Get(bindings, index);
+        if (bindingPtr == ZR_NULL || *bindingPtr == ZR_NULL || (*bindingPtr)->moduleName == ZR_NULL) {
+            continue;
+        }
+
+        (*bindingPtr)->modulePathLocation =
+            project_navigation_refine_import_module_path_location(content,
+                                                                  contentLength,
+                                                                  (*bindingPtr)->modulePathLocation,
+                                                                  (*bindingPtr)->moduleName);
+    }
+}
+
+static TZrBool append_import_target_locations_from_analyzer(SZrState *state,
+                                                            SZrLspContext *context,
+                                                            SZrString *uri,
+                                                            SZrString *moduleName,
+                                                            SZrArray *result);
+
+typedef TZrBool (*TZrLspProjectSourceReferenceAppender)(SZrState *state,
+                                                        SZrLspContext *context,
+                                                        SZrString *uri,
+                                                        SZrSemanticAnalyzer *analyzer,
+                                                        SZrString *moduleName,
+                                                        SZrString *memberName,
+                                                        SZrArray *result);
+
+static TZrBool project_navigation_try_get_analyzer_for_uri(SZrState *state,
+                                                           SZrLspContext *context,
+                                                           SZrString *uri,
+                                                           SZrSemanticAnalyzer **outAnalyzer) {
+    SZrSemanticAnalyzer *analyzer;
+    SZrFileVersion *fileVersion;
+    TZrNativeString sourceBuffer = ZR_NULL;
+    TZrSize sourceLength = 0;
+    TZrBool loadedFromDisk = ZR_FALSE;
+    TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (outAnalyzer != ZR_NULL) {
+        *outAnalyzer = ZR_NULL;
+    }
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || outAnalyzer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    if (analyzer != ZR_NULL && analyzer->ast != ZR_NULL) {
+        *outAnalyzer = analyzer;
+        return ZR_TRUE;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
+        sourceBuffer = fileVersion->content;
+        sourceLength = fileVersion->contentLength;
+    } else if (state->global != ZR_NULL && project_navigation_uri_to_native_path(uri, nativePath, sizeof(nativePath))) {
+        sourceBuffer = ZrLibrary_File_ReadAll(state->global, nativePath);
+        sourceLength = sourceBuffer != ZR_NULL ? strlen(sourceBuffer) : 0;
+        loadedFromDisk = sourceBuffer != ZR_NULL;
+    }
+
+    if (sourceBuffer == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocumentCore(state,
+                                                 context,
+                                                 uri,
+                                                 sourceBuffer,
+                                                 sourceLength,
+                                                 fileVersion != ZR_NULL ? fileVersion->version : 0,
+                                                 ZR_FALSE)) {
+        if (loadedFromDisk) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          sourceBuffer,
+                                          sourceLength + 1,
+                                          ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+        }
+        return ZR_FALSE;
+    }
+
+    if (loadedFromDisk) {
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      sourceBuffer,
+                                      sourceLength + 1,
+                                      ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    if (analyzer != ZR_NULL && analyzer->ast != ZR_NULL) {
+        *outAnalyzer = analyzer;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool project_navigation_append_imported_member_for_uri(SZrState *state,
+                                                                 SZrLspContext *context,
+                                                                 SZrString *uri,
+                                                                 SZrSemanticAnalyzer *analyzer,
+                                                                 SZrString *moduleName,
+                                                                 SZrString *memberName,
+                                                                 SZrArray *result) {
+    ZR_UNUSED_PARAMETER(context);
+    ZR_UNUSED_PARAMETER(uri);
+
+    return analyzer != ZR_NULL
+               ? append_imported_member_locations_from_analyzer(state, analyzer, moduleName, memberName, result)
+               : ZR_TRUE;
+}
+
+static TZrBool project_navigation_append_imported_module_for_uri(SZrState *state,
+                                                                 SZrLspContext *context,
+                                                                 SZrString *uri,
+                                                                 SZrSemanticAnalyzer *analyzer,
+                                                                 SZrString *moduleName,
+                                                                 SZrString *memberName,
+                                                                 SZrArray *result) {
+    ZR_UNUSED_PARAMETER(context);
+    ZR_UNUSED_PARAMETER(uri);
+    ZR_UNUSED_PARAMETER(memberName);
+
+    return analyzer != ZR_NULL
+               ? append_imported_module_locations_from_analyzer(state, analyzer, moduleName, result)
+               : ZR_TRUE;
+}
+
+static TZrBool project_navigation_append_import_binding_for_uri(SZrState *state,
+                                                                SZrLspContext *context,
+                                                                SZrString *uri,
+                                                                SZrSemanticAnalyzer *analyzer,
+                                                                SZrString *moduleName,
+                                                                SZrString *memberName,
+                                                                SZrArray *result) {
+    ZR_UNUSED_PARAMETER(context);
+    ZR_UNUSED_PARAMETER(uri);
+    ZR_UNUSED_PARAMETER(memberName);
+
+    return analyzer != ZR_NULL
+               ? append_import_binding_locations_from_analyzer(state, analyzer, moduleName, result)
+               : ZR_TRUE;
+}
+
+static TZrBool project_navigation_append_import_target_for_uri(SZrState *state,
+                                                               SZrLspContext *context,
+                                                               SZrString *uri,
+                                                               SZrSemanticAnalyzer *analyzer,
+                                                               SZrString *moduleName,
+                                                               SZrString *memberName,
+                                                               SZrArray *result) {
+    ZR_UNUSED_PARAMETER(analyzer);
+    ZR_UNUSED_PARAMETER(memberName);
+
+    return append_import_target_locations_from_analyzer(state, context, uri, moduleName, result);
+}
+
+static TZrBool project_navigation_append_source_reference_for_uri(SZrState *state,
+                                                                  SZrLspContext *context,
+                                                                  SZrString *uri,
+                                                                  SZrString *moduleName,
+                                                                  SZrString *memberName,
+                                                                  TZrLspProjectSourceReferenceAppender appender,
+                                                                  SZrArray *result) {
+    SZrSemanticAnalyzer *analyzer = ZR_NULL;
+
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || moduleName == ZR_NULL ||
+        appender == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!project_navigation_try_get_analyzer_for_uri(state, context, uri, &analyzer)) {
+        return ZR_FALSE;
+    }
+
+    return appender(state, context, uri, analyzer, moduleName, memberName, result);
+}
+
+static TZrBool project_navigation_append_source_reference_for_path(SZrState *state,
+                                                                   SZrLspContext *context,
+                                                                   const TZrChar *path,
+                                                                   SZrString *moduleName,
+                                                                   SZrString *memberName,
+                                                                   TZrLspProjectSourceReferenceAppender appender,
+                                                                   SZrArray *result) {
+    SZrString *uri;
+
+    if (state == ZR_NULL || context == ZR_NULL || path == ZR_NULL || moduleName == ZR_NULL ||
+        appender == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    uri = project_navigation_native_path_to_file_uri(state, path);
+    if (uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return project_navigation_append_source_reference_for_uri(state,
+                                                              context,
+                                                              uri,
+                                                              moduleName,
+                                                              memberName,
+                                                              appender,
+                                                              result);
+}
+
+static TZrBool project_navigation_append_source_root_references_recursive(
+    SZrState *state,
+    SZrLspContext *context,
+    const TZrChar *directory,
+    SZrString *moduleName,
+    SZrString *memberName,
+    TZrLspProjectSourceReferenceAppender appender,
+    SZrArray *result) {
+    if (state == ZR_NULL || context == ZR_NULL || directory == ZR_NULL || moduleName == ZR_NULL ||
+        appender == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    {
+        TZrChar pattern[ZR_LIBRARY_MAX_PATH_LENGTH];
+        WIN32_FIND_DATAA findData;
+        HANDLE handle;
+
+        ZrLibrary_File_PathJoin(directory, "*", pattern);
+        handle = FindFirstFileA(pattern, &findData);
+        if (handle == INVALID_HANDLE_VALUE) {
+            return ZR_TRUE;
+        }
+
+        do {
+            TZrChar childPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+            TZrSize nameLength = strlen(findData.cFileName);
+
+            if (strcmp(findData.cFileName, ".") == 0 || strcmp(findData.cFileName, "..") == 0) {
+                continue;
+            }
+
+            ZrLibrary_File_PathJoin(directory, findData.cFileName, childPath);
+            if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+                if (!project_navigation_append_source_root_references_recursive(state,
+                                                                                context,
+                                                                                childPath,
+                                                                                moduleName,
+                                                                                memberName,
+                                                                                appender,
+                                                                                result)) {
+                    FindClose(handle);
+                    return ZR_FALSE;
+                }
+                continue;
+            }
+
+            if (nameLength >= 3 &&
+                strcmp(findData.cFileName + nameLength - 3, ".zr") == 0 &&
+                !project_navigation_append_source_reference_for_path(state,
+                                                                    context,
+                                                                    childPath,
+                                                                    moduleName,
+                                                                    memberName,
+                                                                    appender,
+                                                                    result)) {
+                FindClose(handle);
+                return ZR_FALSE;
+            }
+        } while (FindNextFileA(handle, &findData) != 0);
+
+        FindClose(handle);
+        return ZR_TRUE;
+    }
+#else
+    {
+        DIR *dir = opendir(directory);
+        struct dirent *entry;
+
+        if (dir == ZR_NULL) {
+            return ZR_TRUE;
+        }
+
+        while ((entry = readdir(dir)) != ZR_NULL) {
+            TZrChar childPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+            TZrSize nameLength;
+            EZrLibrary_File_Exist fileExist;
+
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+
+            ZrLibrary_File_PathJoin((TZrNativeString)directory, entry->d_name, childPath);
+            fileExist = ZrLibrary_File_Exist(childPath);
+            if (fileExist == ZR_LIBRARY_FILE_IS_DIRECTORY) {
+                if (!project_navigation_append_source_root_references_recursive(state,
+                                                                                context,
+                                                                                childPath,
+                                                                                moduleName,
+                                                                                memberName,
+                                                                                appender,
+                                                                                result)) {
+                    closedir(dir);
+                    return ZR_FALSE;
+                }
+                continue;
+            }
+
+            nameLength = strlen(entry->d_name);
+            if (fileExist == ZR_LIBRARY_FILE_IS_FILE &&
+                nameLength >= 3 &&
+                strcmp(entry->d_name + nameLength - 3, ".zr") == 0 &&
+                !project_navigation_append_source_reference_for_path(state,
+                                                                    context,
+                                                                    childPath,
+                                                                    moduleName,
+                                                                    memberName,
+                                                                    appender,
+                                                                    result)) {
+                closedir(dir);
+                return ZR_FALSE;
+            }
+        }
+
+        closedir(dir);
+        return ZR_TRUE;
+    }
+#endif
+}
+
+static TZrBool project_navigation_append_project_source_references(
+    SZrState *state,
+    SZrLspContext *context,
+    SZrLspProjectIndex *projectIndex,
+    SZrString *fallbackUri,
+    SZrString *moduleName,
+    SZrString *memberName,
+    TZrLspProjectSourceReferenceAppender appender,
+    SZrArray *result) {
+    const TZrChar *sourceRootPath;
+
+    if (state == ZR_NULL || context == ZR_NULL || moduleName == ZR_NULL || appender == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (projectIndex == ZR_NULL) {
+        return fallbackUri != ZR_NULL
+                   ? project_navigation_append_source_reference_for_uri(state,
+                                                                       context,
+                                                                       fallbackUri,
+                                                                       moduleName,
+                                                                       memberName,
+                                                                       appender,
+                                                                       result)
+                   : ZR_FALSE;
+    }
+
+    sourceRootPath = project_navigation_string_text(projectIndex->sourceRootPath);
+    if (sourceRootPath == ZR_NULL || sourceRootPath[0] == '\0') {
+        return ZR_TRUE;
+    }
+
+    return project_navigation_append_source_root_references_recursive(state,
+                                                                      context,
+                                                                      sourceRootPath,
+                                                                      moduleName,
+                                                                      memberName,
+                                                                      appender,
+                                                                      result);
+}
+
 static TZrBool append_project_imported_references(SZrState *state,
                                                   SZrLspContext *context,
                                                   SZrLspProjectIndex *projectIndex,
@@ -237,48 +741,14 @@ static TZrBool append_project_imported_references(SZrState *state,
                                                   SZrString *moduleName,
                                                   SZrString *memberName,
                                                   SZrArray *result) {
-    if (state == ZR_NULL || context == ZR_NULL || moduleName == ZR_NULL || memberName == ZR_NULL ||
-        result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (projectIndex == ZR_NULL) {
-        SZrSemanticAnalyzer *fallbackAnalyzer = fallbackUri != ZR_NULL
-                                                    ? ZrLanguageServer_Lsp_FindAnalyzer(state, context, fallbackUri)
-                                                    : ZR_NULL;
-        return fallbackAnalyzer != ZR_NULL
-                   ? append_imported_member_locations_from_analyzer(state,
-                                                                   fallbackAnalyzer,
-                                                                   moduleName,
-                                                                   memberName,
-                                                                   result)
-                   : ZR_FALSE;
-    }
-
-    for (TZrSize fileIndex = 0; fileIndex < projectIndex->files.length; fileIndex++) {
-        SZrLspProjectFileRecord **candidatePtr =
-            (SZrLspProjectFileRecord **)ZrCore_Array_Get(&projectIndex->files, fileIndex);
-        SZrSemanticAnalyzer *candidateAnalyzer;
-
-        if (candidatePtr == ZR_NULL || *candidatePtr == ZR_NULL) {
-            continue;
-        }
-
-        candidateAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, (*candidatePtr)->uri);
-        if (candidateAnalyzer == ZR_NULL || candidateAnalyzer->ast == ZR_NULL) {
-            continue;
-        }
-
-        if (!append_imported_member_locations_from_analyzer(state,
-                                                            candidateAnalyzer,
-                                                            moduleName,
-                                                            memberName,
-                                                            result)) {
-            return ZR_FALSE;
-        }
-    }
-
-    return ZR_TRUE;
+    return project_navigation_append_project_source_references(state,
+                                                               context,
+                                                               projectIndex,
+                                                               fallbackUri,
+                                                               moduleName,
+                                                               memberName,
+                                                               project_navigation_append_imported_member_for_uri,
+                                                               result);
 }
 
 static TZrBool append_imported_module_locations_from_analyzer(SZrState *state,
@@ -304,82 +774,128 @@ static TZrBool append_imported_module_locations_from_analyzer(SZrState *state,
     return appended;
 }
 
+static TZrBool append_import_binding_locations_from_analyzer(SZrState *state,
+                                                             SZrSemanticAnalyzer *analyzer,
+                                                             SZrString *moduleName,
+                                                             SZrArray *result) {
+    SZrArray bindings;
+    TZrBool appended;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->ast == ZR_NULL || moduleName == ZR_NULL ||
+        result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
+    appended = ZrLanguageServer_LspProject_AppendMatchingImportBindingLocations(state,
+                                                                                &bindings,
+                                                                                moduleName,
+                                                                                result);
+    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+    return appended;
+}
+
+static TZrBool append_import_target_locations_from_analyzer(SZrState *state,
+                                                            SZrLspContext *context,
+                                                            SZrString *uri,
+                                                            SZrString *moduleName,
+                                                            SZrArray *result) {
+    SZrSemanticAnalyzer *analyzer;
+    SZrFileVersion *fileVersion;
+    SZrArray bindings;
+    TZrBool appended;
+    TZrBool hasMatchingImport = ZR_FALSE;
+
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || moduleName == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    if (analyzer == ZR_NULL) {
+        analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    }
+    if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
+    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
+        project_navigation_refine_import_binding_target_locations(fileVersion->content,
+                                                                  fileVersion->contentLength,
+                                                                  &bindings);
+    }
+    for (TZrSize index = 0; index < bindings.length; index++) {
+        SZrLspImportBinding **bindingPtr =
+            (SZrLspImportBinding **)ZrCore_Array_Get(&bindings, index);
+        if (bindingPtr != ZR_NULL && *bindingPtr != ZR_NULL &&
+            ZrLanguageServer_Lsp_StringsEqual((*bindingPtr)->moduleName, moduleName)) {
+            hasMatchingImport = ZR_TRUE;
+            break;
+        }
+    }
+
+    if (!hasMatchingImport) {
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        return ZR_TRUE;
+    }
+
+    appended = ZrLanguageServer_LspProject_AppendMatchingImportTargetLocations(state,
+                                                                               &bindings,
+                                                                               moduleName,
+                                                                               result);
+    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+    return appended;
+}
+
 static TZrBool append_project_imported_module_references(SZrState *state,
                                                          SZrLspContext *context,
                                                          SZrLspProjectIndex *projectIndex,
                                                          SZrString *fallbackUri,
                                                          SZrString *moduleName,
                                                          SZrArray *result) {
-    if (state == ZR_NULL || context == ZR_NULL || moduleName == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (projectIndex == ZR_NULL) {
-        SZrSemanticAnalyzer *fallbackAnalyzer = fallbackUri != ZR_NULL
-                                                    ? ZrLanguageServer_Lsp_FindAnalyzer(state, context, fallbackUri)
-                                                    : ZR_NULL;
-        return fallbackAnalyzer != ZR_NULL
-                   ? append_imported_module_locations_from_analyzer(state,
-                                                                   fallbackAnalyzer,
-                                                                   moduleName,
-                                                                   result)
-                   : ZR_FALSE;
-    }
-
-    for (TZrSize fileIndex = 0; fileIndex < projectIndex->files.length; fileIndex++) {
-        SZrLspProjectFileRecord **candidatePtr =
-            (SZrLspProjectFileRecord **)ZrCore_Array_Get(&projectIndex->files, fileIndex);
-        SZrSemanticAnalyzer *candidateAnalyzer;
-
-        if (candidatePtr == ZR_NULL || *candidatePtr == ZR_NULL) {
-            continue;
-        }
-
-        candidateAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, (*candidatePtr)->uri);
-        if (candidateAnalyzer == ZR_NULL || candidateAnalyzer->ast == ZR_NULL) {
-            continue;
-        }
-
-        if (!append_imported_module_locations_from_analyzer(state, candidateAnalyzer, moduleName, result)) {
-            return ZR_FALSE;
-        }
-    }
-
-    return ZR_TRUE;
+    return project_navigation_append_project_source_references(state,
+                                                               context,
+                                                               projectIndex,
+                                                               fallbackUri,
+                                                               moduleName,
+                                                               ZR_NULL,
+                                                               project_navigation_append_imported_module_for_uri,
+                                                               result);
 }
 
-static TZrBool project_navigation_position_within_range(SZrLspPosition position, SZrLspRange range) {
-    return (range.start.line < position.line ||
-            (range.start.line == position.line && range.start.character <= position.character)) &&
-           (position.line < range.end.line ||
-            (position.line == range.end.line && position.character <= range.end.character));
+static TZrBool append_project_import_binding_references(SZrState *state,
+                                                        SZrLspContext *context,
+                                                        SZrLspProjectIndex *projectIndex,
+                                                        SZrString *fallbackUri,
+                                                        SZrString *moduleName,
+                                                        SZrArray *result) {
+    return project_navigation_append_project_source_references(state,
+                                                               context,
+                                                               projectIndex,
+                                                               fallbackUri,
+                                                               moduleName,
+                                                               ZR_NULL,
+                                                               project_navigation_append_import_binding_for_uri,
+                                                               result);
 }
 
-static const SZrLspIntermediateExportSymbol *project_navigation_find_intermediate_symbol_at_position(
-    SZrString *uri,
-    const SZrLspIntermediateModuleMetadata *metadata,
-    SZrLspPosition position) {
-    if (uri == ZR_NULL || metadata == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index < metadata->exportedSymbols.length; index++) {
-        const SZrLspIntermediateExportSymbol *symbol =
-            (const SZrLspIntermediateExportSymbol *)ZrCore_Array_Get((SZrArray *)&metadata->exportedSymbols, index);
-        SZrLspRange symbolRange;
-
-        if (symbol == ZR_NULL) {
-            continue;
-        }
-
-        symbolRange = ZrLanguageServer_LspRange_FromFileRange(
-            project_navigation_intermediate_symbol_range(uri, symbol));
-        if (project_navigation_position_within_range(position, symbolRange)) {
-            return symbol;
-        }
-    }
-
-    return ZR_NULL;
+static TZrBool append_project_import_target_references(SZrState *state,
+                                                       SZrLspContext *context,
+                                                       SZrLspProjectIndex *projectIndex,
+                                                       SZrString *fallbackUri,
+                                                       SZrString *moduleName,
+                                                       SZrArray *result) {
+    return project_navigation_append_project_source_references(state,
+                                                               context,
+                                                               projectIndex,
+                                                               fallbackUri,
+                                                               moduleName,
+                                                               ZR_NULL,
+                                                               project_navigation_append_import_target_for_uri,
+                                                               result);
 }
 
 static TZrBool project_navigation_resolve_descriptor_plugin_module_from_project(SZrState *state,
@@ -486,6 +1002,31 @@ static TZrBool append_locations_as_document_highlights(SZrState *state,
     return result->length > 0;
 }
 
+static TZrBool append_document_highlight(SZrState *state,
+                                         SZrArray *result,
+                                         SZrFileRange range,
+                                         TZrInt32 kind) {
+    SZrLspDocumentHighlight *highlight;
+
+    if (state == ZR_NULL || result == ZR_NULL || range.source == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!result->isValid) {
+        ZrCore_Array_Init(state, result, sizeof(SZrLspDocumentHighlight *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    }
+
+    highlight = (SZrLspDocumentHighlight *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspDocumentHighlight));
+    if (highlight == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    highlight->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    highlight->kind = kind;
+    ZrCore_Array_Push(state, result, &highlight);
+    return ZR_TRUE;
+}
+
 static TZrBool project_try_find_imported_member_resolution(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrString *uri,
@@ -554,6 +1095,70 @@ static TZrBool project_try_find_imported_member_resolution(SZrState *state,
     return found;
 }
 
+static TZrBool project_navigation_try_find_binary_export_declaration_at(
+    SZrState *state,
+    SZrLspProjectIndex *projectIndex,
+    SZrString *moduleName,
+    SZrString *uri,
+    SZrLspPosition position,
+    SZrString **outMemberName,
+    SZrFileRange *outRange) {
+    SZrIoSource *binarySource = ZR_NULL;
+    SZrFilePosition filePosition;
+    SZrFileRange positionRange;
+
+    if (outMemberName != ZR_NULL) {
+        *outMemberName = ZR_NULL;
+    }
+    if (outRange != ZR_NULL) {
+        *outRange = project_navigation_metadata_file_entry_range(uri);
+    }
+    if (state == ZR_NULL || projectIndex == ZR_NULL || moduleName == ZR_NULL || uri == ZR_NULL ||
+        outMemberName == ZR_NULL || outRange == ZR_NULL ||
+        !ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(state, projectIndex, moduleName, &binarySource) ||
+        binarySource == ZR_NULL || binarySource->modulesLength == 0 || binarySource->modules == ZR_NULL ||
+        binarySource->modules[0].entryFunction == ZR_NULL ||
+        binarySource->modules[0].entryFunction->typedExportedSymbols == ZR_NULL) {
+        if (binarySource != ZR_NULL) {
+            ZrCore_Io_ReadSourceFree(state->global, binarySource);
+        }
+        return ZR_FALSE;
+    }
+
+    filePosition = ZrLanguageServer_LspPosition_ToFilePosition(position);
+    positionRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    for (TZrSize index = 0; index < binarySource->modules[0].entryFunction->typedExportedSymbolsLength; index++) {
+        const SZrIoFunctionTypedExportSymbol *symbol =
+            &binarySource->modules[0].entryFunction->typedExportedSymbols[index];
+        SZrFileRange symbolRange;
+        const TZrChar *symbolNameText;
+
+        if (symbol->name == ZR_NULL || symbol->lineInSourceStart == 0 || symbol->columnInSourceStart == 0 ||
+            symbol->lineInSourceEnd == 0 || symbol->columnInSourceEnd == 0) {
+            continue;
+        }
+
+        symbolRange = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(0, (TZrInt32)symbol->lineInSourceStart, (TZrInt32)symbol->columnInSourceStart),
+            ZrParser_FilePosition_Create(0, (TZrInt32)symbol->lineInSourceEnd, (TZrInt32)symbol->columnInSourceEnd),
+            uri);
+        if (!project_navigation_file_range_contains_position(symbolRange, positionRange)) {
+            continue;
+        }
+
+        symbolNameText = project_navigation_string_text(symbol->name);
+        *outMemberName = symbolNameText != ZR_NULL
+                             ? ZrCore_String_Create(state, (TZrNativeString)symbolNameText, strlen(symbolNameText))
+                             : ZR_NULL;
+        *outRange = symbolRange;
+        ZrCore_Io_ReadSourceFree(state->global, binarySource);
+        return *outMemberName != ZR_NULL;
+    }
+
+    ZrCore_Io_ReadSourceFree(state->global, binarySource);
+    return ZR_FALSE;
+}
+
 static TZrBool project_try_resolve_external_imported_member(SZrState *state,
                                                             SZrLspContext *context,
                                                             SZrString *uri,
@@ -586,29 +1191,22 @@ static TZrBool project_try_resolve_external_imported_member(SZrState *state,
 
     if (resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA &&
         projectIndex != ZR_NULL &&
-        ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(state,
-                                                                  projectIndex,
-                                                                  hit.moduleName,
-                                                                  &outResolved->declarationUri) &&
-        outResolved->declarationUri != ZR_NULL) {
-        SZrLspIntermediateModuleMetadata metadata;
-        const SZrLspIntermediateExportSymbol *symbol = ZR_NULL;
-
-        outResolved->declarationRange =
-            project_navigation_metadata_file_entry_range(outResolved->declarationUri);
+        ZrLanguageServer_LspModuleMetadata_ResolveBinaryExportDeclaration(state,
+                                                                          projectIndex,
+                                                                          hit.moduleName,
+                                                                          hit.memberName,
+                                                                          &outResolved->declarationUri,
+                                                                          &outResolved->declarationRange)) {
         outResolved->hasDeclaration = ZR_TRUE;
-        ZrCore_Array_Construct(&metadata.exportedSymbols);
-        if (ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleMetadata(state,
-                                                                              projectIndex,
-                                                                              hit.moduleName,
-                                                                              &metadata)) {
-            symbol = ZrLanguageServer_LspModuleMetadata_FindIntermediateExportSymbol(&metadata, hit.memberName);
-            if (symbol != ZR_NULL) {
-                outResolved->declarationRange =
-                    project_navigation_intermediate_symbol_range(outResolved->declarationUri, symbol);
-            }
-        }
-        ZrLanguageServer_LspModuleMetadata_FreeIntermediateModuleMetadata(state, &metadata);
+    } else if (resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA &&
+               projectIndex != ZR_NULL &&
+               ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(state,
+                                                                         projectIndex,
+                                                                         hit.moduleName,
+                                                                         &outResolved->declarationUri) &&
+               outResolved->declarationUri != ZR_NULL) {
+        outResolved->declarationRange = project_navigation_metadata_file_entry_range(outResolved->declarationUri);
+        outResolved->hasDeclaration = ZR_TRUE;
     } else if (ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(state,
                                                                          projectIndex,
                                                                          hit.moduleName,
@@ -622,13 +1220,14 @@ static TZrBool project_try_resolve_external_imported_member(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool project_try_resolve_external_metadata_declaration(
+TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(
     SZrState *state,
     SZrLspContext *context,
     SZrString *uri,
     SZrLspPosition position,
     SZrLspProjectResolvedExternalMetadataDeclaration *outResolved) {
     SZrLspProjectIndex *projectIndex;
+    SZrLspProjectFileRecord *sourceRecord;
     TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar moduleNameBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
 
@@ -644,35 +1243,56 @@ static TZrBool project_try_resolve_external_metadata_declaration(
         return ZR_FALSE;
     }
 
+    sourceRecord = ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, uri);
+    if (sourceRecord != ZR_NULL &&
+        sourceRecord->moduleName != ZR_NULL &&
+        project_navigation_position_is_module_entry(position)) {
+        outResolved->projectIndex = projectIndex;
+        outResolved->moduleName = sourceRecord->moduleName;
+        outResolved->sourceKind = sourceRecord->isFfiWrapperSource
+                                      ? ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER
+                                      : ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
+        outResolved->declarationUri = sourceRecord->uri != ZR_NULL ? sourceRecord->uri : uri;
+        outResolved->declarationRange =
+            project_navigation_metadata_file_entry_range(outResolved->declarationUri);
+        outResolved->hasDeclaration = ZR_TRUE;
+        return ZR_TRUE;
+    }
+
     if (ZrLanguageServer_LspProject_DeriveBinaryModuleNameFromPath(projectIndex,
                                                                    nativePath,
                                                                    moduleNameBuffer,
                                                                    sizeof(moduleNameBuffer))) {
-        SZrLspIntermediateModuleMetadata metadata;
-        const SZrLspIntermediateExportSymbol *symbol = ZR_NULL;
+        SZrString *binaryDeclarationUri = ZR_NULL;
 
         outResolved->projectIndex = projectIndex;
         outResolved->moduleName = ZrCore_String_CreateFromNative(state, moduleNameBuffer);
         outResolved->sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA;
-        outResolved->declarationUri = uri;
-        outResolved->declarationRange = project_navigation_metadata_file_entry_range(uri);
-        outResolved->hasDeclaration = outResolved->moduleName != ZR_NULL;
+        outResolved->hasDeclaration = outResolved->moduleName != ZR_NULL &&
+                                      ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(state,
+                                                                                                projectIndex,
+                                                                                                outResolved->moduleName,
+                                                                                                &binaryDeclarationUri) &&
+                                      binaryDeclarationUri != ZR_NULL &&
+                                      ZrLanguageServer_Lsp_StringsEqual(binaryDeclarationUri, uri);
         if (!outResolved->hasDeclaration) {
             return ZR_FALSE;
         }
 
-        ZrCore_Array_Construct(&metadata.exportedSymbols);
-        if (ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleMetadata(state,
-                                                                              projectIndex,
-                                                                              outResolved->moduleName,
-                                                                              &metadata)) {
-            symbol = project_navigation_find_intermediate_symbol_at_position(uri, &metadata, position);
-            if (symbol != ZR_NULL) {
-                outResolved->memberName = symbol->name;
-                outResolved->declarationRange = project_navigation_intermediate_symbol_range(uri, symbol);
+        outResolved->declarationUri = binaryDeclarationUri;
+        outResolved->declarationRange = project_navigation_metadata_file_entry_range(outResolved->declarationUri);
+        if (!project_navigation_position_is_module_entry(position)) {
+            if (!project_navigation_try_find_binary_export_declaration_at(state,
+                                                                          projectIndex,
+                                                                          outResolved->moduleName,
+                                                                          outResolved->declarationUri,
+                                                                          position,
+                                                                          &outResolved->memberName,
+                                                                          &outResolved->declarationRange)) {
+                return ZR_FALSE;
             }
+            outResolved->hasDeclaration = outResolved->memberName != ZR_NULL;
         }
-        ZrLanguageServer_LspModuleMetadata_FreeIntermediateModuleMetadata(state, &metadata);
         return ZR_TRUE;
     }
 
@@ -710,6 +1330,117 @@ static TZrBool project_try_resolve_external_metadata_declaration(
     }
 
     return ZR_FALSE;
+}
+
+TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationReferences(
+    SZrState *state,
+    SZrLspContext *context,
+    const SZrLspExternalMetadataDeclaration *resolved,
+    SZrString *queryUri,
+    TZrBool includeDeclaration,
+    SZrArray *result) {
+    TZrBool appended = ZR_FALSE;
+
+    if (state == ZR_NULL || context == ZR_NULL || resolved == ZR_NULL || result == ZR_NULL ||
+        resolved->moduleName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (includeDeclaration &&
+        resolved->hasDeclaration &&
+        resolved->declarationUri != ZR_NULL &&
+        !append_lsp_location(state, result, resolved->declarationUri, resolved->declarationRange)) {
+        return ZR_FALSE;
+    }
+
+    if (resolved->memberName != ZR_NULL) {
+        appended = append_project_imported_references(state,
+                                                      context,
+                                                      resolved->projectIndex,
+                                                      queryUri,
+                                                      resolved->moduleName,
+                                                      resolved->memberName,
+                                                      result);
+    } else {
+        appended = append_project_import_target_references(state,
+                                                           context,
+                                                           resolved->projectIndex,
+                                                           queryUri,
+                                                           resolved->moduleName,
+                                                           result);
+        appended = append_project_import_binding_references(state,
+                                                            context,
+                                                            resolved->projectIndex,
+                                                            queryUri,
+                                                            resolved->moduleName,
+                                                            result) || appended;
+        appended = append_project_imported_module_references(state,
+                                                             context,
+                                                             resolved->projectIndex,
+                                                             queryUri,
+                                                             resolved->moduleName,
+                                                             result) || appended;
+    }
+
+    return appended || result->length > 0;
+}
+
+TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationHighlights(
+    SZrState *state,
+    SZrLspContext *context,
+    const SZrLspExternalMetadataDeclaration *resolved,
+    SZrString *queryUri,
+    SZrArray *result) {
+    SZrArray locations;
+    TZrBool appended = ZR_FALSE;
+
+    if (state == ZR_NULL || context == ZR_NULL || resolved == ZR_NULL || queryUri == ZR_NULL || result == ZR_NULL ||
+        resolved->moduleName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (resolved->hasDeclaration &&
+        resolved->declarationUri != ZR_NULL &&
+        ZrLanguageServer_Lsp_StringsEqual(resolved->declarationUri, queryUri)) {
+        appended = append_document_highlight(state, result, resolved->declarationRange, 3);
+    }
+
+    ZrCore_Array_Init(state, &locations, sizeof(SZrLspLocation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    if (resolved->memberName != ZR_NULL) {
+        appended = append_project_imported_references(state,
+                                                      context,
+                                                      resolved->projectIndex,
+                                                      queryUri,
+                                                      resolved->moduleName,
+                                                      resolved->memberName,
+                                                      &locations) || appended;
+    } else {
+        appended = append_project_import_target_references(state,
+                                                           context,
+                                                           resolved->projectIndex,
+                                                           queryUri,
+                                                           resolved->moduleName,
+                                                           &locations) || appended;
+        appended = append_project_import_binding_references(state,
+                                                            context,
+                                                            resolved->projectIndex,
+                                                            queryUri,
+                                                            resolved->moduleName,
+                                                            &locations) || appended;
+        appended = append_project_imported_module_references(state,
+                                                             context,
+                                                             resolved->projectIndex,
+                                                             queryUri,
+                                                             resolved->moduleName,
+                                                             &locations) || appended;
+    }
+
+    if (locations.length > 0) {
+        appended = append_locations_as_document_highlights(state, &locations, queryUri, 2, result) || appended;
+    }
+
+    ZrCore_Array_Free(state, &locations);
+    return appended;
 }
 
 static TZrBool project_resolve_symbol_at_position(SZrState *state,
@@ -834,11 +1565,11 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetDefinition(SZrState *state,
         return ZR_TRUE;
     }
 
-    if (project_try_resolve_external_metadata_declaration(state,
-                                                          context,
-                                                          uri,
-                                                          position,
-                                                          &externalDeclaration) &&
+    if (ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(state,
+                                                                       context,
+                                                                       uri,
+                                                                       position,
+                                                                       &externalDeclaration) &&
         externalDeclaration.hasDeclaration && externalDeclaration.declarationUri != ZR_NULL) {
         return append_lsp_location(state,
                                    result,
@@ -891,11 +1622,11 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryFindReferences(SZrState *state,
         }
     }
 
-    if (project_try_resolve_external_metadata_declaration(state,
-                                                          context,
-                                                          uri,
-                                                          position,
-                                                          &externalDeclaration)) {
+    if (ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(state,
+                                                                       context,
+                                                                       uri,
+                                                                       position,
+                                                                       &externalDeclaration)) {
         if (includeDeclaration && externalDeclaration.hasDeclaration &&
             !append_lsp_location(state,
                                  result,
@@ -912,12 +1643,24 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryFindReferences(SZrState *state,
                                                        externalDeclaration.moduleName,
                                                        externalDeclaration.memberName,
                                                        result)
-                   : append_project_imported_module_references(state,
+                   : (append_project_import_target_references(state,
                                                               context,
                                                               externalDeclaration.projectIndex,
                                                               uri,
                                                               externalDeclaration.moduleName,
-                                                              result);
+                                                              result) &&
+                      append_project_import_binding_references(state,
+                                                               context,
+                                                               externalDeclaration.projectIndex,
+                                                               uri,
+                                                               externalDeclaration.moduleName,
+                                                               result) &&
+                      append_project_imported_module_references(state,
+                                                                context,
+                                                                externalDeclaration.projectIndex,
+                                                                uri,
+                                                                externalDeclaration.moduleName,
+                                                                result));
     }
 
     if (!project_resolve_symbol_at_position(state, context, uri, position, ZR_TRUE, &resolved)) {
@@ -946,13 +1689,28 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetDocumentHighlights(SZrState *state,
                                                              SZrString *uri,
                                                              SZrLspPosition position,
                                                              SZrArray *result) {
+    SZrLspProjectResolvedExternalMetadataDeclaration externalDeclaration;
     SZrSemanticAnalyzer *analyzer = ZR_NULL;
     SZrLspImportedMemberHit hit;
     SZrArray locations;
     TZrBool appended;
 
-    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL ||
-        !project_try_find_imported_member_resolution(state,
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(state,
+                                                                       context,
+                                                                       uri,
+                                                                       position,
+                                                                       &externalDeclaration) &&
+        externalDeclaration.hasDeclaration &&
+        externalDeclaration.declarationUri != ZR_NULL &&
+        ZrLanguageServer_Lsp_StringsEqual(externalDeclaration.declarationUri, uri)) {
+        return append_document_highlight(state, result, externalDeclaration.declarationRange, 3);
+    }
+
+    if (!project_try_find_imported_member_resolution(state,
                                                      context,
                                                      uri,
                                                      position,

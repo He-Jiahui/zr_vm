@@ -47,3 +47,55 @@ INSTRUCTIONS (3):
   [1] GET_CONSTANT (extra=1, operand=1)
   [2] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
 
+CHILD_FUNCTIONS (1):
+  [0] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 1
+    END_LINE: 4
+    PARAMETERS: 2
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 7
+
+    CONSTANTS (1):
+      [0] int: 25
+
+    LOCAL_VARIABLES (2):
+      [0] left: offset_activate=0, offset_dead=6
+      [1] right: offset_activate=0, offset_dead=6
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (2):
+        [0] left: int
+        [1] right: int
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (6):
+      [0] GET_STACK (extra=2, operand=0)
+      [1] GET_STACK (extra=3, operand=1)
+      [2] ADD_INT (extra=4, operand1=2, operand2=3)
+      [3] GET_CONSTANT (extra=5, operand=0)
+      [4] ADD_INT (extra=6, operand1=4, operand2=5)
+      [5] FUNCTION_RETURN (extra=1, operand1=6, operand2=0)
+
+

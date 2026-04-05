@@ -1244,6 +1244,12 @@ static TZrBool inferred_type_satisfies_constraint(SZrCompilerState *cs,
     return prototype_satisfies_named_constraint_recursive(cs, actualPrototype, constraintTypeName, 0);
 }
 
+TZrBool ZrParser_InferredType_SatisfiesNamedConstraint(SZrCompilerState *cs,
+                                                       const SZrInferredType *actualType,
+                                                       SZrString *constraintTypeName) {
+    return inferred_type_satisfies_constraint(cs, actualType, constraintTypeName);
+}
+
 static TZrBool bind_protocol_argument_from_type_name(SZrCompilerState *cs,
                                                      SZrString *implementedTypeName,
                                                      EZrProtocolId protocolId,
@@ -1728,6 +1734,9 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
                                                                        &openPrototypeSnapshot.genericParameters,
                                                                        &argumentTypeNames);
             ZrCore_Array_Construct(&copiedMember.parameterTypes);
+            ZrCore_Array_Construct(&copiedMember.parameterNames);
+            ZrCore_Array_Construct(&copiedMember.parameterHasDefaultValues);
+            ZrCore_Array_Construct(&copiedMember.parameterDefaultValues);
             ZrCore_Array_Construct(&copiedMember.genericParameters);
             ZrCore_Array_Construct(&copiedMember.parameterPassingModes);
             ZrCore_Array_Construct(&copiedMember.decorators);
@@ -1752,6 +1761,46 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
                         continue;
                     }
                     ZrCore_Array_Push(cs->state, &copiedMember.parameterTypes, &copiedParameter);
+                }
+            }
+            if (sourceMember->parameterNames.length > 0) {
+                ZrCore_Array_Init(cs->state,
+                                  &copiedMember.parameterNames,
+                                  sizeof(SZrString *),
+                                  sourceMember->parameterNames.length);
+                for (TZrSize paramIndex = 0; paramIndex < sourceMember->parameterNames.length; paramIndex++) {
+                    SZrString **sourceName =
+                            (SZrString **)ZrCore_Array_Get(&sourceMember->parameterNames, paramIndex);
+                    SZrString *copiedName = sourceName != ZR_NULL ? *sourceName : ZR_NULL;
+                    ZrCore_Array_Push(cs->state, &copiedMember.parameterNames, &copiedName);
+                }
+            }
+            if (sourceMember->parameterHasDefaultValues.length > 0) {
+                ZrCore_Array_Init(cs->state,
+                                  &copiedMember.parameterHasDefaultValues,
+                                  sizeof(TZrBool),
+                                  sourceMember->parameterHasDefaultValues.length);
+                for (TZrSize paramIndex = 0; paramIndex < sourceMember->parameterHasDefaultValues.length; paramIndex++) {
+                    TZrBool *sourceHasDefault =
+                            (TZrBool *)ZrCore_Array_Get(&sourceMember->parameterHasDefaultValues, paramIndex);
+                    TZrBool copiedHasDefault = sourceHasDefault != ZR_NULL ? *sourceHasDefault : ZR_FALSE;
+                    ZrCore_Array_Push(cs->state, &copiedMember.parameterHasDefaultValues, &copiedHasDefault);
+                }
+            }
+            if (sourceMember->parameterDefaultValues.length > 0) {
+                ZrCore_Array_Init(cs->state,
+                                  &copiedMember.parameterDefaultValues,
+                                  sizeof(SZrTypeValue),
+                                  sourceMember->parameterDefaultValues.length);
+                for (TZrSize paramIndex = 0; paramIndex < sourceMember->parameterDefaultValues.length; paramIndex++) {
+                    SZrTypeValue *sourceDefault =
+                            (SZrTypeValue *)ZrCore_Array_Get(&sourceMember->parameterDefaultValues, paramIndex);
+                    SZrTypeValue copiedDefault;
+                    ZrCore_Value_ResetAsNull(&copiedDefault);
+                    if (sourceDefault != ZR_NULL) {
+                        copiedDefault = *sourceDefault;
+                    }
+                    ZrCore_Array_Push(cs->state, &copiedMember.parameterDefaultValues, &copiedDefault);
                 }
             }
             type_inference_copy_generic_parameter_info_array(cs->state,
@@ -1975,6 +2024,46 @@ static SZrAstNode *find_function_declaration_for_candidate(SZrCompilerState *cs,
     return ZR_NULL;
 }
 
+static SZrCompileTimeFunction *find_compile_time_function_projection_for_candidate(SZrCompilerState *cs,
+                                                                                    SZrTypeEnvironment *env,
+                                                                                    SZrString *funcName,
+                                                                                    const SZrFunctionTypeInfo *funcType) {
+    if (cs == ZR_NULL || env != cs->compileTimeTypeEnv || funcName == ZR_NULL || funcType == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < cs->compileTimeFunctions.length; index++) {
+        SZrCompileTimeFunction **funcPtr =
+                (SZrCompileTimeFunction **)ZrCore_Array_Get(&cs->compileTimeFunctions, index);
+        SZrCompileTimeFunction *func = funcPtr != ZR_NULL ? *funcPtr : ZR_NULL;
+
+        if (func == ZR_NULL || func->declaration != ZR_NULL || func->name == ZR_NULL ||
+            !ZrCore_String_Equal(func->name, funcName) ||
+            func->paramTypes.length != funcType->paramTypes.length ||
+            !ZrParser_InferredType_Equal(&func->returnType, &funcType->returnType)) {
+            continue;
+        }
+
+        {
+            TZrBool matches = ZR_TRUE;
+            for (TZrSize paramIndex = 0; paramIndex < func->paramTypes.length; paramIndex++) {
+                SZrInferredType *lhs = (SZrInferredType *)ZrCore_Array_Get(&func->paramTypes, paramIndex);
+                SZrInferredType *rhs = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&funcType->paramTypes, paramIndex);
+                if (lhs == ZR_NULL || rhs == ZR_NULL || !ZrParser_InferredType_Equal(lhs, rhs)) {
+                    matches = ZR_FALSE;
+                    break;
+                }
+            }
+
+            if (matches) {
+                return func;
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool infer_call_argument_type_node(SZrCompilerState *cs,
                                            SZrAstNode *argNode,
                                            SZrArray *argTypes) {
@@ -2023,7 +2112,186 @@ TZrBool infer_function_call_argument_types_for_candidate(SZrCompilerState *cs,
         declNode = find_function_declaration_for_candidate(cs, env, funcName, funcType);
     }
     if (declNode == ZR_NULL) {
-        return infer_function_call_argument_types(cs, call != ZR_NULL ? call->args : ZR_NULL, argTypes);
+        SZrCompileTimeFunction *projection =
+                find_compile_time_function_projection_for_candidate(cs, env, funcName, funcType);
+        if (projection == ZR_NULL) {
+            return infer_function_call_argument_types(cs, call != ZR_NULL ? call->args : ZR_NULL, argTypes);
+        }
+
+        paramCount = projection->paramTypes.length;
+        argCount = (call != ZR_NULL && call->args != ZR_NULL) ? call->args->count : 0;
+
+        ZrCore_Array_Construct(argTypes);
+        if (paramCount == 0) {
+            if (argCount > 0) {
+                if (mismatch != ZR_NULL) {
+                    *mismatch = ZR_TRUE;
+                }
+                return ZR_TRUE;
+            }
+            return ZR_TRUE;
+        }
+
+        ZrCore_Array_Init(cs->state, argTypes, sizeof(SZrInferredType), paramCount);
+        provided = (TZrBool *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                              sizeof(TZrBool) * paramCount,
+                                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        if (provided == ZR_NULL) {
+            free_inferred_type_array(cs->state, argTypes);
+            ZrCore_Array_Construct(argTypes);
+            return ZR_FALSE;
+        }
+
+        for (TZrSize i = 0; i < paramCount; i++) {
+            provided[i] = ZR_FALSE;
+        }
+
+        if (call != ZR_NULL && call->hasNamedArgs && call->argNames != ZR_NULL) {
+            for (TZrSize i = 0; i < argCount && i < call->argNames->length; i++) {
+                SZrString **namePtr = (SZrString **)ZrCore_Array_Get(call->argNames, i);
+                if (namePtr != ZR_NULL && *namePtr == ZR_NULL) {
+                    positionalCount++;
+                    continue;
+                }
+                break;
+            }
+
+            if (positionalCount > paramCount) {
+                if (mismatch != ZR_NULL) {
+                    *mismatch = ZR_TRUE;
+                }
+                goto cleanup;
+            }
+
+            for (TZrSize i = 0; i < positionalCount; i++) {
+                if (!infer_call_argument_type_node(cs, call->args->nodes[i], argTypes)) {
+                    goto error;
+                }
+                provided[i] = ZR_TRUE;
+            }
+
+            for (TZrSize i = positionalCount; i < argCount && i < call->argNames->length; i++) {
+                SZrString **namePtr = (SZrString **)ZrCore_Array_Get(call->argNames, i);
+                TZrBool matched = ZR_FALSE;
+
+                if (namePtr == ZR_NULL || *namePtr == ZR_NULL) {
+                    if (mismatch != ZR_NULL) {
+                        *mismatch = ZR_TRUE;
+                    }
+                    goto cleanup;
+                }
+
+                for (TZrSize j = 0; j < paramCount; j++) {
+                    SZrString **paramNamePtr = (SZrString **)ZrCore_Array_Get(&projection->paramNames, j);
+
+                    if (paramNamePtr == ZR_NULL || *paramNamePtr == ZR_NULL ||
+                        !ZrCore_String_Equal(*paramNamePtr, *namePtr)) {
+                        continue;
+                    }
+
+                    if (provided[j]) {
+                        if (mismatch != ZR_NULL) {
+                            *mismatch = ZR_TRUE;
+                        }
+                        goto cleanup;
+                    }
+
+                    while (argTypes->length < j) {
+                        SZrInferredType placeholder;
+                        ZrParser_InferredType_Init(cs->state, &placeholder, ZR_VALUE_TYPE_NULL);
+                        ZrCore_Array_Push(cs->state, argTypes, &placeholder);
+                    }
+
+                    if (argTypes->length == j) {
+                        if (!infer_call_argument_type_node(cs, call->args->nodes[i], argTypes)) {
+                            goto error;
+                        }
+                    } else {
+                        SZrInferredType *existing = (SZrInferredType *)ZrCore_Array_Get(argTypes, j);
+                        SZrInferredType argType;
+                        ZrParser_InferredType_Init(cs->state, &argType, ZR_VALUE_TYPE_OBJECT);
+                        if (!ZrParser_ExpressionType_Infer(cs, call->args->nodes[i], &argType)) {
+                            ZrParser_InferredType_Free(cs->state, &argType);
+                            goto error;
+                        }
+                        if (existing != ZR_NULL) {
+                            ZrParser_InferredType_Free(cs->state, existing);
+                            ZrParser_InferredType_Copy(cs->state, existing, &argType);
+                        }
+                        ZrParser_InferredType_Free(cs->state, &argType);
+                    }
+
+                    provided[j] = ZR_TRUE;
+                    matched = ZR_TRUE;
+                    break;
+                }
+
+                if (!matched) {
+                    if (mismatch != ZR_NULL) {
+                        *mismatch = ZR_TRUE;
+                    }
+                    goto cleanup;
+                }
+            }
+        } else {
+            if (argCount > paramCount) {
+                if (mismatch != ZR_NULL) {
+                    *mismatch = ZR_TRUE;
+                }
+                goto cleanup;
+            }
+
+            for (TZrSize i = 0; i < argCount; i++) {
+                if (!infer_call_argument_type_node(cs, call->args->nodes[i], argTypes)) {
+                    goto error;
+                }
+                provided[i] = ZR_TRUE;
+            }
+        }
+
+        for (TZrSize i = 0; i < paramCount; i++) {
+            TZrBool *hasDefaultPtr =
+                    (TZrBool *)ZrCore_Array_Get(&projection->paramHasDefaultValues, i);
+            SZrInferredType *paramType =
+                    (SZrInferredType *)ZrCore_Array_Get(&projection->paramTypes, i);
+
+            if (provided[i]) {
+                if (i >= argTypes->length) {
+                    SZrInferredType placeholder;
+                    ZrParser_InferredType_Init(cs->state, &placeholder, ZR_VALUE_TYPE_OBJECT);
+                    ZrCore_Array_Push(cs->state, argTypes, &placeholder);
+                }
+                continue;
+            }
+
+            if (hasDefaultPtr == ZR_NULL || !*hasDefaultPtr || paramType == ZR_NULL) {
+                if (mismatch != ZR_NULL) {
+                    *mismatch = ZR_TRUE;
+                }
+                goto cleanup;
+            }
+
+            while (argTypes->length < i) {
+                SZrInferredType placeholder;
+                ZrParser_InferredType_Init(cs->state, &placeholder, ZR_VALUE_TYPE_NULL);
+                ZrCore_Array_Push(cs->state, argTypes, &placeholder);
+            }
+
+            if (argTypes->length == i) {
+                SZrInferredType copiedType;
+                ZrParser_InferredType_Init(cs->state, &copiedType, ZR_VALUE_TYPE_OBJECT);
+                ZrParser_InferredType_Copy(cs->state, &copiedType, paramType);
+                ZrCore_Array_Push(cs->state, argTypes, &copiedType);
+            } else {
+                SZrInferredType *existing = (SZrInferredType *)ZrCore_Array_Get(argTypes, i);
+                if (existing != ZR_NULL) {
+                    ZrParser_InferredType_Free(cs->state, existing);
+                    ZrParser_InferredType_Copy(cs->state, existing, paramType);
+                }
+            }
+        }
+
+        goto cleanup;
     }
 
     if (declNode->type == ZR_AST_FUNCTION_DECLARATION) {
@@ -2245,9 +2513,11 @@ error:
     return ZR_FALSE;
 }
 
-static TZrInt32 score_function_overload_candidate(const SZrResolvedCallSignature *resolvedSignature,
+static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
+                                                  const SZrFunctionTypeInfo *funcType,
+                                                  const SZrResolvedCallSignature *resolvedSignature,
                                                   const SZrArray *argTypes) {
-    if (resolvedSignature == ZR_NULL || argTypes == ZR_NULL) {
+    if (cs == ZR_NULL || resolvedSignature == ZR_NULL || argTypes == ZR_NULL) {
         return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
     }
 
@@ -2270,7 +2540,8 @@ static TZrInt32 score_function_overload_candidate(const SZrResolvedCallSignature
                 continue;
             }
 
-            if (!ZrParser_InferredType_IsCompatible(argType, paramType)) {
+            if (!ZrParser_InferredType_IsCompatible(argType, paramType) &&
+                !ffi_function_call_argument_is_native_boundary_compatible(cs, funcType, i, argType, paramType)) {
                 return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
             }
 
@@ -2384,7 +2655,7 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
             continue;
         }
 
-        score = score_function_overload_candidate(&candidateResolvedSignature, &candidateArgTypes);
+        score = score_function_overload_candidate(cs, *candidatePtr, &candidateResolvedSignature, &candidateArgTypes);
         free_inferred_type_array(cs->state, &candidateArgTypes);
         if (score == ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE) {
             free_resolved_call_signature(cs->state, &candidateResolvedSignature);

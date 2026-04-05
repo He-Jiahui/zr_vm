@@ -2,12 +2,12 @@
 
 var decorators = %import("decorators");
 
-#Serializable#
+#decorators.Serializable#
 pub class User {
     pub var id: int = 1;
 }
 
-#markFunction#
+#decorators.markFunction#
 pub decoratedBonus(): int {
     var meta = %type(decoratedBonus).metadata;
     return meta.instrumented;

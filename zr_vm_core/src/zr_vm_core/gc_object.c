@@ -112,7 +112,8 @@ TZrSize garbage_collector_get_object_base_size(SZrState *state, SZrRawObject *ob
                     SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, object);
                     if (closure != ZR_NULL) {
                         TZrSize extraCount = closure->closureValueCount > 1 ? closure->closureValueCount - 1 : 0;
-                        return sizeof(SZrClosureNative) + extraCount * sizeof(SZrTypeValue *);
+                        return sizeof(SZrClosureNative) + extraCount * sizeof(SZrTypeValue *) +
+                               closure->closureValueCount * sizeof(SZrRawObject *);
                     }
                 } else {
                     SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, object);
@@ -206,7 +207,11 @@ SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize s
     SZrGlobalState *global = state->global;
     TZrPtr memory = ZrCore_Memory_GcMalloc(state, ZR_MEMORY_NATIVE_TYPE_OBJECT, size);
     SZrRawObject *object = ZR_CAST_RAW_OBJECT(memory);
+    if (object == ZR_NULL) {
+        return ZR_NULL;
+    }
 
+    ZrCore_Memory_RawSet(object, 0, size);
     ZrCore_RawObject_Construct(object, (EZrRawObjectType)type);
     object->isNative = isNative;
     object->garbageCollectMark.status = global->garbageCollector->gcInitializeObjectStatus;

@@ -124,12 +124,14 @@ static SZrObject *zr_container_resolve_construct_target(ZrLibCallContext *contex
         return ZR_NULL;
     }
 
+    targetPrototype = ZrLib_CallContext_GetConstructTargetPrototype(context);
     self = zr_container_self_object(context);
-    if (self != ZR_NULL && zr_container_object_is_owner_instance(context, self)) {
+    if (self != ZR_NULL &&
+        ((targetPrototype != ZR_NULL && ZrCore_Object_IsInstanceOfPrototype(self, targetPrototype)) ||
+         zr_container_object_is_owner_instance(context, self))) {
         return self;
     }
 
-    targetPrototype = ZrLib_CallContext_GetConstructTargetPrototype(context);
     if (targetPrototype == ZR_NULL) {
         targetPrototype = ZrLib_CallContext_OwnerPrototype(context);
     }
@@ -709,7 +711,6 @@ static TZrBool zr_container_pair_constructor(ZrLibCallContext *context, SZrTypeV
     argc = ZrLib_CallContext_ArgumentCount(context);
     if (argc != 0 && argc != 2) {
         ZrLib_CallContext_RaiseArityError(context, 0, 2);
-        return ZR_FALSE;
     }
 
     pair = zr_container_resolve_construct_target(context);

@@ -8,6 +8,68 @@
 
 #include <stdio.h>
 
+static TZrBool import_io_constant_to_value(SZrState *state,
+                                           const SZrIoFunctionConstantVariable *source,
+                                           SZrTypeValue *result) {
+    if (state == ZR_NULL || source == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_ResetAsNull(result);
+    switch (source->type) {
+        case ZR_VALUE_TYPE_NULL:
+            return ZR_TRUE;
+
+        case ZR_VALUE_TYPE_BOOL:
+            result->type = ZR_VALUE_TYPE_BOOL;
+            result->value.nativeObject.nativeBool = source->value.nativeObject.nativeBool;
+            result->isGarbageCollectable = ZR_FALSE;
+            result->isNative = ZR_TRUE;
+            return ZR_TRUE;
+
+        case ZR_VALUE_TYPE_INT8:
+        case ZR_VALUE_TYPE_INT16:
+        case ZR_VALUE_TYPE_INT32:
+        case ZR_VALUE_TYPE_INT64:
+            result->type = source->type;
+            result->value.nativeObject.nativeInt64 = source->value.nativeObject.nativeInt64;
+            result->isGarbageCollectable = ZR_FALSE;
+            result->isNative = ZR_TRUE;
+            return ZR_TRUE;
+
+        case ZR_VALUE_TYPE_UINT8:
+        case ZR_VALUE_TYPE_UINT16:
+        case ZR_VALUE_TYPE_UINT32:
+        case ZR_VALUE_TYPE_UINT64:
+            result->type = source->type;
+            result->value.nativeObject.nativeUInt64 = source->value.nativeObject.nativeUInt64;
+            result->isGarbageCollectable = ZR_FALSE;
+            result->isNative = ZR_TRUE;
+            return ZR_TRUE;
+
+        case ZR_VALUE_TYPE_FLOAT:
+        case ZR_VALUE_TYPE_DOUBLE:
+            result->type = source->type;
+            result->value.nativeObject.nativeDouble = source->value.nativeObject.nativeDouble;
+            result->isGarbageCollectable = ZR_FALSE;
+            result->isNative = ZR_TRUE;
+            return ZR_TRUE;
+
+        case ZR_VALUE_TYPE_STRING:
+        case ZR_VALUE_TYPE_OBJECT:
+        case ZR_VALUE_TYPE_ARRAY:
+            if (source->value.object == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            ZrCore_Value_InitAsRawObject(state, result, source->value.object);
+            result->type = source->type;
+            return ZR_TRUE;
+
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static TZrBool refill_import_io(SZrIo *io) {
     SZrState *state;
     TZrSize readSize = 0;
@@ -240,6 +302,125 @@ static SZrString *primitive_type_name(SZrCompilerState *cs, EZrValueType baseTyp
     return ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)name);
 }
 
+static const SZrFunction *find_runtime_function_metadata_recursive(const SZrFunction *function,
+                                                                   SZrString *name,
+                                                                   TZrUInt32 parameterCount) {
+    if (function == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (function->functionName != ZR_NULL &&
+        ZrCore_String_Equal(function->functionName, name) &&
+        (function->parameterMetadataCount == parameterCount || function->parameterCount == parameterCount ||
+         parameterCount == 0)) {
+        return function;
+    }
+
+    for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+        const SZrFunction *match =
+                find_runtime_function_metadata_recursive(&function->childFunctionList[index], name, parameterCount);
+        if (match != ZR_NULL) {
+            return match;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const SZrIoFunction *find_io_function_metadata_recursive(const SZrIoFunction *function,
+                                                                SZrString *name,
+                                                                TZrSize parameterCount) {
+    if (function == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (function->name != ZR_NULL &&
+        ZrCore_String_Equal(function->name, name) &&
+        (function->parameterMetadataLength == parameterCount || function->parametersLength == parameterCount ||
+         parameterCount == 0)) {
+        return function;
+    }
+
+    for (TZrSize index = 0; index < function->closuresLength; index++) {
+        const SZrIoFunction *match =
+                find_io_function_metadata_recursive(function->closures[index].subFunction, name, parameterCount);
+        if (match != ZR_NULL) {
+            return match;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void import_copy_runtime_parameter_metadata(SZrCompilerState *cs,
+                                                   SZrTypeMemberInfo *memberInfo,
+                                                   const SZrFunction *function) {
+    if (cs == ZR_NULL || memberInfo == ZR_NULL || function == ZR_NULL || function->parameterMetadata == ZR_NULL ||
+        function->parameterMetadataCount == 0) {
+        return;
+    }
+
+    ZrCore_Array_Init(cs->state,
+                      &memberInfo->parameterNames,
+                      sizeof(SZrString *),
+                      function->parameterMetadataCount);
+    ZrCore_Array_Init(cs->state,
+                      &memberInfo->parameterHasDefaultValues,
+                      sizeof(TZrBool),
+                      function->parameterMetadataCount);
+    ZrCore_Array_Init(cs->state,
+                      &memberInfo->parameterDefaultValues,
+                      sizeof(SZrTypeValue),
+                      function->parameterMetadataCount);
+    for (TZrUInt32 index = 0; index < function->parameterMetadataCount; index++) {
+        SZrString *name = function->parameterMetadata[index].name;
+        TZrBool hasDefaultValue = function->parameterMetadata[index].hasDefaultValue;
+        SZrTypeValue defaultValue;
+        ZrCore_Value_ResetAsNull(&defaultValue);
+        if (hasDefaultValue) {
+            defaultValue = function->parameterMetadata[index].defaultValue;
+        }
+        ZrCore_Array_Push(cs->state, &memberInfo->parameterNames, &name);
+        ZrCore_Array_Push(cs->state, &memberInfo->parameterHasDefaultValues, &hasDefaultValue);
+        ZrCore_Array_Push(cs->state, &memberInfo->parameterDefaultValues, &defaultValue);
+    }
+}
+
+static void import_copy_io_parameter_metadata(SZrCompilerState *cs,
+                                              SZrTypeMemberInfo *memberInfo,
+                                              const SZrIoFunction *function) {
+    if (cs == ZR_NULL || memberInfo == ZR_NULL || function == ZR_NULL || function->parameterMetadata == ZR_NULL ||
+        function->parameterMetadataLength == 0) {
+        return;
+    }
+
+    ZrCore_Array_Init(cs->state,
+                      &memberInfo->parameterNames,
+                      sizeof(SZrString *),
+                      function->parameterMetadataLength);
+    ZrCore_Array_Init(cs->state,
+                      &memberInfo->parameterHasDefaultValues,
+                      sizeof(TZrBool),
+                      function->parameterMetadataLength);
+    ZrCore_Array_Init(cs->state,
+                      &memberInfo->parameterDefaultValues,
+                      sizeof(SZrTypeValue),
+                      function->parameterMetadataLength);
+    for (TZrSize index = 0; index < function->parameterMetadataLength; index++) {
+        SZrString *name = function->parameterMetadata[index].name;
+        TZrBool hasDefaultValue = function->parameterMetadata[index].hasDefaultValue ? ZR_TRUE : ZR_FALSE;
+        SZrTypeValue defaultValue;
+        ZrCore_Value_ResetAsNull(&defaultValue);
+        if (hasDefaultValue &&
+            !import_io_constant_to_value(cs->state, &function->parameterMetadata[index].defaultValue, &defaultValue)) {
+            return;
+        }
+        ZrCore_Array_Push(cs->state, &memberInfo->parameterNames, &name);
+        ZrCore_Array_Push(cs->state, &memberInfo->parameterHasDefaultValues, &hasDefaultValue);
+        ZrCore_Array_Push(cs->state, &memberInfo->parameterDefaultValues, &defaultValue);
+    }
+}
+
 static SZrString *typed_type_ref_to_type_name(SZrCompilerState *cs, const SZrFunctionTypedTypeRef *typeRef) {
     TZrNativeString elementName;
     TZrSize elementLength;
@@ -337,6 +518,9 @@ static void import_add_field_member(SZrState *state,
 
     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
     ZrCore_Array_Construct(&memberInfo.parameterTypes);
+    ZrCore_Array_Construct(&memberInfo.parameterNames);
+    ZrCore_Array_Construct(&memberInfo.parameterHasDefaultValues);
+    ZrCore_Array_Construct(&memberInfo.parameterDefaultValues);
     ZrCore_Array_Construct(&memberInfo.genericParameters);
     ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
     ZrCore_Array_Construct(&memberInfo.decorators);
@@ -351,8 +535,10 @@ static void import_add_field_member(SZrState *state,
 
 static void import_add_function_member_from_symbol(SZrCompilerState *cs,
                                                    SZrTypePrototypeInfo *modulePrototype,
-                                                   const SZrFunctionTypedExportSymbol *symbol) {
+                                                   const SZrFunctionTypedExportSymbol *symbol,
+                                                   const SZrFunction *moduleFunction) {
     SZrTypeMemberInfo memberInfo;
+    const SZrFunction *metadataFunction;
 
     if (cs == ZR_NULL || modulePrototype == ZR_NULL || symbol == ZR_NULL || symbol->name == ZR_NULL ||
         import_prototype_has_member(modulePrototype, symbol->name)) {
@@ -361,6 +547,9 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
 
     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
     ZrCore_Array_Construct(&memberInfo.parameterTypes);
+    ZrCore_Array_Construct(&memberInfo.parameterNames);
+    ZrCore_Array_Construct(&memberInfo.parameterHasDefaultValues);
+    ZrCore_Array_Construct(&memberInfo.parameterDefaultValues);
     ZrCore_Array_Construct(&memberInfo.genericParameters);
     ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
     ZrCore_Array_Construct(&memberInfo.decorators);
@@ -382,13 +571,19 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
         }
     }
 
+    metadataFunction =
+            find_runtime_function_metadata_recursive(moduleFunction, symbol->name, symbol->parameterCount);
+    import_copy_runtime_parameter_metadata(cs, &memberInfo, metadataFunction);
+
     ZrCore_Array_Push(cs->state, &modulePrototype->members, &memberInfo);
 }
 
 static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
                                                       SZrTypePrototypeInfo *modulePrototype,
-                                                      const SZrIoFunctionTypedExportSymbol *symbol) {
+                                                      const SZrIoFunctionTypedExportSymbol *symbol,
+                                                      const SZrIoFunction *moduleFunction) {
     SZrTypeMemberInfo memberInfo;
+    const SZrIoFunction *metadataFunction;
 
     if (cs == ZR_NULL || modulePrototype == ZR_NULL || symbol == ZR_NULL || symbol->name == ZR_NULL ||
         import_prototype_has_member(modulePrototype, symbol->name)) {
@@ -397,6 +592,9 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
 
     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
     ZrCore_Array_Construct(&memberInfo.parameterTypes);
+    ZrCore_Array_Construct(&memberInfo.parameterNames);
+    ZrCore_Array_Construct(&memberInfo.parameterHasDefaultValues);
+    ZrCore_Array_Construct(&memberInfo.parameterDefaultValues);
     ZrCore_Array_Construct(&memberInfo.genericParameters);
     ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
     ZrCore_Array_Construct(&memberInfo.decorators);
@@ -417,6 +615,9 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
             ZrCore_Array_Push(cs->state, &memberInfo.parameterTypes, &paramType);
         }
     }
+
+    metadataFunction = find_io_function_metadata_recursive(moduleFunction, symbol->name, symbol->parameterCount);
+    import_copy_io_parameter_metadata(cs, &memberInfo, metadataFunction);
 
     ZrCore_Array_Push(cs->state, &modulePrototype->members, &memberInfo);
 }
@@ -591,6 +792,9 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
 
                     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
                     ZrCore_Array_Construct(&memberInfo.parameterTypes);
+                    ZrCore_Array_Construct(&memberInfo.parameterNames);
+                    ZrCore_Array_Construct(&memberInfo.parameterHasDefaultValues);
+                    ZrCore_Array_Construct(&memberInfo.parameterDefaultValues);
                     ZrCore_Array_Construct(&memberInfo.genericParameters);
                     ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
                     ZrCore_Array_Construct(&memberInfo.decorators);
@@ -667,7 +871,7 @@ static TZrBool register_runtime_import_metadata(SZrCompilerState *cs,
         }
 
         if (symbol->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION) {
-            import_add_function_member_from_symbol(cs, &modulePrototype, symbol);
+            import_add_function_member_from_symbol(cs, &modulePrototype, symbol, function);
         } else {
             import_add_field_member(cs->state,
                                     &modulePrototype,
@@ -724,7 +928,7 @@ static TZrBool register_binary_import_metadata(SZrCompilerState *cs,
         }
 
         if (symbol->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION) {
-            import_add_function_member_from_io_symbol(cs, &modulePrototype, symbol);
+            import_add_function_member_from_io_symbol(cs, &modulePrototype, symbol, function);
         } else {
             import_add_field_member(cs->state,
                                     &modulePrototype,

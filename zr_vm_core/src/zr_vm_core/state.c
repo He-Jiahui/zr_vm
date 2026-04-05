@@ -5,6 +5,7 @@
 
 #include "zr_vm_common/zr_vm_conf.h"
 #include "zr_vm_common/zr_debug_conf.h"
+#include "zr_vm_common/zr_runtime_sentinel_conf.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/gc.h"
@@ -55,6 +56,10 @@ ZR_FORCE_INLINE void ZrStateResetDebugHookCount(SZrState *state) { state->debugH
 SZrState *ZrCore_State_New(SZrGlobalState *global) {
     // FZrAllocator allocator = global->allocator;
     SZrState *newState = ZrCore_Memory_Allocate(global, NULL, 0, sizeof(SZrState), ZR_MEMORY_NATIVE_TYPE_STATE);
+    if (newState == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrCore_Memory_RawSet(newState, 0, sizeof(SZrState));
     ZrCore_RawObject_Construct(&newState->super, ZR_RAW_OBJECT_TYPE_THREAD);
     ZrCore_State_Init(newState, global);
     return newState;
@@ -89,6 +94,13 @@ void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
     state->baseDebugHookCount = 0;
     state->debugHook = ZR_NULL;
     state->debugHookSignal = 0;
+    state->debugTraceObserver = ZR_NULL;
+    state->debugTraceUserData = ZR_NULL;
+    state->debugLastFunction = ZR_NULL;
+    state->debugLastLine = ZR_RUNTIME_DEBUG_HOOK_LINE_NONE;
+    state->aotObservationMask = 0;
+    state->hasAotObservationPolicyOverride = ZR_FALSE;
+    state->aotPublishAllInstructions = ZR_FALSE;
     ZrStateResetDebugHookCount(state);
     state->allowDebugHook = ZR_TRUE;
     

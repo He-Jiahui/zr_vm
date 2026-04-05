@@ -47,6 +47,58 @@ TZrBool zr_ffi_build_struct_argument(SZrState *state, const SZrTypeValue *value,
     return ZR_TRUE;
 }
 
+static TZrBool zr_ffi_object_uses_pointer_lowering(SZrState *state, SZrObject *object) {
+    const char *loweringKind = ZR_NULL;
+
+    if (state == ZR_NULL || object == ZR_NULL || object->prototype == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return zr_ffi_read_object_string_field(state, &object->prototype->super, "__zr_ffiLoweringKind", &loweringKind) &&
+           loweringKind != ZR_NULL &&
+           strcmp(loweringKind, "pointer") == 0;
+}
+
+static TZrBool zr_ffi_try_lower_pointer_wrapper(SZrState *state, const SZrTypeValue *value, void **outPointer) {
+    SZrObject *wrapperObject = ZR_NULL;
+    ZrFfiHandleData *handleData = ZR_NULL;
+
+    if (outPointer != ZR_NULL) {
+        *outPointer = ZR_NULL;
+    }
+
+    if (state == ZR_NULL || value == ZR_NULL || outPointer == ZR_NULL || !zr_ffi_value_is_object(value, &wrapperObject) ||
+        !zr_ffi_object_uses_pointer_lowering(state, wrapperObject)) {
+        return ZR_FALSE;
+    }
+
+    handleData = zr_ffi_get_handle_data(state, wrapperObject);
+    if (handleData == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (handleData->kind) {
+        case ZR_FFI_HANDLE_POINTER: {
+            ZrFfiPointerData *pointerData = (ZrFfiPointerData *)handleData;
+            if (pointerData->closed) {
+                return ZR_FALSE;
+            }
+            *outPointer = pointerData->address;
+            return ZR_TRUE;
+        }
+        case ZR_FFI_HANDLE_BUFFER: {
+            ZrFfiBufferData *bufferData = (ZrFfiBufferData *)handleData;
+            if (bufferData->closeRequested) {
+                return ZR_FALSE;
+            }
+            *outPointer = bufferData->bytes;
+            return ZR_TRUE;
+        }
+        default:
+            return ZR_FALSE;
+    }
+}
+
 TZrBool zr_ffi_build_scalar_argument(SZrState *state, const SZrTypeValue *value, ZrFfiTypeLayout *type,
                                             void *buffer, char *errorBuffer, TZrSize errorBufferSize) {
     double numericValue = 0.0;
@@ -134,8 +186,13 @@ TZrBool zr_ffi_build_scalar_argument(SZrState *state, const SZrTypeValue *value,
         case ZR_FFI_TYPE_POINTER: {
             SZrObject *pointerObject = ZR_NULL;
             ZrFfiPointerData *pointerData = ZR_NULL;
+            void *loweredPointer = ZR_NULL;
             if (value->type == ZR_VALUE_TYPE_NULL) {
                 *(void **) buffer = ZR_NULL;
+                return ZR_TRUE;
+            }
+            if (zr_ffi_try_lower_pointer_wrapper(state, value, &loweredPointer)) {
+                *(void **) buffer = loweredPointer;
                 return ZR_TRUE;
             }
             if (!zr_ffi_value_is_object(value, &pointerObject)) {

@@ -7,19 +7,38 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 
+#include <stdint.h>
+
+#include "zr_vm_common/zr_runtime_sentinel_conf.h"
+
 static TZrUInt64 CZrLibrary_CommonState_MemoryCounter[ZR_MEMORY_NATIVE_TYPE_ENUM_MAX] = {0};
+
+static TZrBool zr_library_common_state_allocator_can_release_pointer(TZrPtr pointer) {
+    return pointer != ZR_NULL && (uintptr_t)pointer >= (uintptr_t)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND;
+}
+
 TZrPtr ZrLibrary_CommonState_BuiltinAllocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize,
                                               TZrInt64 flag) {
+    TZrBool canReleasePointer;
+    TZrBool trackCounter;
+
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
-    ZR_UNUSED_PARAMETER(flag);
+    canReleasePointer = zr_library_common_state_allocator_can_release_pointer(pointer);
+    trackCounter = flag >= 0 && flag < ZR_MEMORY_NATIVE_TYPE_ENUM_MAX;
     if (newSize == 0) {
-        CZrLibrary_CommonState_MemoryCounter[flag]--;
-        free(pointer);
+        if (trackCounter && canReleasePointer) {
+            CZrLibrary_CommonState_MemoryCounter[flag]--;
+        }
+        if (canReleasePointer) {
+            free(pointer);
+        }
         return ZR_NULL;
     }
-    if (pointer == ZR_NULL) {
-        CZrLibrary_CommonState_MemoryCounter[flag]++;
+    if (pointer == ZR_NULL || !canReleasePointer) {
+        if (trackCounter) {
+            CZrLibrary_CommonState_MemoryCounter[flag]++;
+        }
         return (TZrPtr) malloc(newSize);
     }
     return (TZrPtr) realloc(pointer, newSize);

@@ -203,6 +203,55 @@ static char *generate_output_filename(const char *inputFile, const char *newExt)
     return outputFile;
 }
 
+static void init_test_string_key(SZrState *state, SZrTypeValue *key, const char *fieldName) {
+    SZrString *fieldString;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(key);
+    TEST_ASSERT_NOT_NULL(fieldName);
+
+    fieldString = ZrCore_String_CreateFromNative(state, fieldName);
+    TEST_ASSERT_NOT_NULL(fieldString);
+    ZrCore_Value_InitAsRawObject(state, key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    key->type = ZR_VALUE_TYPE_STRING;
+}
+
+static const SZrTypeValue *get_test_object_field_value(SZrState *state, SZrObject *object, const char *fieldName) {
+    SZrTypeValue key;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(object);
+    init_test_string_key(state, &key, fieldName);
+    return ZrCore_Object_GetValue(state, object, &key);
+}
+
+static void set_test_object_int_field(SZrState *state, SZrObject *object, const char *fieldName, TZrInt64 value) {
+    SZrTypeValue key;
+    SZrTypeValue fieldValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(object);
+    init_test_string_key(state, &key, fieldName);
+    ZrCore_Value_InitAsInt(state, &fieldValue, value);
+    ZrCore_Object_SetValue(state, object, &key, &fieldValue);
+}
+
+static void set_test_object_object_field(SZrState *state,
+                                         SZrObject *object,
+                                         const char *fieldName,
+                                         SZrObject *fieldObject) {
+    SZrTypeValue key;
+    SZrTypeValue fieldValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(object);
+    TEST_ASSERT_NOT_NULL(fieldObject);
+    init_test_string_key(state, &key, fieldName);
+    ZrCore_Value_InitAsRawObject(state, &fieldValue, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldObject));
+    fieldValue.type = ZR_VALUE_TYPE_OBJECT;
+    ZrCore_Object_SetValue(state, object, &key, &fieldValue);
+}
+
 // 测试函数前向声明
 static void test_struct_prototype_compilation(void);
 static void test_class_prototype_compilation(void);
@@ -211,6 +260,7 @@ static void test_prototype_inheritance(void);
 static void test_prototype_module_export(void);
 static void test_struct_field_offsets(void);
 static void test_prototype_inheritance_loading(void);
+static void test_struct_value_copy_clones_nested_storage(void);
 
 // 测试 struct prototype 编译时收集
 static void test_struct_prototype_compilation(void) {
@@ -967,6 +1017,97 @@ static void test_prototype_inheritance_loading(void) {
     TEST_PASS_CUSTOM(timer, "Prototype Inheritance Loading");
 }
 
+static void test_struct_value_copy_clones_nested_storage(void) {
+    TEST_START("Struct Value Copy Clones Nested Storage");
+    TEST_INFO("Struct copy semantics",
+              "Copying a struct value should allocate a distinct boxed object and recursively clone nested struct storage");
+
+    {
+        SZrTestTimer timer;
+        SZrGlobalState *global;
+        SZrState *state;
+        SZrStructPrototype *innerPrototype;
+        SZrStructPrototype *outerPrototype;
+        SZrObject *sourceInnerObject;
+        SZrObject *sourceOuterObject;
+        const SZrTypeValue *sourceInnerValue;
+        const SZrTypeValue *copiedInnerValue;
+        SZrObject *copiedOuterObject;
+        SZrObject *sourceStoredInnerObject;
+        SZrObject *copiedStoredInnerObject;
+        const SZrTypeValue *sourceXValue;
+        const SZrTypeValue *copiedXValue;
+        SZrTypeValue sourceOuterValue;
+        SZrTypeValue copiedOuterValue;
+
+        timer.startTime = clock();
+        timer.endTime = timer.startTime;
+
+        global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12351, ZR_NULL);
+        TEST_ASSERT_NOT_NULL(global);
+        state = global->mainThreadState;
+        TEST_ASSERT_NOT_NULL(state);
+
+        innerPrototype = ZrCore_StructPrototype_New(state, ZrCore_String_CreateFromNative(state, "InnerBox"));
+        outerPrototype = ZrCore_StructPrototype_New(state, ZrCore_String_CreateFromNative(state, "OuterBox"));
+        TEST_ASSERT_NOT_NULL(innerPrototype);
+        TEST_ASSERT_NOT_NULL(outerPrototype);
+        ZrCore_StructPrototype_AddField(state, innerPrototype, ZrCore_String_CreateFromNative(state, "x"), 0);
+        ZrCore_StructPrototype_AddField(state, outerPrototype, ZrCore_String_CreateFromNative(state, "inner"), 0);
+
+        sourceInnerObject = ZrCore_Object_New(state, &innerPrototype->super);
+        sourceOuterObject = ZrCore_Object_New(state, &outerPrototype->super);
+        TEST_ASSERT_NOT_NULL(sourceInnerObject);
+        TEST_ASSERT_NOT_NULL(sourceOuterObject);
+        ZrCore_Object_Init(state, sourceInnerObject);
+        ZrCore_Object_Init(state, sourceOuterObject);
+        sourceInnerObject->internalType = ZR_OBJECT_INTERNAL_TYPE_STRUCT;
+        sourceOuterObject->internalType = ZR_OBJECT_INTERNAL_TYPE_STRUCT;
+
+        set_test_object_int_field(state, sourceInnerObject, "x", 1);
+        set_test_object_object_field(state, sourceOuterObject, "inner", sourceInnerObject);
+
+        ZrCore_Value_ResetAsNull(&sourceOuterValue);
+        ZrCore_Value_ResetAsNull(&copiedOuterValue);
+        ZrCore_Value_InitAsRawObject(state, &sourceOuterValue, ZR_CAST_RAW_OBJECT_AS_SUPER(sourceOuterObject));
+        sourceOuterValue.type = ZR_VALUE_TYPE_OBJECT;
+        ZrCore_Value_Copy(state, &copiedOuterValue, &sourceOuterValue);
+
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, copiedOuterValue.type);
+        copiedOuterObject = ZR_CAST_OBJECT(state, copiedOuterValue.value.object);
+        TEST_ASSERT_NOT_NULL(copiedOuterObject);
+        TEST_ASSERT_NOT_EQUAL(sourceOuterObject, copiedOuterObject);
+
+        sourceInnerValue = get_test_object_field_value(state, sourceOuterObject, "inner");
+        copiedInnerValue = get_test_object_field_value(state, copiedOuterObject, "inner");
+        TEST_ASSERT_NOT_NULL(sourceInnerValue);
+        TEST_ASSERT_NOT_NULL(copiedInnerValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, sourceInnerValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, copiedInnerValue->type);
+
+        sourceStoredInnerObject = ZR_CAST_OBJECT(state, sourceInnerValue->value.object);
+        copiedStoredInnerObject = ZR_CAST_OBJECT(state, copiedInnerValue->value.object);
+        TEST_ASSERT_NOT_NULL(sourceStoredInnerObject);
+        TEST_ASSERT_NOT_NULL(copiedStoredInnerObject);
+        TEST_ASSERT_NOT_EQUAL(sourceStoredInnerObject, copiedStoredInnerObject);
+
+        set_test_object_int_field(state, copiedStoredInnerObject, "x", 9);
+
+        sourceXValue = get_test_object_field_value(state, sourceStoredInnerObject, "x");
+        copiedXValue = get_test_object_field_value(state, copiedStoredInnerObject, "x");
+        TEST_ASSERT_NOT_NULL(sourceXValue);
+        TEST_ASSERT_NOT_NULL(copiedXValue);
+        TEST_ASSERT_EQUAL_INT64(1, sourceXValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(9, copiedXValue->value.nativeObject.nativeInt64);
+
+        ZrCore_GlobalState_Free(global);
+        timer.endTime = clock();
+        TEST_PASS_CUSTOM(timer, "Struct Value Copy Clones Nested Storage");
+    }
+
+    TEST_DIVIDER();
+}
+
 // 主测试函数
 int main(void) {
     UNITY_BEGIN();
@@ -991,6 +1132,9 @@ int main(void) {
     TEST_DIVIDER();
 
     RUN_TEST(test_prototype_inheritance_loading);
+    TEST_DIVIDER();
+
+    RUN_TEST(test_struct_value_copy_clones_nested_storage);
     TEST_MODULE_DIVIDER();
 
     return UNITY_END();

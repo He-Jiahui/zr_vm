@@ -6,12 +6,14 @@
 typedef struct SZrLspImportBinding {
     SZrString *aliasName;
     SZrString *moduleName;
+    SZrFileRange aliasLocation;
     SZrFileRange modulePathLocation;
 } SZrLspImportBinding;
 
 typedef struct SZrLspImportedMemberHit {
     SZrString *moduleName;
     SZrString *memberName;
+    SZrFileRange receiverLocation;
     SZrFileRange location;
 } SZrLspImportedMemberHit;
 
@@ -63,6 +65,14 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedModuleLocations(SZrSta
                                                                           SZrArray *bindings,
                                                                           SZrString *moduleName,
                                                                           SZrArray *result);
+TZrBool ZrLanguageServer_LspProject_AppendMatchingImportBindingLocations(SZrState *state,
+                                                                         SZrArray *bindings,
+                                                                         SZrString *moduleName,
+                                                                         SZrArray *result);
+TZrBool ZrLanguageServer_LspProject_AppendMatchingImportTargetLocations(SZrState *state,
+                                                                        SZrArray *bindings,
+                                                                        SZrString *moduleName,
+                                                                        SZrArray *result);
 TZrBool ZrLanguageServer_LspProject_DeriveBinaryModuleNameFromPath(SZrLspProjectIndex *projectIndex,
                                                                    const TZrChar *path,
                                                                    TZrChar *buffer,

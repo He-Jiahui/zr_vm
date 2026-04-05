@@ -6,6 +6,8 @@
 
 #include <string.h>
 
+#include "zr_vm_core/execution_control.h"
+
 #define ZR_EXCEPTION_HANDLER_STACK_INITIAL_CAPACITY 8U
 #define ZR_EXCEPTION_HANDLER_STACK_GROWTH_FACTOR 2U
 #define ZR_SCOPE_CLEANUP_CLOSED_COUNT_NONE ((TZrSize)0)

@@ -397,48 +397,41 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
             while (callInfo != ZR_NULL) {
                 if (callInfo->functionBase.valuePointer >= state->stackBase.valuePointer &&
                     callInfo->functionBase.valuePointer < state->stackTop.valuePointer) {
-                    SZrTypeValue *closureValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
-                    if (closureValue != ZR_NULL && closureValue->type == ZR_VALUE_TYPE_CLOSURE) {
-                        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, closureValue->value.object);
-                        if (closure != ZR_NULL && closure->function != ZR_NULL) {
-                            struct SZrFunction *func = closure->function;
-                            // 检查是否是entry function（有prototypeData）
-                            if (func->prototypeData != ZR_NULL && func->prototypeCount > 0) {
-                                // 查找对应的模块
-                                // TODO: 注意：这里需要遍历模块注册表查找，简化实现：遍历所有模块
-                                if (state->global != ZR_NULL) {
-                                    SZrGlobalState *registryGlobal = state->global;
-                                    if (ZrCore_Value_IsGarbageCollectable(&registryGlobal->loadedModulesRegistry) &&
-                                        registryGlobal->loadedModulesRegistry.type == ZR_VALUE_TYPE_OBJECT) {
-                                        SZrObject *registry =
-                                                ZR_CAST_OBJECT(state, registryGlobal->loadedModulesRegistry.value.object);
-                                        if (registry != ZR_NULL && registry->nodeMap.isValid && 
-                                            registry->nodeMap.buckets != ZR_NULL) {
-                                            // 遍历模块注册表，查找包含该entry function的模块
-                                            for (TZrSize i = 0; i < registry->nodeMap.capacity; i++) {
-                                                SZrHashKeyValuePair *pair = registry->nodeMap.buckets[i];
-                                                while (pair != ZR_NULL) {
-                                                    if (pair->value.type == ZR_VALUE_TYPE_OBJECT) {
-                                                        SZrObject *cachedObject = ZR_CAST_OBJECT(state, pair->value.value.object);
-                                                        if (cachedObject != ZR_NULL && 
-                                                            cachedObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
-                                                            struct SZrObjectModule *module = (struct SZrObjectModule *)cachedObject;
-                                                            // 检查模块的导出中是否有该类型
-                                                            SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
-                                                            if (prototype != ZR_NULL) {
-                                                                return prototype;
-                                                            }
-                                                        }
+                    struct SZrFunction *func = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+                    if (func != ZR_NULL && func->prototypeData != ZR_NULL && func->prototypeCount > 0) {
+                        // 查找对应的模块
+                        // TODO: 注意：这里需要遍历模块注册表查找，简化实现：遍历所有模块
+                        if (state->global != ZR_NULL) {
+                            SZrGlobalState *registryGlobal = state->global;
+                            if (ZrCore_Value_IsGarbageCollectable(&registryGlobal->loadedModulesRegistry) &&
+                                registryGlobal->loadedModulesRegistry.type == ZR_VALUE_TYPE_OBJECT) {
+                                SZrObject *registry =
+                                        ZR_CAST_OBJECT(state, registryGlobal->loadedModulesRegistry.value.object);
+                                if (registry != ZR_NULL && registry->nodeMap.isValid && registry->nodeMap.buckets != ZR_NULL) {
+                                    // 遍历模块注册表，查找包含该entry function的模块
+                                    for (TZrSize i = 0; i < registry->nodeMap.capacity; i++) {
+                                        SZrHashKeyValuePair *pair = registry->nodeMap.buckets[i];
+                                        while (pair != ZR_NULL) {
+                                            if (pair->value.type == ZR_VALUE_TYPE_OBJECT) {
+                                                SZrObject *cachedObject = ZR_CAST_OBJECT(state, pair->value.value.object);
+                                                if (cachedObject != ZR_NULL &&
+                                                    cachedObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+                                                    struct SZrObjectModule *module = (struct SZrObjectModule *)cachedObject;
+                                                    // 检查模块的导出中是否有该类型
+                                                    SZrObjectPrototype *prototype =
+                                                            find_prototype_in_module(state, module, actualTypeName, expectedType);
+                                                    if (prototype != ZR_NULL) {
+                                                        return prototype;
                                                     }
-                                                    pair = pair->next;
                                                 }
                                             }
+                                            pair = pair->next;
                                         }
                                     }
                                 }
-                                break;  // 找到entry function后，不再继续查找
                             }
                         }
+                        break;  // 找到entry function后，不再继续查找
                     }
                 }
                 callInfo = callInfo->previous;
@@ -537,20 +530,20 @@ TZrBool convert_to_struct(SZrState *state,
         // 设置内部类型为 STRUCT
         structObject->internalType = ZR_OBJECT_INTERNAL_TYPE_STRUCT;
         
-        // 复制源对象的字段到新对象
-        // 对于 struct，字段存储在 nodeMap 中（与普通对象相同）
-        // 遍历源对象的 nodeMap，复制匹配的字段到新对象
-        if (sourceObject->nodeMap.isValid && sourceObject->nodeMap.buckets != ZR_NULL && sourceObject->nodeMap.elementCount > 0) {
-            // 注意：ZrHashSet 没有迭代接口，我们需要通过其他方式复制字段
-            // 一个方案是：通过元方法 @to_struct 来处理字段复制
-            // 或者：如果源对象已经是 struct 类型，直接复制其 nodeMap
-            
-            // TODO: 暂时先复制所有字段（后续需要根据 struct 定义进行字段验证和类型转换）
-            // 由于无法直接迭代 nodeMap，我们依赖元方法或构造函数来处理字段复制
-            // 如果源对象有 @to_struct 元方法，应该已经在上层调用了
-            // 这里只是创建了新的 struct 对象，字段复制由元方法或构造函数完成
+        // Preserve all own fields when crossing a typed struct boundary.
+        if (sourceObject->nodeMap.isValid &&
+            sourceObject->nodeMap.buckets != ZR_NULL &&
+            sourceObject->nodeMap.elementCount > 0) {
+            for (TZrSize bucketIndex = 0; bucketIndex < sourceObject->nodeMap.capacity; bucketIndex++) {
+                for (SZrHashKeyValuePair *pair = sourceObject->nodeMap.buckets[bucketIndex];
+                     pair != ZR_NULL;
+                     pair = pair->next) {
+                    ZrCore_Object_SetValue(state, structObject, &pair->key, &pair->value);
+                }
+            }
         }
-        
+
+        structObject->memberVersion = sourceObject->memberVersion;
         ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(structObject));
         destination->type = ZR_VALUE_TYPE_OBJECT;
         return ZR_TRUE;
@@ -591,20 +584,19 @@ TZrBool convert_to_class(SZrState *state,
         // 设置内部类型为 OBJECT（class 是引用类型）
         classObject->internalType = ZR_OBJECT_INTERNAL_TYPE_OBJECT;
         
-        // 复制源对象的字段到新对象
-        // 对于 class，字段存储在 nodeMap 中
-        // 遍历源对象的 nodeMap，复制匹配的字段到新对象
-        if (sourceObject->nodeMap.isValid && sourceObject->nodeMap.buckets != ZR_NULL && sourceObject->nodeMap.elementCount > 0) {
-            // 注意：ZrHashSet 没有迭代接口，我们需要通过其他方式复制字段
-            // 一个方案是：通过元方法 @to_object 来处理字段复制
-            // 或者：如果源对象已经是 class 类型，直接复制其 nodeMap
-            
-            // TODO: 暂时先复制所有字段（后续需要根据 class 定义进行字段验证和类型转换）
-            // 由于无法直接迭代 nodeMap，我们依赖元方法或构造函数来处理字段复制
-            // 如果源对象有 @to_object 元方法，应该已经在上层调用了
-            // 这里只是创建了新的 class 对象，字段复制由元方法或构造函数完成
+        if (sourceObject->nodeMap.isValid &&
+            sourceObject->nodeMap.buckets != ZR_NULL &&
+            sourceObject->nodeMap.elementCount > 0) {
+            for (TZrSize bucketIndex = 0; bucketIndex < sourceObject->nodeMap.capacity; bucketIndex++) {
+                for (SZrHashKeyValuePair *pair = sourceObject->nodeMap.buckets[bucketIndex];
+                     pair != ZR_NULL;
+                     pair = pair->next) {
+                    ZrCore_Object_SetValue(state, classObject, &pair->key, &pair->value);
+                }
+            }
         }
-        
+
+        classObject->memberVersion = sourceObject->memberVersion;
         ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(classObject));
         destination->type = ZR_VALUE_TYPE_OBJECT;
         return ZR_TRUE;
@@ -880,6 +872,99 @@ TZrBool convert_to_enum(SZrState *state,
 
     ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(enumObject));
     destination->type = ZR_VALUE_TYPE_OBJECT;
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Execution_ToObject(SZrState *state,
+                                  SZrCallInfo *callInfo,
+                                  SZrTypeValue *destination,
+                                  const SZrTypeValue *source,
+                                  const SZrTypeValue *typeNameValue) {
+    SZrString *typeName;
+    SZrObjectPrototype *prototype;
+    TZrBool converted = ZR_FALSE;
+    SZrTypeValue stableSource;
+
+    ZR_UNUSED_PARAMETER(callInfo);
+
+    if (state == ZR_NULL || destination == ZR_NULL || source == ZR_NULL || typeNameValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeNameValue->type != ZR_VALUE_TYPE_STRING || typeNameValue->value.object == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(destination);
+        return ZR_TRUE;
+    }
+
+    typeName = ZR_CAST_STRING(state, typeNameValue->value.object);
+    if (typeName == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(destination);
+        return ZR_TRUE;
+    }
+
+    stableSource = *source;
+    prototype = find_type_prototype(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_INVALID);
+    if (prototype != ZR_NULL) {
+        if (prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+            converted = convert_to_class(state, &stableSource, prototype, destination);
+        } else if (prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
+            converted = convert_to_enum(state, &stableSource, prototype, destination);
+        }
+
+        if (!converted) {
+            ZrCore_Value_ResetAsNull(destination);
+        }
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_OBJECT(stableSource.type)) {
+        ZrCore_Value_Copy(state, destination, &stableSource);
+    } else {
+        ZrCore_Value_ResetAsNull(destination);
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Execution_ToStruct(SZrState *state,
+                                  SZrCallInfo *callInfo,
+                                  SZrTypeValue *destination,
+                                  const SZrTypeValue *source,
+                                  const SZrTypeValue *typeNameValue) {
+    SZrString *typeName;
+    SZrObjectPrototype *prototype;
+    SZrTypeValue stableSource;
+
+    ZR_UNUSED_PARAMETER(callInfo);
+
+    if (state == ZR_NULL || destination == ZR_NULL || source == ZR_NULL || typeNameValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeNameValue->type != ZR_VALUE_TYPE_STRING || typeNameValue->value.object == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(destination);
+        return ZR_TRUE;
+    }
+
+    typeName = ZR_CAST_STRING(state, typeNameValue->value.object);
+    if (typeName == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(destination);
+        return ZR_TRUE;
+    }
+
+    stableSource = *source;
+    prototype = find_type_prototype(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_STRUCT);
+    if (prototype != ZR_NULL) {
+        if (!convert_to_struct(state, &stableSource, prototype, destination)) {
+            ZrCore_Value_ResetAsNull(destination);
+        }
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_OBJECT(stableSource.type)) {
+        ZrCore_Value_Copy(state, destination, &stableSource);
+    } else {
+        ZrCore_Value_ResetAsNull(destination);
+    }
     return ZR_TRUE;
 }
 

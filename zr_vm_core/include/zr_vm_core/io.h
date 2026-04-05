@@ -141,18 +141,36 @@ typedef struct SZrIoFunctionTypedExportSymbol {
     SZrIoFunctionTypedTypeRef valueType;
     TZrSize parameterCount;
     SZrIoFunctionTypedTypeRef *parameterTypes;
+    TZrUInt32 lineInSourceStart;
+    TZrUInt32 columnInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+    TZrUInt32 columnInSourceEnd;
 } SZrIoFunctionTypedExportSymbol;
 
 typedef struct SZrIoFunctionMetadataParameter {
     struct SZrString *name;
     SZrIoFunctionTypedTypeRef type;
+    TZrBool hasDefaultValue;
+    SZrIoFunctionConstantVariable defaultValue;
+    TZrUInt8 hasDecoratorMetadata;
+    SZrIoFunctionConstantVariable decoratorMetadataValue;
+    TZrSize decoratorNamesLength;
+    struct SZrString **decoratorNames;
 } SZrIoFunctionMetadataParameter;
+
+typedef struct SZrIoFunctionCompileTimePathBinding {
+    struct SZrString *path;
+    TZrUInt8 targetKind;
+    struct SZrString *targetName;
+} SZrIoFunctionCompileTimePathBinding;
 
 typedef struct SZrIoFunctionCompileTimeVariableInfo {
     struct SZrString *name;
     SZrIoFunctionTypedTypeRef type;
     TZrUInt32 lineInSourceStart;
     TZrUInt32 lineInSourceEnd;
+    TZrSize pathBindingsLength;
+    SZrIoFunctionCompileTimePathBinding *pathBindings;
 } SZrIoFunctionCompileTimeVariableInfo;
 
 typedef struct SZrIoFunctionCompileTimeFunctionInfo {
@@ -233,9 +251,10 @@ struct SZrIoFunctionClosure {
 typedef struct SZrIoFunctionClosure SZrIoFunctionClosure;
 
 struct SZrIoFunctionDebugInfo {
+    struct SZrString *sourceFile;
+    struct SZrString *sourceHash;
     TZrSize instructionsLength;
     TZrUInt64 *instructionsLine;
-    // todo:
 };
 
 typedef struct SZrIoFunctionDebugInfo SZrIoFunctionDebugInfo;
@@ -291,6 +310,8 @@ struct SZrIoFunction {
     SZrIoFunctionTypedLocalBinding *typedLocalBindings;
     TZrSize typedExportedSymbolsLength;
     SZrIoFunctionTypedExportSymbol *typedExportedSymbols;
+    TZrSize parameterMetadataLength;
+    SZrIoFunctionMetadataParameter *parameterMetadata;
     TZrSize compileTimeVariableInfosLength;
     SZrIoFunctionCompileTimeVariableInfo *compileTimeVariableInfos;
     TZrSize compileTimeFunctionInfosLength;

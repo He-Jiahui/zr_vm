@@ -78,6 +78,28 @@ static TZrBool zr_tests_runtime_handle_unhandled_exception(SZrState *state, SZrT
     return ZR_FALSE;
 }
 
+static TZrBool zr_tests_runtime_capture_failure(SZrState *state, EZrThreadStatus status) {
+    EZrThreadStatus effectiveStatus;
+
+    if (state == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    effectiveStatus = status;
+    if (effectiveStatus == ZR_THREAD_STATUS_FINE && state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        effectiveStatus = state->threadStatus;
+    }
+    if (effectiveStatus == ZR_THREAD_STATUS_FINE) {
+        effectiveStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
+    }
+
+    if (!state->hasCurrentException) {
+        (void)ZrCore_Exception_NormalizeStatus(state, effectiveStatus);
+    }
+    state->threadStatus = effectiveStatus;
+    return ZR_FALSE;
+}
+
 static void zr_tests_runtime_execute_body(SZrState *state, TZrPtr arguments) {
     ZrTestsRuntimeExecuteRequest *request = (ZrTestsRuntimeExecuteRequest *)arguments;
     SZrClosure *closure;
@@ -181,6 +203,14 @@ void ZrTests_Runtime_State_Destroy(SZrState *state) {
 }
 
 TZrBool ZrTests_Runtime_Function_Execute(SZrState *state, SZrFunction *function, SZrTypeValue *result) {
+    if (!ZrTests_Runtime_Function_ExecuteCaptureFailure(state, function, result)) {
+        return zr_tests_runtime_handle_unhandled_exception(state, result);
+    }
+
+    return ZR_TRUE;
+}
+
+TZrBool ZrTests_Runtime_Function_ExecuteCaptureFailure(SZrState *state, SZrFunction *function, SZrTypeValue *result) {
     ZrTestsRuntimeExecuteRequest request;
     EZrThreadStatus status;
 
@@ -198,15 +228,14 @@ TZrBool ZrTests_Runtime_Function_Execute(SZrState *state, SZrFunction *function,
         if (request.closure != ZR_NULL) {
             request.closure->function = ZR_NULL;
         }
-        state->threadStatus = status;
-        return zr_tests_runtime_handle_unhandled_exception(state, result);
+        return zr_tests_runtime_capture_failure(state, status);
     }
     if (!request.callCompleted || request.resultBase == ZR_NULL) {
         if (request.closure != ZR_NULL) {
             request.closure->function = ZR_NULL;
         }
         if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
-            return zr_tests_runtime_handle_unhandled_exception(state, result);
+            return zr_tests_runtime_capture_failure(state, state->threadStatus);
         }
         return ZR_FALSE;
     }

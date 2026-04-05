@@ -1,0 +1,6 @@
+{
+  "name": "network_import_root_probe",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

@@ -31,6 +31,7 @@
 #include "zr_vm_core/value.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -83,6 +84,7 @@ typedef struct ZrLibPluginHandleRecord {
     void *handle;
     TZrChar *moduleName;
     TZrChar *sourcePath;
+    TZrChar *loadedPath;
 } ZrLibPluginHandleRecord;
 
 typedef struct ZrLibrary_NativeRegistryState {
@@ -98,6 +100,11 @@ typedef struct ZrLibrary_NativeRegistryState {
 #define kNativeEnumValueTypeFieldName "__zr_enumValueTypeName"
 #define kNativeAllowValueConstructionFieldName "__zr_allowValueConstruction"
 #define kNativeAllowBoxedConstructionFieldName "__zr_allowBoxedConstruction"
+#define kNativeFfiLoweringKindFieldName "__zr_ffiLoweringKind"
+#define kNativeFfiViewTypeFieldName "__zr_ffiViewTypeName"
+#define kNativeFfiUnderlyingTypeFieldName "__zr_ffiUnderlyingTypeName"
+#define kNativeFfiOwnerModeFieldName "__zr_ffiOwnerMode"
+#define kNativeFfiReleaseHookFieldName "__zr_ffiReleaseHook"
 
 typedef const ZrLibModuleDescriptor *(*FZrVmGetNativeModuleV1)(void);
 
@@ -138,6 +145,7 @@ void *native_registry_open_library(const TZrChar *path);
 void native_registry_close_library(void *handle);
 TZrPtr native_registry_find_symbol(void *handle, const TZrChar *symbolName);
 const TZrChar *native_registry_dynamic_library_extension(void);
+void native_registry_release_plugin_handle_record(SZrGlobalState *global, ZrLibPluginHandleRecord *handleRecord);
 TZrBool native_registry_get_executable_directory(TZrChar *buffer, TZrSize bufferSize);
 void native_registry_sanitize_module_name(const TZrChar *moduleName,
                                                  TZrChar *buffer,

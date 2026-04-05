@@ -1,0 +1,11 @@
+%module "compile_time_parameter_decorator_artifact_baseline";
+
+%compileTime class MarkParameter {
+    @decorate(target: %type Parameter): DecoratorPatch {
+        return { metadata: { compileTimeParameter: 62 } };
+    }
+}
+
+pub measure(#MarkParameter# value: int, other: int = 2): int {
+    return value + other;
+}

@@ -62,7 +62,6 @@ TZrBool ZrMath_Matrix3x3_Construct(ZrLibCallContext *context, SZrTypeValue *resu
     } else {
         if (ZrLib_CallContext_ArgumentCount(context) != 9) {
             ZrLib_CallContext_RaiseArityError(context, 0, 9);
-            return ZR_FALSE;
         }
         for (index = 0; index < 9; index++) {
             if (!ZrLib_CallContext_ReadFloat(context, index, &values[index])) {

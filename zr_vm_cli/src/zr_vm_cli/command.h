@@ -23,6 +23,7 @@ typedef struct SZrCliCommand {
     EZrCliMode mode;
     EZrCliExecutionMode executionMode;
     const TZrChar *projectPath;
+    const TZrChar *debugAddress;
     TZrBool runAfterCompile;
     TZrBool emitIntermediate;
     TZrBool incremental;
@@ -30,6 +31,9 @@ typedef struct SZrCliCommand {
     TZrBool emitAotLlvm;
     TZrBool requireAotPath;
     TZrBool emitExecutedVia;
+    TZrBool debugEnabled;
+    TZrBool debugWait;
+    TZrBool debugPrintEndpoint;
 } SZrCliCommand;
 
 TZrBool ZrCli_Command_Parse(int argc,

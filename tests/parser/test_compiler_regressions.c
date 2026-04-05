@@ -8,15 +8,25 @@
 #include "runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/conversion.h"
+#include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_lib_network/module.h"
+#include "zr_vm_library/common_state.h"
+#include "zr_vm_library/project.h"
+#include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser.h"
 
 typedef struct SZrRegressionTestTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrRegressionTestTimer;
+
+typedef struct ZrProjectRunRequest {
+    SZrTypeValue *result;
+    EZrThreadStatus status;
+} ZrProjectRunRequest;
 
 void setUp(void) {}
 
@@ -62,6 +72,16 @@ static char *read_text_file_owned(const TZrChar *path) {
     buffer[fileSize] = '\0';
     fclose(file);
     return buffer;
+}
+
+static void run_project_body(SZrState *state, TZrPtr arguments) {
+    ZrProjectRunRequest *request = (ZrProjectRunRequest *)arguments;
+
+    if (state == ZR_NULL || request == ZR_NULL || request->result == ZR_NULL) {
+        return;
+    }
+
+    request->status = ZrLibrary_Project_Run(state, request->result);
 }
 
 static const TZrChar *function_name_or_anonymous(const SZrFunction *function) {
@@ -323,6 +343,165 @@ static void test_classes_full_module_compiles_without_static_and_receiver_signat
     ZR_TEST_DIVIDER();
 }
 
+static void test_native_network_optional_argument_import_compiles_without_unknown_parameter_blowup(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Native Network Optional Argument Import Compiles Without Unknown Parameter Blowup";
+    const char *source =
+            "var network = %import(\"zr.network\");\n"
+            "network.tcp.connect(\"127.0.0.1\", 1);\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Imported native optional parameters",
+                 "Testing that optional-argument native members like zr.network.tcp.connect do not treat UNKNOWN parameter counts as allocation sizes during compile");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    TEST_ASSERT_TRUE(ZrVmLibNetwork_Register(state->global));
+
+    sourceName = ZrCore_String_CreateFromNative(state, "native_network_optional_parameter_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_native_network_loopback_runtime_returns_expected_payload(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Native Network Loopback Runtime Returns Expected Payload";
+    const char *source =
+            "var network = %import(\"zr.network\");\n"
+            "var tcp = network.tcp;\n"
+            "var udp = network.udp;\n"
+            "var listener = tcp.listen(\"127.0.0.1\", 0);\n"
+            "var client = tcp.connect(\"127.0.0.1\", listener.port());\n"
+            "var server = listener.accept(3000);\n"
+            "var ping = \"ping\";\n"
+            "var pong = \"pong\";\n"
+            "var echo = \"echo\";\n"
+            "var wrotePing = client.write(ping);\n"
+            "var readPing = server.read(16, 3000);\n"
+            "var wrotePong = server.write(pong);\n"
+            "var readPong = client.read(16, 3000);\n"
+            "var socket = udp.bind(\"127.0.0.1\", 0);\n"
+            "var sentEcho = socket.send(\"127.0.0.1\", socket.port(), echo);\n"
+            "var packet = socket.receive(16, 3000);\n"
+            "server.close();\n"
+            "client.close();\n"
+            "listener.close();\n"
+            "socket.close();\n"
+            "if (wrotePing != 4 || wrotePong != 4 || sentEcho != 4) {\n"
+            "    return \"NETWORK_LOOPBACK_FAIL write\";\n"
+            "}\n"
+            "if (readPing != ping || readPong != pong) {\n"
+            "    return \"NETWORK_LOOPBACK_FAIL tcp\";\n"
+            "}\n"
+            "if (packet == null || packet.payload != echo || packet.length != 4) {\n"
+            "    return \"NETWORK_LOOPBACK_FAIL udp\";\n"
+            "}\n"
+            "return \"NETWORK_LOOPBACK_PASS \" + readPing + \" \" + readPong + \" \" + packet.payload;\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    SZrTypeValue result;
+    SZrString *resultString;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Loopback TCP/UDP runtime",
+                 "Testing that zr.network TCP and UDP loopback client/server flows return the expected payload on the current platform");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    TEST_ASSERT_TRUE(ZrVmLibNetwork_Register(state->global));
+
+    sourceName = ZrCore_String_CreateFromNative(state, "native_network_loopback_runtime_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, result.type);
+    resultString = ZR_CAST_STRING(state, result.value.object);
+    TEST_ASSERT_NOT_NULL(resultString);
+    TEST_ASSERT_EQUAL_STRING("NETWORK_LOOPBACK_PASS ping pong echo", ZrCore_String_GetNativeString(resultString));
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_native_network_loopback_project_run_returns_expected_payload(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Native Network Loopback Project Run Returns Expected Payload";
+    char projectPath[512];
+    SZrGlobalState *global = ZR_NULL;
+    SZrState *state = ZR_NULL;
+    ZrProjectRunRequest request;
+    EZrThreadStatus outerStatus;
+    SZrTypeValue result;
+    SZrString *resultString;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Project runtime loopback",
+                 "Testing that ZrLibrary_Project_Run executes the network_loopback project without escaping through an unhandled runtime exception");
+
+    snprintf(projectPath,
+             sizeof(projectPath),
+             "%s/fixtures/projects/network_loopback/network_loopback.zrp",
+             ZR_VM_TESTS_SOURCE_DIR);
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibNetwork_Register(global));
+
+    request.result = &result;
+    ZrCore_Value_ResetAsNull(request.result);
+    request.status = ZR_THREAD_STATUS_INVALID;
+    outerStatus = ZrCore_Exception_TryRun(state, run_project_body, &request);
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, outerStatus);
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, request.status);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, request.result->type);
+
+    resultString = ZR_CAST_STRING(state, request.result->value.object);
+    TEST_ASSERT_NOT_NULL(resultString);
+    TEST_ASSERT_EQUAL_STRING("NETWORK_LOOPBACK_PASS ping pong echo", ZrCore_String_GetNativeString(resultString));
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    ZR_TEST_DIVIDER();
+}
+
 int main(void) {
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();
@@ -334,5 +513,8 @@ int main(void) {
     RUN_TEST(test_class_member_nested_functions_keep_constant_indices_in_range);
     RUN_TEST(test_lambda_create_closure_targets_are_reachable_from_child_function_graph);
     RUN_TEST(test_classes_full_module_compiles_without_static_and_receiver_signature_regressions);
+    RUN_TEST(test_native_network_optional_argument_import_compiles_without_unknown_parameter_blowup);
+    RUN_TEST(test_native_network_loopback_runtime_returns_expected_payload);
+    RUN_TEST(test_native_network_loopback_project_run_returns_expected_payload);
     return UNITY_END();
 }

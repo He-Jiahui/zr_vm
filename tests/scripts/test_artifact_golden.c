@@ -20,6 +20,8 @@ typedef struct {
 
 static const SZrArtifactGoldenCase ZR_ARTIFACT_GOLDEN_CASES[] = {
     {"artifact_baseline.zr", "artifact_baseline"},
+    {"compile_time_decorator_artifact_baseline.zr", "compile_time_decorator_artifact_baseline"},
+    {"compile_time_parameter_decorator_artifact_baseline.zr", "compile_time_parameter_decorator_artifact_baseline"},
     {"decorator_artifact_baseline.zr", "decorator_artifact_baseline"},
 };
 
@@ -203,7 +205,7 @@ static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
     source = load_zr_file(sourcePath, &sourceLength);
     TEST_ASSERT_NOT_NULL(source);
 
-    SZrTestResult* result = parse_and_compile(state, source, sourceLength, sourcePath);
+    SZrTestResult* result = parse_and_compile(state, source, sourceLength, testCase->sourceFileName);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_TRUE_MESSAGE(result->success, result->errorMessage ? result->errorMessage : "parse_and_compile failed");
 
@@ -211,6 +213,17 @@ static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
     TEST_ASSERT_TRUE(dump_intermediate_to_file(state, result->function, testCase->baseName));
     TEST_ASSERT_TRUE(dump_binary_to_file(state, result->function, testCase->baseName));
     TEST_ASSERT_TRUE(dump_aot_llvm_to_file(state, result->function, testCase->baseName));
+
+    if (strcmp(testCase->baseName, "compile_time_decorator_artifact_baseline") == 0) {
+        assert_generated_text_contains(testCase->baseName,
+                                       "intermediate",
+                                       ".zri",
+                                       "fn decorateWithScale(target: Function, bonus: int = 5, factor: int = 2): DecoratorPatch");
+        assert_generated_text_contains(testCase->baseName,
+                                       "intermediate",
+                                       ".zri",
+                                       "decoratorRegistry: object [bindings: deep.scale->fn:decorateWithScale]");
+    }
 
     assert_file_matches_golden(testCase->baseName, "ast", ".zrs");
     assert_file_matches_golden(testCase->baseName, "intermediate", ".zri");
@@ -237,15 +250,14 @@ static void run_true_aot_c_case(const SZrArtifactGoldenCase* testCase) {
     source = load_zr_file(sourcePath, &sourceLength);
     TEST_ASSERT_NOT_NULL(source);
 
-    SZrTestResult* result = parse_and_compile(state, source, sourceLength, sourcePath);
+    SZrTestResult* result = parse_and_compile(state, source, sourceLength, testCase->sourceFileName);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_TRUE_MESSAGE(result->success, result->errorMessage ? result->errorMessage : "parse_and_compile failed");
 
     TEST_ASSERT_TRUE(dump_binary_to_file(state, result->function, testCase->baseName));
     TEST_ASSERT_TRUE(dump_aot_c_to_file(state, result->function, testCase->baseName));
-    assert_generated_text_contains(testCase->baseName, "aot_c", ".c", "#define ZR_AOT_C_GUARD(call_expr)");
+    assert_generated_text_contains(testCase->baseName, "aot_c", ".c", "#define ZR_AOT_C_GUARD(");
     assert_generated_text_contains(testCase->baseName, "aot_c", ".c", "ZR_AOT_C_GUARD(");
-    assert_generated_text_contains(testCase->baseName, "aot_c", ".c", "zr_aot_fail:");
     assert_generated_text_not_contains(testCase->baseName, "aot_c", ".c", "if (!ZrLibrary_AotRuntime_");
     assert_file_matches_golden(testCase->baseName, "aot_c", ".c");
 

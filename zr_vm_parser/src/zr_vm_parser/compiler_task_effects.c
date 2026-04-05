@@ -270,7 +270,7 @@ static TZrBool task_effects_primary_is_await_call(SZrAstNode *node, TZrSize *cal
     if (memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION || memberNode->data.memberExpression.computed ||
         memberNode->data.memberExpression.property == ZR_NULL ||
         memberNode->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL ||
-        !task_effects_identifier_equals(&memberNode->data.memberExpression.property->data.identifier, "await")) {
+        !task_effects_identifier_equals(&memberNode->data.memberExpression.property->data.identifier, "__awaitTask")) {
         return ZR_FALSE;
     }
 

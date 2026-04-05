@@ -5,25 +5,42 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference_ffi.c
+  - zr_vm_core/src/zr_vm_core/object.c
+  - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_library/src/zr_vm_library/native_binding_metadata.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_callback.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference_ffi.c
+  - zr_vm_core/src/zr_vm_core/object.c
+  - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_library/src/zr_vm_library/native_binding_metadata.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_callback.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
 plan_sources:
   - user: 2026-03-29 实现“zr %extern 源级 FFI 声明计划”
   - user: 2026-03-29 extern 语法用于注册外部 ffi
+  - user: 2026-04-06 struct 值类型与 native wrapper 分层方案
 tests:
   - tests/parser/test_parser.c
   - tests/parser/test_type_inference.c
+  - tests/parser/test_prototype.c
   - tests/ffi/test_ffi_module.c
   - tests/ffi/ffi_fixture.c
+  - tests/module/test_module_system.c
 doc_type: module-detail
 ---
 
@@ -124,6 +141,53 @@ extern `struct` / `enum` 同时具备“zr 类型可见性”和“FFI layout de
 
 类型推导消费的是已注册 declaration metadata，不再依赖“普通函数返回匿名 object 充当外部类型”。
 
+## Boxed Struct Value Model
+
+`%extern struct` 继续代表“值语义聚合”，但运行时实现不再尝试把不定长字段布局直接塞进固定大小的 `SZrValue`。
+
+当前模型是：
+
+- `SZrValue` 里仍只保存对象引用
+- struct 对象内部保存 descriptor 和字段存储
+- 普通可复制 struct 的赋值 / 传参会走专门的 deep-clone 路径，而不是普通 object 引用拷贝
+
+这让 `%extern struct` 能继续承担：
+
+- by-value argument / return
+- nested extern struct
+- pointer pointee overlay
+- FFI 读写布局描述
+
+同时保住 zr VM 的固定尺寸 value 布局。
+
+如果 struct 字段里带有 field-scoped `using` 或其它非可复制 ownership 语义，type inference 会把它视为 move-only：
+
+- 普通赋值不允许隐式复制
+- 普通按值传参也不允许隐式复制
+
+这条规则对 source struct 和 `%extern struct` 一致成立。
+
+## FFI Boundary Wrapper Lowering
+
+native resource 不再要求上层透出裸 `Ptr`。当前 v1 采用“wrapper object + FFI 边界 lowering”的分层模型：
+
+- `%extern struct` 仍是 layout/value type
+- native handle / pointer wrapper 仍是 class-like object
+- 自动 lowering 只发生在 `%extern` / `zr.ffi` 调用边界
+
+普通 zr 语义里保持严格分层：
+
+- 普通赋值不做 wrapper -> pointer / delegate 隐式转换
+- 普通函数调用不做 wrapper -> pointer / delegate 隐式转换
+- 容器写入也不做这类隐式转换
+
+当前已经打通的 source-level boundary 兼容包括：
+
+- extern `delegate` 参数接受 `CallbackHandle`
+- extern `pointer<T>` 参数接受 `BufferHandle` / `PointerHandle` 风格 wrapper
+
+这条兼容只在 `%extern` 函数 overload 选择和参数检查里生效；普通类型系统仍把 wrapper 当普通对象类型处理。
+
 ## Lowering To `zr.ffi`
 
 每个 `%extern` block 在 lowering 时都会生成一套模块局部隐藏缓存：
@@ -160,6 +224,8 @@ extern enum 的 descriptor 包含：
 - `members`
 
 extern delegate 的 descriptor 复用 function signature shape，但带 `kind = "function"`，供 callback trampoline 直接消费。
+
+source extern 的指针形参语法仍写成 `pointer<T>`，但 compile-time 兼容检查会把它与 `zr.ffi` helper API 产生的 `Ptr<T>` 指针家族视为同一个 FFI pointer family。
 
 ## Compile-Time Projection Boundary
 
@@ -211,6 +277,7 @@ extern delegate 的 descriptor 复用 function signature shape，但带 `kind = 
 - `tests/ffi/test_ffi_module.c`
   - source extern function 调用
   - source extern delegate callback
+  - source extern pointer parameter lowering
   - callconv decorator
   - struct pack / offset overlay
   - runtime error classification

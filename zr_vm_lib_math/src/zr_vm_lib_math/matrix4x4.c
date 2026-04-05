@@ -36,9 +36,21 @@ TZrBool ZrMath_Matrix4x4_Construct(ZrLibCallContext *context, SZrTypeValue *resu
     static const TZrChar *const kFields[] = {
             "m00","m01","m02","m03","m10","m11","m12","m13","m20","m21","m22","m23","m30","m31","m32","m33"
     };
-    TZrFloat64 values[16]; TZrSize i;
-    if (ZrLib_CallContext_ArgumentCount(context) == 0) zr_math_matrix4_identity(values);
-    else { if (ZrLib_CallContext_ArgumentCount(context) != 16) { ZrLib_CallContext_RaiseArityError(context, 0, 16); return ZR_FALSE; } for (i = 0; i < 16; i++) if (!ZrLib_CallContext_ReadFloat(context, i, &values[i])) return ZR_FALSE; }
+    TZrFloat64 values[16];
+    TZrSize i;
+
+    if (ZrLib_CallContext_ArgumentCount(context) == 0) {
+        zr_math_matrix4_identity(values);
+    } else {
+        if (ZrLib_CallContext_ArgumentCount(context) != 16) {
+            ZrLib_CallContext_RaiseArityError(context, 0, 16);
+        }
+        for (i = 0; i < 16; i++) {
+            if (!ZrLib_CallContext_ReadFloat(context, i, &values[i])) {
+                return ZR_FALSE;
+            }
+        }
+    }
     return ZrMath_ConstructFloatObject(context, result, kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 TZrBool ZrMath_Matrix4x4_Identity(ZrLibCallContext *context, SZrTypeValue *result) { TZrFloat64 m[16]; SZrObject *o; zr_math_matrix4_identity(m); o = ZrMath_MakeMatrix4x4(context->state, m); if (o == ZR_NULL) return ZR_FALSE; ZrLib_Value_SetObject(context->state, result, o, ZR_VALUE_TYPE_OBJECT); return ZR_TRUE; }

@@ -105,5 +105,38 @@ ZR_FORCE_INLINE SZrTypeValue *ZrCore_ClosureValue_GetValue(SZrClosureValue *clos
     return ZrCore_Stack_GetValue(closureValue->value.valuePointer);
 }
 
+ZR_FORCE_INLINE SZrRawObject **ZrCore_ClosureNative_GetCaptureOwners(SZrClosureNative *closure) {
+    if (closure == ZR_NULL || closure->closureValueCount == 0) {
+        return ZR_NULL;
+    }
+    return (SZrRawObject **)(closure->closureValuesExtend + closure->closureValueCount);
+}
+
+ZR_FORCE_INLINE SZrRawObject *ZrCore_ClosureNative_GetCaptureOwner(SZrClosureNative *closure, TZrSize closureIndex) {
+    SZrRawObject **captureOwners;
+
+    if (closure == ZR_NULL || closureIndex >= closure->closureValueCount) {
+        return ZR_NULL;
+    }
+
+    captureOwners = ZrCore_ClosureNative_GetCaptureOwners(closure);
+    return captureOwners != ZR_NULL ? captureOwners[closureIndex] : ZR_NULL;
+}
+
+ZR_FORCE_INLINE SZrTypeValue *ZrCore_ClosureNative_GetCaptureValue(SZrClosureNative *closure, TZrSize closureIndex) {
+    SZrRawObject *captureOwner;
+
+    if (closure == ZR_NULL || closureIndex >= closure->closureValueCount) {
+        return ZR_NULL;
+    }
+
+    captureOwner = ZrCore_ClosureNative_GetCaptureOwner(closure, closureIndex);
+    if (captureOwner != ZR_NULL && captureOwner->type == ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE) {
+        return ZrCore_ClosureValue_GetValue((SZrClosureValue *)captureOwner);
+    }
+
+    return closure->closureValuesExtend[closureIndex];
+}
+
 
 #endif // ZR_VM_CORE_CLOSURE_H

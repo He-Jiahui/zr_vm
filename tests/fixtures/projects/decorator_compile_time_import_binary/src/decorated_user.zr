@@ -1,0 +1,19 @@
+%module "decorated_user";
+
+var provider = %import("provider");
+
+%compileTime markFunction(target: %type Function, bonus: int = 0): DecoratorPatch {
+    return { metadata: { instrumented: bonus } };
+}
+
+#markFunction(bonus: compute(seed: 10, factor: 3))#
+pub decoratedBonusDefault(): int {
+    var meta = %type(decoratedBonusDefault).metadata;
+    return meta.instrumented;
+}
+
+#markFunction(bonus: compute(10, bonus: 7))#
+pub decoratedBonusNamed(): int {
+    var meta = %type(decoratedBonusNamed).metadata;
+    return meta.instrumented;
+}

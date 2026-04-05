@@ -120,6 +120,8 @@ typedef struct ZrLibFunctionDescriptor {
     const TZrChar *documentation;
     const ZrLibParameterDescriptor *parameters;
     TZrSize parameterCount;
+    const ZrLibGenericParameterDescriptor *genericParameters;
+    TZrSize genericParameterCount;
 } ZrLibFunctionDescriptor;
 
 typedef struct ZrLibMethodDescriptor {
@@ -133,6 +135,8 @@ typedef struct ZrLibMethodDescriptor {
     const ZrLibParameterDescriptor *parameters;
     TZrSize parameterCount;
     TZrUInt32 contractRole;
+    const ZrLibGenericParameterDescriptor *genericParameters;
+    TZrSize genericParameterCount;
 } ZrLibMethodDescriptor;
 
 typedef struct ZrLibMetaMethodDescriptor {
@@ -144,6 +148,8 @@ typedef struct ZrLibMetaMethodDescriptor {
     const TZrChar *documentation;
     const ZrLibParameterDescriptor *parameters;
     TZrSize parameterCount;
+    const ZrLibGenericParameterDescriptor *genericParameters;
+    TZrSize genericParameterCount;
 } ZrLibMetaMethodDescriptor;
 
 typedef struct ZrLibConstantDescriptor {
@@ -162,6 +168,10 @@ typedef struct ZrLibModuleLinkDescriptor {
     const TZrChar *moduleName;
     const TZrChar *documentation;
 } ZrLibModuleLinkDescriptor;
+
+typedef TZrBool (*FZrLibModuleMaterializeCallback)(SZrState *state,
+                                                   struct SZrObjectModule *module,
+                                                   const struct ZrLibModuleDescriptor *descriptor);
 
 typedef struct ZrLibTypeDescriptor {
     const TZrChar *name;
@@ -185,6 +195,11 @@ typedef struct ZrLibTypeDescriptor {
     const ZrLibGenericParameterDescriptor *genericParameters;
     TZrSize genericParameterCount;
     TZrUInt64 protocolMask;
+    const TZrChar *ffiLoweringKind;
+    const TZrChar *ffiViewTypeName;
+    const TZrChar *ffiUnderlyingTypeName;
+    const TZrChar *ffiOwnerMode;
+    const TZrChar *ffiReleaseHook;
 } ZrLibTypeDescriptor;
 
 #define ZR_LIB_FIELD_DESCRIPTOR_INIT(NAME, TYPE_NAME, DOCUMENTATION)                                                  \
@@ -244,7 +259,12 @@ typedef struct ZrLibTypeDescriptor {
      (CONSTRUCTOR_SIGNATURE),                                                                                         \
      (GENERIC_PARAMETERS),                                                                                            \
      (GENERIC_PARAMETER_COUNT),                                                                                       \
-     (TZrUInt64)0}
+     (TZrUInt64)0,                                                                                                    \
+     ZR_NULL,                                                                                                         \
+     ZR_NULL,                                                                                                         \
+     ZR_NULL,                                                                                                         \
+     ZR_NULL,                                                                                                         \
+     ZR_NULL}
 
 #define ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT(NAME, PROTOTYPE_TYPE, FIELDS, FIELD_COUNT, METHODS, METHOD_COUNT,       \
                                              META_METHODS, META_METHOD_COUNT, DOCUMENTATION, EXTENDS_TYPE_NAME,       \
@@ -272,7 +292,46 @@ typedef struct ZrLibTypeDescriptor {
      (CONSTRUCTOR_SIGNATURE),                                                                                         \
      (GENERIC_PARAMETERS),                                                                                            \
      (GENERIC_PARAMETER_COUNT),                                                                                       \
-     (PROTOCOL_MASK)}
+     (PROTOCOL_MASK),                                                                                                 \
+     ZR_NULL,                                                                                                         \
+     ZR_NULL,                                                                                                         \
+     ZR_NULL,                                                                                                         \
+     ZR_NULL,                                                                                                         \
+     ZR_NULL}
+
+#define ZR_LIB_TYPE_DESCRIPTOR_FFI_INIT(NAME, PROTOTYPE_TYPE, FIELDS, FIELD_COUNT, METHODS, METHOD_COUNT,            \
+                                        META_METHODS, META_METHOD_COUNT, DOCUMENTATION, EXTENDS_TYPE_NAME,           \
+                                        IMPLEMENTS_TYPE_NAMES, IMPLEMENTS_TYPE_COUNT, ENUM_MEMBERS,                  \
+                                        ENUM_MEMBER_COUNT, ENUM_VALUE_TYPE_NAME, ALLOW_VALUE_CONSTRUCTION,           \
+                                        ALLOW_BOXED_CONSTRUCTION, CONSTRUCTOR_SIGNATURE, GENERIC_PARAMETERS,         \
+                                        GENERIC_PARAMETER_COUNT, FFI_LOWERING_KIND, FFI_VIEW_TYPE_NAME,             \
+                                        FFI_UNDERLYING_TYPE_NAME, FFI_OWNER_MODE, FFI_RELEASE_HOOK)                 \
+    {(NAME),                                                                                                          \
+     (PROTOTYPE_TYPE),                                                                                                \
+     (FIELDS),                                                                                                        \
+     (FIELD_COUNT),                                                                                                   \
+     (METHODS),                                                                                                       \
+     (METHOD_COUNT),                                                                                                  \
+     (META_METHODS),                                                                                                  \
+     (META_METHOD_COUNT),                                                                                             \
+     (DOCUMENTATION),                                                                                                 \
+     (EXTENDS_TYPE_NAME),                                                                                             \
+     (IMPLEMENTS_TYPE_NAMES),                                                                                         \
+     (IMPLEMENTS_TYPE_COUNT),                                                                                         \
+     (ENUM_MEMBERS),                                                                                                  \
+     (ENUM_MEMBER_COUNT),                                                                                             \
+     (ENUM_VALUE_TYPE_NAME),                                                                                          \
+     (ALLOW_VALUE_CONSTRUCTION),                                                                                      \
+     (ALLOW_BOXED_CONSTRUCTION),                                                                                      \
+     (CONSTRUCTOR_SIGNATURE),                                                                                         \
+     (GENERIC_PARAMETERS),                                                                                            \
+     (GENERIC_PARAMETER_COUNT),                                                                                       \
+     (TZrUInt64)0,                                                                                                    \
+     (FFI_LOWERING_KIND),                                                                                             \
+     (FFI_VIEW_TYPE_NAME),                                                                                            \
+     (FFI_UNDERLYING_TYPE_NAME),                                                                                      \
+     (FFI_OWNER_MODE),                                                                                                \
+     (FFI_RELEASE_HOOK)}
 
 typedef struct ZrLibModuleDescriptor {
     TZrUInt32 abiVersion;
@@ -292,6 +351,7 @@ typedef struct ZrLibModuleDescriptor {
     const TZrChar *moduleVersion;
     TZrUInt32 minRuntimeAbi;
     TZrUInt64 requiredCapabilities;
+    FZrLibModuleMaterializeCallback onMaterialize;
 } ZrLibModuleDescriptor;
 
 ZR_LIBRARY_API TZrSize ZrLib_CallContext_ArgumentCount(const ZrLibCallContext *context);

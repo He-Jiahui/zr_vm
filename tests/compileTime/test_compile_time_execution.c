@@ -1156,6 +1156,71 @@ static void test_compile_time_import_deep_member_call_projection(void) {
     TEST_DIVIDER();
 }
 
+static void test_compile_time_import_runtime_callable_named_default_projection(void) {
+    static const SZrCompileTimeImportFixture fixtures[] = {
+            {
+                    "helper",
+                    "%module \"helper\";\n"
+                    "pub compute(seed: int, bonus: int = 5, factor: int = 2): int {\n"
+                    "    return seed * factor + bonus;\n"
+                    "}\n",
+                    ZR_NULL,
+                    0,
+                    ZR_FALSE,
+            },
+    };
+
+    SZrTestTimer timer;
+    const TZrChar* testSummary = "Compile-Time Execution - Import Runtime Callable Named Default Projection";
+    const SZrCompileTimeImportFixture* previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrParser_ToGlobalState_Register(state);
+    gCompileTimeImportFixtures = fixtures;
+    gCompileTimeImportFixtureCount = sizeof(fixtures) / sizeof(fixtures[0]);
+    state->global->sourceLoader = compile_time_import_source_loader;
+
+    TEST_INFO("Compile-time import runtime callable named/default projection",
+              "Testing %import(\"helper\").compute(seed: 10, factor: 3) uses named/default args during compile-time projection");
+
+    const TZrChar* source =
+            "%module \"test\";\n"
+            "var runtimeValue = %import(\"helper\").compute(seed: 10, factor: 3) + %import(\"helper\").compute(10, bonus: 7);\n"
+            "%test(\"test\") {\n"
+            "    return runtimeValue;\n"
+            "}\n";
+
+    SZrString* sourceName =
+            ZrCore_String_Create(state, "test_compile_time_import_runtime_callable_named_default_projection.zr", 69);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(ast);
+
+    SZrCompileResult compileResult;
+    TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+    reset_loaded_module_registry(state);
+    state->global->sourceLoader = ZR_NULL;
+    TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
+
+    ZrParser_CompileResult_Free(state, &compileResult);
+    ZrParser_Ast_Free(state, ast);
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 static void test_compile_time_binary_import_function_alias_projection(void) {
     static const TZrChar* providerSource =
             "%module \"provider\";\n"
@@ -1254,6 +1319,625 @@ static void test_compile_time_binary_import_function_alias_projection(void) {
         free(binaryBytes);
     }
     remove(binaryPath);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_binary_import_named_and_default_argument_projection(void) {
+    static const TZrChar* providerSource =
+            "%module \"provider\";\n"
+            "%compileTime var BASE = 5;\n"
+            "%compileTime compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
+            "    return seed * factor + bonus;\n"
+            "}\n";
+
+    SZrTestTimer timer;
+    const TZrChar* testSummary = "Compile-Time Execution - Binary Import Named Default Projection";
+    const SZrCompileTimeImportFixture* previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+    const TZrChar* binaryPath = "test_compile_time_import_provider_named_default_binary.zro";
+    TZrByte* binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrCompileTimeImportFixture fixtures[1];
+        SZrState* state = create_test_state();
+        const TZrChar* source =
+                "%module \"test\";\n"
+                "var provider = %import(\"provider\");\n"
+                "var runtimeValue = compute(seed: 10, factor: 3) + compute(10, bonus: 7);\n"
+                "%test(\"test\") {\n"
+                "    return runtimeValue;\n"
+                "}\n";
+        SZrString* sourceName;
+        SZrAstNode* ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+        ZrParser_ToGlobalState_Register(state);
+
+        binaryBytes = build_compile_time_import_binary_fixture(state, providerSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        fixtures[0].path = "provider";
+        fixtures[0].source = ZR_NULL;
+        fixtures[0].bytes = binaryBytes;
+        fixtures[0].length = binaryLength;
+        fixtures[0].isBinary = ZR_TRUE;
+
+        gCompileTimeImportFixtures = fixtures;
+        gCompileTimeImportFixtureCount = 1;
+        state->global->sourceLoader = compile_time_import_source_loader;
+
+        sourceName = ZrCore_String_Create(state,
+                                          "test_compile_time_binary_import_named_default_argument_projection.zr",
+                                          67);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        reset_loaded_module_registry(state);
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+    if (binaryBytes != ZR_NULL) {
+        free(binaryBytes);
+    }
+    remove(binaryPath);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_binary_import_runtime_callable_named_default_projection(void) {
+    static const TZrChar* providerSource =
+            "%module \"provider\";\n"
+            "pub compute(seed: int, bonus: int = 5, factor: int = 2): int {\n"
+            "    return seed * factor + bonus;\n"
+            "}\n";
+
+    SZrTestTimer timer;
+    const TZrChar* testSummary = "Compile-Time Execution - Binary Import Runtime Callable Named Default Projection";
+    const SZrCompileTimeImportFixture* previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+    const TZrChar* binaryPath = "test_compile_time_import_runtime_callable_named_default_binary.zro";
+    TZrByte* binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrCompileTimeImportFixture fixtures[1];
+        SZrState* state = create_test_state();
+        const TZrChar* source =
+                "%module \"test\";\n"
+                "var provider = %import(\"provider\");\n"
+                "var runtimeValue = provider.compute(seed: 10, factor: 3) + provider.compute(10, bonus: 7);\n"
+                "%test(\"test\") {\n"
+                "    return runtimeValue;\n"
+                "}\n";
+        SZrString* sourceName;
+        SZrAstNode* ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+        ZrParser_ToGlobalState_Register(state);
+
+        binaryBytes = build_compile_time_import_binary_fixture(state, providerSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        fixtures[0].path = "provider";
+        fixtures[0].source = ZR_NULL;
+        fixtures[0].bytes = binaryBytes;
+        fixtures[0].length = binaryLength;
+        fixtures[0].isBinary = ZR_TRUE;
+
+        gCompileTimeImportFixtures = fixtures;
+        gCompileTimeImportFixtureCount = 1;
+        state->global->sourceLoader = compile_time_import_source_loader;
+
+        sourceName = ZrCore_String_Create(state,
+                                          "test_compile_time_binary_import_runtime_callable_named_default_projection.zr",
+                                          76);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        reset_loaded_module_registry(state);
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+    if (binaryBytes != ZR_NULL) {
+        free(binaryBytes);
+    }
+    remove(binaryPath);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_binary_import_named_default_arguments_inside_function_decorator(void) {
+    static const TZrChar* providerSource =
+            "%module \"provider\";\n"
+            "%compileTime var BASE = 5;\n"
+            "%compileTime compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
+            "    return seed * factor + bonus;\n"
+            "}\n";
+
+    SZrTestTimer timer;
+    const TZrChar* testSummary = "Compile-Time Execution - Binary Import Named Default Arguments Inside Function Decorator";
+    const SZrCompileTimeImportFixture* previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+    const TZrChar* binaryPath = "test_compile_time_import_provider_decorator_binary.zro";
+    TZrByte* binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrCompileTimeImportFixture fixtures[1];
+        SZrState* state = create_test_state();
+        const TZrChar* source =
+                "%module \"test\";\n"
+                "var provider = %import(\"provider\");\n"
+                "%compileTime markFunction(target: %type Function, bonus: int = 0): DecoratorPatch {\n"
+                "    return { metadata: { instrumented: bonus } };\n"
+                "}\n"
+                "#markFunction(bonus: compute(seed: 10, factor: 3))#\n"
+                "pub decoratedBonusDefault(): int {\n"
+                "    var meta = %type(decoratedBonusDefault).metadata;\n"
+                "    return meta.instrumented;\n"
+                "}\n"
+                "#markFunction(bonus: compute(10, bonus: 7))#\n"
+                "pub decoratedBonusNamed(): int {\n"
+                "    var meta = %type(decoratedBonusNamed).metadata;\n"
+                "    return meta.instrumented;\n"
+                "}\n"
+                "%test(\"test\") {\n"
+                "    return decoratedBonusDefault() + decoratedBonusNamed();\n"
+                "}\n";
+        SZrString* sourceName;
+        SZrAstNode* ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+        ZrParser_ToGlobalState_Register(state);
+
+        binaryBytes = build_compile_time_import_binary_fixture(state, providerSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        fixtures[0].path = "provider";
+        fixtures[0].source = ZR_NULL;
+        fixtures[0].bytes = binaryBytes;
+        fixtures[0].length = binaryLength;
+        fixtures[0].isBinary = ZR_TRUE;
+
+        gCompileTimeImportFixtures = fixtures;
+        gCompileTimeImportFixtureCount = 1;
+        state->global->sourceLoader = compile_time_import_source_loader;
+
+        sourceName = ZrCore_String_Create(state,
+                                          "test_compile_time_binary_import_function_decorator_projection.zr",
+                                          65);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        reset_loaded_module_registry(state);
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+    if (binaryBytes != ZR_NULL) {
+        free(binaryBytes);
+    }
+    remove(binaryPath);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_binary_import_named_default_arguments_inside_imported_module_decorator(void) {
+    static const TZrChar* providerSource =
+            "%module \"provider\";\n"
+            "%compileTime var BASE = 5;\n"
+            "%compileTime compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
+            "    return seed * factor + bonus;\n"
+            "}\n";
+    static const TZrChar* decoratedUserSource =
+            "%module \"decorated_user\";\n"
+            "var provider = %import(\"provider\");\n"
+            "%compileTime markFunction(target: %type Function, bonus: int = 0): DecoratorPatch {\n"
+            "    return { metadata: { instrumented: bonus } };\n"
+            "}\n"
+            "#markFunction(bonus: compute(seed: 10, factor: 3))#\n"
+            "pub decoratedBonusDefault(): int {\n"
+            "    var meta = %type(decoratedBonusDefault).metadata;\n"
+            "    return meta.instrumented;\n"
+            "}\n"
+            "#markFunction(bonus: compute(10, bonus: 7))#\n"
+            "pub decoratedBonusNamed(): int {\n"
+            "    var meta = %type(decoratedBonusNamed).metadata;\n"
+            "    return meta.instrumented;\n"
+            "}\n";
+
+    SZrTestTimer timer;
+    const TZrChar* testSummary =
+            "Compile-Time Execution - Binary Import Named Default Arguments Inside Imported Module Decorator";
+    const SZrCompileTimeImportFixture* previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+    const TZrChar* binaryPath = "test_compile_time_import_provider_imported_decorator_binary.zro";
+    TZrByte* binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrCompileTimeImportFixture fixtures[2];
+        SZrState* state = create_test_state();
+        const TZrChar* source =
+                "%module \"main\";\n"
+                "var decorated = %import(\"decorated_user\");\n"
+                "%test(\"test\") {\n"
+                "    return decorated.decoratedBonusDefault() + decorated.decoratedBonusNamed();\n"
+                "}\n";
+        SZrString* sourceName;
+        SZrAstNode* ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+        ZrParser_ToGlobalState_Register(state);
+
+        binaryBytes = build_compile_time_import_binary_fixture(state, providerSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        fixtures[0].path = "provider";
+        fixtures[0].source = ZR_NULL;
+        fixtures[0].bytes = binaryBytes;
+        fixtures[0].length = binaryLength;
+        fixtures[0].isBinary = ZR_TRUE;
+        fixtures[1].path = "decorated_user";
+        fixtures[1].source = decoratedUserSource;
+        fixtures[1].bytes = ZR_NULL;
+        fixtures[1].length = 0;
+        fixtures[1].isBinary = ZR_FALSE;
+
+        gCompileTimeImportFixtures = fixtures;
+        gCompileTimeImportFixtureCount = 2;
+        state->global->sourceLoader = compile_time_import_source_loader;
+
+        sourceName = ZrCore_String_Create(state,
+                                          "test_compile_time_binary_import_imported_module_function_decorator_projection.zr",
+                                          81);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        reset_loaded_module_registry(state);
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+    if (binaryBytes != ZR_NULL) {
+        free(binaryBytes);
+    }
+    remove(binaryPath);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_imported_decorator_member_chain(void) {
+    static const SZrCompileTimeImportFixture fixtures[] = {
+            {
+                    "decorators",
+                    "%module \"decorators\";\n"
+                    "%compileTime class Serializable {\n"
+                    "    @decorate(target: %type Class): DecoratorPatch {\n"
+                    "        return { metadata: { serializable: true } };\n"
+                    "    }\n"
+                    "}\n"
+                    "%compileTime markFunction(target: %type Function, bonus: int = 16): DecoratorPatch {\n"
+                    "    return { metadata: { instrumented: bonus } };\n"
+                    "}\n",
+                    ZR_NULL,
+                    0,
+                    ZR_FALSE,
+            },
+    };
+
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Compile-Time Execution - Imported Decorator Member Chain";
+    const SZrCompileTimeImportFixture *previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "%module \"test\";\n"
+                "var decorators = %import(\"decorators\");\n"
+                "#decorators.markFunction(bonus: 28)#\n"
+                "pub decorated(): int {\n"
+                "    var info = %type(decorated);\n"
+                "    return info.metadata.instrumented;\n"
+                "}\n"
+                "%test(\"test\") {\n"
+                "    return decorated();\n"
+                "}\n";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        ZrParser_ToGlobalState_Register(state);
+        gCompileTimeImportFixtures = fixtures;
+        gCompileTimeImportFixtureCount = sizeof(fixtures) / sizeof(fixtures[0]);
+        state->global->sourceLoader = compile_time_import_source_loader;
+
+        sourceName = ZrCore_String_Create(state, "test_compile_time_imported_decorator_member_chain.zr", 54);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        reset_loaded_module_registry(state);
+        state->global->sourceLoader = ZR_NULL;
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 28, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_imported_decorator_deep_member_chain(void) {
+    static const SZrCompileTimeImportFixture fixtures[] = {
+            {
+                    "decorators",
+                    "%module \"decorators\";\n"
+                    "%compileTime markFunction(target: %type Function, bonus: int = 16): DecoratorPatch {\n"
+                    "    return { metadata: { instrumented: bonus } };\n"
+                    "}\n"
+                    "%compileTime var registry = {\n"
+                    "    nested: {\n"
+                    "        mark: markFunction\n"
+                    "    }\n"
+                    "};\n",
+                    ZR_NULL,
+                    0,
+                    ZR_FALSE,
+            },
+    };
+
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Compile-Time Execution - Imported Decorator Deep Member Chain";
+    const SZrCompileTimeImportFixture *previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "%module \"test\";\n"
+                "var decorators = %import(\"decorators\");\n"
+                "#decorators.registry.nested.mark(bonus: 33)#\n"
+                "pub decorated(): int {\n"
+                "    var info = %type(decorated);\n"
+                "    return info.metadata.instrumented;\n"
+                "}\n"
+                "%test(\"test\") {\n"
+                "    return decorated();\n"
+                "}\n";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        ZrParser_ToGlobalState_Register(state);
+        gCompileTimeImportFixtures = fixtures;
+        gCompileTimeImportFixtureCount = sizeof(fixtures) / sizeof(fixtures[0]);
+        state->global->sourceLoader = compile_time_import_source_loader;
+
+        sourceName =
+                ZrCore_String_Create(state, "test_compile_time_imported_decorator_deep_member_chain.zr", 59);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        reset_loaded_module_registry(state);
+        state->global->sourceLoader = ZR_NULL;
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 33, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_binary_imported_decorator_deep_member_chain(void) {
+    static const TZrChar *decoratorSource =
+            "%module \"decorators\";\n"
+            "%compileTime markFunction(target: %type Function, bonus: int = 16): DecoratorPatch {\n"
+            "    return { metadata: { instrumented: bonus } };\n"
+            "}\n"
+            "%compileTime var registry = {\n"
+            "    nested: {\n"
+            "        mark: markFunction\n"
+            "    }\n"
+            "};\n";
+
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Compile-Time Execution - Binary Imported Decorator Deep Member Chain";
+    const SZrCompileTimeImportFixture *previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+    const TZrChar *binaryPath = "test_compile_time_imported_decorator_deep_member_chain.zro";
+    TZrByte *binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrCompileTimeImportFixture fixtures[1];
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "%module \"test\";\n"
+                "var decorators = %import(\"decorators\");\n"
+                "#decorators.registry.nested.mark(bonus: 41)#\n"
+                "pub decorated(): int {\n"
+                "    var info = %type(decorated);\n"
+                "    return info.metadata.instrumented;\n"
+                "}\n"
+                "%test(\"test\") {\n"
+                "    return decorated();\n"
+                "}\n";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+        ZrParser_ToGlobalState_Register(state);
+
+        binaryBytes = build_compile_time_import_binary_fixture(state, decoratorSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        fixtures[0].path = "decorators";
+        fixtures[0].source = ZR_NULL;
+        fixtures[0].bytes = binaryBytes;
+        fixtures[0].length = binaryLength;
+        fixtures[0].isBinary = ZR_TRUE;
+
+        gCompileTimeImportFixtures = fixtures;
+        gCompileTimeImportFixtureCount = 1;
+        state->global->sourceLoader = compile_time_import_source_loader;
+
+        sourceName = ZrCore_String_Create(state,
+                                          "test_compile_time_binary_imported_decorator_deep_member_chain.zr",
+                                          66);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        reset_loaded_module_registry(state);
+        state->global->sourceLoader = ZR_NULL;
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 41, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+    if (binaryBytes != ZR_NULL) {
+        free(binaryBytes);
+    }
+    remove(binaryPath);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_object_decorator_member_chain(void) {
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Compile-Time Execution - Object Decorator Member Chain";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "%module \"test\";\n"
+                "%compileTime markFunction(target: %type Function, bonus: int = 11): DecoratorPatch {\n"
+                "    return { metadata: { instrumented: bonus } };\n"
+                "}\n"
+                "%compileTime var decorators = { markFunction: markFunction };\n"
+                "#decorators.markFunction(bonus: 17)#\n"
+                "pub decorated(): int {\n"
+                "    var info = %type(decorated);\n"
+                "    return info.metadata.instrumented;\n"
+                "}\n"
+                "%test(\"test\") {\n"
+                "    return decorated();\n"
+                "}\n";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        sourceName = ZrCore_String_Create(state, "test_compile_time_object_decorator_member_chain.zr", 52);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 17, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -1474,9 +2158,18 @@ int main(void) {
     RUN_TEST(test_compile_time_duplicate_declaration_override);
     RUN_TEST(test_compile_time_member_call_projection);
     RUN_TEST(test_compile_time_import_member_call_projection);
+    RUN_TEST(test_compile_time_import_runtime_callable_named_default_projection);
     RUN_TEST(test_compile_time_projection_rejects_function_ref_leak);
     RUN_TEST(test_compile_time_import_deep_member_call_projection);
     RUN_TEST(test_compile_time_binary_import_function_alias_projection);
+    RUN_TEST(test_compile_time_binary_import_named_and_default_argument_projection);
+    RUN_TEST(test_compile_time_binary_import_runtime_callable_named_default_projection);
+    RUN_TEST(test_compile_time_binary_import_named_default_arguments_inside_function_decorator);
+    RUN_TEST(test_compile_time_binary_import_named_default_arguments_inside_imported_module_decorator);
+    RUN_TEST(test_compile_time_imported_decorator_member_chain);
+    RUN_TEST(test_compile_time_imported_decorator_deep_member_chain);
+    RUN_TEST(test_compile_time_binary_imported_decorator_deep_member_chain);
+    RUN_TEST(test_compile_time_object_decorator_member_chain);
     RUN_TEST(test_compile_time_object_member_assignment_projects_mutation);
     RUN_TEST(test_compile_time_class_decorator_projects_metadata_to_runtime_reflection);
     RUN_TEST(test_compile_time_function_decorator_projects_metadata_to_runtime_reflection);

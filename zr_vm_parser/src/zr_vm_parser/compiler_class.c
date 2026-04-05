@@ -6,6 +6,14 @@
 #include "compile_expression_internal.h"
 #include "compile_time_executor_internal.h"
 
+static const TZrChar *compiler_class_builtin_ffi_wrapper_leaf_names[] = {
+        "lowering",
+        "viewType",
+        "underlying",
+        "ownerMode",
+        "releaseHook",
+};
+
 static SZrTypeMemberInfo *compiler_class_find_declared_member(SZrTypePrototypeInfo *info, SZrString *memberName) {
     if (info == ZR_NULL || memberName == ZR_NULL) {
         return ZR_NULL;
@@ -20,6 +28,285 @@ static SZrTypeMemberInfo *compiler_class_find_declared_member(SZrTypePrototypeIn
     }
 
     return ZR_NULL;
+}
+
+static const TZrChar *compiler_class_builtin_ffi_wrapper_leaf_name(SZrAstNode *decoratorNode,
+                                                                   TZrBool *outHasCall) {
+    TZrSize index;
+
+    if (outHasCall != ZR_NULL) {
+        *outHasCall = ZR_FALSE;
+    }
+
+    for (index = 0; index < ZR_ARRAY_COUNT(compiler_class_builtin_ffi_wrapper_leaf_names); index++) {
+        const TZrChar *leafName = compiler_class_builtin_ffi_wrapper_leaf_names[index];
+        if (extern_compiler_match_decorator_path(decoratorNode, leafName, ZR_TRUE, ZR_NULL)) {
+            if (outHasCall != ZR_NULL) {
+                *outHasCall = ZR_TRUE;
+            }
+            return leafName;
+        }
+        if (extern_compiler_match_decorator_path(decoratorNode, leafName, ZR_FALSE, ZR_NULL)) {
+            return leafName;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool compiler_class_decorator_is_builtin_ffi_wrapper(SZrAstNode *decoratorNode) {
+    return compiler_class_builtin_ffi_wrapper_leaf_name(decoratorNode, ZR_NULL) != ZR_NULL;
+}
+
+static TZrBool compiler_class_extract_builtin_ffi_string_decorator(SZrCompilerState *cs,
+                                                                   SZrAstNodeArray *decorators,
+                                                                   const TZrChar *leafName,
+                                                                   SZrString **outValue,
+                                                                   TZrBool *outPresent,
+                                                                   SZrFileRange location) {
+    SZrFunctionCall *call = ZR_NULL;
+    SZrAstNode *decoratorNode;
+
+    if (outValue != ZR_NULL) {
+        *outValue = ZR_NULL;
+    }
+    if (outPresent != ZR_NULL) {
+        *outPresent = ZR_FALSE;
+    }
+
+    if (cs == ZR_NULL || leafName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    decoratorNode = extern_compiler_decorators_find_call(decorators, leafName, &call);
+    if (decoratorNode == ZR_NULL) {
+        for (TZrSize index = 0; decorators != ZR_NULL && index < decorators->count; index++) {
+            TZrBool hasCall = ZR_FALSE;
+            const TZrChar *builtinLeafName = compiler_class_builtin_ffi_wrapper_leaf_name(decorators->nodes[index],
+                                                                                           &hasCall);
+            if (builtinLeafName != ZR_NULL && strcmp(builtinLeafName, leafName) == 0 && !hasCall) {
+                ZrParser_Compiler_Error(cs, "zr.ffi class wrapper decorators require a single string argument", location);
+                return ZR_FALSE;
+            }
+        }
+        return ZR_TRUE;
+    }
+
+    if (outPresent != ZR_NULL) {
+        *outPresent = ZR_TRUE;
+    }
+    if (!extern_compiler_extract_string_argument(call, outValue) || outValue == ZR_NULL || *outValue == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "zr.ffi class wrapper decorators require a single string argument", location);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static SZrObject *compiler_class_ensure_type_metadata_object(SZrCompilerState *cs, SZrTypePrototypeInfo *info) {
+    SZrObject *metadataObject;
+
+    if (cs == ZR_NULL || info == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (info->hasDecoratorMetadata && info->decoratorMetadataValue.type == ZR_VALUE_TYPE_OBJECT &&
+        info->decoratorMetadataValue.value.object != ZR_NULL) {
+        return ZR_CAST_OBJECT(cs->state, info->decoratorMetadataValue.value.object);
+    }
+
+    metadataObject = extern_compiler_new_object_constant(cs);
+    if (metadataObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &info->decoratorMetadataValue, ZR_CAST_RAW_OBJECT_AS_SUPER(metadataObject));
+    info->decoratorMetadataValue.type = ZR_VALUE_TYPE_OBJECT;
+    info->hasDecoratorMetadata = ZR_TRUE;
+    return metadataObject;
+}
+
+static TZrBool compiler_class_set_type_metadata_string_field(SZrCompilerState *cs,
+                                                             SZrTypePrototypeInfo *info,
+                                                             const TZrChar *fieldName,
+                                                             SZrString *fieldValue) {
+    SZrTypeValue value;
+    SZrObject *metadataObject;
+
+    if (cs == ZR_NULL || info == ZR_NULL || fieldName == ZR_NULL || fieldValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    metadataObject = compiler_class_ensure_type_metadata_object(cs, info);
+    if (metadataObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldValue));
+    value.type = ZR_VALUE_TYPE_STRING;
+    return extern_compiler_set_object_field(cs, metadataObject, fieldName, &value);
+}
+
+static TZrBool compiler_class_append_builtin_decorator_name(SZrCompilerState *cs,
+                                                            SZrTypePrototypeInfo *info,
+                                                            const TZrChar *qualifiedName) {
+    SZrTypeDecoratorInfo decoratorInfo;
+    SZrString *decoratorName;
+
+    if (cs == ZR_NULL || info == ZR_NULL || qualifiedName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    decoratorName = ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)qualifiedName);
+    if (decoratorName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    decoratorInfo.name = decoratorName;
+    ZrCore_Array_Push(cs->state, &info->decorators, &decoratorInfo);
+    return ZR_TRUE;
+}
+
+static TZrBool compiler_class_apply_builtin_ffi_wrapper_decorators(SZrCompilerState *cs,
+                                                                   SZrAstNodeArray *decorators,
+                                                                   SZrTypePrototypeInfo *info,
+                                                                   SZrFileRange location) {
+    SZrString *loweringValue = ZR_NULL;
+    SZrString *viewTypeValue = ZR_NULL;
+    SZrString *underlyingValue = ZR_NULL;
+    SZrString *ownerModeValue = ZR_NULL;
+    SZrString *releaseHookValue = ZR_NULL;
+    TZrBool hasLowering = ZR_FALSE;
+    TZrBool hasViewType = ZR_FALSE;
+    TZrBool hasUnderlying = ZR_FALSE;
+    TZrBool hasOwnerMode = ZR_FALSE;
+    TZrBool hasReleaseHook = ZR_FALSE;
+
+    if (cs == ZR_NULL || info == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (decorators == ZR_NULL || decorators->count == 0) {
+        return ZR_TRUE;
+    }
+
+    if (!compiler_class_extract_builtin_ffi_string_decorator(
+                cs, decorators, "lowering", &loweringValue, &hasLowering, location) ||
+        !compiler_class_extract_builtin_ffi_string_decorator(
+                cs, decorators, "viewType", &viewTypeValue, &hasViewType, location) ||
+        !compiler_class_extract_builtin_ffi_string_decorator(
+                cs, decorators, "underlying", &underlyingValue, &hasUnderlying, location) ||
+        !compiler_class_extract_builtin_ffi_string_decorator(
+                cs, decorators, "ownerMode", &ownerModeValue, &hasOwnerMode, location) ||
+        !compiler_class_extract_builtin_ffi_string_decorator(
+                cs, decorators, "releaseHook", &releaseHookValue, &hasReleaseHook, location)) {
+        return ZR_FALSE;
+    }
+
+    if (!hasLowering && !hasViewType && !hasUnderlying && !hasOwnerMode && !hasReleaseHook) {
+        return ZR_TRUE;
+    }
+
+    if (hasLowering &&
+        !extern_compiler_string_equals(loweringValue, "value") &&
+        !extern_compiler_string_equals(loweringValue, "pointer") &&
+        !extern_compiler_string_equals(loweringValue, "handle_id")) {
+        ZrParser_Compiler_Error(cs,
+                                "zr.ffi.lowering on class wrappers requires one of: value, pointer, handle_id",
+                                location);
+        return ZR_FALSE;
+    }
+
+    if (hasOwnerMode &&
+        !extern_compiler_string_equals(ownerModeValue, "borrowed") &&
+        !extern_compiler_string_equals(ownerModeValue, "owned")) {
+        ZrParser_Compiler_Error(cs,
+                                "zr.ffi.ownerMode on class wrappers requires one of: borrowed, owned",
+                                location);
+        return ZR_FALSE;
+    }
+
+    if (hasUnderlying &&
+        (!hasLowering || !extern_compiler_string_equals(loweringValue, "handle_id"))) {
+        ZrParser_Compiler_Error(cs,
+                                "zr.ffi.underlying on class wrappers currently requires zr.ffi.lowering(\"handle_id\")",
+                                location);
+        return ZR_FALSE;
+    }
+
+    if (hasLowering && extern_compiler_string_equals(loweringValue, "handle_id") && !hasUnderlying) {
+        ZrParser_Compiler_Error(cs,
+                                "zr.ffi.lowering(\"handle_id\") on class wrappers requires zr.ffi.underlying(...)",
+                                location);
+        return ZR_FALSE;
+    }
+
+    if (hasLowering &&
+        (!compiler_class_set_type_metadata_string_field(cs, info, "ffiLoweringKind", loweringValue) ||
+         !compiler_class_append_builtin_decorator_name(cs, info, "zr.ffi.lowering"))) {
+        return ZR_FALSE;
+    }
+    if (hasViewType &&
+        (!compiler_class_set_type_metadata_string_field(cs, info, "ffiViewTypeName", viewTypeValue) ||
+         !compiler_class_append_builtin_decorator_name(cs, info, "zr.ffi.viewType"))) {
+        return ZR_FALSE;
+    }
+    if (hasUnderlying &&
+        (!compiler_class_set_type_metadata_string_field(cs, info, "ffiUnderlyingTypeName", underlyingValue) ||
+         !compiler_class_append_builtin_decorator_name(cs, info, "zr.ffi.underlying"))) {
+        return ZR_FALSE;
+    }
+    if (hasOwnerMode &&
+        (!compiler_class_set_type_metadata_string_field(cs, info, "ffiOwnerMode", ownerModeValue) ||
+         !compiler_class_append_builtin_decorator_name(cs, info, "zr.ffi.ownerMode"))) {
+        return ZR_FALSE;
+    }
+    if (hasReleaseHook &&
+        (!compiler_class_set_type_metadata_string_field(cs, info, "ffiReleaseHook", releaseHookValue) ||
+         !compiler_class_append_builtin_decorator_name(cs, info, "zr.ffi.releaseHook"))) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool compiler_class_emit_runtime_decorators_excluding_builtin_ffi(SZrCompilerState *cs,
+                                                                            SZrAstNodeArray *decorators,
+                                                                            TZrUInt32 targetSlot,
+                                                                            TZrBool persistTarget,
+                                                                            SZrFileRange location) {
+    if (cs == ZR_NULL || decorators == ZR_NULL || decorators->count == 0) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = decorators->count; index > 0; index--) {
+        SZrAstNode *decoratorNode = decorators->nodes[index - 1];
+        SZrAstNode *singleDecoratorNodes[1];
+        SZrAstNodeArray singleDecoratorArray;
+
+        if (decoratorNode == ZR_NULL ||
+            compiler_class_decorator_is_builtin_ffi_wrapper(decoratorNode) ||
+            ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
+            if (cs->hasError) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+
+        singleDecoratorNodes[0] = decoratorNode;
+        singleDecoratorArray.nodes = singleDecoratorNodes;
+        singleDecoratorArray.count = 1;
+        singleDecoratorArray.capacity = 1;
+        if (!emit_runtime_decorator_applications(cs,
+                                                 &singleDecoratorArray,
+                                                 targetSlot,
+                                                 persistTarget,
+                                                 location)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
 }
 
 static TZrBool compiler_class_validate_interface_const_fields(SZrCompilerState *cs,
@@ -501,6 +788,13 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
+    if (!compiler_class_apply_builtin_ffi_wrapper_decorators(cs, classDecl->decorators, &info, node->location)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
+
     // 将 prototype 信息添加到数组
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
     
@@ -586,6 +880,9 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     cs->currentTypeNode = oldTypeNode;
                     return;
                 }
+                if (compiler_class_decorator_is_builtin_ffi_wrapper(decoratorNode)) {
+                    continue;
+                }
                 hasRuntimeDecorators = ZR_TRUE;
                 break;
             }
@@ -598,11 +895,11 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
 
         if (hasRuntimeDecorators &&
-            !emit_runtime_decorator_applications(cs,
-                                                 classDecl->decorators,
-                                                 emit_load_global_identifier(cs, typeName),
-                                                 ZR_FALSE,
-                                                 node->location)) {
+            !compiler_class_emit_runtime_decorators_excluding_builtin_ffi(cs,
+                                                                          classDecl->decorators,
+                                                                          emit_load_global_identifier(cs, typeName),
+                                                                          ZR_FALSE,
+                                                                          node->location)) {
             cs->currentTypeName = oldTypeName;
             cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
             cs->currentTypeNode = oldTypeNode;

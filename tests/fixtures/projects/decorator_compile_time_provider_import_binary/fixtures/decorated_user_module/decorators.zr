@@ -1,0 +1,17 @@
+%module "decorators";
+
+%compileTime class Serializable {
+    @decorate(target: %type Class): DecoratorPatch {
+        return { metadata: { serializable: true } };
+    }
+}
+
+%compileTime markFunction(target: %type Function, bonus: int = 7): DecoratorPatch {
+    return { metadata: { instrumented: bonus } };
+}
+
+%compileTime var registry = {
+    nested: {
+        mark: markFunction
+    }
+};

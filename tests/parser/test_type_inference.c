@@ -23,6 +23,7 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_library/native_registry.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/type_inference_internal.h"
 
 extern void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
 extern void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
@@ -694,6 +695,37 @@ static void add_test_method_member(SZrState *state,
     if (returnTypeName != ZR_NULL) {
         memberInfo.returnTypeName = create_test_string(state, returnTypeName);
         TEST_ASSERT_NOT_NULL(memberInfo.returnTypeName);
+    }
+
+    TEST_ASSERT_NOT_NULL(memberInfo.name);
+    ZrCore_Array_Push(state, &info->members, &memberInfo);
+}
+
+static void add_test_field_member(SZrState *state,
+                                  SZrTypePrototypeInfo *info,
+                                  const char *name,
+                                  const char *fieldTypeName,
+                                  EZrOwnershipQualifier ownershipQualifier,
+                                  TZrBool isUsingManaged) {
+    SZrTypeMemberInfo memberInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(info);
+    TEST_ASSERT_NOT_NULL(name);
+
+    memset(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.memberType =
+            info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ? ZR_AST_STRUCT_FIELD : ZR_AST_CLASS_FIELD;
+    memberInfo.name = create_test_string(state, name);
+    memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
+    memberInfo.ownershipQualifier = ownershipQualifier;
+    memberInfo.isUsingManaged = isUsingManaged;
+    memberInfo.fieldOffset = 0;
+    memberInfo.fieldSize = sizeof(TZrUInt64);
+    memberInfo.declarationOrder = (TZrUInt32)info->members.length;
+    if (fieldTypeName != ZR_NULL) {
+        memberInfo.fieldTypeName = create_test_string(state, fieldTypeName);
+        TEST_ASSERT_NOT_NULL(memberInfo.fieldTypeName);
     }
 
     TEST_ASSERT_NOT_NULL(memberInfo.name);
@@ -2142,6 +2174,125 @@ static void test_type_inference_import_native_module_keeps_module_name(void) {
         TEST_ASSERT_EQUAL_STRING("zr.math", ZrCore_String_GetNativeString(result.typeName));
 
         ZrParser_InferredType_Free(state, &result);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_move_only_struct_assignment_rejects_implicit_copy(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Move-Only Struct Assignment Rejects Implicit Copy";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        SZrTypePrototypeInfo handleBoxInfo;
+        SZrInferredType leftType;
+        SZrInferredType rightType;
+        SZrFileRange location = {{1, 1}, {1, 8}};
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+
+        init_test_type_prototype(state, &handleBoxInfo, "HandleBox", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT);
+        add_test_field_member(state,
+                              &handleBoxInfo,
+                              "resource",
+                              "int",
+                              ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+                              ZR_TRUE);
+        register_test_type_prototype(state, cs, &handleBoxInfo);
+
+        init_test_object_type(state, &leftType, "HandleBox", ZR_OWNERSHIP_QUALIFIER_NONE);
+        init_test_object_type(state, &rightType, "HandleBox", ZR_OWNERSHIP_QUALIFIER_NONE);
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &leftType, &rightType, location));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "move-only struct"));
+
+        ZrParser_InferredType_Free(state, &leftType);
+        ZrParser_InferredType_Free(state, &rightType);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_move_only_struct_argument_rejects_by_value_call(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Move-Only Struct Argument Rejects By-Value Call";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source = "return Observe(box);";
+        SZrString *sourceName = ZrCore_String_Create(state, "move_only_struct_call_test.zr", 29);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType boxType;
+        SZrInferredType result;
+        SZrTypePrototypeInfo handleBoxInfo;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        init_test_type_prototype(state, &handleBoxInfo, "HandleBox", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT);
+        add_test_field_member(state,
+                              &handleBoxInfo,
+                              "resource",
+                              "int",
+                              ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+                              ZR_TRUE);
+        register_test_type_prototype(state, cs, &handleBoxInfo);
+        register_test_function_with_one_param(state,
+                                              cs,
+                                              "Observe",
+                                              ZR_VALUE_TYPE_INT64,
+                                              ZR_NULL,
+                                              ZR_VALUE_TYPE_OBJECT,
+                                              "HandleBox",
+                                              ZR_OWNERSHIP_QUALIFIER_NONE);
+
+        init_test_object_type(state, &boxType, "HandleBox", ZR_OWNERSHIP_QUALIFIER_NONE);
+        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(state,
+                                                                   cs->typeEnv,
+                                                                   create_test_string(state, "box"),
+                                                                   &boxType));
+        ZrParser_InferredType_Free(state, &boxType);
+
+        expr = ast->data.script.statements->nodes[0]->data.returnStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "move-only struct"));
+        ZrParser_InferredType_Free(state, &result);
+
         ZrParser_Ast_Free(state, ast);
         destroy_test_compiler_state(cs);
         destroy_test_state(state);
@@ -3613,6 +3764,12 @@ static void test_type_inference_source_const_generic_method_supports_explicit_ar
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *inferredExpr = ZR_NULL;
         SZrAstNode *explicitExpr = ZR_NULL;
+        SZrAstNode *inferredCallNode = ZR_NULL;
+        const SZrTypePrototypeInfo *closedBoxPrototype = ZR_NULL;
+        const SZrTypeMemberInfo *shapeMember = ZR_NULL;
+        SZrResolvedCallSignature resolvedSignature;
+        EZrGenericCallResolveStatus signatureStatus;
+        TZrChar diagnostic[ZR_PARSER_ERROR_BUFFER_LENGTH];
         SZrInferredType result;
 
         TEST_ASSERT_NOT_NULL(state);
@@ -3635,10 +3792,57 @@ static void test_type_inference_source_const_generic_method_supports_explicit_ar
         compile_test_top_level_statement(cs, ast->data.script.statements->nodes[3]);
         TEST_ASSERT_FALSE(cs->hasError);
 
+        closedBoxPrototype = find_test_type_prototype(cs, "Box<int>");
+        TEST_ASSERT_NOT_NULL(closedBoxPrototype);
+        for (TZrSize memberIndex = 0; memberIndex < closedBoxPrototype->members.length; memberIndex++) {
+            const SZrTypeMemberInfo *candidate =
+                    (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&closedBoxPrototype->members, memberIndex);
+            if (candidate != ZR_NULL &&
+                candidate->name != ZR_NULL &&
+                strcmp(ZrCore_String_GetNativeString(candidate->name), "shape") == 0) {
+                shapeMember = candidate;
+                break;
+            }
+        }
+        TEST_ASSERT_NOT_NULL(shapeMember);
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)shapeMember->genericParameters.length);
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)shapeMember->parameterTypes.length);
+        TEST_ASSERT_NOT_NULL(shapeMember->returnTypeName);
+        TEST_ASSERT_EQUAL_STRING("Matrix<int, N>", ZrCore_String_GetNativeString(shapeMember->returnTypeName));
+
         inferredExpr = ast->data.script.statements->nodes[4]->data.expressionStatement.expr;
         explicitExpr = ast->data.script.statements->nodes[5]->data.expressionStatement.expr;
         TEST_ASSERT_NOT_NULL(inferredExpr);
         TEST_ASSERT_NOT_NULL(explicitExpr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, inferredExpr->type);
+        TEST_ASSERT_NOT_NULL(inferredExpr->data.primaryExpression.members);
+        TEST_ASSERT_EQUAL_INT(2, (int)inferredExpr->data.primaryExpression.members->count);
+        inferredCallNode = inferredExpr->data.primaryExpression.members->nodes[1];
+        TEST_ASSERT_NOT_NULL(inferredCallNode);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_CALL, inferredCallNode->type);
+
+        memset(&resolvedSignature, 0, sizeof(resolvedSignature));
+        ZrParser_InferredType_Init(state, &resolvedSignature.returnType, ZR_VALUE_TYPE_OBJECT);
+        ZrCore_Array_Construct(&resolvedSignature.parameterTypes);
+        ZrCore_Array_Construct(&resolvedSignature.parameterPassingModes);
+        diagnostic[0] = '\0';
+        signatureStatus = resolve_generic_member_call_signature_detailed(cs,
+                                                                         shapeMember,
+                                                                         &inferredCallNode->data.functionCall,
+                                                                         &resolvedSignature,
+                                                                         diagnostic,
+                                                                         sizeof(diagnostic));
+        TEST_ASSERT_EQUAL_INT(ZR_GENERIC_CALL_RESOLVE_OK, signatureStatus);
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)resolvedSignature.parameterTypes.length);
+        TEST_ASSERT_NOT_NULL(((SZrInferredType *)ZrCore_Array_Get(&resolvedSignature.parameterTypes, 0))->typeName);
+        TEST_ASSERT_EQUAL_STRING("Matrix<int, 4>",
+                                 ZrCore_String_GetNativeString(((SZrInferredType *)ZrCore_Array_Get(
+                                         &resolvedSignature.parameterTypes,
+                                         0))->typeName));
+        TEST_ASSERT_NOT_NULL(resolvedSignature.returnType.typeName);
+        TEST_ASSERT_EQUAL_STRING("Matrix<int, 4>",
+                                 ZrCore_String_GetNativeString(resolvedSignature.returnType.typeName));
+        free_resolved_call_signature(state, &resolvedSignature);
 
         ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
         TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, inferredExpr, &result));
@@ -5189,6 +5393,217 @@ static void test_type_inference_ffi_pointer_helpers_propagate_registered_pointer
     TEST_DIVIDER();
 }
 
+static void test_type_inference_ffi_pointer_helpers_propagate_extern_wrapper_types(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - FFI Pointer Helpers Propagate Extern Wrapper Types";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "%extern(\"fixture\") {"
+                "    struct NativePoint {"
+                "        var x: i32;"
+                "        var y: i32;"
+                "    }"
+                "}"
+                "var ffi = %import(\"zr.ffi\");"
+                "var buffer = ffi.BufferHandle.allocate(8);"
+                "var bytePtr = buffer.pin();"
+                "var pointPtr = bytePtr.as({ kind: \"pointer\", to: NativePoint, direction: \"inout\" });"
+                "var pointValue = pointPtr.read(NativePoint);"
+                "pointPtr;"
+                "pointValue;"
+                "pointValue.y;";
+        SZrString *sourceName = ZrCore_String_Create(state, "ffi_pointer_extern_wrapper_test.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *pointPtrExpr = ZR_NULL;
+        SZrAstNode *pointValueExpr = ZR_NULL;
+        SZrAstNode *pointFieldExpr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(9, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        for (TZrSize index = 0; index < 6; index++) {
+            ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[index]);
+            TEST_ASSERT_FALSE(cs->hasError);
+        }
+
+        pointPtrExpr = ast->data.script.statements->nodes[6]->data.expressionStatement.expr;
+        pointValueExpr = ast->data.script.statements->nodes[7]->data.expressionStatement.expr;
+        pointFieldExpr = ast->data.script.statements->nodes[8]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(pointPtrExpr);
+        TEST_ASSERT_NOT_NULL(pointValueExpr);
+        TEST_ASSERT_NOT_NULL(pointFieldExpr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, pointPtrExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Ptr<NativePoint>", ZrCore_String_GetNativeString(result.typeName));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, pointValueExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("NativePoint", ZrCore_String_GetNativeString(result.typeName));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, pointFieldExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT32, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_system_primitive_named_and_direct_types_compare_equally(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type System - Primitive Named And Direct Types Compare Equally";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrInferredType namedString;
+        SZrInferredType directString;
+        SZrInferredType namedInt;
+        SZrInferredType directInt;
+        SZrInferredType int64Alias;
+        SZrInferredType namedObject;
+        SZrInferredType plainObject;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        ZrParser_InferredType_InitFull(state,
+                                       &namedString,
+                                       ZR_VALUE_TYPE_STRING,
+                                       ZR_FALSE,
+                                       create_test_string(state, "string"));
+        ZrParser_InferredType_Init(state, &directString, ZR_VALUE_TYPE_STRING);
+        ZrParser_InferredType_InitFull(state,
+                                       &namedInt,
+                                       ZR_VALUE_TYPE_INT64,
+                                       ZR_FALSE,
+                                       create_test_string(state, "int"));
+        ZrParser_InferredType_Init(state, &directInt, ZR_VALUE_TYPE_INT64);
+        ZrParser_InferredType_InitFull(state,
+                                       &int64Alias,
+                                       ZR_VALUE_TYPE_INT64,
+                                       ZR_FALSE,
+                                       create_test_string(state, "i64"));
+        ZrParser_InferredType_InitFull(state,
+                                       &namedObject,
+                                       ZR_VALUE_TYPE_OBJECT,
+                                       ZR_FALSE,
+                                       create_test_string(state, "Widget"));
+        ZrParser_InferredType_Init(state, &plainObject, ZR_VALUE_TYPE_OBJECT);
+
+        TEST_ASSERT_TRUE(ZrParser_InferredType_Equal(&namedString, &directString));
+        TEST_ASSERT_TRUE(ZrParser_InferredType_IsCompatible(&directString, &namedString));
+        TEST_ASSERT_TRUE(ZrParser_InferredType_IsCompatible(&namedString, &directString));
+
+        TEST_ASSERT_TRUE(ZrParser_InferredType_Equal(&namedInt, &directInt));
+        TEST_ASSERT_TRUE(ZrParser_InferredType_Equal(&namedInt, &int64Alias));
+        TEST_ASSERT_TRUE(ZrParser_InferredType_IsCompatible(&directInt, &namedInt));
+        TEST_ASSERT_TRUE(ZrParser_InferredType_IsCompatible(&int64Alias, &directInt));
+
+        TEST_ASSERT_FALSE(ZrParser_InferredType_Equal(&namedObject, &plainObject));
+        TEST_ASSERT_FALSE(ZrParser_InferredType_IsCompatible(&plainObject, &namedObject));
+
+        ZrParser_InferredType_Free(state, &plainObject);
+        ZrParser_InferredType_Free(state, &namedObject);
+        ZrParser_InferredType_Free(state, &int64Alias);
+        ZrParser_InferredType_Free(state, &directInt);
+        ZrParser_InferredType_Free(state, &namedInt);
+        ZrParser_InferredType_Free(state, &directString);
+        ZrParser_InferredType_Free(state, &namedString);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_environment_lookup_functions_deduplicates_exact_signature_from_parent_scope(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Environment - Lookup Functions Deduplicates Exact Parent Scope Signature";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        SZrTypeEnvironment *childEnv = ZR_NULL;
+        SZrInferredType returnType;
+        SZrInferredType paramType;
+        SZrArray paramTypes;
+        SZrArray results;
+        SZrString *functionName;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+
+        functionName = create_test_string(state, "NativeAdd");
+        TEST_ASSERT_NOT_NULL(functionName);
+
+        childEnv = ZrParser_TypeEnvironment_New(state);
+        TEST_ASSERT_NOT_NULL(childEnv);
+        childEnv->parent = cs->typeEnv;
+
+        ZrParser_InferredType_Init(state, &returnType, ZR_VALUE_TYPE_INT32);
+        ZrParser_InferredType_Init(state, &paramType, ZR_VALUE_TYPE_INT32);
+        ZrCore_Array_Init(state, &paramTypes, sizeof(SZrInferredType), 2);
+        ZrCore_Array_Push(state, &paramTypes, &paramType);
+        ZrCore_Array_Push(state, &paramTypes, &paramType);
+
+        TEST_ASSERT_TRUE(
+                ZrParser_TypeEnvironment_RegisterFunction(state, cs->typeEnv, functionName, &returnType, &paramTypes));
+        TEST_ASSERT_TRUE(
+                ZrParser_TypeEnvironment_RegisterFunction(state, childEnv, functionName, &returnType, &paramTypes));
+
+        ZrCore_Array_Construct(&results);
+        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_LookupFunctions(state, childEnv, functionName, &results));
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)results.length);
+
+        ZrCore_Array_Free(state, &results);
+        ZrCore_Array_Free(state, &paramTypes);
+        ZrParser_InferredType_Free(state, &paramType);
+        ZrParser_InferredType_Free(state, &returnType);
+        ZrParser_TypeEnvironment_Free(state, childEnv);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_foreach_binds_iterated_element_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Foreach Binds Iterated Element Type";
@@ -5262,6 +5677,8 @@ int main(void) {
     RUN_TEST(test_unique_instance_only_calls_borrowed_methods);
     RUN_TEST(test_unique_value_is_compatible_with_borrowed_parameter);
     RUN_TEST(test_borrowed_value_cannot_flow_to_plain_parameter);
+    RUN_TEST(test_move_only_struct_assignment_rejects_implicit_copy);
+    RUN_TEST(test_move_only_struct_argument_rejects_by_value_call);
     RUN_TEST(test_parser_supports_ownership_types_and_template_strings);
     RUN_TEST(test_using_statement_compilation_records_cleanup_plan);
     RUN_TEST(test_template_string_compilation_records_semantic_segments);
@@ -5301,6 +5718,9 @@ int main(void) {
     RUN_TEST(test_type_inference_container_dotted_generic_new_returns_closed_registered_type);
     RUN_TEST(test_type_inference_container_computed_access_uses_registered_meta_types);
     RUN_TEST(test_type_inference_ffi_pointer_helpers_propagate_registered_pointer_types);
+    RUN_TEST(test_type_inference_ffi_pointer_helpers_propagate_extern_wrapper_types);
+    RUN_TEST(test_type_system_primitive_named_and_direct_types_compare_equally);
+    RUN_TEST(test_type_environment_lookup_functions_deduplicates_exact_signature_from_parent_scope);
     RUN_TEST(test_type_inference_foreach_binds_iterated_element_type);
     RUN_TEST(test_type_inference_native_enum_construction_returns_enum_type);
     RUN_TEST(test_type_inference_native_enum_member_access_returns_enum_type);

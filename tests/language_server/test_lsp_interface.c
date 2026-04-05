@@ -15,6 +15,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_query.h"
 
 #include <errno.h>
 
@@ -643,6 +644,62 @@ static TZrBool completion_array_contains_label(SZrArray *completions, const TZrC
             (SZrLspCompletionItem **)ZrCore_Array_Get(completions, index);
         if (itemPtr != ZR_NULL && *itemPtr != ZR_NULL &&
             strcmp(test_string_ptr((*itemPtr)->label), label) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrInt32 semantic_token_type_index(const TZrChar *typeName) {
+    if (typeName == ZR_NULL) {
+        return -1;
+    }
+
+    for (TZrSize index = 0; index < ZrLanguageServer_Lsp_SemanticTokenTypeCount(); index++) {
+        const TZrChar *candidate = ZrLanguageServer_Lsp_SemanticTokenTypeName(index);
+        if (candidate != ZR_NULL && strcmp(candidate, typeName) == 0) {
+            return (TZrInt32)index;
+        }
+    }
+
+    return -1;
+}
+
+static TZrBool semantic_tokens_contain(SZrArray *data,
+                                       TZrInt32 line,
+                                       TZrInt32 character,
+                                       TZrInt32 length,
+                                       const TZrChar *typeName) {
+    TZrUInt32 currentLine = 0;
+    TZrUInt32 currentCharacter = 0;
+    TZrInt32 typeIndex = semantic_token_type_index(typeName);
+
+    if (data == ZR_NULL || typeIndex < 0) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index + 4 < data->length; index += 5) {
+        TZrUInt32 *deltaLinePtr = (TZrUInt32 *)ZrCore_Array_Get(data, index);
+        TZrUInt32 *deltaStartPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 1);
+        TZrUInt32 *lengthPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 2);
+        TZrUInt32 *typePtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 3);
+
+        if (deltaLinePtr == ZR_NULL || deltaStartPtr == ZR_NULL || lengthPtr == ZR_NULL || typePtr == ZR_NULL) {
+            continue;
+        }
+
+        currentLine += *deltaLinePtr;
+        if (*deltaLinePtr == 0) {
+            currentCharacter += *deltaStartPtr;
+        } else {
+            currentCharacter = *deltaStartPtr;
+        }
+
+        if ((TZrInt32)currentLine == line &&
+            (TZrInt32)currentCharacter == character &&
+            (TZrInt32)(*lengthPtr) == length &&
+            (TZrInt32)(*typePtr) == typeIndex) {
             return ZR_TRUE;
         }
     }
@@ -1967,8 +2024,16 @@ static void test_lsp_signature_help_displays_closed_generic_instantiation(SZrSta
         help->signatures.length == 0 ||
         !signature_help_contains_text(help, "shape<const N: int>(value: Matrix<int, 4>): Matrix<int, 4>") ||
         help->activeParameter != 0) {
+        TZrChar reason[256];
+        const TZrChar *label = signature_help_first_label(help);
+
+        snprintf(reason,
+                 sizeof(reason),
+                 "Signature help should show the closed generic method signature with normalized const generics (label=%s, activeParameter=%zu)",
+                 label != ZR_NULL ? label : "<null>",
+                 help != ZR_NULL ? (TZrSize)help->activeParameter : (TZrSize)0);
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, "LSP Signature Help Displays Closed Generic Instantiation", "Signature help should show the closed generic method signature with normalized const generics");
+        TEST_FAIL(timer, "LSP Signature Help Displays Closed Generic Instantiation", reason);
         return;
     }
 
@@ -2470,6 +2535,7 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
     SZrLspPosition secondCallPosition;
     SZrLspPosition signaturePosition;
     SZrLspPosition completionPosition;
+    SZrArray diagnostics;
     SZrArray definitions;
     SZrArray references;
     SZrArray highlights;
@@ -2502,6 +2568,18 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
                   "Failed to prepare extern function test fixture positions");
         return;
     }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
+        diagnostic_array_contains_message(&diagnostics, "Ambiguous overload for function 'NativeAdd'")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Function Navigation And Signature Help",
+                  "Extern function analysis should not emit a duplicate overload diagnostic for NativeAdd");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, firstCallPosition, &definitions) ||
@@ -2733,6 +2811,296 @@ static void test_lsp_extern_type_symbols_surface_hover_and_definition(SZrState *
     TEST_PASS(timer, "LSP Extern Type Symbols Surface Hover And Definition");
 }
 
+static void test_lsp_extern_layout_hover_surfaces_ffi_metadata(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "%extern(\"fixture\") {\n"
+        "    #zr.ffi.pack(8)#\n"
+        "    #zr.ffi.align(16)#\n"
+        "    struct NativePoint {\n"
+        "        var x: i32;\n"
+        "        #zr.ffi.offset(8)#\n"
+        "        var y: i32;\n"
+        "    }\n"
+        "    #zr.ffi.underlying(\"i32\")#\n"
+        "    enum Mode {\n"
+        "        #zr.ffi.value(1)# On\n"
+        "    }\n"
+        "}\n"
+        "func read(point: NativePoint): i32 {\n"
+        "    return point.y;\n"
+        "}\n"
+        "func current(): Mode {\n"
+        "    return Mode.On;\n"
+        "}\n";
+    SZrLspPosition pointUsePosition;
+    SZrLspPosition fieldDeclPosition;
+    SZrLspPosition fieldUsePosition;
+    SZrLspPosition enumUsePosition;
+    SZrLspPosition enumMemberUsePosition;
+    SZrArray definitions;
+    SZrArray references;
+    SZrArray highlights;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP Extern Layout Hover Surfaces FFI Metadata");
+    TEST_INFO("Extern layout metadata hover",
+              "Extern struct/enum hover should surface ffi layout decorators like pack/align/offset/underlying/value through the same source-symbol path");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Extern Layout Hover Surfaces FFI Metadata",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///extern_layout_hover.zr", 30);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "point: NativePoint", 0, 7, &pointUsePosition) ||
+        !lsp_find_position_for_substring(content, "var y: i32;", 0, 4, &fieldDeclPosition) ||
+        !lsp_find_position_for_substring(content, "point.y", 0, 6, &fieldUsePosition) ||
+        !lsp_find_position_for_substring(content, "current(): Mode", 0, 11, &enumUsePosition) ||
+        !lsp_find_position_for_substring(content, "Mode.On", 0, 5, &enumMemberUsePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Layout Hover Surfaces FFI Metadata",
+                  "Failed to prepare extern layout hover positions");
+        return;
+    }
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, fieldUsePosition, &definitions) ||
+        !location_array_contains_position(&definitions, fieldDeclPosition.line, fieldDeclPosition.character)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Layout Hover Surfaces FFI Metadata",
+                  "Goto definition on an extern struct field usage should jump to the field declaration");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
+    if (!ZrLanguageServer_Lsp_FindReferences(state, context, uri, fieldUsePosition, ZR_TRUE, &references) ||
+        !location_array_contains_position(&references, fieldDeclPosition.line, fieldDeclPosition.character) ||
+        !location_array_contains_position(&references, fieldUsePosition.line, fieldUsePosition.character)) {
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Layout Hover Surfaces FFI Metadata",
+                  "Extern struct field references should include the field declaration and usage");
+        return;
+    }
+    ZrCore_Array_Free(state, &references);
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 8);
+    if (!ZrLanguageServer_Lsp_GetDocumentHighlights(state, context, uri, fieldUsePosition, &highlights) ||
+        !highlight_array_contains_position(&highlights, fieldDeclPosition.line, fieldDeclPosition.character) ||
+        !highlight_array_contains_position(&highlights, fieldUsePosition.line, fieldUsePosition.character)) {
+        ZrCore_Array_Free(state, &highlights);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Layout Hover Surfaces FFI Metadata",
+                  "Extern struct field document highlights should include the field declaration and usage");
+        return;
+    }
+    ZrCore_Array_Free(state, &highlights);
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, pointUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "NativePoint") ||
+        !hover_contains_text(hover, "Source: ffi extern") ||
+        !hover_contains_text(hover, "Pack: 8") ||
+        !hover_contains_text(hover, "Align: 16")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Layout Hover Surfaces FFI Metadata",
+                  "Hover on an extern struct type usage should surface pack/align metadata");
+        return;
+    }
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, fieldUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "y") ||
+        !hover_contains_text(hover, "Source: ffi extern") ||
+        !hover_contains_text(hover, "Offset: 8")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Layout Hover Surfaces FFI Metadata",
+                  "Hover on an extern struct field usage should surface its ffi offset metadata");
+        return;
+    }
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, enumUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "Mode") ||
+        !hover_contains_text(hover, "Source: ffi extern") ||
+        !hover_contains_text(hover, "Underlying: i32")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Layout Hover Surfaces FFI Metadata",
+                  "Hover on an extern enum usage should surface its ffi underlying metadata");
+        return;
+    }
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, enumMemberUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "On") ||
+        !hover_contains_text(hover, "Source: ffi extern") ||
+        !hover_contains_text(hover, "Value: 1")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Extern Layout Hover Surfaces FFI Metadata",
+                  "Hover on an extern enum member usage should surface its ffi value metadata");
+        return;
+    }
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Extern Layout Hover Surfaces FFI Metadata");
+}
+
+static void test_lsp_ffi_pointer_helpers_surface_extern_wrapper_types(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "%extern(\"fixture\") {\n"
+        "    struct NativePoint {\n"
+        "        var x: i32;\n"
+        "        #zr.ffi.offset(4)#\n"
+        "        var y: i32;\n"
+        "    }\n"
+        "}\n"
+        "var ffi = %import(\"zr.ffi\");\n"
+        "func run(buffer: ffi.BufferHandle): i32 {\n"
+        "    var bytePtr = buffer.pin();\n"
+        "    var pointPtr = bytePtr.as({ kind: \"pointer\", to: NativePoint, direction: \"inout\" });\n"
+        "    var pointValue = pointPtr.read(NativePoint);\n"
+        "    return pointValue.y;\n"
+        "}\n";
+    SZrLspPosition pointFieldDeclPosition;
+    SZrLspPosition pointPtrHoverPosition;
+    SZrLspPosition pointValueHoverPosition;
+    SZrLspPosition pointFieldUsePosition;
+    SZrLspPosition pointValueCompletionPosition;
+    SZrArray definitions;
+    SZrArray references;
+    SZrArray highlights;
+    SZrArray completions;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP FFI Pointer Helpers Surface Extern Wrapper Types");
+    TEST_INFO("FFI pointer helper extern wrapper flow",
+              "pin/as/read should keep extern wrapper types on locals, completions, field navigation, and hover metadata");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP FFI Pointer Helpers Surface Extern Wrapper Types",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///ffi_pointer_extern_wrapper.zr", 38);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "var y: i32;", 0, 4, &pointFieldDeclPosition) ||
+        !lsp_find_position_for_substring(content, "var pointPtr = ", 0, 4, &pointPtrHoverPosition) ||
+        !lsp_find_position_for_substring(content, "var pointValue = ", 0, 4, &pointValueHoverPosition) ||
+        !lsp_find_position_for_substring(content, "pointValue.y", 0, 11, &pointFieldUsePosition) ||
+        !lsp_find_position_for_substring(content, "pointValue.y", 0, 10, &pointValueCompletionPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP FFI Pointer Helpers Surface Extern Wrapper Types",
+                  "Failed to prepare ffi pointer extern wrapper positions");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, pointPtrHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "pointPtr") ||
+        !hover_contains_text(hover, "Ptr<NativePoint>")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP FFI Pointer Helpers Surface Extern Wrapper Types",
+                  "Hover on pointPtr should expose the refined Ptr<NativePoint> type");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, pointValueHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "pointValue") ||
+        !hover_contains_text(hover, "NativePoint")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP FFI Pointer Helpers Surface Extern Wrapper Types",
+                  "Hover on pointValue should expose the extern wrapper result type inferred from read(NativePoint)");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, pointValueCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "x") ||
+        !completion_array_contains_label(&completions, "y")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP FFI Pointer Helpers Surface Extern Wrapper Types",
+                  "Completion on pointValue should list extern struct fields propagated through the pointer helpers");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, pointFieldUsePosition, &definitions) ||
+        !location_array_contains_position(&definitions, pointFieldDeclPosition.line, pointFieldDeclPosition.character)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP FFI Pointer Helpers Surface Extern Wrapper Types",
+                  "Goto definition on pointValue.y should jump to the extern struct field declaration");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
+    if (!ZrLanguageServer_Lsp_FindReferences(state, context, uri, pointFieldUsePosition, ZR_TRUE, &references) ||
+        !location_array_contains_position(&references, pointFieldDeclPosition.line, pointFieldDeclPosition.character) ||
+        !location_array_contains_position(&references, pointFieldUsePosition.line, pointFieldUsePosition.character)) {
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP FFI Pointer Helpers Surface Extern Wrapper Types",
+                  "References on pointValue.y should include the extern field declaration and local usage");
+        return;
+    }
+    ZrCore_Array_Free(state, &references);
+
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 8);
+    if (!ZrLanguageServer_Lsp_GetDocumentHighlights(state, context, uri, pointFieldUsePosition, &highlights) ||
+        !highlight_array_contains_position(&highlights, pointFieldDeclPosition.line, pointFieldDeclPosition.character) ||
+        !highlight_array_contains_position(&highlights, pointFieldUsePosition.line, pointFieldUsePosition.character)) {
+        ZrCore_Array_Free(state, &highlights);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP FFI Pointer Helpers Surface Extern Wrapper Types",
+                  "Document highlights on pointValue.y should stay attached to the same extern field symbol");
+        return;
+    }
+    ZrCore_Array_Free(state, &highlights);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, pointFieldUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "y") ||
+        !hover_contains_text(hover, "Source: ffi extern") ||
+        !hover_contains_text(hover, "Offset: 4")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP FFI Pointer Helpers Surface Extern Wrapper Types",
+                  "Hover on pointValue.y should still surface the extern field metadata after pointer helper inference");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP FFI Pointer Helpers Surface Extern Wrapper Types");
+}
+
 static void test_lsp_completion_lists_directives_and_meta_methods(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -2807,6 +3175,846 @@ static void test_lsp_completion_lists_directives_and_meta_methods(SZrState *stat
     ZrCore_Array_Free(state, &completions);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Completion Lists Directives And Meta Methods");
+}
+
+static void test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "func run(seed: int): int {\n"
+        "    var result = seed + 1;\n"
+        "    return result;\n"
+        "}\n";
+    SZrLspPosition resultDeclPosition;
+    SZrLspPosition resultUsePosition;
+    SZrLspSemanticQuery query;
+    SZrLspHover *hover = ZR_NULL;
+    SZrArray definitions;
+    SZrArray references;
+    SZrArray highlights;
+
+    TEST_START("LSP Semantic Query Unifies Local Symbol Navigation And Hover");
+    TEST_INFO("Structured semantic query",
+              "The shared semantic query should resolve one local symbol target and drive hover/definition/references/highlights from the same structured result");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Local Symbol Navigation And Hover",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///semantic_query_local_symbol.zr", 38);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "var result = seed + 1;", 0, 4, &resultDeclPosition) ||
+        !lsp_find_position_for_substring(content, "return result;", 0, 7, &resultUsePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Local Symbol Navigation And Hover",
+                  "Failed to prepare semantic query local symbol fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, resultUsePosition, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL ||
+        query.symbol == ZR_NULL ||
+        query.resolvedTypeInfo.resolvedTypeText == ZR_NULL ||
+        strcmp(ZrCore_String_GetNativeString(query.resolvedTypeInfo.resolvedTypeText), "int") != 0) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Local Symbol Navigation And Hover",
+                  "Structured semantic query should resolve the local symbol and its inferred int type");
+        return;
+    }
+
+    if (!ZrLanguageServer_LspSemanticQuery_BuildHover(state, context, &query, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "result") ||
+        !hover_contains_text(hover, "int")) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Local Symbol Navigation And Hover",
+                  "Semantic query hover should be produced from the same structured symbol result");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_LspSemanticQuery_AppendDefinitions(state, context, &query, &definitions) ||
+        !location_array_contains_position(&definitions, resultDeclPosition.line, resultDeclPosition.character)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Local Symbol Navigation And Hover",
+                  "Semantic query definitions should include the local declaration");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
+    if (!ZrLanguageServer_LspSemanticQuery_AppendReferences(state, context, &query, ZR_TRUE, &references) ||
+        !location_array_contains_position(&references, resultDeclPosition.line, resultDeclPosition.character) ||
+        !location_array_contains_position(&references, resultUsePosition.line, resultUsePosition.character)) {
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Local Symbol Navigation And Hover",
+                  "Semantic query references should include both the declaration and the usage");
+        return;
+    }
+    ZrCore_Array_Free(state, &references);
+
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 8);
+    if (!ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(state, context, &query, &highlights) ||
+        !highlight_array_contains_position(&highlights, resultDeclPosition.line, resultDeclPosition.character) ||
+        !highlight_array_contains_position(&highlights, resultUsePosition.line, resultUsePosition.character)) {
+        ZrCore_Array_Free(state, &highlights);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Local Symbol Navigation And Hover",
+                  "Semantic query highlights should include both the declaration and the usage");
+        return;
+    }
+    ZrCore_Array_Free(state, &highlights);
+
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Query Unifies Local Symbol Navigation And Hover");
+}
+
+static void test_lsp_semantic_query_resolves_native_import_member_source_kind(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var ffi = %import(\"zr.ffi\");\n"
+        "var buffer = ffi.BufferHandle.allocate(8);\n";
+    SZrLspPosition memberPosition;
+    SZrLspSemanticQuery query;
+
+    TEST_START("LSP Semantic Query Resolves Native Import Member Source Kind");
+    TEST_INFO("Structured metadata provider",
+              "The shared semantic query should resolve imported members through the metadata provider and preserve the native builtin source kind");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Native Import Member Source Kind",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///semantic_query_native_import.zr", 38);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "ffi.BufferHandle.allocate(8)", 0, 5, &memberPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Native Import Member Source Kind",
+                  "Failed to prepare semantic query native import fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, memberPosition, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER ||
+        query.sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN ||
+        query.moduleName == ZR_NULL ||
+        query.memberName == ZR_NULL) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Native Import Member Source Kind",
+                  "Structured semantic query should resolve imported members through the native builtin metadata path");
+        return;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Query Resolves Native Import Member Source Kind");
+}
+
+static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrString *consoleModuleUri = ZR_NULL;
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "run() {\n"
+        "    system.console.printLine(\"one\");\n"
+        "    return system.console.printLine(\"two\");\n"
+        "}\n";
+    SZrLspPosition firstPrintLinePosition;
+    SZrLspPosition secondPrintLinePosition;
+    SZrLspSemanticQuery query;
+    SZrArray definitions;
+    SZrArray references;
+    SZrArray highlights;
+
+    TEST_START("LSP Semantic Query Resolves Module-Link Chain Member Navigation");
+    TEST_INFO("Structured import chain query",
+              "Secondary chain segments such as system.console.printLine should resolve through the same structured metadata query used by definition, references, and document highlight");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///semantic_query_module_link_chain.zr", 43);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "console.printLine", 0, 8, &firstPrintLinePosition) ||
+        !lsp_find_position_for_substring(content, "console.printLine", 1, 8, &secondPrintLinePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
+                  "Failed to prepare module-link chain fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, firstPrintLinePosition, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER ||
+        query.moduleName == ZR_NULL ||
+        query.memberName == ZR_NULL ||
+        strcmp(test_string_ptr(query.moduleName), "zr.system.console") != 0 ||
+        strcmp(test_string_ptr(query.memberName), "printLine") != 0) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
+                  "Structured semantic query should resolve system.console.printLine to the linked console module member");
+        return;
+    }
+    consoleModuleUri = query.resolvedMember.declarationUri;
+    if (!query.resolvedMember.hasDeclaration || consoleModuleUri == ZR_NULL) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
+                  "Structured semantic query should expose the linked module declaration uri for printLine");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_LspSemanticQuery_AppendDefinitions(state, context, &query, &definitions) ||
+        !location_array_contains_uri_and_range(&definitions, test_string_ptr(consoleModuleUri), 0, 0, 0, 0)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
+                  "Definition on system.console.printLine should resolve to the linked native module metadata entry");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
+    if (!ZrLanguageServer_LspSemanticQuery_AppendReferences(state, context, &query, ZR_TRUE, &references) ||
+        !location_array_contains_uri_and_range(&references, test_string_ptr(consoleModuleUri), 0, 0, 0, 0) ||
+        !location_array_contains_uri_and_range(&references,
+                                               test_string_ptr(uri),
+                                               firstPrintLinePosition.line,
+                                               firstPrintLinePosition.character,
+                                               firstPrintLinePosition.line,
+                                               firstPrintLinePosition.character + 9) ||
+        !location_array_contains_uri_and_range(&references,
+                                               test_string_ptr(uri),
+                                               secondPrintLinePosition.line,
+                                               secondPrintLinePosition.character,
+                                               secondPrintLinePosition.line,
+                                               secondPrintLinePosition.character + 9)) {
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
+                  "References on system.console.printLine should include the linked module entry and each secondary member usage");
+        return;
+    }
+    ZrCore_Array_Free(state, &references);
+
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 8);
+    if (!ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(state, context, &query, &highlights) ||
+        !highlight_array_contains_position(&highlights, firstPrintLinePosition.line, firstPrintLinePosition.character) ||
+        !highlight_array_contains_position(&highlights, secondPrintLinePosition.line, secondPrintLinePosition.character)) {
+        ZrCore_Array_Free(state, &highlights);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
+                  "Document highlights on system.console.printLine should include each same-document secondary member usage");
+        return;
+    }
+    ZrCore_Array_Free(state, &highlights);
+
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Query Resolves Module-Link Chain Member Navigation");
+}
+
+static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "run() {\n"
+        "    return system.clockTicks();\n"
+        "}\n";
+    SZrLspPosition importLiteralPosition;
+    SZrLspPosition importBindingPosition;
+    SZrLspPosition importUsePosition;
+    SZrLspSemanticQuery query;
+    SZrArray definitions;
+    SZrArray references;
+    SZrArray highlights;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP Semantic Query Unifies Import Target Navigation");
+    TEST_INFO("Structured import target query",
+              "Import literals and aliases should resolve through the shared semantic query path for hover/definition/references/highlights instead of interface-level string navigation");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Import Target Navigation",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///semantic_query_import_target.zr", 39);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "\"zr.system\"", 0, 1, &importLiteralPosition) ||
+        !lsp_find_position_for_substring(content, "var system = ", 0, 4, &importBindingPosition) ||
+        !lsp_find_position_for_substring(content, "system.clockTicks", 0, 0, &importUsePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Import Target Navigation",
+                  "Failed to prepare semantic query import target fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, importLiteralPosition, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION ||
+        query.moduleName == ZR_NULL ||
+        strcmp(test_string_ptr(query.moduleName), "zr.system") != 0 ||
+        query.sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN ||
+        query.resolvedTypeInfo.valueKind != ZR_LSP_RESOLVED_VALUE_KIND_MODULE) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Import Target Navigation",
+                  "Structured semantic query should resolve %import literals as imported module targets with the native builtin source kind");
+        return;
+    }
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, importLiteralPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "module <zr.system>") ||
+        !hover_contains_text(hover, "Source: native builtin")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Import Target Navigation",
+                  "Hover on an import literal should be produced through the shared imported-module metadata path");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, importLiteralPosition, &definitions) ||
+        definitions.length == 0) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Import Target Navigation",
+                  "Goto definition on an import literal should resolve through the shared imported-module entry target");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
+    if (!ZrLanguageServer_Lsp_FindReferences(state, context, uri, importLiteralPosition, ZR_TRUE, &references) ||
+        !location_array_contains_position(&references, importLiteralPosition.line, importLiteralPosition.character) ||
+        !location_array_contains_position(&references, importBindingPosition.line, importBindingPosition.character) ||
+        !location_array_contains_position(&references, importUsePosition.line, importUsePosition.character)) {
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Import Target Navigation",
+                  "References on an import literal should include the literal, alias declaration, and alias receiver use through the shared query path");
+        return;
+    }
+    ZrCore_Array_Free(state, &references);
+
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 8);
+    if (!ZrLanguageServer_Lsp_GetDocumentHighlights(state, context, uri, importLiteralPosition, &highlights) ||
+        !highlight_array_contains_position(&highlights, importLiteralPosition.line, importLiteralPosition.character) ||
+        !highlight_array_contains_position(&highlights, importBindingPosition.line, importBindingPosition.character) ||
+        !highlight_array_contains_position(&highlights, importUsePosition.line, importUsePosition.character)) {
+        ZrCore_Array_Free(state, &highlights);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Import Target Navigation",
+                  "Document highlights on an import literal should stay on the same imported module target graph");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &highlights);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Query Unifies Import Target Navigation");
+}
+
+static void test_lsp_semantic_query_collects_receiver_completion_items(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var math = %import(\"zr.math\");\n"
+        "run() {\n"
+        "    var vector = $math.Vector3(4.0, 5.0, 6.0);\n"
+        "    return vector.;\n"
+        "}\n";
+    SZrLspPosition completionPosition;
+    SZrArray completions;
+
+    TEST_START("LSP Semantic Query Collects Receiver Completion Items");
+    TEST_INFO("Structured completion query",
+              "Completion should be collectable through the shared semantic query path for local receivers such as value-constructor-backed structs");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///semantic_query_completion_receiver.zr", 45);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "return vector.", 0, 14, &completionPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "Failed to prepare semantic query completion fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+    if (!ZrLanguageServer_LspSemanticQuery_CollectCompletionItems(state,
+                                                                  context,
+                                                                  uri,
+                                                                  completionPosition,
+                                                                  &completions) ||
+        !completion_array_contains_label(&completions, "x") ||
+        !completion_array_contains_label(&completions, "y") ||
+        !completion_array_contains_label(&completions, "z")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "Structured completion query should surface Vector3 field completions through the unified semantic query path");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Query Collects Receiver Completion Items");
+}
+
+static void test_lsp_semantic_query_collects_import_module_completion_items(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "run() {\n"
+        "    return system.console;\n"
+        "}\n";
+    SZrLspPosition completionPosition;
+    SZrArray completions;
+
+    TEST_START("LSP Semantic Query Collects Import Module Completion Items");
+    TEST_INFO("Structured import completion query",
+              "Completion on imported module members should come from the shared semantic query/module metadata path instead of the legacy string-scanning import completion helper");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Import Module Completion Items",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///semantic_query_completion_import_module.zr", 50);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "console", 0, 0, &completionPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Import Module Completion Items",
+                  "Failed to prepare semantic query import completion fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+    if (!ZrLanguageServer_LspSemanticQuery_CollectCompletionItems(state,
+                                                                  context,
+                                                                  uri,
+                                                                  completionPosition,
+                                                                  &completions) ||
+        !completion_array_contains_label(&completions, "console")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Import Module Completion Items",
+                  "Structured semantic query completion should surface imported module members without the legacy import string scanner");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Query Collects Import Module Completion Items");
+}
+
+static void test_lsp_semantic_query_collects_import_chain_completion_items(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "run() {\n"
+        "    return system.console.;\n"
+        "}\n";
+    SZrLspPosition completionPosition;
+    SZrArray completions;
+
+    TEST_START("LSP Semantic Query Collects Import Chain Completion Items");
+    TEST_INFO("Structured import-chain completion query",
+              "Completion after system.console. should come from the same import-chain metadata resolver instead of falling back to generic receiver heuristics");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Import Chain Completion Items",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///semantic_query_completion_import_chain.zr", 49);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "console.", 0, 8, &completionPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Import Chain Completion Items",
+                  "Failed to prepare semantic query import-chain completion fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+    if (!ZrLanguageServer_LspSemanticQuery_CollectCompletionItems(state,
+                                                                  context,
+                                                                  uri,
+                                                                  completionPosition,
+                                                                  &completions) ||
+        !completion_array_contains_label(&completions, "printLine")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Import Chain Completion Items",
+                  "Structured semantic query completion should surface linked module members after system.console.");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Query Collects Import Chain Completion Items");
+}
+
+static void test_lsp_semantic_tokens_cover_import_chain_members(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "run() {\n"
+        "    system.console.printLine(\"x\");\n"
+        "}\n";
+    SZrLspPosition consolePosition;
+    SZrLspPosition printLinePosition;
+    SZrArray tokens;
+
+    TEST_START("LSP Semantic Tokens Cover Import Chain Members");
+    TEST_INFO("Structured import-chain semantic tokens",
+              "Semantic tokens should classify linked submodules and their terminal members through the shared import-chain metadata resolver");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Cover Import Chain Members",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///semantic_tokens_import_chain.zr", 39);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "console.printLine", 0, 0, &consolePosition) ||
+        !lsp_find_position_for_substring(content, "console.printLine", 0, 8, &printLinePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Cover Import Chain Members",
+                  "Failed to prepare semantic token import-chain fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 32);
+    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||
+        !semantic_tokens_contain(&tokens, consolePosition.line, consolePosition.character, 7, "namespace") ||
+        !semantic_tokens_contain(&tokens, printLinePosition.line, printLinePosition.character, 9, "method")) {
+        ZrCore_Array_Free(state, &tokens);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Cover Import Chain Members",
+                  "Semantic tokens should classify console as namespace and printLine as method through the shared chain resolver");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &tokens);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Tokens Cover Import Chain Members");
+}
+
+static void test_lsp_semantic_query_builds_native_receiver_member_hover(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var math = %import(\"zr.math\");\n"
+        "runImpl() {\n"
+        "    return $math.Vector3(4.0, 5.0, 6.0).y;\n"
+        "}\n";
+    SZrLspPosition hoverPosition;
+    SZrLspSemanticQuery query;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP Semantic Query Builds Native Receiver Member Hover");
+    TEST_INFO("Structured native receiver hover",
+              "Hover on $module.Type(...).member should resolve through the shared semantic query instead of interface markdown fallback");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Builds Native Receiver Member Hover",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///semantic_query_native_receiver_hover.zr", 46);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, ").y", 0, 2, &hoverPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Builds Native Receiver Member Hover",
+                  "Failed to prepare native receiver hover fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, hoverPosition, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_TYPE_MEMBER ||
+        !ZrLanguageServer_LspSemanticQuery_BuildHover(state, context, &query, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "field") ||
+        !hover_contains_text(hover, "y") ||
+        !hover_contains_text(hover, "float") ||
+        !hover_contains_text(hover, "Vector3")) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Builds Native Receiver Member Hover",
+                  "Structured semantic query should resolve native receiver fields without interface-only markdown fallback");
+        return;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Query Builds Native Receiver Member Hover");
+}
+
+static void test_lsp_semantic_query_resolves_external_metadata_declaration_targets(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize mainLength = 0;
+    TZrChar *mainContent;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *binaryUri = ZR_NULL;
+    SZrLspPosition binaryEntryPosition = {0, 0};
+    SZrLspSemanticQuery query;
+
+    TEST_START("LSP Semantic Query Resolves External Metadata Declaration Targets");
+    TEST_INFO("Structured external metadata query",
+              "The shared semantic query should recognize .zro declaration entries directly instead of relying on interface-level project fallback code");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/bin/graph_binary_stage.zro",
+                                   binaryPath,
+                                   sizeof(binaryPath))) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves External Metadata Declaration Targets",
+                  "Failed to build binary metadata fixture paths");
+        return;
+    }
+
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (mainContent == ZR_NULL || context == ZR_NULL) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves External Metadata Declaration Targets",
+                  "Failed to load binary metadata fixture");
+        return;
+    }
+
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    binaryUri = create_file_uri_from_native_path(state, binaryPath);
+    if (mainUri == ZR_NULL || binaryUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves External Metadata Declaration Targets",
+                  "Failed to open binary metadata fixture source");
+        return;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, binaryUri, binaryEntryPosition, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION ||
+        query.moduleName == ZR_NULL ||
+        strcmp(test_string_ptr(query.uri), test_string_ptr(binaryUri)) != 0 ||
+        query.sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Resolves External Metadata Declaration Targets",
+                  "Structured semantic query should resolve .zro module entries as first-class external metadata declarations");
+        return;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    free(mainContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Query Resolves External Metadata Declaration Targets");
+}
+
+static void test_lsp_semantic_query_external_metadata_references_and_highlights(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize mainLength = 0;
+    TZrChar *mainContent;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *binaryUri = ZR_NULL;
+    SZrLspPosition binaryEntryPosition = {0, 0};
+    SZrLspPosition importLiteralPosition = {0, 0};
+    SZrLspPosition importBindingPosition = {0, 0};
+    SZrLspSemanticQuery query;
+    SZrArray references;
+    SZrArray highlights;
+
+    TEST_START("LSP Semantic Query External Metadata References And Highlights");
+    TEST_INFO("Structured external metadata references",
+              "External metadata semantic queries should drive references and same-document highlights without routing back through legacy project position fallback");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/bin/graph_binary_stage.zro",
+                                   binaryPath,
+                                   sizeof(binaryPath))) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Query External Metadata References And Highlights",
+                  "Failed to build binary metadata fixture paths");
+        return;
+    }
+
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (mainContent == ZR_NULL || context == ZR_NULL) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query External Metadata References And Highlights",
+                  "Failed to load binary metadata fixture");
+        return;
+    }
+
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    binaryUri = create_file_uri_from_native_path(state, binaryPath);
+    if (mainUri == ZR_NULL || binaryUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
+        !lsp_find_position_for_substring(mainContent, "\"graph_binary_stage\"", 0, 1, &importLiteralPosition) ||
+        !lsp_find_position_for_substring(mainContent, "binaryStage", 0, 0, &importBindingPosition)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query External Metadata References And Highlights",
+                  "Failed to prepare semantic-query external metadata fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 4);
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, binaryUri, binaryEntryPosition, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION ||
+        !ZrLanguageServer_LspSemanticQuery_AppendReferences(state, context, &query, ZR_TRUE, &references) ||
+        !location_array_contains_position(&references, importLiteralPosition.line, importLiteralPosition.character) ||
+        !location_array_contains_position(&references, importBindingPosition.line, importBindingPosition.character) ||
+        !ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(state, context, &query, &highlights) ||
+        !highlight_array_contains_position(&highlights, binaryEntryPosition.line, binaryEntryPosition.character)) {
+        ZrCore_Array_Free(state, &highlights);
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query External Metadata References And Highlights",
+                  "Structured external metadata queries should surface import references and same-document highlights through the shared query path");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &highlights);
+    ZrCore_Array_Free(state, &references);
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    free(mainContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Query External Metadata References And Highlights");
 }
 
 // 主测试函数
@@ -2925,9 +4133,48 @@ int main(void) {
     test_lsp_extern_type_symbols_surface_hover_and_definition(state);
     TEST_DIVIDER();
 
+    test_lsp_extern_layout_hover_surfaces_ffi_metadata(state);
+    TEST_DIVIDER();
+
+    test_lsp_ffi_pointer_helpers_surface_extern_wrapper_types(state);
+    TEST_DIVIDER();
+
     test_lsp_completion_lists_directives_and_meta_methods(state);
     TEST_DIVIDER();
-    
+
+    test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_query_resolves_native_import_member_source_kind(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_query_resolves_module_link_chain_member_navigation(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_query_unifies_import_target_navigation(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_query_collects_receiver_completion_items(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_query_collects_import_module_completion_items(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_query_collects_import_chain_completion_items(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_tokens_cover_import_chain_members(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_query_builds_native_receiver_member_hover(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_query_resolves_external_metadata_declaration_targets(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_query_external_metadata_references_and_highlights(state);
+    TEST_DIVIDER();
+
     // 清理
     ZrCore_GlobalState_Free(global);
     

@@ -716,6 +716,225 @@ static TZrSize semantic_buffer_append(TZrChar *buffer,
     return offset + (TZrSize)written;
 }
 
+static const TZrChar *semantic_identifier_node_text(SZrAstNode *node) {
+    if (node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL || node->data.identifier.name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return semantic_string_native(node->data.identifier.name);
+}
+
+static const TZrChar *semantic_member_property_text(SZrAstNode *node) {
+    if (node == ZR_NULL || node->type != ZR_AST_MEMBER_EXPRESSION || node->data.memberExpression.computed) {
+        return ZR_NULL;
+    }
+
+    return semantic_identifier_node_text(node->data.memberExpression.property);
+}
+
+static TZrBool semantic_text_equals(const TZrChar *value, const TZrChar *expected) {
+    return value != ZR_NULL && expected != ZR_NULL && strcmp(value, expected) == 0;
+}
+
+static SZrAstNodeArray *semantic_get_decorator_array_for_node(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (node->type) {
+        case ZR_AST_STRUCT_DECLARATION:
+            return node->data.structDeclaration.decorators;
+        case ZR_AST_STRUCT_FIELD:
+            return node->data.structField.decorators;
+        case ZR_AST_ENUM_DECLARATION:
+            return node->data.enumDeclaration.decorators;
+        case ZR_AST_ENUM_MEMBER:
+            return node->data.enumMember.decorators;
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            return node->data.externFunctionDeclaration.decorators;
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+            return node->data.externDelegateDeclaration.decorators;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool semantic_extract_ffi_decorator(SZrAstNode *decoratorNode,
+                                              const TZrChar **outLeafName,
+                                              TZrBool *outHasCall,
+                                              SZrFunctionCall **outCall) {
+    SZrAstNode *expr;
+    SZrPrimaryExpression *primary;
+    SZrAstNode *ffiMember;
+    SZrAstNode *leafMember;
+
+    if (outLeafName != ZR_NULL) {
+        *outLeafName = ZR_NULL;
+    }
+    if (outHasCall != ZR_NULL) {
+        *outHasCall = ZR_FALSE;
+    }
+    if (outCall != ZR_NULL) {
+        *outCall = ZR_NULL;
+    }
+
+    if (decoratorNode == ZR_NULL || decoratorNode->type != ZR_AST_DECORATOR_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    expr = decoratorNode->data.decoratorExpression.expr;
+    if (expr == ZR_NULL || expr->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    primary = &expr->data.primaryExpression;
+    if (!semantic_text_equals(semantic_identifier_node_text(primary->property), "zr") ||
+        primary->members == ZR_NULL || primary->members->count < 2 || primary->members->count > 3) {
+        return ZR_FALSE;
+    }
+
+    ffiMember = primary->members->nodes[0];
+    leafMember = primary->members->nodes[1];
+    if (!semantic_text_equals(semantic_member_property_text(ffiMember), "ffi")) {
+        return ZR_FALSE;
+    }
+
+    if (outLeafName != ZR_NULL) {
+        *outLeafName = semantic_member_property_text(leafMember);
+        if (*outLeafName == ZR_NULL) {
+            return ZR_FALSE;
+        }
+    }
+
+    if (primary->members->count == 3) {
+        SZrAstNode *callNode = primary->members->nodes[2];
+        if (callNode == ZR_NULL || callNode->type != ZR_AST_FUNCTION_CALL) {
+            return ZR_FALSE;
+        }
+        if (outHasCall != ZR_NULL) {
+            *outHasCall = ZR_TRUE;
+        }
+        if (outCall != ZR_NULL) {
+            *outCall = &callNode->data.functionCall;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool semantic_call_read_single_integer_arg(SZrFunctionCall *call, TZrInt64 *outValue) {
+    SZrAstNode *arg;
+
+    if (outValue != ZR_NULL) {
+        *outValue = 0;
+    }
+    if (call == ZR_NULL || call->args == ZR_NULL || call->args->count != 1) {
+        return ZR_FALSE;
+    }
+
+    arg = call->args->nodes[0];
+    if (arg == ZR_NULL || arg->type != ZR_AST_INTEGER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    if (outValue != ZR_NULL) {
+        *outValue = arg->data.integerLiteral.value;
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool semantic_call_read_single_string_arg(SZrFunctionCall *call, const TZrChar **outValue) {
+    SZrAstNode *arg;
+
+    if (outValue != ZR_NULL) {
+        *outValue = ZR_NULL;
+    }
+    if (call == ZR_NULL || call->args == ZR_NULL || call->args->count != 1) {
+        return ZR_FALSE;
+    }
+
+    arg = call->args->nodes[0];
+    if (arg == ZR_NULL || arg->type != ZR_AST_STRING_LITERAL || arg->data.stringLiteral.value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (outValue != ZR_NULL) {
+        *outValue = semantic_string_native(arg->data.stringLiteral.value);
+    }
+    return ZR_TRUE;
+}
+
+static TZrSize semantic_append_ffi_hover_metadata(SZrAstNode *node,
+                                                  TZrChar *buffer,
+                                                  TZrSize bufferSize,
+                                                  TZrSize offset) {
+    SZrAstNodeArray *decorators;
+
+    if (node == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return offset;
+    }
+
+    decorators = semantic_get_decorator_array_for_node(node);
+    if (decorators == ZR_NULL || decorators->nodes == ZR_NULL) {
+        return offset;
+    }
+
+    for (TZrSize index = 0; index < decorators->count; index++) {
+        SZrAstNode *decoratorNode = decorators->nodes[index];
+        const TZrChar *leafName = ZR_NULL;
+        TZrBool hasCall = ZR_FALSE;
+        SZrFunctionCall *call = ZR_NULL;
+        TZrInt64 integerValue = 0;
+        const TZrChar *stringValue = ZR_NULL;
+
+        if (!semantic_extract_ffi_decorator(decoratorNode, &leafName, &hasCall, &call) ||
+            leafName == ZR_NULL || !hasCall) {
+            continue;
+        }
+
+        switch (node->type) {
+            case ZR_AST_STRUCT_DECLARATION:
+                if (semantic_text_equals(leafName, "pack") &&
+                    semantic_call_read_single_integer_arg(call, &integerValue)) {
+                    offset = semantic_buffer_append(buffer, bufferSize, offset, "\nPack: %lld", (long long)integerValue);
+                } else if (semantic_text_equals(leafName, "align") &&
+                           semantic_call_read_single_integer_arg(call, &integerValue)) {
+                    offset =
+                        semantic_buffer_append(buffer, bufferSize, offset, "\nAlign: %lld", (long long)integerValue);
+                }
+                break;
+
+            case ZR_AST_STRUCT_FIELD:
+                if (semantic_text_equals(leafName, "offset") &&
+                    semantic_call_read_single_integer_arg(call, &integerValue)) {
+                    offset =
+                        semantic_buffer_append(buffer, bufferSize, offset, "\nOffset: %lld", (long long)integerValue);
+                }
+                break;
+
+            case ZR_AST_ENUM_DECLARATION:
+                if (semantic_text_equals(leafName, "underlying") &&
+                    semantic_call_read_single_string_arg(call, &stringValue) &&
+                    stringValue != ZR_NULL) {
+                    offset = semantic_buffer_append(buffer, bufferSize, offset, "\nUnderlying: %s", stringValue);
+                }
+                break;
+
+            case ZR_AST_ENUM_MEMBER:
+                if (semantic_text_equals(leafName, "value") &&
+                    semantic_call_read_single_integer_arg(call, &integerValue)) {
+                    offset = semantic_buffer_append(buffer, bufferSize, offset, "\nValue: %lld", (long long)integerValue);
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    return offset;
+}
+
 static void semantic_format_type_from_ast(SZrState *state,
                                           SZrCompilerState *compilerState,
                                           SZrType *typeNode,
@@ -1464,18 +1683,6 @@ static void semantic_append_native_module_descriptor_completions(SZrState *state
         return;
     }
 
-    for (TZrSize index = 0; index < descriptor->typeHintCount; index++) {
-        const ZrLibTypeHintDescriptor *hint = &descriptor->typeHints[index];
-        if (hint->symbolName != ZR_NULL) {
-            semantic_append_completion_item(state,
-                                            result,
-                                            hint->symbolName,
-                                            hint->symbolKind != ZR_NULL ? hint->symbolKind : "symbol",
-                                            hint->signature,
-                                            ZR_NULL);
-        }
-    }
-
     for (TZrSize index = 0; index < descriptor->functionCount; index++) {
         const ZrLibFunctionDescriptor *functionDescriptor = &descriptor->functions[index];
         TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
@@ -1843,6 +2050,25 @@ SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *an
     return ZR_NULL;
 }
 
+TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(SZrState *state,
+                                                                SZrSemanticAnalyzer *analyzer,
+                                                                SZrFileRange position,
+                                                                SZrInferredType *outType) {
+    const SZrType *typeInfo;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->ast == ZR_NULL ||
+        analyzer->compilerState == ZR_NULL || outType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typeInfo = semantic_find_type_node_at_position(analyzer->ast, position);
+    if (typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return ZrParser_AstTypeToInferredType_Convert(analyzer->compilerState, typeInfo, outType);
+}
+
 // 获取悬停信息
 TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
                                      SZrSemanticAnalyzer *analyzer,
@@ -1921,6 +2147,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
         if (sourceText != ZR_NULL) {
             semantic_buffer_append(buffer, sizeof(buffer), strlen(buffer), "\nSource: %s", sourceText);
         }
+        if (symbol->astNode != ZR_NULL) {
+            semantic_append_ffi_hover_metadata(symbol->astNode, buffer, sizeof(buffer), strlen(buffer));
+        }
         *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->selectionRange, symbol->typeInfo);
         return *result != ZR_NULL;
     }
@@ -1950,6 +2179,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
 
     if (sourceText != ZR_NULL) {
         semantic_buffer_append(buffer, sizeof(buffer), strlen(buffer), "\nSource: %s", sourceText);
+    }
+    if (symbol->astNode != ZR_NULL) {
+        semantic_append_ffi_hover_metadata(symbol->astNode, buffer, sizeof(buffer), strlen(buffer));
     }
 
     *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->selectionRange, symbol->typeInfo);

@@ -22,6 +22,26 @@
 
 #define ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ((TZrUInt32)-1)
 
+static TZrBool inferred_type_is_task_handle(const SZrInferredType *type) {
+    const TZrChar *typeName;
+
+    if (type == ZR_NULL || type->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (type->typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        typeName = ZrCore_String_GetNativeStringShort(type->typeName);
+    } else {
+        typeName = ZrCore_String_GetNativeString(type->typeName);
+    }
+
+    if (typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return strcmp(typeName, "Task") == 0 || strncmp(typeName, "Task<", 5) == 0;
+}
+
 static const SZrTypeValue *native_module_info_get_object_field(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
     SZrString *fieldString;
     SZrTypeValue key;
@@ -125,6 +145,88 @@ static SZrString *native_module_info_array_get_string(SZrState *state, SZrObject
     }
 
     return ZR_CAST_STRING(state, value->value.object);
+}
+
+static void native_module_info_add_field_member(SZrState *state,
+                                                SZrTypePrototypeInfo *info,
+                                                EZrAstNodeType memberType,
+                                                SZrString *memberName,
+                                                SZrString *fieldTypeName,
+                                                TZrBool isStatic);
+
+static TZrBool native_module_info_is_ascii_space(TZrChar ch) {
+    return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
+}
+
+static SZrString *native_module_info_parse_property_hint_type_name(SZrState *state, SZrString *signature) {
+    const TZrChar *signatureText;
+    const TZrChar *colon;
+    const TZrChar *typeStart;
+    const TZrChar *typeEnd;
+
+    if (state == ZR_NULL || signature == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    signatureText = ZrCore_String_GetNativeString(signature);
+    if (signatureText == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    colon = strchr(signatureText, ':');
+    if (colon == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    typeStart = colon + 1;
+    while (*typeStart != '\0' && native_module_info_is_ascii_space(*typeStart)) {
+        typeStart++;
+    }
+
+    typeEnd = signatureText + strlen(signatureText);
+    while (typeEnd > typeStart && native_module_info_is_ascii_space(typeEnd[-1])) {
+        typeEnd--;
+    }
+
+    if (typeEnd <= typeStart) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(state, (TZrNativeString)typeStart, (TZrSize)(typeEnd - typeStart));
+}
+
+static void native_module_info_add_property_hint_member(SZrCompilerState *cs,
+                                                        SZrTypePrototypeInfo *modulePrototype,
+                                                        SZrObject *hintEntry) {
+    SZrString *symbolName;
+    SZrString *symbolKind;
+    SZrString *signature;
+    TZrNativeString symbolKindText;
+    SZrString *typeName;
+
+    if (cs == ZR_NULL || modulePrototype == ZR_NULL || hintEntry == ZR_NULL) {
+        return;
+    }
+
+    symbolName = native_module_info_get_string_field(cs->state, hintEntry, "symbolName");
+    symbolKind = native_module_info_get_string_field(cs->state, hintEntry, "symbolKind");
+    signature = native_module_info_get_string_field(cs->state, hintEntry, "signature");
+    symbolKindText = symbolKind != ZR_NULL ? ZrCore_String_GetNativeString(symbolKind) : ZR_NULL;
+    if (symbolName == ZR_NULL || symbolKindText == ZR_NULL || strcmp(symbolKindText, "property") != 0) {
+        return;
+    }
+
+    typeName = native_module_info_parse_property_hint_type_name(cs->state, signature);
+    if (typeName == ZR_NULL) {
+        return;
+    }
+
+    native_module_info_add_field_member(cs->state,
+                                        modulePrototype,
+                                        ZR_AST_CLASS_FIELD,
+                                        symbolName,
+                                        typeName,
+                                        ZR_TRUE);
 }
 
 static void native_module_info_init_prototype(SZrState *state,
@@ -277,6 +379,107 @@ static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
     }
 }
 
+static TZrBool native_module_info_member_has_generic_parameter(const SZrTypeMemberInfo *memberInfo, SZrString *name) {
+    if (memberInfo == ZR_NULL || name == ZR_NULL || !memberInfo->genericParameters.isValid) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < memberInfo->genericParameters.length; index++) {
+        SZrTypeGenericParameterInfo *existing =
+                (SZrTypeGenericParameterInfo *)ZrCore_Array_Get((SZrArray *)&memberInfo->genericParameters, index);
+        if (existing != ZR_NULL && existing->name != ZR_NULL && ZrCore_String_Equal(existing->name, name)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void native_module_info_append_generic_parameter_copy(SZrState *state,
+                                                             SZrTypeMemberInfo *memberInfo,
+                                                             const SZrTypeGenericParameterInfo *source) {
+    SZrTypeGenericParameterInfo copied;
+
+    if (state == ZR_NULL || memberInfo == ZR_NULL || source == ZR_NULL || source->name == ZR_NULL ||
+        native_module_info_member_has_generic_parameter(memberInfo, source->name)) {
+        return;
+    }
+
+    if (!memberInfo->genericParameters.isValid) {
+        ZrCore_Array_Init(state,
+                          &memberInfo->genericParameters,
+                          sizeof(SZrTypeGenericParameterInfo),
+                          ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    }
+
+    memset(&copied, 0, sizeof(copied));
+    copied.name = source->name;
+    ZrCore_Array_Init(state,
+                      &copied.constraintTypeNames,
+                      sizeof(SZrString *),
+                      source->constraintTypeNames.length > 0 ? source->constraintTypeNames.length
+                                                             : ZR_PARSER_INITIAL_CAPACITY_PAIR);
+    for (TZrSize index = 0; index < source->constraintTypeNames.length; index++) {
+        SZrString **constraintName =
+                (SZrString **)ZrCore_Array_Get((SZrArray *)&source->constraintTypeNames, index);
+        if (constraintName != ZR_NULL && *constraintName != ZR_NULL) {
+            ZrCore_Array_Push(state, &copied.constraintTypeNames, constraintName);
+        }
+    }
+
+    ZrCore_Array_Push(state, &memberInfo->genericParameters, &copied);
+}
+
+static void native_module_info_copy_method_generic_parameters(SZrState *state,
+                                                              SZrTypeMemberInfo *memberInfo,
+                                                              SZrObject *genericParametersArray) {
+    if (state == ZR_NULL || memberInfo == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < native_module_info_array_length(genericParametersArray); index++) {
+        SZrObject *genericParameterEntry =
+                native_module_info_array_get_object(state, genericParametersArray, index);
+        SZrString *name;
+        SZrObject *constraintsArray;
+        SZrTypeGenericParameterInfo copied;
+
+        if (genericParameterEntry == ZR_NULL) {
+            continue;
+        }
+
+        name = native_module_info_get_string_field(state, genericParameterEntry, "name");
+        if (name == ZR_NULL || native_module_info_member_has_generic_parameter(memberInfo, name)) {
+            continue;
+        }
+
+        if (!memberInfo->genericParameters.isValid) {
+            ZrCore_Array_Init(state,
+                              &memberInfo->genericParameters,
+                              sizeof(SZrTypeGenericParameterInfo),
+                              ZR_PARSER_INITIAL_CAPACITY_PAIR);
+        }
+
+        memset(&copied, 0, sizeof(copied));
+        copied.name = name;
+        ZrCore_Array_Init(state,
+                          &copied.constraintTypeNames,
+                          sizeof(SZrString *),
+                          ZR_PARSER_INITIAL_CAPACITY_PAIR);
+        constraintsArray = native_module_info_get_array_field(state, genericParameterEntry, "constraints");
+        for (TZrSize constraintIndex = 0; constraintIndex < native_module_info_array_length(constraintsArray);
+             constraintIndex++) {
+            SZrString *constraintTypeName =
+                    native_module_info_array_get_string(state, constraintsArray, constraintIndex);
+            if (constraintTypeName != ZR_NULL) {
+                ZrCore_Array_Push(state, &copied.constraintTypeNames, &constraintTypeName);
+            }
+        }
+
+        ZrCore_Array_Push(state, &memberInfo->genericParameters, &copied);
+    }
+}
+
 static TZrUInt32 native_module_info_exact_parameter_count(SZrState *state, SZrObject *entry) {
     TZrInt64 parameterCount;
     TZrInt64 minArgumentCount;
@@ -307,7 +510,8 @@ static void native_module_info_add_method_member(SZrCompilerState *cs,
                                                  SZrString *returnTypeName,
                                                  TZrBool isStatic,
                                                  TZrUInt32 parameterCount,
-                                                 SZrObject *parametersArray) {
+                                                 SZrObject *parametersArray,
+                                                 SZrObject *genericParametersArray) {
     SZrTypeMemberInfo memberInfo;
 
     if (cs == ZR_NULL || info == ZR_NULL || memberName == ZR_NULL || native_module_info_has_member(info, memberName)) {
@@ -321,6 +525,7 @@ static void native_module_info_add_method_member(SZrCompilerState *cs,
     memberInfo.isStatic = isStatic;
     memberInfo.parameterCount = parameterCount;
     memberInfo.returnTypeName = returnTypeName;
+    native_module_info_copy_method_generic_parameters(cs->state, &memberInfo, genericParametersArray);
     native_module_info_copy_parameter_types(cs, &memberInfo, parametersArray);
     ZrCore_Array_Push(cs->state, &info->members, &memberInfo);
 }
@@ -330,7 +535,8 @@ static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
                                                       EZrMetaType metaType,
                                                       SZrString *returnTypeName,
                                                       TZrUInt32 parameterCount,
-                                                      SZrObject *parametersArray) {
+                                                      SZrObject *parametersArray,
+                                                      SZrObject *genericParametersArray) {
     SZrTypeMemberInfo memberInfo;
     const TZrChar *memberNameText;
     SZrString *memberName;
@@ -359,6 +565,7 @@ static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
     memberInfo.isMetaMethod = ZR_TRUE;
     memberInfo.parameterCount = parameterCount;
     memberInfo.returnTypeName = returnTypeName;
+    native_module_info_copy_method_generic_parameters(cs->state, &memberInfo, genericParametersArray);
     native_module_info_copy_parameter_types(cs, &memberInfo, parametersArray);
     ZrCore_Array_Push(cs->state, &info->members, &memberInfo);
 }
@@ -503,6 +710,9 @@ not_array_type_name:
         EZrValueType primitiveBaseType = ZR_VALUE_TYPE_UNKNOWN;
         if (nativeTypeName != ZR_NULL &&
             inferred_type_try_map_primitive_name(nativeTypeName, nativeTypeNameLength, &primitiveBaseType)) {
+            /* Preserve the imported primitive spelling so closed generic names
+             * like Ptr<u8> stay stable; compatibility is normalized later in
+             * the shared type-system compare helpers. */
             ZrParser_InferredType_InitFull(cs->state, result, primitiveBaseType, ZR_FALSE, typeName);
             return ZR_TRUE;
         }
@@ -716,6 +926,142 @@ static TZrBool inferred_type_from_member_call(SZrCompilerState *cs,
     }
 }
 
+static SZrAstNodeArray *member_info_parameter_list(const SZrTypeMemberInfo *memberInfo) {
+    if (memberInfo == ZR_NULL || memberInfo->declarationNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (memberInfo->declarationNode->type) {
+        case ZR_AST_STRUCT_METHOD:
+            return memberInfo->declarationNode->data.structMethod.params;
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return memberInfo->declarationNode->data.structMetaFunction.params;
+        case ZR_AST_CLASS_METHOD:
+            return memberInfo->declarationNode->data.classMethod.params;
+        case ZR_AST_CLASS_META_FUNCTION:
+            return memberInfo->declarationNode->data.classMetaFunction.params;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static SZrString *member_info_parameter_name_at(const SZrTypeMemberInfo *memberInfo, TZrSize index) {
+    SZrAstNodeArray *paramList = member_info_parameter_list(memberInfo);
+
+    if (paramList != ZR_NULL && index < paramList->count) {
+        SZrAstNode *paramNode = paramList->nodes[index];
+        if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER &&
+            paramNode->data.parameter.name != ZR_NULL) {
+            return paramNode->data.parameter.name->name;
+        }
+    }
+
+    if (memberInfo != ZR_NULL && index < memberInfo->parameterNames.length) {
+        SZrString **namePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterNames, index);
+        return namePtr != ZR_NULL ? *namePtr : ZR_NULL;
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool member_info_parameter_has_default_at(const SZrTypeMemberInfo *memberInfo, TZrSize index) {
+    SZrAstNodeArray *paramList = member_info_parameter_list(memberInfo);
+
+    if (paramList != ZR_NULL && index < paramList->count) {
+        SZrAstNode *paramNode = paramList->nodes[index];
+        if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
+            return paramNode->data.parameter.defaultValue != ZR_NULL;
+        }
+    }
+
+    if (memberInfo != ZR_NULL && index < memberInfo->parameterHasDefaultValues.length) {
+        TZrBool *hasDefaultPtr =
+                (TZrBool *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterHasDefaultValues, index);
+        return hasDefaultPtr != ZR_NULL ? *hasDefaultPtr : ZR_FALSE;
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrAstNode *member_info_parameter_default_node_at(const SZrTypeMemberInfo *memberInfo, TZrSize index) {
+    SZrAstNodeArray *paramList = member_info_parameter_list(memberInfo);
+
+    if (paramList == ZR_NULL || index >= paramList->count) {
+        return ZR_NULL;
+    }
+
+    if (paramList->nodes[index] == ZR_NULL || paramList->nodes[index]->type != ZR_AST_PARAMETER) {
+        return ZR_NULL;
+    }
+
+    return paramList->nodes[index]->data.parameter.defaultValue;
+}
+
+static EZrParameterPassingMode member_call_parameter_passing_mode_at(const SZrArray *parameterPassingModes,
+                                                                    TZrSize index) {
+    EZrParameterPassingMode *modePtr;
+
+    if (parameterPassingModes == ZR_NULL || index >= parameterPassingModes->length) {
+        return ZR_PARAMETER_PASSING_MODE_VALUE;
+    }
+
+    modePtr = (EZrParameterPassingMode *)ZrCore_Array_Get((SZrArray *)parameterPassingModes, index);
+    return modePtr != ZR_NULL ? *modePtr : ZR_PARAMETER_PASSING_MODE_VALUE;
+}
+
+static const TZrChar *member_call_parameter_passing_mode_label(EZrParameterPassingMode passingMode) {
+    switch (passingMode) {
+        case ZR_PARAMETER_PASSING_MODE_IN:
+            return "%in";
+        case ZR_PARAMETER_PASSING_MODE_OUT:
+            return "%out";
+        case ZR_PARAMETER_PASSING_MODE_REF:
+            return "%ref";
+        case ZR_PARAMETER_PASSING_MODE_VALUE:
+        default:
+            return "value";
+    }
+}
+
+static TZrBool member_call_expression_is_assignable_storage(SZrAstNode *node) {
+    SZrPrimaryExpression *primaryExpr;
+
+    if (node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_TRUE;
+    }
+
+    if (node->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    primaryExpr = &node->data.primaryExpression;
+    if (primaryExpr->property == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!member_call_expression_is_assignable_storage(primaryExpr->property) &&
+        primaryExpr->property->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    if (primaryExpr->members == ZR_NULL || primaryExpr->members->count == 0) {
+        return primaryExpr->property->type == ZR_AST_IDENTIFIER_LITERAL;
+    }
+
+    for (TZrSize index = 0; index < primaryExpr->members->count; index++) {
+        SZrAstNode *memberNode = primaryExpr->members->nodes[index];
+        if (memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool validate_member_call_arguments(SZrCompilerState *cs,
                                               const SZrTypeMemberInfo *memberInfo,
                                               const SZrResolvedCallSignature *resolvedSignature,
@@ -723,13 +1069,19 @@ static TZrBool validate_member_call_arguments(SZrCompilerState *cs,
                                               SZrFileRange location) {
     TZrSize argCount;
     SZrArray argTypes;
+    SZrAstNode **argumentNodes = ZR_NULL;
     const SZrArray *parameterTypes;
     const SZrArray *parameterPassingModes;
+    TZrBool *provided = ZR_NULL;
+    TZrSize parameterSlotCount;
     TZrUInt32 parameterCount;
+    TZrBool requireTaskHandleArgument = ZR_FALSE;
 
     if (cs == ZR_NULL || memberInfo == ZR_NULL) {
         return ZR_FALSE;
     }
+
+    requireTaskHandleArgument = zr_string_equals_cstr(memberInfo->name, "__awaitTask");
 
     if (resolvedSignature != ZR_NULL) {
         parameterTypes = &resolvedSignature->parameterTypes;
@@ -749,76 +1101,185 @@ static TZrBool validate_member_call_arguments(SZrCompilerState *cs,
         return ZR_TRUE;
     }
 
-    if (parameterCount != (TZrUInt32)argCount) {
-        ZrParser_Compiler_Error(cs, "Argument count mismatch", location);
-        return ZR_FALSE;
-    }
-
-    if (parameterTypes->length == 0) {
-        return ZR_TRUE;
-    }
-
-    ZrCore_Array_Init(cs->state, &argTypes, sizeof(SZrInferredType), parameterTypes->length);
-    for (TZrSize index = 0; index < parameterTypes->length; index++) {
-        SZrAstNode *argNode;
-        SZrInferredType *paramType;
-        SZrInferredType argType;
-
-        if (call == ZR_NULL || call->args == ZR_NULL || index >= call->args->count) {
-            free_inferred_type_array(cs->state, &argTypes);
+    parameterSlotCount = parameterCount > parameterTypes->length ? parameterCount : parameterTypes->length;
+    if (parameterSlotCount == 0) {
+        if (argCount > 0) {
             ZrParser_Compiler_Error(cs, "Argument count mismatch", location);
             return ZR_FALSE;
         }
-
-        argNode = call->args->nodes[index];
-        paramType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)parameterTypes, index);
-        if (argNode == ZR_NULL || paramType == ZR_NULL) {
-            free_inferred_type_array(cs->state, &argTypes);
-            return ZR_FALSE;
-        }
-
-        ZrParser_InferredType_Init(cs->state, &argType, ZR_VALUE_TYPE_OBJECT);
-        if (!ZrParser_ExpressionType_Infer(cs, argNode, &argType)) {
-            free_inferred_type_array(cs->state, &argTypes);
-            ZrParser_InferredType_Free(cs->state, &argType);
-            return ZR_FALSE;
-        }
-        ZrCore_Array_Push(cs->state, &argTypes, &argType);
+        return ZR_TRUE;
     }
 
-    if (!validate_call_argument_passing_modes(cs,
-                                              parameterPassingModes,
-                                              parameterTypes,
-                                              call,
-                                              &argTypes)) {
-        free_inferred_type_array(cs->state, &argTypes);
+    provided = (TZrBool *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                          sizeof(TZrBool) * parameterSlotCount,
+                                                          ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    argumentNodes = (SZrAstNode **)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                   sizeof(SZrAstNode *) * parameterSlotCount,
+                                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (provided == ZR_NULL || argumentNodes == ZR_NULL) {
+        if (provided != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                          provided,
+                                          sizeof(TZrBool) * parameterSlotCount,
+                                          ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        }
+        if (argumentNodes != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                          argumentNodes,
+                                          sizeof(SZrAstNode *) * parameterSlotCount,
+                                          ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        }
         return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < parameterSlotCount; index++) {
+        provided[index] = ZR_FALSE;
+        argumentNodes[index] = ZR_NULL;
+    }
+
+    if (call != ZR_NULL && call->hasNamedArgs && call->argNames != ZR_NULL) {
+        TZrSize positionalCount = 0;
+
+        for (TZrSize index = 0; index < argCount && index < call->argNames->length; index++) {
+            SZrString **namePtr = (SZrString **)ZrCore_Array_Get(call->argNames, index);
+            if (namePtr != ZR_NULL && *namePtr == ZR_NULL) {
+                positionalCount++;
+                continue;
+            }
+            break;
+        }
+
+        if (positionalCount > parameterSlotCount) {
+            ZrParser_Compiler_Error(cs, "Argument count mismatch", location);
+            goto cleanup_error;
+        }
+
+        for (TZrSize index = 0; index < positionalCount; index++) {
+            provided[index] = ZR_TRUE;
+            argumentNodes[index] = call->args->nodes[index];
+        }
+
+        for (TZrSize index = positionalCount; index < argCount && index < call->argNames->length; index++) {
+            SZrString **namePtr = (SZrString **)ZrCore_Array_Get(call->argNames, index);
+            TZrBool matched = ZR_FALSE;
+
+            if (namePtr == ZR_NULL || *namePtr == ZR_NULL) {
+                ZrParser_Compiler_Error(cs, "Argument count mismatch", location);
+                goto cleanup_error;
+            }
+
+            for (TZrSize paramIndex = 0; paramIndex < parameterSlotCount; paramIndex++) {
+                SZrString *paramName = member_info_parameter_name_at(memberInfo, paramIndex);
+                if (paramName == ZR_NULL || !ZrCore_String_Equal(paramName, *namePtr)) {
+                    continue;
+                }
+
+                if (provided[paramIndex]) {
+                    ZrParser_Compiler_Error(cs, "Argument count mismatch", location);
+                    goto cleanup_error;
+                }
+
+                provided[paramIndex] = ZR_TRUE;
+                argumentNodes[paramIndex] = call->args->nodes[index];
+                matched = ZR_TRUE;
+                break;
+            }
+
+            if (!matched) {
+                ZrParser_Compiler_Error(cs, "Argument count mismatch", location);
+                goto cleanup_error;
+            }
+        }
+    } else {
+        if (argCount > parameterSlotCount) {
+            ZrParser_Compiler_Error(cs, "Argument count mismatch", location);
+            goto cleanup_error;
+        }
+
+        for (TZrSize index = 0; index < argCount; index++) {
+            provided[index] = ZR_TRUE;
+            argumentNodes[index] = call->args->nodes[index];
+        }
+    }
+
+    ZrCore_Array_Init(cs->state, &argTypes, sizeof(SZrInferredType), parameterSlotCount);
+    for (TZrSize index = 0; index < parameterSlotCount; index++) {
+        SZrAstNode *argNode = argumentNodes[index];
+        SZrAstNode *defaultNode = member_info_parameter_default_node_at(memberInfo, index);
+        SZrInferredType *paramType =
+                index < parameterTypes->length
+                        ? (SZrInferredType *)ZrCore_Array_Get((SZrArray *)parameterTypes, index)
+                        : ZR_NULL;
+        SZrInferredType argType;
+
+        ZrParser_InferredType_Init(cs->state, &argType, ZR_VALUE_TYPE_OBJECT);
+        if (provided[index]) {
+            if (argNode == ZR_NULL || !ZrParser_ExpressionType_Infer(cs, argNode, &argType)) {
+                ZrParser_InferredType_Free(cs->state, &argType);
+                goto cleanup_error_with_types;
+            }
+        } else if (defaultNode != ZR_NULL) {
+            if (!ZrParser_ExpressionType_Infer(cs, defaultNode, &argType)) {
+                ZrParser_InferredType_Free(cs->state, &argType);
+                goto cleanup_error_with_types;
+            }
+        } else if (member_info_parameter_has_default_at(memberInfo, index)) {
+            if (paramType != ZR_NULL) {
+                ZrParser_InferredType_Copy(cs->state, &argType, paramType);
+            }
+        } else {
+            ZrParser_InferredType_Free(cs->state, &argType);
+            ZrParser_Compiler_Error(cs, "Argument count mismatch", location);
+            goto cleanup_error_with_types;
+        }
+
+        ZrCore_Array_Push(cs->state, &argTypes, &argType);
     }
 
     for (TZrSize index = 0; index < parameterTypes->length; index++) {
         EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
-        EZrParameterPassingMode *modePtr = ZR_NULL;
         SZrInferredType *paramType =
                 (SZrInferredType *)ZrCore_Array_Get((SZrArray *)parameterTypes, index);
         SZrInferredType *argType = (SZrInferredType *)ZrCore_Array_Get(&argTypes, index);
-        SZrAstNode *argNode = call != ZR_NULL && call->args != ZR_NULL && index < call->args->count
-                                      ? call->args->nodes[index]
-                                      : ZR_NULL;
+        SZrAstNode *argNode = index < parameterSlotCount ? argumentNodes[index] : ZR_NULL;
+        TZrChar errorBuffer[ZR_PARSER_DETAIL_BUFFER_LENGTH];
 
         if (paramType == ZR_NULL || argType == ZR_NULL) {
-            free_inferred_type_array(cs->state, &argTypes);
-            return ZR_FALSE;
+            goto cleanup_error_with_types;
         }
 
-        if (parameterPassingModes != ZR_NULL && index < parameterPassingModes->length) {
-            modePtr = (EZrParameterPassingMode *)ZrCore_Array_Get((SZrArray *)parameterPassingModes, index);
-            if (modePtr != ZR_NULL) {
-                passingMode = *modePtr;
-            }
-        }
+        passingMode = member_call_parameter_passing_mode_at(parameterPassingModes, index);
 
         if (passingMode == ZR_PARAMETER_PASSING_MODE_OUT || passingMode == ZR_PARAMETER_PASSING_MODE_REF) {
+            if (argNode == ZR_NULL || !member_call_expression_is_assignable_storage(argNode)) {
+                snprintf(errorBuffer,
+                         sizeof(errorBuffer),
+                         "%s argument must be an assignable storage location",
+                         member_call_parameter_passing_mode_label(passingMode));
+                ZrParser_Compiler_Error(cs, errorBuffer, argNode != ZR_NULL ? argNode->location : location);
+                goto cleanup_error_with_types;
+            }
+
+            if (!ZrParser_InferredType_Equal(argType, paramType)) {
+                snprintf(errorBuffer,
+                         sizeof(errorBuffer),
+                         "%s argument type mismatch",
+                         member_call_parameter_passing_mode_label(passingMode));
+                ZrParser_TypeError_Report(cs,
+                                          errorBuffer,
+                                          paramType,
+                                          argType,
+                                          argNode != ZR_NULL ? argNode->location : location);
+                goto cleanup_error_with_types;
+            }
             continue;
+        }
+
+        if (requireTaskHandleArgument && index == 0 && !inferred_type_is_task_handle(argType)) {
+            ZrParser_Compiler_Error(cs,
+                                    "%await expects a zr.task.Task<T>; call .start() on the TaskRunner first",
+                                    argNode != ZR_NULL ? argNode->location : location);
+            goto cleanup_error_with_types;
         }
 
         if (!ZrParser_InferredType_IsCompatible(argType, paramType)) {
@@ -827,13 +1288,41 @@ static TZrBool validate_member_call_arguments(SZrCompilerState *cs,
                                       paramType,
                                       argType,
                                       argNode != ZR_NULL ? argNode->location : location);
-            free_inferred_type_array(cs->state, &argTypes);
-            return ZR_FALSE;
+            goto cleanup_error_with_types;
         }
     }
 
+    if (provided != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      provided,
+                                      sizeof(TZrBool) * parameterSlotCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    if (argumentNodes != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      argumentNodes,
+                                      sizeof(SZrAstNode *) * parameterSlotCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
     free_inferred_type_array(cs->state, &argTypes);
     return ZR_TRUE;
+
+cleanup_error_with_types:
+    free_inferred_type_array(cs->state, &argTypes);
+cleanup_error:
+    if (provided != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      provided,
+                                      sizeof(TZrBool) * parameterSlotCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    if (argumentNodes != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      argumentNodes,
+                                      sizeof(SZrAstNode *) * parameterSlotCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    return ZR_FALSE;
 }
 
 TZrBool infer_import_expression_type(SZrCompilerState *cs,
@@ -939,6 +1428,7 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
     SZrObject *constantsArray;
     SZrObject *typesArray;
     SZrObject *modulesArray;
+    SZrObject *typeHintsArray;
     SZrTypePrototypeInfo modulePrototype;
     TZrUInt64 pathHash;
 
@@ -994,6 +1484,7 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
         SZrString *returnTypeName = native_module_info_get_string_field(cs->state, entry, "returnTypeName");
         TZrUInt32 parameterCount = native_module_info_exact_parameter_count(cs->state, entry);
         SZrObject *parametersArray = native_module_info_get_array_field(cs->state, entry, "parameters");
+        SZrObject *genericParametersArray = native_module_info_get_array_field(cs->state, entry, "genericParameters");
         if (name != ZR_NULL) {
             native_module_info_add_method_member(cs,
                                                  &modulePrototype,
@@ -1002,7 +1493,8 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
                                                  returnTypeName,
                                                  ZR_TRUE,
                                                  parameterCount,
-                                                 parametersArray);
+                                                 parametersArray,
+                                                 genericParametersArray);
         }
     }
 
@@ -1040,6 +1532,7 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
                                             ZR_TRUE);
     }
 
+    typeHintsArray = native_module_info_get_array_field(cs->state, moduleInfo, "typeHints");
     typesArray = native_module_info_get_array_field(cs->state, moduleInfo, "types");
     for (TZrSize i = 0; i < native_module_info_array_length(typesArray); i++) {
         SZrObject *entry = native_module_info_array_get_object(cs->state, typesArray, i);
@@ -1143,6 +1636,8 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
             TZrBool isStatic = native_module_info_get_bool_field(cs->state, methodEntry, "isStatic", ZR_FALSE);
             TZrUInt32 parameterCount = native_module_info_exact_parameter_count(cs->state, methodEntry);
             SZrObject *parametersArray = native_module_info_get_array_field(cs->state, methodEntry, "parameters");
+            SZrObject *genericParametersArray =
+                    native_module_info_get_array_field(cs->state, methodEntry, "genericParameters");
             if (methodName != ZR_NULL) {
                 native_module_info_add_method_member(cs,
                                                      &typePrototype,
@@ -1151,7 +1646,8 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
                                                      returnTypeName,
                                                      isStatic,
                                                      parameterCount,
-                                                     parametersArray);
+                                                     parametersArray,
+                                                     genericParametersArray);
             }
         }
 
@@ -1162,6 +1658,8 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
             SZrString *returnTypeName = native_module_info_get_string_field(cs->state, metaEntry, "returnTypeName");
             TZrUInt32 parameterCount = native_module_info_exact_parameter_count(cs->state, metaEntry);
             SZrObject *parametersArray = native_module_info_get_array_field(cs->state, metaEntry, "parameters");
+            SZrObject *genericParametersArray =
+                    native_module_info_get_array_field(cs->state, metaEntry, "genericParameters");
 
             if (metaTypeValue < 0 || metaTypeValue >= ZR_META_ENUM_MAX) {
                 continue;
@@ -1172,7 +1670,8 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
                                                       (EZrMetaType)metaTypeValue,
                                                       returnTypeName,
                                                       parameterCount,
-                                                      parametersArray);
+                                                      parametersArray,
+                                                      genericParametersArray);
         }
 
         for (TZrSize enumMemberIndex = 0; enumMemberIndex < native_module_info_array_length(enumMembersArray);
@@ -1190,6 +1689,11 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
         }
 
         ZrCore_Array_Push(cs->state, &cs->typePrototypes, &typePrototype);
+    }
+
+    for (TZrSize hintIndex = 0; hintIndex < native_module_info_array_length(typeHintsArray); hintIndex++) {
+        SZrObject *hintEntry = native_module_info_array_get_object(cs->state, typeHintsArray, hintIndex);
+        native_module_info_add_property_hint_member(cs, &modulePrototype, hintEntry);
     }
 
     if (cs->typeEnv != ZR_NULL) {
@@ -1334,6 +1838,35 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     SZrResolvedCallSignature resolvedMemberSignature;
                     TZrChar genericDiagnostic[ZR_PARSER_ERROR_BUFFER_LENGTH];
                     TZrBool ffiHandled = ZR_FALSE;
+
+                    if (zr_string_equals_cstr(memberLookupName, "__awaitTask")) {
+                        SZrFunctionCall *awaitCall = &members->nodes[i + 1]->data.functionCall;
+                        SZrInferredType awaitedType;
+                        SZrAstNode *awaitedNode =
+                                (awaitCall != ZR_NULL && awaitCall->args != ZR_NULL && awaitCall->args->count > 0)
+                                        ? awaitCall->args->nodes[0]
+                                        : ZR_NULL;
+
+                        ZrParser_InferredType_Init(cs->state, &awaitedType, ZR_VALUE_TYPE_OBJECT);
+                        if (awaitedNode == ZR_NULL || !ZrParser_ExpressionType_Infer(cs, awaitedNode, &awaitedType)) {
+                            ZrParser_InferredType_Free(cs->state, &currentType);
+                            ZrParser_InferredType_Free(cs->state, &nextType);
+                            ZrParser_InferredType_Free(cs->state, &awaitedType);
+                            return ZR_FALSE;
+                        }
+
+                        if (!inferred_type_is_task_handle(&awaitedType)) {
+                            ZrParser_Compiler_Error(cs,
+                                                    "%await expects a zr.task.Task<T>; call .start() on the TaskRunner first",
+                                                    awaitedNode->location);
+                            ZrParser_InferredType_Free(cs->state, &currentType);
+                            ZrParser_InferredType_Free(cs->state, &nextType);
+                            ZrParser_InferredType_Free(cs->state, &awaitedType);
+                            return ZR_FALSE;
+                        }
+
+                        ZrParser_InferredType_Free(cs->state, &awaitedType);
+                    }
 
                     memset(&resolvedMemberSignature, 0, sizeof(resolvedMemberSignature));
                     ZrParser_InferredType_Init(cs->state, &resolvedMemberSignature.returnType, ZR_VALUE_TYPE_OBJECT);

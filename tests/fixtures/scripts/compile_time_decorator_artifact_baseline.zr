@@ -1,0 +1,50 @@
+%module "compile_time_decorator_artifact_baseline";
+
+%compileTime var BASE_BONUS: int = 5;
+%compileTime var EXTRA_FACTOR: int = 2;
+
+%compileTime decorateWithScale(target: %type Function, bonus: int = BASE_BONUS, factor: int = EXTRA_FACTOR): DecoratorPatch {
+    return {
+        metadata: {
+            compileTimeTagged: true,
+            projectedBonus: bonus * factor
+        }
+    };
+}
+
+%compileTime var decoratorRegistry = {
+    deep: {
+        scale: decorateWithScale
+    }
+};
+
+%compileTime class TagClass {
+    pri var marker: int = BASE_BONUS;
+
+    @constructor(marker: int = BASE_BONUS) {
+        this.marker = marker;
+    }
+
+    @decorate(target: %type Class): DecoratorPatch {
+        return {
+            metadata: {
+                compileTimeClassTag: this.marker
+            }
+        };
+    }
+}
+
+#TagClass(9)#
+pub class User {
+}
+
+#decoratorRegistry.deep.scale(factor: 3)#
+pub score(seed: int = 4): int {
+    var fnMeta = %type(score).metadata;
+    var classMeta = %type(User).metadata;
+    var observed = fnMeta;
+    observed = classMeta;
+    return seed + BASE_BONUS + EXTRA_FACTOR;
+}
+
+return score();

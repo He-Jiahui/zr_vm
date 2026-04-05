@@ -115,18 +115,42 @@ typedef struct SZrFunctionTypedExportSymbol {
     SZrFunctionTypedTypeRef valueType;
     TZrUInt32 parameterCount;
     SZrFunctionTypedTypeRef *parameterTypes;
+    TZrUInt32 lineInSourceStart;
+    TZrUInt32 columnInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+    TZrUInt32 columnInSourceEnd;
 } SZrFunctionTypedExportSymbol;
 
 typedef struct SZrFunctionMetadataParameter {
     struct SZrString *name;
     SZrFunctionTypedTypeRef type;
+    TZrBool hasDefaultValue;
+    struct SZrTypeValue defaultValue;
+    TZrBool hasDecoratorMetadata;
+    struct SZrTypeValue decoratorMetadataValue;
+    struct SZrString **decoratorNames;
+    TZrUInt32 decoratorCount;
 } SZrFunctionMetadataParameter;
+
+typedef enum EZrCompileTimeBindingTargetKind {
+    ZR_COMPILE_TIME_BINDING_TARGET_NONE = 0,
+    ZR_COMPILE_TIME_BINDING_TARGET_FUNCTION = 1,
+    ZR_COMPILE_TIME_BINDING_TARGET_DECORATOR_CLASS = 2
+} EZrCompileTimeBindingTargetKind;
+
+typedef struct SZrFunctionCompileTimePathBinding {
+    struct SZrString *path;
+    TZrUInt8 targetKind;
+    struct SZrString *targetName;
+} SZrFunctionCompileTimePathBinding;
 
 typedef struct SZrFunctionCompileTimeVariableInfo {
     struct SZrString *name;
     SZrFunctionTypedTypeRef type;
     TZrUInt32 lineInSourceStart;
     TZrUInt32 lineInSourceEnd;
+    SZrFunctionCompileTimePathBinding *pathBindings;
+    TZrUInt32 pathBindingCount;
 } SZrFunctionCompileTimeVariableInfo;
 
 typedef struct SZrFunctionCompileTimeFunctionInfo {
@@ -286,6 +310,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     SZrFunctionExceptionHandlerInfo *exceptionHandlerList;
     TZrUInt32 *lineInSourceList;
     struct SZrString *sourceCodeList;
+    struct SZrString *sourceHash;
     SZrRawObject *gcList;
     
     // module export info (for script-level functions only)
@@ -297,6 +322,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 typedLocalBindingLength;
     SZrFunctionTypedExportSymbol *typedExportedSymbols;
     TZrUInt32 typedExportedSymbolLength;
+    SZrFunctionMetadataParameter *parameterMetadata;
+    TZrUInt32 parameterMetadataCount;
     SZrFunctionCompileTimeVariableInfo *compileTimeVariableInfos;
     TZrUInt32 compileTimeVariableInfoLength;
     SZrFunctionCompileTimeFunctionInfo *compileTimeFunctionInfos;
@@ -379,9 +406,11 @@ ZR_CORE_API void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunct
 
 ZR_CORE_API TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(const SZrFunction *function);
 
+ZR_CORE_API TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function);
+
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CheckStackAndAnchor(struct SZrState *state,
                                                                 TZrSize size,
-                                                                TZrStackValuePointer checkPointer,
+                                                               TZrStackValuePointer checkPointer,
                                                                TZrStackValuePointer stackPointer,
                                                                SZrFunctionStackAnchor *anchor);
 

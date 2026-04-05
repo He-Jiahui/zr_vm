@@ -34,8 +34,6 @@ static TZrBool module_metadata_normalize_module_key(const TZrChar *modulePath,
 
     if (length >= 4 && memcmp(modulePath + length - 4, ".zro", 4) == 0) {
         length -= 4;
-    } else if (length >= 4 && memcmp(modulePath + length - 4, ".zri", 4) == 0) {
-        length -= 4;
     } else if (length >= 3 && memcmp(modulePath + length - 3, ".zr", 3) == 0) {
         length -= 3;
     }
@@ -328,17 +326,6 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ProjectHasBinaryModule(SZrLspProjectI
         return ZR_TRUE;
     }
 
-    if (module_metadata_resolve_existing_project_binary_path(projectIndex,
-                                                             moduleName,
-                                                             ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION,
-                                                             binaryModulePath,
-                                                             sizeof(binaryModulePath))) {
-        if (buffer != ZR_NULL && bufferSize > 0) {
-            snprintf(buffer, bufferSize, "%s", binaryModulePath);
-        }
-        return ZR_TRUE;
-    }
-
     return ZR_FALSE;
 }
 
@@ -487,222 +474,41 @@ TZrBool ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(SZrState *stat
     return *outSource != ZR_NULL;
 }
 
-TZrBool ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleFunction(SZrState *state,
-                                                                          SZrLspProjectIndex *projectIndex,
-                                                                          SZrString *moduleName,
-                                                                          SZrFunction **outFunction) {
-    TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrNativeString sourceBuffer;
-    TZrSize sourceLength;
-
-    if (outFunction != ZR_NULL) {
-        *outFunction = ZR_NULL;
+static const SZrIoFunctionTypedExportSymbol *module_metadata_find_binary_export_symbol(
+    const SZrIoFunction *entryFunction,
+    SZrString *memberName) {
+    if (entryFunction == ZR_NULL || memberName == ZR_NULL || entryFunction->typedExportedSymbols == ZR_NULL) {
+        return ZR_NULL;
     }
 
-    if (state == ZR_NULL || projectIndex == ZR_NULL || moduleName == ZR_NULL || outFunction == ZR_NULL ||
-        !module_metadata_resolve_existing_project_binary_path(projectIndex,
-                                                              module_metadata_string_text(moduleName),
-                                                              ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION,
-                                                              binaryPath,
-                                                              sizeof(binaryPath))) {
-        return ZR_FALSE;
+    for (TZrSize index = 0; index < entryFunction->typedExportedSymbolsLength; index++) {
+        const SZrIoFunctionTypedExportSymbol *symbol = &entryFunction->typedExportedSymbols[index];
+        if (symbol->name != ZR_NULL && ZrLanguageServer_Lsp_StringsEqual(symbol->name, memberName)) {
+            return symbol;
+        }
     }
 
-    sourceBuffer = ZrLibrary_File_ReadAll(state->global, binaryPath);
-    if (sourceBuffer == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    sourceLength = strlen(sourceBuffer);
-    if (state->global == ZR_NULL || state->global->compileSource == ZR_NULL) {
-        ZrCore_Memory_RawFreeWithType(state->global,
-                                      sourceBuffer,
-                                      sourceLength + 1,
-                                      ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
-        return ZR_FALSE;
-    }
-
-    *outFunction = state->global->compileSource(state,
-                                                sourceBuffer,
-                                                sourceLength,
-                                                ZrCore_String_Create(state,
-                                                                     (TZrNativeString)module_metadata_string_text(moduleName),
-                                                                     strlen(module_metadata_string_text(moduleName))));
-    ZrCore_Memory_RawFreeWithType(state->global,
-                                  sourceBuffer,
-                                  sourceLength + 1,
-                                  ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
-    return *outFunction != ZR_NULL;
+    return ZR_NULL;
 }
 
-static const TZrChar *intermediate_metadata_trim_leading(const TZrChar *start, const TZrChar *end) {
-    while (start < end && (*start == ' ' || *start == '\t')) {
-        start++;
-    }
-    return start;
+static TZrBool module_metadata_binary_export_symbol_has_declaration_range(
+    const SZrIoFunctionTypedExportSymbol *symbol) {
+    return symbol != ZR_NULL && symbol->lineInSourceStart > 0 && symbol->columnInSourceStart > 0 &&
+           symbol->lineInSourceEnd > 0 && symbol->columnInSourceEnd > 0;
 }
 
-static const TZrChar *intermediate_metadata_trim_trailing(const TZrChar *start, const TZrChar *end) {
-    while (end > start && (end[-1] == '\r' || end[-1] == '\n' || end[-1] == ' ' || end[-1] == '\t')) {
-        end--;
-    }
-    return end;
-}
+static SZrFileRange module_metadata_binary_export_symbol_range(SZrString *uri,
+                                                               const SZrIoFunctionTypedExportSymbol *symbol) {
+    SZrFilePosition start;
+    SZrFilePosition end;
 
-static TZrBool intermediate_metadata_append_symbol(SZrState *state,
-                                                   SZrLspIntermediateModuleMetadata *metadata,
-                                                   const TZrChar *nameStart,
-                                                   const TZrChar *nameEnd,
-                                                   const TZrChar *typeStart,
-                                                   const TZrChar *typeEnd,
-                                                   TZrBool isCallable) {
-    SZrLspIntermediateExportSymbol symbol;
-
-    if (state == ZR_NULL || metadata == ZR_NULL || nameStart == ZR_NULL || nameEnd == ZR_NULL ||
-        typeStart == ZR_NULL || typeEnd == ZR_NULL || nameEnd <= nameStart || typeEnd <= typeStart) {
-        return ZR_FALSE;
-    }
-
-    symbol.name = ZrCore_String_Create(state, (TZrNativeString)nameStart, (TZrSize)(nameEnd - nameStart));
-    symbol.typeName = ZrCore_String_Create(state, (TZrNativeString)typeStart, (TZrSize)(typeEnd - typeStart));
-    symbol.isCallable = isCallable;
-    if (symbol.name == ZR_NULL || symbol.typeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Push(state, &metadata->exportedSymbols, &symbol);
-    return ZR_TRUE;
-}
-
-TZrBool ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleMetadata(SZrState *state,
-                                                                          SZrLspProjectIndex *projectIndex,
-                                                                          SZrString *moduleName,
-                                                                          SZrLspIntermediateModuleMetadata *outMetadata) {
-    TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrNativeString sourceBuffer;
-    const TZrChar *exportsSection;
-    const TZrChar *cursor;
-
-    if (outMetadata != ZR_NULL) {
-        ZrCore_Array_Construct(&outMetadata->exportedSymbols);
-    }
-
-    if (state == ZR_NULL || projectIndex == ZR_NULL || moduleName == ZR_NULL || outMetadata == ZR_NULL ||
-        !module_metadata_resolve_existing_project_binary_path(projectIndex,
-                                                              module_metadata_string_text(moduleName),
-                                                              ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION,
-                                                              binaryPath,
-                                                              sizeof(binaryPath))) {
-        return ZR_FALSE;
-    }
-
-    sourceBuffer = ZrLibrary_File_ReadAll(state->global, binaryPath);
-    if (sourceBuffer == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Init(state,
-                      &outMetadata->exportedSymbols,
-                      sizeof(SZrLspIntermediateExportSymbol),
-                      ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    exportsSection = strstr(sourceBuffer, "EXPORTED_SYMBOLS (");
-    if (exportsSection == ZR_NULL) {
-        ZrCore_Memory_RawFreeWithType(state->global,
-                                      sourceBuffer,
-                                      strlen(sourceBuffer) + 1,
-                                      ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
-        return ZR_FALSE;
-    }
-
-    cursor = strchr(exportsSection, '\n');
-    cursor = cursor != ZR_NULL ? cursor + 1 : exportsSection;
-    while (cursor != ZR_NULL && *cursor != '\0') {
-        const TZrChar *lineStart = cursor;
-        const TZrChar *lineEnd = strchr(cursor, '\n');
-        const TZrChar *trimmedStart;
-        const TZrChar *trimmedEnd;
-        TZrInt32 currentLine = 1;
-
-        if (lineEnd == ZR_NULL) {
-            lineEnd = cursor + strlen(cursor);
-        }
-        for (const TZrChar *lineCursor = sourceBuffer; lineCursor < lineStart; lineCursor++) {
-            if (*lineCursor == '\n') {
-                currentLine++;
-            }
-        }
-        trimmedStart = intermediate_metadata_trim_leading(lineStart, lineEnd);
-        trimmedEnd = intermediate_metadata_trim_trailing(trimmedStart, lineEnd);
-
-        if (trimmedStart >= trimmedEnd) {
-            cursor = *lineEnd == '\0' ? ZR_NULL : lineEnd + 1;
-            continue;
-        }
-
-        if (strncmp(trimmedStart, "COMPILE_TIME_VARIABLES", strlen("COMPILE_TIME_VARIABLES")) == 0 ||
-            strncmp(trimmedStart, "TYPE_TABLE", strlen("TYPE_TABLE")) == 0) {
-            break;
-        }
-
-        if (strncmp(trimmedStart, "fn ", 3) == 0) {
-            const TZrChar *nameStart = trimmedStart + 3;
-            const TZrChar *openParen = strchr(nameStart, '(');
-            const TZrChar *typeStart = openParen != ZR_NULL ? strstr(openParen, "): ") : ZR_NULL;
-            if (openParen != ZR_NULL && typeStart != ZR_NULL) {
-                TZrInt32 startColumn = (TZrInt32)(nameStart - lineStart) + 1;
-                TZrInt32 endColumn = (TZrInt32)(openParen - lineStart) + 1;
-                intermediate_metadata_append_symbol(state,
-                                                    outMetadata,
-                                                    nameStart,
-                                                    openParen,
-                                                    typeStart + 3,
-                                                    trimmedEnd,
-                                                    ZR_TRUE);
-                if (outMetadata->exportedSymbols.length > 0) {
-                    SZrLspIntermediateExportSymbol *symbol =
-                        (SZrLspIntermediateExportSymbol *)ZrCore_Array_Get(&outMetadata->exportedSymbols,
-                                                                            outMetadata->exportedSymbols.length - 1);
-                    if (symbol != ZR_NULL) {
-                        symbol->declarationLine = currentLine;
-                        symbol->declarationStartColumn = startColumn;
-                        symbol->declarationEndColumn = endColumn;
-                    }
-                }
-            }
-        } else if (strncmp(trimmedStart, "var ", 4) == 0) {
-            const TZrChar *nameStart = trimmedStart + 4;
-            const TZrChar *typeStart = strstr(nameStart, ": ");
-            if (typeStart != ZR_NULL) {
-                TZrInt32 startColumn = (TZrInt32)(nameStart - lineStart) + 1;
-                TZrInt32 endColumn = (TZrInt32)(typeStart - lineStart) + 1;
-                intermediate_metadata_append_symbol(state,
-                                                    outMetadata,
-                                                    nameStart,
-                                                    typeStart,
-                                                    typeStart + 2,
-                                                    trimmedEnd,
-                                                    ZR_FALSE);
-                if (outMetadata->exportedSymbols.length > 0) {
-                    SZrLspIntermediateExportSymbol *symbol =
-                        (SZrLspIntermediateExportSymbol *)ZrCore_Array_Get(&outMetadata->exportedSymbols,
-                                                                            outMetadata->exportedSymbols.length - 1);
-                    if (symbol != ZR_NULL) {
-                        symbol->declarationLine = currentLine;
-                        symbol->declarationStartColumn = startColumn;
-                        symbol->declarationEndColumn = endColumn;
-                    }
-                }
-            }
-        }
-
-        cursor = *lineEnd == '\0' ? ZR_NULL : lineEnd + 1;
-    }
-
-    ZrCore_Memory_RawFreeWithType(state->global,
-                                  sourceBuffer,
-                                  strlen(sourceBuffer) + 1,
-                                  ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
-    return outMetadata->exportedSymbols.length > 0;
+    start = ZrParser_FilePosition_Create(0,
+                                         symbol != ZR_NULL ? (TZrInt32)symbol->lineInSourceStart : 0,
+                                         symbol != ZR_NULL ? (TZrInt32)symbol->columnInSourceStart : 0);
+    end = ZrParser_FilePosition_Create(0,
+                                       symbol != ZR_NULL ? (TZrInt32)symbol->lineInSourceEnd : 0,
+                                       symbol != ZR_NULL ? (TZrInt32)symbol->columnInSourceEnd : 0);
+    return ZrParser_FileRange_Create(start, end, uri);
 }
 
 TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(SZrState *state,
@@ -716,21 +522,57 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(SZrState *stat
     }
 
     if (state == ZR_NULL || projectIndex == ZR_NULL || moduleName == ZR_NULL || outUri == ZR_NULL ||
-        (!module_metadata_resolve_existing_project_binary_path(projectIndex,
-                                                               module_metadata_string_text(moduleName),
-                                                               ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION,
-                                                               binaryPath,
-                                                               sizeof(binaryPath)) &&
-         !module_metadata_resolve_existing_project_binary_path(projectIndex,
-                                                               module_metadata_string_text(moduleName),
-                                                               ZR_VM_BINARY_MODULE_FILE_EXTENSION,
-                                                               binaryPath,
-                                                               sizeof(binaryPath)))) {
+        !module_metadata_resolve_existing_project_binary_path(projectIndex,
+                                                              module_metadata_string_text(moduleName),
+                                                              ZR_VM_BINARY_MODULE_FILE_EXTENSION,
+                                                              binaryPath,
+                                                              sizeof(binaryPath))) {
         return ZR_FALSE;
     }
 
     *outUri = module_metadata_create_file_uri_from_native_path(state, binaryPath);
     return *outUri != ZR_NULL;
+}
+
+TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryExportDeclaration(SZrState *state,
+                                                                          SZrLspProjectIndex *projectIndex,
+                                                                          SZrString *moduleName,
+                                                                          SZrString *memberName,
+                                                                          SZrString **outUri,
+                                                                          SZrFileRange *outRange) {
+    SZrIoSource *source = ZR_NULL;
+    const SZrIoFunctionTypedExportSymbol *symbol = ZR_NULL;
+    TZrBool resolved = ZR_FALSE;
+
+    if (outUri != ZR_NULL) {
+        *outUri = ZR_NULL;
+    }
+    if (outRange != ZR_NULL) {
+        *outRange = ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 1, 1),
+                                              ZrParser_FilePosition_Create(0, 1, 1),
+                                              ZR_NULL);
+    }
+    if (state == ZR_NULL || projectIndex == ZR_NULL || moduleName == ZR_NULL || memberName == ZR_NULL ||
+        outUri == ZR_NULL || outRange == ZR_NULL ||
+        !ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(state, projectIndex, moduleName, outUri) ||
+        *outUri == ZR_NULL ||
+        !ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(state, projectIndex, moduleName, &source) ||
+        source == ZR_NULL || source->modulesLength == 0 || source->modules == ZR_NULL ||
+        source->modules[0].entryFunction == ZR_NULL) {
+        if (source != ZR_NULL) {
+            ZrCore_Io_ReadSourceFree(state->global, source);
+        }
+        return ZR_FALSE;
+    }
+
+    symbol = module_metadata_find_binary_export_symbol(source->modules[0].entryFunction, memberName);
+    if (module_metadata_binary_export_symbol_has_declaration_range(symbol)) {
+        *outRange = module_metadata_binary_export_symbol_range(*outUri, symbol);
+        resolved = ZR_TRUE;
+    }
+
+    ZrCore_Io_ReadSourceFree(state->global, source);
+    return resolved;
 }
 
 TZrBool ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(SZrState *state,
@@ -755,7 +597,8 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(SZrState *stat
                                                                   projectIndex,
                                                                   moduleText,
                                                                   &sourceKind) == ZR_NULL ||
-        sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN) {
+        (sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN &&
+         sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN)) {
         return ZR_FALSE;
     }
 
@@ -768,35 +611,6 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(SZrState *stat
     *outUri = module_metadata_create_file_uri_from_native_path(state, moduleInfo.sourcePath);
     return *outUri != ZR_NULL;
 }
-
-const SZrLspIntermediateExportSymbol *ZrLanguageServer_LspModuleMetadata_FindIntermediateExportSymbol(
-    const SZrLspIntermediateModuleMetadata *metadata,
-    SZrString *symbolName) {
-    if (metadata == ZR_NULL || symbolName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index < metadata->exportedSymbols.length; index++) {
-        const SZrLspIntermediateExportSymbol *symbol =
-            (const SZrLspIntermediateExportSymbol *)ZrCore_Array_Get((SZrArray *)&metadata->exportedSymbols, index);
-        if (symbol != ZR_NULL && symbol->name != ZR_NULL &&
-            ZrLanguageServer_Lsp_StringsEqual(symbol->name, symbolName)) {
-            return symbol;
-        }
-    }
-
-    return ZR_NULL;
-}
-
-void ZrLanguageServer_LspModuleMetadata_FreeIntermediateModuleMetadata(SZrState *state,
-                                                                       SZrLspIntermediateModuleMetadata *metadata) {
-    if (state == ZR_NULL || metadata == ZR_NULL) {
-        return;
-    }
-
-    ZrCore_Array_Free(state, &metadata->exportedSymbols);
-}
-
 const TZrChar *ZrLanguageServer_LspModuleMetadata_SourceKindLabel(EZrLspImportedModuleSourceKind sourceKind) {
     switch (sourceKind) {
         case ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE:

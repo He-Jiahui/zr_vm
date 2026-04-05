@@ -14,7 +14,10 @@
   "activationEvents": [
     "onLanguage:zr",
     "onLanguage:zr-project",
-    "onCommand:zr.restartLanguageServer"
+    "onCommand:zr.restartLanguageServer",
+    "onCommand:zr.debugCurrentProject",
+    "onCommand:zr.attachDebugEndpoint",
+    "onDebugResolve:zr"
   ],
   "main": "./out/extension.js",
   "browser": "./out/browser.js",
@@ -64,6 +67,105 @@
         "command": "zr.restartLanguageServer",
         "title": "Restart Language Server",
         "category": "Zr"
+      },
+      {
+        "command": "zr.debugCurrentProject",
+        "title": "Debug Current Project",
+        "category": "Zr"
+      },
+      {
+        "command": "zr.attachDebugEndpoint",
+        "title": "Attach to Debug Endpoint",
+        "category": "Zr"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "zr",
+        "label": "ZR Debugger",
+        "languages": [
+          "zr",
+          "zr-project"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "project"
+            ],
+            "properties": {
+              "project": {
+                "type": "string",
+                "description": "Path to the .zrp project file to launch under zr_vm_cli --debug."
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory used when launching zr_vm_cli."
+              },
+              "executionMode": {
+                "type": "string",
+                "enum": [
+                  "interp",
+                  "binary"
+                ],
+                "default": "interp",
+                "description": "ZR execution mode used by zr_vm_cli."
+              },
+              "cliPath": {
+                "type": "string",
+                "description": "Optional absolute path to zr_vm_cli."
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Extra arguments passed through to zr_vm_cli before debug flags are appended."
+              },
+              "debugAddress": {
+                "type": "string",
+                "default": "127.0.0.1:0",
+                "description": "Loopback endpoint requested from the embedded debugger agent."
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "default": true,
+                "description": "Pause on the initial entry stop emitted by zrdbg/1."
+              }
+            }
+          },
+          "attach": {
+            "required": [
+              "endpoint"
+            ],
+            "properties": {
+              "endpoint": {
+                "type": "string",
+                "description": "Loopback zrdbg/1 endpoint in host:port form."
+              },
+              "authToken": {
+                "type": "string",
+                "description": "Optional auth token forwarded to zrdbg/1 initialize."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "zr",
+            "name": "ZR: Launch Project",
+            "request": "launch",
+            "project": "${workspaceFolder}/import_basic.zrp",
+            "cwd": "${workspaceFolder}",
+            "executionMode": "interp",
+            "stopOnEntry": true
+          },
+          {
+            "type": "zr",
+            "name": "ZR: Attach to zrdbg/1 Endpoint",
+            "request": "attach",
+            "endpoint": "127.0.0.1:9000"
+          }
+        ]
       }
     ],
     "configuration": {
@@ -98,6 +200,11 @@
           "type": "string",
           "default": "",
           "description": "Absolute path to a custom zr_vm_language_server_stdio executable."
+        },
+        "zr.debug.cli.path": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to a custom zr_vm_cli executable used for ZR desktop debugging."
         }
       }
     }
@@ -113,6 +220,7 @@
     "sync:wasm": "node ./scripts/sync-wasm-server.js",
     "package:vsix": "powershell -ExecutionPolicy Bypass -File ./scripts/package-vsix.ps1",
     "test:e2e:desktop": "npm run compile && npm run build:native && node ./scripts/run-electron-smoke.js",
+    "test:e2e:desktop:debug": "npm run compile && npm run build:native && set ZR_TEST_SMOKE_FOCUS=debug&& node ./scripts/run-electron-smoke.js",
     "test:e2e:web": "npm run compile && npm run build:wasm && npm run sync:wasm && node ./scripts/run-web-smoke.js",
     "package": "vsce package --allow-missing-repository"
   },

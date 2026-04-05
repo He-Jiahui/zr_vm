@@ -1,0 +1,25 @@
+var system = %import("zr.system");
+
+var outer = 0;
+var value = 17;
+var checksum = 0;
+
+while (outer < 24) {
+    var inner = 0;
+    while (inner < 3000) {
+        value = (value * 1103 + 97 + outer + inner) % 65521;
+        if (value % 7 == 0) {
+            checksum = checksum + value / 7;
+        } else if (value % 5 == 0) {
+            checksum = checksum + value % 97;
+        } else {
+            checksum = checksum + value % 31;
+        }
+        inner = inner + 1;
+    }
+    checksum = checksum + outer;
+    outer = outer + 1;
+}
+
+system.console.printLine("BENCH_NUMERIC_LOOPS_PASS");
+return checksum % 1000000;

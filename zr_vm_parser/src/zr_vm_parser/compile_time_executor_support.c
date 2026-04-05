@@ -257,6 +257,8 @@ static void ct_compile_time_function_init_record(SZrCompilerState *cs,
     ZrCore_Memory_RawSet(func, 0, sizeof(*func));
     ZrCore_Array_Init(cs->state, &func->paramTypes, sizeof(SZrInferredType), parameterCapacity);
     ZrCore_Array_Init(cs->state, &func->paramNames, sizeof(SZrString *), parameterCapacity);
+    ZrCore_Array_Init(cs->state, &func->paramHasDefaultValues, sizeof(TZrBool), parameterCapacity);
+    ZrCore_Array_Init(cs->state, &func->paramDefaultValues, sizeof(SZrTypeValue), parameterCapacity);
     ZrParser_InferredType_Init(cs->state, &func->returnType, ZR_VALUE_TYPE_OBJECT);
 }
 
@@ -273,6 +275,8 @@ static void ct_compile_time_function_reset_signature(SZrCompilerState *cs, SZrCo
     }
     func->paramTypes.length = 0;
     func->paramNames.length = 0;
+    func->paramHasDefaultValues.length = 0;
+    func->paramDefaultValues.length = 0;
     ZrParser_InferredType_Free(cs->state, &func->returnType);
     ZrParser_InferredType_Init(cs->state, &func->returnType, ZR_VALUE_TYPE_OBJECT);
     func->runtimeProjectionModuleName = ZR_NULL;
@@ -285,6 +289,8 @@ static TZrBool ct_compile_time_function_append_parameter(SZrCompilerState *cs,
                                                          SZrParameter *param) {
     SZrInferredType paramType;
     SZrString *paramName = ZR_NULL;
+    TZrBool hasDefaultValue = ZR_FALSE;
+    SZrTypeValue defaultValue;
 
     if (cs == ZR_NULL || func == ZR_NULL || param == ZR_NULL) {
         return ZR_FALSE;
@@ -301,8 +307,11 @@ static TZrBool ct_compile_time_function_append_parameter(SZrCompilerState *cs,
         paramName = param->name->name;
     }
 
+    ZrCore_Value_ResetAsNull(&defaultValue);
     ZrCore_Array_Push(cs->state, &func->paramTypes, &paramType);
     ZrCore_Array_Push(cs->state, &func->paramNames, &paramName);
+    ZrCore_Array_Push(cs->state, &func->paramHasDefaultValues, &hasDefaultValue);
+    ZrCore_Array_Push(cs->state, &func->paramDefaultValues, &defaultValue);
     return ZR_TRUE;
 }
 

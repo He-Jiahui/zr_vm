@@ -803,6 +803,27 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
         case ZR_TK_TRY:
             return parse_try_catch_finally_statement(ps);
 
+        case ZR_TK_PERCENT:
+            if (current_percent_directive_equals(ps, "module")) {
+                return parse_module_declaration(ps);
+            }
+            if (current_percent_directive_equals(ps, "async")) {
+                return parse_reserved_async_function_declaration(ps);
+            }
+            if (current_percent_directive_equals(ps, "compileTime")) {
+                return parse_compile_time_declaration(ps);
+            }
+            if (current_percent_directive_equals(ps, "extern")) {
+                return parse_extern_block(ps);
+            }
+            if (current_percent_directive_equals(ps, "test")) {
+                return parse_test_declaration(ps);
+            }
+            if (current_percent_directive_equals(ps, "owned")) {
+                return parse_owned_class_declaration(ps);
+            }
+            return parse_expression_statement(ps);
+
         default:
             if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
                 SZrAstNode *funcDecl = try_parse_prefixed_function_declaration(ps);
@@ -1167,14 +1188,18 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             if (token == ZR_TK_SHARP) {
                 SZrParserCursor cursor;
                 SZrAstNode *decorator;
+                SZrAstNodeArray *decorators;
                 EZrToken nextToken;
                 EZrToken declarationToken = ZR_TK_EOS;
                 TZrBool decoratorStartsFunction = ZR_FALSE;
 
-                // 先向前看装饰器后面的声明类型，再回到起点让声明解析函数处理装饰器本身。
+                // 先向前看整串 leading decorators 后面的声明类型，再回到起点让声明解析函数处理装饰器本身。
                 save_parser_cursor(ps, &cursor);
-                decorator = parse_decorator_expression(ps);
-                if (decorator == ZR_NULL) {
+                decorators = parse_leading_decorators(ps);
+                if (decorators == ZR_NULL || decorators->count == 0) {
+                    if (decorators != ZR_NULL) {
+                        ZrParser_AstNodeArray_Free(ps->state, decorators);
+                    }
                     restore_parser_cursor(ps, &cursor);
                     return ZR_NULL;
                 }
@@ -1183,7 +1208,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 if (nextToken == ZR_TK_PUB || nextToken == ZR_TK_PRI || nextToken == ZR_TK_PRO) {
                     declarationToken = peek_token(ps);
                 }
-                ZrParser_Ast_Free(ps->state, decorator);
+                ZrParser_AstNodeArray_Free(ps->state, decorators);
                 restore_parser_cursor(ps, &cursor);
 
                 if (nextToken == ZR_TK_CLASS) {

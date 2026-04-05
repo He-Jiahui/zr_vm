@@ -13,6 +13,10 @@
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/runtime_decorator.h"
 
+static TZrBool io_runtime_convert_constant(SZrState *state,
+                                           const SZrIoFunctionConstantVariable *source,
+                                           SZrTypeValue *destination);
+
 static void io_runtime_init_inline_function(SZrState *state, SZrFunction *function) {
     ZrCore_Memory_RawSet(function, 0, sizeof(*function));
     ZrCore_RawObject_Construct(&function->super, ZR_RAW_OBJECT_TYPE_FUNCTION);
@@ -217,6 +221,80 @@ static TZrBool io_runtime_copy_callsite_cache_metadata(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool io_runtime_copy_debug_infos(SZrState *state,
+                                           const SZrIoFunction *source,
+                                           SZrFunction *function) {
+    const SZrIoFunctionDebugInfo *debugInfo;
+    SZrGlobalState *global;
+    TZrSize debugInstructionCount;
+    TZrUInt32 previousLine = 0;
+    TZrBool hasPreviousLine = ZR_FALSE;
+
+    if (state == ZR_NULL || source == ZR_NULL || function == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (function->instructionsLength == 0 || source->debugInfosLength == 0 || source->debugInfos == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    debugInfo = &source->debugInfos[0];
+    if (debugInfo->instructionsLength == 0 || debugInfo->instructionsLine == ZR_NULL) {
+        function->sourceCodeList = debugInfo->sourceFile;
+        function->sourceHash = debugInfo->sourceHash;
+        return ZR_TRUE;
+    }
+
+    function->sourceCodeList = debugInfo->sourceFile;
+    function->sourceHash = debugInfo->sourceHash;
+
+    global = state->global;
+    debugInstructionCount = debugInfo->instructionsLength;
+    if (debugInstructionCount > function->instructionsLength) {
+        debugInstructionCount = function->instructionsLength;
+    }
+
+    function->lineInSourceList = (TZrUInt32 *)ZrCore_Memory_RawMallocWithType(global,
+                                                                               sizeof(TZrUInt32) * function->instructionsLength,
+                                                                               ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (function->lineInSourceList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Memory_RawSet(function->lineInSourceList, 0, sizeof(TZrUInt32) * function->instructionsLength);
+
+    for (TZrUInt32 index = 0; index < (TZrUInt32)debugInstructionCount; index++) {
+        TZrUInt32 currentLine = (TZrUInt32)debugInfo->instructionsLine[index];
+        function->lineInSourceList[index] = currentLine;
+        previousLine = currentLine;
+        hasPreviousLine = ZR_TRUE;
+    }
+
+    if (hasPreviousLine) {
+        for (TZrUInt32 index = (TZrUInt32)debugInstructionCount; index < function->instructionsLength; index++) {
+            function->lineInSourceList[index] = previousLine;
+        }
+    }
+
+    function->executionLocationInfoList = (SZrFunctionExecutionLocationInfo *)ZrCore_Memory_RawMallocWithType(
+            global,
+            sizeof(SZrFunctionExecutionLocationInfo) * function->instructionsLength,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (function->executionLocationInfoList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Memory_RawSet(function->executionLocationInfoList,
+                         0,
+                         sizeof(SZrFunctionExecutionLocationInfo) * function->instructionsLength);
+
+    for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+        function->executionLocationInfoList[index].currentInstructionOffset = index;
+        function->executionLocationInfoList[index].lineInSource = function->lineInSourceList[index];
+    }
+    function->executionLocationInfoLength = function->instructionsLength;
+
+    return ZR_TRUE;
+}
+
 static TZrBool io_runtime_copy_metadata_parameters(SZrState *state,
                                                    SZrFunctionMetadataParameter **outParameters,
                                                    TZrUInt32 *outCount,
@@ -247,6 +325,40 @@ static TZrBool io_runtime_copy_metadata_parameters(SZrState *state,
     for (TZrSize index = 0; index < sourceCount; index++) {
         (*outParameters)[index].name = sourceParameters[index].name;
         io_runtime_copy_typed_type_ref(&(*outParameters)[index].type, &sourceParameters[index].type);
+        (*outParameters)[index].hasDefaultValue = sourceParameters[index].hasDefaultValue ? ZR_TRUE : ZR_FALSE;
+        if ((*outParameters)[index].hasDefaultValue &&
+            !io_runtime_convert_constant(state,
+                                         &sourceParameters[index].defaultValue,
+                                         &(*outParameters)[index].defaultValue)) {
+            return ZR_FALSE;
+        }
+        (*outParameters)[index].hasDecoratorMetadata = sourceParameters[index].hasDecoratorMetadata ? ZR_TRUE : ZR_FALSE;
+        if ((*outParameters)[index].hasDecoratorMetadata &&
+            !io_runtime_convert_constant(state,
+                                         &sourceParameters[index].decoratorMetadataValue,
+                                         &(*outParameters)[index].decoratorMetadataValue)) {
+            return ZR_FALSE;
+        }
+        if (sourceParameters[index].decoratorNamesLength > 0) {
+            (*outParameters)[index].decoratorNames = (SZrString **)ZrCore_Memory_RawMallocWithType(
+                    global,
+                    sizeof(SZrString *) * sourceParameters[index].decoratorNamesLength,
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            if ((*outParameters)[index].decoratorNames == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            ZrCore_Memory_RawSet((*outParameters)[index].decoratorNames,
+                                 0,
+                                 sizeof(SZrString *) * sourceParameters[index].decoratorNamesLength);
+            for (TZrSize decoratorIndex = 0;
+                 decoratorIndex < sourceParameters[index].decoratorNamesLength;
+                 decoratorIndex++) {
+                (*outParameters)[index].decoratorNames[decoratorIndex] =
+                        sourceParameters[index].decoratorNames[decoratorIndex];
+            }
+            (*outParameters)[index].decoratorCount = (TZrUInt32)sourceParameters[index].decoratorNamesLength;
+        }
     }
 
     *outCount = (TZrUInt32)sourceCount;
@@ -416,6 +528,10 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         function->instructionsLength = (TZrUInt32)source->instructionsLength;
     }
 
+    if (!io_runtime_copy_debug_infos(state, source, function)) {
+        return ZR_FALSE;
+    }
+
     if (source->localVariablesLength > 0) {
         TZrSize localBytes = sizeof(SZrFunctionLocalVariable) * source->localVariablesLength;
         function->localVariableList =
@@ -575,6 +691,10 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             destinationSymbol->symbolKind = sourceSymbol->symbolKind;
             io_runtime_copy_typed_type_ref(&destinationSymbol->valueType, &sourceSymbol->valueType);
             destinationSymbol->parameterCount = (TZrUInt32)sourceSymbol->parameterCount;
+            destinationSymbol->lineInSourceStart = sourceSymbol->lineInSourceStart;
+            destinationSymbol->columnInSourceStart = sourceSymbol->columnInSourceStart;
+            destinationSymbol->lineInSourceEnd = sourceSymbol->lineInSourceEnd;
+            destinationSymbol->columnInSourceEnd = sourceSymbol->columnInSourceEnd;
 
             if (sourceSymbol->parameterCount > 0) {
                 destinationSymbol->parameterTypes =
@@ -593,6 +713,14 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             }
         }
         function->typedExportedSymbolLength = (TZrUInt32)source->typedExportedSymbolsLength;
+    }
+
+    if (!io_runtime_copy_metadata_parameters(state,
+                                             &function->parameterMetadata,
+                                             &function->parameterMetadataCount,
+                                             source->parameterMetadata,
+                                             source->parameterMetadataLength)) {
+        return ZR_FALSE;
     }
 
     if (source->compileTimeVariableInfosLength > 0) {
@@ -614,6 +742,28 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             destinationInfo->lineInSourceStart = sourceInfo->lineInSourceStart;
             destinationInfo->lineInSourceEnd = sourceInfo->lineInSourceEnd;
             io_runtime_copy_typed_type_ref(&destinationInfo->type, &sourceInfo->type);
+            destinationInfo->pathBindings = ZR_NULL;
+            destinationInfo->pathBindingCount = 0;
+            if (sourceInfo->pathBindingsLength > 0) {
+                destinationInfo->pathBindings = (SZrFunctionCompileTimePathBinding *)ZrCore_Memory_RawMallocWithType(
+                        global,
+                        sizeof(SZrFunctionCompileTimePathBinding) * sourceInfo->pathBindingsLength,
+                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+                if (destinationInfo->pathBindings == ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                ZrCore_Memory_RawSet(destinationInfo->pathBindings,
+                                     0,
+                                     sizeof(SZrFunctionCompileTimePathBinding) * sourceInfo->pathBindingsLength);
+                for (TZrSize bindingIndex = 0; bindingIndex < sourceInfo->pathBindingsLength; bindingIndex++) {
+                    destinationInfo->pathBindings[bindingIndex].path = sourceInfo->pathBindings[bindingIndex].path;
+                    destinationInfo->pathBindings[bindingIndex].targetKind =
+                            sourceInfo->pathBindings[bindingIndex].targetKind;
+                    destinationInfo->pathBindings[bindingIndex].targetName =
+                            sourceInfo->pathBindings[bindingIndex].targetName;
+                }
+                destinationInfo->pathBindingCount = (TZrUInt32)sourceInfo->pathBindingsLength;
+            }
         }
         function->compileTimeVariableInfoLength = (TZrUInt32)source->compileTimeVariableInfosLength;
     }

@@ -1,0 +1,3 @@
+var decorated = %import("decorated_user");
+
+return decorated.verifyDecorators();

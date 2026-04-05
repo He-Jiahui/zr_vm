@@ -510,7 +510,7 @@ if (run_compile_aot_c_unsupported_lowering)
     cli_copy_fixture("hello_world" unsupported_aot_c_dir)
     file(REMOVE_RECURSE "${unsupported_aot_c_dir}/bin")
     cli_write_file("${unsupported_aot_c_dir}/src/main.zr"
-                   "return { value: 1 };\n")
+                   "return 5 % 2;\n")
     cli_run("compile_aot_c_unsupported_lowering"
             compile_aot_c_unsupported_lowering_output
             compile_aot_c_unsupported_lowering_result
@@ -518,15 +518,15 @@ if (run_compile_aot_c_unsupported_lowering)
             "--compile"
             "${unsupported_aot_c_dir}/hello_world.zrp"
             "--emit-aot-c")
-    cli_assert_success("compile_aot_c_unsupported_lowering"
+    cli_assert_failure("compile_aot_c_unsupported_lowering"
                        compile_aot_c_unsupported_lowering_result
                        compile_aot_c_unsupported_lowering_output)
-    if (NOT EXISTS "${unsupported_aot_c_dir}/bin/aot_c/src/main.c")
-        message(FATAL_ERROR "compile_aot_c_unsupported_lowering did not create main AOT C source")
+    if (EXISTS "${unsupported_aot_c_dir}/bin/aot_c/src/main.c")
+        message(FATAL_ERROR "compile_aot_c_unsupported_lowering unexpectedly created main AOT C source")
     endif()
-    cli_assert_file_contains("compile_aot_c_unsupported_lowering"
-                             "${unsupported_aot_c_dir}/bin/aot_c/src/main.c"
-                             "ZrLibrary_AotRuntime_InvokeActiveShim")
+    cli_assert_contains("compile_aot_c_unsupported_lowering"
+                        compile_aot_c_unsupported_lowering_output
+                        "aot_c lowering unsupported")
 endif()
 
 cli_case_matches_tier("core;stress" run_aot_c_missing_artifacts)
@@ -826,6 +826,31 @@ if (run_decorator_compile_time_deep_import_recursive)
                         "43")
 endif()
 
+cli_case_matches_tier("smoke;core;stress" run_decorator_compile_time_import_binary)
+if (run_decorator_compile_time_import_binary)
+    message("---- decorator_compile_time_import_binary_run")
+    cli_copy_fixture("decorator_compile_time_import_binary" decorator_compile_time_import_binary_dir)
+    file(REMOVE_RECURSE "${decorator_compile_time_import_binary_dir}/bin")
+    cli_prepare_binary_module("decorator_compile_time_import_binary_prepare"
+                              "${decorator_compile_time_import_binary_dir}"
+                              "fixtures/provider_module"
+                              "provider")
+    if (NOT EXISTS "${decorator_compile_time_import_binary_dir}/bin/provider.zro")
+        message(FATAL_ERROR "decorator_compile_time_import_binary_run did not prepare provider.zro")
+    endif()
+    cli_run("decorator_compile_time_import_binary_run"
+            decorator_compile_time_import_binary_output
+            decorator_compile_time_import_binary_result
+            "${CLI_EXE}"
+            "${decorator_compile_time_import_binary_dir}/decorator_compile_time_import_binary.zrp")
+    cli_assert_success("decorator_compile_time_import_binary_run"
+                       decorator_compile_time_import_binary_result
+                       decorator_compile_time_import_binary_output)
+    cli_assert_contains("decorator_compile_time_import_binary_run"
+                        decorator_compile_time_import_binary_output
+                        "62")
+endif()
+
 cli_case_matches_tier("smoke;core;stress" run_decorator_compile_time_deep_import_binary)
 if (run_decorator_compile_time_deep_import_binary)
     message("---- decorator_compile_time_deep_import_binary_run")
@@ -849,6 +874,70 @@ if (run_decorator_compile_time_deep_import_binary)
     cli_assert_contains("decorator_compile_time_deep_import_binary_run"
                         decorator_compile_time_deep_import_binary_output
                         "43")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_decorator_compile_time_provider_import_recursive)
+if (run_decorator_compile_time_provider_import_recursive)
+    message("---- decorator_compile_time_provider_import_compile_recursive_and_run")
+    cli_copy_fixture("decorator_compile_time_provider_import" decorator_compile_time_provider_import_dir)
+    file(REMOVE_RECURSE "${decorator_compile_time_provider_import_dir}/bin")
+    cli_run("decorator_compile_time_provider_import_compile_recursive_and_run"
+            decorator_compile_time_provider_import_output
+            decorator_compile_time_provider_import_result
+            "${CLI_EXE}"
+            "--compile"
+            "${decorator_compile_time_provider_import_dir}/decorator_compile_time_provider_import.zrp"
+            "--intermediate"
+            "--run")
+    cli_assert_success("decorator_compile_time_provider_import_compile_recursive_and_run"
+                       decorator_compile_time_provider_import_result
+                       decorator_compile_time_provider_import_output)
+    if (NOT EXISTS "${decorator_compile_time_provider_import_dir}/bin/main.zro")
+        message(FATAL_ERROR "decorator_compile_time_provider_import_compile_recursive_and_run did not create main.zro")
+    endif()
+    if (NOT EXISTS "${decorator_compile_time_provider_import_dir}/bin/decorated_user.zro")
+        message(FATAL_ERROR "decorator_compile_time_provider_import_compile_recursive_and_run did not create decorated_user.zro")
+    endif()
+    if (NOT EXISTS "${decorator_compile_time_provider_import_dir}/bin/decorators.zro")
+        message(FATAL_ERROR "decorator_compile_time_provider_import_compile_recursive_and_run did not create decorators.zro")
+    endif()
+    if (NOT EXISTS "${decorator_compile_time_provider_import_dir}/bin/main.zri")
+        message(FATAL_ERROR "decorator_compile_time_provider_import_compile_recursive_and_run did not create main.zri")
+    endif()
+    if (NOT EXISTS "${decorator_compile_time_provider_import_dir}/bin/decorated_user.zri")
+        message(FATAL_ERROR "decorator_compile_time_provider_import_compile_recursive_and_run did not create decorated_user.zri")
+    endif()
+    if (NOT EXISTS "${decorator_compile_time_provider_import_dir}/bin/decorators.zri")
+        message(FATAL_ERROR "decorator_compile_time_provider_import_compile_recursive_and_run did not create decorators.zri")
+    endif()
+    cli_assert_contains("decorator_compile_time_provider_import_compile_recursive_and_run"
+                        decorator_compile_time_provider_import_output
+                        "71")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_decorator_compile_time_provider_import_binary)
+if (run_decorator_compile_time_provider_import_binary)
+    message("---- decorator_compile_time_provider_import_binary_run")
+    cli_copy_fixture("decorator_compile_time_provider_import_binary" decorator_compile_time_provider_import_binary_dir)
+    file(REMOVE_RECURSE "${decorator_compile_time_provider_import_binary_dir}/bin")
+    cli_prepare_binary_module("decorator_compile_time_provider_import_binary_prepare"
+                              "${decorator_compile_time_provider_import_binary_dir}"
+                              "fixtures/decorated_user_module"
+                              "decorated_user")
+    if (NOT EXISTS "${decorator_compile_time_provider_import_binary_dir}/bin/decorators.zro")
+        message(FATAL_ERROR "decorator_compile_time_provider_import_binary_run did not prepare decorators.zro")
+    endif()
+    cli_run("decorator_compile_time_provider_import_binary_run"
+            decorator_compile_time_provider_import_binary_output
+            decorator_compile_time_provider_import_binary_result
+            "${CLI_EXE}"
+            "${decorator_compile_time_provider_import_binary_dir}/decorator_compile_time_provider_import_binary.zrp")
+    cli_assert_success("decorator_compile_time_provider_import_binary_run"
+                       decorator_compile_time_provider_import_binary_result
+                       decorator_compile_time_provider_import_binary_output)
+    cli_assert_contains("decorator_compile_time_provider_import_binary_run"
+                        decorator_compile_time_provider_import_binary_output
+                        "71")
 endif()
 
 cli_case_matches_tier("smoke;core;stress" run_aot_module_graph_roundtrip)
@@ -885,44 +974,47 @@ if (run_aot_module_graph_roundtrip)
     cli_assert_contains("aot_module_graph_pipeline_run" aot_graph_run_output "102")
 endif()
 
-cli_case_matches_tier("smoke;core;stress" run_aot_module_graph_llvm_missing_import)
-if (run_aot_module_graph_llvm_missing_import AND CLI_AOT_LLVM_HOST_AVAILABLE)
-    message("---- aot_module_graph_pipeline_llvm_missing_import")
-    cli_copy_fixture("aot_module_graph_pipeline" aot_graph_llvm_missing_dir)
-    file(REMOVE_RECURSE "${aot_graph_llvm_missing_dir}/bin")
-    cli_prepare_binary_module("aot_module_graph_pipeline_llvm_missing_import"
-                              "${aot_graph_llvm_missing_dir}"
+cli_case_matches_tier("smoke;core;stress" run_aot_module_graph_llvm_binary_import)
+if (run_aot_module_graph_llvm_binary_import AND CLI_AOT_LLVM_HOST_AVAILABLE)
+    message("---- aot_module_graph_pipeline_llvm_binary_import")
+    cli_copy_fixture("aot_module_graph_pipeline" aot_graph_llvm_binary_dir)
+    file(REMOVE_RECURSE "${aot_graph_llvm_binary_dir}/bin")
+    cli_prepare_binary_module("aot_module_graph_pipeline_llvm_binary_import"
+                              "${aot_graph_llvm_binary_dir}"
                               "fixtures/graph_binary_stage_source.zr"
                               "graph_binary_stage")
 
-    cli_run("aot_module_graph_pipeline_llvm_missing_compile"
-            aot_graph_llvm_missing_compile_output
-            aot_graph_llvm_missing_compile_result
+    cli_run("aot_module_graph_pipeline_llvm_binary_compile"
+            aot_graph_llvm_binary_compile_output
+            aot_graph_llvm_binary_compile_result
             "${CLI_EXE}"
             "--compile"
-            "${aot_graph_llvm_missing_dir}/aot_module_graph_pipeline.zrp"
+            "${aot_graph_llvm_binary_dir}/aot_module_graph_pipeline.zrp"
             "--emit-aot-llvm")
-    cli_assert_success("aot_module_graph_pipeline_llvm_missing_compile"
-                       aot_graph_llvm_missing_compile_result
-                       aot_graph_llvm_missing_compile_output)
+    cli_assert_success("aot_module_graph_pipeline_llvm_binary_compile"
+                       aot_graph_llvm_binary_compile_result
+                       aot_graph_llvm_binary_compile_output)
 
-    cli_run("aot_module_graph_pipeline_llvm_missing_run"
-            aot_graph_llvm_missing_run_output
-            aot_graph_llvm_missing_run_result
+    cli_run("aot_module_graph_pipeline_llvm_binary_run"
+            aot_graph_llvm_binary_run_output
+            aot_graph_llvm_binary_run_result
             "${CLI_EXE}"
             "--execution-mode"
             "aot_llvm"
             "--require-aot-path"
             "--emit-executed-via"
-            "${aot_graph_llvm_missing_dir}/aot_module_graph_pipeline.zrp")
-    cli_assert_failure("aot_module_graph_pipeline_llvm_missing_run"
-                       aot_graph_llvm_missing_run_result
-                       aot_graph_llvm_missing_run_output)
-    cli_assert_contains("aot_module_graph_pipeline_llvm_missing_run"
-                        aot_graph_llvm_missing_run_output
-                        "missing AOT artifacts for module 'graph_binary_stage'")
-elseif (run_aot_module_graph_llvm_missing_import)
-    message("---- aot_module_graph_pipeline_llvm_missing_import (skipped: AOT LLVM host adapter unavailable)")
+            "${aot_graph_llvm_binary_dir}/aot_module_graph_pipeline.zrp")
+    cli_assert_success("aot_module_graph_pipeline_llvm_binary_run"
+                       aot_graph_llvm_binary_run_result
+                       aot_graph_llvm_binary_run_output)
+    cli_assert_contains("aot_module_graph_pipeline_llvm_binary_run"
+                        aot_graph_llvm_binary_run_output
+                        "AOT_MODULE_GRAPH_PIPELINE_PASS")
+    cli_assert_contains("aot_module_graph_pipeline_llvm_binary_run"
+                        aot_graph_llvm_binary_run_output
+                        "executed_via=aot_llvm")
+elseif (run_aot_module_graph_llvm_binary_import)
+    message("---- aot_module_graph_pipeline_llvm_binary_import (skipped: AOT LLVM host adapter unavailable)")
 endif()
 
 cli_case_matches_tier("core;stress" run_incremental)

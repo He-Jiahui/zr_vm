@@ -134,6 +134,12 @@ typedef struct ZrExternCompilerTempRoot {
     TZrBool active;
 } ZrExternCompilerTempRoot;
 
+typedef struct SZrCompilerArraySnapshot {
+    TZrPtr data;
+    TZrSize length;
+    TZrSize elementSize;
+} SZrCompilerArraySnapshot;
+
 #pragma pack(push, 1)
 typedef struct SZrCompiledPrototypeInfo {
     TZrUInt32 nameStringIndex;
@@ -203,6 +209,17 @@ TZrBool compiler_copy_range_to_raw(SZrCompilerState *cs,
                                           const TZrPtr source,
                                           TZrSize count,
                                           TZrSize elementSize) ;
+
+TZrBool compiler_capture_array_snapshot(SZrCompilerState *cs,
+                                               const SZrArray *source,
+                                               SZrCompilerArraySnapshot *snapshot) ;
+
+void compiler_restore_array_snapshot(SZrCompilerState *cs,
+                                            SZrArray *target,
+                                            SZrCompilerArraySnapshot *snapshot) ;
+
+void compiler_release_array_snapshot(SZrCompilerState *cs,
+                                            SZrCompilerArraySnapshot *snapshot) ;
 
 TZrBool compiler_copy_function_exception_metadata_slice(SZrCompilerState *cs,
                                                                 SZrFunction *function,
@@ -566,6 +583,11 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
 TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
                                             SZrFunctionTypedLocalBinding **outBindings,
                                             TZrUInt32 *outCount);
+TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
+                                                   SZrAstNodeArray *params,
+                                                   TZrBool includeDefaultValues,
+                                                   SZrFunctionMetadataParameter **outParameters,
+                                                   TZrUInt32 *outParameterCount);
 
 TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs);
 

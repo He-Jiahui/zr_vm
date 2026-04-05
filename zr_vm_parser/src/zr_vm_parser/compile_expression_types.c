@@ -5,6 +5,26 @@
 #include "compile_expression_internal.h"
 #include "type_inference_internal.h"
 
+static TZrBool compile_inferred_type_is_task_handle(const SZrInferredType *type) {
+    const TZrChar *typeName;
+
+    if (type == ZR_NULL || type->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (type->typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        typeName = ZrCore_String_GetNativeStringShort(type->typeName);
+    } else {
+        typeName = ZrCore_String_GetNativeString(type->typeName);
+    }
+
+    if (typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return strcmp(typeName, "Task") == 0 || strncmp(typeName, "Task<", 5) == 0;
+}
+
 SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeName) {
     if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
@@ -872,6 +892,341 @@ static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static SZrAstNodeArray *member_call_parameter_list(const SZrTypeMemberInfo *memberInfo) {
+    if (memberInfo == ZR_NULL || memberInfo->declarationNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (memberInfo->declarationNode->type) {
+        case ZR_AST_STRUCT_METHOD:
+            return memberInfo->declarationNode->data.structMethod.params;
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return memberInfo->declarationNode->data.structMetaFunction.params;
+        case ZR_AST_CLASS_METHOD:
+            return memberInfo->declarationNode->data.classMethod.params;
+        case ZR_AST_CLASS_META_FUNCTION:
+            return memberInfo->declarationNode->data.classMetaFunction.params;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static SZrString *member_call_parameter_name_at(const SZrTypeMemberInfo *memberInfo, TZrSize index) {
+    if (memberInfo == ZR_NULL || index >= memberInfo->parameterNames.length) {
+        return ZR_NULL;
+    }
+
+    {
+        SZrString **namePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterNames, index);
+        return namePtr != ZR_NULL ? *namePtr : ZR_NULL;
+    }
+}
+
+static TZrBool member_call_parameter_has_default_at(const SZrTypeMemberInfo *memberInfo, TZrSize index) {
+    if (memberInfo == ZR_NULL || index >= memberInfo->parameterHasDefaultValues.length) {
+        return ZR_FALSE;
+    }
+
+    {
+        TZrBool *hasDefaultPtr =
+                (TZrBool *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterHasDefaultValues, index);
+        return hasDefaultPtr != ZR_NULL ? *hasDefaultPtr : ZR_FALSE;
+    }
+}
+
+#ifndef ZR_MEMBER_PARAMETER_COUNT_UNKNOWN
+#define ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ((TZrUInt32)-1)
+#endif
+
+static const SZrTypeValue *member_call_parameter_default_value_at(const SZrTypeMemberInfo *memberInfo, TZrSize index) {
+    if (memberInfo == ZR_NULL || index >= memberInfo->parameterDefaultValues.length) {
+        return ZR_NULL;
+    }
+
+    return (const SZrTypeValue *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterDefaultValues, index);
+}
+
+static EZrParameterPassingMode member_call_parameter_passing_mode_at(const SZrArray *parameterPassingModes,
+                                                                    TZrSize index) {
+    if (parameterPassingModes == ZR_NULL || index >= parameterPassingModes->length) {
+        return ZR_PARAMETER_PASSING_MODE_VALUE;
+    }
+
+    {
+        EZrParameterPassingMode *passingMode =
+                (EZrParameterPassingMode *)ZrCore_Array_Get((SZrArray *)parameterPassingModes, index);
+        return passingMode != ZR_NULL ? *passingMode : ZR_PARAMETER_PASSING_MODE_VALUE;
+    }
+}
+
+static TZrBool emit_default_constant_argument(SZrCompilerState *cs,
+                                              TZrUInt32 targetSlot,
+                                              const SZrTypeValue *defaultValue) {
+    SZrTypeValue constantValue;
+    TZrUInt32 constantIndex;
+
+    if (cs == ZR_NULL || defaultValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    constantValue = *defaultValue;
+    if (cs->stackSlotCount <= targetSlot) {
+        cs->stackSlotCount = (TZrSize)targetSlot + 1;
+        if (cs->maxStackSlotCount < cs->stackSlotCount) {
+            cs->maxStackSlotCount = cs->stackSlotCount;
+        }
+    }
+    constantIndex = add_constant(cs, &constantValue);
+    emit_instruction(cs,
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                                          (TZrUInt16)targetSlot,
+                                          (TZrInt32)constantIndex));
+    return !cs->hasError;
+}
+
+static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerState *cs,
+                                                                  SZrFunctionCall *call,
+                                                                  const SZrTypeMemberInfo *memberInfo,
+                                                                  const SZrResolvedCallSignature *resolvedSignature,
+                                                                  SZrFileRange callLocation,
+                                                                  TZrUInt32 firstArgSlot,
+                                                                  TZrUInt32 *outArgCount) {
+    const SZrArray *parameterTypes =
+            resolvedSignature != ZR_NULL ? &resolvedSignature->parameterTypes
+                                         : (memberInfo != ZR_NULL ? &memberInfo->parameterTypes : ZR_NULL);
+    const SZrArray *parameterPassingModes =
+            resolvedSignature != ZR_NULL ? &resolvedSignature->parameterPassingModes
+                                         : (memberInfo != ZR_NULL ? &memberInfo->parameterPassingModes : ZR_NULL);
+    TZrSize callArgCount = (call != ZR_NULL && call->args != ZR_NULL) ? call->args->count : 0;
+    TZrSize slotCount = 0;
+    TZrBool *provided = ZR_NULL;
+    SZrAstNode **argumentNodes = ZR_NULL;
+    TZrBool success = ZR_FALSE;
+    TZrBool hasNamedArguments = ZR_FALSE;
+    TZrBool requireTaskHandleArgument = ZR_FALSE;
+
+    if (outArgCount != ZR_NULL) {
+        *outArgCount = 0;
+    }
+    if (cs == ZR_NULL || memberInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    requireTaskHandleArgument = zr_string_equals_cstr(memberInfo->name, "__awaitTask");
+
+    if (memberInfo->parameterCount != ZR_MEMBER_PARAMETER_COUNT_UNKNOWN) {
+        slotCount = memberInfo->parameterCount;
+    }
+    if (parameterTypes != ZR_NULL && parameterTypes->length > slotCount) {
+        slotCount = parameterTypes->length;
+    }
+    if (memberInfo->parameterNames.length > slotCount) {
+        slotCount = memberInfo->parameterNames.length;
+    }
+    if (memberInfo->parameterDefaultValues.length > slotCount) {
+        slotCount = memberInfo->parameterDefaultValues.length;
+    }
+    if (memberInfo->parameterHasDefaultValues.length > slotCount) {
+        slotCount = memberInfo->parameterHasDefaultValues.length;
+    }
+
+    if (call != ZR_NULL && call->argNames != ZR_NULL) {
+        for (TZrSize index = 0; index < call->argNames->length && index < callArgCount; index++) {
+            SZrString **namePtr = (SZrString **)ZrCore_Array_Get(call->argNames, index);
+            if (namePtr != ZR_NULL && *namePtr != ZR_NULL) {
+                hasNamedArguments = ZR_TRUE;
+                break;
+            }
+        }
+    }
+
+    if (memberInfo->parameterCount == ZR_MEMBER_PARAMETER_COUNT_UNKNOWN) {
+        if (hasNamedArguments && memberInfo->parameterNames.length == 0) {
+            ZrParser_Compiler_Error(cs,
+                                    "Imported member call does not expose parameter names for named arguments",
+                                    callLocation);
+            goto cleanup;
+        }
+
+        if (callArgCount > slotCount) {
+            slotCount = callArgCount;
+        }
+    }
+
+    if (slotCount == 0) {
+        success = callArgCount == 0;
+        goto cleanup;
+    }
+
+    provided = (TZrBool *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                          sizeof(TZrBool) * slotCount,
+                                                          ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    argumentNodes = (SZrAstNode **)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                   sizeof(SZrAstNode *) * slotCount,
+                                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (provided == ZR_NULL || argumentNodes == ZR_NULL) {
+        goto cleanup;
+    }
+
+    for (TZrSize index = 0; index < slotCount; index++) {
+        provided[index] = ZR_FALSE;
+        argumentNodes[index] = ZR_NULL;
+    }
+
+    if (call != ZR_NULL && call->argNames != ZR_NULL) {
+        TZrSize positionalCount = 0;
+
+        for (TZrSize index = 0; index < call->argNames->length && index < callArgCount; index++) {
+            SZrString **namePtr = (SZrString **)ZrCore_Array_Get(call->argNames, index);
+            if (namePtr != ZR_NULL && *namePtr == ZR_NULL) {
+                positionalCount++;
+                continue;
+            }
+            break;
+        }
+
+        if (positionalCount > slotCount) {
+            ZrParser_Compiler_Error(cs, "Too many arguments for member call", callLocation);
+            goto cleanup;
+        }
+
+        for (TZrSize index = 0; index < positionalCount; index++) {
+            provided[index] = ZR_TRUE;
+            argumentNodes[index] = call->args->nodes[index];
+        }
+
+        for (TZrSize index = positionalCount; index < callArgCount && index < call->argNames->length; index++) {
+            SZrString **namePtr = (SZrString **)ZrCore_Array_Get(call->argNames, index);
+            TZrBool matched = ZR_FALSE;
+
+            if (namePtr == ZR_NULL || *namePtr == ZR_NULL) {
+                ZrParser_Compiler_Error(cs, "Invalid member call argument shape", callLocation);
+                goto cleanup;
+            }
+
+            for (TZrSize paramIndex = 0; paramIndex < slotCount; paramIndex++) {
+                SZrString *paramName = member_call_parameter_name_at(memberInfo, paramIndex);
+                if (paramName == ZR_NULL || !ZrCore_String_Equal(paramName, *namePtr)) {
+                    continue;
+                }
+
+                if (provided[paramIndex]) {
+                    ZrParser_Compiler_Error(cs, "Duplicate named member argument", call->args->nodes[index]->location);
+                    goto cleanup;
+                }
+
+                provided[paramIndex] = ZR_TRUE;
+                argumentNodes[paramIndex] = call->args->nodes[index];
+                matched = ZR_TRUE;
+                break;
+            }
+
+            if (!matched) {
+                ZrParser_Compiler_Error(cs, "Unknown named member argument", call->args->nodes[index]->location);
+                goto cleanup;
+            }
+        }
+    } else if (callArgCount > 0) {
+        if (callArgCount > slotCount) {
+            ZrParser_Compiler_Error(cs, "Too many arguments for member call", callLocation);
+            goto cleanup;
+        }
+
+        for (TZrSize index = 0; index < callArgCount; index++) {
+            provided[index] = ZR_TRUE;
+            argumentNodes[index] = call->args->nodes[index];
+        }
+    }
+
+    for (TZrSize index = 0; index < slotCount; index++) {
+        SZrAstNode *argNode = argumentNodes[index];
+        SZrInferredType *expectedType =
+                (parameterTypes != ZR_NULL && index < parameterTypes->length)
+                        ? (SZrInferredType *)ZrCore_Array_Get((SZrArray *)parameterTypes, index)
+                        : ZR_NULL;
+        EZrParameterPassingMode passingMode = member_call_parameter_passing_mode_at(parameterPassingModes, index);
+        TZrUInt32 argSlot = firstArgSlot + (TZrUInt32)index;
+
+        if (argNode != ZR_NULL) {
+            if (requireTaskHandleArgument && index == 0) {
+                SZrInferredType argType;
+
+                ZrParser_InferredType_Init(cs->state, &argType, ZR_VALUE_TYPE_OBJECT);
+                if (!ZrParser_ExpressionType_Infer(cs, argNode, &argType)) {
+                    ZrParser_InferredType_Free(cs->state, &argType);
+                    goto cleanup;
+                }
+                if (!compile_inferred_type_is_task_handle(&argType)) {
+                    ZrParser_InferredType_Free(cs->state, &argType);
+                    ZrParser_Compiler_Error(cs,
+                                            "%await expects a zr.task.Task<T>; call .start() on the TaskRunner first",
+                                            argNode->location);
+                    goto cleanup;
+                }
+                ZrParser_InferredType_Free(cs->state, &argType);
+            }
+
+            if ((passingMode == ZR_PARAMETER_PASSING_MODE_OUT || passingMode == ZR_PARAMETER_PASSING_MODE_REF) &&
+                !compiler_expression_is_assignable_storage_location(argNode)) {
+                ZrParser_Compiler_Error(cs,
+                                        passingMode == ZR_PARAMETER_PASSING_MODE_OUT
+                                                ? "%out argument must be an assignable storage location"
+                                                : "%ref argument must be an assignable storage location",
+                                        argNode->location);
+                goto cleanup;
+            }
+
+            if (compile_expression_into_slot(cs, argNode, argSlot) == ZR_PARSER_SLOT_NONE || cs->hasError) {
+                goto cleanup;
+            }
+            if (expectedType != ZR_NULL && !emit_argument_conversion_if_needed(cs, argNode, argSlot, expectedType)) {
+                goto cleanup;
+            }
+            continue;
+        }
+
+        if (passingMode == ZR_PARAMETER_PASSING_MODE_OUT || passingMode == ZR_PARAMETER_PASSING_MODE_REF) {
+            ZrParser_Compiler_Error(cs,
+                                    passingMode == ZR_PARAMETER_PASSING_MODE_OUT
+                                            ? "Missing %out member argument"
+                                            : "Missing %ref member argument",
+                                    callLocation);
+            goto cleanup;
+        }
+
+        if (member_call_parameter_has_default_at(memberInfo, index)) {
+            const SZrTypeValue *defaultValue = member_call_parameter_default_value_at(memberInfo, index);
+            if (defaultValue == ZR_NULL || !emit_default_constant_argument(cs, argSlot, defaultValue)) {
+                goto cleanup;
+            }
+            continue;
+        }
+
+        ZrParser_Compiler_Error(cs, "Missing required member argument", callLocation);
+        goto cleanup;
+    }
+
+    if (outArgCount != ZR_NULL) {
+        *outArgCount = (TZrUInt32)slotCount;
+    }
+    success = ZR_TRUE;
+
+cleanup:
+    if (provided != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      provided,
+                                      sizeof(TZrBool) * slotCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    if (argumentNodes != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      argumentNodes,
+                                      sizeof(SZrAstNode *) * slotCount,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    return success;
+}
+
 static TZrBool compile_arguments_against_function_signature(SZrCompilerState *cs,
                                                             SZrAstNodeArray *argsToCompile,
                                                             const SZrFunctionTypeInfo *funcType,
@@ -1063,6 +1418,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             SZrAstNodeArray *argsToCompile = call->args;
             SZrFunctionTypeInfo *resolvedFunctionType = ZR_NULL;
             const SZrTypeMemberInfo *activeCallMemberInfo = pendingCallMemberInfo;
+            SZrAstNodeArray *memberParamList = ZR_NULL;
             SZrResolvedCallSignature resolvedFunctionSignature;
             SZrResolvedCallSignature resolvedMemberSignature;
             TZrBool hasResolvedFunctionSignature = ZR_FALSE;
@@ -1087,7 +1443,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 return;
             }
 
-            if (propertyNode != ZR_NULL && propertyNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+            if (i == memberStartIndex && propertyNode != ZR_NULL && propertyNode->type == ZR_AST_IDENTIFIER_LITERAL) {
                 SZrString *funcName = propertyNode->data.identifier.name;
                 TZrUInt32 childFuncIndex = find_child_function_index(cs, funcName);
 
@@ -1134,6 +1490,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             }
 
             if (activeCallMemberInfo != ZR_NULL) {
+                memberParamList = member_call_parameter_list(activeCallMemberInfo);
+                if (memberParamList != ZR_NULL) {
+                    argsToCompile = match_named_arguments(cs, call, memberParamList);
+                }
                 hasResolvedMemberSignature = resolve_generic_member_call_signature(cs,
                                                                                    activeCallMemberInfo,
                                                                                    call,
@@ -1150,6 +1510,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
 
             TZrUInt32 argCount = 0;
             TZrUInt32 argBaseSlot = currentSlot + 1;
+            TZrUInt32 compiledMemberArgCount = 0;
             if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE) {
                 argCount = 1;
                 argBaseSlot = pendingReceiverSlot + 1;
@@ -1157,15 +1518,33 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
 
             if (argsToCompile != ZR_NULL) {
                 if (activeCallMemberInfo != ZR_NULL) {
-                    if (!(hasResolvedMemberSignature
-                                  ? compile_arguments_against_member_resolved_signature(cs,
-                                                                                        argsToCompile,
-                                                                                        &resolvedMemberSignature,
-                                                                                        argBaseSlot)
-                                  : compile_arguments_against_member_signature(cs,
-                                                                               argsToCompile,
-                                                                               activeCallMemberInfo,
-                                                                               argBaseSlot))) {
+                    if (argsToCompile != call->args) {
+                        compiledMemberArgCount = (TZrUInt32)argsToCompile->count;
+                        if (!(hasResolvedMemberSignature
+                                      ? compile_arguments_against_member_resolved_signature(cs,
+                                                                                            argsToCompile,
+                                                                                            &resolvedMemberSignature,
+                                                                                            argBaseSlot)
+                                      : compile_arguments_against_member_signature(cs,
+                                                                                   argsToCompile,
+                                                                                   activeCallMemberInfo,
+                                                                                   argBaseSlot))) {
+                            if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                                ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                            }
+                            free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                            free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                            return;
+                        }
+                    } else if (!compile_arguments_against_imported_member_metadata(cs,
+                                                                                   call,
+                                                                                   activeCallMemberInfo,
+                                                                                   hasResolvedMemberSignature
+                                                                                           ? &resolvedMemberSignature
+                                                                                           : ZR_NULL,
+                                                                                   member->location,
+                                                                                   argBaseSlot,
+                                                                                   &compiledMemberArgCount)) {
                         if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
                             ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
                         }
@@ -1173,6 +1552,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                         return;
                     }
+                    argCount += compiledMemberArgCount;
                 } else if (resolvedFunctionType != ZR_NULL) {
                     if (!(hasResolvedFunctionSignature
                                   ? compile_arguments_against_function_resolved_signature(cs,
@@ -1190,6 +1570,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                         return;
                     }
+                    argCount += (TZrUInt32)argsToCompile->count;
                 } else {
                     for (TZrSize j = 0; j < argsToCompile->count; j++) {
                         SZrAstNode *argNode = argsToCompile->nodes[j];
@@ -1206,8 +1587,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             }
                         }
                     }
+                    argCount += (TZrUInt32)argsToCompile->count;
                 }
-                argCount += (TZrUInt32)argsToCompile->count;
             }
 
             {

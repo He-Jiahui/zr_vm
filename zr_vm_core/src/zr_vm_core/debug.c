@@ -11,8 +11,10 @@
 #include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
 #include "zr_vm_common/zr_runtime_limits_conf.h"
+#include "zr_vm_common/zr_runtime_sentinel_conf.h"
 #include "zr_vm_common/zr_string_conf.h"
 #include "zr_vm_core/constant_reference.h"
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/meta.h"
@@ -22,11 +24,89 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
+static TZrNativeString debug_get_string_native(SZrString *stringValue, TZrSize *outLength) {
+    TZrNativeString nativeString;
+
+    if (outLength != ZR_NULL) {
+        *outLength = 0;
+    }
+    if (stringValue == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    nativeString = ZrCore_String_GetNativeString(stringValue);
+    if (nativeString != ZR_NULL && outLength != ZR_NULL) {
+        *outLength = strlen(nativeString);
+    }
+    return nativeString;
+}
+
+static TZrUInt32 debug_get_current_instruction_offset(SZrCallInfo *callInfo, SZrFunction *function) {
+    if (callInfo == ZR_NULL || function == ZR_NULL || function->instructionsList == ZR_NULL ||
+        callInfo->context.context.programCounter == ZR_NULL) {
+        return 0;
+    }
+
+    if (callInfo->context.context.programCounter < function->instructionsList) {
+        return 0;
+    }
+
+    return (TZrUInt32)(callInfo->context.context.programCounter - function->instructionsList);
+}
+
 TZrBool ZrCore_DebugInfo_Get(struct SZrState *state, EZrDebugInfoType type, SZrDebugInfo *debugInfo) {
-    ZR_TODO_PARAMETER(state);
-    ZR_TODO_PARAMETER(type);
-    ZR_TODO_PARAMETER(debugInfo);
-    return ZR_FALSE;
+    SZrCallInfo *callInfo;
+    SZrFunction *function;
+
+    ZR_UNUSED_PARAMETER(type);
+
+    if (state == ZR_NULL || debugInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(debugInfo, 0, sizeof(*debugInfo));
+    callInfo = state->callInfoList;
+    if (callInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    debugInfo->callInfo = callInfo;
+    debugInfo->scope = ZR_DEBUG_SCOPE_FUNCTION;
+    debugInfo->isNative = ZrCore_CallInfo_IsNative(callInfo);
+    debugInfo->name = debug_get_string_native(function->functionName, ZR_NULL);
+    debugInfo->source = debug_get_string_native(function->sourceCodeList, &debugInfo->sourceLength);
+    debugInfo->definedLineStart = function->lineInSourceStart;
+    debugInfo->definedLineEnd = function->lineInSourceEnd;
+    debugInfo->closureValuesCount = function->closureValueLength;
+    debugInfo->parametersCount = function->parameterCount;
+    debugInfo->hasVariableParameters = function->hasVariableArguments;
+    debugInfo->isTailCall = (TZrBool)((callInfo->callStatus & ZR_CALL_STATUS_TAIL_CALL) != 0);
+    debugInfo->transferStart = callInfo->yieldContext.transferStart;
+    debugInfo->transferCount = callInfo->yieldContext.transferCount;
+    debugInfo->currentLine = ZrCore_Exception_FindSourceLine(function,
+                                                             debug_get_current_instruction_offset(callInfo, function));
+    if (debugInfo->currentLine == 0 && state->debugLastFunction == function &&
+        state->debugLastLine != ZR_RUNTIME_DEBUG_HOOK_LINE_NONE) {
+        debugInfo->currentLine = state->debugLastLine;
+    }
+
+    return ZR_TRUE;
+}
+
+void ZrCore_Debug_SetTraceObserver(struct SZrState *state,
+                                   FZrDebugTraceObserver observer,
+                                   TZrPtr userData) {
+    if (state == ZR_NULL) {
+        return;
+    }
+
+    state->debugTraceObserver = observer;
+    state->debugTraceUserData = userData;
 }
 
 void ZrCore_Debug_CallError(struct SZrState *state, struct SZrTypeValue *value) {
@@ -36,10 +116,74 @@ void ZrCore_Debug_CallError(struct SZrState *state, struct SZrTypeValue *value) 
 }
 
 TZrDebugSignal ZrCore_Debug_TraceExecution(struct SZrState *state, const TZrInstruction *programCounter) {
-    ZR_TODO_PARAMETER(state);
-    ZR_TODO_PARAMETER(programCounter);
+    SZrCallInfo *callInfo;
+    SZrFunction *function;
+    const TZrInstruction *currentProgramCounter;
+    TZrUInt32 currentInstructionOffset;
+    TZrUInt32 currentLine;
+    FZrDebugTraceObserver traceObserver;
+    TZrDebugSignal observerTrap = ZR_DEBUG_SIGNAL_NONE;
+    TZrDebugSignal trap = ZR_DEBUG_SIGNAL_NONE;
 
-    return ZR_DEBUG_SIGNAL_NONE;
+    if (state == ZR_NULL || programCounter == ZR_NULL) {
+        return ZR_DEBUG_SIGNAL_NONE;
+    }
+
+    callInfo = state->callInfoList;
+    if (callInfo == ZR_NULL || ZrCore_CallInfo_IsNative(callInfo)) {
+        return ZR_DEBUG_SIGNAL_NONE;
+    }
+
+    function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || function->instructionsLength == 0) {
+        callInfo->context.context.trap = ZR_DEBUG_SIGNAL_NONE;
+        return ZR_DEBUG_SIGNAL_NONE;
+    }
+
+    currentProgramCounter = programCounter + 1;
+    if (currentProgramCounter < function->instructionsList ||
+        currentProgramCounter >= function->instructionsList + function->instructionsLength) {
+        callInfo->context.context.trap = ZR_DEBUG_SIGNAL_NONE;
+        return ZR_DEBUG_SIGNAL_NONE;
+    }
+
+    callInfo->context.context.programCounter = currentProgramCounter;
+    currentInstructionOffset = (TZrUInt32)(currentProgramCounter - function->instructionsList);
+    state->previousProgramCounter = currentInstructionOffset;
+
+    currentLine = ZrCore_Exception_FindSourceLine(function, currentInstructionOffset);
+
+    if ((state->debugHookSignal & ZR_DEBUG_HOOK_MASK_LINE) != 0) {
+        if (currentLine != 0 &&
+            (state->debugLastFunction != function || state->debugLastLine != currentLine)) {
+            state->debugLastFunction = function;
+            state->debugLastLine = currentLine;
+            ZrCore_Debug_Hook(state, ZR_DEBUG_HOOK_EVENT_LINE, currentLine, 0, 0);
+        } else if (currentLine != 0) {
+            state->debugLastFunction = function;
+            state->debugLastLine = currentLine;
+        } else {
+            state->debugLastFunction = function;
+            state->debugLastLine = ZR_RUNTIME_DEBUG_HOOK_LINE_NONE;
+        }
+        trap = state->debugHookSignal;
+    }
+
+    traceObserver = state->debugTraceObserver;
+    if (traceObserver != ZR_NULL) {
+        observerTrap = traceObserver(state,
+                                     function,
+                                     currentProgramCounter,
+                                     currentInstructionOffset,
+                                     currentLine,
+                                     state->debugTraceUserData);
+        if (observerTrap != ZR_DEBUG_SIGNAL_NONE) {
+            trap = observerTrap;
+        }
+    }
+
+    callInfo->context.context.trap = trap;
+    return trap;
 }
 
 ZR_NO_RETURN void ZrCore_Debug_RunError(struct SZrState *state, TZrNativeString format, ...) {

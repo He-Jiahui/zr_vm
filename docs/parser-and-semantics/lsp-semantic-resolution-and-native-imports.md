@@ -202,6 +202,11 @@ extern function 的 signature help 之前还有两个独立缺口：
 - hover 现在会把 `%import("greet")` / `%import("zr.system")` 统一展示成：
   - `module <...>`
   - `Source: project source` / `native builtin` / `external/unresolved`
+- references 现在也会把 import target literal 当成真实 module-level 入口：
+- `includeDeclaration=true` 时先落到 source / native descriptor plugin 的 module entry
+  - binary metadata 若 `.zro` typed export 已携带 declaration span，则优先落到 symbol-level declaration；旧 schema 才回退到 module entry
+  - 然后回收 project 内所有匹配的 `%import("module")` 字面量位置
+- document highlight 现在会在当前文档里标出同一 module target 的 import literal 范围，而不是退回普通 string token 语义
 
 这让 `%import` 字面量本身进入了和 imported member、decorator、`super(...)` 一致的第一类导航模型，也避免继续在 AST 位置不稳定的情况下做“命中不到就算了”的弱处理。
 
@@ -297,42 +302,40 @@ var math = %import("zr.math");
 
 这条规则把 project-local native plugin 从“可能命中”提升为“同名模块下的第一优先元信息源”。
 
-## Watched `.dll/.so/.dylib` Refresh 的加载时机
+## Watched `.dll/.so/.dylib` Refresh 的加载路径
 
-watched dynamic library refresh 现在和 binary metadata refresh 走同一条 project discovery 入口，但加载时机不完全相同。
+watched dynamic library refresh 现在仍然和 binary metadata refresh 走同一条 project discovery + project refresh 入口，但 plugin loader 本身已经改成“从 shadow copy 装载”，不再直接把 project 里的 `.dll/.so/.dylib` 原文件 `dlopen` 到当前进程。
 
-之前 language server 在收到 watched plugin path 后，会：
+这条修复针对的是一个真实崩溃场景：
 
-1. 失效 native registry 和 module cache。
-2. 立即对已打开项目执行完整 project refresh。
-3. 在 refresh 的 reanalyze 阶段又把当前 plugin 重新 `dlopen` 回来。
-
-这会带来一个实际问题：如果外部工具还没把新的 `.so/.dll` 写完，或者测试流程像 `test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents(...)` 那样先触发一次 reload、再覆盖文件、再触发第二次 reload，server 会在两次 watched event 中间把旧库重新载回去，导致后续覆盖和卸载变得不稳定。
+1. open document 已经因为 `%import("zr.pluginprobe")` 把 project-local descriptor plugin 载入进程。
+2. 外部构建工具在原路径上直接覆盖同名 `.so/.dll`。
+3. server 收到 `workspace/didChangeWatchedFiles` 后尝试 `dlclose` 旧句柄。
+4. 如果旧句柄直接映射的就是被覆盖中的原文件，卸载阶段可能读到被替换后的 fini / dynamic 元数据，最终在 `dlclose` 里崩溃。
 
 当前行为改成：
 
-- watched path 命中 `.dll/.so/.dylib` 时，server 先做两件确定性的失效：
-  - native registry descriptor record invalidation
-  - module cache invalidation
-- 如果这个 watched path 只是命中一个已经打开的 project，则这一步先返回，不再立刻把旧 plugin 重新加载回当前进程。
-- 后续真正的 hover / completion / definition / references 查询会通过 project-aware metadata resolver 懒加载当前磁盘上的 plugin descriptor。
-- 如果 watched path 还没有所属 project 打开，server 仍然会向上发现最近的 `.zrp` 并 bootstrap project index，使 unopened-project 的 workspace symbol / metadata bootstrap 语义不退化。
+- `native_registry_load_plugin_descriptor(...)` 会先把 project/source plugin 文件复制到 OS 临时目录下的 `zr_vm_native_plugin_cache/` shadow path。
+- 真正 `dlopen` 的是这份 shadow copy，而不是 workspace 里的原始 plugin 文件。
+- registry 继续把 workspace 中的真实 plugin 路径记录为 `sourcePath`，因此 watched-files invalidation 和 definition/source-kind 展示仍然指向用户工程里的原文件。
+- plugin handle record 额外保存 `loadedPath`，invalidate 或按模块替换时会：
+  - `dlclose` shadow-loaded handle
+  - 删除对应 shadow copy
+  - 清掉 module record / module cache
+- `ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(...)` 不再对 `.dll/.so/.dylib` 走早退分支；它会继续执行完整 project refresh，并把已打开文档重新挂到新的 project metadata 上。
 
 结果是：
 
-- 已打开项目在 plugin 文件真正变化后，下一次 hover / completion 会拿到新的 descriptor。
-- 同名 plugin 切 project 时不会再因为“中间步骤把旧库又载回去”而污染后续 watched refresh。
-- bootstrap unopened project 的 watched plugin 场景仍然能建立 project metadata 索引。
-- 由于 imported-member completion 也改成 metadata-first，watched plugin refresh 现在会连同 completion detail 一起更新，而不再只修复 hover。
-
-这条策略和 binary metadata refresh 不同的地方在于：dynamic library reload 更强调“先失效、后按需装载”，避免把文件系统替换中的动态库重新拉回进程。
+- project 内的 plugin 文件可以被外部构建工具原地替换，而不会把当前进程里已加载句柄的卸载元数据破坏掉。
+- watched plugin refresh 之后，open document 的 completion / hover / local inference 会在同一轮 project refresh 中切到新 descriptor，而不再依赖“下一次查询时再碰巧重新加载”。
+- unopened-project 的 watched plugin bootstrap 语义保持不变，仍然可以沿路径回溯最近 `.zrp` 自举 owning project。
 
 ## 统一模块元信息入口与优先级
 
 `lsp_module_metadata.c` 现在是 server 侧统一的 imported-module metadata 入口，负责把四类来源归一到同一套 source-kind 判定上：
 
 1. 当前工作区源码 record
-2. `.zro/.zri` binary metadata
+2. `.zro` binary metadata
 3. native builtin descriptor
 4. native descriptor plugin
 
@@ -361,7 +364,7 @@ watched dynamic library refresh 现在和 binary metadata refresh 走同一条 p
 - `moduleName`
 - `memberName`
 - metadata source kind
-- 可选的 binary metadata declaration 位置
+- 可选的 binary metadata module-entry 位置
 
 消费结果按来源分层：
 
@@ -370,8 +373,8 @@ watched dynamic library refresh 现在和 binary metadata refresh 走同一条 p
   - references 继续合并真实源码声明、真实源码引用、跨文件 import usage
   - document highlight 现在也会在当前文档里标出所有 imported usage
 - binary-only imported member
-  - definition 会优先落到 `.zri` 的 `EXPORTED_SYMBOLS` 声明
-  - references 在 `includeDeclaration=true` 时会把 `.zri` 声明和项目 usage 归并到同一结果集
+  - definition 会落到 `.zro` module entry
+  - references 在 `includeDeclaration=true` 时会把 `.zro` module entry 和项目 usage 归并到同一结果集
   - document highlight 会在当前文档里标出全部 `moduleAlias.member` usage
 - native builtin / native descriptor plugin imported member
   - references 现在至少返回项目内或当前文档内的 usage 集合
@@ -382,13 +385,25 @@ watched dynamic library refresh 现在和 binary metadata refresh 走同一条 p
 
 这一轮又把“声明侧 metadata 文件本身”接回了同一条导航链，补掉了之前只支持“从 source usage 反推 declaration”的单向路径：
 
-- `.zri/.zro` 路径现在会先按 project binary root 反推出 `moduleName`
-- 若光标命中 `.zri` 的 `EXPORTED_SYMBOLS` 声明行，definition 会保持在该导出声明上，references 会回收到同一 module/member 的所有 project usages
-- 若光标落在 binary metadata file entry，本轮则退化为 module 级结果，references 会聚合该模块的 imported member usages
+- `.zro` 路径现在会先按 project binary root 反推出 `moduleName`
+- 若光标落在 binary metadata file entry，仍然统一成 module-entry 级结果
+- 若光标落在 `.zro` typed export declaration span，resolver 会直接返回该 exported member，并把 references / document highlight 归并到同一条 imported-member 链
 - descriptor plugin `.dll/.so/.dylib` 入口会先尝试走 owning project 的 import bindings 反解 `moduleName`，避免同名 plugin 跨 project 时只依赖全局 registry
 - 若 project 侧暂时还没把 plugin 重新解析进 analyzer，再回退到 native registry 的 `sourcePath -> moduleName` 反查
+- document highlight 现在也能落在 external metadata declaration 自身：
+  - `.zro` module entry 会在 metadata 文档里高亮 module entry 自身
+  - descriptor plugin file entry 会在 plugin 文档里高亮 module entry 自身
+- module-entry 级 references 也补进了 import-binding 声明：
+  - binary metadata / plugin file entry 除了继续聚合 `moduleAlias.member` usages，还会回收 project 内 `var moduleAlias = %import("...")` 的 alias declaration
+  - 这样 module entry 不再只有“成员被访问过”的粗粒度引用，而开始具备真正的 module-binding 导航覆盖
+- 这条 module-entry 聚合链现在也覆盖源码模块与 `%extern` wrapper 源文件：
+  - `greet.zr` 这类 project source file entry 在 `0:0` module entry 上会回收到 `%import("greet")` 字面量、`greetModule` alias declaration，以及同模块的 imported-member usages
+  - `native_api.zr` 这类 ffi source wrapper file entry 走同一条 declaration resolver，不再因为它是 source-backed wrapper 就退回“只能从 import literal 一侧导航”
+  - project 级 import-target references 不再依赖“当前文件必须已打开”；若文档未打开，server 会先确认该 analyzer 是否真的导入了目标模块，再从磁盘文本恢复 `%import("...")` 的精确 inner-string range；必要时才回退到 AST binding range
+  - source module entry / ffi wrapper module entry 的 references 也不再局限于 `projectIndex->files`；server 现在会递归 sourceRoot 下的 `.zr` 文件，按需加载 analyzer，把未打开源码里的 import literal、alias binding、imported-member usage 一起并回同一个 module target
+  - 这样 source / ffi wrapper / binary metadata / descriptor plugin 四种 module entry 现在都共享同一套 declaration + import-target + alias-binding + imported-member usage 聚合模型
 
-结果是 binary metadata declaration、plugin file entry、source-side imported member 这三类入口现在都能回到同一套 definition/references 目标模型，而不是继续分裂成“只能从 usage 侧工作”的半通路径。
+结果是 binary metadata module entry、plugin file entry、source/ffi module entry、source-side imported member 这几类入口现在都能回到同一套 definition/references/document highlight 目标模型，而不是继续分裂成“只能从 usage 侧工作”的半通路径。
 
 ## Watched Metadata Refresh
 
@@ -397,7 +412,6 @@ watched dynamic library refresh 现在和 binary metadata refresh 走同一条 p
 - `.zr`
 - `.zrp`
 - `.zro`
-- `.zri`
 - `.dll`
 - `.so`
 - `.dylib`
@@ -413,37 +427,31 @@ server 不再只把 `.zrp` 刷新当成 document-sync 副作用。外部 metadat
 - 失效旧 project record 持有的 analyzer
 - 保留 parser 里已加载文档的最新内容
 - 在新 project index 下重新分析这些已加载文档
+- 在 project-aware reanalyze 前，为这些已加载文档预加载当前 project `native/` 目录里的 descriptor plugin imports
 - 重新挂回 import bindings / imported module facts
-- 如果变更来自尚未预热的 `.zro/.zri/.dll/.so/.dylib`，会沿文件路径回溯最近 `.zrp` 并先自举 owning project，再走同一套 refresh
+- 如果变更来自尚未预热的 `.zro/.dll/.so/.dylib`，会沿文件路径回溯最近 `.zrp` 并先自举 owning project，再走同一套 refresh
 
 这条修复专门解决两类问题：
 
 - binary/native metadata 已经变了，但 open 文档 hover / completion 仍然吃旧 analyzer
 - metadata 先变、project 还没被任何 source doc 触发发现，导致 watched-files 事件根本进不了 project refresh
+- watched plugin refresh 之后，importer locals 仍然停留在旧的 descriptor return type，而没有重新走 compiler-side local inference
 
-## `.zro` 与 `.zri` 的分流加载
+## `.zro` 与 `.zri` 的职责分流
 
-当前 binary metadata 入口已经明确区分两种载体：
+当前 binary metadata 的正式机器可消费入口固定为 `.zro`：
 
 - `.zro`
   - 继续走 `ZrCore_Io_ReadSourceNew(...)`
   - 直接读取序列化 binary module/source
+  - imported member hover / completion / definition / references / document highlight 都以这条路径为准
+  - compiler/type inference 侧的 imported-module compile info 也只消费这条路径
 - `.zri`
-  - 不再错误地复用 `.zro` 的 binary source loader
-  - 改成按 intermediate 文本元数据读取 `EXPORTED_SYMBOLS`
-  - LSP hover / completion 直接消费这些结构化 exported-symbol facts
+  - 保留为 debug / intermediate 文本产物
+  - 不再作为 server 的语义推断、导航、hover、completion 事实源
+  - 也不再被当作 `.zro` 的替代输入
 
-这条分流很关键，因为 `.zri` 虽然是中间产物元数据，但它是文本格式，不是 `io.c` 里的 binary source 布局。之前把 `.zri` 当 `.zro` 读会在 refresh 后重新加载 imported member hover 时触发无效 IO 读取和断言崩溃。
-
-现在 `.zri` 至少覆盖了 LSP 当前真正依赖的能力面：
-
-- imported member hover
-- imported member completion
-- `%import("binary_only")` definition 到 metadata file entry
-- `moduleAlias.member` definition 到 `.zri` 的 `EXPORTED_SYMBOLS` 声明行
-- watched-files metadata refresh 后的重新提示
-
-同时 `.zro` 仍然保持原来的完整 binary source 路径，不影响已有 `.zro` 工程。
+这条分流很关键，因为 `.zri` 虽然仍然是有用的 debug 文件，但它不是 `io.c` 里的 binary source 布局，也不应该再驱动正式的 LSP 语义链。之前把 `.zri` 当 `.zro` 读会在 refresh 后重新加载 imported member hover 时触发无效 IO 读取和断言崩溃。
 
 ## 相关回归
 
@@ -463,11 +471,14 @@ server 不再只把 `.zrp` 刷新当成 document-sync 副作用。外部 metadat
 - native value constructor `$math.Vector3(...).y`
 - watched binary metadata refresh 对 unopened project 的 bootstrap
 - watched binary metadata refresh 后 open 文档 hover 的更新
-- `.zri` 作为 binary metadata 载体的 imported member hover / completion
-- binary import literal definition 到 `.zri` module entry
-- binary imported member definition 到 `.zri` exported symbol declaration
-- binary imported member references 到项目 usage + `.zri` exported symbol declaration
+- `.zro` 作为 binary metadata 载体的 imported member hover / completion
+- binary import literal definition 到 `.zro` module entry
+- binary imported member definition 到 `.zro` exported declaration span（旧 schema 回退 module entry）
+- binary imported member references 到项目 usage + `.zro` exported declaration span
 - binary imported member document highlight 到当前文档 usage
+- source module entry / ffi wrapper module entry references 到 `%import(...)` literal + alias binding + imported-member usage
+- source module entry / ffi wrapper module entry references 覆盖未打开 project source files
+- source module entry / ffi wrapper module entry document highlight 命中 module entry 自身
 - native imported member references / document highlight 到 usage-only 结果
 - 类成员 definition / references / comment hover
 
@@ -479,12 +490,15 @@ server 不再只把 `.zrp` 刷新当成 document-sync 副作用。外部 metadat
 
 ## 验证证据
 
-2026-04-04 这一轮 imported-module / external-symbol 导航修复的验证结果如下：
+2026-04-05 这一轮 watched refresh / external metadata reanalysis 修复的验证结果如下：
 
 - WSL gcc `build/codex-wsl-gcc-debug`
-  - 定向重编 `libzr_vm_language_server.so`
-  - `test_lsp_project_features.c` 通过
-  - `stdio_smoke.js` 通过
+  - 定向重编 `libzr_vm_library.so`、`libzr_vm_language_server.so`
+  - `./build/codex-wsl-gcc-debug/bin/zr_vm_language_server_lsp_project_features_test_relaxed` 通过
+  - `./build/codex-wsl-gcc-debug/bin/zr_vm_language_server_lsp_interface_test` 通过
+  - watched binary metadata refresh 的 importer local inference 回归通过
+  - watched descriptor plugin refresh 的 importer local inference 回归通过
+  - plugin source overwrite 后的 unload/reload 不再在 `dlclose` 崩溃
 - WSL clang `build/codex-wsl-clang-debug`
   - 这一轮未重跑；当前验证以 WSL 定向构建为准
 - Windows MSVC

@@ -3,6 +3,8 @@
 //
 
 #include "compiler_internal.h"
+#include "compile_time_executor_internal.h"
+#include "compile_time_binding_metadata.h"
 
 static void typed_type_ref_init_unknown(SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
@@ -100,6 +102,115 @@ static TZrBool typed_type_ref_from_callable_binding(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+typedef struct SZrCompileTimeVariableBindingBuildContext {
+    SZrCompilerState *cs;
+    SZrCompileTimeBindingSourceVariable *variables;
+    TZrSize variableCount;
+} SZrCompileTimeVariableBindingBuildContext;
+
+static SZrCompileTimeBindingSourceVariable *find_compile_time_binding_variable_source(
+        TZrPtr userData,
+        SZrString *name) {
+    SZrCompileTimeVariableBindingBuildContext *context =
+            (SZrCompileTimeVariableBindingBuildContext *)userData;
+
+    if (context == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < context->variableCount; index++) {
+        if (context->variables[index].name != ZR_NULL &&
+            ZrCore_String_Equal(context->variables[index].name, name)) {
+            return &context->variables[index];
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrCompileTimeFunction *find_compile_time_binding_function(TZrPtr userData, SZrString *name) {
+    SZrCompileTimeVariableBindingBuildContext *context =
+            (SZrCompileTimeVariableBindingBuildContext *)userData;
+
+    if (context == ZR_NULL || context->cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < context->cs->compileTimeFunctions.length; index++) {
+        SZrCompileTimeFunction **funcPtr =
+                (SZrCompileTimeFunction **)ZrCore_Array_Get(&context->cs->compileTimeFunctions, index);
+        if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL && (*funcPtr)->name != ZR_NULL &&
+            ZrCore_String_Equal((*funcPtr)->name, name)) {
+            return *funcPtr;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrCompileTimeDecoratorClass *find_compile_time_binding_decorator_class(TZrPtr userData, SZrString *name) {
+    SZrCompileTimeVariableBindingBuildContext *context =
+            (SZrCompileTimeVariableBindingBuildContext *)userData;
+
+    if (context == ZR_NULL || context->cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < context->cs->compileTimeDecoratorClasses.length; index++) {
+        SZrCompileTimeDecoratorClass **classPtr =
+                (SZrCompileTimeDecoratorClass **)ZrCore_Array_Get(&context->cs->compileTimeDecoratorClasses, index);
+        if (classPtr != ZR_NULL && *classPtr != ZR_NULL && (*classPtr)->name != ZR_NULL &&
+            ZrCore_String_Equal((*classPtr)->name, name)) {
+            return *classPtr;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void typed_export_symbol_set_declaration_range(SZrFunctionTypedExportSymbol *symbol, SZrFileRange location) {
+    if (symbol == ZR_NULL) {
+        return;
+    }
+
+    symbol->lineInSourceStart = location.start.line > 0 ? (TZrUInt32)location.start.line : 0;
+    symbol->columnInSourceStart = location.start.column > 0 ? (TZrUInt32)location.start.column : 0;
+    symbol->lineInSourceEnd = location.end.line > 0 ? (TZrUInt32)location.end.line : 0;
+    symbol->columnInSourceEnd = location.end.column > 0 ? (TZrUInt32)location.end.column : 0;
+}
+
+static void typed_export_symbol_set_declaration_from_function(SZrFunctionTypedExportSymbol *symbol,
+                                                              SZrAstNode *functionDeclNode) {
+    SZrFunctionDeclaration *declaration;
+
+    if (symbol == ZR_NULL || functionDeclNode == ZR_NULL || functionDeclNode->type != ZR_AST_FUNCTION_DECLARATION) {
+        return;
+    }
+
+    declaration = &functionDeclNode->data.functionDeclaration;
+    if (declaration->name != ZR_NULL) {
+        typed_export_symbol_set_declaration_range(symbol, declaration->nameLocation);
+    } else {
+        typed_export_symbol_set_declaration_range(symbol, functionDeclNode->location);
+    }
+}
+
+static void typed_export_symbol_set_declaration_from_variable(SZrFunctionTypedExportSymbol *symbol,
+                                                              SZrAstNode *variableDeclNode) {
+    SZrVariableDeclaration *declaration;
+
+    if (symbol == ZR_NULL || variableDeclNode == ZR_NULL || variableDeclNode->type != ZR_AST_VARIABLE_DECLARATION) {
+        return;
+    }
+
+    declaration = &variableDeclNode->data.variableDeclaration;
+    if (declaration->pattern != ZR_NULL) {
+        typed_export_symbol_set_declaration_range(symbol, declaration->pattern->location);
+    } else {
+        typed_export_symbol_set_declaration_range(symbol, variableDeclNode->location);
+    }
+}
+
 static SZrAstNode *find_script_function_declaration_by_name(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || name == ZR_NULL || cs->scriptAst->type != ZR_AST_SCRIPT ||
         cs->scriptAst->data.script.statements == ZR_NULL) {
@@ -180,6 +291,15 @@ static void free_metadata_parameters(SZrState *state,
         return;
     }
 
+    for (TZrUInt32 index = 0; index < parameterCount; index++) {
+        if (parameters[index].decoratorNames != ZR_NULL && parameters[index].decoratorCount > 0) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          parameters[index].decoratorNames,
+                                          sizeof(SZrString *) * parameters[index].decoratorCount,
+                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+    }
+
     ZrCore_Memory_RawFreeWithType(state->global,
                                   parameters,
                                   sizeof(SZrFunctionMetadataParameter) * parameterCount,
@@ -220,10 +340,11 @@ static void free_test_infos(SZrState *state,
                                   ZR_MEMORY_NATIVE_TYPE_FUNCTION);
 }
 
-static TZrBool build_metadata_parameters_from_ast(SZrCompilerState *cs,
-                                                  SZrAstNodeArray *params,
-                                                  SZrFunctionMetadataParameter **outParameters,
-                                                  TZrUInt32 *outParameterCount) {
+TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
+                                                   SZrAstNodeArray *params,
+                                                   TZrBool includeDefaultValues,
+                                                   SZrFunctionMetadataParameter **outParameters,
+                                                   TZrUInt32 *outParameterCount) {
     TZrUInt32 parameterCount;
     SZrFunctionMetadataParameter *parameters;
 
@@ -251,6 +372,12 @@ static TZrBool build_metadata_parameters_from_ast(SZrCompilerState *cs,
         SZrAstNode *paramNode = params->nodes[index];
 
         typed_type_ref_init_unknown(&parameters[index].type);
+        parameters[index].hasDefaultValue = ZR_FALSE;
+        ZrCore_Value_ResetAsNull(&parameters[index].defaultValue);
+        parameters[index].hasDecoratorMetadata = ZR_FALSE;
+        ZrCore_Value_ResetAsNull(&parameters[index].decoratorMetadataValue);
+        parameters[index].decoratorNames = ZR_NULL;
+        parameters[index].decoratorCount = 0;
         if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
             continue;
         }
@@ -258,6 +385,21 @@ static TZrBool build_metadata_parameters_from_ast(SZrCompilerState *cs,
         parameters[index].name =
                 paramNode->data.parameter.name != ZR_NULL ? paramNode->data.parameter.name->name : ZR_NULL;
         if (!typed_type_ref_from_ast_type(cs, paramNode->data.parameter.typeInfo, &parameters[index].type)) {
+            free_metadata_parameters(cs->state, parameters, parameterCount);
+            return ZR_FALSE;
+        }
+
+        if (includeDefaultValues && paramNode->data.parameter.defaultValue != ZR_NULL) {
+            if (!ZrParser_Compiler_EvaluateCompileTimeExpression(cs,
+                                                                 paramNode->data.parameter.defaultValue,
+                                                                 &parameters[index].defaultValue)) {
+                free_metadata_parameters(cs->state, parameters, parameterCount);
+                return ZR_FALSE;
+            }
+            parameters[index].hasDefaultValue = ZR_TRUE;
+        }
+
+        if (!ZrParser_CompileTime_ApplyParameterDecorators(cs, paramNode, index, &parameters[index])) {
             free_metadata_parameters(cs->state, parameters, parameterCount);
             return ZR_FALSE;
         }
@@ -273,6 +415,9 @@ static TZrBool build_compile_time_variable_infos(SZrCompilerState *cs,
                                                  TZrUInt32 *outCount) {
     TZrUInt32 infoCount;
     SZrFunctionCompileTimeVariableInfo *infos;
+    SZrCompileTimeBindingSourceVariable *bindingSources = ZR_NULL;
+    SZrCompileTimeVariableBindingBuildContext bindingContext;
+    SZrCompileTimeBindingResolver resolver;
 
     if (outInfos == ZR_NULL || outCount == ZR_NULL) {
         return ZR_FALSE;
@@ -293,7 +438,20 @@ static TZrBool build_compile_time_variable_infos(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
+    bindingSources = (SZrCompileTimeBindingSourceVariable *)ZrCore_Memory_RawMallocWithType(
+            cs->state->global,
+            sizeof(SZrCompileTimeBindingSourceVariable) * infoCount,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (bindingSources == ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      infos,
+                                      sizeof(SZrFunctionCompileTimeVariableInfo) * infoCount,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        return ZR_FALSE;
+    }
+
     ZrCore_Memory_RawSet(infos, 0, sizeof(SZrFunctionCompileTimeVariableInfo) * infoCount);
+    ZrCore_Memory_RawSet(bindingSources, 0, sizeof(SZrCompileTimeBindingSourceVariable) * infoCount);
     for (TZrUInt32 index = 0; index < infoCount; index++) {
         SZrCompileTimeVariable **recordPtr =
                 (SZrCompileTimeVariable **)ZrCore_Array_Get(&cs->compileTimeVariables, index);
@@ -310,7 +468,43 @@ static TZrBool build_compile_time_variable_infos(SZrCompilerState *cs,
         infos[index].lineInSourceEnd =
                 record->location.end.line > 0 ? (TZrUInt32)record->location.end.line : 0;
         typed_type_ref_from_inferred(&infos[index].type, &record->type);
+        bindingSources[index].name = record->name;
+        bindingSources[index].value = record->value;
+        bindingSources[index].info = &infos[index];
     }
+
+    bindingContext.cs = cs;
+    bindingContext.variables = bindingSources;
+    bindingContext.variableCount = infoCount;
+    resolver.state = cs->state;
+    resolver.userData = &bindingContext;
+    resolver.findVariable = find_compile_time_binding_variable_source;
+    resolver.findFunction = find_compile_time_binding_function;
+    resolver.findDecoratorClass = find_compile_time_binding_decorator_class;
+    if (!ZrParser_CompileTimeBinding_ResolveAll(&resolver, bindingSources, infoCount)) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      bindingSources,
+                                      sizeof(SZrCompileTimeBindingSourceVariable) * infoCount,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        for (TZrUInt32 index = 0; index < infoCount; index++) {
+            if (infos[index].pathBindings != ZR_NULL && infos[index].pathBindingCount > 0) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                              infos[index].pathBindings,
+                                              sizeof(SZrFunctionCompileTimePathBinding) * infos[index].pathBindingCount,
+                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+        }
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      infos,
+                                      sizeof(SZrFunctionCompileTimeVariableInfo) * infoCount,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                  bindingSources,
+                                  sizeof(SZrCompileTimeBindingSourceVariable) * infoCount,
+                                  ZR_MEMORY_NATIVE_TYPE_FUNCTION);
 
     *outInfos = infos;
     *outCount = infoCount;
@@ -366,10 +560,11 @@ static TZrBool build_compile_time_function_infos(SZrCompilerState *cs,
         }
 
         if (declaration != ZR_NULL &&
-            !build_metadata_parameters_from_ast(cs,
-                                                declaration->params,
-                                                &infos[index].parameters,
-                                                &infos[index].parameterCount)) {
+            !compiler_build_function_parameter_metadata(cs,
+                                                        declaration->params,
+                                                        ZR_TRUE,
+                                                        &infos[index].parameters,
+                                                        &infos[index].parameterCount)) {
             free_compile_time_function_infos(cs->state, infos, infoCount);
             return ZR_FALSE;
         }
@@ -435,10 +630,11 @@ static TZrBool build_test_infos(SZrCompilerState *cs,
                 statement->location.start.line > 0 ? (TZrUInt32)statement->location.start.line : 0;
         infos[writeIndex].lineInSourceEnd =
                 statement->location.end.line > 0 ? (TZrUInt32)statement->location.end.line : 0;
-        if (!build_metadata_parameters_from_ast(cs,
-                                                declaration->params,
-                                                &infos[writeIndex].parameters,
-                                                &infos[writeIndex].parameterCount)) {
+        if (!compiler_build_function_parameter_metadata(cs,
+                                                        declaration->params,
+                                                        ZR_FALSE,
+                                                        &infos[writeIndex].parameters,
+                                                        &infos[writeIndex].parameterCount)) {
             free_test_infos(cs->state, infos, infoCount);
             return ZR_FALSE;
         }
@@ -692,6 +888,7 @@ static TZrBool build_typed_export_symbols(SZrCompilerState *cs,
                 free_typed_export_symbols(cs->state, symbols, exportCount);
                 return ZR_FALSE;
             }
+            typed_export_symbol_set_declaration_from_function(&symbols[index], functionDeclNode);
         } else {
             variableDeclNode = find_script_variable_declaration_by_name(cs, exportedVar->name);
             if (variableDeclNode != ZR_NULL && variableDeclNode->type == ZR_AST_VARIABLE_DECLARATION) {
@@ -710,6 +907,7 @@ static TZrBool build_typed_export_symbols(SZrCompilerState *cs,
                             free_typed_export_symbols(cs->state, symbols, exportCount);
                             return ZR_FALSE;
                         }
+                        typed_export_symbol_set_declaration_from_variable(&symbols[index], variableDeclNode);
                         continue;
                     }
                 }
@@ -723,11 +921,15 @@ static TZrBool build_typed_export_symbols(SZrCompilerState *cs,
                         free_typed_export_symbols(cs->state, symbols, exportCount);
                         return ZR_FALSE;
                     }
+                    typed_export_symbol_set_declaration_from_variable(&symbols[index], variableDeclNode);
                     continue;
                 }
             }
 
             build_variable_export_symbol(cs, exportedVar, &symbols[index]);
+            if (variableDeclNode != ZR_NULL) {
+                typed_export_symbol_set_declaration_from_variable(&symbols[index], variableDeclNode);
+            }
         }
     }
 

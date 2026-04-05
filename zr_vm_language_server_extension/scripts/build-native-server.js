@@ -7,13 +7,11 @@ const buildDir = process.env.ZR_NATIVE_BUILD_DIR
     ? path.resolve(process.env.ZR_NATIVE_BUILD_DIR)
     : path.join(repositoryRoot, 'build', 'codex-lsp');
 const buildConfig = process.env.ZR_NATIVE_BUILD_CONFIG || 'Debug';
-const target = process.env.ZR_NATIVE_BUILD_TARGET || 'zr_vm_language_server_stdio';
+const targets = (process.env.ZR_NATIVE_BUILD_TARGET || 'zr_vm_language_server_stdio,zr_vm_cli_executable')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
 const jobs = process.env.ZR_BUILD_JOBS || '8';
-
-if (!fs.existsSync(buildDir)) {
-    console.error(`Native build directory does not exist: ${buildDir}`);
-    process.exit(1);
-}
 
 function findVsDevCmd() {
     const candidates = [];
@@ -110,11 +108,17 @@ const args = ['--build', buildDir];
 if (process.platform === 'win32') {
     args.push('--config', buildConfig);
 }
-args.push('--target', target, '--parallel', jobs);
+if (targets.length > 0) {
+    args.push('--target', ...targets);
+}
+args.push('--parallel', jobs);
 
 const env = process.platform === 'win32' && !process.env.VSCMD_VER
     ? importVsDevCmdEnvironment()
     : process.env;
+
+ensureBuildDirectory(env);
+
 const result = spawnSync('cmake', args, {
     cwd: repositoryRoot,
     stdio: 'inherit',
@@ -123,4 +127,36 @@ const result = spawnSync('cmake', args, {
 
 if (result.status !== 0) {
     process.exit(result.status ?? 1);
+}
+
+function ensureBuildDirectory(env) {
+    const cachePath = path.join(buildDir, 'CMakeCache.txt');
+    if (fs.existsSync(cachePath)) {
+        const cacheText = fs.readFileSync(cachePath, 'utf8');
+        if (cacheText.includes('CMAKE_GENERATOR:INTERNAL=Ninja')) {
+            return;
+        }
+
+        fs.rmSync(buildDir, { recursive: true, force: true });
+    }
+
+    fs.mkdirSync(buildDir, { recursive: true });
+    const configureArgs = ['-S', repositoryRoot, '-B', buildDir];
+
+    configureArgs.push('-G', 'Ninja', `-DCMAKE_BUILD_TYPE=${buildConfig}`);
+
+    configureArgs.push(
+        '-DBUILD_TESTS=OFF',
+        '-DBUILD_WASM=OFF',
+        '-DBUILD_LANGUAGE_SERVER_EXTENSION=OFF',
+    );
+
+    const configureResult = spawnSync('cmake', configureArgs, {
+        cwd: repositoryRoot,
+        stdio: 'inherit',
+        env,
+    });
+    if (configureResult.status !== 0) {
+        process.exit(configureResult.status ?? 1);
+    }
 }

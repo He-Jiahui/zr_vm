@@ -75,6 +75,14 @@ static TZrBool string_array_contains(const SZrArray *array, const char *expected
     return ZR_FALSE;
 }
 
+static const SZrInferredType *member_parameter_type_at(const SZrTypeMemberInfo *memberInfo, TZrSize index) {
+    if (memberInfo == ZR_NULL || index >= memberInfo->parameterTypes.length) {
+        return ZR_NULL;
+    }
+
+    return (const SZrInferredType *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterTypes, index);
+}
+
 static SZrAstNode *parse_test_ast(SZrState *state, const char *path, const char *source) {
     SZrString *sourceName;
 
@@ -280,6 +288,87 @@ static void test_container_metadata_closed_native_prototypes_substitute_members_
     TEST_DIVIDER();
 }
 
+static void test_container_metadata_closed_native_method_parameter_types_preserve_specialized_value_kinds(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Metadata - Closed Native Method Parameters Preserve Specialized Value Kinds";
+    SZrState *state;
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var map: Map<string, int> = new container.Map<string, int>();\n"
+            "var list: LinkedList<int> = new container.LinkedList<int>();\n";
+    const SZrTypePrototypeInfo *mapPrototype;
+    const SZrTypePrototypeInfo *listPrototype;
+    const SZrTypeMemberInfo *mapContainsKey;
+    const SZrTypeMemberInfo *listAddLast;
+    const SZrInferredType *mapKeyParameter;
+    const SZrInferredType *listValueParameter;
+    SZrInferredType directString;
+    SZrInferredType directInt;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+    cs = ZrContainerTests_CreateCompilerState(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    ast = parse_test_ast(state, "container_closed_method_parameter_metadata_test.zr", source);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    cs->scriptAst = ast;
+    cs->currentFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+    for (TZrSize index = 0; index < ast->data.script.statements->count; index++) {
+        ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[index]);
+        TEST_ASSERT_FALSE(cs->hasError);
+    }
+
+    mapPrototype = ZrContainerTests_FindTypePrototype(cs, "Map<string, int>");
+    listPrototype = ZrContainerTests_FindTypePrototype(cs, "LinkedList<int>");
+    TEST_ASSERT_NOT_NULL(mapPrototype);
+    TEST_ASSERT_NOT_NULL(listPrototype);
+
+    mapContainsKey = ZrContainerTests_FindTypeMemberByName(mapPrototype, "containsKey");
+    listAddLast = ZrContainerTests_FindTypeMemberByName(listPrototype, "addLast");
+    TEST_ASSERT_NOT_NULL(mapContainsKey);
+    TEST_ASSERT_NOT_NULL(listAddLast);
+
+    mapKeyParameter = member_parameter_type_at(mapContainsKey, 0);
+    listValueParameter = member_parameter_type_at(listAddLast, 0);
+    TEST_ASSERT_NOT_NULL(mapKeyParameter);
+    TEST_ASSERT_NOT_NULL(listValueParameter);
+
+    ZrParser_InferredType_Init(state, &directString, ZR_VALUE_TYPE_STRING);
+    ZrParser_InferredType_Init(state, &directInt, ZR_VALUE_TYPE_INT64);
+
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, mapKeyParameter->baseType);
+    TEST_ASSERT_NOT_NULL(mapKeyParameter->typeName);
+    TEST_ASSERT_EQUAL_STRING("string", ZrCore_String_GetNativeString(mapKeyParameter->typeName));
+    TEST_ASSERT_TRUE(ZrParser_InferredType_Equal(mapKeyParameter, &directString));
+    TEST_ASSERT_TRUE(ZrParser_InferredType_IsCompatible(&directString, mapKeyParameter));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, listValueParameter->baseType);
+    TEST_ASSERT_NOT_NULL(listValueParameter->typeName);
+    TEST_ASSERT_EQUAL_STRING("int", ZrCore_String_GetNativeString(listValueParameter->typeName));
+    TEST_ASSERT_TRUE(ZrParser_InferredType_Equal(listValueParameter, &directInt));
+    TEST_ASSERT_TRUE(ZrParser_InferredType_IsCompatible(&directInt, listValueParameter));
+
+    ZrParser_InferredType_Free(state, &directInt);
+    ZrParser_InferredType_Free(state, &directString);
+
+    ZrCore_Function_Free(state, cs->currentFunction);
+    cs->currentFunction = ZR_NULL;
+    ZrParser_Ast_Free(state, ast);
+    ZrContainerTests_DestroyCompilerState(cs);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -288,5 +377,6 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_container_metadata_open_module_info_exposes_generic_shapes);
     RUN_TEST(test_container_metadata_closed_native_prototypes_substitute_members_and_interfaces);
+    RUN_TEST(test_container_metadata_closed_native_method_parameter_types_preserve_specialized_value_kinds);
     return UNITY_END();
 }

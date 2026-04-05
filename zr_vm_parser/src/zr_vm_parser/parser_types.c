@@ -198,9 +198,7 @@ static const TZrChar *classify_atomic_wrapper_name(SZrType *type) {
 static SZrType *parse_percent_prefixed_type(SZrParserState *ps, TZrBool noGeneric) {
     EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     SZrType *innerType;
-    const TZrChar *atomicWrapperName;
     SZrType *type;
-    SZrFileRange location;
 
     if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
         return ZR_NULL;
@@ -212,41 +210,6 @@ static SZrType *parse_percent_prefixed_type(SZrParserState *ps, TZrBool noGeneri
             return innerType;
         }
         return ZR_NULL;
-    }
-
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "mutex")) {
-        location = get_current_location(ps);
-        ZrParser_Lexer_Next(ps->lexer);
-        innerType = parse_task_inner_type(ps, noGeneric);
-        if (innerType == ZR_NULL) {
-            report_error(ps, "Expected type after '%mutex'");
-            return ZR_NULL;
-        }
-        return wrap_type_in_task_generic(ps, innerType, "Mutex", location);
-    }
-
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "atomic")) {
-        location = get_current_location(ps);
-        ZrParser_Lexer_Next(ps->lexer);
-        innerType = parse_task_inner_type(ps, noGeneric);
-        if (innerType == ZR_NULL) {
-            report_error(ps, "Expected type after '%atomic'");
-            return ZR_NULL;
-        }
-
-        atomicWrapperName = classify_atomic_wrapper_name(innerType);
-        if (atomicWrapperName == ZR_NULL) {
-            free_owned_type(ps->state, innerType);
-            report_error(ps, "'%atomic' only supports bool, signed int, and unsigned int scalar type annotations");
-            return ZR_NULL;
-        }
-
-        if (strcmp(atomicWrapperName, "AtomicBool") == 0) {
-            free_owned_type(ps->state, innerType);
-            return wrap_type_in_task_identifier(ps, atomicWrapperName, location);
-        }
-
-        return wrap_type_in_task_generic(ps, innerType, atomicWrapperName, location);
     }
 
     if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||

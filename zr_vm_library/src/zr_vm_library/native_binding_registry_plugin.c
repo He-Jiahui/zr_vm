@@ -1,5 +1,176 @@
 #include "native_binding_internal.h"
 
+static TZrBool native_registry_ensure_directory_exists(const TZrChar *path) {
+    if (path == ZR_NULL || path[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    if (ZrLibrary_File_Exist((TZrNativeString)path) == ZR_LIBRARY_FILE_IS_DIRECTORY) {
+        return ZR_TRUE;
+    }
+
+#if defined(ZR_PLATFORM_WIN)
+    return CreateDirectoryA(path, ZR_NULL) != 0 || GetLastError() == ERROR_ALREADY_EXISTS;
+#else
+    return mkdir(path, 0755) == 0 || errno == EEXIST;
+#endif
+}
+
+static TZrBool native_registry_get_plugin_shadow_cache_directory(TZrChar *buffer, TZrSize bufferSize) {
+    TZrChar rootPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    buffer[0] = '\0';
+#if defined(ZR_PLATFORM_WIN)
+    {
+        DWORD length = GetTempPathA((DWORD)sizeof(rootPath), rootPath);
+        if (length == 0 || length >= sizeof(rootPath)) {
+            return ZR_FALSE;
+        }
+    }
+#else
+    {
+        const TZrChar *tempPath = getenv("TMPDIR");
+        if (tempPath == ZR_NULL || tempPath[0] == '\0') {
+            tempPath = "/tmp";
+        }
+        snprintf(rootPath, sizeof(rootPath), "%s", tempPath);
+    }
+#endif
+
+    ZrLibrary_File_PathJoin(rootPath, "zr_vm_native_plugin_cache", buffer);
+    return native_registry_ensure_directory_exists(buffer);
+}
+
+static TZrBool native_registry_copy_binary_file(const TZrChar *sourcePath, const TZrChar *targetPath) {
+    FILE *source;
+    FILE *target;
+    TZrByte buffer[4096];
+    size_t readSize;
+    TZrBool success = ZR_TRUE;
+
+    if (sourcePath == ZR_NULL || targetPath == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    source = fopen(sourcePath, "rb");
+    if (source == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    target = fopen(targetPath, "wb");
+    if (target == ZR_NULL) {
+        fclose(source);
+        return ZR_FALSE;
+    }
+
+    while ((readSize = fread(buffer, 1, sizeof(buffer), source)) > 0) {
+        if (fwrite(buffer, 1, readSize, target) != readSize) {
+            success = ZR_FALSE;
+            break;
+        }
+    }
+
+    if (ferror(source)) {
+        success = ZR_FALSE;
+    }
+
+    fclose(source);
+    fclose(target);
+
+    if (!success) {
+        remove(targetPath);
+    }
+    return success;
+}
+
+static TZrBool native_registry_prepare_shadow_plugin_path(const TZrChar *moduleName,
+                                                          const TZrChar *sourcePath,
+                                                          TZrChar *buffer,
+                                                          TZrSize bufferSize) {
+    static TZrUInt64 shadowCounter = 0;
+    TZrChar cacheDirectory[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar sanitizedModuleName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *baseName;
+    TZrChar fileName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *extension;
+    TZrUInt64 counter;
+    TZrSize baseNameLength;
+    unsigned long processId;
+
+    if (moduleName == ZR_NULL || sourcePath == ZR_NULL || buffer == ZR_NULL || bufferSize == 0 ||
+        !native_registry_get_plugin_shadow_cache_directory(cacheDirectory, sizeof(cacheDirectory))) {
+        return ZR_FALSE;
+    }
+
+    native_registry_sanitize_module_name(moduleName, sanitizedModuleName, sizeof(sanitizedModuleName));
+    baseName = sanitizedModuleName[0] != '\0' ? sanitizedModuleName : "plugin";
+    baseNameLength = strlen(baseName);
+    if (baseNameLength > 96) {
+        baseNameLength = 96;
+    }
+    extension = native_registry_dynamic_library_extension();
+    counter = ++shadowCounter;
+#if defined(ZR_PLATFORM_WIN)
+    processId = (unsigned long)GetCurrentProcessId();
+#else
+    processId = (unsigned long)getpid();
+#endif
+
+    snprintf(fileName,
+             sizeof(fileName),
+             "zrvm_shadow_%.*s_%lu_%llu%s",
+             (int)baseNameLength,
+             baseName,
+             processId,
+             (unsigned long long)counter,
+             extension);
+    ZrLibrary_File_PathJoin(cacheDirectory, fileName, buffer);
+    return native_registry_copy_binary_file(sourcePath, buffer);
+}
+
+void native_registry_release_plugin_handle_record(SZrGlobalState *global, ZrLibPluginHandleRecord *handleRecord) {
+    if (global == ZR_NULL || handleRecord == ZR_NULL) {
+        return;
+    }
+
+    if (handleRecord->handle != ZR_NULL) {
+        native_registry_close_library(handleRecord->handle);
+        handleRecord->handle = ZR_NULL;
+    }
+    if (handleRecord->loadedPath != ZR_NULL &&
+        (handleRecord->sourcePath == ZR_NULL || strcmp(handleRecord->loadedPath, handleRecord->sourcePath) != 0)) {
+        remove(handleRecord->loadedPath);
+    }
+    if (handleRecord->loadedPath != ZR_NULL) {
+        global->allocator(global->userAllocationArguments,
+                          handleRecord->loadedPath,
+                          strlen(handleRecord->loadedPath) + 1,
+                          0,
+                          ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        handleRecord->loadedPath = ZR_NULL;
+    }
+    if (handleRecord->moduleName != ZR_NULL) {
+        global->allocator(global->userAllocationArguments,
+                          handleRecord->moduleName,
+                          strlen(handleRecord->moduleName) + 1,
+                          0,
+                          ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        handleRecord->moduleName = ZR_NULL;
+    }
+    if (handleRecord->sourcePath != ZR_NULL) {
+        global->allocator(global->userAllocationArguments,
+                          handleRecord->sourcePath,
+                          strlen(handleRecord->sourcePath) + 1,
+                          0,
+                          ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        handleRecord->sourcePath = ZR_NULL;
+    }
+}
+
 void *native_registry_open_library(const TZrChar *path) {
     if (path == ZR_NULL) {
         return ZR_NULL;
@@ -68,26 +239,7 @@ static void native_registry_remove_plugin_handles_for_module(SZrState *state,
             continue;
         }
 
-        if (handleRecord->handle != ZR_NULL) {
-            native_registry_close_library(handleRecord->handle);
-            handleRecord->handle = ZR_NULL;
-        }
-        if (handleRecord->moduleName != ZR_NULL) {
-            state->global->allocator(state->global->userAllocationArguments,
-                                     handleRecord->moduleName,
-                                     strlen(handleRecord->moduleName) + 1,
-                                     0,
-                                     ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-            handleRecord->moduleName = ZR_NULL;
-        }
-        if (handleRecord->sourcePath != ZR_NULL) {
-            state->global->allocator(state->global->userAllocationArguments,
-                                     handleRecord->sourcePath,
-                                     strlen(handleRecord->sourcePath) + 1,
-                                     0,
-                                     ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-            handleRecord->sourcePath = ZR_NULL;
-        }
+        native_registry_release_plugin_handle_record(state->global, handleRecord);
 
         if (index < registry->pluginHandles.length) {
             memmove(registry->pluginHandles.head + (index - 1) * registry->pluginHandles.elementSize,
@@ -169,6 +321,9 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
                                                                            const TZrChar *candidatePath,
                                                                            const TZrChar *requestedModuleName) {
     void *handle;
+    TZrChar shadowPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *loadPath = candidatePath;
+    TZrBool loadedFromShadow = ZR_FALSE;
     FZrVmGetNativeModuleV1 symbol;
     const ZrLibModuleDescriptor *descriptor;
 
@@ -176,7 +331,15 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
         return ZR_NULL;
     }
 
-    handle = native_registry_open_library(candidatePath);
+    if (native_registry_prepare_shadow_plugin_path(requestedModuleName,
+                                                   candidatePath,
+                                                   shadowPath,
+                                                   sizeof(shadowPath))) {
+        loadPath = shadowPath;
+        loadedFromShadow = ZR_TRUE;
+    }
+
+    handle = native_registry_open_library(loadPath);
     if (handle == ZR_NULL) {
         native_registry_set_error(registry,
                                   ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
@@ -192,6 +355,9 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
                                   "native plugin '%s' does not export ZrVm_GetNativeModule_v1",
                                   candidatePath);
         native_registry_close_library(handle);
+        if (loadedFromShadow) {
+            remove(loadPath);
+        }
         return ZR_NULL;
     }
 
@@ -202,6 +368,9 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
                                   "native plugin '%s' returned a null module descriptor",
                                   candidatePath);
         native_registry_close_library(handle);
+        if (loadedFromShadow) {
+            remove(loadPath);
+        }
         return ZR_NULL;
     }
 
@@ -213,6 +382,9 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
                                   descriptor->abiVersion,
                                   ZR_VM_NATIVE_PLUGIN_ABI_VERSION);
         native_registry_close_library(handle);
+        if (loadedFromShadow) {
+            remove(loadPath);
+        }
         return ZR_NULL;
     }
 
@@ -225,6 +397,9 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
                                   descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>",
                                   requestedModuleName);
         native_registry_close_library(handle);
+        if (loadedFromShadow) {
+            remove(loadPath);
+        }
         return ZR_NULL;
     }
 
@@ -235,6 +410,9 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
                                                candidatePath,
                                                ZR_TRUE)) {
         native_registry_close_library(handle);
+        if (loadedFromShadow) {
+            remove(loadPath);
+        }
         return ZR_NULL;
     }
 
@@ -245,22 +423,11 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
         handleRecord.handle = handle;
         handleRecord.moduleName = native_registry_duplicate_string(state->global, requestedModuleName);
         handleRecord.sourcePath = native_registry_duplicate_string(state->global, candidatePath);
-        if (handleRecord.moduleName == ZR_NULL || handleRecord.sourcePath == ZR_NULL) {
-            if (handleRecord.moduleName != ZR_NULL) {
-                state->global->allocator(state->global->userAllocationArguments,
-                                         handleRecord.moduleName,
-                                         strlen(handleRecord.moduleName) + 1,
-                                         0,
-                                         ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-            }
-            if (handleRecord.sourcePath != ZR_NULL) {
-                state->global->allocator(state->global->userAllocationArguments,
-                                         handleRecord.sourcePath,
-                                         strlen(handleRecord.sourcePath) + 1,
-                                         0,
-                                         ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-            }
-            native_registry_close_library(handle);
+        handleRecord.loadedPath = native_registry_duplicate_string(state->global, loadPath);
+        if (handleRecord.moduleName == ZR_NULL ||
+            handleRecord.sourcePath == ZR_NULL ||
+            handleRecord.loadedPath == ZR_NULL) {
+            native_registry_release_plugin_handle_record(state->global, &handleRecord);
             return ZR_NULL;
         }
         ZrCore_Array_Push(state, &registry->pluginHandles, &handleRecord);
@@ -557,8 +724,17 @@ TZrBool native_binding_make_callable_value(SZrState *state,
         return ZR_FALSE;
     }
 
+    native_binding_trace_import("[zr_native_import] make_callable begin module=%s type=%s kind=%d descriptor=%p bindings=%llu\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor != ZR_NULL && typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
+                                (int)bindingKind,
+                                descriptor,
+                                (unsigned long long)registry->bindingEntries.length);
+
     closure = ZrCore_ClosureNative_New(state, 0);
     if (closure == ZR_NULL) {
+        native_binding_trace_import("[zr_native_import] make_callable failed module=%s reason=create_native_closure\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>");
         return ZR_FALSE;
     }
 
@@ -585,6 +761,12 @@ TZrBool native_binding_make_callable_value(SZrState *state,
     }
 
     ZrCore_Array_Push(state, &registry->bindingEntries, &entry);
+    native_binding_trace_import("[zr_native_import] make_callable pushed module=%s type=%s kind=%d closure=%p bindings=%llu\n",
+                                moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                typeDescriptor != ZR_NULL && typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
+                                (int)bindingKind,
+                                (void *)closure,
+                                (unsigned long long)registry->bindingEntries.length);
 
     ZrCore_Value_InitAsRawObject(state, value, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     value->isNative = ZR_TRUE;
@@ -705,6 +887,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
         }
     }
 
+    native_binding_trace_import("[zr_native_import] materialize module_info begin module=%s\n",
+                                descriptor->moduleName);
     moduleInfo = native_metadata_make_module_info(state,
                                                   descriptor,
                                                   native_registry_find_record_by_descriptor(registry, descriptor));
@@ -715,7 +899,17 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
         return ZR_NULL;
     }
     ZrLib_Value_SetObject(state, &moduleInfoValue, moduleInfo, ZR_VALUE_TYPE_OBJECT);
+    native_binding_trace_import("[zr_native_import] materialize module_info export module=%s\n",
+                                descriptor->moduleName);
     ZrCore_Module_AddPubExport(state, module, moduleInfoName, &moduleInfoValue);
+    native_binding_trace_import("[zr_native_import] materialize module_info success module=%s\n",
+                                descriptor->moduleName);
+
+    if (descriptor->onMaterialize != ZR_NULL && !descriptor->onMaterialize(state, module, descriptor)) {
+        native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=materialize_hook\n",
+                                    descriptor->moduleName);
+        return ZR_NULL;
+    }
 
     native_binding_trace_import("[zr_native_import] materialize success module=%s module=%p\n",
                                 descriptor->moduleName,

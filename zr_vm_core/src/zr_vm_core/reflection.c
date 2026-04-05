@@ -870,6 +870,63 @@ static void reflection_populate_parameters_from_metadata(SZrState *state,
                                                               moduleReflection,
                                                               ownerHash ^ ((TZrUInt64)index + ZR_RUNTIME_REFLECTION_MEMBER_HASH_BASE));
         if (parameterReflection != ZR_NULL) {
+            if (parameters != ZR_NULL) {
+                if (parameters[index].hasDecoratorMetadata &&
+                    parameters[index].decoratorMetadataValue.type == ZR_VALUE_TYPE_OBJECT &&
+                    parameters[index].decoratorMetadataValue.value.object != ZR_NULL) {
+                    SZrObject *metadataObject =
+                            reflection_get_field_object(state, parameterReflection, "metadata", ZR_VALUE_TYPE_OBJECT);
+                    if (metadataObject == ZR_NULL) {
+                        reflection_set_field_object(state,
+                                                    parameterReflection,
+                                                    "metadata",
+                                                    ZR_CAST_OBJECT(state, parameters[index].decoratorMetadataValue.value.object),
+                                                    ZR_VALUE_TYPE_OBJECT);
+                    } else {
+                        reflection_merge_object_fields(state,
+                                                       metadataObject,
+                                                       ZR_CAST_OBJECT(state, parameters[index].decoratorMetadataValue.value.object));
+                    }
+                }
+
+                reflection_set_field_bool(state,
+                                          parameterReflection,
+                                          "hasDefaultValue",
+                                          parameters[index].hasDefaultValue ? ZR_TRUE : ZR_FALSE);
+                if (parameters[index].hasDefaultValue) {
+                    reflection_set_field_value(state,
+                                               parameterReflection,
+                                               "defaultValue",
+                                               &parameters[index].defaultValue);
+                }
+
+                if (parameters[index].decoratorNames != ZR_NULL && parameters[index].decoratorCount > 0) {
+                    SZrObject *decoratorsArray =
+                            reflection_get_field_object(state, parameterReflection, "decorators", ZR_VALUE_TYPE_ARRAY);
+                    for (TZrUInt32 decoratorIndex = 0;
+                         decoratorsArray != ZR_NULL && decoratorIndex < parameters[index].decoratorCount;
+                         decoratorIndex++) {
+                        SZrObject *decoratorEntry;
+                        SZrTypeValue decoratorNameValue;
+
+                        if (parameters[index].decoratorNames[decoratorIndex] == ZR_NULL) {
+                            continue;
+                        }
+
+                        decoratorEntry = reflection_new_object(state);
+                        if (decoratorEntry == ZR_NULL) {
+                            continue;
+                        }
+
+                        reflection_init_object_value(state,
+                                                     &decoratorNameValue,
+                                                     ZR_CAST_RAW_OBJECT_AS_SUPER(parameters[index].decoratorNames[decoratorIndex]),
+                                                     ZR_VALUE_TYPE_STRING);
+                        reflection_set_field_value(state, decoratorEntry, "name", &decoratorNameValue);
+                        reflection_array_push_object(state, decoratorsArray, decoratorEntry, ZR_VALUE_TYPE_OBJECT);
+                    }
+                }
+            }
             reflection_array_push_object(state, parametersArray, parameterReflection, ZR_VALUE_TYPE_OBJECT);
         }
     }
@@ -885,6 +942,14 @@ static void reflection_populate_parameters_from_function(SZrState *state,
     TZrUInt32 hiddenParameterCount = 0;
 
     if (state == ZR_NULL || callableReflection == ZR_NULL || function == ZR_NULL) {
+        return;
+    }
+
+    if (function->parameterMetadata != ZR_NULL && function->parameterMetadataCount > 0) {
+        reflection_populate_parameters_from_metadata(state,
+                                                     callableReflection,
+                                                     function->parameterMetadata,
+                                                     function->parameterMetadataCount);
         return;
     }
 
@@ -3477,6 +3542,8 @@ TZrInt64 ZrCore_Reflection_TypeOfNativeEntry(SZrState *state) {
     TZrStackValuePointer argBase;
     SZrTypeValue *result;
     SZrTypeValue *targetValue;
+    SZrFunction *callerFunction;
+    const TZrChar *callerName;
 
     if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
         return 0;
@@ -3499,6 +3566,10 @@ TZrInt64 ZrCore_Reflection_TypeOfNativeEntry(SZrState *state) {
         return 1;
     }
 
+    callerFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, state->callInfoList);
+    callerName = callerFunction != ZR_NULL && callerFunction->functionName != ZR_NULL
+                         ? ZrCore_String_GetNativeString(callerFunction->functionName)
+                         : "<anonymous>";
     ZrCore_Reflection_TypeOfValue(state, targetValue, result);
 
     state->stackTop.valuePointer = functionBase + 1;

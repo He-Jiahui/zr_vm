@@ -2299,6 +2299,11 @@ static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *stat
             "    ): void;\n"
             "    #zr.ffi.callconv(123)#\n"
             "    BadCallconv(): void;\n"
+            "}\n"
+            "#zr.ffi.lowering(\"bad\")#\n"
+            "#zr.ffi.underlying(123)#\n"
+            "class InvalidWrapper {\n"
+            "    var handleId:i32;\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "invalid_ffi_decorator_test.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
@@ -2327,12 +2332,12 @@ static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *stat
             return;
         }
 
-        if (count_diagnostics_with_code(analyzer, "invalid_decorator") != 4) {
+        if (count_diagnostics_with_code(analyzer, "invalid_decorator") != 6) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Reports Invalid FFI Decorators",
-                      "Expected four invalid_decorator diagnostics for unknown target, illegal target, conflicting directions and bad callconv argument");
+                      "Expected six invalid_decorator diagnostics including invalid wrapper lowering and invalid wrapper underlying arguments");
             return;
         }
 

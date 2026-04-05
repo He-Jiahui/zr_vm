@@ -58,6 +58,10 @@ TZrBool ZrParser_CompileTime_ApplyMemberDecorators(SZrCompilerState *cs,
                                                    SZrAstNode *memberNode,
                                                    SZrAstNodeArray *decorators,
                                                    SZrTypeMemberInfo *memberInfo);
+TZrBool ZrParser_CompileTime_ApplyParameterDecorators(SZrCompilerState *cs,
+                                                      SZrAstNode *parameterNode,
+                                                      TZrUInt32 position,
+                                                      SZrFunctionMetadataParameter *parameterInfo);
 TZrBool execute_compile_time_statement(SZrCompilerState *cs,
                                        SZrAstNode *node,
                                        SZrCompileTimeFrame *frame,

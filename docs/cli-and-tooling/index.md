@@ -52,6 +52,11 @@ doc_type: category-index
   - 项目上下文、输出目录和增量 manifest
   - compile / compile+run / REPL handler 的职责分离
   - `.zro` 里内部 native helper 的稳定序列化与运行时恢复
+- `zr-debugger-v1-launch-workflow.md`
+  - `launch-under-debug` 作为 v1 主路线的模块分层
+  - `zr_vm_debug` / `zr_vm_network` / CLI runtime 的职责边界
+  - `zrdbg/1` 请求与事件最小集
+  - source / binary 断点解析、step 语义和 AOT 边界
 - `zrp-editor-schema-and-lsp-refresh.md`
   - `.zrp` 作为 JSON 文档的 VS Code 识别路径
   - schema 字段覆盖、必填项与基础校验
@@ -60,5 +65,6 @@ doc_type: category-index
 ## 阅读顺序
 
 1. 先看 `zr-vm-cli-command-system.md`，了解 CLI 第一版对用户暴露的模式和内部模块边界。
-2. 需要修改 `.zrp` 编辑体验或 project config 刷新路径时，再看 `zrp-editor-schema-and-lsp-refresh.md`。
-3. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。
+2. 需要修改调试 launch、断点解析、`zrdbg/1` 协议或 loopback transport 时，再看 `zr-debugger-v1-launch-workflow.md`。
+3. 需要修改 `.zrp` 编辑体验或 project config 刷新路径时，再看 `zrp-editor-schema-and-lsp-refresh.md`。
+4. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。

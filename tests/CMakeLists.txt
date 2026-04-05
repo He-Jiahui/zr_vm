@@ -20,6 +20,7 @@ set(ZR_VM_TESTS_REFERENCE_HARNESS_SOURCES
 
 set(ZR_VM_SUITE_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_executable_suite.cmake)
 set(ZR_VM_PROJECTS_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_projects_suite.cmake)
+set(ZR_VM_PERFORMANCE_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_performance_suite.cmake)
 find_program(ZR_VM_NODE_EXECUTABLE node)
 
 function(zr_vm_apply_common_test_settings target_name)
@@ -56,6 +57,17 @@ function(zr_vm_add_support_target target_name)
     )
     zr_vm_apply_common_test_settings(${target_name})
 endfunction()
+
+add_executable(
+        zr_vm_perf_runner
+        ${CMAKE_SOURCE_DIR}/tests/performance/perf_runner.c
+)
+
+if (WIN32)
+    target_link_libraries(zr_vm_perf_runner PRIVATE Psapi)
+elseif (NOT APPLE)
+    target_link_libraries(zr_vm_perf_runner PRIVATE m)
+endif ()
 
 function(zr_vm_link_core target_name)
     if (BUILD_SHARED_LIB)
@@ -236,6 +248,67 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core(zr_vm_dynamic_iteration_pipeline_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_debug_metadata_test
+            ${CMAKE_SOURCE_DIR}/tests/debug/test_debug_metadata.c
+    )
+    target_include_directories(zr_vm_debug_metadata_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core(zr_vm_debug_metadata_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_debug_trace_test
+            ${CMAKE_SOURCE_DIR}/tests/debug/test_debug_trace.c
+    )
+    target_include_directories(zr_vm_debug_trace_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core(zr_vm_debug_trace_test)
+
+    if ((TARGET zr_vm_debug_shared OR TARGET zr_vm_debug_static) AND
+            (TARGET zr_vm_lib_network_shared OR TARGET zr_vm_lib_network_static))
+        zr_vm_add_unity_test_target(
+                zr_vm_debug_agent_test
+                ${CMAKE_SOURCE_DIR}/tests/debug/test_debug_agent.c
+        )
+        target_include_directories(zr_vm_debug_agent_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_debug/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
+        )
+        zr_vm_link_parser_core(zr_vm_debug_agent_test)
+        if (BUILD_SHARED_LIB)
+            target_link_libraries(zr_vm_debug_agent_test PRIVATE zr_vm_debug_shared zr_vm_lib_network_shared)
+        else ()
+            target_link_libraries(zr_vm_debug_agent_test PRIVATE zr_vm_debug_static zr_vm_lib_network_static)
+        endif ()
+        zr_link_third_party_for_target(zr_vm_debug_agent_test "zr_c_json")
+        target_link_libraries(zr_vm_debug_agent_test PRIVATE Threads::Threads)
+
+        zr_vm_add_unity_test_target(
+                zr_vm_debug_agent_protocol_test
+                ${CMAKE_SOURCE_DIR}/tests/debug/test_debug_agent_protocol.c
+        )
+        target_include_directories(zr_vm_debug_agent_protocol_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_debug/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
+        )
+        zr_vm_link_parser_core(zr_vm_debug_agent_protocol_test)
+        if (BUILD_SHARED_LIB)
+            target_link_libraries(zr_vm_debug_agent_protocol_test PRIVATE zr_vm_debug_shared zr_vm_lib_network_shared)
+        else ()
+            target_link_libraries(zr_vm_debug_agent_protocol_test PRIVATE zr_vm_debug_static zr_vm_lib_network_static)
+        endif ()
+        zr_link_third_party_for_target(zr_vm_debug_agent_protocol_test "zr_c_json")
+        target_link_libraries(zr_vm_debug_agent_protocol_test PRIVATE Threads::Threads)
+    endif ()
+
+    zr_vm_add_unity_test_target(
             zr_vm_meta_call_pipeline_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_meta_call_pipeline.c
     )
@@ -262,8 +335,15 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     target_include_directories(zr_vm_compiler_regressions_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
     )
-    zr_vm_link_parser_core(zr_vm_compiler_regressions_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_compiler_regressions_test)
+    if (TARGET zr_vm_lib_network_shared)
+        target_link_libraries(zr_vm_compiler_regressions_test PRIVATE zr_vm_lib_network_shared)
+    elseif (TARGET zr_vm_lib_network_static)
+        target_link_libraries(zr_vm_compiler_regressions_test PRIVATE zr_vm_lib_network_static)
+    endif ()
 
     zr_vm_add_unity_test_target(
             zr_vm_char_and_type_cast_test
@@ -420,6 +500,13 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/task/test_task_runtime.c
             ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
     )
+    if (TARGET zr_vm_thread_shared OR TARGET zr_vm_thread_static)
+        zr_vm_add_unity_test_target(
+                zr_vm_thread_runtime_test
+                ${CMAKE_SOURCE_DIR}/tests/thread/test_thread_runtime.c
+                ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+        )
+    endif ()
 
     foreach (container_target
             zr_vm_container_runtime_test
@@ -442,22 +529,43 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_task/include
     )
     if (BUILD_SHARED_LIB)
         target_link_libraries(zr_vm_task_runtime_test PRIVATE
                 zr_vm_parser_shared
                 zr_vm_core_shared
                 zr_vm_library_shared
-                zr_vm_task_shared
         )
     else ()
         target_link_libraries(zr_vm_task_runtime_test PRIVATE
                 zr_vm_parser_static
                 zr_vm_core_static
                 zr_vm_library_static
-                zr_vm_task_static
         )
+    endif ()
+
+    if (TARGET zr_vm_thread_runtime_test)
+        target_include_directories(zr_vm_thread_runtime_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_thread/include
+        )
+        if (BUILD_SHARED_LIB)
+            target_link_libraries(zr_vm_thread_runtime_test PRIVATE
+                    zr_vm_parser_shared
+                    zr_vm_core_shared
+                    zr_vm_library_shared
+                    zr_vm_thread_shared
+            )
+        else ()
+            target_link_libraries(zr_vm_thread_runtime_test PRIVATE
+                    zr_vm_parser_static
+                    zr_vm_core_static
+                    zr_vm_library_static
+                    zr_vm_thread_static
+            )
+        endif ()
     endif ()
 endif ()
 
@@ -590,6 +698,27 @@ if (TARGET zr_vm_cli_executable AND
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
     )
+endif ()
+
+if (TARGET zr_vm_cli_executable AND
+        ((TARGET zr_vm_lib_network_shared AND TARGET zr_vm_debug_shared) OR
+         (TARGET zr_vm_lib_network_static AND TARGET zr_vm_debug_static)))
+    add_executable(
+            zr_vm_cli_debug_e2e_test
+            ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_debug_e2e.c
+            ${CMAKE_SOURCE_DIR}/tests/harness/path_support.c
+    )
+    zr_vm_apply_common_test_settings(zr_vm_cli_debug_e2e_test)
+    target_include_directories(zr_vm_cli_debug_e2e_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/harness
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
+    )
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_cli_debug_e2e_test PRIVATE zr_vm_lib_network_shared)
+    else ()
+        target_link_libraries(zr_vm_cli_debug_e2e_test PRIVATE zr_vm_lib_network_static)
+    endif ()
+    zr_link_third_party_for_target(zr_vm_cli_debug_e2e_test "zr_c_json")
 endif ()
 
 find_package(Threads REQUIRED)
@@ -826,6 +955,72 @@ if (TARGET zr_vm_cli_args_test)
     )
 endif ()
 
+if (TARGET zr_vm_cli_debug_e2e_test)
+    add_test(
+            NAME cli_debug_e2e
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=cli_debug_e2e"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_cli_debug_e2e_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_cli_debug_e2e_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_cli_debug_e2e_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_cli_debug_e2e_test>"
+            "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_debug_metadata_test)
+    add_test(
+            NAME debug_metadata
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=debug_metadata"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_debug_metadata_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_debug_metadata_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_debug_metadata_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_debug_metadata_test>"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_debug_trace_test)
+    add_test(
+            NAME debug_trace
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=debug_trace"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_debug_trace_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_debug_trace_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_debug_trace_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_debug_trace_test>"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_debug_agent_test)
+    add_test(
+            NAME debug_agent
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=debug_agent"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_debug_agent_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_debug_agent_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_debug_agent_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_debug_agent_test>"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_debug_agent_protocol_test)
+    add_test(
+            NAME debug_agent_protocol
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=debug_agent_protocol"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_debug_agent_protocol_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_debug_agent_protocol_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_debug_agent_protocol_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_debug_agent_protocol_test>"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
 if (TARGET zr_vm_cli_executable)
     add_test(
             NAME cli_integration
@@ -848,6 +1043,22 @@ if (TARGET zr_vm_artifact_golden_test)
             "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_artifact_golden_test>"
             "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
             -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_cli_executable AND TARGET zr_vm_perf_runner)
+    add_test(
+            NAME performance_report
+            COMMAND ${CMAKE_COMMAND}
+            "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+            "-DPERF_RUNNER_EXE=$<TARGET_FILE:zr_vm_perf_runner>"
+            "-DPROJECT_FIXTURES_DIR=${ZR_VM_TESTS_SOURCE_DIR_NORMALIZED}/fixtures/projects"
+            "-DGENERATED_DIR=${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}"
+            -P ${ZR_VM_PERFORMANCE_RUNNER_SCRIPT}
+    )
+    set_tests_properties(performance_report PROPERTIES
+            RUN_SERIAL TRUE
+            TIMEOUT 300
     )
 endif ()
 

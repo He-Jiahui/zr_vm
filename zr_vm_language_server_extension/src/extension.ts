@@ -7,9 +7,11 @@ import {
     ServerOptions,
     Trace,
 } from 'vscode-languageclient/node';
+import { registerDesktopDebugSupport } from './debug/configProvider';
+import { LANGUAGE_SERVER_CONFIG_SECTION, resolveNativeLanguageServerPath } from './nativeAssets';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
 
-const CONFIG_SECTION = 'zr.languageServer';
+const CONFIG_SECTION = LANGUAGE_SERVER_CONFIG_SECTION;
 const RESTART_COMMAND = 'zr.restartLanguageServer';
 
 let client: LanguageClient | undefined;
@@ -21,6 +23,7 @@ type LanguageServerMode = 'auto' | 'native' | 'web';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     context.subscriptions.push(registerZrpJsonSupport());
+    context.subscriptions.push(...registerDesktopDebugSupport(context));
 
     context.subscriptions.push(
         vscode.commands.registerCommand(RESTART_COMMAND, async () => {
@@ -83,7 +86,7 @@ async function startClient(
         return;
     }
 
-    const serverPath = resolveNativeServerPath(context, config);
+    const serverPath = resolveNativeLanguageServerPath(context, config);
     if (serverPath === undefined) {
         void vscode.window.showErrorMessage(
             'Unable to locate zr_vm_language_server_stdio. Set zr.languageServer.native.path or build the native server.',
@@ -145,34 +148,6 @@ async function stopClient(): Promise<void> {
         client = undefined;
         await currentClient.stop();
     }
-}
-
-function resolveNativeServerPath(
-    context: vscode.ExtensionContext,
-    config: vscode.WorkspaceConfiguration,
-): string | undefined {
-    const configuredPath = config.get<string>('native.path', '').trim();
-    const executableName = process.platform === 'win32'
-        ? 'zr_vm_language_server_stdio.exe'
-        : 'zr_vm_language_server_stdio';
-    const extensionRoot = context.extensionPath;
-    const bundledFolder = `${process.platform}-${process.arch}`;
-    const candidates = configuredPath.length > 0
-        ? [configuredPath]
-        : [
-            path.join(extensionRoot, 'server', 'native', bundledFolder, executableName),
-            path.join(extensionRoot, 'server', executableName),
-            path.join(extensionRoot, '..', 'build', 'codex-lsp', 'bin', 'Debug', executableName),
-            path.join(extensionRoot, '..', 'build', 'codex-lsp', 'bin', executableName),
-        ];
-
-    for (const candidate of candidates) {
-        if (candidate.length > 0 && fs.existsSync(candidate)) {
-            return candidate;
-        }
-    }
-
-    return undefined;
 }
 
 function resolveTrace(value: string): Trace {

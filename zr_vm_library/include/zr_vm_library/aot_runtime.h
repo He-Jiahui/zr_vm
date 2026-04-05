@@ -2,23 +2,51 @@
 #define ZR_VM_LIBRARY_AOT_RUNTIME_H
 
 #include "zr_vm_common/zr_aot_abi.h"
-#include "zr_vm_core/stack.h"
+#include "zr_vm_core/state.h"
 #include "zr_vm_library/conf.h"
 
 struct SZrGlobalState;
 struct SZrObjectModule;
 struct SZrLibrary_Project;
-struct SZrState;
 struct SZrFunction;
 struct SZrString;
 struct SZrTypeValue;
 
+typedef enum EZrAotGeneratedStepFlag {
+    ZR_AOT_GENERATED_STEP_FLAG_NONE = 0,
+    ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW = 1u << 0,
+    ZR_AOT_GENERATED_STEP_FLAG_CONTROL_FLOW = 1u << 1,
+    ZR_AOT_GENERATED_STEP_FLAG_CALL = 1u << 2,
+    ZR_AOT_GENERATED_STEP_FLAG_RETURN = 1u << 3
+} EZrAotGeneratedStepFlag;
+
+#define ZR_AOT_RUNTIME_RESUME_FALLTHROUGH ((TZrUInt32)0xFFFFFFFFu)
+
 typedef struct ZrAotGeneratedFrame {
     TZrPtr recordHandle;
     struct SZrFunction *function;
+    struct SZrCallInfo *callInfo;
     TZrStackValuePointer slotBase;
     TZrUInt32 functionIndex;
+    TZrUInt32 currentInstructionIndex;
+    TZrUInt32 lastObservedInstructionIndex;
+    TZrUInt32 lastObservedLine;
+    TZrUInt32 observationMask;
+    TZrBool publishAllInstructions;
 } ZrAotGeneratedFrame;
+
+typedef struct ZrAotGeneratedDirectCall {
+    FZrAotEntryThunk nativeFunction;
+    struct SZrCallInfo *callerCallInfo;
+    struct SZrCallInfo *calleeCallInfo;
+    TZrUInt32 callerFunctionIndex;
+    TZrUInt32 calleeFunctionIndex;
+    TZrUInt32 callInstructionIndex;
+    TZrUInt32 resumeInstructionIndex;
+    TZrUInt32 observationMaskSnapshot;
+    TZrBool publishAllInstructionsSnapshot;
+    TZrBool prepared;
+} ZrAotGeneratedDirectCall;
 
 typedef enum EZrLibraryProjectExecutionMode {
     ZR_LIBRARY_PROJECT_EXECUTION_MODE_INTERP = 0,
@@ -65,6 +93,28 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_BeginGeneratedFunction(struct SZrSta
                                                                    TZrUInt32 functionIndex,
                                                                    ZrAotGeneratedFrame *frame);
 
+ZR_FORCE_INLINE TZrUInt32 ZrLibrary_AotRuntime_DefaultObservationMask(void) {
+    return ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW |
+           ZR_AOT_GENERATED_STEP_FLAG_CONTROL_FLOW |
+           ZR_AOT_GENERATED_STEP_FLAG_CALL |
+           ZR_AOT_GENERATED_STEP_FLAG_RETURN;
+}
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetObservationPolicy(struct SZrState *state,
+                                                                 TZrUInt32 observationMask,
+                                                                 TZrBool publishAllInstructions);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ResetObservationPolicy(struct SZrState *state);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetObservationPolicy(struct SZrState *state,
+                                                                 TZrUInt32 *outObservationMask,
+                                                                 TZrBool *outPublishAllInstructions);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_BeginInstruction(struct SZrState *state,
+                                                             ZrAotGeneratedFrame *frame,
+                                                             TZrUInt32 instructionIndex,
+                                                             TZrUInt32 stepFlags);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CopyConstant(struct SZrState *state,
                                                          ZrAotGeneratedFrame *frame,
                                                          TZrUInt32 destinationSlot,
@@ -75,10 +125,139 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CreateClosure(struct SZrState *state
                                                           TZrUInt32 destinationSlot,
                                                           TZrUInt32 constantIndex);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetClosureValue(struct SZrState *state,
+                                                            ZrAotGeneratedFrame *frame,
+                                                            TZrUInt32 destinationSlot,
+                                                            TZrUInt32 closureIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetClosureValue(struct SZrState *state,
+                                                            ZrAotGeneratedFrame *frame,
+                                                            TZrUInt32 sourceSlot,
+                                                            TZrUInt32 closureIndex);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CopyStack(struct SZrState *state,
                                                       ZrAotGeneratedFrame *frame,
                                                       TZrUInt32 destinationSlot,
                                                       TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetGlobal(struct SZrState *state,
+                                                      ZrAotGeneratedFrame *frame,
+                                                      TZrUInt32 destinationSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CreateObject(struct SZrState *state,
+                                                         ZrAotGeneratedFrame *frame,
+                                                         TZrUInt32 destinationSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CreateArray(struct SZrState *state,
+                                                        ZrAotGeneratedFrame *frame,
+                                                        TZrUInt32 destinationSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_TypeOf(struct SZrState *state,
+                                                   ZrAotGeneratedFrame *frame,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ToObject(struct SZrState *state,
+                                                     ZrAotGeneratedFrame *frame,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 sourceSlot,
+                                                     TZrUInt32 typeNameConstantIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ToStruct(struct SZrState *state,
+                                                     ZrAotGeneratedFrame *frame,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 sourceSlot,
+                                                     TZrUInt32 typeNameConstantIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MetaGetCached(struct SZrState *state,
+                                                          ZrAotGeneratedFrame *frame,
+                                                          TZrUInt32 destinationSlot,
+                                                          TZrUInt32 receiverSlot,
+                                                          TZrUInt32 cacheIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MetaGet(struct SZrState *state,
+                                                    ZrAotGeneratedFrame *frame,
+                                                    TZrUInt32 destinationSlot,
+                                                    TZrUInt32 receiverSlot,
+                                                    TZrUInt32 memberId);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MetaSetCached(struct SZrState *state,
+                                                          ZrAotGeneratedFrame *frame,
+                                                          TZrUInt32 receiverAndResultSlot,
+                                                          TZrUInt32 assignedValueSlot,
+                                                          TZrUInt32 cacheIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MetaSet(struct SZrState *state,
+                                                    ZrAotGeneratedFrame *frame,
+                                                    TZrUInt32 receiverAndResultSlot,
+                                                    TZrUInt32 assignedValueSlot,
+                                                    TZrUInt32 memberId);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MetaGetStaticCached(struct SZrState *state,
+                                                                ZrAotGeneratedFrame *frame,
+                                                                TZrUInt32 destinationSlot,
+                                                                TZrUInt32 receiverSlot,
+                                                                TZrUInt32 cacheIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MetaSetStaticCached(struct SZrState *state,
+                                                                ZrAotGeneratedFrame *frame,
+                                                                TZrUInt32 receiverAndResultSlot,
+                                                                TZrUInt32 assignedValueSlot,
+                                                                TZrUInt32 cacheIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnUsing(struct SZrState *state,
+                                                     ZrAotGeneratedFrame *frame,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnShare(struct SZrState *state,
+                                                     ZrAotGeneratedFrame *frame,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnWeak(struct SZrState *state,
+                                                    ZrAotGeneratedFrame *frame,
+                                                    TZrUInt32 destinationSlot,
+                                                    TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnUpgrade(struct SZrState *state,
+                                                       ZrAotGeneratedFrame *frame,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnRelease(struct SZrState *state,
+                                                       ZrAotGeneratedFrame *frame,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_LogicalEqual(struct SZrState *state,
+                                                         ZrAotGeneratedFrame *frame,
+                                                         TZrUInt32 destinationSlot,
+                                                         TZrUInt32 leftSlot,
+                                                         TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_LogicalNotEqual(struct SZrState *state,
+                                                            ZrAotGeneratedFrame *frame,
+                                                            TZrUInt32 destinationSlot,
+                                                            TZrUInt32 leftSlot,
+                                                            TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_LogicalLessSigned(struct SZrState *state,
+                                                              ZrAotGeneratedFrame *frame,
+                                                              TZrUInt32 destinationSlot,
+                                                              TZrUInt32 leftSlot,
+                                                              TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_IsTruthy(struct SZrState *state,
+                                                     ZrAotGeneratedFrame *frame,
+                                                     TZrUInt32 sourceSlot,
+                                                     TZrBool *outTruthy);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Add(struct SZrState *state,
+                                                ZrAotGeneratedFrame *frame,
+                                                TZrUInt32 destinationSlot,
+                                                TZrUInt32 leftSlot,
+                                                TZrUInt32 rightSlot);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_AddInt(struct SZrState *state,
                                                    ZrAotGeneratedFrame *frame,
@@ -86,17 +265,146 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_AddInt(struct SZrState *state,
                                                    TZrUInt32 leftSlot,
                                                    TZrUInt32 rightSlot);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SubInt(struct SZrState *state,
+                                                   ZrAotGeneratedFrame *frame,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 leftSlot,
+                                                   TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MulSigned(struct SZrState *state,
+                                                      ZrAotGeneratedFrame *frame,
+                                                      TZrUInt32 destinationSlot,
+                                                      TZrUInt32 leftSlot,
+                                                      TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_DivSigned(struct SZrState *state,
+                                                      ZrAotGeneratedFrame *frame,
+                                                      TZrUInt32 destinationSlot,
+                                                      TZrUInt32 leftSlot,
+                                                      TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Neg(struct SZrState *state,
+                                                ZrAotGeneratedFrame *frame,
+                                                TZrUInt32 destinationSlot,
+                                                TZrUInt32 sourceSlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetMember(struct SZrState *state,
                                                       ZrAotGeneratedFrame *frame,
                                                       TZrUInt32 destinationSlot,
                                                       TZrUInt32 receiverSlot,
                                                       TZrUInt32 memberId);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetMember(struct SZrState *state,
+                                                      ZrAotGeneratedFrame *frame,
+                                                      TZrUInt32 sourceSlot,
+                                                      TZrUInt32 receiverSlot,
+                                                      TZrUInt32 memberId);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetByIndex(struct SZrState *state,
+                                                       ZrAotGeneratedFrame *frame,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 receiverSlot,
+                                                       TZrUInt32 keySlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetByIndex(struct SZrState *state,
+                                                       ZrAotGeneratedFrame *frame,
+                                                       TZrUInt32 sourceSlot,
+                                                       TZrUInt32 receiverSlot,
+                                                       TZrUInt32 keySlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_IterInit(struct SZrState *state,
+                                                     ZrAotGeneratedFrame *frame,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 iterableSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_IterMoveNext(struct SZrState *state,
+                                                         ZrAotGeneratedFrame *frame,
+                                                         TZrUInt32 destinationSlot,
+                                                         TZrUInt32 iteratorSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_IterCurrent(struct SZrState *state,
+                                                        ZrAotGeneratedFrame *frame,
+                                                        TZrUInt32 destinationSlot,
+                                                        TZrUInt32 iteratorSlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Call(struct SZrState *state,
                                                  ZrAotGeneratedFrame *frame,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 functionSlot,
                                                  TZrUInt32 argumentCount);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallPreparedOrGeneric(struct SZrState *state,
+                                                                  ZrAotGeneratedFrame *frame,
+                                                                  ZrAotGeneratedDirectCall *directCall,
+                                                                  TZrUInt32 destinationSlot,
+                                                                  TZrUInt32 functionSlot,
+                                                                  TZrUInt32 argumentCount,
+                                                                  TZrUInt32 resultCount);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PrepareDirectCall(struct SZrState *state,
+                                                              ZrAotGeneratedFrame *frame,
+                                                              TZrUInt32 destinationSlot,
+                                                              TZrUInt32 functionSlot,
+                                                              TZrUInt32 argumentCount,
+                                                              ZrAotGeneratedDirectCall *directCall);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PrepareMetaCall(struct SZrState *state,
+                                                            ZrAotGeneratedFrame *frame,
+                                                            TZrUInt32 destinationSlot,
+                                                            TZrUInt32 receiverSlot,
+                                                            TZrUInt32 argumentCount,
+                                                            ZrAotGeneratedDirectCall *directCall);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PrepareStaticDirectCall(struct SZrState *state,
+                                                                    ZrAotGeneratedFrame *frame,
+                                                                    TZrUInt32 destinationSlot,
+                                                                    TZrUInt32 functionSlot,
+                                                                    TZrUInt32 argumentCount,
+                                                                    TZrUInt32 calleeFunctionIndex,
+                                                                    ZrAotGeneratedDirectCall *directCall);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_FinishDirectCall(struct SZrState *state,
+                                                             ZrAotGeneratedFrame *frame,
+                                                             ZrAotGeneratedDirectCall *directCall,
+                                                             TZrUInt32 resultCount);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Try(struct SZrState *state,
+                                                ZrAotGeneratedFrame *frame,
+                                                TZrUInt32 handlerIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_EndTry(struct SZrState *state,
+                                                   ZrAotGeneratedFrame *frame,
+                                                   TZrUInt32 handlerIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Throw(struct SZrState *state,
+                                                  ZrAotGeneratedFrame *frame,
+                                                  TZrUInt32 sourceSlot,
+                                                  TZrUInt32 *outResumeInstructionIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Catch(struct SZrState *state,
+                                                  ZrAotGeneratedFrame *frame,
+                                                  TZrUInt32 destinationSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_EndFinally(struct SZrState *state,
+                                                       ZrAotGeneratedFrame *frame,
+                                                       TZrUInt32 handlerIndex,
+                                                       TZrUInt32 *outResumeInstructionIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetPendingReturn(struct SZrState *state,
+                                                             ZrAotGeneratedFrame *frame,
+                                                             TZrUInt32 sourceSlot,
+                                                             TZrUInt32 targetInstructionIndex,
+                                                             TZrUInt32 *outResumeInstructionIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetPendingBreak(struct SZrState *state,
+                                                            ZrAotGeneratedFrame *frame,
+                                                            TZrUInt32 targetInstructionIndex,
+                                                            TZrUInt32 *outResumeInstructionIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetPendingContinue(struct SZrState *state,
+                                                               ZrAotGeneratedFrame *frame,
+                                                               TZrUInt32 targetInstructionIndex,
+                                                               TZrUInt32 *outResumeInstructionIndex);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ToInt(struct SZrState *state,
                                                   ZrAotGeneratedFrame *frame,
@@ -112,5 +420,8 @@ ZR_LIBRARY_API TZrInt64 ZrLibrary_AotRuntime_ReportUnsupportedInstruction(struct
                                                                           TZrUInt32 functionIndex,
                                                                           TZrUInt32 instructionIndex,
                                                                           TZrUInt32 opcode);
+
+ZR_LIBRARY_API TZrInt64 ZrLibrary_AotRuntime_FailGeneratedFunction(struct SZrState *state,
+                                                                   const ZrAotGeneratedFrame *frame);
 
 #endif

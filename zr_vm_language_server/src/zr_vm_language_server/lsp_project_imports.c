@@ -35,6 +35,34 @@ static SZrString *create_string_from_const_text(SZrState *state, const TZrChar *
 
 static TZrBool file_range_contains_position(SZrFileRange range, SZrFileRange position);
 
+static SZrFileRange normalize_import_module_path_location(SZrFileRange range, TZrSize moduleNameLength) {
+    TZrInt32 spanColumns;
+
+    if (moduleNameLength == 0) {
+        return range;
+    }
+
+    spanColumns = range.end.line == range.start.line ? range.end.column - range.start.column : 0;
+    if (spanColumns > 1 && spanColumns >= (TZrInt32)moduleNameLength) {
+        return range;
+    }
+
+    if (range.end.column > (TZrInt32)(moduleNameLength + 2)) {
+        range.start.column = range.end.column - (TZrInt32)moduleNameLength - 2;
+        if (range.start.column < 1) {
+            range.start.column = 1;
+        }
+        range.end.column = range.start.column + (TZrInt32)moduleNameLength;
+    }
+
+    if (range.end.offset > moduleNameLength + 3) {
+        range.start.offset = range.end.offset - moduleNameLength - 3;
+        range.end.offset = range.start.offset + moduleNameLength;
+    }
+
+    return range;
+}
+
 static TZrBool normalize_module_key(const TZrChar *modulePath, TZrChar *buffer, TZrSize bufferSize) {
     TZrSize length;
     TZrSize writeIndex = 0;
@@ -90,12 +118,20 @@ static TZrBool append_import_binding(SZrState *state,
                                      SZrArray *bindings,
                                      SZrString *aliasName,
                                      const TZrChar *moduleNameText,
+                                     SZrFileRange aliasLocation,
                                      SZrFileRange modulePathLocation) {
     SZrLspImportBinding *binding;
     SZrString *moduleName;
 
     if (state == ZR_NULL || bindings == ZR_NULL || aliasName == ZR_NULL || moduleNameText == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (aliasLocation.source == ZR_NULL) {
+        aliasLocation.source = modulePathLocation.source;
+    }
+    if (modulePathLocation.source == ZR_NULL) {
+        modulePathLocation.source = aliasLocation.source;
     }
 
     binding = (SZrLspImportBinding *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspImportBinding));
@@ -109,6 +145,7 @@ static TZrBool append_import_binding(SZrState *state,
 
     binding->aliasName = aliasName;
     binding->moduleName = moduleName;
+    binding->aliasLocation = aliasLocation;
     binding->modulePathLocation = modulePathLocation;
     ZrCore_Array_Push(state, bindings, &binding);
     return ZR_TRUE;
@@ -161,11 +198,23 @@ void ZrLanguageServer_LspProject_CollectImportBindings(SZrState *state, SZrAstNo
                     memcpy(normalizedModule, moduleText, moduleLength);
                     normalizedModule[moduleLength] = '\0';
                     if (normalize_module_key(normalizedModule, normalizedModule, sizeof(normalizedModule))) {
+                        SZrFileRange aliasLocation = node->data.variableDeclaration.pattern->location;
+                        SZrFileRange modulePathLocation = normalize_import_module_path_location(
+                            node->data.variableDeclaration.value->data.importExpression.modulePath->location,
+                            moduleLength);
+
+                        if (aliasLocation.source == ZR_NULL) {
+                            aliasLocation.source = node->location.source;
+                        }
+                        if (modulePathLocation.source == ZR_NULL) {
+                            modulePathLocation.source = aliasLocation.source;
+                        }
                         append_import_binding(state,
                                               bindings,
                                               node->data.variableDeclaration.pattern->data.identifier.name,
                                               normalizedModule,
-                                              node->data.variableDeclaration.value->data.importExpression.modulePath->location);
+                                              aliasLocation,
+                                              modulePathLocation);
                     }
                 }
             }
@@ -220,7 +269,17 @@ static TZrBool variable_declaration_get_import_binding_hit(SZrAstNode *node,
 
     binding = ZrLanguageServer_LspProject_FindImportBindingByAlias(bindings,
                                                                    varDecl->pattern->data.identifier.name);
-    if (binding == ZR_NULL || !file_range_contains_position(varDecl->pattern->location, position)) {
+    if (binding == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (file_range_contains_position(binding->modulePathLocation, position)) {
+        *outBinding = binding;
+        *outLocation = binding->modulePathLocation;
+        return ZR_TRUE;
+    }
+
+    if (!file_range_contains_position(varDecl->pattern->location, position)) {
         return ZR_FALSE;
     }
 
@@ -276,6 +335,7 @@ static TZrBool primary_expression_get_imported_member(SZrAstNode *node,
 
     outHit->moduleName = binding->moduleName;
     outHit->memberName = memberNode->data.memberExpression.property->data.identifier.name;
+    outHit->receiverLocation = receiverNode->location;
     outHit->location = memberNode->data.memberExpression.property->location;
     return ZR_TRUE;
 }
@@ -1089,9 +1149,15 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
     if (primary_expression_get_imported_member(node, bindings, &hit) &&
         ZrLanguageServer_Lsp_StringsEqual(hit.moduleName, moduleName) &&
-        (memberName == ZR_NULL || ZrLanguageServer_Lsp_StringsEqual(hit.memberName, memberName)) &&
-        !append_lsp_location(state, result, hit.location.source, hit.location)) {
-        return ZR_FALSE;
+        (memberName == ZR_NULL || ZrLanguageServer_Lsp_StringsEqual(hit.memberName, memberName))) {
+        if (memberName == ZR_NULL) {
+            if (!append_lsp_location(state, result, hit.receiverLocation.source, hit.receiverLocation) ||
+                !append_lsp_location(state, result, hit.location.source, hit.location)) {
+                return ZR_FALSE;
+            }
+        } else if (!append_lsp_location(state, result, hit.location.source, hit.location)) {
+            return ZR_FALSE;
+        }
     }
 
     switch (node->type) {
@@ -1592,4 +1658,57 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedModuleLocations(SZrSta
                                                                moduleName,
                                                                ZR_NULL,
                                                                result);
+}
+
+TZrBool ZrLanguageServer_LspProject_AppendMatchingImportBindingLocations(SZrState *state,
+                                                                         SZrArray *bindings,
+                                                                         SZrString *moduleName,
+                                                                         SZrArray *result) {
+    if (bindings == ZR_NULL || moduleName == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < bindings->length; index++) {
+        SZrLspImportBinding **bindingPtr =
+            (SZrLspImportBinding **)ZrCore_Array_Get(bindings, index);
+
+        if (bindingPtr == ZR_NULL || *bindingPtr == ZR_NULL ||
+            !ZrLanguageServer_Lsp_StringsEqual((*bindingPtr)->moduleName, moduleName)) {
+            continue;
+        }
+
+        if (!append_lsp_location(state, result, (*bindingPtr)->aliasLocation.source, (*bindingPtr)->aliasLocation)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+TZrBool ZrLanguageServer_LspProject_AppendMatchingImportTargetLocations(SZrState *state,
+                                                                        SZrArray *bindings,
+                                                                        SZrString *moduleName,
+                                                                        SZrArray *result) {
+    if (bindings == ZR_NULL || moduleName == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < bindings->length; index++) {
+        SZrLspImportBinding **bindingPtr =
+            (SZrLspImportBinding **)ZrCore_Array_Get(bindings, index);
+
+        if (bindingPtr == ZR_NULL || *bindingPtr == ZR_NULL ||
+            !ZrLanguageServer_Lsp_StringsEqual((*bindingPtr)->moduleName, moduleName)) {
+            continue;
+        }
+
+        if (!append_lsp_location(state,
+                                 result,
+                                 (*bindingPtr)->modulePathLocation.source,
+                                 (*bindingPtr)->modulePathLocation)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
 }

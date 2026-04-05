@@ -64,6 +64,9 @@ ZR_PARSER_API TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, con
 
 // 检查赋值兼容性
 ZR_PARSER_API TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *leftType, const SZrInferredType *rightType, SZrFileRange location);
+ZR_PARSER_API TZrBool ZrParser_InferredType_SatisfiesNamedConstraint(SZrCompilerState *cs,
+                                                                     const SZrInferredType *actualType,
+                                                                     SZrString *constraintTypeName);
 
 // 检查函数调用参数兼容性
 ZR_PARSER_API TZrBool ZrParser_FunctionCallCompatibility_Check(SZrCompilerState *cs,

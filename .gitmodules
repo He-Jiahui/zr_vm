@@ -20,3 +20,6 @@
 [submodule "zr_vm_lib_ffi/third_party/zr_libffi/libffi"]
 	path = zr_vm_lib_ffi/third_party/zr_libffi/libffi
 	url = https://github.com/libffi/libffi.git
+[submodule "zr_vm_lib_network/third_party/zr_libuv/libuv"]
+	path = zr_vm_lib_network/third_party/zr_libuv/libuv
+	url = https://github.com/libuv/libuv

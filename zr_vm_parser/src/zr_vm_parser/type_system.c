@@ -5,6 +5,7 @@
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/semantic.h"
+#include "type_inference_internal.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/memory.h"
@@ -22,6 +23,87 @@ static TZrBool inferred_type_is_reference_like(EZrValueType baseType) {
            baseType == ZR_VALUE_TYPE_FUNCTION ||
            baseType == ZR_VALUE_TYPE_CLOSURE ||
            baseType == ZR_VALUE_TYPE_THREAD;
+}
+
+static TZrBool inferred_type_get_type_name_view(const SZrInferredType *type,
+                                                TZrNativeString *outName,
+                                                TZrSize *outNameLength) {
+    TZrNativeString nativeTypeName = ZR_NULL;
+    TZrSize nativeTypeNameLength = 0;
+
+    if (outName != ZR_NULL) {
+        *outName = ZR_NULL;
+    }
+    if (outNameLength != ZR_NULL) {
+        *outNameLength = 0;
+    }
+    if (type == ZR_NULL || type->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (type->typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        nativeTypeName = ZrCore_String_GetNativeStringShort(type->typeName);
+        nativeTypeNameLength = type->typeName->shortStringLength;
+    } else {
+        nativeTypeName = ZrCore_String_GetNativeString(type->typeName);
+        nativeTypeNameLength = nativeTypeName != ZR_NULL ? type->typeName->longStringLength : 0;
+    }
+
+    if (nativeTypeName == ZR_NULL || nativeTypeNameLength == 0) {
+        return ZR_FALSE;
+    }
+
+    if (outName != ZR_NULL) {
+        *outName = nativeTypeName;
+    }
+    if (outNameLength != ZR_NULL) {
+        *outNameLength = nativeTypeNameLength;
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool inferred_type_has_matching_primitive_alias_name(const SZrInferredType *type) {
+    TZrNativeString nativeTypeName = ZR_NULL;
+    TZrSize nativeTypeNameLength = 0;
+    EZrValueType primitiveBaseType = ZR_VALUE_TYPE_UNKNOWN;
+
+    if (!inferred_type_get_type_name_view(type, &nativeTypeName, &nativeTypeNameLength)) {
+        return ZR_FALSE;
+    }
+
+    return inferred_type_try_map_primitive_name(nativeTypeName, nativeTypeNameLength, &primitiveBaseType) &&
+           primitiveBaseType == type->baseType;
+}
+
+static TZrBool inferred_type_same_base_name_matches(const SZrInferredType *type1, const SZrInferredType *type2) {
+    TZrBool type1HasPrimitiveAlias;
+    TZrBool type2HasPrimitiveAlias;
+
+    if (type1 == ZR_NULL || type2 == ZR_NULL || type1->baseType != type2->baseType) {
+        return ZR_FALSE;
+    }
+
+    if (type1->typeName == type2->typeName) {
+        return ZR_TRUE;
+    }
+
+    type1HasPrimitiveAlias = inferred_type_has_matching_primitive_alias_name(type1);
+    type2HasPrimitiveAlias = inferred_type_has_matching_primitive_alias_name(type2);
+    if (type1HasPrimitiveAlias || type2HasPrimitiveAlias) {
+        if (type1HasPrimitiveAlias && type2HasPrimitiveAlias) {
+            return ZR_TRUE;
+        }
+
+        if (type1->typeName == ZR_NULL || type2->typeName == ZR_NULL) {
+            return ZR_TRUE;
+        }
+    }
+
+    if (type1->typeName != ZR_NULL && type2->typeName != ZR_NULL) {
+        return ZrCore_String_Equal(type1->typeName, type2->typeName);
+    }
+
+    return ZR_FALSE;
 }
 
 // 初始化类型（使用基础类型）
@@ -152,15 +234,8 @@ TZrBool ZrParser_InferredType_Equal(const SZrInferredType *type1, const SZrInfer
         return ZR_FALSE;
     }
     
-    // 比较类型名
-    if (type1->typeName != type2->typeName) {
-        if (type1->typeName != ZR_NULL && type2->typeName != ZR_NULL) {
-            if (!ZrCore_String_Equal(type1->typeName, type2->typeName)) {
-                return ZR_FALSE;
-            }
-        } else {
-            return ZR_FALSE;
-        }
+    if (!inferred_type_same_base_name_matches(type1, type2)) {
+        return ZR_FALSE;
     }
 
     if (type1->hasArraySizeConstraint != type2->hasArraySizeConstraint) {
@@ -376,6 +451,48 @@ static TZrBool copy_generic_parameter_info_array(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool function_type_info_is_equivalent_overload(const SZrFunctionTypeInfo *left,
+                                                         const SZrFunctionTypeInfo *right) {
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (left == right) {
+        return ZR_TRUE;
+    }
+
+    if (left->name != right->name &&
+        (left->name == ZR_NULL || right->name == ZR_NULL || !ZrCore_String_Equal(left->name, right->name))) {
+        return ZR_FALSE;
+    }
+
+    if (left->genericParameters.length != right->genericParameters.length) {
+        return ZR_FALSE;
+    }
+
+    return function_type_info_matches_signature(left, &right->returnType, &right->paramTypes);
+}
+
+static TZrBool function_results_contains_equivalent_overload(const SZrArray *results,
+                                                             const SZrFunctionTypeInfo *candidate) {
+    if (results == ZR_NULL || candidate == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < results->length; index++) {
+        SZrFunctionTypeInfo **existingPtr = (SZrFunctionTypeInfo **)ZrCore_Array_Get((SZrArray *)results, index);
+        if (existingPtr == ZR_NULL || *existingPtr == ZR_NULL) {
+            continue;
+        }
+
+        if (function_type_info_is_equivalent_overload(*existingPtr, candidate)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool copy_parameter_passing_mode_array(SZrState *state,
                                                  SZrArray *dest,
                                                  const SZrArray *src) {
@@ -460,9 +577,7 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
     }
 
     if (fromType->baseType == toType->baseType &&
-        fromType->typeName != ZR_NULL &&
-        toType->typeName != ZR_NULL &&
-        ZrCore_String_Equal(fromType->typeName, toType->typeName)) {
+        inferred_type_same_base_name_matches(fromType, toType)) {
         if (fromType->isNullable == toType->isNullable) {
             return ZR_TRUE;
         }
@@ -473,6 +588,30 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
     }
 
     if (fromType->baseType == ZR_VALUE_TYPE_ARRAY && toType->baseType == ZR_VALUE_TYPE_ARRAY) {
+        if (toType->elementTypes.length > 0) {
+            if (fromType->elementTypes.length == 0 || fromType->elementTypes.length != toType->elementTypes.length) {
+                return ZR_FALSE;
+            }
+
+            for (TZrSize index = 0; index < toType->elementTypes.length; index++) {
+                SZrInferredType *fromElementType =
+                        (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&fromType->elementTypes, index);
+                SZrInferredType *toElementType =
+                        (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&toType->elementTypes, index);
+
+                if (fromElementType == ZR_NULL || toElementType == ZR_NULL) {
+                    if (fromElementType != toElementType) {
+                        return ZR_FALSE;
+                    }
+                    continue;
+                }
+
+                if (!ZrParser_InferredType_IsCompatible(fromElementType, toElementType)) {
+                    return ZR_FALSE;
+                }
+            }
+        }
+
         if (toType->hasArraySizeConstraint) {
             if (!fromType->hasArraySizeConstraint) {
                 return ZR_FALSE;
@@ -491,6 +630,14 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
                     return ZR_FALSE;
                 }
             }
+        }
+
+        if (fromType->isNullable == toType->isNullable) {
+            return ZR_TRUE;
+        }
+
+        if (toType->isNullable && !fromType->isNullable) {
+            return ZR_TRUE;
         }
     }
     
@@ -903,6 +1050,9 @@ TZrBool ZrParser_TypeEnvironment_LookupFunctions(SZrState *state, SZrTypeEnviron
             if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL &&
                 (*funcInfo)->name != ZR_NULL && ZrCore_String_Equal((*funcInfo)->name, name)) {
                 SZrFunctionTypeInfo *resolvedInfo = *funcInfo;
+                if (function_results_contains_equivalent_overload(results, resolvedInfo)) {
+                    continue;
+                }
                 ZrCore_Array_Push(state, results, &resolvedInfo);
             }
         }

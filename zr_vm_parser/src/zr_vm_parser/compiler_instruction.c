@@ -68,6 +68,63 @@ TZrBool compiler_copy_range_to_raw(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+TZrBool compiler_capture_array_snapshot(SZrCompilerState *cs,
+                                               const SZrArray *source,
+                                               SZrCompilerArraySnapshot *snapshot) {
+    if (snapshot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    snapshot->data = ZR_NULL;
+    snapshot->length = 0;
+    snapshot->elementSize = 0;
+    if (cs == ZR_NULL || source == ZR_NULL || !source->isValid) {
+        return ZR_TRUE;
+    }
+
+    snapshot->length = source->length;
+    snapshot->elementSize = source->elementSize;
+    return compiler_copy_range_to_raw(cs,
+                                      &snapshot->data,
+                                      source->head,
+                                      source->length,
+                                      source->elementSize);
+}
+
+void compiler_restore_array_snapshot(SZrCompilerState *cs,
+                                            SZrArray *target,
+                                            SZrCompilerArraySnapshot *snapshot) {
+    if (cs == ZR_NULL || target == ZR_NULL || snapshot == ZR_NULL) {
+        return;
+    }
+
+    target->length = 0;
+    if (snapshot->data != ZR_NULL && snapshot->length > 0) {
+        ZrCore_Array_Append(cs->state, target, snapshot->data, snapshot->length);
+    }
+    compiler_release_array_snapshot(cs, snapshot);
+}
+
+void compiler_release_array_snapshot(SZrCompilerState *cs,
+                                            SZrCompilerArraySnapshot *snapshot) {
+    TZrSize bytes;
+
+    if (cs == ZR_NULL || snapshot == ZR_NULL || snapshot->data == ZR_NULL || snapshot->elementSize == 0) {
+        if (snapshot != ZR_NULL) {
+            snapshot->data = ZR_NULL;
+            snapshot->length = 0;
+            snapshot->elementSize = 0;
+        }
+        return;
+    }
+
+    bytes = snapshot->length * snapshot->elementSize;
+    ZrCore_Memory_RawFreeWithType(cs->state->global, snapshot->data, bytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    snapshot->data = ZR_NULL;
+    snapshot->length = 0;
+    snapshot->elementSize = 0;
+}
+
 TZrBool compiler_copy_function_exception_metadata_slice(SZrCompilerState *cs,
                                                                SZrFunction *function,
                                                                TZrSize executionStart,

@@ -1,0 +1,30 @@
+var system = %import("zr.system");
+
+class Accumulator {
+    pub var value: int;
+
+    pub @constructor(seed: int) {
+        this.value = seed;
+    }
+
+    pub step(delta: int): int {
+        this.value = (this.value * 13 + delta) % 1009;
+        return this.value;
+    }
+}
+
+var acc = new Accumulator(17);
+var outer = 0;
+var checksum = 0;
+
+while (outer < 80) {
+    var inner = 0;
+    while (inner < 640) {
+        checksum = checksum + acc.step(inner + outer);
+        inner = inner + 1;
+    }
+    outer = outer + 1;
+}
+
+system.console.printLine("BENCH_DISPATCH_LOOPS_PASS");
+return checksum % 1000000;

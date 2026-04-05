@@ -21,6 +21,8 @@ typedef struct {
     clock_t endTime;
 } SZrTestTimer;
 
+static void destroy_test_state(SZrState *state);
+
 // 测试日志宏（符合测试规范）
 #define TEST_START(summary)                                                                                            \
     do {                                                                                                               \
@@ -48,6 +50,12 @@ typedef struct {
         printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason);                                      \
         fflush(stdout);                                                                                                \
         TEST_FAIL_MESSAGE(reason);                                                                                     \
+    } while (0)
+
+#define TEST_FAIL_STATE(timer, summary, reason, state)                                                                 \
+    do {                                                                                                               \
+        destroy_test_state(state);                                                                                     \
+        TEST_FAIL_CUSTOM(timer, summary, reason);                                                                      \
     } while (0)
 
 #define TEST_DIVIDER()                                                                                                 \
@@ -158,9 +166,7 @@ static void test_const_local_variable_declaration(void) {
     
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Local Variable Declaration", "Failed to compile const local variable");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer, "Const Local Variable Declaration", "Failed to compile const local variable", state);
     }
     
     timer.endTime = clock();
@@ -188,12 +194,10 @@ static void test_const_local_variable_reassignment_error(void) {
     // 应该编译失败（const 变量不能重新赋值）
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Local Variable Reassignment Error", "Expected compilation error but compilation succeeded");
-        if (func != ZR_NULL) {
-            // 清理函数对象（如果存在）
-        }
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Local Variable Reassignment Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
     
     timer.endTime = clock();
@@ -225,9 +229,10 @@ static void test_const_class_field_in_constructor(void) {
     
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Class Field in Constructor", "Failed to compile const class field in constructor");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Class Field in Constructor",
+                        "Failed to compile const class field in constructor",
+                        state);
     }
     
     timer.endTime = clock();
@@ -264,12 +269,10 @@ static void test_const_class_field_in_method_error(void) {
     // 应该编译失败（const 字段不能在构造函数外赋值）
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Class Field in Method Error", "Expected compilation error but compilation succeeded");
-        if (func != ZR_NULL) {
-            // 清理函数对象（如果存在）
-        }
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Class Field in Method Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
     
     timer.endTime = clock();
@@ -301,9 +304,10 @@ static void test_const_struct_field_in_constructor(void) {
     
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Struct Field in Constructor", "Failed to compile const struct field in constructor");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Struct Field in Constructor",
+                        "Failed to compile const struct field in constructor",
+                        state);
     }
     
     timer.endTime = clock();
@@ -340,12 +344,10 @@ static void test_const_struct_field_in_method_error(void) {
     // 应该编译失败（const 字段不能在构造函数外赋值）
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Struct Field in Method Error", "Expected compilation error but compilation succeeded");
-        if (func != ZR_NULL) {
-            // 清理函数对象（如果存在）
-        }
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Struct Field in Method Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
     
     timer.endTime = clock();
@@ -374,9 +376,10 @@ static void test_const_interface_field_declaration(void) {
     
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Interface Field Declaration", "Failed to compile const interface field");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Interface Field Declaration",
+                        "Failed to compile const interface field",
+                        state);
     }
     
     timer.endTime = clock();
@@ -411,9 +414,10 @@ static void test_const_interface_implementation_match(void) {
     
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Interface Implementation Match", "Failed to compile const interface implementation");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Interface Implementation Match",
+                        "Failed to compile const interface implementation",
+                        state);
     }
     
     timer.endTime = clock();
@@ -442,9 +446,10 @@ static void test_const_function_parameter(void) {
     
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Function Parameter", "Failed to compile const function parameter");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Function Parameter",
+                        "Failed to compile const function parameter",
+                        state);
     }
     
     timer.endTime = clock();
@@ -476,12 +481,10 @@ static void test_const_parameter_modification_error(void) {
     // 应该编译失败（const 参数不能修改）
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Parameter Modification Error", "Expected compilation error but compilation succeeded");
-        if (func != ZR_NULL) {
-            // 清理函数对象（如果存在）
-        }
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Parameter Modification Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
     
     timer.endTime = clock();
@@ -510,9 +513,10 @@ static void test_const_static_field_declaration(void) {
     
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Static Field Declaration", "Failed to compile const static field");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Static Field Declaration",
+                        "Failed to compile const static field",
+                        state);
     }
     
     timer.endTime = clock();
@@ -546,12 +550,10 @@ static void test_const_static_field_reassignment_error(void) {
     // 应该编译失败（静态 const 字段不能重新赋值）
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Static Field Reassignment Error", "Expected compilation error but compilation succeeded");
-        if (func != ZR_NULL) {
-            // 清理函数对象（如果存在）
-        }
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Static Field Reassignment Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
     
     timer.endTime = clock();
@@ -588,12 +590,10 @@ static void test_const_interface_implementation_mismatch_error(void) {
     // 应该编译失败（接口 const 字段在实现类中也必须是 const）
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Const Interface Implementation Mismatch Error", "Expected compilation error but compilation succeeded");
-        if (func != ZR_NULL) {
-            // 清理函数对象（如果存在）
-        }
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Interface Implementation Mismatch Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
     
     timer.endTime = clock();
@@ -627,11 +627,10 @@ static void test_const_field_multiple_assignment_in_constructor(void) {
     
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Multiple Assignment in Constructor",
-                         "Expected compilation error but compilation succeeded");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Multiple Assignment in Constructor",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
     
     timer.endTime = clock();
@@ -658,11 +657,10 @@ static void test_const_local_variable_uninitialized_error(void) {
     
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Local Variable Uninitialized Error",
-                         "Expected compilation error but compilation succeeded");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Local Variable Uninitialized Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
     
     timer.endTime = clock();
@@ -696,11 +694,10 @@ static void test_const_field_declared_after_constructor_initializes_successfully
     
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Declared After Constructor Initializes Successfully",
-                         "Failed to compile constructor initialization for const field declared later");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Declared After Constructor Initializes Successfully",
+                        "Failed to compile constructor initialization for const field declared later",
+                        state);
     }
     
     timer.endTime = clock();
@@ -734,11 +731,10 @@ static void test_const_field_missing_constructor_initialization_error(void) {
     
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Missing Constructor Initialization Error",
-                         "Expected compilation error but compilation succeeded");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Missing Constructor Initialization Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
     
     timer.endTime = clock();
@@ -773,11 +769,10 @@ static void test_const_field_compound_assignment_in_constructor_error(void) {
     
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Compound Assignment in Constructor Error",
-                         "Expected compilation error but compilation succeeded");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Compound Assignment in Constructor Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
     
     timer.endTime = clock();
@@ -815,11 +810,10 @@ static void test_const_field_initialized_once_per_branch_success(void) {
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Initialized Once Per Branch Success",
-                         "Failed to compile constructor with one const-field initialization per branch");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Initialized Once Per Branch Success",
+                        "Failed to compile constructor with one const-field initialization per branch",
+                        state);
     }
 
     timer.endTime = clock();
@@ -856,11 +850,10 @@ static void test_const_field_missing_branch_initialization_error(void) {
 
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Missing Branch Initialization Error",
-                         "Expected compilation error but compilation succeeded");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Missing Branch Initialization Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
 
     timer.endTime = clock();
@@ -898,11 +891,10 @@ static void test_const_field_early_return_before_initialization_error(void) {
 
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Early Return Before Initialization Error",
-                         "Expected compilation error but compilation succeeded");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Early Return Before Initialization Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
 
     timer.endTime = clock();
@@ -940,11 +932,10 @@ static void test_const_struct_field_initialized_once_per_branch_success(void) {
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Struct Field Initialized Once Per Branch Success",
-                         "Failed to compile struct constructor with one const-field initialization per branch");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Struct Field Initialized Once Per Branch Success",
+                        "Failed to compile struct constructor with one const-field initialization per branch",
+                        state);
     }
 
     timer.endTime = clock();
@@ -984,11 +975,10 @@ static void test_const_field_initialized_once_across_else_if_chain_success(void)
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Initialized Once Across Else-If Chain Success",
-                         "Failed to compile constructor with full else-if initialization coverage");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Initialized Once Across Else-If Chain Success",
+                        "Failed to compile constructor with full else-if initialization coverage",
+                        state);
     }
 
     timer.endTime = clock();
@@ -1026,11 +1016,10 @@ static void test_const_field_switch_paths_initialized_once_success(void) {
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Switch Paths Initialized Once Success",
-                         "Failed to compile constructor with switch-based const initialization");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Switch Paths Initialized Once Success",
+                        "Failed to compile constructor with switch-based const initialization",
+                        state);
     }
 
     timer.endTime = clock();
@@ -1068,11 +1057,10 @@ static void test_const_field_switch_missing_default_initialization_error(void) {
 
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Switch Missing Default Initialization Error",
-                         "Expected compilation error but compilation succeeded");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Switch Missing Default Initialization Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
 
     timer.endTime = clock();
@@ -1106,11 +1094,10 @@ static void test_const_field_ternary_branches_initialized_once_success(void) {
 
     if (func == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Ternary Branches Initialized Once Success",
-                         "Failed to compile constructor with ternary-based const initialization");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Ternary Branches Initialized Once Success",
+                        "Failed to compile constructor with ternary-based const initialization",
+                        state);
     }
 
     timer.endTime = clock();
@@ -1145,11 +1132,10 @@ static void test_const_field_ternary_missing_branch_initialization_error(void) {
 
     if (!hasError || func != ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer,
-                         "Const Field Ternary Missing Branch Initialization Error",
-                         "Expected compilation error but compilation succeeded");
-        destroy_test_state(state);
-        return;
+        TEST_FAIL_STATE(timer,
+                        "Const Field Ternary Missing Branch Initialization Error",
+                        "Expected compilation error but compilation succeeded",
+                        state);
     }
 
     timer.endTime = clock();

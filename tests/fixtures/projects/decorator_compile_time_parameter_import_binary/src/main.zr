@@ -1,0 +1,3 @@
+var provider = %import("provider");
+
+return %type(provider.measure).parameters[0].metadata.compileTimeParameter;

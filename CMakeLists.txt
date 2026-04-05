@@ -43,6 +43,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 option(USE_SYSTEM_PACKAGES "Use system package manager for dependencies" ON)
+option(BUILD_EXPERIMENTAL_NETWORK_LIB "Build zr_vm_lib_network module" ON)
 
 # 为 Debug 构建添加 -DDEBUG 宏定义
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -83,6 +84,18 @@ add_subdirectory("zr_vm_parser")
 
 add_subdirectory("zr_vm_library")
 
+if (EXISTS "${CMAKE_SOURCE_DIR}/zr_vm_lib_network/CMakeLists.txt")
+    add_subdirectory("zr_vm_lib_network")
+else ()
+    message(STATUS "Skipping zr_vm_lib_network: directory is absent in this checkout")
+endif ()
+
+if (EXISTS "${CMAKE_SOURCE_DIR}/zr_vm_lib_debug/CMakeLists.txt")
+    add_subdirectory("zr_vm_lib_debug")
+else ()
+    message(STATUS "Skipping zr_vm_lib_debug: directory is absent in this checkout")
+endif ()
+
 add_subdirectory("zr_vm_lib_math")
 
 add_subdirectory("zr_vm_lib_system")
@@ -91,7 +104,11 @@ add_subdirectory("zr_vm_lib_container")
 
 add_subdirectory("zr_vm_lib_ffi")
 
-add_subdirectory("zr_vm_task")
+if (EXISTS "${CMAKE_SOURCE_DIR}/zr_vm_lib_thread/CMakeLists.txt")
+    add_subdirectory("zr_vm_lib_thread")
+else ()
+    message(STATUS "Skipping zr_vm_lib_thread: directory is absent in this checkout")
+endif ()
 
 add_subdirectory("zr_vm_language_server")
 

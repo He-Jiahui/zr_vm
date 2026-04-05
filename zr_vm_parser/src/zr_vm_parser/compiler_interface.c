@@ -50,6 +50,9 @@ static void compiler_interface_init_member_defaults(SZrTypeMemberInfo *memberInf
     memberInfo->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     memberInfo->receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     ZrCore_Array_Construct(&memberInfo->parameterTypes);
+    ZrCore_Array_Construct(&memberInfo->parameterNames);
+    ZrCore_Array_Construct(&memberInfo->parameterHasDefaultValues);
+    ZrCore_Array_Construct(&memberInfo->parameterDefaultValues);
     ZrCore_Array_Construct(&memberInfo->genericParameters);
     ZrCore_Array_Construct(&memberInfo->parameterPassingModes);
     ZrCore_Array_Construct(&memberInfo->decorators);

@@ -4,7 +4,7 @@
 
 ## 活跃 Suite
 
-当前有效的 CTest 入口固定为 9 个：
+当前有效的 CTest 入口固定为 10 个：
 
 1. `core_runtime`
 2. `language_pipeline`
@@ -15,6 +15,7 @@
 7. `cli_args`
 8. `cli_integration`
 9. `golden_regression`
+10. `performance_report`
 
 不再把旧的单个二进制入口描述为“活跃 suite”。诸如 `zr_vm_gc_test`、`zr_vm_parser_test`、`zr_vm_scripts_test` 这类目标只作为 suite 内部实现细节存在，由 `tests/cmake/run_executable_suite.cmake`、`tests/cmake/run_projects_suite.cmake`、`tests/cmake/run_cli_suite.cmake` 统一编排。
 
@@ -59,6 +60,10 @@
 - 覆盖范围：`tests/golden/` 下的 AST / `.zri` / `.zro` / AOT-C / AOT-LLVM 快照。
 - 角色：锁定稳定 artifact contract，而不是仅比较“能不能生成”。
 
+### `performance_report`
+- 覆盖范围：稳定 benchmark 项目夹具的 binary 模式执行耗时与峰值内存。
+- 角色：生成 `tests_generated/performance/benchmark_report.md` 与 `.json`，作为常规 benchmark 算法测试与运行态占用报告。
+
 ## Tier 过滤
 
 `smoke/core/stress` 不是新的顶层 suite，而是叠加在现有 suite 上的过滤维度：
@@ -96,6 +101,7 @@
 7. `cli_args`
 8. `cli_integration`
 9. `golden_regression`
+10. `performance_report`
 
 其中 `golden_regression` 保持最后执行，用于在功能与项目工作流已确认有效后，再锁定 `.zri/.zro/AOT C/AOT LLVM` 漂移。
 
@@ -124,6 +130,8 @@
 - `build/codex-wsl-gcc-debug/tests_generated/scripts/`
 - `build/codex-wsl-gcc-debug/tests_generated/scripts/aot_c/`
 - `build/codex-wsl-gcc-debug/tests_generated/scripts/aot_llvm/`
+- `build/codex-wsl-gcc-debug/tests_generated/performance/benchmark_report.md`
+- `build/codex-wsl-gcc-debug/tests_generated/performance/benchmark_report.json`
 
 ## 运行方式
 
@@ -151,6 +159,7 @@ ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure -R '^projects$'
 ```bash
 ZR_VM_TEST_TIER=smoke ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure -R 'language_pipeline|projects|golden_regression'
 ZR_VM_TEST_TIER=core ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure
+ZR_VM_PERF_WARMUP=2 ZR_VM_PERF_ITERATIONS=6 ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure -R '^performance_report$'
 ```
 
 使用薄封装 runner：
@@ -162,7 +171,7 @@ ZR_VM_TEST_TIER=core ctest --test-dir build/codex-wsl-gcc-debug --output-on-fail
 
 ## 维护规则
 
-1. 新增覆盖优先并入现有 9 个 suite，不新增长期第 10 个顶层 CTest 入口。
+1. 新增功能回归覆盖优先并入现有功能 suite；`performance_report` 作为专门的 benchmark/reporting 入口保留，不再把性能采集塞回功能回归脚本。
 2. AOT 测试继续复用 `tests/fixtures/reference/core_semantics/`，不新开平行 reference 根目录。
 3. `smoke/core/stress` 作为标签/runner filter/CI job 维度叠加，不改一级 suite 组织。
 4. 正式矩阵中的 AOT case 必须同时具备前端 `source` oracle 和至少一个后端 `artifact/parity/probe` oracle。

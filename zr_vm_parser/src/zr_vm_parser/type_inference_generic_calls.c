@@ -478,6 +478,114 @@ static SZrAstNodeArray *member_declaration_param_list(SZrAstNode *declarationNod
     }
 }
 
+static SZrType *member_declaration_return_type(SZrAstNode *declarationNode) {
+    if (declarationNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (declarationNode->type) {
+        case ZR_AST_CLASS_METHOD:
+            return declarationNode->data.classMethod.returnType;
+        case ZR_AST_STRUCT_METHOD:
+            return declarationNode->data.structMethod.returnType;
+        case ZR_AST_CLASS_META_FUNCTION:
+            return declarationNode->data.classMetaFunction.returnType;
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return declarationNode->data.structMetaFunction.returnType;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static EZrGenericCallResolveStatus build_substituted_member_signature_from_declaration(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *memberInfo,
+        const SZrArray *bindings,
+        SZrResolvedCallSignature *signature) {
+    SZrAstNodeArray *params;
+    SZrType *returnTypeNode;
+
+    if (cs == ZR_NULL || memberInfo == ZR_NULL || bindings == ZR_NULL || signature == ZR_NULL) {
+        return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+    }
+
+    params = member_declaration_param_list(memberInfo->declarationNode);
+    returnTypeNode = member_declaration_return_type(memberInfo->declarationNode);
+    if (params == ZR_NULL && returnTypeNode == ZR_NULL) {
+        return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+    }
+
+    resolved_call_signature_init(cs->state, signature);
+    if (!copy_parameter_passing_modes(cs->state,
+                                      &signature->parameterPassingModes,
+                                      &memberInfo->parameterPassingModes)) {
+        return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+    }
+
+    if (params != ZR_NULL && params->count > 0) {
+        ZrCore_Array_Init(cs->state, &signature->parameterTypes, sizeof(SZrInferredType), params->count);
+        for (TZrSize index = 0; index < params->count; index++) {
+            SZrAstNode *paramNode = params->nodes[index];
+            SZrInferredType *memberParameterType =
+                    index < memberInfo->parameterTypes.length
+                            ? (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterTypes, index)
+                            : ZR_NULL;
+            TZrBool hasUnresolvedType = ZR_FALSE;
+            SZrInferredType unresolvedType;
+            SZrInferredType resolvedType;
+
+            ZrParser_InferredType_Init(cs->state, &unresolvedType, ZR_VALUE_TYPE_OBJECT);
+            ZrParser_InferredType_Init(cs->state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
+
+            if (memberParameterType != ZR_NULL) {
+                ZrParser_InferredType_Copy(cs->state, &unresolvedType, memberParameterType);
+                hasUnresolvedType = ZR_TRUE;
+            } else if (paramNode != ZR_NULL &&
+                       paramNode->type == ZR_AST_PARAMETER &&
+                       paramNode->data.parameter.typeInfo != ZR_NULL &&
+                       ZrParser_AstTypeToInferredType_Convert(cs,
+                                                               paramNode->data.parameter.typeInfo,
+                                                               &unresolvedType)) {
+                hasUnresolvedType = ZR_TRUE;
+            }
+
+            if (!hasUnresolvedType ||
+                !substitute_generic_parameter_type(cs->state, bindings, &unresolvedType, &resolvedType)) {
+                ZrParser_InferredType_Free(cs->state, &unresolvedType);
+                ZrParser_InferredType_Free(cs->state, &resolvedType);
+                return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+            }
+
+            ZrParser_InferredType_Free(cs->state, &unresolvedType);
+            ZrCore_Array_Push(cs->state, &signature->parameterTypes, &resolvedType);
+        }
+    }
+
+    if (returnTypeNode != ZR_NULL) {
+        SZrInferredType unresolvedReturnType;
+
+        ZrParser_InferredType_Init(cs->state, &unresolvedReturnType, ZR_VALUE_TYPE_OBJECT);
+        if (((memberInfo->returnTypeName != ZR_NULL &&
+              !inferred_type_from_type_name(cs, memberInfo->returnTypeName, &unresolvedReturnType)) ||
+             (memberInfo->returnTypeName == ZR_NULL &&
+              !ZrParser_AstTypeToInferredType_Convert(cs, returnTypeNode, &unresolvedReturnType))) ||
+            !substitute_generic_parameter_type(cs->state, bindings, &unresolvedReturnType, &signature->returnType)) {
+            ZrParser_InferredType_Free(cs->state, &unresolvedReturnType);
+            return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+        }
+
+        ZrParser_InferredType_Free(cs->state, &unresolvedReturnType);
+        return ZR_GENERIC_CALL_RESOLVE_OK;
+    }
+
+    if (memberInfo->returnTypeName == ZR_NULL) {
+        ZrParser_InferredType_Init(cs->state, &signature->returnType, ZR_VALUE_TYPE_NULL);
+        return ZR_GENERIC_CALL_RESOLVE_OK;
+    }
+
+    return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+}
+
 static TZrBool infer_call_argument_types_against_param_list(SZrCompilerState *cs,
                                                             SZrAstNodeArray *params,
                                                             SZrFunctionCall *call,
@@ -654,9 +762,15 @@ static EZrGenericCallResolveStatus build_substituted_member_signature(
         const SZrArray *bindings,
         SZrResolvedCallSignature *signature) {
     SZrInferredType unresolvedReturnType;
+    EZrGenericCallResolveStatus astStatus;
 
     if (cs == ZR_NULL || memberInfo == ZR_NULL || bindings == ZR_NULL || signature == ZR_NULL) {
         return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+    }
+
+    astStatus = build_substituted_member_signature_from_declaration(cs, memberInfo, bindings, signature);
+    if (astStatus == ZR_GENERIC_CALL_RESOLVE_OK) {
+        return ZR_GENERIC_CALL_RESOLVE_OK;
     }
 
     resolved_call_signature_init(cs->state, signature);
@@ -979,9 +1093,27 @@ EZrGenericCallResolveStatus resolve_generic_member_call_signature_detailed(
 
     params = member_declaration_param_list(memberInfo->declarationNode);
     ZrCore_Array_Construct(&argumentTypes);
-    if (!infer_call_argument_types_against_param_list(cs, params, call, &argumentTypes, &mismatch)) {
-        free_generic_call_bindings(cs->state, &bindings);
-        return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+    if (params != ZR_NULL) {
+        if (!infer_call_argument_types_against_param_list(cs, params, call, &argumentTypes, &mismatch)) {
+            free_generic_call_bindings(cs->state, &bindings);
+            return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+        }
+    } else {
+        TZrSize expectedCount = memberInfo->parameterTypes.length;
+        TZrSize argCount = call != ZR_NULL && call->args != ZR_NULL ? call->args->count : 0;
+
+        if (expectedCount != argCount) {
+            mismatch = ZR_TRUE;
+        } else if (argCount > 0) {
+            ZrCore_Array_Init(cs->state, &argumentTypes, sizeof(SZrInferredType), argCount);
+            for (TZrSize index = 0; index < argCount; index++) {
+                if (!infer_call_argument_type_node_for_generic(cs, call->args->nodes[index], &argumentTypes)) {
+                    free_inferred_type_array(cs->state, &argumentTypes);
+                    free_generic_call_bindings(cs->state, &bindings);
+                    return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+                }
+            }
+        }
     }
 
     if (!mismatch) {

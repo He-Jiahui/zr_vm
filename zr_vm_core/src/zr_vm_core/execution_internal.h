@@ -5,6 +5,7 @@
 #ifndef ZR_VM_CORE_EXECUTION_INTERNAL_H
 #define ZR_VM_CORE_EXECUTION_INTERNAL_H
 
+#include "zr_vm_core/execution_control.h"
 #include "zr_vm_core/execution.h"
 
 #include <math.h>
@@ -164,33 +165,13 @@ TZrBool execution_invoke_meta_call(SZrState *state,
                                    TZrStackValuePointer *outMetaBase,
                                    TZrStackValuePointer *outSavedStackTop);
 
-TZrBool execution_push_exception_handler(SZrState *state, SZrCallInfo *callInfo, TZrUInt32 handlerIndex);
-SZrVmExceptionHandlerState *execution_find_handler_state(SZrState *state,
-                                                         SZrCallInfo *callInfo,
-                                                         TZrUInt32 handlerIndex);
 TZrBool execution_has_exception_handler_for_callinfo(SZrState *state, SZrCallInfo *callInfo);
 const SZrFunctionExceptionHandlerInfo *execution_lookup_exception_handler_info(
         SZrState *state,
         const SZrVmExceptionHandlerState *handlerState,
         SZrFunction **outFunction);
-void execution_pop_exception_handler(SZrState *state, SZrVmExceptionHandlerState *handlerState);
-void execution_discard_exception_handlers_for_callinfo(SZrState *state, SZrCallInfo *callInfo);
 TZrBool execution_try_reuse_tail_call_frame(SZrState *state,
                                             SZrCallInfo *callInfo,
                                             TZrStackValuePointer functionPointer);
-
-TZrBool execution_jump_to_instruction_offset(SZrState *state,
-                                             SZrCallInfo **ioCallInfo,
-                                             SZrCallInfo *targetCallInfo,
-                                             TZrMemoryOffset instructionOffset);
-void execution_clear_pending_control(SZrState *state);
-void execution_set_pending_control(SZrState *state,
-                                   EZrVmPendingControlKind kind,
-                                   SZrCallInfo *callInfo,
-                                   TZrMemoryOffset targetInstructionOffset,
-                                   TZrUInt32 valueSlot,
-                                   const SZrTypeValue *value);
-TZrBool execution_resume_pending_via_outer_finally(SZrState *state, SZrCallInfo **ioCallInfo);
-TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioCallInfo);
 
 #endif // ZR_VM_CORE_EXECUTION_INTERNAL_H

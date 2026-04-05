@@ -56,8 +56,8 @@ void ZrCli_Command_WriteHelp(FILE *stream, const TZrChar *programName) {
     fprintf(stream,
             "Usage:\n"
             "  %s\n"
-            "  %s <project.zrp> [--execution-mode interp|binary|aot_c|aot_llvm] [--require-aot-path] [--emit-executed-via]\n"
-            "  %s --compile <project.zrp> [--intermediate] [--incremental] [--emit-aot-c] [--emit-aot-llvm] [--run] [--execution-mode interp|binary|aot_c|aot_llvm] [--require-aot-path] [--emit-executed-via]\n"
+            "  %s <project.zrp> [--execution-mode interp|binary|aot_c|aot_llvm] [--require-aot-path] [--emit-executed-via] [--debug] [--debug-address host:port] [--debug-wait] [--debug-print-endpoint]\n"
+            "  %s --compile <project.zrp> [--intermediate] [--incremental] [--emit-aot-c] [--emit-aot-llvm] [--run] [--execution-mode interp|binary|aot_c|aot_llvm] [--require-aot-path] [--emit-executed-via] [--debug] [--debug-address host:port] [--debug-wait] [--debug-print-endpoint]\n"
             "  %s --help\n"
             "\n"
             "Modes:\n"
@@ -74,6 +74,10 @@ void ZrCli_Command_WriteHelp(FILE *stream, const TZrChar *programName) {
             "  --execution-mode <mode>   Select interp, binary, aot_c, or aot_llvm for run paths.\n"
             "  --require-aot-path        Fail if an aot_* run cannot prove the requested AOT path.\n"
             "  --emit-executed-via       Print executed_via=<mode> after a successful run.\n"
+            "  --debug                   Start the project under the ZR debugger agent.\n"
+            "  --debug-address <addr>    Bind the debugger agent to the given host:port.\n"
+            "  --debug-wait              Wait for the debugger client before running user code.\n"
+            "  --debug-print-endpoint    Print the resolved debugger endpoint after startup.\n"
             "  --help                    Show this help text.\n"
             "\n"
             "Examples:\n"
@@ -110,6 +114,7 @@ TZrBool ZrCli_Command_Parse(int argc,
     outCommand->mode = ZR_CLI_MODE_REPL;
     outCommand->executionMode = ZR_CLI_EXECUTION_MODE_INTERP;
     outCommand->projectPath = ZR_NULL;
+    outCommand->debugAddress = ZR_NULL;
     outCommand->runAfterCompile = ZR_FALSE;
     outCommand->emitIntermediate = ZR_FALSE;
     outCommand->incremental = ZR_FALSE;
@@ -117,6 +122,9 @@ TZrBool ZrCli_Command_Parse(int argc,
     outCommand->emitAotLlvm = ZR_FALSE;
     outCommand->requireAotPath = ZR_FALSE;
     outCommand->emitExecutedVia = ZR_FALSE;
+    outCommand->debugEnabled = ZR_FALSE;
+    outCommand->debugWait = ZR_FALSE;
+    outCommand->debugPrintEndpoint = ZR_FALSE;
 
     if (errorBuffer != ZR_NULL && errorBufferSize > 0) {
         errorBuffer[0] = '\0';
@@ -188,6 +196,35 @@ TZrBool ZrCli_Command_Parse(int argc,
             continue;
         }
 
+        if (strcmp(argument, "--debug") == 0) {
+            outCommand->debugEnabled = ZR_TRUE;
+            continue;
+        }
+
+        if (strcmp(argument, "--debug-wait") == 0) {
+            outCommand->debugWait = ZR_TRUE;
+            continue;
+        }
+
+        if (strcmp(argument, "--debug-print-endpoint") == 0) {
+            outCommand->debugPrintEndpoint = ZR_TRUE;
+            continue;
+        }
+
+        if (strcmp(argument, "--debug-address") == 0) {
+            if (index + 1 >= argc) {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing address after --debug-address");
+                return ZR_FALSE;
+            }
+            if (argv[index + 1][0] == '-') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing address after --debug-address");
+                return ZR_FALSE;
+            }
+
+            outCommand->debugAddress = argv[++index];
+            continue;
+        }
+
         if (strcmp(argument, "--execution-mode") == 0) {
             if (index + 1 >= argc) {
                 zr_cli_write_error(errorBuffer, errorBufferSize, "Missing execution mode after --execution-mode");
@@ -221,6 +258,8 @@ TZrBool ZrCli_Command_Parse(int argc,
         if (compileSeen || positionalPath != ZR_NULL || outCommand->emitIntermediate || outCommand->incremental ||
             outCommand->runAfterCompile || outCommand->emitAotC || outCommand->emitAotLlvm ||
             outCommand->requireAotPath || outCommand->emitExecutedVia ||
+            outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
+            outCommand->debugAddress != ZR_NULL ||
             outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP) {
             zr_cli_write_error(errorBuffer, errorBufferSize, "--help cannot be combined with other options");
             return ZR_FALSE;
@@ -238,6 +277,14 @@ TZrBool ZrCli_Command_Parse(int argc,
         return ZR_FALSE;
     }
 
+    if (!outCommand->debugEnabled &&
+        (outCommand->debugAddress != ZR_NULL || outCommand->debugWait || outCommand->debugPrintEndpoint)) {
+        zr_cli_write_error(errorBuffer,
+                           errorBufferSize,
+                           "--debug-address, --debug-wait, and --debug-print-endpoint require --debug");
+        return ZR_FALSE;
+    }
+
     if (compileSeen && positionalPath != ZR_NULL) {
         zr_cli_write_error(errorBuffer, errorBufferSize, "Unexpected positional argument: %s", positionalPath);
         return ZR_FALSE;
@@ -245,19 +292,21 @@ TZrBool ZrCli_Command_Parse(int argc,
 
     if (!compileSeen && positionalPath == ZR_NULL &&
         (outCommand->requireAotPath || outCommand->emitExecutedVia ||
+         outCommand->debugEnabled ||
          outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP)) {
         zr_cli_write_error(errorBuffer,
                            errorBufferSize,
-                           "--execution-mode, --require-aot-path, and --emit-executed-via require a project run path");
+                           "--execution-mode, --require-aot-path, --emit-executed-via, and --debug require a project run path");
         return ZR_FALSE;
     }
 
     if (compileSeen && !outCommand->runAfterCompile &&
         (outCommand->requireAotPath || outCommand->emitExecutedVia ||
+         outCommand->debugEnabled ||
          outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP)) {
         zr_cli_write_error(errorBuffer,
                            errorBufferSize,
-                           "--execution-mode, --require-aot-path, and --emit-executed-via require an active run path");
+                           "--execution-mode, --require-aot-path, --emit-executed-via, and --debug require an active run path");
         return ZR_FALSE;
     }
 

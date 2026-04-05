@@ -3,14 +3,20 @@
 /* descriptor.moduleName = main */
 /* descriptor.inputKind = 1 */
 /* descriptor.inputHash = 519d8fc4249f42aa */
-/* descriptor.embeddedModuleBlobLength = 2336 */
+/* descriptor.embeddedModuleBlobLength = 2807 */
 #include "zr_vm_common/zr_aot_abi.h"
+#include "zr_vm_core/call_info.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/debug.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_library/aot_runtime.h"
 
+#define ZR_AOT_C_FAIL() \
+    return ZrLibrary_AotRuntime_FailGeneratedFunction(state, &frame)
 #define ZR_AOT_C_GUARD(call_expr) \
     do { \
         if (!(call_expr)) { \
-            goto zr_aot_fail; \
+            ZR_AOT_C_FAIL(); \
         } \
     } while (0)
 
@@ -24,8 +30,8 @@ static const TZrChar *const zr_aot_runtime_contracts[] = {
 
 static const TZrByte zr_aot_embedded_module_blob[] = {
     0x01, 0x5a, 0x52, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x08, 0x08, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
+    0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x08, 0x08, 0x08, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x73, 0x69, 0x6d, 0x70, 0x6c, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -163,61 +169,100 @@ static const TZrByte zr_aot_embedded_module_blob[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x73, 0x65, 0x65, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x62, 0x69, 0x6e, 0x61, 0x72, 0x79, 0x53, 0x65, 0x65, 0x64, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6d, 0x65, 0x72, 0x67, 0x65, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x63, 0x6f, 0x6e, 0x73, 
-    0x6f, 0x6c, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 
-    0x72, 0x69, 0x6e, 0x74, 0x4c, 0x69, 0x6e, 0x65, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x65, 
+    0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x62, 0x69, 0x6e, 
+    0x61, 0x72, 0x79, 0x53, 0x65, 0x65, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x6d, 0x65, 0x72, 0x67, 0x65, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x63, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 0x72, 0x69, 0x6e, 0x74, 
+    0x4c, 0x69, 0x6e, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x90, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x90, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 
+    0x04, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x02, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 
-    0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 
-    0x0c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 
-    0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    0x00, 0x00, 0x00, 0x00, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x2e, 0x2f, 0x74, 0x65, 0x73, 0x74, 0x73, 0x2f, 0x66, 0x69, 0x78, 0x74, 
+    0x75, 0x72, 0x65, 0x73, 0x2f, 0x70, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 
+    0x73, 0x2f, 0x61, 0x6f, 0x74, 0x5f, 0x6d, 0x6f, 0x64, 0x75, 0x6c, 0x65, 
+    0x5f, 0x67, 0x72, 0x61, 0x70, 0x68, 0x5f, 0x70, 0x69, 0x70, 0x65, 0x6c, 
+    0x69, 0x6e, 0x65, 0x2f, 0x73, 0x72, 0x63, 0x2f, 0x6d, 0x61, 0x69, 0x6e, 
+    0x2e, 0x7a, 0x72, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2f, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0b, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
 static TZrInt64 zr_aot_fn_0(struct SZrState *state);
@@ -229,91 +274,263 @@ static const FZrAotEntryThunk zr_aot_function_thunks[] = {
 static TZrInt64 zr_aot_fn_0(struct SZrState *state) {
     ZrAotGeneratedFrame frame;
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame));
+    TZrUInt32 zr_aot_next_instruction = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;
+    goto zr_aot_fn_0_ins_0;
+zr_aot_fn_0_dispatch:
+    switch (zr_aot_next_instruction) {
+        case 0: goto zr_aot_fn_0_ins_0;
+        case 1: goto zr_aot_fn_0_ins_1;
+        case 2: goto zr_aot_fn_0_ins_2;
+        case 3: goto zr_aot_fn_0_ins_3;
+        case 4: goto zr_aot_fn_0_ins_4;
+        case 5: goto zr_aot_fn_0_ins_5;
+        case 6: goto zr_aot_fn_0_ins_6;
+        case 7: goto zr_aot_fn_0_ins_7;
+        case 8: goto zr_aot_fn_0_ins_8;
+        case 9: goto zr_aot_fn_0_ins_9;
+        case 10: goto zr_aot_fn_0_ins_10;
+        case 11: goto zr_aot_fn_0_ins_11;
+        case 12: goto zr_aot_fn_0_ins_12;
+        case 13: goto zr_aot_fn_0_ins_13;
+        case 14: goto zr_aot_fn_0_ins_14;
+        case 15: goto zr_aot_fn_0_ins_15;
+        case 16: goto zr_aot_fn_0_ins_16;
+        case 17: goto zr_aot_fn_0_ins_17;
+        case 18: goto zr_aot_fn_0_ins_18;
+        case 19: goto zr_aot_fn_0_ins_19;
+        case 20: goto zr_aot_fn_0_ins_20;
+        case 21: goto zr_aot_fn_0_ins_21;
+        case 22: goto zr_aot_fn_0_ins_22;
+        case 23: goto zr_aot_fn_0_ins_23;
+        case 24: goto zr_aot_fn_0_ins_24;
+        case 25: goto zr_aot_fn_0_ins_25;
+        case 26: goto zr_aot_fn_0_ins_26;
+        case 27: goto zr_aot_fn_0_ins_27;
+        case 28: goto zr_aot_fn_0_ins_28;
+        case 29: goto zr_aot_fn_0_ins_29;
+        case 30: goto zr_aot_fn_0_ins_30;
+        case 31: goto zr_aot_fn_0_ins_31;
+        case 32: goto zr_aot_fn_0_ins_32;
+        case 33: goto zr_aot_fn_0_ins_33;
+        case 34: goto zr_aot_fn_0_ins_34;
+        case 35: goto zr_aot_fn_0_ins_35;
+        case 36: goto zr_aot_fn_0_ins_36;
+        case 37: goto zr_aot_fn_0_ins_37;
+        case 38: goto zr_aot_fn_0_ins_38;
+        case 39: goto zr_aot_fn_0_ins_39;
+        case 40: goto zr_aot_fn_0_ins_40;
+        case 41: goto zr_aot_fn_0_ins_41;
+        case 42: goto zr_aot_fn_0_ins_42;
+        case 43: goto zr_aot_fn_0_ins_43;
+        case 44: goto zr_aot_fn_0_ins_44;
+        case 45: goto zr_aot_fn_0_ins_45;
+        case 46: goto zr_aot_fn_0_ins_46;
+        default: return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, 0, zr_aot_next_instruction, 0);
+    }
 zr_aot_fn_0_ins_0:
     /* opcode=2 extra=0 op1a=0 op1b=0 op2=0 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 0, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 0),
                       &frame.function->constantValueList[0]);
 zr_aot_fn_0_ins_1:
     /* opcode=2 extra=1 op1a=1 op1b=0 op2=1 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 1, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 1),
                       &frame.function->constantValueList[1]);
 zr_aot_fn_0_ins_2:
     /* opcode=73 extra=0 op1a=0 op1b=1 op2=65536 */
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 0, 0, 1));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 2, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW | ZR_AOT_GENERATED_STEP_FLAG_CALL));
+    {
+        ZrAotGeneratedDirectCall zr_aot_direct_call;
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareDirectCall(state,
+                                                            &frame,
+                                                            0,
+                                                            0,
+                                                            1,
+                                                            &zr_aot_direct_call));
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
+                                                               &frame,
+                                                               &zr_aot_direct_call,
+                                                               0,
+                                                               0,
+                                                               1,
+                                                               1));
+    }
 zr_aot_fn_0_ins_3:
     /* opcode=2 extra=1 op1a=2 op1b=0 op2=2 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 1),
-                      &frame.function->constantValueList[2]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 3, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 1);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_4:
     /* opcode=2 extra=1 op1a=3 op1b=0 op2=3 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 4, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 1),
                       &frame.function->constantValueList[3]);
 zr_aot_fn_0_ins_5:
     /* opcode=2 extra=2 op1a=4 op1b=0 op2=4 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 5, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 2),
                       &frame.function->constantValueList[4]);
 zr_aot_fn_0_ins_6:
     /* opcode=73 extra=1 op1a=1 op1b=1 op2=65537 */
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 1, 1, 1));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 6, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW | ZR_AOT_GENERATED_STEP_FLAG_CALL));
+    {
+        ZrAotGeneratedDirectCall zr_aot_direct_call;
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareDirectCall(state,
+                                                            &frame,
+                                                            1,
+                                                            1,
+                                                            1,
+                                                            &zr_aot_direct_call));
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
+                                                               &frame,
+                                                               &zr_aot_direct_call,
+                                                               1,
+                                                               1,
+                                                               1,
+                                                               1));
+    }
 zr_aot_fn_0_ins_7:
     /* opcode=2 extra=2 op1a=2 op1b=0 op2=2 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 2),
-                      &frame.function->constantValueList[2]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 7, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 2);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_8:
     /* opcode=2 extra=2 op1a=5 op1b=0 op2=5 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 8, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 2),
                       &frame.function->constantValueList[5]);
 zr_aot_fn_0_ins_9:
     /* opcode=2 extra=3 op1a=6 op1b=0 op2=6 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 9, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 3),
                       &frame.function->constantValueList[6]);
 zr_aot_fn_0_ins_10:
     /* opcode=73 extra=2 op1a=2 op1b=1 op2=65538 */
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 2, 2, 1));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 10, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW | ZR_AOT_GENERATED_STEP_FLAG_CALL));
+    {
+        ZrAotGeneratedDirectCall zr_aot_direct_call;
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareDirectCall(state,
+                                                            &frame,
+                                                            2,
+                                                            2,
+                                                            1,
+                                                            &zr_aot_direct_call));
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
+                                                               &frame,
+                                                               &zr_aot_direct_call,
+                                                               2,
+                                                               2,
+                                                               1,
+                                                               1));
+    }
 zr_aot_fn_0_ins_11:
     /* opcode=2 extra=3 op1a=2 op1b=0 op2=2 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 3),
-                      &frame.function->constantValueList[2]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 11, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 3);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_12:
     /* opcode=2 extra=3 op1a=7 op1b=0 op2=7 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 12, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 3),
                       &frame.function->constantValueList[7]);
 zr_aot_fn_0_ins_13:
     /* opcode=2 extra=4 op1a=8 op1b=0 op2=8 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 13, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 4),
                       &frame.function->constantValueList[8]);
 zr_aot_fn_0_ins_14:
     /* opcode=73 extra=3 op1a=3 op1b=1 op2=65539 */
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 3, 3, 1));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 14, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW | ZR_AOT_GENERATED_STEP_FLAG_CALL));
+    {
+        ZrAotGeneratedDirectCall zr_aot_direct_call;
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareDirectCall(state,
+                                                            &frame,
+                                                            3,
+                                                            3,
+                                                            1,
+                                                            &zr_aot_direct_call));
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
+                                                               &frame,
+                                                               &zr_aot_direct_call,
+                                                               3,
+                                                               3,
+                                                               1,
+                                                               1));
+    }
 zr_aot_fn_0_ins_15:
     /* opcode=2 extra=4 op1a=2 op1b=0 op2=2 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 4),
-                      &frame.function->constantValueList[2]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 15, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 4);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_16:
     /* opcode=0 extra=4 op1a=1 op1b=0 op2=1 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 16, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 4),
                       ZrCore_Stack_GetValue(frame.slotBase + 1));
 zr_aot_fn_0_ins_17:
     /* opcode=8 extra=4 op1a=4 op1b=0 op2=4 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 17, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 4, 4, 0));
 zr_aot_fn_0_ins_18:
     /* opcode=104 extra=4 op1a=4 op1b=0 op2=4 */
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 4, 4, 0));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 18, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW | ZR_AOT_GENERATED_STEP_FLAG_CALL));
+    {
+        ZrAotGeneratedDirectCall zr_aot_direct_call;
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareDirectCall(state,
+                                                            &frame,
+                                                            4,
+                                                            4,
+                                                            0,
+                                                            &zr_aot_direct_call));
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
+                                                               &frame,
+                                                               &zr_aot_direct_call,
+                                                               4,
+                                                               4,
+                                                               0,
+                                                               1));
+    }
 zr_aot_fn_0_ins_19:
     /* opcode=16 extra=5 op1a=4 op1b=0 op2=4 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 19, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     {
         SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 5);
         const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + 4);
@@ -340,17 +557,36 @@ zr_aot_fn_0_ins_19:
     }
 zr_aot_fn_0_ins_20:
     /* opcode=0 extra=6 op1a=3 op1b=0 op2=3 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 20, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 6),
                       ZrCore_Stack_GetValue(frame.slotBase + 3));
 zr_aot_fn_0_ins_21:
     /* opcode=8 extra=6 op1a=6 op1b=1 op2=65542 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 21, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 6, 6, 1));
 zr_aot_fn_0_ins_22:
     /* opcode=104 extra=6 op1a=6 op1b=0 op2=6 */
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 6, 6, 0));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 22, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW | ZR_AOT_GENERATED_STEP_FLAG_CALL));
+    {
+        ZrAotGeneratedDirectCall zr_aot_direct_call;
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareDirectCall(state,
+                                                            &frame,
+                                                            6,
+                                                            6,
+                                                            0,
+                                                            &zr_aot_direct_call));
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
+                                                               &frame,
+                                                               &zr_aot_direct_call,
+                                                               6,
+                                                               6,
+                                                               0,
+                                                               1));
+    }
 zr_aot_fn_0_ins_23:
     /* opcode=16 extra=7 op1a=6 op1b=0 op2=6 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 23, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     {
         SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 7);
         const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + 6);
@@ -377,106 +613,210 @@ zr_aot_fn_0_ins_23:
     }
 zr_aot_fn_0_ins_24:
     /* opcode=0 extra=8 op1a=2 op1b=0 op2=2 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 24, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 8),
                       ZrCore_Stack_GetValue(frame.slotBase + 2));
 zr_aot_fn_0_ins_25:
     /* opcode=8 extra=8 op1a=8 op1b=2 op2=131080 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 25, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 8, 8, 2));
 zr_aot_fn_0_ins_26:
     /* opcode=0 extra=9 op1a=5 op1b=0 op2=5 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 26, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 9),
                       ZrCore_Stack_GetValue(frame.slotBase + 5));
 zr_aot_fn_0_ins_27:
     /* opcode=0 extra=10 op1a=7 op1b=0 op2=7 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 27, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 10),
                       ZrCore_Stack_GetValue(frame.slotBase + 7));
 zr_aot_fn_0_ins_28:
     /* opcode=73 extra=8 op1a=8 op1b=2 op2=131080 */
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 8, 8, 2));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 28, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW | ZR_AOT_GENERATED_STEP_FLAG_CALL));
+    {
+        ZrAotGeneratedDirectCall zr_aot_direct_call;
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareDirectCall(state,
+                                                            &frame,
+                                                            8,
+                                                            8,
+                                                            2,
+                                                            &zr_aot_direct_call));
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
+                                                               &frame,
+                                                               &zr_aot_direct_call,
+                                                               8,
+                                                               8,
+                                                               2,
+                                                               1));
+    }
 zr_aot_fn_0_ins_29:
     /* opcode=2 extra=9 op1a=2 op1b=0 op2=2 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 9),
-                      &frame.function->constantValueList[2]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 29, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 9);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_30:
     /* opcode=2 extra=10 op1a=2 op1b=0 op2=2 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 10),
-                      &frame.function->constantValueList[2]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 30, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 10);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_31:
     /* opcode=0 extra=9 op1a=0 op1b=0 op2=0 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 31, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 9),
                       ZrCore_Stack_GetValue(frame.slotBase + 0));
 zr_aot_fn_0_ins_32:
     /* opcode=8 extra=9 op1a=9 op1b=3 op2=196617 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 32, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 3));
 zr_aot_fn_0_ins_33:
     /* opcode=8 extra=9 op1a=9 op1b=4 op2=262153 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 33, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 4));
 zr_aot_fn_0_ins_34:
     /* opcode=2 extra=10 op1a=9 op1b=0 op2=9 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 34, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 10),
                       &frame.function->constantValueList[9]);
 zr_aot_fn_0_ins_35:
     /* opcode=73 extra=9 op1a=9 op1b=1 op2=65545 */
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 9, 9, 1));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 35, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW | ZR_AOT_GENERATED_STEP_FLAG_CALL));
+    {
+        ZrAotGeneratedDirectCall zr_aot_direct_call;
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareDirectCall(state,
+                                                            &frame,
+                                                            9,
+                                                            9,
+                                                            1,
+                                                            &zr_aot_direct_call));
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
+                                                               &frame,
+                                                               &zr_aot_direct_call,
+                                                               9,
+                                                               9,
+                                                               1,
+                                                               1));
+    }
 zr_aot_fn_0_ins_36:
     /* opcode=2 extra=10 op1a=2 op1b=0 op2=2 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 10),
-                      &frame.function->constantValueList[2]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 36, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 10);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_37:
     /* opcode=2 extra=9 op1a=2 op1b=0 op2=2 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 9),
-                      &frame.function->constantValueList[2]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 37, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 9);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_38:
     /* opcode=0 extra=9 op1a=0 op1b=0 op2=0 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 38, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 9),
                       ZrCore_Stack_GetValue(frame.slotBase + 0));
 zr_aot_fn_0_ins_39:
     /* opcode=8 extra=9 op1a=9 op1b=3 op2=196617 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 39, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 3));
 zr_aot_fn_0_ins_40:
     /* opcode=8 extra=9 op1a=9 op1b=4 op2=262153 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 40, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, 9, 9, 4));
 zr_aot_fn_0_ins_41:
     /* opcode=0 extra=10 op1a=8 op1b=0 op2=8 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 41, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 10),
                       ZrCore_Stack_GetValue(frame.slotBase + 8));
 zr_aot_fn_0_ins_42:
     /* opcode=73 extra=9 op1a=9 op1b=1 op2=65545 */
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, 9, 9, 1));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 42, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW | ZR_AOT_GENERATED_STEP_FLAG_CALL));
+    {
+        ZrAotGeneratedDirectCall zr_aot_direct_call;
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareDirectCall(state,
+                                                            &frame,
+                                                            9,
+                                                            9,
+                                                            1,
+                                                            &zr_aot_direct_call));
+        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
+                                                               &frame,
+                                                               &zr_aot_direct_call,
+                                                               9,
+                                                               9,
+                                                               1,
+                                                               1));
+    }
 zr_aot_fn_0_ins_43:
     /* opcode=2 extra=10 op1a=2 op1b=0 op2=2 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 10),
-                      &frame.function->constantValueList[2]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 43, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 10);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_44:
     /* opcode=2 extra=9 op1a=2 op1b=0 op2=2 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 9),
-                      &frame.function->constantValueList[2]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 44, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 9);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_45:
     /* opcode=0 extra=9 op1a=8 op1b=0 op2=8 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 45, ZR_AOT_GENERATED_STEP_FLAG_NONE));
     ZrCore_Value_Copy(state,
                       ZrCore_Stack_GetValue(frame.slotBase + 9),
                       ZrCore_Stack_GetValue(frame.slotBase + 8));
 zr_aot_fn_0_ins_46:
     /* opcode=75 extra=1 op1a=9 op1b=0 op2=9 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 46, ZR_AOT_GENERATED_STEP_FLAG_RETURN));
     {
-        SZrCallInfo *zr_aot_call_info = state->callInfoList;
+        SZrCallInfo *zr_aot_call_info = frame.callInfo;
         TZrStackValuePointer zr_aot_result_slot = frame.slotBase + 9;
         if (zr_aot_call_info == ZR_NULL || zr_aot_call_info->functionBase.valuePointer == ZR_NULL ||
             zr_aot_result_slot == ZR_NULL) {
-            goto zr_aot_fail;
+            ZR_AOT_C_FAIL();
         }
         ZrCore_Value_Copy(state,
                           ZrCore_Stack_GetValue(zr_aot_call_info->functionBase.valuePointer),
@@ -485,8 +825,6 @@ zr_aot_fn_0_ins_46:
         return 1;
     }
     return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, 0, 47, 0);
-zr_aot_fail:
-    return 0;
 }
 
 static const ZrAotCompiledModule zr_aot_module = {
@@ -497,7 +835,7 @@ static const ZrAotCompiledModule zr_aot_module = {
     "519d8fc4249f42aa",
     zr_aot_runtime_contracts,
     zr_aot_embedded_module_blob,
-    2336,
+    2807,
     zr_aot_function_thunks,
     1,
     zr_aot_fn_0,

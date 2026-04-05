@@ -15,6 +15,9 @@
 #include <stdio.h>
 #include <string.h>
 
+typedef struct SZrLspResolvedMetadataMember SZrLspResolvedMetadataMember;
+typedef struct SZrLspProjectIndex SZrLspProjectIndex;
+
 TZrSize ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(const TZrChar *content,
                                                            TZrSize contentLength,
                                                            TZrInt32 line,
@@ -38,18 +41,19 @@ SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
                                                               SZrSymbol *symbol,
                                                               const TZrChar *content,
                                                               TZrSize contentLength);
-SZrString *ZrLanguageServer_Lsp_ParseResolvedTypeFromHoverMarkdown(SZrState *state,
-                                                                   SZrString *hoverMarkdown);
-SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *state,
-                                                                    SZrSemanticAnalyzer *analyzer,
-                                                                    SZrAstNode *ast,
-                                                                    const TZrChar *content,
-                                                                    TZrSize contentLength,
-                                                                    TZrSize cursorOffset);
+TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
+                                                            SZrLspProjectIndex *projectIndex,
+                                                            SZrSemanticAnalyzer *analyzer,
+                                                            SZrAstNode *ast,
+                                                            const TZrChar *content,
+                                                            TZrSize contentLength,
+                                                            TZrSize cursorOffset,
+                                                            SZrLspResolvedMetadataMember *outResolved);
 void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag);
 SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformation(SZrState *state,
                                                                       SZrSymbol *symbol);
 TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
+                                                           SZrLspProjectIndex *projectIndex,
                                                            SZrSemanticAnalyzer *analyzer,
                                                            SZrAstNode *ast,
                                                            const TZrChar *content,
@@ -86,6 +90,25 @@ typedef struct SZrLspProjectIndex {
     SZrArray files; // SZrLspProjectFileRecord*
 } SZrLspProjectIndex;
 
+typedef enum EZrLspImportedModuleSourceKind {
+    ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED = 0,
+    ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE = 1,
+    ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER = 2,
+    ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA = 3,
+    ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN = 4,
+    ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN = 5
+} EZrLspImportedModuleSourceKind;
+
+typedef struct SZrLspExternalMetadataDeclaration {
+    SZrLspProjectIndex *projectIndex;
+    SZrString *moduleName;
+    SZrString *memberName;
+    TZrInt32 sourceKind;
+    SZrString *declarationUri;
+    SZrFileRange declarationRange;
+    TZrBool hasDeclaration;
+} SZrLspExternalMetadataDeclaration;
+
 SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri);
@@ -116,11 +139,6 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetDefinition(SZrState *state,
                                                      SZrString *uri,
                                                      SZrLspPosition position,
                                                      SZrArray *result);
-TZrBool ZrLanguageServer_Lsp_TryGetImportTargetDefinition(SZrState *state,
-                                                          SZrLspContext *context,
-                                                          SZrString *uri,
-                                                          SZrLspPosition position,
-                                                          SZrArray *result);
 TZrBool ZrLanguageServer_Lsp_ProjectTryFindReferences(SZrState *state,
                                                       SZrLspContext *context,
                                                       SZrString *uri,
@@ -132,6 +150,24 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetDocumentHighlights(SZrState *state,
                                                              SZrString *uri,
                                                              SZrLspPosition position,
                                                              SZrArray *result);
+TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(SZrState *state,
+                                                                       SZrLspContext *context,
+                                                                       SZrString *uri,
+                                                                       SZrLspPosition position,
+                                                                       SZrLspExternalMetadataDeclaration *outResolved);
+TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationReferences(
+    SZrState *state,
+    SZrLspContext *context,
+    const SZrLspExternalMetadataDeclaration *resolved,
+    SZrString *queryUri,
+    TZrBool includeDeclaration,
+    SZrArray *result);
+TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationHighlights(
+    SZrState *state,
+    SZrLspContext *context,
+    const SZrLspExternalMetadataDeclaration *resolved,
+    SZrString *queryUri,
+    SZrArray *result);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_ProjectContainsUri(SZrState *state,
                                                                        SZrLspContext *context,
                                                                        SZrString *uri);
@@ -139,24 +175,6 @@ TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrString *query,
                                                            SZrArray *result);
-TZrBool ZrLanguageServer_Lsp_ProjectTryGetHover(SZrState *state,
-                                                SZrLspContext *context,
-                                                SZrString *uri,
-                                                SZrLspPosition position,
-                                                SZrLspHover **result);
-TZrBool ZrLanguageServer_Lsp_TryGetImportTargetHover(SZrState *state,
-                                                     SZrLspContext *context,
-                                                     SZrString *uri,
-                                                     SZrLspPosition position,
-                                                     SZrLspHover **result);
-TZrBool ZrLanguageServer_Lsp_ProjectTryCollectImportCompletions(SZrState *state,
-                                                                SZrLspContext *context,
-                                                                SZrString *uri,
-                                                                const TZrChar *content,
-                                                                TZrSize contentLength,
-                                                                TZrSize cursorOffset,
-                                                                SZrFileRange cursorRange,
-                                                                SZrArray *result);
 TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDefinition(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,

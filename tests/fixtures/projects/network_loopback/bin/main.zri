@@ -1,0 +1,314 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 39
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 59
+
+CONSTANTS (16):
+  [0] native closure
+  [1] string: "zr.network"
+  [2] null
+  [3] string: "127.0.0.1"
+  [4] int: 0
+  [5] int: 3000
+  [6] string: "ping"
+  [7] string: "pong"
+  [8] string: "echo"
+  [9] int: 16
+  [10] int: 4
+  [11] string: "NETWORK_LOOPBACK_FAIL write"
+  [12] string: "NETWORK_LOOPBACK_FAIL tcp"
+  [13] string: "NETWORK_LOOPBACK_FAIL udp"
+  [14] string: "NETWORK_LOOPBACK_PASS "
+  [15] string: " "
+
+LOCAL_VARIABLES (16):
+  [0] network: offset_activate=4, offset_dead=163
+  [1] tcp: offset_activate=6, offset_dead=163
+  [2] udp: offset_activate=8, offset_dead=163
+  [3] listener: offset_activate=15, offset_dead=163
+  [4] client: offset_activate=24, offset_dead=163
+  [5] server: offset_activate=29, offset_dead=163
+  [6] ping: offset_activate=30, offset_dead=163
+  [7] pong: offset_activate=31, offset_dead=163
+  [8] echo: offset_activate=32, offset_dead=163
+  [9] wrotePing: offset_activate=37, offset_dead=163
+  [10] readPing: offset_activate=44, offset_dead=163
+  [11] wrotePong: offset_activate=49, offset_dead=163
+  [12] readPong: offset_activate=56, offset_dead=163
+  [13] socket: offset_activate=63, offset_dead=163
+  [14] sentEcho: offset_activate=74, offset_dead=163
+  [15] packet: offset_activate=81, offset_dead=163
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (16):
+    [0] network: zr.network
+    [1] tcp: object
+    [2] udp: object
+    [3] listener: object
+    [4] client: object
+    [5] server: object
+    [6] ping: string
+    [7] pong: string
+    [8] echo: string
+    [9] wrotePing: object
+    [10] readPing: object
+    [11] wrotePong: object
+    [12] readPong: object
+    [13] socket: object
+    [14] sentEcho: object
+    [15] packet: object
+  EXPORTED_SYMBOLS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (3):
+  [0] object
+  [1] zr.network
+  [2] string
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (16):
+  [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
+  [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
+  [2] DYNAMIC_RUNTIME inst=2 from=0 to=0
+  [3] DYNAMIC_RUNTIME inst=3 from=0 to=0
+  [4] DYNAMIC_RUNTIME inst=4 from=0 to=0
+  [5] DYNAMIC_RUNTIME inst=5 from=0 to=0
+  [6] DYNAMIC_RUNTIME inst=6 from=0 to=0
+  [7] DYNAMIC_RUNTIME inst=7 from=0 to=0
+  [8] DYNAMIC_RUNTIME inst=8 from=0 to=0
+  [9] DYNAMIC_RUNTIME inst=9 from=0 to=0
+  [10] DYNAMIC_RUNTIME inst=10 from=0 to=0
+  [11] DYNAMIC_RUNTIME inst=11 from=0 to=0
+  [12] DYNAMIC_RUNTIME inst=12 from=0 to=0
+  [13] DYNAMIC_RUNTIME inst=13 from=0 to=0
+  [14] DYNAMIC_RUNTIME inst=14 from=0 to=0
+  [15] DYNAMIC_RUNTIME inst=15 from=0 to=0
+
+BLOCK_GRAPH (1):
+  [0] block=0 first=0 count=16
+
+SEMIR (16):
+  [0] DYN_CALL exec=12 type=0 effect=0 dst=3 op0=3 op1=2 deopt=1
+  [1] DYN_CALL exec=20 type=2 effect=1 dst=6 op0=6 op1=0 deopt=2
+  [2] DYN_CALL exec=21 type=0 effect=2 dst=4 op0=4 op1=2 deopt=3
+  [3] DYN_CALL exec=27 type=0 effect=3 dst=5 op0=5 op1=1 deopt=4
+  [4] DYN_CALL exec=35 type=0 effect=4 dst=9 op0=9 op1=1 deopt=5
+  [5] DYN_CALL exec=41 type=0 effect=5 dst=10 op0=10 op1=2 deopt=6
+  [6] DYN_CALL exec=47 type=0 effect=6 dst=11 op0=11 op1=1 deopt=7
+  [7] DYN_CALL exec=53 type=0 effect=7 dst=12 op0=12 op1=2 deopt=8
+  [8] DYN_CALL exec=60 type=0 effect=8 dst=13 op0=13 op1=2 deopt=9
+  [9] DYN_CALL exec=68 type=0 effect=9 dst=16 op0=16 op1=0 deopt=10
+  [10] DYN_CALL exec=70 type=0 effect=10 dst=14 op0=14 op1=3 deopt=11
+  [11] DYN_CALL exec=78 type=0 effect=11 dst=15 op0=15 op1=2 deopt=12
+  [12] DYN_CALL exec=83 type=0 effect=12 dst=16 op0=16 op1=0 deopt=13
+  [13] DYN_CALL exec=87 type=0 effect=13 dst=16 op0=16 op1=0 deopt=14
+  [14] DYN_CALL exec=91 type=0 effect=14 dst=16 op0=16 op1=0 deopt=15
+  [15] DYN_CALL exec=95 type=0 effect=15 dst=16 op0=16 op1=0 deopt=16
+
+DEOPT_MAP (16):
+  [0] deopt=1 exec=12
+  [1] deopt=2 exec=20
+  [2] deopt=3 exec=21
+  [3] deopt=4 exec=27
+  [4] deopt=5 exec=35
+  [5] deopt=6 exec=41
+  [6] deopt=7 exec=47
+  [7] deopt=8 exec=53
+  [8] deopt=9 exec=60
+  [9] deopt=10 exec=68
+  [10] deopt=11 exec=70
+  [11] deopt=12 exec=78
+  [12] deopt=13 exec=83
+  [13] deopt=14 exec=87
+  [14] deopt=15 exec=91
+  [15] deopt=16 exec=95
+
+CALLSITE_CACHE_TABLE (10):
+  [0] kind=DYN_CALL inst=12 member=4294967295 deopt=1 args=2 hits=0 misses=0
+  [1] kind=DYN_CALL inst=21 member=4294967295 deopt=3 args=2 hits=0 misses=0
+  [2] kind=DYN_CALL inst=27 member=4294967295 deopt=4 args=1 hits=0 misses=0
+  [3] kind=DYN_CALL inst=35 member=4294967295 deopt=5 args=1 hits=0 misses=0
+  [4] kind=DYN_CALL inst=41 member=4294967295 deopt=6 args=2 hits=0 misses=0
+  [5] kind=DYN_CALL inst=47 member=4294967295 deopt=7 args=1 hits=0 misses=0
+  [6] kind=DYN_CALL inst=53 member=4294967295 deopt=8 args=2 hits=0 misses=0
+  [7] kind=DYN_CALL inst=60 member=4294967295 deopt=9 args=2 hits=0 misses=0
+  [8] kind=DYN_CALL inst=70 member=4294967295 deopt=11 args=3 hits=0 misses=0
+  [9] kind=DYN_CALL inst=78 member=4294967295 deopt=12 args=2 hits=0 misses=0
+
+EH_TABLE (0):
+
+INSTRUCTIONS (163):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=1)
+  [2] FUNCTION_CALL (extra=0, operand1=0, operand2=1)
+  [3] GET_CONSTANT (extra=1, operand=2)
+  [4] GET_STACK (extra=1, operand=0)
+  [5] GET_MEMBER (extra=1, operand1=1, operand2=0)
+  [6] GET_STACK (extra=2, operand=0)
+  [7] GET_MEMBER (extra=2, operand1=2, operand2=1)
+  [8] GET_STACK (extra=3, operand=1)
+  [9] GET_MEMBER (extra=3, operand1=3, operand2=2)
+  [10] GET_CONSTANT (extra=4, operand=3)
+  [11] GET_CONSTANT (extra=5, operand=4)
+  [12] SUPER_DYN_CALL_CACHED (extra=3, operand1=3, operand2=0)
+  [13] GET_CONSTANT (extra=4, operand=2)
+  [14] GET_CONSTANT (extra=5, operand=2)
+  [15] GET_STACK (extra=4, operand=1)
+  [16] GET_MEMBER (extra=4, operand1=4, operand2=3)
+  [17] GET_CONSTANT (extra=5, operand=3)
+  [18] GET_STACK (extra=6, operand=3)
+  [19] GET_MEMBER (extra=6, operand1=6, operand2=4)
+  [20] SUPER_DYN_CALL_NO_ARGS (extra=6, operand1=6, operand2=0)
+  [21] SUPER_DYN_CALL_CACHED (extra=4, operand1=4, operand2=1)
+  [22] GET_CONSTANT (extra=5, operand=2)
+  [23] GET_CONSTANT (extra=6, operand=2)
+  [24] GET_STACK (extra=5, operand=3)
+  [25] GET_MEMBER (extra=5, operand1=5, operand2=5)
+  [26] GET_CONSTANT (extra=6, operand=5)
+  [27] SUPER_DYN_CALL_CACHED (extra=5, operand1=5, operand2=2)
+  [28] GET_CONSTANT (extra=6, operand=2)
+  [29] GET_CONSTANT (extra=6, operand=6)
+  [30] GET_CONSTANT (extra=7, operand=7)
+  [31] GET_CONSTANT (extra=8, operand=8)
+  [32] GET_STACK (extra=9, operand=4)
+  [33] GET_MEMBER (extra=9, operand1=9, operand2=6)
+  [34] GET_STACK (extra=10, operand=6)
+  [35] SUPER_DYN_CALL_CACHED (extra=9, operand1=9, operand2=3)
+  [36] GET_CONSTANT (extra=10, operand=2)
+  [37] GET_STACK (extra=10, operand=5)
+  [38] GET_MEMBER (extra=10, operand1=10, operand2=7)
+  [39] GET_CONSTANT (extra=11, operand=9)
+  [40] GET_CONSTANT (extra=12, operand=5)
+  [41] SUPER_DYN_CALL_CACHED (extra=10, operand1=10, operand2=4)
+  [42] GET_CONSTANT (extra=11, operand=2)
+  [43] GET_CONSTANT (extra=12, operand=2)
+  [44] GET_STACK (extra=11, operand=5)
+  [45] GET_MEMBER (extra=11, operand1=11, operand2=6)
+  [46] GET_STACK (extra=12, operand=7)
+  [47] SUPER_DYN_CALL_CACHED (extra=11, operand1=11, operand2=5)
+  [48] GET_CONSTANT (extra=12, operand=2)
+  [49] GET_STACK (extra=12, operand=4)
+  [50] GET_MEMBER (extra=12, operand1=12, operand2=7)
+  [51] GET_CONSTANT (extra=13, operand=9)
+  [52] GET_CONSTANT (extra=14, operand=5)
+  [53] SUPER_DYN_CALL_CACHED (extra=12, operand1=12, operand2=6)
+  [54] GET_CONSTANT (extra=13, operand=2)
+  [55] GET_CONSTANT (extra=14, operand=2)
+  [56] GET_STACK (extra=13, operand=2)
+  [57] GET_MEMBER (extra=13, operand1=13, operand2=8)
+  [58] GET_CONSTANT (extra=14, operand=3)
+  [59] GET_CONSTANT (extra=15, operand=4)
+  [60] SUPER_DYN_CALL_CACHED (extra=13, operand1=13, operand2=7)
+  [61] GET_CONSTANT (extra=14, operand=2)
+  [62] GET_CONSTANT (extra=15, operand=2)
+  [63] GET_STACK (extra=14, operand=13)
+  [64] GET_MEMBER (extra=14, operand1=14, operand2=9)
+  [65] GET_CONSTANT (extra=15, operand=3)
+  [66] GET_STACK (extra=16, operand=13)
+  [67] GET_MEMBER (extra=16, operand1=16, operand2=4)
+  [68] SUPER_DYN_CALL_NO_ARGS (extra=16, operand1=16, operand2=0)
+  [69] GET_STACK (extra=17, operand=8)
+  [70] SUPER_DYN_CALL_CACHED (extra=14, operand1=14, operand2=8)
+  [71] GET_CONSTANT (extra=15, operand=2)
+  [72] GET_CONSTANT (extra=16, operand=2)
+  [73] GET_CONSTANT (extra=17, operand=2)
+  [74] GET_STACK (extra=15, operand=13)
+  [75] GET_MEMBER (extra=15, operand1=15, operand2=10)
+  [76] GET_CONSTANT (extra=16, operand=9)
+  [77] GET_CONSTANT (extra=17, operand=5)
+  [78] SUPER_DYN_CALL_CACHED (extra=15, operand1=15, operand2=9)
+  [79] GET_CONSTANT (extra=16, operand=2)
+  [80] GET_CONSTANT (extra=17, operand=2)
+  [81] GET_STACK (extra=16, operand=5)
+  [82] GET_MEMBER (extra=16, operand1=16, operand2=11)
+  [83] SUPER_DYN_CALL_NO_ARGS (extra=16, operand1=16, operand2=0)
+  [84] GET_CONSTANT (extra=16, operand=2)
+  [85] GET_STACK (extra=16, operand=4)
+  [86] GET_MEMBER (extra=16, operand1=16, operand2=11)
+  [87] SUPER_DYN_CALL_NO_ARGS (extra=16, operand1=16, operand2=0)
+  [88] GET_CONSTANT (extra=16, operand=2)
+  [89] GET_STACK (extra=16, operand=3)
+  [90] GET_MEMBER (extra=16, operand1=16, operand2=11)
+  [91] SUPER_DYN_CALL_NO_ARGS (extra=16, operand1=16, operand2=0)
+  [92] GET_CONSTANT (extra=16, operand=2)
+  [93] GET_STACK (extra=16, operand=13)
+  [94] GET_MEMBER (extra=16, operand1=16, operand2=11)
+  [95] SUPER_DYN_CALL_NO_ARGS (extra=16, operand1=16, operand2=0)
+  [96] GET_CONSTANT (extra=16, operand=2)
+  [97] GET_STACK (extra=16, operand=9)
+  [98] GET_CONSTANT (extra=17, operand=10)
+  [99] LOGICAL_NOT_EQUAL (extra=18, operand1=16, operand2=17)
+  [100] SET_STACK (extra=19, operand=18)
+  [101] JUMP_IF (extra=18, operand=4)
+  [102] GET_STACK (extra=20, operand=11)
+  [103] GET_CONSTANT (extra=21, operand=10)
+  [104] LOGICAL_NOT_EQUAL (extra=22, operand1=20, operand2=21)
+  [105] SET_STACK (extra=19, operand=22)
+  [106] SET_STACK (extra=23, operand=22)
+  [107] JUMP_IF (extra=22, operand=4)
+  [108] GET_STACK (extra=24, operand=14)
+  [109] GET_CONSTANT (extra=25, operand=10)
+  [110] LOGICAL_NOT_EQUAL (extra=26, operand1=24, operand2=25)
+  [111] SET_STACK (extra=23, operand=26)
+  [112] JUMP_IF (extra=26, operand=3)
+  [113] GET_CONSTANT (extra=27, operand=11)
+  [114] FUNCTION_RETURN (extra=1, operand1=27, operand2=0)
+  [115] JUMP (extra=0, operand=0)
+  [116] GET_STACK (extra=28, operand=10)
+  [117] GET_STACK (extra=29, operand=6)
+  [118] LOGICAL_NOT_EQUAL (extra=30, operand1=28, operand2=29)
+  [119] SET_STACK (extra=31, operand=30)
+  [120] JUMP_IF (extra=30, operand=4)
+  [121] GET_STACK (extra=32, operand=12)
+  [122] GET_STACK (extra=33, operand=7)
+  [123] LOGICAL_NOT_EQUAL (extra=34, operand1=32, operand2=33)
+  [124] SET_STACK (extra=31, operand=34)
+  [125] JUMP_IF (extra=34, operand=3)
+  [126] GET_CONSTANT (extra=35, operand=12)
+  [127] FUNCTION_RETURN (extra=1, operand1=35, operand2=0)
+  [128] JUMP (extra=0, operand=0)
+  [129] GET_STACK (extra=36, operand=15)
+  [130] GET_CONSTANT (extra=37, operand=2)
+  [131] LOGICAL_EQUAL (extra=38, operand1=36, operand2=37)
+  [132] SET_STACK (extra=39, operand=38)
+  [133] JUMP_IF (extra=38, operand=5)
+  [134] GET_STACK (extra=40, operand=15)
+  [135] GET_MEMBER (extra=40, operand1=40, operand2=12)
+  [136] GET_STACK (extra=41, operand=8)
+  [137] LOGICAL_NOT_EQUAL (extra=42, operand1=40, operand2=41)
+  [138] SET_STACK (extra=39, operand=42)
+  [139] SET_STACK (extra=43, operand=42)
+  [140] JUMP_IF (extra=42, operand=5)
+  [141] GET_STACK (extra=44, operand=15)
+  [142] GET_MEMBER (extra=44, operand1=44, operand2=13)
+  [143] GET_CONSTANT (extra=45, operand=10)
+  [144] LOGICAL_NOT_EQUAL (extra=46, operand1=44, operand2=45)
+  [145] SET_STACK (extra=43, operand=46)
+  [146] JUMP_IF (extra=46, operand=3)
+  [147] GET_CONSTANT (extra=47, operand=13)
+  [148] FUNCTION_RETURN (extra=1, operand1=47, operand2=0)
+  [149] JUMP (extra=0, operand=0)
+  [150] GET_CONSTANT (extra=48, operand=14)
+  [151] GET_STACK (extra=49, operand=10)
+  [152] ADD_STRING (extra=50, operand1=48, operand2=49)
+  [153] GET_CONSTANT (extra=51, operand=15)
+  [154] ADD_STRING (extra=52, operand1=50, operand2=51)
+  [155] GET_STACK (extra=53, operand=12)
+  [156] ADD_INT (extra=54, operand1=52, operand2=53)
+  [157] GET_CONSTANT (extra=55, operand=15)
+  [158] ADD_STRING (extra=56, operand1=54, operand2=55)
+  [159] GET_STACK (extra=57, operand=15)
+  [160] GET_MEMBER (extra=57, operand1=57, operand2=12)
+  [161] ADD (extra=58, operand1=56, operand2=57)
+  [162] FUNCTION_RETURN (extra=1, operand1=58, operand2=0)
+

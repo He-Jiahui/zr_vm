@@ -1,6 +1,7 @@
 #include "zr_vm_cli/project.h"
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,11 +15,13 @@
 #endif
 
 #include "zr_vm_core/string.h"
+#include "zr_vm_common/zr_runtime_sentinel_conf.h"
 #include "zr_vm_lib_ffi/module.h"
 #include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_math/module.h"
+#include "zr_vm_lib_network/module.h"
 #include "zr_vm_lib_system/module.h"
-#include "zr_vm_task/module.h"
+#include "zr_vm_core/task_runtime.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
@@ -27,16 +30,22 @@
 #define ZR_CLI_MANIFEST_FORMAT_VERSION 2U
 
 static TZrPtr zr_cli_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
+    TZrBool canReleasePointer;
+
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
+    canReleasePointer = pointer != ZR_NULL &&
+                        (uintptr_t)pointer >= (uintptr_t)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND;
 
     if (newSize == 0) {
-        free(pointer);
+        if (canReleasePointer) {
+            free(pointer);
+        }
         return ZR_NULL;
     }
 
-    if (pointer == ZR_NULL) {
+    if (pointer == ZR_NULL || !canReleasePointer) {
         return malloc(newSize);
     }
 
@@ -251,8 +260,12 @@ TZrBool ZrCli_Project_RegisterStandardModules(SZrGlobalState *global) {
     }
 
     ZrParser_ToGlobalState_Register(global->mainThreadState);
-    return ZrVmLibMath_Register(global) && ZrVmLibSystem_Register(global) &&
-           ZrVmLibContainer_Register(global) && ZrVmLibFfi_Register(global) && ZrVmTask_Register(global);
+    return ZrVmLibMath_Register(global) &&
+           ZrVmLibSystem_Register(global) &&
+           ZrVmLibNetwork_Register(global) &&
+           ZrVmLibContainer_Register(global) &&
+           ZrVmLibFfi_Register(global) &&
+           ZrCore_TaskRuntime_RegisterBuiltins(global);
 }
 
 TZrBool ZrCli_ProjectContext_FromGlobal(SZrCliProjectContext *context,

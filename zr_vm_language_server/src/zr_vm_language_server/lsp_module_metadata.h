@@ -7,15 +7,6 @@
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_parser/compiler.h"
 
-typedef enum EZrLspImportedModuleSourceKind {
-    ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED = 0,
-    ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE = 1,
-    ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER = 2,
-    ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA = 3,
-    ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN = 4,
-    ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN = 5
-} EZrLspImportedModuleSourceKind;
-
 typedef struct SZrLspResolvedImportedModule {
     SZrString *moduleName;
     SZrLspProjectIndex *projectIndex;
@@ -24,19 +15,6 @@ typedef struct SZrLspResolvedImportedModule {
     const SZrTypePrototypeInfo *modulePrototype;
     EZrLspImportedModuleSourceKind sourceKind;
 } SZrLspResolvedImportedModule;
-
-typedef struct SZrLspIntermediateExportSymbol {
-    SZrString *name;
-    SZrString *typeName;
-    TZrBool isCallable;
-    TZrInt32 declarationLine;
-    TZrInt32 declarationStartColumn;
-    TZrInt32 declarationEndColumn;
-} SZrLspIntermediateExportSymbol;
-
-typedef struct SZrLspIntermediateModuleMetadata {
-    SZrArray exportedSymbols;
-} SZrLspIntermediateModuleMetadata;
 
 const SZrTypePrototypeInfo *ZrLanguageServer_LspModuleMetadata_FindTypePrototype(SZrSemanticAnalyzer *analyzer,
                                                                                  const TZrChar *typeName);
@@ -61,27 +39,20 @@ TZrBool ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(SZrState *stat
                                                                   SZrLspProjectIndex *projectIndex,
                                                                   SZrString *moduleName,
                                                                   SZrIoSource **outSource);
-TZrBool ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleFunction(SZrState *state,
-                                                                          SZrLspProjectIndex *projectIndex,
-                                                                          SZrString *moduleName,
-                                                                          SZrFunction **outFunction);
-TZrBool ZrLanguageServer_LspModuleMetadata_LoadIntermediateModuleMetadata(SZrState *state,
-                                                                          SZrLspProjectIndex *projectIndex,
-                                                                          SZrString *moduleName,
-                                                                          SZrLspIntermediateModuleMetadata *outMetadata);
 TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(SZrState *state,
                                                                   SZrLspProjectIndex *projectIndex,
                                                                   SZrString *moduleName,
                                                                   SZrString **outUri);
+TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryExportDeclaration(SZrState *state,
+                                                                          SZrLspProjectIndex *projectIndex,
+                                                                          SZrString *moduleName,
+                                                                          SZrString *memberName,
+                                                                          SZrString **outUri,
+                                                                          SZrFileRange *outRange);
 TZrBool ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(SZrState *state,
                                                                   SZrLspProjectIndex *projectIndex,
                                                                   SZrString *moduleName,
                                                                   SZrString **outUri);
-const SZrLspIntermediateExportSymbol *ZrLanguageServer_LspModuleMetadata_FindIntermediateExportSymbol(
-    const SZrLspIntermediateModuleMetadata *metadata,
-    SZrString *symbolName);
-void ZrLanguageServer_LspModuleMetadata_FreeIntermediateModuleMetadata(SZrState *state,
-                                                                       SZrLspIntermediateModuleMetadata *metadata);
 const TZrChar *ZrLanguageServer_LspModuleMetadata_SourceKindLabel(EZrLspImportedModuleSourceKind sourceKind);
 
 #endif

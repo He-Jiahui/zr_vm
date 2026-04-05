@@ -1440,6 +1440,72 @@ static TZrBool signature_build_specialized_type_name(SZrCompilerState *compilerS
     return *outTypeName != ZR_NULL;
 }
 
+static TZrBool signature_build_specialized_type_name_from_ast_type(SZrCompilerState *compilerState,
+                                                                   SZrType *sourceType,
+                                                                   const SZrArray *genericParameters,
+                                                                   const SZrArray *bindingTypes,
+                                                                   SZrString **outTypeName) {
+    SZrInferredType unresolvedType;
+    SZrInferredType resolvedType;
+    TZrChar buffer[ZR_LSP_TEXT_BUFFER_LENGTH];
+    const TZrChar *displayText;
+
+    if (outTypeName != ZR_NULL) {
+        *outTypeName = ZR_NULL;
+    }
+
+    if (compilerState == ZR_NULL || sourceType == ZR_NULL || genericParameters == ZR_NULL ||
+        bindingTypes == ZR_NULL || outTypeName == ZR_NULL) {
+        return sourceType == ZR_NULL;
+    }
+
+    ZrParser_InferredType_Init(compilerState->state, &unresolvedType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(compilerState->state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_AstTypeToInferredType_Convert(compilerState, sourceType, &unresolvedType) ||
+        !signature_substitute_receiver_generic_type(compilerState->state,
+                                                    genericParameters,
+                                                    bindingTypes,
+                                                    &unresolvedType,
+                                                    &resolvedType)) {
+        ZrParser_InferredType_Free(compilerState->state, &unresolvedType);
+        ZrParser_InferredType_Free(compilerState->state, &resolvedType);
+        return ZR_FALSE;
+    }
+
+    displayText = ZrParser_TypeNameString_Get(compilerState->state, &resolvedType, buffer, sizeof(buffer));
+    if (displayText != ZR_NULL && displayText[0] != '\0') {
+        *outTypeName =
+            ZrCore_String_Create(compilerState->state, (TZrNativeString)displayText, strlen(displayText));
+    }
+
+    ZrParser_InferredType_Free(compilerState->state, &unresolvedType);
+    ZrParser_InferredType_Free(compilerState->state, &resolvedType);
+    return *outTypeName != ZR_NULL;
+}
+
+static SZrType *signature_method_return_type_node(SZrAstNode *declarationNode) {
+    if (declarationNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (declarationNode->type) {
+        case ZR_AST_CLASS_METHOD:
+            return declarationNode->data.classMethod.returnType;
+
+        case ZR_AST_STRUCT_METHOD:
+            return declarationNode->data.structMethod.returnType;
+
+        case ZR_AST_CLASS_META_FUNCTION:
+            return declarationNode->data.classMetaFunction.returnType;
+
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return declarationNode->data.structMetaFunction.returnType;
+
+        default:
+            return ZR_NULL;
+    }
+}
+
 static SZrTypeMemberInfo *signature_find_member_recursive(SZrCompilerState *compilerState,
                                                           SZrTypePrototypeInfo *prototype,
                                                           SZrString *memberName,
@@ -1493,6 +1559,7 @@ static TZrBool signature_prepare_specialized_receiver_member(SZrState *state,
     SZrArray argumentTypeNames;
     SZrArray bindingTypes;
     SZrTypePrototypeInfo *openPrototype = ZR_NULL;
+    TZrBool hasGenericReceiver = ZR_FALSE;
     TZrBool success = ZR_FALSE;
 
     if (resolvedMemberInfo != ZR_NULL) {
@@ -1504,18 +1571,25 @@ static TZrBool signature_prepare_specialized_receiver_member(SZrState *state,
         return ZR_FALSE;
     }
 
-    ensure_generic_instance_type_prototype(compilerState, receiverType->typeName);
-    closedPrototype = find_compiler_type_prototype_inference(compilerState, receiverType->typeName);
-    memberInfo = signature_find_member_recursive(compilerState, closedPrototype, memberName, 0);
-    if (memberInfo != ZR_NULL) {
-        *resolvedMemberInfo = memberInfo;
-        return ZR_TRUE;
-    }
-
     ZrCore_Array_Construct(&argumentTypeNames);
     ZrCore_Array_Construct(&bindingTypes);
-    if (!try_parse_generic_instance_type_name(state, receiverType->typeName, &baseName, &argumentTypeNames) ||
-        baseName == ZR_NULL) {
+    hasGenericReceiver =
+        try_parse_generic_instance_type_name(state, receiverType->typeName, &baseName, &argumentTypeNames) &&
+        baseName != ZR_NULL;
+    if (!hasGenericReceiver) {
+        ensure_generic_instance_type_prototype(compilerState, receiverType->typeName);
+        closedPrototype = find_compiler_type_prototype_inference(compilerState, receiverType->typeName);
+        memberInfo = signature_find_member_recursive(compilerState, closedPrototype, memberName, 0);
+        if (memberInfo != ZR_NULL) {
+            if (argumentTypeNames.isValid && argumentTypeNames.head != ZR_NULL) {
+                ZrCore_Array_Free(state, &argumentTypeNames);
+            }
+            *resolvedMemberInfo = memberInfo;
+            return ZR_TRUE;
+        }
+        if (argumentTypeNames.isValid && argumentTypeNames.head != ZR_NULL) {
+            ZrCore_Array_Free(state, &argumentTypeNames);
+        }
         return ZR_FALSE;
     }
 
@@ -1569,12 +1643,24 @@ static TZrBool signature_prepare_specialized_receiver_member(SZrState *state,
         }
     }
 
-    if (!signature_build_specialized_type_name(compilerState,
-                                               memberInfo->returnTypeName,
-                                               &openPrototype->genericParameters,
-                                               &bindingTypes,
-                                               &temporaryMemberInfo->returnTypeName)) {
-        goto cleanup;
+    if (memberInfo->returnTypeName != ZR_NULL) {
+        SZrType *returnTypeNode = signature_method_return_type_node(memberInfo->declarationNode);
+
+        if (returnTypeNode != ZR_NULL) {
+            if (!signature_build_specialized_type_name_from_ast_type(compilerState,
+                                                                     returnTypeNode,
+                                                                     &openPrototype->genericParameters,
+                                                                     &bindingTypes,
+                                                                     &temporaryMemberInfo->returnTypeName)) {
+                goto cleanup;
+            }
+        } else if (!signature_build_specialized_type_name(compilerState,
+                                                          memberInfo->returnTypeName,
+                                                          &openPrototype->genericParameters,
+                                                          &bindingTypes,
+                                                          &temporaryMemberInfo->returnTypeName)) {
+            goto cleanup;
+        }
     }
 
     *resolvedMemberInfo = temporaryMemberInfo;
@@ -3015,25 +3101,34 @@ static TZrBool signature_resolve_method_help(SZrState *state,
     ZrCore_Array_Construct(&resolvedSignature.parameterTypes);
     ZrCore_Array_Construct(&resolvedSignature.parameterPassingModes);
 
-    if ((resolve_generic_member_call_signature_detailed(compilerState,
-                                                        memberInfo,
-                                                        &context->callNode->data.functionCall,
-                                                        &resolvedSignature,
-                                                        ZR_NULL,
-                                                        0) != ZR_GENERIC_CALL_RESOLVE_OK &&
-         !signature_resolve_member_call_signature_locally(state,
-                                                          analyzer,
-                                                          compilerState,
-                                                          memberInfo,
-                                                          &context->callNode->data.functionCall,
-                                                          context->callNode->location.start.offset,
-                                                          &resolvedSignature)) ||
-        !signature_build_label_from_method(state, memberInfo, &resolvedSignature, labelBuffer, sizeof(labelBuffer))) {
-        free_resolved_call_signature(state, &resolvedSignature);
-        signature_free_temporary_member_info(state, &temporaryMemberInfo);
-        ZrParser_InferredType_Free(state, &receiverType);
-        ZrCore_Memory_RawFree(state->global, tempNode, sizeof(SZrAstNode));
-        return ZR_FALSE;
+    {
+        EZrGenericCallResolveStatus genericStatus =
+            resolve_generic_member_call_signature_detailed(compilerState,
+                                                           memberInfo,
+                                                           &context->callNode->data.functionCall,
+                                                           &resolvedSignature,
+                                                           ZR_NULL,
+                                                           0);
+        TZrBool localResolved = ZR_FALSE;
+
+        if (genericStatus != ZR_GENERIC_CALL_RESOLVE_OK) {
+            localResolved = signature_resolve_member_call_signature_locally(state,
+                                                                            analyzer,
+                                                                            compilerState,
+                                                                            memberInfo,
+                                                                            &context->callNode->data.functionCall,
+                                                                            context->callNode->location.start.offset,
+                                                                            &resolvedSignature);
+        }
+
+        if ((genericStatus != ZR_GENERIC_CALL_RESOLVE_OK && !localResolved) ||
+            !signature_build_label_from_method(state, memberInfo, &resolvedSignature, labelBuffer, sizeof(labelBuffer))) {
+            free_resolved_call_signature(state, &resolvedSignature);
+            signature_free_temporary_member_info(state, &temporaryMemberInfo);
+            ZrParser_InferredType_Free(state, &receiverType);
+            ZrCore_Memory_RawFree(state->global, tempNode, sizeof(SZrAstNode));
+            return ZR_FALSE;
+        }
     }
 
     if (!signature_populate_help_from_label(state,

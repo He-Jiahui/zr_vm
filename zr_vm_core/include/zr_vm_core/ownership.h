@@ -13,6 +13,8 @@ struct SZrRawObject;
 
 struct ZR_STRUCT_ALIGN SZrOwnershipWeakRef {
     SZrTypeValue *slot;
+    TZrMemoryOffset stackSlotOffset;
+    TZrBool usesStackSlotOffset;
     struct SZrOwnershipControl *control;
     struct SZrOwnershipWeakRef *next;
 };

@@ -5,6 +5,7 @@
 #include "zr_vm_parser/writer.h"
 
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
@@ -105,7 +106,25 @@ static void writer_intermediate_format_type_ref(const SZrFunctionTypedTypeRef *t
     snprintf(buffer, bufferSize, "%s", baseName);
 }
 
+static void writer_intermediate_write_metadata_parameter_default_value(FILE *file,
+                                                                      SZrState *state,
+                                                                      const SZrFunctionMetadataParameter *parameter) {
+    SZrTypeValue defaultValueCopy;
+    SZrString *debugString;
+    TZrNativeString nativeDebugString;
+
+    if (file == ZR_NULL || state == ZR_NULL || parameter == ZR_NULL || !parameter->hasDefaultValue) {
+        return;
+    }
+
+    defaultValueCopy = parameter->defaultValue;
+    debugString = ZrCore_Value_ToDebugString(state, &defaultValueCopy);
+    nativeDebugString = debugString != ZR_NULL ? ZrCore_String_GetNativeString(debugString) : ZR_NULL;
+    fprintf(file, " = %s", nativeDebugString != ZR_NULL ? nativeDebugString : "<default>");
+}
+
 static void writer_intermediate_write_metadata_parameters(FILE *file,
+                                                          SZrState *state,
                                                           const SZrFunctionMetadataParameter *parameters,
                                                           TZrUInt32 parameterCount) {
     if (file == ZR_NULL) {
@@ -127,6 +146,7 @@ static void writer_intermediate_write_metadata_parameters(FILE *file,
         } else {
             fprintf(file, "%s", typeBuffer);
         }
+        writer_intermediate_write_metadata_parameter_default_value(file, state, parameter);
     }
 }
 
@@ -189,7 +209,27 @@ static void writer_intermediate_write_type_metadata(FILE *file,
 
         writer_intermediate_format_type_ref(&info->type, typeBuffer, sizeof(typeBuffer));
         writer_intermediate_write_indent(file, indentLevel);
-        fprintf(file, "    var %s: %s\n", name != ZR_NULL ? name : "<unnamed>", typeBuffer);
+        fprintf(file, "    var %s: %s", name != ZR_NULL ? name : "<unnamed>", typeBuffer);
+        if (info->pathBindingCount > 0) {
+            fprintf(file, " [bindings:");
+            for (TZrUInt32 bindingIndex = 0; bindingIndex < info->pathBindingCount; bindingIndex++) {
+                SZrFunctionCompileTimePathBinding *binding = &info->pathBindings[bindingIndex];
+                TZrNativeString path = binding->path != ZR_NULL ? ZrCore_String_GetNativeString(binding->path) : "";
+                TZrNativeString targetName =
+                        binding->targetName != ZR_NULL ? ZrCore_String_GetNativeString(binding->targetName) : "<unnamed>";
+                const TZrChar *targetKind =
+                        binding->targetKind == ZR_COMPILE_TIME_BINDING_TARGET_DECORATOR_CLASS ? "class" : "fn";
+
+                fprintf(file,
+                        "%s%s->%s:%s",
+                        bindingIndex == 0 ? " " : ", ",
+                        path != ZR_NULL ? path : "",
+                        targetKind,
+                        targetName != ZR_NULL ? targetName : "<unnamed>");
+            }
+            fprintf(file, "]");
+        }
+        fprintf(file, "\n");
     }
 
     writer_intermediate_write_indent(file, indentLevel);
@@ -202,7 +242,7 @@ static void writer_intermediate_write_type_metadata(FILE *file,
         writer_intermediate_format_type_ref(&info->returnType, returnTypeBuffer, sizeof(returnTypeBuffer));
         writer_intermediate_write_indent(file, indentLevel);
         fprintf(file, "    fn %s(", name != ZR_NULL ? name : "<unnamed>");
-        writer_intermediate_write_metadata_parameters(file, info->parameters, info->parameterCount);
+        writer_intermediate_write_metadata_parameters(file, state, info->parameters, info->parameterCount);
         fprintf(file, "): %s\n", returnTypeBuffer);
     }
 
@@ -214,7 +254,7 @@ static void writer_intermediate_write_type_metadata(FILE *file,
 
         writer_intermediate_write_indent(file, indentLevel);
         fprintf(file, "    test %s(", name != ZR_NULL ? name : "<unnamed>");
-        writer_intermediate_write_metadata_parameters(file, info->parameters, info->parameterCount);
+        writer_intermediate_write_metadata_parameters(file, state, info->parameters, info->parameterCount);
         if (info->hasVariableArguments) {
             if (info->parameterCount > 0) {
                 fprintf(file, ", ");

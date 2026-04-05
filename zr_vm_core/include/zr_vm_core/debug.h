@@ -88,8 +88,19 @@ typedef struct SZrDebugInfo SZrDebugInfo;
 
 typedef void (*FZrDebugHook)(struct SZrState *state, SZrDebugInfo *debugInfo);
 
+typedef TZrDebugSignal (*FZrDebugTraceObserver)(struct SZrState *state,
+                                                struct SZrFunction *function,
+                                                const TZrInstruction *programCounter,
+                                                TZrUInt32 instructionOffset,
+                                                TZrUInt32 sourceLine,
+                                                TZrPtr userData);
+
 
 ZR_CORE_API TZrBool ZrCore_DebugInfo_Get(struct SZrState *state, EZrDebugInfoType type, SZrDebugInfo *debugInfo);
+
+ZR_CORE_API void ZrCore_Debug_SetTraceObserver(struct SZrState *state,
+                                               FZrDebugTraceObserver observer,
+                                               TZrPtr userData);
 
 ZR_CORE_API ZR_NO_RETURN void ZrCore_Debug_CallError(struct SZrState *state, struct SZrTypeValue *value);
 

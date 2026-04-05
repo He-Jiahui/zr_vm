@@ -1,0 +1,6 @@
+{
+  "name": "decorator_compile_time_parameter_import",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

@@ -157,6 +157,8 @@ ZR_FORCE_INLINE SZrMeta *ZrCore_Object_GetMetaRecursively(struct SZrGlobalState 
 
 ZR_CORE_API void ZrCore_Object_Init(struct SZrState *state, SZrObject *object);
 
+ZR_CORE_API SZrObject *ZrCore_Object_CloneStruct(struct SZrState *state, const SZrObject *source);
+
 // this function do not call Meta function to compare, only compare address, we use this for hash set to make key
 // different
 ZR_CORE_API TZrBool ZrCore_Object_CompareWithAddress(struct SZrState *state, SZrObject *object1, SZrObject *object2);

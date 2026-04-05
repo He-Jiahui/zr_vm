@@ -606,6 +606,88 @@ void ZrCore_Object_Init(struct SZrState *state, SZrObject *object) {
     ZrCore_HashSet_Init(state, &object->nodeMap, ZR_OBJECT_TABLE_INITIAL_SIZE_LOG2);
 }
 
+SZrObject *ZrCore_Object_CloneStruct(struct SZrState *state, const SZrObject *source) {
+    TZrStackValuePointer savedStackTop;
+    TZrStackValuePointer scratchBase;
+    SZrCallInfo *savedCallInfo;
+    SZrFunctionStackAnchor savedStackTopAnchor;
+    SZrFunctionStackAnchor scratchBaseAnchor;
+    SZrFunctionStackAnchor callInfoBaseAnchor;
+    SZrFunctionStackAnchor callInfoTopAnchor;
+    TZrBool hasCallInfoAnchors = ZR_FALSE;
+    SZrObject *clone = ZR_NULL;
+
+    if (state == ZR_NULL || source == ZR_NULL || source->internalType != ZR_OBJECT_INTERNAL_TYPE_STRUCT) {
+        return ZR_NULL;
+    }
+
+    savedStackTop = state->stackTop.valuePointer;
+    savedCallInfo = state->callInfoList;
+    scratchBase = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
+
+    ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
+    ZrCore_Function_StackAnchorInit(state, scratchBase, &scratchBaseAnchor);
+    if (savedCallInfo != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &callInfoBaseAnchor);
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &callInfoTopAnchor);
+        hasCallInfoAnchors = ZR_TRUE;
+    }
+
+    scratchBase = ZrCore_Function_ReserveScratchSlots(state, 2, scratchBase);
+    savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+    scratchBase = ZrCore_Function_StackAnchorRestore(state, &scratchBaseAnchor);
+    if (hasCallInfoAnchors) {
+        savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+        scratchBase = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
+    }
+    if (scratchBase == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Stack_SetRawObjectValue(state, scratchBase, ZR_CAST_RAW_OBJECT_AS_SUPER((SZrObject *)source));
+    state->stackTop.valuePointer = scratchBase + 1;
+    if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+        savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
+
+    clone = ZrCore_Object_New(state, source->prototype);
+    if (clone == ZR_NULL) {
+        goto cleanup;
+    }
+
+    ZrCore_Stack_SetRawObjectValue(state, scratchBase + 1, ZR_CAST_RAW_OBJECT_AS_SUPER(clone));
+    state->stackTop.valuePointer = scratchBase + 2;
+    if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+        savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
+
+    ZrCore_Object_Init(state, clone);
+    clone->internalType = ZR_OBJECT_INTERNAL_TYPE_STRUCT;
+    clone->memberVersion = source->memberVersion;
+
+    if (object_node_map_is_ready(source)) {
+        for (TZrSize bucketIndex = 0; bucketIndex < source->nodeMap.capacity; bucketIndex++) {
+            for (SZrHashKeyValuePair *pair = source->nodeMap.buckets[bucketIndex]; pair != ZR_NULL; pair = pair->next) {
+                ZrCore_Object_SetValue(state, clone, &pair->key, &pair->value);
+                if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                    clone = ZR_NULL;
+                    goto cleanup;
+                }
+            }
+        }
+    }
+
+cleanup:
+    state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+    if (hasCallInfoAnchors) {
+        savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+    }
+    state->callInfoList = savedCallInfo;
+    return clone;
+}
+
 TZrBool ZrCore_Object_CompareWithAddress(struct SZrState *state, SZrObject *object1, SZrObject *object2) {
     ZR_UNUSED_PARAMETER(state);
     return object1 == object2;

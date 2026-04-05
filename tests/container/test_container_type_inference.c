@@ -171,6 +171,52 @@ static void test_container_type_inference_fixed_arrays_satisfy_arraylike_and_ite
     TEST_DIVIDER();
 }
 
+static void test_container_type_inference_fixed_array_assigns_to_unsized_array_annotation(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Type Inference - Fixed Array Assigns To Unsized Array Annotation";
+    SZrState *state;
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+    const char *source =
+            "var xs: int[] = [1, 2, 3];\n"
+            "xs[1];\n";
+    SZrInferredType result;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+    cs = ZrContainerTests_CreateCompilerState(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    ast = parse_test_ast(state, "container_fixed_array_unsized_assignment_type_test.zr", source);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    cs->scriptAst = ast;
+    cs->currentFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+    ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[0]);
+    TEST_ASSERT_FALSE(cs->hasError);
+
+    ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs,
+                                                   ast->data.script.statements->nodes[1]->data.expressionStatement.expr,
+                                                   &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+    ZrParser_InferredType_Free(state, &result);
+
+    ZrCore_Function_Free(state, cs->currentFunction);
+    cs->currentFunction = ZR_NULL;
+    ZrParser_Ast_Free(state, ast);
+    ZrContainerTests_DestroyCompilerState(cs);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 static void test_container_type_inference_native_generic_constraints_accept_pair_and_reject_plain_source_type(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Native Generic Constraints Accept Pair And Reject Plain Source Type";
@@ -534,6 +580,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_container_type_inference_fixed_array_length_identity_and_mismatch);
     RUN_TEST(test_container_type_inference_fixed_arrays_satisfy_arraylike_and_iterable_constraints);
+    RUN_TEST(test_container_type_inference_fixed_array_assigns_to_unsized_array_annotation);
     RUN_TEST(test_container_type_inference_native_generic_constraints_accept_pair_and_reject_plain_source_type);
     RUN_TEST(test_container_type_inference_computed_access_and_native_method_signatures_flow_types);
     RUN_TEST(test_container_type_inference_typed_function_returns_preserve_native_container_method_types);

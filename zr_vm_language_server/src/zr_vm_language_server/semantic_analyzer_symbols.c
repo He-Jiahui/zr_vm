@@ -487,6 +487,11 @@ static void promote_class_property_symbol_to_getter(SZrSymbol *symbol, SZrAstNod
     symbol->astNode = classMember;
 }
 
+static void register_variable_type_binding_in_env(SZrState *state,
+                                                  SZrTypeEnvironment *typeEnv,
+                                                  SZrString *name,
+                                                  SZrInferredType *typeInfo);
+
 static void collect_function_parameters(SZrState *state,
                                         SZrSemanticAnalyzer *analyzer,
                                         SZrAstNodeArray *params) {
@@ -527,19 +532,12 @@ static void collect_function_parameters(SZrState *state,
                                                                   typeInfo,
                                                                   ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
         ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
+        register_variable_type_binding_in_env(state,
+                                              analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv
+                                                                                 : ZR_NULL,
+                                              name,
+                                              typeInfo);
     }
-}
-
-static TZrBool current_scope_is_global(SZrSemanticAnalyzer *analyzer) {
-    SZrSymbolScope *currentScope;
-
-    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    currentScope = ZrLanguageServer_SymbolTable_GetCurrentScope(analyzer->symbolTable);
-    return currentScope == analyzer->symbolTable->globalScope ||
-           (currentScope != ZR_NULL && currentScope->parent == ZR_NULL);
 }
 
 static void register_variable_type_binding_in_env(SZrState *state,
@@ -551,6 +549,47 @@ static void register_variable_type_binding_in_env(SZrState *state,
     }
 
     ZrParser_TypeEnvironment_RegisterVariable(state, typeEnv, name, typeInfo);
+}
+
+static SZrTypeEnvironment *push_runtime_type_binding_scope(SZrState *state,
+                                                           SZrSemanticAnalyzer *analyzer) {
+    SZrTypeEnvironment *savedEnv;
+    SZrTypeEnvironment *newEnv;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    savedEnv = analyzer->compilerState->typeEnv;
+    newEnv = ZrParser_TypeEnvironment_New(state);
+    if (newEnv == ZR_NULL) {
+        return savedEnv;
+    }
+
+    newEnv->parent = savedEnv;
+    newEnv->semanticContext = savedEnv != ZR_NULL ? savedEnv->semanticContext : analyzer->compilerState->semanticContext;
+    analyzer->compilerState->typeEnv = newEnv;
+    return savedEnv;
+}
+
+static void pop_runtime_type_binding_scope(SZrState *state,
+                                           SZrSemanticAnalyzer *analyzer,
+                                           SZrTypeEnvironment *savedEnv) {
+    SZrTypeEnvironment *currentEnv;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL) {
+        return;
+    }
+
+    currentEnv = analyzer->compilerState->typeEnv;
+    if (currentEnv == savedEnv) {
+        return;
+    }
+
+    analyzer->compilerState->typeEnv = savedEnv;
+    if (currentEnv != ZR_NULL) {
+        ZrParser_TypeEnvironment_Free(state, currentEnv);
+    }
 }
 
 static SZrInferredType *create_named_object_type_info(SZrState *state,
@@ -713,6 +752,10 @@ static void register_implicit_runtime_symbol(SZrState *state,
                                                                   typeInfo,
                                                                   ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
     }
+    register_variable_type_binding_in_env(state,
+                                          analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv : ZR_NULL,
+                                          name,
+                                          typeInfo);
 }
 
 static void collect_single_parameter_symbol(SZrState *state,
@@ -745,6 +788,10 @@ static void collect_single_parameter_symbol(SZrState *state,
                                                                   ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
         ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
     }
+    register_variable_type_binding_in_env(state,
+                                          analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv : ZR_NULL,
+                                          name,
+                                          typeInfo);
 }
 
 static void collect_function_like_scope(SZrState *state,
@@ -758,10 +805,13 @@ static void collect_function_like_scope(SZrState *state,
                                         TZrBool isStructScope,
                                         SZrString *manualParamName,
                                         SZrType *manualParamType) {
+    SZrTypeEnvironment *savedTypeEnv;
+
     if (state == ZR_NULL || analyzer == ZR_NULL || scopeNode == ZR_NULL) {
         return;
     }
 
+    savedTypeEnv = push_runtime_type_binding_scope(state, analyzer);
     ZrLanguageServer_SymbolTable_EnterScope(state,
                                             analyzer->symbolTable,
                                             scopeNode->location,
@@ -797,6 +847,7 @@ static void collect_function_like_scope(SZrState *state,
     }
 
     ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
+    pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
 }
 
 static void collect_symbols_from_node_array(SZrState *state,
@@ -838,6 +889,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
         
         case ZR_AST_BLOCK: {
             SZrBlock *block = &node->data.block;
+            SZrTypeEnvironment *savedTypeEnv = push_runtime_type_binding_scope(state, analyzer);
             ZrLanguageServer_SymbolTable_EnterScope(state,
                                                     analyzer->symbolTable,
                                                     node->location,
@@ -852,6 +904,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                 }
             }
             ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
+            pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
             return;
         }
         
@@ -874,15 +927,12 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                           typeInfo,
                                           ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
                 ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
-
-                if (current_scope_is_global(analyzer)) {
-                    register_variable_type_binding_in_env(state,
-                                                          analyzer->compilerState != ZR_NULL
-                                                              ? analyzer->compilerState->typeEnv
-                                                              : ZR_NULL,
-                                                          name,
-                                                          typeInfo);
-                }
+                register_variable_type_binding_in_env(state,
+                                                      analyzer->compilerState != ZR_NULL
+                                                          ? analyzer->compilerState->typeEnv
+                                                          : ZR_NULL,
+                                                      name,
+                                                      typeInfo);
             }
             if (varDecl->value != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, varDecl->value);
@@ -918,15 +968,17 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                           ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
                 ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
 
-                ZrLanguageServer_SymbolTable_EnterScope(state,
-                                                        analyzer->symbolTable,
-                                                        node->location,
-                                                        ZR_TRUE,
-                                                        ZR_FALSE,
-                                                        ZR_FALSE);
-                collect_function_parameters(state, analyzer, funcDecl->params);
-                ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, funcDecl->body);
-                ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
+                collect_function_like_scope(state,
+                                            analyzer,
+                                            node,
+                                            funcDecl->params,
+                                            funcDecl->body,
+                                            ZR_NULL,
+                                            ZR_TRUE,
+                                            ZR_FALSE,
+                                            ZR_FALSE,
+                                            ZR_NULL,
+                                            ZR_NULL);
             }
             return;
         }
@@ -1020,7 +1072,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             if (compileTimeDecl->declarationType == ZR_COMPILE_TIME_STATEMENT &&
                 wrappedNode->type == ZR_AST_BLOCK &&
                 wrappedNode->data.block.body != ZR_NULL) {
-                collect_symbols_from_node_array(state, analyzer, wrappedNode->data.block.body);
+                ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, wrappedNode);
                 return;
             }
 

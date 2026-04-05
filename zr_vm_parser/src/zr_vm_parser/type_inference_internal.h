@@ -113,6 +113,11 @@ TZrBool infer_ffi_member_call_type(SZrCompilerState *cs,
                                    SZrFunctionCall *call,
                                    SZrInferredType *result,
                                    TZrBool *outHandled);
+TZrBool ffi_function_call_argument_is_native_boundary_compatible(SZrCompilerState *cs,
+                                                                 const SZrFunctionTypeInfo *funcType,
+                                                                 TZrSize parameterIndex,
+                                                                 const SZrInferredType *argType,
+                                                                 const SZrInferredType *paramType);
 TZrBool resolve_compile_time_array_size(SZrCompilerState *cs,
                                         const SZrType *astType,
                                         TZrSize *resolvedSize);

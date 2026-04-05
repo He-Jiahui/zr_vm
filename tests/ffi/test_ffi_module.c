@@ -236,6 +236,7 @@ static EZrThreadStatus execute_function_capture_status(SZrState *state,
 
     if (status == ZR_THREAD_STATUS_FINE && request.callCompleted && request.resultBase != ZR_NULL) {
         if (result != ZR_NULL) {
+            ZrCore_Value_ResetAsNull(result);
             ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(request.resultBase));
         }
         if (request.closure != ZR_NULL) {
@@ -538,6 +539,53 @@ static void test_zr_ffi_can_fill_buffer_via_symbol(void) {
     destroy_test_state(state);
     timer.endTime = clock();
     ZR_TEST_PASS(timer, "zr.ffi can fill buffer via symbol");
+    ZR_TEST_DIVIDER();
+}
+
+static void test_zr_ffi_can_lower_buffer_handle_directly_to_pointer_argument(void) {
+    static const TZrChar *kSourceTemplate =
+            "var ffi = %%import(\"zr.ffi\");\n"
+            "var lib = ffi.loadLibrary(\"%s\");\n"
+            "var fillBytes = lib.getSymbol(\"zr_ffi_fill_bytes\", {\n"
+            "  returnType: \"i32\",\n"
+            "  parameters: [\n"
+            "    { type: { kind: \"pointer\", to: \"u8\", direction: \"inout\" } },\n"
+            "    { type: \"u64\" },\n"
+            "    { type: \"u8\" }\n"
+            "  ]\n"
+            "});\n"
+            "var buffer = ffi.BufferHandle.allocate(8);\n"
+            "var written = fillBytes.call([buffer, 4, 10]);\n"
+            "return written + buffer.read(0, 4)[0];\n";
+    SZrTestTimer timer;
+    char source[4096];
+    char escapedPath[4096];
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue result;
+
+    ZR_TEST_START("zr.ffi can lower BufferHandle directly to pointer arguments");
+    timer.startTime = clock();
+
+    escape_for_zr_string_literal(escapedPath, sizeof(escapedPath), ZR_VM_FFI_FIXTURE_PATH);
+    snprintf(source, sizeof(source), kSourceTemplate, escapedPath);
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_source(state, source, "ffi_buffer_handle_pointer_lowering.zr");
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(result.type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(result.type));
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(result.type)) {
+        TEST_ASSERT_EQUAL_UINT64(14, result.value.nativeObject.nativeUInt64);
+    } else {
+        TEST_ASSERT_EQUAL_INT64(14, result.value.nativeObject.nativeInt64);
+    }
+
+    ZrCore_Function_Free(state, entryFunction);
+    destroy_test_state(state);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "zr.ffi can lower BufferHandle directly to pointer arguments");
     ZR_TEST_DIVIDER();
 }
 
@@ -1119,6 +1167,160 @@ static void test_zr_ffi_source_extern_delegate_works_with_callback(void) {
     ZR_TEST_DIVIDER();
 }
 
+static void test_zr_ffi_source_extern_pointer_parameter_accepts_buffer_handle(void) {
+    static const TZrChar *kSourceTemplate =
+            "%%extern(\"%s\") {\n"
+            "  #zr.ffi.entry(\"zr_ffi_fill_bytes\")# Fill(buffer: pointer<u8>, length:u64, seed:u8): i32;\n"
+            "}\n"
+            "var ffi = %%import(\"zr.ffi\");\n"
+            "var buffer = ffi.BufferHandle.allocate(8);\n"
+            "var written = Fill(buffer, 4, 10);\n"
+            "return written + buffer.read(0, 4)[0];\n";
+    SZrTestTimer timer;
+    char source[4096];
+    char escapedPath[4096];
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue result;
+
+    ZR_TEST_START("zr.ffi source extern pointer parameter accepts BufferHandle");
+    timer.startTime = clock();
+
+    escape_for_zr_string_literal(escapedPath, sizeof(escapedPath), ZR_VM_FFI_FIXTURE_PATH);
+    snprintf(source, sizeof(source), kSourceTemplate, escapedPath);
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_source(state, source, "ffi_source_extern_pointer_lowering.zr");
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(result.type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(result.type));
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(result.type)) {
+        TEST_ASSERT_EQUAL_UINT64(14, result.value.nativeObject.nativeUInt64);
+    } else {
+        TEST_ASSERT_EQUAL_INT64(14, result.value.nativeObject.nativeInt64);
+    }
+
+    ZrCore_Function_Free(state, entryFunction);
+    destroy_test_state(state);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "zr.ffi source extern pointer parameter accepts BufferHandle");
+    ZR_TEST_DIVIDER();
+}
+
+static void test_zr_ffi_wrapper_lowering_does_not_apply_to_ordinary_calls(void) {
+    static const TZrChar *kSourceTemplate =
+            "%%extern(\"%s\") {\n"
+            "  delegate Unary(value:f64): f64;\n"
+            "}\n"
+            "var ffi = %%import(\"zr.ffi\");\n"
+            "func ApplyLocal(cb: Unary): f64 {\n"
+            "  return 1.0;\n"
+            "}\n"
+            "var cb = ffi.callback(Unary, (value) => {\n"
+            "  return value * 2.0;\n"
+            "});\n"
+            "return ApplyLocal(cb);\n";
+    SZrTestTimer timer;
+    char source[4096];
+    char escapedPath[4096];
+    SZrState *state;
+    SZrFunction *entryFunction;
+
+    ZR_TEST_START("zr.ffi wrapper lowering does not apply to ordinary calls");
+    timer.startTime = clock();
+
+    escape_for_zr_string_literal(escapedPath, sizeof(escapedPath), ZR_VM_FFI_FIXTURE_PATH);
+    snprintf(source, sizeof(source), kSourceTemplate, escapedPath);
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_source(state, source, "ffi_wrapper_not_ordinary_call.zr");
+    TEST_ASSERT_NULL(entryFunction);
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "zr.ffi wrapper lowering does not apply to ordinary calls");
+    ZR_TEST_DIVIDER();
+}
+
+static void test_zr_ffi_source_extern_handle_id_parameter_accepts_source_wrapper(void) {
+    static const TZrChar *kSourceTemplate =
+            "%%extern(\"%s\") {\n"
+            "  #zr.ffi.entry(\"zr_ffi_flip_mode\")# Flip(mode:i32): i32;\n"
+            "}\n"
+            "#zr.ffi.lowering(\"handle_id\")#\n"
+            "#zr.ffi.underlying(\"i32\")#\n"
+            "class ModeHandle {\n"
+            "  var handleId:i32;\n"
+            "}\n"
+            "var mode = new ModeHandle();\n"
+            "mode.handleId = 1;\n"
+            "return Flip(mode);\n";
+    SZrTestTimer timer;
+    char source[4096];
+    char escapedPath[4096];
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue result;
+
+    ZR_TEST_START("zr.ffi source extern handle_id parameter accepts source wrapper");
+    timer.startTime = clock();
+
+    escape_for_zr_string_literal(escapedPath, sizeof(escapedPath), ZR_VM_FFI_FIXTURE_PATH);
+    snprintf(source, sizeof(source), kSourceTemplate, escapedPath);
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_source(state, source, "ffi_source_extern_handle_id_lowering.zr");
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(result.type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(result.type));
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(result.type)) {
+        TEST_ASSERT_EQUAL_UINT64(0, result.value.nativeObject.nativeUInt64);
+    } else {
+        TEST_ASSERT_EQUAL_INT64(0, result.value.nativeObject.nativeInt64);
+    }
+
+    ZrCore_Function_Free(state, entryFunction);
+    destroy_test_state(state);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "zr.ffi source extern handle_id parameter accepts source wrapper");
+    ZR_TEST_DIVIDER();
+}
+
+static void test_zr_ffi_handle_id_lowering_does_not_apply_to_ordinary_calls(void) {
+    static const TZrChar *kSourceTemplate =
+            "#zr.ffi.lowering(\"handle_id\")#\n"
+            "#zr.ffi.underlying(\"i32\")#\n"
+            "class ModeHandle {\n"
+            "  var handleId:i32;\n"
+            "}\n"
+            "func FlipLocal(mode:i32): i32 {\n"
+            "  return mode;\n"
+            "}\n"
+            "var mode = new ModeHandle();\n"
+            "mode.handleId = 1;\n"
+            "return FlipLocal(mode);\n";
+    SZrTestTimer timer;
+    SZrState *state;
+    SZrFunction *entryFunction;
+
+    ZR_TEST_START("zr.ffi handle_id lowering does not apply to ordinary calls");
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_source(state, kSourceTemplate, "ffi_handle_id_not_ordinary_call.zr");
+    TEST_ASSERT_NULL(entryFunction);
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "zr.ffi handle_id lowering does not apply to ordinary calls");
+    ZR_TEST_DIVIDER();
+}
+
 static void test_zr_ffi_source_extern_system_callconv_uses_platform_default(void) {
     static const TZrChar *kSourceTemplate =
             "%%extern(\"%s\") {\n"
@@ -1251,6 +1453,7 @@ int main(void) {
     test_zr_ffi_can_roundtrip_struct_symbols();
     test_zr_ffi_buffer_and_pointer_methods_work();
     test_zr_ffi_can_fill_buffer_via_symbol();
+    test_zr_ffi_can_lower_buffer_handle_directly_to_pointer_argument();
     test_zr_ffi_can_create_callback_handle();
     test_zr_ffi_can_call_callback_symbol();
     test_zr_ffi_can_roundtrip_structs_buffers_and_callbacks();
@@ -1264,6 +1467,10 @@ int main(void) {
     test_zr_ffi_foreign_thread_callback_reports_error();
     test_zr_ffi_source_extern_can_bind_and_call_symbol();
     test_zr_ffi_source_extern_delegate_works_with_callback();
+    test_zr_ffi_source_extern_pointer_parameter_accepts_buffer_handle();
+    test_zr_ffi_wrapper_lowering_does_not_apply_to_ordinary_calls();
+    test_zr_ffi_source_extern_handle_id_parameter_accepts_source_wrapper();
+    test_zr_ffi_handle_id_lowering_does_not_apply_to_ordinary_calls();
     test_zr_ffi_source_extern_system_callconv_uses_platform_default();
     test_zr_ffi_source_extern_struct_pack_affects_sizeof_and_alignof();
     test_zr_ffi_source_extern_struct_offset_overlay_controls_pointer_read();

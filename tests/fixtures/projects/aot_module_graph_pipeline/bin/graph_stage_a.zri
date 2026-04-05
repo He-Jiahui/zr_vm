@@ -47,3 +47,47 @@ INSTRUCTIONS (3):
   [1] GET_CONSTANT (extra=1, operand=1)
   [2] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
 
+CHILD_FUNCTIONS (1):
+  [0] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 1
+    END_LINE: 4
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 1
+
+    CONSTANTS (1):
+      [0] int: 37
+
+    LOCAL_VARIABLES (0):
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (0):
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (2):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+
+

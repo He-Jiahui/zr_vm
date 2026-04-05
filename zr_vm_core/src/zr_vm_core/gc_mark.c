@@ -97,6 +97,56 @@ void garbage_collector_mark_value(SZrState *state, SZrTypeValue *value) {
     }
 }
 
+static void garbage_collector_mark_string_if_present(SZrState *state, SZrString *stringValue) {
+    if (state != ZR_NULL && stringValue != ZR_NULL) {
+        garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue));
+    }
+}
+
+static void garbage_collector_mark_typed_type_ref(SZrState *state, const SZrFunctionTypedTypeRef *typeRef) {
+    if (state == ZR_NULL || typeRef == ZR_NULL) {
+        return;
+    }
+
+    garbage_collector_mark_string_if_present(state, typeRef->typeName);
+    garbage_collector_mark_string_if_present(state, typeRef->elementTypeName);
+}
+
+static void garbage_collector_mark_metadata_parameters(SZrState *state,
+                                                       const SZrFunctionMetadataParameter *parameters,
+                                                       TZrUInt32 parameterCount,
+                                                       TZrSize *work) {
+    if (state == ZR_NULL || parameters == ZR_NULL) {
+        return;
+    }
+
+    for (TZrUInt32 index = 0; index < parameterCount; index++) {
+        const SZrFunctionMetadataParameter *parameter = &parameters[index];
+
+        garbage_collector_mark_string_if_present(state, parameter->name);
+        garbage_collector_mark_typed_type_ref(state, &parameter->type);
+        if (parameter->hasDefaultValue) {
+            garbage_collector_mark_value(state, (SZrTypeValue *)&parameter->defaultValue);
+            if (work != ZR_NULL) {
+                (*work)++;
+            }
+        }
+        if (parameter->hasDecoratorMetadata) {
+            garbage_collector_mark_value(state, (SZrTypeValue *)&parameter->decoratorMetadataValue);
+            if (work != ZR_NULL) {
+                (*work)++;
+            }
+        }
+        for (TZrUInt32 decoratorIndex = 0; decoratorIndex < parameter->decoratorCount; decoratorIndex++) {
+            garbage_collector_mark_string_if_present(state, parameter->decoratorNames[decoratorIndex]);
+        }
+    }
+
+    if (work != ZR_NULL) {
+        *work += parameterCount;
+    }
+}
+
 void garbage_collector_link_to_gray_list(SZrRawObject *object, SZrRawObject **list) {
     SZrRawObject *current = *list;
     TZrSize checkCount = 0;
@@ -152,7 +202,10 @@ void ZrGarbageCollectorReallyMarkObject(SZrState *state, SZrRawObject *object) {
                 }
 
                 for (TZrSize i = 0; i < closure->closureValueCount; i++) {
-                    if (closure->closureValuesExtend[i] != ZR_NULL) {
+                    SZrRawObject *captureOwner = ZrCore_ClosureNative_GetCaptureOwner(closure, i);
+                    if (captureOwner != ZR_NULL) {
+                        garbage_collector_mark_object(state, captureOwner);
+                    } else if (closure->closureValuesExtend[i] != ZR_NULL) {
                         garbage_collector_mark_value(state, closure->closureValuesExtend[i]);
                     }
                 }
@@ -268,7 +321,10 @@ TZrSize ZrGarbageCollectorPropagateMark(SZrState *state) {
                 SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, object);
 
                 for (TZrSize i = 0; i < closure->closureValueCount; i++) {
-                    if (closure->closureValuesExtend[i] != ZR_NULL) {
+                    SZrRawObject *captureOwner = ZrCore_ClosureNative_GetCaptureOwner(closure, i);
+                    if (captureOwner != ZR_NULL) {
+                        garbage_collector_mark_object(state, captureOwner);
+                    } else if (closure->closureValuesExtend[i] != ZR_NULL) {
                         garbage_collector_mark_value(state, closure->closureValuesExtend[i]);
                     }
                 }
@@ -336,7 +392,63 @@ TZrSize ZrGarbageCollectorPropagateMark(SZrState *state) {
             if (function->sourceCodeList != ZR_NULL) {
                 garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function->sourceCodeList));
             }
-            work = function->closureValueLength + function->constantValueLength + function->childFunctionLength;
+            for (TZrUInt32 i = 0; i < function->localVariableLength; i++) {
+                garbage_collector_mark_string_if_present(state, function->localVariableList[i].name);
+            }
+            for (TZrUInt32 i = 0; i < function->typedLocalBindingLength; i++) {
+                garbage_collector_mark_string_if_present(state, function->typedLocalBindings[i].name);
+                garbage_collector_mark_typed_type_ref(state, &function->typedLocalBindings[i].type);
+            }
+            for (TZrUInt32 i = 0; i < function->typedExportedSymbolLength; i++) {
+                SZrFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[i];
+
+                garbage_collector_mark_string_if_present(state, symbol->name);
+                garbage_collector_mark_typed_type_ref(state, &symbol->valueType);
+                for (TZrUInt32 parameterIndex = 0; parameterIndex < symbol->parameterCount; parameterIndex++) {
+                    garbage_collector_mark_typed_type_ref(state, &symbol->parameterTypes[parameterIndex]);
+                }
+            }
+            garbage_collector_mark_metadata_parameters(state,
+                                                       function->parameterMetadata,
+                                                       function->parameterMetadataCount,
+                                                       &work);
+            for (TZrUInt32 i = 0; i < function->compileTimeVariableInfoLength; i++) {
+                SZrFunctionCompileTimeVariableInfo *info = &function->compileTimeVariableInfos[i];
+
+                garbage_collector_mark_string_if_present(state, info->name);
+                garbage_collector_mark_typed_type_ref(state, &info->type);
+                for (TZrUInt32 bindingIndex = 0; bindingIndex < info->pathBindingCount; bindingIndex++) {
+                    garbage_collector_mark_string_if_present(state, info->pathBindings[bindingIndex].path);
+                    garbage_collector_mark_string_if_present(state, info->pathBindings[bindingIndex].targetName);
+                }
+            }
+            for (TZrUInt32 i = 0; i < function->compileTimeFunctionInfoLength; i++) {
+                SZrFunctionCompileTimeFunctionInfo *info = &function->compileTimeFunctionInfos[i];
+
+                garbage_collector_mark_string_if_present(state, info->name);
+                garbage_collector_mark_typed_type_ref(state, &info->returnType);
+                garbage_collector_mark_metadata_parameters(state, info->parameters, info->parameterCount, &work);
+            }
+            for (TZrUInt32 i = 0; i < function->testInfoLength; i++) {
+                SZrFunctionTestInfo *info = &function->testInfos[i];
+
+                garbage_collector_mark_string_if_present(state, info->name);
+                garbage_collector_mark_metadata_parameters(state, info->parameters, info->parameterCount, &work);
+            }
+            if (function->hasDecoratorMetadata) {
+                garbage_collector_mark_value(state, &function->decoratorMetadataValue);
+                work++;
+            }
+            for (TZrUInt32 i = 0; i < function->decoratorCount; i++) {
+                garbage_collector_mark_string_if_present(state, function->decoratorNames[i]);
+            }
+            for (TZrUInt32 i = 0; i < function->memberEntryLength; i++) {
+                garbage_collector_mark_string_if_present(state, function->memberEntries[i].symbol);
+            }
+            for (TZrUInt32 i = 0; i < function->semIrTypeTableLength; i++) {
+                garbage_collector_mark_typed_type_ref(state, &function->semIrTypeTable[i]);
+            }
+            work += function->closureValueLength + function->constantValueLength + function->childFunctionLength;
             break;
         }
         case ZR_RAW_OBJECT_TYPE_THREAD: {

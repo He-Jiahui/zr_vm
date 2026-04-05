@@ -13,14 +13,18 @@
 #define ZR_CLOSURE_CLOSED_COUNT_NONE ((TZrSize)0)
 
 SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closureValueCount) {
+    TZrSize extraCaptureCount = closureValueCount > 1 ? closureValueCount - 1 : 0;
+    TZrSize extraOwnerBytes = closureValueCount * sizeof(SZrRawObject *);
     SZrRawObject *object =
             ZrCore_RawObject_New(state, ZR_VALUE_TYPE_CLOSURE,
-                           sizeof(SZrClosureNative) + sizeof(SZrClosureValue *) * closureValueCount, ZR_TRUE);
+                                 sizeof(SZrClosureNative) + extraCaptureCount * sizeof(SZrTypeValue *) + extraOwnerBytes,
+                                 ZR_TRUE);
     SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, object);
     closure->aotShimFunction = ZR_NULL;
     closure->closureValueCount = closureValueCount;
     if (closureValueCount > 0) {
         ZrCore_Memory_RawSet(closure->closureValuesExtend, 0, sizeof(SZrClosureValue *) * closureValueCount);
+        ZrCore_Memory_RawSet(ZrCore_ClosureNative_GetCaptureOwners(closure), 0, extraOwnerBytes);
     }
     return closure;
 }

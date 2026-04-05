@@ -1,0 +1,6 @@
+{
+  "name": "network_loopback",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

@@ -78,7 +78,7 @@ static SZrType *zr_task_wrap_return_type_async(SZrParserState *ps, SZrType *retu
     }
     ZrParser_AstNodeArray_Add(ps->state, genericArguments, typeArgumentNode);
 
-    asyncIdentifierNode = zr_task_create_identifier(ps, "Async", location);
+    asyncIdentifierNode = zr_task_create_identifier(ps, "TaskRunner", location);
     if (asyncIdentifierNode == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, genericArguments);
         return ZR_NULL;
@@ -215,8 +215,8 @@ static SZrAstNode *zr_task_create_module_member_call(SZrParserState *ps,
 static SZrAstNode *zr_task_wrap_async_body(SZrParserState *ps, SZrAstNode *body) {
     SZrAstNodeArray *lambdaParams;
     SZrAstNode *lambdaNode;
-    SZrAstNodeArray *spawnArgs;
-    SZrAstNode *spawnCall;
+    SZrAstNodeArray *runnerArgs;
+    SZrAstNode *runnerCall;
     SZrAstNode *returnNode;
     SZrAstNodeArray *blockBody;
     SZrAstNode *blockNode;
@@ -240,25 +240,25 @@ static SZrAstNode *zr_task_wrap_async_body(SZrParserState *ps, SZrAstNode *body)
     lambdaNode->data.lambdaExpression.block = body;
     lambdaNode->data.lambdaExpression.isAsync = ZR_TRUE;
 
-    spawnArgs = ZrParser_AstNodeArray_New(ps->state, 1);
-    if (spawnArgs == ZR_NULL) {
+    runnerArgs = ZrParser_AstNodeArray_New(ps->state, 1);
+    if (runnerArgs == ZR_NULL) {
         lambdaNode->data.lambdaExpression.block = ZR_NULL;
         ZrParser_Ast_Free(ps->state, lambdaNode);
         return ZR_NULL;
     }
-    ZrParser_AstNodeArray_Add(ps->state, spawnArgs, lambdaNode);
+    ZrParser_AstNodeArray_Add(ps->state, runnerArgs, lambdaNode);
 
-    spawnCall = zr_task_create_module_member_call(ps, "spawn", spawnArgs, body->location);
-    if (spawnCall == ZR_NULL) {
+    runnerCall = zr_task_create_module_member_call(ps, "__createTaskRunner", runnerArgs, body->location);
+    if (runnerCall == ZR_NULL) {
         return ZR_NULL;
     }
 
     returnNode = create_ast_node(ps, ZR_AST_RETURN_STATEMENT, body->location);
     if (returnNode == ZR_NULL) {
-        ZrParser_Ast_Free(ps->state, spawnCall);
+        ZrParser_Ast_Free(ps->state, runnerCall);
         return ZR_NULL;
     }
-    returnNode->data.returnStatement.expr = spawnCall;
+    returnNode->data.returnStatement.expr = runnerCall;
 
     blockBody = ZrParser_AstNodeArray_New(ps->state, 1);
     if (blockBody == ZR_NULL) {
@@ -305,7 +305,7 @@ SZrAstNode *parse_reserved_await_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
     ZrParser_AstNodeArray_Add(ps->state, args, operand);
-    return zr_task_create_module_member_call(ps, "await", args, startLoc);
+    return zr_task_create_module_member_call(ps, "__awaitTask", args, startLoc);
 }
 
 SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {

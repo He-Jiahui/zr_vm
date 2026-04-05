@@ -176,6 +176,35 @@ static TZrBool compiler_add_decorator_name_array_constant(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static TZrUInt32 compiler_resolve_serialized_member_function_constant_index(SZrCompilerState *cs,
+                                                                            const SZrTypeMemberInfo *memberInfo) {
+    SZrTypeValue functionValue;
+    SZrTypeValue *existingValue;
+
+    if (cs == ZR_NULL || memberInfo == ZR_NULL || memberInfo->compiledFunction == ZR_NULL) {
+        return memberInfo != ZR_NULL ? memberInfo->functionConstantIndex : 0;
+    }
+
+    /*
+     * Member functions are already registered in the enclosing compiler state's
+     * constant pool when the member is compiled. Reusing that canonical index
+     * keeps prototype serialization deterministic across toolchains instead of
+     * depending on a second add_constant() pass to rediscover the same object.
+     */
+    if (memberInfo->functionConstantIndex < cs->constants.length) {
+        existingValue = (SZrTypeValue *)ZrCore_Array_Get(&cs->constants, memberInfo->functionConstantIndex);
+        if (existingValue != ZR_NULL &&
+            (existingValue->type == ZR_VALUE_TYPE_FUNCTION || existingValue->type == ZR_VALUE_TYPE_CLOSURE)) {
+            return memberInfo->functionConstantIndex;
+        }
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state,
+                                 &functionValue,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->compiledFunction));
+    return add_constant(cs, &functionValue);
+}
+
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize) {
     if (cs == ZR_NULL || info == ZR_NULL || info->name == ZR_NULL || outData == ZR_NULL || outSize == ZR_NULL) {
@@ -363,10 +392,8 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
             compiledMember->isMetaMethod = memberInfo->isMetaMethod ? ZR_TRUE : ZR_FALSE;
             compiledMember->metaType = (TZrUInt32)memberInfo->metaType;
             if (memberInfo->compiledFunction != ZR_NULL) {
-                SZrTypeValue functionValue;
-                ZrCore_Value_InitAsRawObject(cs->state, &functionValue,
-                                       ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->compiledFunction));
-                compiledMember->functionConstantIndex = add_constant(cs, &functionValue);
+                compiledMember->functionConstantIndex =
+                        compiler_resolve_serialized_member_function_constant_index(cs, memberInfo);
             } else {
                 compiledMember->functionConstantIndex = memberInfo->functionConstantIndex;
             }
@@ -487,7 +514,7 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 
                 // 如果遇到致命错误，停止编译
                 if (cs->hasFatalError) {
-                    printf("  Fatal compile-time error encountered, stopping compilation\n");
+                    fprintf(stderr, "  Fatal compile-time error encountered, stopping compilation\n");
                     return;
                 }
             }
@@ -558,7 +585,7 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                     default:
                         // 其他顶层声明类型（intermediate等）
                         // TODO: 目前先跳过，后续实现
-                        printf("    Skipping statement type %d (not implemented yet)\n", stmt->type);
+                        fprintf(stderr, "    Skipping statement type %d (not implemented yet)\n", stmt->type);
                         break;
                 }
 
@@ -570,11 +597,11 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 // 即使有错误，也继续编译后续语句（除非是致命错误）
                 // 这样可以尽可能多地编译成功的语句
                 if (cs->hasError && !cs->hasFatalError) {
-                    printf("    Compilation error at statement %zu, resetting error and continuing...\n", i);
+                    fprintf(stderr, "    Compilation error at statement %zu, resetting error and continuing...\n", i);
                     // 清除当前语句的阻塞状态，保留总体失败标记以继续收集后续错误
                     cs->hasError = ZR_FALSE;
                 } else if (cs->hasFatalError) {
-                    printf("  Fatal error encountered, stopping compilation\n");
+                    fprintf(stderr, "  Fatal error encountered, stopping compilation\n");
                     return;
                 }
             }
@@ -588,7 +615,7 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             return;
         }
 
-        printf("  Finished compiling statements, total instructions: %zu\n", cs->instructionCount);
+        fprintf(stderr, "  Finished compiling statements, total instructions: %zu\n", cs->instructionCount);
         exit_scope(cs);
     }
 
@@ -768,9 +795,9 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
 
     if (cs.hasError) {
         // 错误信息已在 ZrParser_Compiler_Error 中输出（包含行列号）
-        printf("\n=== Compilation Summary ===\n");
-        printf("Status: FAILED\n");
-        printf("Reason: %s\n", (cs.errorMessage != ZR_NULL) ? cs.errorMessage : "Unknown error");
+        fprintf(stderr, "\n=== Compilation Summary ===\n");
+        fprintf(stderr, "Status: FAILED\n");
+        fprintf(stderr, "Reason: %s\n", (cs.errorMessage != ZR_NULL) ? cs.errorMessage : "Unknown error");
         if (cs.currentFunction != ZR_NULL) {
             ZrCore_Function_Free(state, cs.currentFunction);
         }
@@ -855,9 +882,9 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
 
     if (cs.hasError) {
         // 错误信息已在 ZrParser_Compiler_Error 中输出（包含行列号）
-        printf("\n=== Compilation Summary ===\n");
-        printf("Status: FAILED\n");
-        printf("Reason: %s\n", (cs.errorMessage != ZR_NULL) ? cs.errorMessage : "Unknown error");
+        fprintf(stderr, "\n=== Compilation Summary ===\n");
+        fprintf(stderr, "Status: FAILED\n");
+        fprintf(stderr, "Reason: %s\n", (cs.errorMessage != ZR_NULL) ? cs.errorMessage : "Unknown error");
         if (cs.currentFunction != ZR_NULL) {
             ZrCore_Function_Free(state, cs.currentFunction);
         }

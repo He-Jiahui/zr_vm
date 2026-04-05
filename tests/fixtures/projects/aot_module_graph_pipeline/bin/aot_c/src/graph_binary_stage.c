@@ -5,12 +5,18 @@
 /* descriptor.inputHash = 69350aa2bdbdab80 */
 /* descriptor.embeddedModuleBlobLength = 1163 */
 #include "zr_vm_common/zr_aot_abi.h"
+#include "zr_vm_core/call_info.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/debug.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_library/aot_runtime.h"
 
+#define ZR_AOT_C_FAIL() \
+    return ZrLibrary_AotRuntime_FailGeneratedFunction(state, &frame)
 #define ZR_AOT_C_GUARD(call_expr) \
     do { \
         if (!(call_expr)) { \
-            goto zr_aot_fail; \
+            ZR_AOT_C_FAIL(); \
         } \
     } while (0)
 
@@ -133,38 +139,89 @@ static const FZrAotEntryThunk zr_aot_function_thunks[] = {
 static TZrInt64 zr_aot_fn_0(struct SZrState *state) {
     ZrAotGeneratedFrame frame;
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame));
+    TZrUInt32 zr_aot_next_instruction = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;
+    goto zr_aot_fn_0_ins_0;
+zr_aot_fn_0_dispatch:
+    switch (zr_aot_next_instruction) {
+        case 0: goto zr_aot_fn_0_ins_0;
+        case 1: goto zr_aot_fn_0_ins_1;
+        case 2: goto zr_aot_fn_0_ins_2;
+        default: return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, 0, zr_aot_next_instruction, 0);
+    }
 zr_aot_fn_0_ins_0:
     /* opcode=80 extra=0 op1a=0 op1b=0 op2=0 */
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateClosure(state, &frame, 0, 0));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 0, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        const SZrTypeValue *zr_aot_source = &frame.function->constantValueList[0];
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 0);
+        SZrFunction *zr_aot_metadata_function = ZrCore_Closure_GetMetadataFunctionFromValue(state, zr_aot_source);
+        if (zr_aot_destination == ZR_NULL || zr_aot_metadata_function == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Ownership_ReleaseValue(state, zr_aot_destination);
+        SZrClosureNative *zr_aot_closure = ZrCore_ClosureNative_New(state, 0);
+        if (zr_aot_closure == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        zr_aot_closure->nativeFunction = zr_aot_fn_1;
+        zr_aot_closure->aotShimFunction = zr_aot_metadata_function;
+        ZrCore_Value_InitAsRawObject(state, zr_aot_destination, ZR_CAST_RAW_OBJECT_AS_SUPER(zr_aot_closure));
+        zr_aot_destination->type = ZR_VALUE_TYPE_CLOSURE;
+        zr_aot_destination->isGarbageCollectable = ZR_TRUE;
+        zr_aot_destination->isNative = ZR_TRUE;
+    }
 zr_aot_fn_0_ins_1:
     /* opcode=2 extra=1 op1a=1 op1b=0 op2=1 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 1),
-                      &frame.function->constantValueList[1]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 1, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 1);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_0_ins_2:
     /* opcode=75 extra=1 op1a=1 op1b=0 op2=1 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 2, ZR_AOT_GENERATED_STEP_FLAG_RETURN));
     return ZrLibrary_AotRuntime_Return(state, &frame, 1, ZR_TRUE);
     return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, 0, 3, 0);
-zr_aot_fail:
-    return 0;
 }
 
 static TZrInt64 zr_aot_fn_1(struct SZrState *state) {
     ZrAotGeneratedFrame frame;
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 1, &frame));
+    TZrUInt32 zr_aot_next_instruction = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;
+    goto zr_aot_fn_1_ins_0;
+zr_aot_fn_1_dispatch:
+    switch (zr_aot_next_instruction) {
+        case 0: goto zr_aot_fn_1_ins_0;
+        case 1: goto zr_aot_fn_1_ins_1;
+        default: return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, 1, zr_aot_next_instruction, 0);
+    }
 zr_aot_fn_1_ins_0:
     /* opcode=2 extra=0 op1a=0 op1b=0 op2=0 */
-    ZrCore_Value_Copy(state,
-                      ZrCore_Stack_GetValue(frame.slotBase + 0),
-                      &frame.function->constantValueList[0]);
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 0, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
+    {
+        SZrTypeValue zr_aot_constant;
+        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 0);
+        ZrCore_Value_ResetAsNull(&zr_aot_constant);
+        if (zr_aot_destination == ZR_NULL) {
+            ZR_AOT_C_FAIL();
+        }
+        ZR_VALUE_FAST_SET(&zr_aot_constant, nativeInt64, (TZrInt64)40, ZR_VALUE_TYPE_INT64);
+        ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);
+    }
 zr_aot_fn_1_ins_1:
     /* opcode=75 extra=1 op1a=0 op1b=0 op2=0 */
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 1, ZR_AOT_GENERATED_STEP_FLAG_RETURN));
     {
-        SZrCallInfo *zr_aot_call_info = state->callInfoList;
+        SZrCallInfo *zr_aot_call_info = frame.callInfo;
         TZrStackValuePointer zr_aot_result_slot = frame.slotBase + 0;
         if (zr_aot_call_info == ZR_NULL || zr_aot_call_info->functionBase.valuePointer == ZR_NULL ||
             zr_aot_result_slot == ZR_NULL) {
-            goto zr_aot_fail;
+            ZR_AOT_C_FAIL();
         }
         ZrCore_Value_Copy(state,
                           ZrCore_Stack_GetValue(zr_aot_call_info->functionBase.valuePointer),
@@ -173,8 +230,6 @@ zr_aot_fn_1_ins_1:
         return 1;
     }
     return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, 1, 2, 0);
-zr_aot_fail:
-    return 0;
 }
 
 static const ZrAotCompiledModule zr_aot_module = {

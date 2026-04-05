@@ -1,320 +1,117 @@
 ---
 related_code:
-  - zr_vm_task/include/zr_vm_task/module.h
-  - zr_vm_task/include/zr_vm_task/runtime.h
-  - zr_vm_task/src/zr_vm_task/module.c
-  - zr_vm_task/src/zr_vm_task/runtime.c
-  - zr_vm_library/include/zr_vm_library/project.h
-  - zr_vm_library/src/zr_vm_library/project.c
-  - zr_vm_cli/CMakeLists.txt
+  - zr_vm_core/include/zr_vm_core/task_runtime.h
+  - zr_vm_library/include/zr_vm_library/native_binding.h
+  - zr_vm_library/src/zr_vm_library/task_runtime.c
+  - zr_vm_library/src/zr_vm_library/native_binding_registry_plugin.c
+  - zr_vm_parser/src/zr_vm_parser/parser_reserved_task.c
+  - zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c
+  - zr_vm_parser/src/zr_vm_parser/parser_types.c
   - zr_vm_cli/src/zr_vm_cli/project.c
-  - zr_vm_parser/include/zr_vm_parser/ast.h
-  - zr_vm_parser/include/zr_vm_parser/lexer.h
-  - zr_vm_parser/src/zr_vm_parser/lexer.c
-  - zr_vm_parser/src/zr_vm_parser/compiler.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_internal.h
-  - zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c
-  - zr_vm_parser/src/zr_vm_parser/parser_declarations.c
-  - zr_vm_parser/src/zr_vm_parser/parser_expression_primary.c
-  - zr_vm_parser/src/zr_vm_parser/parser_expressions.c
-  - zr_vm_parser/src/zr_vm_parser/parser_internal.h
-  - zr_vm_parser/src/zr_vm_parser/parser_reserved_task.c
-  - zr_vm_parser/src/zr_vm_parser/parser_statements.c
-  - zr_vm_parser/src/zr_vm_parser/parser_types.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression_support.c
-  - zr_vm_parser/src/zr_vm_parser/compile_time_executor_support.c
-  - zr_vm_core/src/zr_vm_core/execution_control.c
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
+  - tests/task/test_task_runtime.c
 implementation_files:
-  - zr_vm_task/src/zr_vm_task/module.c
-  - zr_vm_task/src/zr_vm_task/runtime.c
-  - zr_vm_library/include/zr_vm_library/project.h
-  - zr_vm_library/src/zr_vm_library/project.c
-  - zr_vm_parser/include/zr_vm_parser/ast.h
-  - zr_vm_parser/src/zr_vm_parser/compiler.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c
-  - zr_vm_parser/src/zr_vm_parser/parser_declarations.c
-  - zr_vm_parser/src/zr_vm_parser/parser_expression_primary.c
+  - zr_vm_core/include/zr_vm_core/task_runtime.h
+  - zr_vm_library/src/zr_vm_library/task_runtime.c
+  - zr_vm_library/src/zr_vm_library/native_binding_registry_plugin.c
   - zr_vm_parser/src/zr_vm_parser/parser_reserved_task.c
-  - zr_vm_parser/src/zr_vm_parser/parser_expressions.c
-  - zr_vm_parser/src/zr_vm_parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c
   - zr_vm_parser/src/zr_vm_parser/parser_types.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression_support.c
-  - zr_vm_parser/src/zr_vm_parser/compile_time_executor_support.c
-  - zr_vm_core/src/zr_vm_core/execution_control.c
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
+  - zr_vm_cli/src/zr_vm_cli/project.c
 plan_sources:
-  - user: 2026-04-05 实现 `zr_vm_task` 异步、协程与多线程运行时方案，并增加 `supportMultithread` / `autoCoroutine`
+  - user: 2026-04-05 Task / Coroutine / Thread 并发模型重构计划
 tests:
   - tests/task/test_task_runtime.c
-  - tests/exceptions/test_exceptions.c
-  - tests/parser/test_type_inference.c
-  - tests/parser/test_compiler_features.c
 doc_type: module-detail
 ---
 
-# zr.task Runtime
+# zr.task Built-in Runtime
 
-## Purpose
+## Scope
 
-`zr.task` 是当前仓库里独立的并发内建模块。它把 async handle、协作式 scheduler、`%async/%await` sugar 和项目级并发开关接到同一条执行链上，让单线程协程路径先成立，再为后续真正的 worker isolate / shared arena 预留模块边界。
+`zr.task` 不再由 `zr_vm_lib_task` 对外注册。当前实现把任务抽象与 `%async/%await` 的 builtin owner 收到 VM 内建注册路径，由 `ZrCore_TaskRuntime_RegisterBuiltins(...)` 把 `zr.task` 与 `zr.coroutine` 一起挂进 native registry。
 
-这次实现的重点不是一次性做完完整并发计划，而是先把下面四层打通：
+这一轮已经落地的公开面是：
 
-- 项目配置能声明 `supportMultithread` 与 `autoCoroutine`
-- CLI 能注册 `zr.task` native 模块
-- parser 能把 `%async` / `%await` lower 到 `zr.task`
-- VM 在 native call 抛错时也能正确进入 `try/catch/finally`
+- `zr.task.IScheduler`
+- `zr.task.TaskRunner<T>`
+- `zr.task.Task<T>`
+- `zr.task.defaultScheduler`
 
-## Related Files
+当前没有再公开旧接口：
 
-`zr_vm_task/src/zr_vm_task/runtime.c` 是当前 runtime 主体。它定义 `Async<T>` / `Scheduler` / `Channel<T>` / `Mutex<T>` / `Shared<T>` / `Transfer<T>` / `WeakShared<T>` / `Atomic*` 的 native descriptor，以及 `spawn`、`spawnThread`、`await`、`yieldNow`、`sleep`、`currentScheduler` 的实际行为。
+- `zr.task.Async<T>`
+- `zr.task.Scheduler`
+- `zr.task.spawn(...)`
+- `zr.task.spawnThread(...)`
+- `zr.task.currentScheduler()`
+- `zr.task.await(...)`
+- `%mutex`
+- `%atomic`
 
-`zr_vm_library/include/zr_vm_library/project.h` 和 `zr_vm_library/src/zr_vm_library/project.c` 扩展 `.zrp` 项目结构，新增：
+## `%async` / `%await` Lowering
 
-- `supportMultithread`
-- `autoCoroutine`
+`%async` 仍然先走 parser lowering，但目标已经改成 builtin `TaskRunner` 模型，而不是旧 `spawn()` 热启动模型。
 
-`zr_vm_parser/src/zr_vm_parser/parser_reserved_task.c` 负责 `%async` / `%await` 的 source-level sugar。`parser_types.c` 负责 `%mutex` / `%atomic` type sugar。`parser_expressions.c`、`parser_statements.c`、`parser_declarations.c` 与 `parser_expression_primary.c` 负责把这些保留形式接入现有表达式、声明和 lambda 入口。
-
-`zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c` 与 `compiler.c` 负责在正式发射函数前做 task effect 预检查，补上 `await` 上下文和显式 borrowed-across-await 诊断。`compile_expression_support.c` 与 `compile_time_executor_support.c` 则负责避免 `zr.task` import/member 调用被错误地拉进 compile-time projection。
-
-`zr_vm_core/src/zr_vm_core/execution_dispatch.c` 与 `execution_control.c` 负责 native call 抛错后的异常回卷。没有这层修正，`spawnThread(...)` 在多线程关闭时虽然能创建异常对象，但 VM 不会把它送进局部 `catch`。
-
-## Behavior Model
-
-### Module Surface
-
-当前 `zr.task` 根模块公开以下函数：
-
-- `spawn(fn): Async<T>`
-- `spawnThread(fn): Async<T>`
-- `currentScheduler(): Scheduler`
-- `await(handle): T`
-- `yieldNow(): null`
-- `sleep(ms): null`
-
-公开以下类型：
-
-- `Async<T>`
-- `Scheduler`
-- `Channel<T>`
-- `Mutex<T>`
-- `Shared<T>`
-- `Transfer<T>`
-- `WeakShared<T>`
-- `AtomicBool`
-- `AtomicInt<T>`
-- `AtomicUInt<T>`
-
-其中只有 `Async<T>` 与 `Scheduler` 已经有真实行为；其余类型目前还是 descriptor 级占位，先稳定模块面、泛型 metadata 和类型提示，再等待后续 shared arena / lock-free / channel 语义落地。
-
-### Scheduler Storage Model
-
-当前 scheduler 不放在 parser 私有状态，也不放在线程局部静态变量里，而是挂在 `global->zrObject` 上的隐藏字段中：
-
-- `__zr_task_scheduler`
-- `__zr_task_worker_scheduler`
-
-每个 scheduler 自带：
-
-- 队列数组 `__zr_task_queue`
-- 队列头 `__zr_task_queue_head`
-- `__zr_task_auto_coroutine`
-- `__zr_task_support_multithread`
-- `__zr_task_is_pumping`
-
-这个结构意味着当前实现仍然是“单个 `SZrGlobalState` 内的 cooperative scheduler”，还不是多 isolate 真并发；但 `main scheduler` 和 `worker scheduler` 已经被拆成两个显式槽位，后续换成真正的 worker runtime 时不用再改模块 API。
-
-### Async Handle State Machine
-
-`Async` handle 通过对象字段保存任务状态：
-
-- `CREATED`
-- `QUEUED`
-- `RUNNING`
-- `COMPLETED`
-- `FAULTED`
-
-同时记录：
-
-- `__zr_task_callable`
-- `__zr_task_result`
-- `__zr_task_error`
-- `__zr_task_scheduler_owner`
-
-`spawn` / `spawnThread` 先创建 handle，再把 handle 入队到对应 scheduler。执行完成后：
-
-- 成功时把 `result` 写回 handle，状态改成 `COMPLETED`
-- 失败时把异常值写回 `error`，状态改成 `FAULTED`
-
-`Async.result()` 与 `%await handle` 最终都走 `zr_vm_task_wait_for_handle(...)`，因此二者对 pending / faulted / completed 的处理一致。
-
-### autoCoroutine And Manual Pump
-
-`autoCoroutine` 的默认值来自项目配置：
-
-- `.zrp` 未声明时默认为 `true`
-- `.zrp` 明确写 `false` 时，需要外部显式调用 `Scheduler.step()` 或 `Scheduler.pump()`
-
-运行时行为是：
-
-- `spawn(...)` 入队后，如果 scheduler `autoCoroutine == true` 且当前不在 pump 递归中，runtime 立即自动 drain 队列
-- `await(...)` 发现 handle 仍是 pending 时，如果 `autoCoroutine == true`，会主动 pump 所属 scheduler 再重试
-- 如果 `autoCoroutine == false` 且任务仍未完成，`await` 直接报运行时错误，要求调用方先手动 `pump`
-
-这条路径对应用户要求里的“像 GC 一样自动启动，也可以关闭后由游戏引擎手动控制 Tick/Update”。
-
-### supportMultithread Gate
-
-`supportMultithread` 只控制 worker 相关入口，不影响本地 async / coroutine：
-
-- `false` 时，`spawnThread` 会构造异常并让脚本层 `try/catch` 可捕获
-- `true` 时，`spawnThread` 目前把任务排进 `worker scheduler` 占位队列
-
-当前 `worker scheduler` 仍然和主调度器共处同一个 `SZrGlobalState`，因此它只是“接口和调度槽位已分离”的过渡实现，不是最终的多虚拟机 state。
-
-## Parser Lowering
-
-### `%await`
-
-`%await expr` 会被 parser 直接改写成：
+源代码：
 
 ```zr
-%import("zr.task").await(expr)
+%async func f(): int {
+    return 1;
+}
 ```
 
-这样 runtime 只需要维护一个普通 native function，不需要新增解释器层特殊 await opcode。
+当前会 lower 成：
 
-### `%async`
+- 返回类型从 `int` 包成 `TaskRunner<int>`
+- 函数体返回 `zr.task.__createTaskRunner(...)`
 
-`%async func addOne(value: int): int { ... }` 当前会被改写成一个普通函数声明，其函数体再包装成：
+也就是说，调用 `%async` 函数只会得到冷的 runner，不会立即排队执行。
 
-```zr
-return %import("zr.task").spawn(() -> {
-    // original body
-})
-```
+`%await expr` 当前 lower 到 builtin hidden helper `zr.task.__awaitTask(expr)`。effect 检查也已经从旧 `zr.task.await(...)` helper 改到这个新的 hidden await call。
 
-如果源代码写了显式返回类型，parser 现在会把它从 `T` 包成 `Async<T>`，例如：
+## Runtime Model
 
-```zr
-%async func addOne(value: int): int
-```
+### TaskRunner
 
-会落成返回 `Async<int>` 的声明，而不是直接清空返回类型。
+- `TaskRunner<T>` 保存冷启动 callable
+- `TaskRunner.start()` 委托到 `zr.task.defaultScheduler`
+- 同一个 runner 只能 `start()` 一次；重复启动直接抛运行时错误
 
-这意味着当前版本的 `%async` 是“parser sugar + native runtime handle”，而不是 semir / execbc 层一等 async 函数形态。它先满足了语言可写性和基本行为验证，后续再继续向 effect/opcode 方案收敛。
+### Task
 
-### `%mutex` / `%atomic`
+- `Task<T>` 状态目前实现为：
+  - `Created`
+  - `Queued`
+  - `Running`
+  - `Suspended`
+  - `Completed`
+  - `Faulted`
+- 当前调度器主路径实际会用到 `Created/Queued/Running/Completed/Faulted`
+- `Task.result()` 与 `%await task` 共用同一条等待路径
 
-这一版把并发类型 sugar 也提前接到了 parser：
+### defaultScheduler
 
-- `%mutex T` 会改写成 `Mutex<T>`
-- `%atomic bool` 会改写成 `AtomicBool`
-- `%atomic int` / `i8/i16/i32/i64` 会改写成 `AtomicInt<T>`
-- `%atomic uint` / `u8/u16/u32/u64` 会改写成 `AtomicUInt<T>`
+- `zr.task.defaultScheduler` 在模块 materialize 时初始化为当前 isolate 的 `zr.coroutine.coroutineScheduler`
+- 它是模块根导出字段，脚本层可直接重绑
+- `TaskRunner.start()` 每次都会重新读取这个字段，因此重绑会立即生效
 
-`%atomic` 目前仍然只接受布尔或整数标量。像 `string`、数组、带 ownership 包装的复合类型或普通 GC 引用，在 parser 阶段就会被拒绝。
+## Context Safety
 
-### Compile-Time Guard
+`compiler_task_effects.c` 继续保留 borrow-across-await 诊断，但 await 边界识别已经从旧公开 helper 改成 builtin hidden await helper。
 
-`compile_expression_support.c` 额外跳过了 `%import("zr.task")...` 的 compile-time projection。否则 `%async` 包装体里的 `zr.task.spawn(...)` 会被错误当作 compile-time import/member 解析，直接在编译阶段失败。
+当前保持的约束：
 
-`compile_time_executor_support.c` 也避开了 async wrapper 函数的 compile-time 注册，防止编译器把 sugar 生成的包装体误判成普通 compile-time candidate。
+- `%await` 只能出现在 `%async` 上下文
+- borrowed binding 不能跨 `await` 使用
+- borrowed 值在 `await` 前使用、`await` 后不再读，仍然允许
 
-`compiler_task_effects.c` 则在正式编译前补上一轮 task effect 预检查，当前落地了两条规则：
+## Module Materialization Hook
 
-- `await` 只允许出现在 `%async` 包装出来的 async body，或脚本顶层这种 scheduler-managed coroutine body 里
-- 显式 `%borrowed` 参数或局部变量不能在 `await` 之后再次使用
+native binding descriptor 现在支持模块 materialize 回调。`zr.task` 与 `zr.coroutine` 利用这条路径把状态相关的根属性挂到每个 isolate 的模块对象上，而不是把 `defaultScheduler` / `coroutineScheduler` 硬编码成静态常量。
 
-这里的 borrowed 检查还是保守版，只覆盖显式 `%borrowed` 绑定，不尝试推导所有隐式借用或复杂 capture 图。
+这条 hook 目前先用于：
 
-## Native Exception Integration
+- `zr.task.defaultScheduler`
+- `zr.coroutine.coroutineScheduler`
 
-这次并发运行时补丁还修正了一个 core 级缺口：native call 返回 `NULL` 时，dispatch loop 之前只会恢复 `base/trap`，不会检查“native 绑定是否已经把异常规范化到 `state->currentException`”。
-
-修正后：
-
-1. `execution_dispatch.c` 为全部 native call opcode 统一走 `RESUME_AFTER_NATIVE_CALL(...)`
-2. 如果 native 绑定已经设置 `hasCurrentException`，dispatch 会立即调用 `execution_unwind_exception_to_handler(...)`
-3. `execution_control.c` 在跳转到 `catch` 或 `finally` 前把 `threadStatus` 恢复为 `FINE`
-
-第三步很关键。没有它，脚本层虽然已经 catch 住异常，外层测试框架仍会把残留的错误线程状态当成未处理异常。
-
-这项修正不只服务 `zr.task`。任何 future native module 只要按现有 `NormalizeThrownValue(...)` 路径抛错，现在都能进入局部 `try/catch/finally`。
-
-## Design And Rationale
-
-### Why `zr.task` Is A Separate Module
-
-这次没有把并发 API 塞进 `zr.system`，因为并发语义本身会继续演进：
-
-- cooperative scheduler
-- worker isolate
-- shared wrappers
-- channels
-- atomics
-
-把它独立成 `zr.task`，可以让 parser、CLI、type hints、native registry 和项目配置围绕一个清晰命名空间收敛，不和系统 I/O、进程、GC 控制 API 混在一起。
-
-### Why v1 Uses Cooperative Pump First
-
-当前仓库还没有完成“多 `SZrGlobalState` 真 worker isolate + shared arena + sendable ownership rules”。在这个前提下，先做 cooperative scheduler 有两个价值：
-
-- `%async/%await` 可以立即变成可执行语言能力，而不是只停留在设计稿
-- `autoCoroutine` / 手动 `pump` 的生命周期控制可以先被引擎侧验证
-
-这也符合原计划里的里程碑顺序：先把 runtime 拓扑与 safe point 管理做实，再继续向真正的多线程扩展。
-
-## Edge Cases And Constraints
-
-- 当前 `spawnThread` 不是透明降级。多线程关闭时，它明确抛错，不会偷偷回退到主线程 `spawn`
-- `yieldNow()` 目前只是对 main scheduler 执行一次 `step()`，还没有真正的 suspension effect 分析
-- `sleep()` 仍是占位实现，只返回 `null`
-- `Channel<T>` / `Mutex<T>` / `Shared<T>` / `Transfer<T>` / `WeakShared<T>` / `Atomic*` 目前只有模块类型面，没有共享内存、worker isolate 或原子 opcode 实现
-- 当前 `%async` / `%await` 仍然是 parser lowering，不等于已完成计划中的 semir effect、真实 worker isolate 或跨线程发送规则；本次只把 `await` 上下文和显式 borrowed-across-await 诊断先落地
-- 当前 `worker scheduler` 仍处于同一 global state，因此没有实现文档计划里的“多个 isolate 各自 GC”
-
-## Test Coverage
-
-`tests/task/test_task_runtime.c` 当前覆盖：
-
-- `.zrp` 默认 `supportMultithread = false`、`autoCoroutine = true`
-- `.zrp` 显式读取 `supportMultithread` / `autoCoroutine`
-- `zr.task` 模块成功注册到 native registry
-- `Async<T>` / `Channel<T>` / `Mutex<T>` / `Shared<T>` / `Transfer<T>` / `WeakShared<T>` / `Atomic*` 的泛型 descriptor 面
-- 手动 `Scheduler.pump()` 可执行本地任务
-- `spawnThread` 在多线程关闭时抛错且能被脚本 `catch`
-- `%async` / `%await` sugar 能 lower 并执行
-- `%async` 显式返回类型会被包装成 `Async<T>`
-- `%mutex` / `%atomic` type sugar 能通过 parser，且 `%atomic string` 这类非法用法会被拒绝
-- 非 async 函数体里的 `%await` 会在编译阶段被拒绝
-- 显式 `%borrowed` 绑定跨 `await` 复用会在编译阶段被拒绝
-
-`tests/exceptions/test_exceptions.c` 是这次 core 修正的回归护栏，确保已有 `throw/catch/finally` 行为仍保持原语义。
-
-`tests/parser/test_type_inference.c` 与 `tests/parser/test_compiler_features.c` 是这次 parser/compiler 改动的额外回归样本，用来确认 type parser、generic type materialization 和 compiler 入口的既有行为没有被并发 sugar 破坏。
-
-## Plan Sources
-
-本文件对应 2026-04-05 的用户并发运行时方案，当前已经落地的部分是：
-
-- `zr.task` 独立标准模块
-- 项目级 `supportMultithread` / `autoCoroutine`
-- `%async` / `%await` source sugar
-- cooperative scheduler 与手动 pump
-- native exception -> VM `try/catch` 回卷
-
-尚未落地但已明确留出扩展边界的部分是：
-
-- 真正的 worker isolate / 多 `SZrGlobalState`
-- shared arena / `Transfer` / `Shared` / `WeakShared`
-- `%mutex` / `%atomic` 对应的一等 opcode 与同步原语运行时
-- 更完整的 suspension/thread effect 与 beyond-explicit-borrow 的 capture 诊断
-
-## Open Issues Or Follow-up
-
-- `spawnThread` 目前只有配置门禁和独立 scheduler 槽位，没有真实线程或 isolate 创建
-- `Async<T>` 现在已经在 `%async` 显式返回注解上 materialize 成 parser-level 泛型返回类型，但还没有进入更深层的 semir / execbc async effect 模型
-- 若后续把 async/coroutine 升级为 semir / execbc 一等 effect，需要把当前 parser sugar 文档替换成正式 lowering 文档，而不是继续叠加兼容描述
+后续 thread 模块接入时，也会复用这条机制做 isolate 相关对象的根导出初始化。

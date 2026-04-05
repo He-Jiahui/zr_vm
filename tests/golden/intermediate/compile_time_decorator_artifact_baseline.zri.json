@@ -1,0 +1,51 @@
+{
+	"startLine":	1,
+	"endLine":	51,
+	"parameterCount":	0,
+	"hasVariableArguments":	false,
+	"stackSize":	3,
+	"instructionsLength":	6,
+	"constantValueLength":	5,
+	"localVariableLength":	1,
+	"constants":	[{
+			"index":	0,
+			"type":	0
+		}, {
+			"index":	1,
+			"type":	15
+		}, {
+			"index":	2,
+			"type":	12
+		}, {
+			"index":	3,
+			"type":	12
+		}, {
+			"index":	4,
+			"type":	18
+		}],
+	"instructions":	[{
+			"index":	0,
+			"opcode":	2,
+			"operandExtra":	0
+		}, {
+			"index":	1,
+			"opcode":	80,
+			"operandExtra":	1
+		}, {
+			"index":	2,
+			"opcode":	1,
+			"operandExtra":	0
+		}, {
+			"index":	3,
+			"opcode":	0,
+			"operandExtra":	2
+		}, {
+			"index":	4,
+			"opcode":	109,
+			"operandExtra":	2
+		}, {
+			"index":	5,
+			"opcode":	75,
+			"operandExtra":	1
+		}]
+}

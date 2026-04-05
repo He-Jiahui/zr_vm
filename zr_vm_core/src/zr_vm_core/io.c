@@ -414,6 +414,18 @@ static void io_read_function_typed_export_symbols(SZrIo *io,
         } else {
             symbol->parameterTypes = ZR_NULL;
         }
+
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_TYPED_EXPORT_DECLARATION_SPANS) {
+            ZR_IO_READ_NATIVE_TYPE(io, symbol->lineInSourceStart, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, symbol->columnInSourceStart, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, symbol->lineInSourceEnd, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, symbol->columnInSourceEnd, TZrUInt32);
+        } else {
+            symbol->lineInSourceStart = 0;
+            symbol->columnInSourceStart = 0;
+            symbol->lineInSourceEnd = 0;
+            symbol->columnInSourceEnd = 0;
+        }
     }
 }
 
@@ -443,17 +455,77 @@ static void io_read_function_metadata_parameters(SZrIo *io,
     for (TZrSize index = 0; index < count; index++) {
         (*outParameters)[index].name = io_read_string_with_length(io);
         io_read_function_typed_type_ref(io, &(*outParameters)[index].type);
+        (*outParameters)[index].hasDefaultValue = ZR_FALSE;
+        ZR_IO_READ_NATIVE_TYPE(io, (*outParameters)[index].hasDefaultValue, TZrUInt8);
+        if ((*outParameters)[index].hasDefaultValue) {
+            io_read_function_constant_variables(io, &(*outParameters)[index].defaultValue, 1);
+        } else {
+            ZrCore_Memory_RawSet(&(*outParameters)[index].defaultValue, 0, sizeof((*outParameters)[index].defaultValue));
+        }
+        (*outParameters)[index].hasDecoratorMetadata = ZR_FALSE;
+        ZrCore_Memory_RawSet(&(*outParameters)[index].decoratorMetadataValue,
+                             0,
+                             sizeof((*outParameters)[index].decoratorMetadataValue));
+        (*outParameters)[index].decoratorNamesLength = 0;
+        (*outParameters)[index].decoratorNames = ZR_NULL;
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_PARAMETER_METADATA) {
+            ZR_IO_READ_NATIVE_TYPE(io, (*outParameters)[index].hasDecoratorMetadata, TZrUInt8);
+            if ((*outParameters)[index].hasDecoratorMetadata) {
+                io_read_function_constant_variables(io, &(*outParameters)[index].decoratorMetadataValue, 1);
+            }
+
+            ZR_IO_READ_NATIVE_TYPE(io, (*outParameters)[index].decoratorNamesLength, TZrSize);
+            if ((*outParameters)[index].decoratorNamesLength > 0) {
+                (*outParameters)[index].decoratorNames =
+                        ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                 sizeof(SZrString *) * (*outParameters)[index].decoratorNamesLength);
+                if ((*outParameters)[index].decoratorNames != ZR_NULL) {
+                    for (TZrSize decoratorIndex = 0;
+                         decoratorIndex < (*outParameters)[index].decoratorNamesLength;
+                         decoratorIndex++) {
+                        (*outParameters)[index].decoratorNames[decoratorIndex] = io_read_string_with_length(io);
+                    }
+                }
+            }
+        }
     }
 }
 
 static void io_read_function_compile_time_variable_infos(SZrIo *io,
                                                          SZrIoFunctionCompileTimeVariableInfo *infos,
                                                          TZrSize count) {
+    SZrGlobalState *global = io != ZR_NULL && io->state != ZR_NULL ? io->state->global : ZR_NULL;
+
     for (TZrSize index = 0; index < count; index++) {
         infos[index].name = io_read_string_with_length(io);
         io_read_function_typed_type_ref(io, &infos[index].type);
         ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceStart, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceEnd, TZrUInt32);
+        infos[index].pathBindingsLength = 0;
+        infos[index].pathBindings = ZR_NULL;
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_COMPILE_TIME_PATH_BINDINGS) {
+            ZR_IO_READ_NATIVE_TYPE(io, infos[index].pathBindingsLength, TZrSize);
+            if (infos[index].pathBindingsLength > 0) {
+                if (global != ZR_NULL) {
+                    infos[index].pathBindings = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                                         sizeof(SZrIoFunctionCompileTimePathBinding) *
+                                                                                 infos[index].pathBindingsLength);
+                }
+                for (TZrSize bindingIndex = 0; bindingIndex < infos[index].pathBindingsLength; bindingIndex++) {
+                    SZrString *path = io_read_string_with_length(io);
+                    TZrUInt8 targetKind = 0;
+                    SZrString *targetName;
+
+                    ZR_IO_READ_NATIVE_TYPE(io, targetKind, TZrUInt8);
+                    targetName = io_read_string_with_length(io);
+                    if (infos[index].pathBindings != ZR_NULL) {
+                        infos[index].pathBindings[bindingIndex].path = path;
+                        infos[index].pathBindings[bindingIndex].targetKind = targetKind;
+                        infos[index].pathBindings[bindingIndex].targetName = targetName;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -714,10 +786,15 @@ static void io_read_function_debug_infos(SZrIo *io, SZrIoFunctionDebugInfo *debu
     SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionDebugInfo *debugInfo = &debugInfos[i];
+        debugInfo->sourceFile = ZR_NULL;
+        debugInfo->sourceHash = ZR_NULL;
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_SOURCE_IDENTITY) {
+            debugInfo->sourceFile = io_read_string_with_length(io);
+            debugInfo->sourceHash = io_read_string_with_length(io);
+        }
         ZR_IO_READ_NATIVE_TYPE(io, debugInfo->instructionsLength, TZrSize);
         debugInfo->instructionsLine = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(TZrUInt64) * debugInfo->instructionsLength);
         ZrCore_Io_Read(io, (TZrBytePtr) debugInfo->instructionsLine, sizeof(TZrUInt64) * debugInfo->instructionsLength);
-        // todo:
     }
 }
 
@@ -819,6 +896,8 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         } else {
             function->typedExportedSymbols = ZR_NULL;
         }
+        function->parameterMetadataLength = 0;
+        function->parameterMetadata = ZR_NULL;
         function->compileTimeVariableInfosLength = 0;
         function->compileTimeVariableInfos = ZR_NULL;
         function->compileTimeFunctionInfosLength = 0;
@@ -850,6 +929,9 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->semIrDeoptTable = ZR_NULL;
         function->callSiteCacheLength = 0;
         function->callSiteCaches = ZR_NULL;
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_PARAMETER_METADATA) {
+            io_read_function_metadata_parameters(io, &function->parameterMetadata, &function->parameterMetadataLength);
+        }
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_COMPILE_TIME_METADATA) {
             ZR_IO_READ_NATIVE_TYPE(io, function->compileTimeVariableInfosLength, TZrSize);
             if (function->compileTimeVariableInfosLength > 0) {

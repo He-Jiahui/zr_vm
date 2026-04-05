@@ -3,7 +3,9 @@
 //
 
 #include "lsp_interface_internal.h"
+#include "lsp_metadata_provider.h"
 #include "lsp_module_metadata.h"
+#include "lsp_project_internal.h"
 
 #include "zr_vm_parser/type_inference.h"
 
@@ -25,6 +27,12 @@ static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *le
         *text = ZrCore_String_GetNativeString(value);
         *length = value->longStringLength;
     }
+}
+
+static TZrBool receiver_type_text_is_specific(const TZrChar *text) {
+    return text != ZR_NULL && text[0] != '\0' &&
+           strcmp(text, "object") != 0 &&
+           strcmp(text, "unknown") != 0;
 }
 
 TZrBool ZrLanguageServer_Lsp_StringsEqual(SZrString *left, SZrString *right) {
@@ -437,46 +445,6 @@ SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
     return ZrCore_String_Create(state, commentBuffer, strlen(commentBuffer));
 }
 
-SZrString *ZrLanguageServer_Lsp_ParseResolvedTypeFromHoverMarkdown(SZrState *state,
-                                                                   SZrString *hoverMarkdown) {
-    TZrNativeString text;
-    TZrSize length;
-    const TZrChar *prefix = "Resolved Type: ";
-    TZrSize prefixLength = strlen(prefix);
-
-    if (state == ZR_NULL || hoverMarkdown == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    get_string_view(hoverMarkdown, &text, &length);
-    if (text == ZR_NULL || length < prefixLength) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index + prefixLength <= length; index++) {
-        TZrSize end;
-
-        if (memcmp(text + index, prefix, prefixLength) != 0) {
-            continue;
-        }
-
-        end = index + prefixLength;
-        while (end < length && text[end] != '\n' && text[end] != '\r') {
-            end++;
-        }
-
-        if (end <= index + prefixLength) {
-            return ZR_NULL;
-        }
-
-        return ZrCore_String_Create(state,
-                                    (TZrNativeString)(text + index + prefixLength),
-                                    end - index - prefixLength);
-    }
-
-    return ZR_NULL;
-}
-
 SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state,
                                                       SZrSymbol *symbol,
                                                       const TZrChar *content,
@@ -698,6 +666,54 @@ static SZrString *extract_identifier_name_from_node(SZrAstNode *node) {
     }
 
     return ZR_NULL;
+}
+
+static SZrString *extract_construct_target_type_name_from_node(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (node->type) {
+        case ZR_AST_IDENTIFIER_LITERAL:
+            return node->data.identifier.name;
+
+        case ZR_AST_TYPE:
+            if (node->data.type.name == ZR_NULL) {
+                return ZR_NULL;
+            }
+            if (node->data.type.name->type == ZR_AST_IDENTIFIER_LITERAL) {
+                return node->data.type.name->data.identifier.name;
+            }
+            if (node->data.type.name->type == ZR_AST_GENERIC_TYPE &&
+                node->data.type.name->data.genericType.name != ZR_NULL) {
+                return node->data.type.name->data.genericType.name->name;
+            }
+            return ZR_NULL;
+
+        case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION:
+            return extract_construct_target_type_name_from_node(node->data.prototypeReferenceExpression.target);
+
+        case ZR_AST_PRIMARY_EXPRESSION: {
+            SZrPrimaryExpression *primary = &node->data.primaryExpression;
+
+            if (primary->members != ZR_NULL && primary->members->nodes != ZR_NULL) {
+                for (TZrSize index = primary->members->count; index > 0; index--) {
+                    SZrAstNode *memberNode = primary->members->nodes[index - 1];
+                    if (memberNode != ZR_NULL &&
+                        memberNode->type == ZR_AST_MEMBER_EXPRESSION &&
+                        memberNode->data.memberExpression.property != ZR_NULL &&
+                        memberNode->data.memberExpression.property->type == ZR_AST_IDENTIFIER_LITERAL) {
+                        return memberNode->data.memberExpression.property->data.identifier.name;
+                    }
+                }
+            }
+
+            return extract_construct_target_type_name_from_node(primary->property);
+        }
+
+        default:
+            return ZR_NULL;
+    }
 }
 
 static SZrString *get_class_property_name(SZrAstNode *memberNode) {
@@ -923,9 +939,55 @@ static const ZrLibTypeDescriptor *find_native_type_descriptor_in_module(const Zr
 }
 
 static const ZrLibTypeDescriptor *find_native_type_descriptor_across_modules(SZrState *state,
+                                                                             SZrLspProjectIndex *projectIndex,
+                                                                             SZrSemanticAnalyzer *analyzer,
+                                                                             SZrAstNode *ast,
                                                                              const TZrChar *typeName,
                                                                              const ZrLibModuleDescriptor **outModule) {
-    return ZrLanguageServer_LspModuleMetadata_FindNativeTypeDescriptor(state, typeName, outModule);
+    const ZrLibTypeDescriptor *typeDescriptor;
+
+    typeDescriptor = ZrLanguageServer_LspModuleMetadata_FindNativeTypeDescriptor(state, typeName, outModule);
+    if (typeDescriptor != ZR_NULL || state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL) {
+        return typeDescriptor;
+    }
+
+    {
+        SZrArray bindings;
+
+        ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+        ZrLanguageServer_LspProject_CollectImportBindings(state, ast, &bindings);
+        for (TZrSize index = 0; index < bindings.length; index++) {
+            SZrLspImportBinding **bindingPtr =
+                (SZrLspImportBinding **)ZrCore_Array_Get(&bindings, index);
+            SZrLspResolvedImportedModule resolvedModule;
+
+            if (bindingPtr == ZR_NULL || *bindingPtr == ZR_NULL || (*bindingPtr)->moduleName == ZR_NULL) {
+                continue;
+            }
+
+            memset(&resolvedModule, 0, sizeof(resolvedModule));
+            if (!ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(state,
+                                                                          analyzer,
+                                                                          projectIndex,
+                                                                          (*bindingPtr)->moduleName,
+                                                                          &resolvedModule) ||
+                resolvedModule.nativeDescriptor == ZR_NULL) {
+                continue;
+            }
+
+            typeDescriptor = find_native_type_descriptor_in_module(resolvedModule.nativeDescriptor, typeName);
+            if (typeDescriptor != ZR_NULL) {
+                if (outModule != ZR_NULL) {
+                    *outModule = resolvedModule.nativeDescriptor;
+                }
+                ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+                return typeDescriptor;
+            }
+        }
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+    }
+
+    return ZR_NULL;
 }
 
 static void append_native_type_descriptor_member_completions(SZrState *state,
@@ -989,6 +1051,9 @@ static void append_native_type_descriptor_member_completions(SZrState *state,
 }
 
 static TZrBool append_receiver_native_type_completions(SZrState *state,
+                                                       SZrLspProjectIndex *projectIndex,
+                                                       SZrSemanticAnalyzer *analyzer,
+                                                       SZrAstNode *ast,
                                                        const TZrChar *typeName,
                                                        TZrBool wantStatic,
                                                        SZrArray *result) {
@@ -999,7 +1064,12 @@ static TZrBool append_receiver_native_type_completions(SZrState *state,
         return ZR_FALSE;
     }
 
-    typeDescriptor = find_native_type_descriptor_across_modules(state, typeName, &module);
+    typeDescriptor = find_native_type_descriptor_across_modules(state,
+                                                                projectIndex,
+                                                                analyzer,
+                                                                ast,
+                                                                typeName,
+                                                                &module);
     if (typeDescriptor == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1096,7 +1166,10 @@ static TZrBool resolve_receiver_type_text(SZrState *state,
     receiverSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, receiverName, ZR_NULL);
     if (copy_type_text_from_symbol(state, receiverSymbol, buffer, bufferSize) ||
         copy_type_text_from_type_env(state, analyzer, receiverName, buffer, bufferSize)) {
-        return ZR_TRUE;
+        if (receiver_type_text_is_specific(buffer)) {
+            return ZR_TRUE;
+        }
+        buffer[0] = '\0';
     }
 
     find_receiver_variable_prototype_recursive(state,
@@ -1730,12 +1803,14 @@ static TZrBool try_infer_receiver_type_text_from_ast(SZrState *state,
     return buffer[0] != '\0';
 }
 
-SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *state,
-                                                                    SZrSemanticAnalyzer *analyzer,
-                                                                    SZrAstNode *ast,
-                                                                    const TZrChar *content,
-                                                                    TZrSize contentLength,
-                                                                    TZrSize cursorOffset) {
+TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
+                                                            SZrLspProjectIndex *projectIndex,
+                                                            SZrSemanticAnalyzer *analyzer,
+                                                            SZrAstNode *ast,
+                                                            const TZrChar *content,
+                                                            TZrSize contentLength,
+                                                            TZrSize cursorOffset,
+                                                            SZrLspResolvedMetadataMember *outResolved) {
     TZrSize memberStart;
     TZrSize memberEnd;
     TZrSize receiverStart;
@@ -1750,14 +1825,16 @@ SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *st
     const ZrLibFieldDescriptor *fieldDescriptor;
     const ZrLibMethodDescriptor *methodDescriptor;
     SZrString *receiverName;
-    TZrChar buffer[ZR_LSP_HOVER_BUFFER_LENGTH];
     TZrChar specializedType[ZR_LSP_TEXT_BUFFER_LENGTH];
-    TZrSize used = 0;
+    EZrLspImportedModuleSourceKind sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
+    SZrLspMetadataProvider provider;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL || content == ZR_NULL ||
-        cursorOffset >= contentLength) {
-        return ZR_NULL;
+        cursorOffset >= contentLength || outResolved == ZR_NULL) {
+        return ZR_FALSE;
     }
+
+    memset(outResolved, 0, sizeof(*outResolved));
 
     memberStart = cursorOffset;
     while (memberStart > 0 && native_hover_is_identifier_char(content[memberStart - 1])) {
@@ -1768,7 +1845,7 @@ SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *st
         memberEnd++;
     }
     if (memberEnd <= memberStart || memberStart == 0 || content[memberStart - 1] != '.') {
-        return ZR_NULL;
+        return ZR_FALSE;
     }
 
     receiverEnd = memberStart - 1;
@@ -1777,7 +1854,7 @@ SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *st
         receiverStart--;
     }
     if (memberEnd - memberStart >= sizeof(memberName)) {
-        return ZR_NULL;
+        return ZR_FALSE;
     }
 
     memcpy(memberName, content + memberStart, memberEnd - memberStart);
@@ -1792,7 +1869,10 @@ SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *st
                                                sizeof(receiverTypeText)) &&
         (receiverEnd <= receiverStart ||
          receiverEnd - receiverStart >= sizeof(receiverNameText))) {
-        return ZR_NULL;
+        return ZR_FALSE;
+    }
+    if (!receiver_type_text_is_specific(receiverTypeText)) {
+        receiverTypeText[0] = '\0';
     }
 
     if (receiverTypeText[0] == '\0') {
@@ -1812,45 +1892,40 @@ SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *st
                                         cursorOffset,
                                         receiverTypeText,
                                         sizeof(receiverTypeText))) {
-            return ZR_NULL;
+            return ZR_FALSE;
         }
     }
 
-    typeDescriptor = find_native_type_descriptor_across_modules(state, receiverTypeText, &module);
+    typeDescriptor = find_native_type_descriptor_across_modules(state,
+                                                                projectIndex,
+                                                                analyzer,
+                                                                ast,
+                                                                receiverTypeText,
+                                                                &module);
     if (typeDescriptor == ZR_NULL) {
-        return ZR_NULL;
+        return ZR_FALSE;
     }
 
     type_text_parse_generic_arguments(receiverTypeText, genericArguments, &genericArgumentCount);
     fieldDescriptor = find_native_field_descriptor_recursive(module, typeDescriptor, memberName, 0);
     methodDescriptor = find_native_method_descriptor_recursive(module, typeDescriptor, memberName, 0);
 
-    if (methodDescriptor != ZR_NULL) {
-        append_buffer_text(buffer, sizeof(buffer), &used, "**method**: ");
-        append_buffer_text(buffer, sizeof(buffer), &used, memberName);
-        append_buffer_text(buffer, sizeof(buffer), &used, "\n\nSignature: ");
-        append_buffer_text(buffer, sizeof(buffer), &used, methodDescriptor->name);
-        append_buffer_text(buffer, sizeof(buffer), &used, "(");
-        for (TZrSize index = 0; index < methodDescriptor->parameterCount; index++) {
-            const ZrLibParameterDescriptor *parameter = &methodDescriptor->parameters[index];
+    if (module != ZR_NULL && module->moduleName != ZR_NULL) {
+        outResolved->module.moduleName =
+            ZrCore_String_Create(state, (TZrNativeString)module->moduleName, strlen(module->moduleName));
+        ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleDescriptor(state, module->moduleName, &sourceKind);
+        outResolved->module.nativeDescriptor = module;
+    }
+    outResolved->module.sourceKind = sourceKind;
+    outResolved->memberName = ZrCore_String_Create(state, (TZrNativeString)memberName, strlen(memberName));
+    outResolved->ownerTypeName =
+        ZrCore_String_Create(state, (TZrNativeString)receiverTypeText, strlen(receiverTypeText));
+    outResolved->ownerTypeDescriptor = typeDescriptor;
+    outResolved->typeDescriptor = typeDescriptor;
 
-            if (index > 0) {
-                append_buffer_text(buffer, sizeof(buffer), &used, ", ");
-            }
-            if (parameter->name != ZR_NULL) {
-                append_buffer_text(buffer, sizeof(buffer), &used, parameter->name);
-                append_buffer_text(buffer, sizeof(buffer), &used, ": ");
-            }
-            specialize_native_type_text(parameter->typeName,
-                                        typeDescriptor->genericParameters,
-                                        typeDescriptor->genericParameterCount,
-                                        genericArguments,
-                                        genericArgumentCount,
-                                        specializedType,
-                                        sizeof(specializedType));
-            append_buffer_text(buffer, sizeof(buffer), &used, specializedType[0] != '\0' ? specializedType : "object");
-        }
-        append_buffer_text(buffer, sizeof(buffer), &used, "): ");
+    if (methodDescriptor != ZR_NULL) {
+        outResolved->memberKind = ZR_LSP_METADATA_MEMBER_METHOD;
+        outResolved->methodDescriptor = methodDescriptor;
         specialize_native_type_text(methodDescriptor->returnTypeName,
                                     typeDescriptor->genericParameters,
                                     typeDescriptor->genericParameterCount,
@@ -1858,16 +1933,18 @@ SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *st
                                     genericArgumentCount,
                                     specializedType,
                                     sizeof(specializedType));
-        append_buffer_text(buffer, sizeof(buffer), &used, specializedType[0] != '\0' ? specializedType : "object");
-        append_buffer_text(buffer, sizeof(buffer), &used, "\nReceiver: ");
-        append_buffer_text(buffer, sizeof(buffer), &used, receiverTypeText);
-        return ZrCore_String_Create(state, buffer, strlen(buffer));
+        if (specializedType[0] != '\0') {
+            outResolved->resolvedTypeText =
+                ZrCore_String_Create(state, (TZrNativeString)specializedType, strlen(specializedType));
+        }
+        ZrLanguageServer_LspMetadataProvider_Init(&provider, state, ZR_NULL);
+        ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(&provider, projectIndex, outResolved);
+        return outResolved->memberName != ZR_NULL;
     }
 
     if (fieldDescriptor != ZR_NULL) {
-        append_buffer_text(buffer, sizeof(buffer), &used, "**field**: ");
-        append_buffer_text(buffer, sizeof(buffer), &used, memberName);
-        append_buffer_text(buffer, sizeof(buffer), &used, "\n\nType: ");
+        outResolved->memberKind = ZR_LSP_METADATA_MEMBER_FIELD;
+        outResolved->fieldDescriptor = fieldDescriptor;
         specialize_native_type_text(fieldDescriptor->typeName,
                                     typeDescriptor->genericParameters,
                                     typeDescriptor->genericParameterCount,
@@ -1875,13 +1952,16 @@ SZrString *ZrLanguageServer_Lsp_TryBuildReceiverNativeHoverMarkdown(SZrState *st
                                     genericArgumentCount,
                                     specializedType,
                                     sizeof(specializedType));
-        append_buffer_text(buffer, sizeof(buffer), &used, specializedType[0] != '\0' ? specializedType : "object");
-        append_buffer_text(buffer, sizeof(buffer), &used, "\nReceiver: ");
-        append_buffer_text(buffer, sizeof(buffer), &used, receiverTypeText);
-        return ZrCore_String_Create(state, buffer, strlen(buffer));
+        if (specializedType[0] != '\0') {
+            outResolved->resolvedTypeText =
+                ZrCore_String_Create(state, (TZrNativeString)specializedType, strlen(specializedType));
+        }
+        ZrLanguageServer_LspMetadataProvider_Init(&provider, state, ZR_NULL);
+        ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(&provider, projectIndex, outResolved);
+        return outResolved->memberName != ZR_NULL;
     }
 
-    return ZR_NULL;
+    return ZR_FALSE;
 }
 
 static void append_type_prototype_member_completions(SZrState *state,
@@ -1959,7 +2039,9 @@ static void append_type_prototype_member_completions(SZrState *state,
 }
 
 static TZrBool append_receiver_symbol_type_completions(SZrState *state,
+                                                       SZrLspProjectIndex *projectIndex,
                                                        SZrSemanticAnalyzer *analyzer,
+                                                       SZrAstNode *ast,
                                                        SZrSymbol *receiverSymbol,
                                                        TZrBool wantStatic,
                                                        SZrArray *result) {
@@ -1983,11 +2065,19 @@ static TZrBool append_receiver_symbol_type_completions(SZrState *state,
         return result->length > 0;
     }
 
-    return append_receiver_native_type_completions(state, typeText, wantStatic, result);
+    return append_receiver_native_type_completions(state,
+                                                   projectIndex,
+                                                   analyzer,
+                                                   ast,
+                                                   typeText,
+                                                   wantStatic,
+                                                   result);
 }
 
 static TZrBool append_receiver_name_type_env_completions(SZrState *state,
+                                                         SZrLspProjectIndex *projectIndex,
                                                          SZrSemanticAnalyzer *analyzer,
+                                                         SZrAstNode *ast,
                                                          SZrString *receiverName,
                                                          TZrBool wantStatic,
                                                          SZrArray *result) {
@@ -2025,7 +2115,13 @@ static TZrBool append_receiver_name_type_env_completions(SZrState *state,
         return result->length > 0;
     }
 
-    append_receiver_native_type_completions(state, typeText, wantStatic, result);
+    append_receiver_native_type_completions(state,
+                                            projectIndex,
+                                            analyzer,
+                                            ast,
+                                            typeText,
+                                            wantStatic,
+                                            result);
     ZrParser_InferredType_Free(state, &inferredType);
     return result->length > 0;
 }
@@ -2114,9 +2210,159 @@ static void find_receiver_variable_prototype_recursive(SZrState *state,
             }
             break;
 
+        case ZR_AST_EXPRESSION_STATEMENT:
+            if (node->data.expressionStatement.expr != ZR_NULL) {
+                find_receiver_variable_prototype_recursive(state,
+                                                           analyzer,
+                                                           node->data.expressionStatement.expr,
+                                                           receiverText,
+                                                           receiverLength,
+                                                           cursorOffset,
+                                                           bestPrototype,
+                                                           bestTypeName,
+                                                           bestTypeNameSize,
+                                                           bestOffset);
+            }
+            break;
+
+        case ZR_AST_USING_STATEMENT:
+            if (node->data.usingStatement.resource != ZR_NULL) {
+                find_receiver_variable_prototype_recursive(state,
+                                                           analyzer,
+                                                           node->data.usingStatement.resource,
+                                                           receiverText,
+                                                           receiverLength,
+                                                           cursorOffset,
+                                                           bestPrototype,
+                                                           bestTypeName,
+                                                           bestTypeNameSize,
+                                                           bestOffset);
+            }
+            if (node->data.usingStatement.body != ZR_NULL) {
+                find_receiver_variable_prototype_recursive(state,
+                                                           analyzer,
+                                                           node->data.usingStatement.body,
+                                                           receiverText,
+                                                           receiverLength,
+                                                           cursorOffset,
+                                                           bestPrototype,
+                                                           bestTypeName,
+                                                           bestTypeNameSize,
+                                                           bestOffset);
+            }
+            break;
+
+        case ZR_AST_RETURN_STATEMENT:
+            if (node->data.returnStatement.expr != ZR_NULL) {
+                find_receiver_variable_prototype_recursive(state,
+                                                           analyzer,
+                                                           node->data.returnStatement.expr,
+                                                           receiverText,
+                                                           receiverLength,
+                                                           cursorOffset,
+                                                           bestPrototype,
+                                                           bestTypeName,
+                                                           bestTypeNameSize,
+                                                           bestOffset);
+            }
+            break;
+
+        case ZR_AST_LAMBDA_EXPRESSION:
+            if (node->data.lambdaExpression.block != ZR_NULL) {
+                find_receiver_variable_prototype_recursive(state,
+                                                           analyzer,
+                                                           node->data.lambdaExpression.block,
+                                                           receiverText,
+                                                           receiverLength,
+                                                           cursorOffset,
+                                                           bestPrototype,
+                                                           bestTypeName,
+                                                           bestTypeNameSize,
+                                                           bestOffset);
+            }
+            break;
+
+        case ZR_AST_PRIMARY_EXPRESSION:
+            if (node->data.primaryExpression.property != ZR_NULL) {
+                find_receiver_variable_prototype_recursive(state,
+                                                           analyzer,
+                                                           node->data.primaryExpression.property,
+                                                           receiverText,
+                                                           receiverLength,
+                                                           cursorOffset,
+                                                           bestPrototype,
+                                                           bestTypeName,
+                                                           bestTypeNameSize,
+                                                           bestOffset);
+            }
+            if (node->data.primaryExpression.members != ZR_NULL &&
+                node->data.primaryExpression.members->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.primaryExpression.members->count; index++) {
+                    find_receiver_variable_prototype_recursive(state,
+                                                               analyzer,
+                                                               node->data.primaryExpression.members->nodes[index],
+                                                               receiverText,
+                                                               receiverLength,
+                                                               cursorOffset,
+                                                               bestPrototype,
+                                                               bestTypeName,
+                                                               bestTypeNameSize,
+                                                               bestOffset);
+                }
+            }
+            break;
+
+        case ZR_AST_FUNCTION_CALL:
+            if (node->data.functionCall.args != ZR_NULL && node->data.functionCall.args->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.functionCall.args->count; index++) {
+                    find_receiver_variable_prototype_recursive(state,
+                                                               analyzer,
+                                                               node->data.functionCall.args->nodes[index],
+                                                               receiverText,
+                                                               receiverLength,
+                                                               cursorOffset,
+                                                               bestPrototype,
+                                                               bestTypeName,
+                                                               bestTypeNameSize,
+                                                               bestOffset);
+                }
+            }
+            break;
+
+        case ZR_AST_CONSTRUCT_EXPRESSION:
+            if (node->data.constructExpression.target != ZR_NULL) {
+                find_receiver_variable_prototype_recursive(state,
+                                                           analyzer,
+                                                           node->data.constructExpression.target,
+                                                           receiverText,
+                                                           receiverLength,
+                                                           cursorOffset,
+                                                           bestPrototype,
+                                                           bestTypeName,
+                                                           bestTypeNameSize,
+                                                           bestOffset);
+            }
+            if (node->data.constructExpression.args != ZR_NULL &&
+                node->data.constructExpression.args->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.constructExpression.args->count; index++) {
+                    find_receiver_variable_prototype_recursive(state,
+                                                               analyzer,
+                                                               node->data.constructExpression.args->nodes[index],
+                                                               receiverText,
+                                                               receiverLength,
+                                                               cursorOffset,
+                                                               bestPrototype,
+                                                               bestTypeName,
+                                                               bestTypeNameSize,
+                                                               bestOffset);
+                }
+            }
+            break;
+
         case ZR_AST_VARIABLE_DECLARATION: {
             SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;
             SZrString *patternName = extract_identifier_name_from_node(varDecl->pattern);
+            SZrString *constructTargetTypeName = ZR_NULL;
             TZrNativeString patternText;
             TZrSize patternLength;
             SZrInferredType inferredType;
@@ -2147,11 +2393,31 @@ static void find_receiver_variable_prototype_recursive(SZrState *state,
             }
 
             if (!hasType) {
-                ZrParser_InferredType_Free(state, &inferredType);
-                break;
+                if (varDecl->value != ZR_NULL && varDecl->value->type == ZR_AST_CONSTRUCT_EXPRESSION) {
+                    constructTargetTypeName =
+                        extract_construct_target_type_name_from_node(varDecl->value->data.constructExpression.target);
+                    if (constructTargetTypeName != ZR_NULL) {
+                        typeText = ZrCore_String_GetNativeString(constructTargetTypeName);
+                    }
+                }
+                if (typeText == ZR_NULL || typeText[0] == '\0') {
+                    ZrParser_InferredType_Free(state, &inferredType);
+                    break;
+                }
+            } else {
+                typeText = ZrParser_TypeNameString_Get(state, &inferredType, typeBuffer, sizeof(typeBuffer));
             }
 
-            typeText = ZrParser_TypeNameString_Get(state, &inferredType, typeBuffer, sizeof(typeBuffer));
+            if ((typeText == ZR_NULL || typeText[0] == '\0' ||
+                 find_type_prototype_by_text(analyzer, typeText) == ZR_NULL) &&
+                varDecl->value != ZR_NULL && varDecl->value->type == ZR_AST_CONSTRUCT_EXPRESSION) {
+                constructTargetTypeName =
+                    extract_construct_target_type_name_from_node(varDecl->value->data.constructExpression.target);
+                if (constructTargetTypeName != ZR_NULL) {
+                    typeText = ZrCore_String_GetNativeString(constructTargetTypeName);
+                }
+            }
+
             prototype = typeText != ZR_NULL ? find_type_prototype_by_text(analyzer, typeText) : ZR_NULL;
             if (typeText != ZR_NULL && node->location.start.offset >= *bestOffset) {
                 *bestPrototype = prototype;
@@ -2269,12 +2535,13 @@ static void find_construct_initialized_class_symbol_recursive(SZrState *state,
 }
 
 TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
-                                                SZrSemanticAnalyzer *analyzer,
-                                                SZrAstNode *ast,
-                                                const TZrChar *content,
-                                                TZrSize contentLength,
-                                                TZrSize cursorOffset,
-                                                SZrArray *result) {
+                                                           SZrLspProjectIndex *projectIndex,
+                                                           SZrSemanticAnalyzer *analyzer,
+                                                           SZrAstNode *ast,
+                                                           const TZrChar *content,
+                                                           TZrSize contentLength,
+                                                           TZrSize cursorOffset,
+                                                           SZrArray *result) {
     TZrSize receiverEnd;
     TZrSize receiverStart;
     TZrSize receiverLength;
@@ -2311,7 +2578,7 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                   cursorOffset,
                                                   receiverTypeName,
                                                   sizeof(receiverTypeName))) {
-            const SZrTypePrototypeInfo *receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
+            receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
             if (receiverPrototype != ZR_NULL) {
                 append_type_prototype_member_completions(state,
                                                          analyzer,
@@ -2323,7 +2590,13 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                     return ZR_TRUE;
                 }
             }
-            return append_receiver_native_type_completions(state, receiverTypeName, ZR_FALSE, result);
+            return append_receiver_native_type_completions(state,
+                                                           projectIndex,
+                                                           analyzer,
+                                                           ast,
+                                                           receiverTypeName,
+                                                           ZR_FALSE,
+                                                           result);
         }
         return ZR_FALSE;
     }
@@ -2340,13 +2613,17 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
         classSymbol = receiverSymbol;
         wantStatic = ZR_TRUE;
     } else if (append_receiver_symbol_type_completions(state,
+                                                       projectIndex,
                                                        analyzer,
+                                                       ast,
                                                        receiverSymbol,
                                                        ZR_FALSE,
                                                        result)) {
         return ZR_TRUE;
     } else if (append_receiver_name_type_env_completions(state,
+                                                         projectIndex,
                                                          analyzer,
+                                                         ast,
                                                          receiverName,
                                                          ZR_FALSE,
                                                          result)) {
@@ -2372,7 +2649,13 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
             return result->length > 0;
         }
         if (receiverTypeName[0] != '\0' &&
-            append_receiver_native_type_completions(state, receiverTypeName, ZR_FALSE, result)) {
+            append_receiver_native_type_completions(state,
+                                                    projectIndex,
+                                                    analyzer,
+                                                    ast,
+                                                    receiverTypeName,
+                                                    ZR_FALSE,
+                                                    result)) {
             return ZR_TRUE;
         }
         if (try_infer_receiver_type_text_from_ast(state,
@@ -2393,7 +2676,13 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                     return ZR_TRUE;
                 }
             }
-            if (append_receiver_native_type_completions(state, receiverTypeName, ZR_FALSE, result)) {
+            if (append_receiver_native_type_completions(state,
+                                                        projectIndex,
+                                                        analyzer,
+                                                        ast,
+                                                        receiverTypeName,
+                                                        ZR_FALSE,
+                                                        result)) {
                 return ZR_TRUE;
             }
         }

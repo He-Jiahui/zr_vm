@@ -222,7 +222,6 @@ static TZrBool watched_string_ends_with(SZrString *value, const TZrChar *suffix)
 
 static TZrBool watched_uri_has_metadata_extension(SZrString *uri) {
     return watched_string_ends_with(uri, ZR_VM_BINARY_MODULE_FILE_EXTENSION) ||
-           watched_string_ends_with(uri, ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION) ||
            watched_string_ends_with(uri, ".dll") ||
            watched_string_ends_with(uri, ".so") ||
            watched_string_ends_with(uri, ".dylib");

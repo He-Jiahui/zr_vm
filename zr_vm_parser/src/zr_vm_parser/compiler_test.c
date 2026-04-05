@@ -154,6 +154,65 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->constants.length = oldConstantLength;
     cs->closureVars.length = oldClosureVarLength;
 
+    if (oldFunction != ZR_NULL && oldFunction->memberEntries != ZR_NULL && oldFunction->memberEntryLength > 0) {
+        TZrSize memberEntryBytes = sizeof(SZrFunctionMemberEntry) * oldFunction->memberEntryLength;
+        cs->currentFunction->memberEntries =
+                (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                          memberEntryBytes,
+                                                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (cs->currentFunction->memberEntries == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "Failed to inherit member entries for test declaration", node->location);
+            ZrCore_Function_Free(cs->state, cs->currentFunction);
+            if (savedParentInstructions != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                              savedParentInstructions,
+                                              savedParentInstructionsSize,
+                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+            if (savedParentLocalVars != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                              savedParentLocalVars,
+                                              savedParentLocalVarsSize,
+                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+            if (savedParentConstants != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                              savedParentConstants,
+                                              savedParentConstantsSize,
+                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+            if (savedParentClosureVars != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                              savedParentClosureVars,
+                                              savedParentClosureVarsSize,
+                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+            cs->currentFunction = oldFunction;
+            cs->instructionCount = oldInstructionCount;
+            cs->stackSlotCount = oldStackSlotCount;
+            cs->maxStackSlotCount = oldMaxStackSlotCount;
+            cs->localVarCount = oldLocalVarCount;
+            cs->constantCount = oldConstantCount;
+            cs->closureVarCount = oldClosureVarCount;
+            cs->instructions.length = oldInstructionLength;
+            cs->localVars.length = oldLocalVarLength;
+            cs->constants.length = oldConstantLength;
+            cs->closureVars.length = oldClosureVarLength;
+            cs->executionLocations.length = oldExecutionLocationLength;
+            cs->catchClauseInfos.length = oldCatchClauseInfoLength;
+            cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
+            cs->tryContextStack.length = oldTryContextLength;
+            cs->isInConstructor = oldIsInConstructor;
+            cs->currentFunctionNode = oldFunctionNode;
+            cs->constLocalVars.length = oldConstLocalVarLength;
+            cs->constParameters.length = oldConstParameterLength;
+            return;
+        }
+
+        memcpy(cs->currentFunction->memberEntries, oldFunction->memberEntries, memberEntryBytes);
+        cs->currentFunction->memberEntryLength = oldFunction->memberEntryLength;
+    }
+
     // 进入函数作用域
     enter_scope(cs);
 

@@ -1,3 +1,6 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
 const vscode = require('vscode');
 
 const CLASSES_FULL_SMOKE_SOURCE = [
@@ -639,7 +642,225 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     await vscode.workspace.fs.delete(smokeUri, { useTrash: false });
 }
 
-async function runSmokeSuite({ expectedMode }) {
+async function waitForDebugEvent(eventName, timeoutMs, expectedSessionId) {
+    return new Promise((resolve, reject) => {
+        const trackerDisposable = vscode.debug.registerDebugAdapterTrackerFactory('zr', {
+            createDebugAdapterTracker(debugSession) {
+                if (expectedSessionId && debugSession.id !== expectedSessionId) {
+                    return undefined;
+                }
+
+                return {
+                    onDidSendMessage(message) {
+                        if (message && message.type === 'event' && message.event === eventName) {
+                            clearTimeout(timeoutHandle);
+                            trackerDisposable.dispose();
+                            resolve(message);
+                        }
+                    },
+                };
+            },
+        });
+        const timeoutHandle = setTimeout(() => {
+            trackerDisposable.dispose();
+            reject(new Error(`Timed out waiting for debug event ${eventName}`));
+        }, timeoutMs);
+    });
+}
+
+async function startExternalDebugTarget(cliPath, workspaceRoot) {
+    const projectPath = path.join(workspaceRoot.fsPath, 'import_basic.zrp');
+    const child = spawn(cliPath, [
+        projectPath,
+        '--debug',
+        '--debug-address',
+        '127.0.0.1:0',
+        '--debug-wait',
+        '--debug-print-endpoint',
+    ], {
+        cwd: workspaceRoot.fsPath,
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    return new Promise((resolve, reject) => {
+        let stdoutBuffer = '';
+        let stderrBuffer = '';
+        let resolved = false;
+        const timeoutHandle = setTimeout(() => {
+            if (!resolved) {
+                child.kill();
+                reject(new Error(`Timed out waiting for external debug endpoint.\nstdout:\n${stdoutBuffer}\nstderr:\n${stderrBuffer}`));
+            }
+        }, 15000);
+
+        function finish(error, value) {
+            clearTimeout(timeoutHandle);
+            if (error) {
+                reject(error);
+                return;
+            }
+            resolve(value);
+        }
+
+        child.stdout.on('data', (chunk) => {
+            stdoutBuffer += chunk.toString();
+            const match = stdoutBuffer.match(/debug_endpoint=([^\r\n]+)/);
+            if (match && !resolved) {
+                resolved = true;
+                finish(undefined, {
+                    child,
+                    endpoint: match[1].trim(),
+                });
+            }
+        });
+        child.stderr.on('data', (chunk) => {
+            stderrBuffer += chunk.toString();
+        });
+        child.on('exit', (code) => {
+            if (!resolved) {
+                finish(new Error(`External debug target exited before endpoint became available (code=${code}).\nstdout:\n${stdoutBuffer}\nstderr:\n${stderrBuffer}`));
+            }
+        });
+        child.on('error', (error) => {
+            if (!resolved) {
+                finish(error);
+            }
+        });
+    });
+}
+
+async function verifyDebugStateInspection(session, expectedSourcePath) {
+    const stackTrace = await session.customRequest('stackTrace', { threadId: 1 });
+    const stackFrames = Array.isArray(stackTrace?.stackFrames) ? stackTrace.stackFrames : [];
+
+    assert(stackFrames.length > 0, 'Expected stackTrace to return at least one frame');
+    assert(typeof stackFrames[0].line === 'number' && stackFrames[0].line > 0,
+        'Expected top stack frame to expose a source line');
+    assert(normalizePath(stackFrames[0]?.source?.path ?? '') === normalizePath(expectedSourcePath),
+        'Expected top stack frame source path to match the launched ZR source');
+
+    const scopesResult = await session.customRequest('scopes', { frameId: stackFrames[0].id });
+    const scopes = Array.isArray(scopesResult?.scopes) ? scopesResult.scopes : [];
+
+    assert(scopes.length > 0, 'Expected scopes request to return at least one scope');
+
+    for (const scope of scopes) {
+        if (!scope || typeof scope.variablesReference !== 'number' || scope.variablesReference <= 0) {
+            continue;
+        }
+
+        const variablesResult = await session.customRequest('variables', {
+            variablesReference: scope.variablesReference,
+        });
+        const variables = Array.isArray(variablesResult?.variables) ? variablesResult.variables : [];
+
+        if (variables.some((item) => item?.name === 'greetModule')) {
+            return;
+        }
+    }
+
+    throw new Error('Expected variables request to expose greetModule in at least one scope');
+}
+
+async function verifyDebugIntegration(workspaceRoot) {
+    const extension = vscode.extensions.all.find((item) => item.packageJSON?.name === 'zr-vm-language-server');
+    const contributedDebuggers = extension?.packageJSON?.contributes?.debuggers ?? [];
+    const bundledFolder = `${process.platform}-${process.arch}`;
+    const bundledCliPath = process.platform === 'win32'
+        ? path.join(extension.extensionPath, 'server', 'native', bundledFolder, 'zr_vm_cli.exe')
+        : path.join(extension.extensionPath, 'server', 'native', bundledFolder, 'zr_vm_cli');
+    const debugMainUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'main.zr');
+    const debugDocument = await openDocument(debugMainUri);
+    const debugBreakpointPosition = findPositionBySubstring(debugDocument, 'return greetModule.greet()');
+    const debugBreakpoint = new vscode.SourceBreakpoint(
+        new vscode.Location(debugDocument.uri, debugBreakpointPosition),
+    );
+    let attachTarget;
+    let session;
+    let started;
+
+    assert(extension, 'Expected Zr extension to be present before debug verification');
+    assert((await vscode.commands.getCommands(true)).includes('zr.debugCurrentProject'),
+        'Expected zr.debugCurrentProject to be registered');
+    assert((await vscode.commands.getCommands(true)).includes('zr.attachDebugEndpoint'),
+        'Expected zr.attachDebugEndpoint to be registered');
+    assert(Array.isArray(contributedDebuggers) && contributedDebuggers.some((item) => item.type === 'zr'),
+        'Expected ZR debugger contributions to be present');
+    assert(fs.existsSync(bundledCliPath),
+        `Expected bundled zr_vm_cli at ${bundledCliPath}`);
+
+    vscode.debug.addBreakpoints([debugBreakpoint]);
+
+    try {
+        const breakpointResolved = waitForDebugEvent('breakpoint', 15000);
+        const launchStopped = waitForDebugEvent('stopped', 15000);
+        const launchTerminated = waitForDebugEvent('terminated', 30000);
+        started = await vscode.debug.startDebugging(workspaceRoot, {
+            type: 'zr',
+            name: 'ZR Smoke Launch',
+            request: 'launch',
+            project: debugMainUri.fsPath.replace(/[\\\/]src[\\\/]main\.zr$/i, `${path.sep}import_basic.zrp`),
+            cwd: workspaceRoot.fsPath,
+            executionMode: 'interp',
+            stopOnEntry: false,
+        });
+        assert(started, 'Expected ZR launch debug session to start');
+        session = await withRetry(
+            async () => vscode.debug.activeDebugSession,
+            (value) => value && value.type === 'zr',
+            15000,
+            'ZR debug session start',
+        );
+        const breakpointEvent = await breakpointResolved;
+        assert(breakpointEvent?.body?.breakpoint?.verified !== false,
+            'Expected launch breakpoint to resolve before continuing');
+        const stoppedEvent = await launchStopped;
+        assert(stoppedEvent?.body?.reason === 'breakpoint',
+            'Expected launch session to stop because the source breakpoint was hit');
+        await verifyDebugStateInspection(session, debugDocument.uri.fsPath);
+        await session.customRequest('continue', { threadId: 1 });
+        await launchTerminated;
+    } finally {
+        if (session) {
+            await vscode.debug.stopDebugging(session);
+        }
+        vscode.debug.removeBreakpoints([debugBreakpoint]);
+    }
+
+    attachTarget = await startExternalDebugTarget(bundledCliPath, workspaceRoot);
+    session = undefined;
+    try {
+        const attachStopped = waitForDebugEvent('stopped', 15000);
+        const attachTerminated = waitForDebugEvent('terminated', 30000);
+        started = await vscode.debug.startDebugging(workspaceRoot, {
+            type: 'zr',
+            name: 'ZR Smoke Attach',
+            request: 'attach',
+            endpoint: attachTarget.endpoint,
+        });
+        assert(started, 'Expected ZR attach debug session to start');
+        session = await withRetry(
+            async () => vscode.debug.activeDebugSession,
+            (value) => value && value.type === 'zr',
+            15000,
+            'ZR attach session start',
+        );
+        const attachStoppedEvent = await attachStopped;
+        assert(attachStoppedEvent?.body?.reason === 'entry',
+            'Expected attach session to observe the runtime entry stop');
+        await session.customRequest('continue', { threadId: 1 });
+        await attachTerminated;
+    } finally {
+        if (session) {
+            await vscode.debug.stopDebugging(session);
+        }
+        if (attachTarget) {
+            attachTarget.child.kill();
+        }
+    }
+}
+
+async function runSmokeSuite({ expectedMode, focus = 'all' }) {
     const workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
     assert(workspaceFolder, 'Expected a workspace folder for smoke test');
     const extension = vscode.extensions.all.find((item) => item.packageJSON?.name === 'zr-vm-language-server');
@@ -650,14 +871,21 @@ async function runSmokeSuite({ expectedMode }) {
     assert(expectedMode === 'native' || expectedMode === 'web',
         `Unexpected smoke mode: ${expectedMode}`);
 
-    await verifyLanguageFeatures(workspaceFolder.uri);
-    await verifyProjectInferenceAndSemanticTokens(workspaceFolder.uri);
-    await verifyClassLanguageFeatures(workspaceFolder.uri);
-    await verifyDiagnostics(workspaceFolder.uri);
+    if (focus === 'all' || focus === 'lsp') {
+        await verifyLanguageFeatures(workspaceFolder.uri);
+        await verifyProjectInferenceAndSemanticTokens(workspaceFolder.uri);
+        await verifyClassLanguageFeatures(workspaceFolder.uri);
+        await verifyDiagnostics(workspaceFolder.uri);
+    }
+    await verifyDebugIntegration(workspaceFolder.uri);
 }
 
 function uriPath(uri) {
     return typeof uri.path === 'string' ? uri.path : uri.toString();
+}
+
+function normalizePath(value) {
+    return typeof value === 'string' ? value.replace(/[\\/]+/g, '/').toLowerCase() : '';
 }
 
 module.exports = {

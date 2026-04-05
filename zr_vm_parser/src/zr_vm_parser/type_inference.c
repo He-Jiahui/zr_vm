@@ -52,6 +52,75 @@ void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, con
     ZrParser_Compiler_Error(cs, errorMsg, location);
 }
 
+static TZrBool type_inference_named_struct_is_move_only(SZrCompilerState *cs, SZrString *typeName, TZrUInt32 depth) {
+    SZrTypePrototypeInfo *prototype;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL || depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
+        return ZR_FALSE;
+    }
+
+    prototype = find_compiler_type_prototype_inference(cs, typeName);
+    if (prototype == ZR_NULL || prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize memberIndex = 0; memberIndex < prototype->members.length; memberIndex++) {
+        SZrTypeMemberInfo *memberInfo =
+                (SZrTypeMemberInfo *)ZrCore_Array_Get(&prototype->members, memberIndex);
+
+        if (memberInfo == ZR_NULL || memberInfo->memberType != ZR_AST_STRUCT_FIELD) {
+            continue;
+        }
+
+        if (memberInfo->isUsingManaged || memberInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
+            return ZR_TRUE;
+        }
+
+        if (memberInfo->fieldTypeName != ZR_NULL &&
+            !ZrCore_String_Equal(memberInfo->fieldTypeName, typeName) &&
+            type_inference_named_struct_is_move_only(cs, memberInfo->fieldTypeName, depth + 1)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool type_inference_inferred_type_is_move_only_struct(SZrCompilerState *cs, const SZrInferredType *type) {
+    if (cs == ZR_NULL || type == ZR_NULL || type->baseType != ZR_VALUE_TYPE_OBJECT || type->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return type_inference_named_struct_is_move_only(cs, type->typeName, 0);
+}
+
+static TZrBool type_inference_report_move_only_struct_copy(SZrCompilerState *cs,
+                                                           const SZrInferredType *type,
+                                                           const TZrChar *context,
+                                                           SZrFileRange location) {
+    TZrChar errorMsg[ZR_PARSER_TEXT_BUFFER_LENGTH];
+    const TZrChar *typeName = "struct";
+
+    if (cs == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (type != ZR_NULL && type->typeName != ZR_NULL) {
+        const TZrChar *candidateName = ZrCore_String_GetNativeString(type->typeName);
+        if (candidateName != ZR_NULL) {
+            typeName = candidateName;
+        }
+    }
+
+    snprintf(errorMsg,
+             sizeof(errorMsg),
+             "Type Error: move-only struct '%s' cannot be implicitly copied during %s",
+             typeName,
+             context != ZR_NULL ? context : "this operation");
+    ZrParser_Compiler_Error(cs, errorMsg, location);
+    return ZR_FALSE;
+}
+
 // 检查类型兼容性（用于赋值等场景）
 TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *fromType, const SZrInferredType *toType, SZrFileRange location) {
     if (cs == ZR_NULL || fromType == ZR_NULL || toType == ZR_NULL) {
@@ -59,6 +128,11 @@ TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferred
     }
     
     if (ZrParser_InferredType_IsCompatible(fromType, toType)) {
+        return ZR_TRUE;
+    }
+
+    if (toType->typeName != ZR_NULL &&
+        ZrParser_InferredType_SatisfiesNamedConstraint(cs, fromType, toType->typeName)) {
         return ZR_TRUE;
     }
     
@@ -76,6 +150,10 @@ TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrIn
     // 首先检查基本类型兼容性
     if (!ZrParser_TypeCompatibility_Check(cs, rightType, leftType, location)) {
         return ZR_FALSE;
+    }
+
+    if (type_inference_inferred_type_is_move_only_struct(cs, rightType)) {
+        return type_inference_report_move_only_struct_copy(cs, rightType, "assignment", location);
     }
     
     // 检查范围约束（如果目标类型有范围约束）
@@ -174,10 +252,18 @@ TZrBool ZrParser_FunctionCallCompatibility_Check(SZrCompilerState *cs,
             continue;
         }
 
-        if (!ZrParser_InferredType_IsCompatible(argType, paramType)) {
+        if (!ZrParser_InferredType_IsCompatible(argType, paramType) &&
+            !ffi_function_call_argument_is_native_boundary_compatible(cs, funcType, i, argType, paramType)) {
             ZrParser_TypeError_Report(cs, "Argument type mismatch", paramType, argType, location);
             free_inferred_type_array(cs->state, &argTypes);
             return ZR_FALSE;
+        }
+
+        if (type_inference_inferred_type_is_move_only_struct(cs, argType)) {
+            TZrBool reported =
+                    type_inference_report_move_only_struct_copy(cs, argType, "argument passing", location);
+            free_inferred_type_array(cs->state, &argTypes);
+            return reported;
         }
     }
 
@@ -708,13 +794,17 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                                                    &funcTypeInfo,
                                                    &resolvedSignature)) {
                     ZrParser_InferredType_Copy(cs->state, &baseType, &resolvedSignature.returnType);
-                    ZrParser_FunctionCallCompatibility_Check(cs,
-                                                      cs->typeEnv,
-                                                      funcName,
-                                                      call,
-                                                      funcTypeInfo,
-                                                      &resolvedSignature,
-                                                      node->location);
+                    if (!ZrParser_FunctionCallCompatibility_Check(cs,
+                                                                  cs->typeEnv,
+                                                                  funcName,
+                                                                  call,
+                                                                  funcTypeInfo,
+                                                                  &resolvedSignature,
+                                                                  node->location)) {
+                        ZrParser_InferredType_Free(cs->state, &baseType);
+                        free_resolved_call_signature(cs->state, &resolvedSignature);
+                        return ZR_FALSE;
+                    }
                     if (primary->members->count > 1) {
                         TZrBool success =
                                 infer_primary_member_chain_type(cs, &baseType, primary->members, 1, ZR_FALSE, result);
@@ -748,13 +838,17 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                                                    &funcTypeInfo,
                                                    &resolvedSignature)) {
                     ZrParser_InferredType_Copy(cs->state, &baseType, &resolvedSignature.returnType);
-                    ZrParser_FunctionCallCompatibility_Check(cs,
-                                                      cs->compileTimeTypeEnv,
-                                                      funcName,
-                                                      call,
-                                                      funcTypeInfo,
-                                                      &resolvedSignature,
-                                                      node->location);
+                    if (!ZrParser_FunctionCallCompatibility_Check(cs,
+                                                                  cs->compileTimeTypeEnv,
+                                                                  funcName,
+                                                                  call,
+                                                                  funcTypeInfo,
+                                                                  &resolvedSignature,
+                                                                  node->location)) {
+                        ZrParser_InferredType_Free(cs->state, &baseType);
+                        free_resolved_call_signature(cs->state, &resolvedSignature);
+                        return ZR_FALSE;
+                    }
                     if (primary->members->count > 1) {
                         TZrBool success =
                                 infer_primary_member_chain_type(cs, &baseType, primary->members, 1, ZR_FALSE, result);

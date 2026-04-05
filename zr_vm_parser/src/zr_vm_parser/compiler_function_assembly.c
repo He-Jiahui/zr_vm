@@ -182,6 +182,9 @@ static TZrBool compiler_copy_function_children(SZrCompilerState *cs, SZrFunction
 
     function->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
+    for (TZrSize index = 0; index < cs->childFunctions.length; index++) {
+        ZrCore_Function_RebindConstantFunctionValuesToChildren(&function->childFunctionList[index]);
+    }
     return ZR_TRUE;
 }
 
