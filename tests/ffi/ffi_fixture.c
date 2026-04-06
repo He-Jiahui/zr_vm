@@ -4,11 +4,13 @@
 #include <string.h>
 
 #if defined(_WIN32)
+#include <io.h>
 #include <windows.h>
 #define ZR_FFI_FIXTURE_EXPORT __declspec(dllexport)
 #define ZR_FFI_FIXTURE_STDCALL __stdcall
 #else
 #include <pthread.h>
+#include <unistd.h>
 #define ZR_FFI_FIXTURE_EXPORT
 #define ZR_FFI_FIXTURE_STDCALL
 #endif
@@ -42,6 +44,7 @@ ZR_FFI_FIXTURE_EXPORT double zr_ffi_apply_callback(double value, ZrFfiFixtureUna
 ZR_FFI_FIXTURE_EXPORT double zr_ffi_apply_callback_foreign_thread(double value,
                                                                   ZrFfiFixtureUnaryCallback callback);
 ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_flip_mode(int32_t modeValue);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_tell_fd(int32_t fd);
 
 ZR_FFI_FIXTURE_EXPORT const char *zr_ffi_version_string(void) {
     return kZrFfiFixtureVersion;
@@ -188,4 +191,12 @@ ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_flip_mode(int32_t modeValue) {
     return modeValue == (int32_t)ZR_FFI_FIXTURE_MODE_ON
                    ? (int32_t)ZR_FFI_FIXTURE_MODE_OFF
                    : (int32_t)ZR_FFI_FIXTURE_MODE_ON;
+}
+
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_tell_fd(int32_t fd) {
+#if defined(_WIN32)
+    return (int32_t)_lseeki64(fd, 0, SEEK_CUR);
+#else
+    return (int32_t)lseek(fd, 0, SEEK_CUR);
+#endif
 }

@@ -2172,8 +2172,10 @@ LZrReturning: {
                 stableReceiver = *opA;
                 if (memberName == ZR_NULL) {
                     ZrCore_Debug_RunError(state, "GET_MEMBER: invalid member id");
-                } else if (stableReceiver.type != ZR_VALUE_TYPE_OBJECT && stableReceiver.type != ZR_VALUE_TYPE_ARRAY) {
-                    ZrCore_Debug_RunError(state, "GET_MEMBER: receiver must be an object or array");
+                } else if (stableReceiver.type != ZR_VALUE_TYPE_OBJECT &&
+                           stableReceiver.type != ZR_VALUE_TYPE_ARRAY &&
+                           stableReceiver.type != ZR_VALUE_TYPE_STRING) {
+                    ZrCore_Debug_RunError(state, "GET_MEMBER: receiver must be an object, array, or string");
                 }
 
                 resolved = ZrCore_Object_GetMember(state, &stableReceiver, memberName, destination);

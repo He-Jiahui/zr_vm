@@ -57,21 +57,8 @@ export interface ZrDbgResponseMessage {
 export interface ZrDbgBreakpoint {
     verified?: boolean;
     line?: number;
+    functionName?: string;
     instructionIndex?: number;
-}
-
-export interface ZrDbgFrame {
-    frameId: number;
-    functionName: string;
-    sourceFile: string;
-    line: number;
-    instructionIndex: number;
-}
-
-export interface ZrDbgScope {
-    scopeId: number;
-    frameId: number;
-    name: string;
 }
 
 export interface ZrDbgVariable {
@@ -79,4 +66,28 @@ export interface ZrDbgVariable {
     type: string;
     value: string;
     variablesReference: number;
+}
+
+export interface ZrDbgReceiver extends ZrDbgVariable {}
+
+export interface ZrDbgFrame {
+    frameId: number;
+    moduleName: string;
+    functionName: string;
+    sourceFile: string;
+    line: number;
+    instructionIndex: number;
+    frameDepth?: number;
+    callKind?: string;
+    argumentCount?: number;
+    returnSlot?: number;
+    isExceptionFrame?: boolean;
+    receiver?: ZrDbgReceiver;
+    arguments?: ZrDbgVariable[];
+}
+
+export interface ZrDbgScope {
+    scopeId: number;
+    frameId: number;
+    name: string;
 }

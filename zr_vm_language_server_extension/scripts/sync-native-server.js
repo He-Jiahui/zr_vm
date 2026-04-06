@@ -9,6 +9,8 @@ const destinationDir = path.join(extensionRoot, 'server', 'native', bundledFolde
 const sourceDir = process.argv[2]
     ? path.resolve(process.argv[2])
     : resolveDefaultSourceDir();
+const retryableCopyErrorCodes = new Set(['EBUSY', 'EPERM']);
+const copyRetryDelaysMs = [150, 300, 600, 1200, 2000];
 
 const { requiredFiles, optionalFiles } = process.platform === 'win32'
     ? collectWindowsNativeAssets(sourceDir)
@@ -36,7 +38,7 @@ for (const fileName of [...requiredFiles, ...optionalFiles]) {
     }
 
     const destinationFile = path.join(destinationDir, fileName);
-    fs.copyFileSync(sourceFile, destinationFile);
+    copyFileWithRetry(sourceFile, destinationFile, fileName);
     console.log(`Copied ${fileName} -> ${path.relative(extensionRoot, destinationFile)}`);
 }
 
@@ -88,4 +90,54 @@ function collectUnixNativeAssets(nativeSourceDir) {
         requiredFiles: ['zr_vm_language_server_stdio', 'zr_vm_cli'],
         optionalFiles: optionalRuntimeFiles,
     };
+}
+
+function copyFileWithRetry(sourceFile, destinationFile, fileName) {
+    for (let attempt = 0; attempt <= copyRetryDelaysMs.length; attempt += 1) {
+        try {
+            fs.copyFileSync(sourceFile, destinationFile);
+            return;
+        } catch (error) {
+            const errorCode = error && typeof error === 'object' ? error.code : undefined;
+            if (!retryableCopyErrorCodes.has(errorCode)) {
+                throw error;
+            }
+
+            if (filesAreIdentical(sourceFile, destinationFile)) {
+                console.warn(`Skipped locked unchanged asset: ${fileName}`);
+                return;
+            }
+
+            if (attempt >= copyRetryDelaysMs.length) {
+                throw error;
+            }
+
+            sleep(copyRetryDelaysMs[attempt]);
+        }
+    }
+}
+
+function filesAreIdentical(sourceFile, destinationFile) {
+    try {
+        if (!fs.existsSync(destinationFile)) {
+            return false;
+        }
+
+        const sourceStat = fs.statSync(sourceFile);
+        const destinationStat = fs.statSync(destinationFile);
+        if (sourceStat.size !== destinationStat.size) {
+            return false;
+        }
+
+        const sourceContent = fs.readFileSync(sourceFile);
+        const destinationContent = fs.readFileSync(destinationFile);
+        return sourceContent.equals(destinationContent);
+    } catch {
+        return false;
+    }
+}
+
+function sleep(durationMs) {
+    const signal = new Int32Array(new SharedArrayBuffer(4));
+    Atomics.wait(signal, 0, 0, durationMs);
 }

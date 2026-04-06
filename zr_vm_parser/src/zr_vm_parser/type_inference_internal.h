@@ -78,6 +78,9 @@ ZR_PARSER_API TZrBool resolve_best_function_overload(SZrCompilerState *cs,
                                                      SZrFileRange location,
                                                      SZrFunctionTypeInfo **resolvedFunction,
                                                      SZrResolvedCallSignature *resolvedSignature);
+TZrBool inferred_type_can_use_named_constraint_fallback(SZrCompilerState *cs,
+                                                        const SZrInferredType *actualType,
+                                                        const SZrInferredType *expectedType);
 TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
                                            SZrAstNode *node,
                                            SZrTypePrototypeInfo **outPrototype,

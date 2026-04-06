@@ -9,10 +9,6 @@ type DocumentSelectorEntry = {
 };
 
 function isZrpDocument(document: vscode.TextDocument): boolean {
-    if (document.uri.scheme !== 'file' && document.uri.scheme !== 'untitled') {
-        return false;
-    }
-
     return document.uri.path.toLowerCase().endsWith(ZRP_EXTENSION);
 }
 
@@ -36,8 +32,7 @@ export function registerZrpJsonSupport(): vscode.Disposable {
 
 export function createDocumentSelector(): DocumentSelectorEntry[] {
     return [
-        { language: 'zr', scheme: 'file' },
-        { language: 'zr', scheme: 'untitled' },
-        { scheme: 'file', pattern: '**/*.zrp' },
+        { language: 'zr' },
+        { pattern: '**/*.zrp' },
     ];
 }

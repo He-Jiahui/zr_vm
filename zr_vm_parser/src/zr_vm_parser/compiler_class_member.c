@@ -99,6 +99,10 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     TZrSize oldLocalVarLength = cs->localVars.length;
     TZrSize oldConstantLength = cs->constants.length;
     TZrSize oldClosureVarLength = cs->closureVars.length;
+    TZrSize oldExecutionLocationLength = cs->executionLocations.length;
+    TZrSize oldCatchClauseInfoLength = cs->catchClauseInfos.length;
+    TZrSize oldExceptionHandlerInfoLength = cs->exceptionHandlerInfos.length;
+    TZrSize oldTryContextLength = cs->tryContextStack.length;
     TZrSize oldChildFunctionLength = cs->childFunctions.length;
     TZrSize oldChildFunctionNameMapLength = cs->childFunctionNameMap.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
@@ -379,6 +383,10 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         cs->localVars.length = oldLocalVarLength;
         cs->constants.length = oldConstantLength;
         cs->closureVars.length = oldClosureVarLength;
+        cs->executionLocations.length = oldExecutionLocationLength;
+        cs->catchClauseInfos.length = oldCatchClauseInfoLength;
+        cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
+        cs->tryContextStack.length = oldTryContextLength;
         cs->childFunctions.length = oldChildFunctionLength;
         cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
         cs->isInConstructor = oldIsInConstructor;
@@ -453,6 +461,14 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     newFunc->hasVariableArguments = ZR_FALSE;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TZrUInt32)node->location.start.line : 0;
     newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TZrUInt32)node->location.end.line : 0;
+    if (!compiler_copy_function_exception_metadata_slice(cs,
+                                                         newFunc,
+                                                         oldExecutionLocationLength,
+                                                         oldCatchClauseInfoLength,
+                                                         oldExceptionHandlerInfoLength,
+                                                         node)) {
+        ZrParser_Compiler_Error(cs, "Failed to copy class member debug metadata", node->location);
+    }
     newFunc->functionName = functionName;
 
     if (savedParentInstructions != ZR_NULL && savedParentInstructionsSize > 0) {
@@ -492,6 +508,10 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     cs->localVars.length = oldLocalVarLength;
     cs->constants.length = oldConstantLength;
     cs->closureVars.length = oldClosureVarLength;
+    cs->executionLocations.length = oldExecutionLocationLength;
+    cs->catchClauseInfos.length = oldCatchClauseInfoLength;
+    cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
+    cs->tryContextStack.length = oldTryContextLength;
     cs->childFunctions.length = oldChildFunctionLength;
     cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
     cs->isInConstructor = oldIsInConstructor;

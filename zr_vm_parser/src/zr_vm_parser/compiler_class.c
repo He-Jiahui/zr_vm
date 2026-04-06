@@ -14,6 +14,53 @@ static const TZrChar *compiler_class_builtin_ffi_wrapper_leaf_names[] = {
         "releaseHook",
 };
 
+static TZrBool compiler_class_ffi_integer_type_name_supported(SZrString *typeName) {
+    static const TZrChar *const kSupportedIntegerTypeNames[] = {
+            "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64",
+    };
+
+    if (typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(kSupportedIntegerTypeNames); index++) {
+        if (extern_compiler_string_equals(typeName, kSupportedIntegerTypeNames[index])) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool compiler_class_view_type_is_source_extern_struct(SZrCompilerState *cs, SZrString *typeName) {
+    SZrScript *script;
+
+    if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || typeName == ZR_NULL || cs->scriptAst->type != ZR_AST_SCRIPT) {
+        return ZR_FALSE;
+    }
+
+    script = &cs->scriptAst->data.script;
+    if (script->statements == ZR_NULL || script->statements->nodes == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < script->statements->count; index++) {
+        SZrAstNode *statement = script->statements->nodes[index];
+        SZrAstNode *declaration;
+
+        if (statement == ZR_NULL || statement->type != ZR_AST_EXTERN_BLOCK) {
+            continue;
+        }
+
+        declaration = extern_compiler_find_named_declaration(&statement->data.externBlock, typeName);
+        if (declaration != ZR_NULL && declaration->type == ZR_AST_STRUCT_DECLARATION) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static SZrTypeMemberInfo *compiler_class_find_declared_member(SZrTypePrototypeInfo *info, SZrString *memberName) {
     if (info == ZR_NULL || memberName == ZR_NULL) {
         return ZR_NULL;
@@ -237,6 +284,21 @@ static TZrBool compiler_class_apply_builtin_ffi_wrapper_decorators(SZrCompilerSt
     if (hasLowering && extern_compiler_string_equals(loweringValue, "handle_id") && !hasUnderlying) {
         ZrParser_Compiler_Error(cs,
                                 "zr.ffi.lowering(\"handle_id\") on class wrappers requires zr.ffi.underlying(...)",
+                                location);
+        return ZR_FALSE;
+    }
+
+    if (hasLowering && extern_compiler_string_equals(loweringValue, "handle_id") && hasUnderlying &&
+        !compiler_class_ffi_integer_type_name_supported(underlyingValue)) {
+        ZrParser_Compiler_Error(cs,
+                                "zr.ffi.underlying on class wrappers requires a supported integer type name: i8, u8, i16, u16, i32, u32, i64, u64",
+                                location);
+        return ZR_FALSE;
+    }
+
+    if (hasViewType && !compiler_class_view_type_is_source_extern_struct(cs, viewTypeValue)) {
+        ZrParser_Compiler_Error(cs,
+                                "zr.ffi.viewType on class wrappers requires a source extern struct name",
                                 location);
         return ZR_FALSE;
     }
@@ -500,6 +562,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             
             SZrTypeMemberInfo memberInfo;
             memset(&memberInfo, 0, sizeof(memberInfo));
+            memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
 
             // 初始化所有字段
             memberInfo.memberType = member->type;

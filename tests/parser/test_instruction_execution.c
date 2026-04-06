@@ -1910,6 +1910,157 @@ static void test_execute_string_concat_with_dynamic_member_number(void) {
     TEST_DIVIDER();
 }
 
+static void test_execute_string_length_member_counts_code_points(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "String length member counts Unicode code points";
+    const char *input = "a\xE4\xB8\xAD\xF0\x9F\x99\x82";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrString *text;
+        SZrString *memberName;
+        SZrTypeValue receiver;
+        SZrTypeValue result;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        TEST_INFO("String length member",
+                  "Testing that string.length resolves through the string prototype and returns Unicode code point count");
+
+        text = ZrCore_String_Create(state, (TZrNativeString)input, strlen(input));
+        memberName = ZrCore_String_CreateFromNative(state, "length");
+        TEST_ASSERT_NOT_NULL(text);
+        TEST_ASSERT_NOT_NULL(memberName);
+
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(text));
+        ZrCore_Value_ResetAsNull(&result);
+
+        TEST_ASSERT_TRUE(ZrCore_Object_GetMember(state, &receiver, memberName, &result));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(3, result.value.nativeObject.nativeInt64);
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_execute_string_byte_length_member_counts_utf8_bytes(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "String byteLength member counts UTF-8 bytes";
+    const char *input = "\xF0\x9F\x99\x82";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrString *text;
+        SZrString *memberName;
+        SZrTypeValue receiver;
+        SZrTypeValue result;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        TEST_INFO("String byteLength member",
+                  "Testing that string.byteLength resolves through the string prototype and returns raw UTF-8 bytes");
+
+        text = ZrCore_String_Create(state, (TZrNativeString)input, strlen(input));
+        memberName = ZrCore_String_CreateFromNative(state, "byteLength");
+        TEST_ASSERT_NOT_NULL(text);
+        TEST_ASSERT_NOT_NULL(memberName);
+
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(text));
+        ZrCore_Value_ResetAsNull(&result);
+
+        TEST_ASSERT_TRUE(ZrCore_Object_GetMember(state, &receiver, memberName, &result));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(4, result.value.nativeObject.nativeInt64);
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_execute_string_to_array_returns_utf8_bytes(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "String toArray returns raw UTF-8 bytes";
+    const char *asciiInput = "A";
+    const char *utf8Input = "\xE4\xB8\xAD";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrString *text;
+        SZrString *memberName;
+        SZrString *lengthName;
+        SZrTypeValue receiver;
+        SZrTypeValue result;
+        SZrTypeValue lengthValue;
+        SZrTypeValue keyValue;
+        SZrTypeValue firstByteValue;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        TEST_INFO("String toArray member",
+                  "Testing that string.toArray() resolves through the string prototype and exposes raw UTF-8 bytes");
+
+        text = ZrCore_String_Create(state, (TZrNativeString)asciiInput, strlen(asciiInput));
+        memberName = ZrCore_String_CreateFromNative(state, "toArray");
+        lengthName = ZrCore_String_CreateFromNative(state, "length");
+        TEST_ASSERT_NOT_NULL(text);
+        TEST_ASSERT_NOT_NULL(memberName);
+        TEST_ASSERT_NOT_NULL(lengthName);
+
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(text));
+        ZrCore_Value_ResetAsNull(&result);
+        TEST_ASSERT_TRUE(ZrCore_Object_InvokeMember(state, &receiver, memberName, ZR_NULL, 0, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, result.type);
+
+        ZrCore_Value_ResetAsNull(&lengthValue);
+        TEST_ASSERT_TRUE(ZrCore_Object_GetMember(state, &result, lengthName, &lengthValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lengthValue.type));
+        TEST_ASSERT_EQUAL_INT64(1, lengthValue.value.nativeObject.nativeInt64);
+
+        ZrCore_Value_InitAsInt(state, &keyValue, 0);
+        ZrCore_Value_ResetAsNull(&firstByteValue);
+        TEST_ASSERT_TRUE(ZrCore_Object_GetByIndex(state, &result, &keyValue, &firstByteValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_UNSIGNED_INT(firstByteValue.type) || ZR_VALUE_IS_TYPE_INT(firstByteValue.type));
+        TEST_ASSERT_EQUAL_INT64(65,
+                                ZR_VALUE_IS_TYPE_UNSIGNED_INT(firstByteValue.type)
+                                        ? (TZrInt64)firstByteValue.value.nativeObject.nativeUInt64
+                                        : firstByteValue.value.nativeObject.nativeInt64);
+
+        text = ZrCore_String_Create(state, (TZrNativeString)utf8Input, strlen(utf8Input));
+        TEST_ASSERT_NOT_NULL(text);
+        ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(text));
+        ZrCore_Value_ResetAsNull(&result);
+        TEST_ASSERT_TRUE(ZrCore_Object_InvokeMember(state, &receiver, memberName, ZR_NULL, 0, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, result.type);
+
+        ZrCore_Value_ResetAsNull(&lengthValue);
+        TEST_ASSERT_TRUE(ZrCore_Object_GetMember(state, &result, lengthName, &lengthValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lengthValue.type));
+        TEST_ASSERT_EQUAL_INT64(3, lengthValue.value.nativeObject.nativeInt64);
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_execute_function_helper_restores_base_after_stack_grow(void) {
     SZrTestTimer timer;
     const char *testSummary = "Function Helper Restores Base After Stack Grow";
@@ -2728,6 +2879,9 @@ int main(void) {
     RUN_TEST(test_execute_object_literal_with_complex_property_values);
     RUN_TEST(test_execute_string_concat_variable_lifetimes);
     RUN_TEST(test_execute_string_concat_with_dynamic_member_number);
+    RUN_TEST(test_execute_string_length_member_counts_code_points);
+    RUN_TEST(test_execute_string_byte_length_member_counts_utf8_bytes);
+    RUN_TEST(test_execute_string_to_array_returns_utf8_bytes);
     RUN_TEST(test_execute_function_helper_restores_base_after_stack_grow);
     RUN_TEST(test_execute_function_stack_anchor_restores_base_after_stack_grow);
 

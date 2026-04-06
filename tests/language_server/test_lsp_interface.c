@@ -16,6 +16,7 @@
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_query.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_interface_internal.h"
 
 #include <errno.h>
 
@@ -103,6 +104,7 @@ static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZ
 static TZrBool build_fixture_native_path(const TZrChar *relativePath, TZrChar *buffer, TZrSize bufferSize);
 static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength);
 static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrChar *path);
+static SZrString *create_percent_encoded_file_uri_from_native_path(SZrState *state, const TZrChar *path);
 
 // 测试 LSP 上下文创建和释放
 static void test_lsp_context_create_and_free(SZrState *state) {
@@ -873,6 +875,50 @@ static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrCha
     return ZrCore_String_Create(state, uriBuffer, writeIndex);
 }
 
+static SZrString *create_percent_encoded_file_uri_from_native_path(SZrState *state, const TZrChar *path) {
+    TZrChar uriBuffer[2048];
+    TZrSize writeIndex = 0;
+    TZrSize pathLength;
+
+    if (state == ZR_NULL || path == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pathLength = strlen(path);
+    if (pathLength + 16 >= sizeof(uriBuffer)) {
+        return ZR_NULL;
+    }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    memcpy(uriBuffer, "file:///", 8);
+    writeIndex = 8;
+    if (pathLength >= 2 &&
+        ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) &&
+        path[1] == ':') {
+        TZrChar drive = path[0];
+        if (drive >= 'A' && drive <= 'Z') {
+            drive = (TZrChar)(drive - 'A' + 'a');
+        }
+        uriBuffer[writeIndex++] = drive;
+        memcpy(uriBuffer + writeIndex, "%3A", 3);
+        writeIndex += 3;
+        path += 2;
+        pathLength -= 2;
+    }
+#else
+    memcpy(uriBuffer, "file://", 7);
+    writeIndex = 7;
+#endif
+
+    for (TZrSize index = 0; index < pathLength && writeIndex + 2 < sizeof(uriBuffer); index++) {
+        TZrChar current = path[index];
+        uriBuffer[writeIndex++] = current == '\\' ? '/' : current;
+    }
+
+    uriBuffer[writeIndex] = '\0';
+    return ZrCore_String_Create(state, uriBuffer, writeIndex);
+}
+
 static SZrLspSymbolInformation *find_symbol_information_by_name(SZrArray *symbols, const TZrChar *name) {
     for (TZrSize index = 0; symbols != ZR_NULL && index < symbols->length; index++) {
         SZrLspSymbolInformation **symbolPtr =
@@ -1399,6 +1445,91 @@ static void test_lsp_project_workspace_symbols_include_imported_exports(SZrState
     free(mainContent);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Project Workspace Symbols Include Imported Exports");
+}
+
+static void test_lsp_project_encoded_uri_builtin_import_refresh_does_not_crash(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrLspPosition importLiteralPosition;
+    SZrArray diagnostics;
+    SZrLspHover *hover = ZR_NULL;
+    TZrChar mainPath[1024];
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "return 1;\n";
+
+    TEST_START("LSP Project Encoded URI Builtin Import Refresh Does Not Crash");
+    TEST_INFO("Project refresh encoded URI",
+              "Opening a project source file through a percent-encoded file URI should keep project refresh and native builtin metadata loading stable for zr.system imports");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/import_pub_function/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath))) {
+        TEST_FAIL(timer,
+                  "LSP Project Encoded URI Builtin Import Refresh Does Not Crash",
+                  "Failed to build project fixture path");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Project Encoded URI Builtin Import Refresh Does Not Crash",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    mainUri = create_percent_encoded_file_uri_from_native_path(state, mainPath);
+    if (mainUri == ZR_NULL ||
+        !lsp_find_position_for_substring(content, "\"zr.system\"", 0, 1, &importLiteralPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Encoded URI Builtin Import Refresh Does Not Crash",
+                  "Failed to prepare percent-encoded URI fixture");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Encoded URI Builtin Import Refresh Does Not Crash",
+                  "Failed to update the encoded project source document");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, mainUri, &diagnostics)) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Encoded URI Builtin Import Refresh Does Not Crash",
+                  "Failed to retrieve diagnostics after project refresh");
+        return;
+    }
+    if (diagnostics.length != 0) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Encoded URI Builtin Import Refresh Does Not Crash",
+                  "Expected the encoded-uri builtin import fixture to analyze without diagnostics");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, importLiteralPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "module <zr.system>") ||
+        !hover_contains_text(hover, "Source: native builtin")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Encoded URI Builtin Import Refresh Does Not Crash",
+                  "Hover on the encoded-uri zr.system import should still resolve through native builtin metadata");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Project Encoded URI Builtin Import Refresh Does Not Crash");
 }
 
 // 测试获取文档高亮
@@ -3290,6 +3421,119 @@ static void test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(SZ
     TEST_PASS(timer, "LSP Semantic Query Unifies Local Symbol Navigation And Hover");
 }
 
+static void test_lsp_web_uri_local_symbol_navigation(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content = "var x = 10; var y = x;\n";
+    SZrLspPosition definitionPosition;
+    SZrLspPosition declarationPosition;
+    SZrArray definitions;
+    SZrArray references;
+    SZrArray highlights;
+
+    TEST_START("LSP Web URI Local Symbol Navigation");
+    TEST_INFO("Web URI support",
+              "Non-file document URIs such as vscode-test-web://... should still support same-document definition, references, and highlights through the shared semantic query path");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Web URI Local Symbol Navigation",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                               "vscode-test-web://mount/src/lsp_smoke.zr",
+                               strlen("vscode-test-web://mount/src/lsp_smoke.zr"));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "x = 10", 0, 0, &declarationPosition) ||
+        !lsp_find_position_for_substring(content, "= x;", 0, 2, &definitionPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Web URI Local Symbol Navigation",
+                  "Failed to prepare the web-uri local symbol fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, definitionPosition, &definitions) ||
+        !location_array_contains_uri_and_range(&definitions,
+                                               "vscode-test-web://mount/src/lsp_smoke.zr",
+                                               declarationPosition.line,
+                                               declarationPosition.character,
+                                               declarationPosition.line,
+                                               declarationPosition.character + 1)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Web URI Local Symbol Navigation",
+                  "Definition should resolve the local declaration for vscode-test-web URIs");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_FindReferences(state, context, uri, definitionPosition, ZR_TRUE, &references) ||
+        !location_array_contains_position(&references, declarationPosition.line, declarationPosition.character) ||
+        !location_array_contains_position(&references, definitionPosition.line, definitionPosition.character)) {
+        ZrCore_Array_Free(state, &references);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Web URI Local Symbol Navigation",
+                  "References should include both declaration and usage for vscode-test-web URIs");
+        return;
+    }
+    ZrCore_Array_Free(state, &references);
+
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 4);
+    if (!ZrLanguageServer_Lsp_GetDocumentHighlights(state, context, uri, definitionPosition, &highlights) ||
+        !highlight_array_contains_position(&highlights, declarationPosition.line, declarationPosition.character) ||
+        !highlight_array_contains_position(&highlights, definitionPosition.line, definitionPosition.character)) {
+        ZrCore_Array_Free(state, &highlights);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Web URI Local Symbol Navigation",
+                  "Document highlights should include both declaration and usage for vscode-test-web URIs");
+        return;
+    }
+    ZrCore_Array_Free(state, &highlights);
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Web URI Local Symbol Navigation");
+}
+
+static void test_lsp_file_uri_to_native_path_rejects_non_file_web_uri(SZrState *state) {
+    SZrTestTimer timer;
+    SZrString *webUri;
+    TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    TEST_START("LSP FileUriToNativePath Rejects Non-File Web Uri");
+    TEST_INFO("Web URI native-path rejection",
+              "Non-file URIs such as vscode-test-web://... must not be treated as native file-system paths for project refresh or metadata loading");
+
+    webUri = ZrCore_String_Create(state,
+                                  "vscode-test-web://mount/src/lsp_smoke.zr",
+                                  strlen("vscode-test-web://mount/src/lsp_smoke.zr"));
+    if (webUri == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP FileUriToNativePath Rejects Non-File Web Uri",
+                  "Failed to create the test web URI");
+        return;
+    }
+
+    if (ZrLanguageServer_Lsp_FileUriToNativePath(webUri, nativePath, sizeof(nativePath))) {
+        TEST_FAIL(timer,
+                  "LSP FileUriToNativePath Rejects Non-File Web Uri",
+                  "Non-file web URIs should not be converted into native paths");
+        return;
+    }
+
+    TEST_PASS(timer, "LSP FileUriToNativePath Rejects Non-File Web Uri");
+}
+
 static void test_lsp_semantic_query_resolves_native_import_member_source_kind(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4082,6 +4326,9 @@ int main(void) {
     test_lsp_project_workspace_symbols_include_imported_exports(state);
     TEST_DIVIDER();
 
+    test_lsp_project_encoded_uri_builtin_import_refresh_does_not_crash(state);
+    TEST_DIVIDER();
+
     test_lsp_get_document_highlights(state);
     TEST_DIVIDER();
 
@@ -4143,6 +4390,12 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(state);
+    TEST_DIVIDER();
+
+    test_lsp_web_uri_local_symbol_navigation(state);
+    TEST_DIVIDER();
+
+    test_lsp_file_uri_to_native_path_rejects_non_file_web_uri(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_query_resolves_native_import_member_source_kind(state);

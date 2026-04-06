@@ -10,7 +10,9 @@
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"
+#include "zr_vm_core/utf8.h"
 #include "zr_vm_core/value.h"
 
 static void native_string_push_string_to_stack(SZrNativeStringFormatBuffer *buffer, TZrNativeString string, TZrSize length) {
@@ -93,13 +95,7 @@ static void native_string_add_number_to_buffer(SZrNativeStringFormatBuffer *buff
 }
 
 static TZrSize zr_string_length_local(const SZrString *string) {
-    if (string == ZR_NULL) {
-        return 0;
-    }
-
-    return string->shortStringLength < ZR_VM_LONG_STRING_FLAG
-                   ? (TZrSize)string->shortStringLength
-                   : string->longStringLength;
+    return ZrCore_String_GetByteLength(string);
 }
 
 static void zr_string_collapse_stack_window(SZrState *state,
@@ -305,8 +301,10 @@ TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, TZrNativeStr
             case 'U': {
                 // handle utf8 char
                 TZrChar uCharBuffer[ZR_STRING_UTF8_SIZE];
-                TZrSize length = ZrCore_NativeString_Utf8CharLength(uCharBuffer, ZR_CAST_UINT64(va_arg(args, TZrInt64)));
-                native_string_add_string_to_buffer(&buffer, uCharBuffer + ZR_STRING_UTF8_SIZE - length, length);
+                TZrSize length = 0;
+                if (ZrCore_Utf8_EncodeCodePoint((TZrUInt32)ZR_CAST_UINT64(va_arg(args, TZrInt64)), uCharBuffer, &length)) {
+                    native_string_add_string_to_buffer(&buffer, uCharBuffer, length);
+                }
             } break;
             case '%': {
                 native_string_add_string_to_buffer(&buffer, "%", sizeof(TZrChar));
@@ -472,6 +470,81 @@ SZrString *ZrCore_String_CreateTryHitCache(SZrState *state, TZrNativeString stri
     }
     apiCache[0] = ZrCore_String_Create(state, string, ZrCore_NativeString_Length(string));
     return apiCache[0];
+}
+
+TZrBool ZrCore_String_GetCodePointLength(const SZrString *string, TZrSize *outLength) {
+    TZrNativeString nativeString;
+    TZrSize byteLength;
+
+    if (outLength == ZR_NULL || string == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nativeString = ZrCore_String_GetNativeString(string);
+    byteLength = ZrCore_String_GetByteLength(string);
+    return ZrCore_Utf8_CountCodePoints(nativeString, byteLength, outLength);
+}
+
+TZrBool ZrCore_String_CodePointCountToByteOffset(const SZrString *string,
+                                                 TZrSize codePointCount,
+                                                 TZrSize *outOffset) {
+    TZrNativeString nativeString;
+    TZrSize byteLength;
+
+    if (outOffset == ZR_NULL || string == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nativeString = ZrCore_String_GetNativeString(string);
+    byteLength = ZrCore_String_GetByteLength(string);
+    return ZrCore_Utf8_CodePointCountToByteOffset(nativeString, byteLength, codePointCount, outOffset);
+}
+
+TZrBool ZrCore_String_ToByteArray(SZrState *state,
+                                  const SZrString *string,
+                                  SZrObject **outArray) {
+    SZrObject *array;
+    SZrTypeValue receiver;
+    TZrNativeString nativeString;
+    TZrSize byteLength;
+    const TZrUInt8 *bytes;
+
+    if (outArray != ZR_NULL) {
+        *outArray = ZR_NULL;
+    }
+
+    if (state == ZR_NULL || string == ZR_NULL || outArray == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nativeString = ZrCore_String_GetNativeString(string);
+    byteLength = ZrCore_String_GetByteLength(string);
+    if (!ZrCore_Utf8_IsValid(nativeString, byteLength)) {
+        return ZR_FALSE;
+    }
+
+    array = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+    if (array == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Object_Init(state, array);
+
+    ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(array));
+    receiver.type = ZR_VALUE_TYPE_ARRAY;
+    bytes = (const TZrUInt8 *)nativeString;
+    for (TZrSize index = 0; index < byteLength; index++) {
+        SZrTypeValue indexValue;
+        SZrTypeValue elementValue;
+
+        ZrCore_Value_InitAsInt(state, &indexValue, (TZrInt64)index);
+        ZrCore_Value_InitAsUInt(state, &elementValue, (TZrUInt64)bytes[index]);
+        if (!ZrCore_Object_SetByIndex(state, &receiver, &indexValue, &elementValue)) {
+            return ZR_FALSE;
+        }
+    }
+
+    *outArray = array;
+    return ZR_TRUE;
 }
 
 TZrBool ZrCore_String_Equal(SZrString *string1, SZrString *string2) {

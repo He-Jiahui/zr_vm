@@ -1,0 +1,21 @@
+%module "lib";
+
+pub var a: i32 = 10;
+
+pub class Record {
+    pub var x: i32;
+    pub var y: i32;
+
+    pub @constructor(x: i32, y: i32) {
+        this.x = x;
+        this.y = y;
+    }
+
+    pub @call(){
+        return this.x + this.y;
+    }
+
+    pub static newInstance(x: i32, y: i32) : Record {
+        return new Record (x, y);
+    }
+}

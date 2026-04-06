@@ -10,6 +10,21 @@ zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_system")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_math")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_container")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_ffi")
+if (TARGET zr_vm_lib_network_shared OR TARGET zr_vm_lib_network_static)
+    zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_network")
+
+    if (TARGET ${zr_curr_module_name}_shared)
+        target_compile_definitions(${zr_curr_module_name}_shared PRIVATE
+            ZR_VM_LSP_HAS_NETWORK_LIB=1
+        )
+    endif()
+
+    if (TARGET ${zr_curr_module_name}_static)
+        target_compile_definitions(${zr_curr_module_name}_static PRIVATE
+            ZR_VM_LSP_HAS_NETWORK_LIB=1
+        )
+    endif()
+endif()
 zr_link_third_party_for_module(${zr_curr_module_name} "zr_c_json")
 
 zr_install_module(${zr_curr_module_name})
@@ -121,6 +136,9 @@ if(BUILD_WASM)
         list(FILTER zr_vm_lib_math_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_lib_container_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_lib_ffi_src EXCLUDE REGEX ".*test.*")
+        list(APPEND zr_vm_parser_src
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler_test.c
+        )
         
         # 创建 WASM 可执行文件（包含所有依赖的源文件）
         add_executable(${zr_curr_module_name}_wasm 
@@ -206,6 +224,7 @@ if(BUILD_WASM)
         # TODO: 需要确保 zr_vm_parser 和 zr_vm_core 也编译为 WASM 版本
         zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_c_json")
         zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_xx_hash")
+        zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_utf8proc")
         zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_tiny_dir")
         
         message(STATUS "WASM target ${zr_curr_module_name}_wasm configured for Emscripten")

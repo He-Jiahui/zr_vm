@@ -1,42 +1,45 @@
 ---
 related_code:
   - zr_vm_lib_system/include/zr_vm_lib_system/module.h
-  - zr_vm_lib_system/include/zr_vm_lib_system/console_registry.h
   - zr_vm_lib_system/include/zr_vm_lib_system/fs_registry.h
-  - zr_vm_lib_system/include/zr_vm_lib_system/env_registry.h
-  - zr_vm_lib_system/include/zr_vm_lib_system/process_registry.h
-  - zr_vm_lib_system/include/zr_vm_lib_system/gc_registry.h
-  - zr_vm_lib_system/include/zr_vm_lib_system/vm_registry.h
+  - zr_vm_lib_system/include/zr_vm_lib_system/exception_registry.h
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/console_registry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/env_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/process_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/gc_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/vm_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs_common.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs_entry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs_stream.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs_internal.h
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception_registry.c
+  - zr_vm_library/include/zr_vm_library/file.h
   - zr_vm_library/include/zr_vm_library/native_binding.h
+  - zr_vm_library/src/zr_vm_library/file.c
   - zr_vm_library/src/zr_vm_library/native_binding.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/compile_expression.c
 implementation_files:
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/console_registry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/env_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/process_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/gc_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/vm_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs_common.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs_entry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs_stream.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs_internal.h
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception_registry.c
+  - zr_vm_library/include/zr_vm_library/file.h
+  - zr_vm_library/src/zr_vm_library/file.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
   - zr_vm_library/src/zr_vm_library/native_binding.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/compile_expression.c
 plan_sources:
   - user: 2026-03-29 实现“zr.system 模块细分与子模块化方案”
+  - .codex/plans/zr struct 值类型与 native wrapper 分层方案.md
+  - .codex/plans/zr.system.fs 对象化文件系统与 FileStream handle_id wrapper 验证.md
 tests:
   - tests/module/test_module_system.c
   - tests/parser/test_type_inference.c
+  - tests/system/test_system_fs_module.c
+  - tests/ffi/ffi_fixture.c
   - tests/fixtures/projects/native_numeric_pipeline/src/main.zr
-  - tests/fixtures/projects/native_numeric_pipeline/src/lin_alg.zr
   - tests/fixtures/projects/native_math_export_probe/src/main.zr
 doc_type: module-detail
 ---
@@ -45,31 +48,16 @@ doc_type: module-detail
 
 ## Purpose
 
-`zr.system` 现在是一个只负责聚合的 native 根模块，真正的行为全部落在叶子模块中。这个拆分解决了两个问题：
+`zr.system` 现在仍然是一个聚合根模块，但文件系统部分已经从“扁平函数集合”升级成“路径对象 + 打开流对象 + native wrapper metadata”三层结构。
 
-第一，system API 不再是一个持续膨胀的扁平命名空间。调用方必须显式选择 `console`、`fs`、`env`、`process`、`gc`、`vm` 之一，语义边界稳定，命名也能保持完整而不依赖缩写。
+这个文档同时约束两件事：
 
-第二，根模块导出子模块对象不再靠 `zr.system` 专用硬编码，而是通过 `zr_vm_library` 的通用 native descriptor 和 materializer 机制完成。以后别的 native 模块如果也要聚合子模块，可以复用同一套 `moduleLinks` 路径。
+- 根模块和 6 个叶子模块之间的聚合关系必须继续走通用 `moduleLinks` / native materializer 路径，而不是对 `zr.system` 做专用硬编码。
+- `zr.system.fs` 必须同时提供对象化路径 API、兼容的旧函数 API，以及 `FileStream` 的 `handle_id` wrapper 语义，且这些语义只能在 FFI/native 边界自动 lowering。
 
-## Related Files
+## Root Module Shape
 
-`zr_vm_lib_system/src/zr_vm_lib_system/module.c` 定义根模块 `zr.system`，只保留 6 个 `moduleLinks`，并在注册时先注册 6 个叶子模块，再注册根模块。
-
-`zr_vm_lib_system/src/zr_vm_lib_system/*_registry.c` 定义每个叶子模块的公开函数、常量、类型和 hints。这里是公开 API 与元信息的单一来源。
-
-`zr_vm_library/include/zr_vm_library/native_binding.h` 扩展 native descriptor 结构，新增 `ZrLibModuleLinkDescriptor` 和 `ZrLibModuleDescriptor.moduleLinks/moduleLinkCount`。
-
-`zr_vm_library/src/zr_vm_library/native_binding.c` 负责把 type、constant、function、module link 一起物化成运行时模块对象，并把 `modules` 数组写入 `__zr_native_module_info`。
-
-`zr_vm_parser/src/zr_vm_parser/type_inference.c` 在编译期读取 `__zr_native_module_info` 的 `modules/functions/constants/types` 数组，生成模块原型与字段信息。
-
-`zr_vm_parser/src/zr_vm_parser/compile_expression.c` 保证模块导出的 prototype 不能被普通函数调用语法误用，要求使用 `$target(...)` 或 `new target(...)`。
-
-## Behavior Model
-
-### Root Module Shape
-
-`%import("zr.system")` 返回的根模块只暴露这 6 个字段：
+`%import("zr.system")` 返回的根模块只导出这 6 个字段：
 
 - `console: zr.system.console`
 - `fs: zr.system.fs`
@@ -78,159 +66,365 @@ doc_type: module-detail
 - `gc: zr.system.gc`
 - `vm: zr.system.vm`
 
-根模块不再保留旧的扁平函数，也不重导出 `SystemFileInfo`、`SystemVmState`、`SystemLoadedModuleInfo` 这类类型值。调用方必须走层级访问，例如：
+根模块不再重导出旧的扁平文件系统函数，也不重导出 `SystemFileInfo`、`SystemVmState`、`SystemLoadedModuleInfo` 这类类型值。类型仍然属于各自叶子模块，但会进入全局 type 空间，所以既可以写 `var fs = %import("zr.system.fs"); new fs.File("a.txt");`，也可以在类型推断阶段通过模块字段拿到原型和元信息。
 
-```zr
-var system = %import("zr.system");
-system.console.printLine("hello");
-system.gc.stop();
-var info = system.fs.getInfo(system.fs.currentDirectory());
-```
+`zr.system.exception` 仍然是独立模块，不属于根模块这 6 个字段之一。文件系统相关失败会抛这个模块里的 `IOException`。
 
-### Leaf Module APIs
+## Leaf Modules At A Glance
 
-`zr.system.console` 提供标准输出和标准错误输出函数：
+`zr.system.console` 暴露：
 
 - `print`
 - `printLine`
 - `printError`
 - `printErrorLine`
 
-`zr.system.fs` 提供文件系统查询和文本 I/O：
+`zr.system.fs` 暴露：
 
-- `currentDirectory`
-- `changeCurrentDirectory`
-- `pathExists`
-- `isFile`
-- `isDirectory`
-- `createDirectory`
-- `createDirectories`
-- `removePath`
-- `readText`
-- `writeText`
-- `appendText`
-- `getInfo`
+- 兼容函数：`currentDirectory`、`changeCurrentDirectory`、`pathExists`、`isFile`、`isDirectory`、`createDirectory`、`createDirectories`、`removePath`、`readText`、`writeText`、`appendText`、`getInfo`
+- 对象类型：`SystemFileInfo`、`FileSystemEntry`、`File`、`Folder`、`IStreamReader`、`IStreamWriter`、`FileStream`
 
-`zr.system.env` 只暴露 `getVariable`。
+`zr.system.env` 暴露：
 
-`zr.system.process` 暴露一个常量和两个过程控制函数：
+- `getVariable`
+
+`zr.system.process` 暴露：
 
 - `arguments`
 - `sleepMilliseconds`
 - `exit`
 
-`zr.system.gc` 暴露垃圾回收控制：
+`zr.system.gc` 暴露：
 
 - `start`
 - `stop`
 - `step`
 - `collect`
 
-`zr.system.vm` 暴露运行时检查与跨模块调用：
+`zr.system.vm` 暴露：
 
 - `loadedModules`
 - `state`
 - `callModuleExport`
 
-### Public Types And Metadata
+`zr.system.exception` 暴露：
 
-叶子模块拥有自己的公开类型，并且这些类型会同时出现在模块 export 和全局 type 空间中。当前固定的公开类型如下：
+- `registerUnhandledException`
+- `Error`
+- `StackFrame`
+- `RuntimeError`
+- `IOException`
+- `TypeError`
+- `MemoryError`
+- `ExceptionError`
 
-- `SystemFileInfo`
-- `SystemVmState`
-- `SystemLoadedModuleInfo`
+## zr.system.fs Public Surface
 
-字段名保持完整语义，不保留缩写：
+### Compatibility Functions
 
-- `SystemFileInfo { path, size, isFile, isDirectory, modifiedMilliseconds }`
-- `SystemVmState { loadedModuleCount, garbageCollectionMode, garbageCollectionDebt, garbageCollectionThreshold, stackDepth, frameDepth }`
-- `SystemLoadedModuleInfo { name, sourceKind, sourcePath, hasTypeHints }`
+旧的模块级函数还保留在 `zr.system.fs`，用于兼容既有脚本和测试：
 
-子模块对象本身没有额外的 `SystemConsoleModule`、`SystemFsModule` 之类别名类型。它们的类型身份直接使用模块路径名，例如 `zr.system.console`。
+- `currentDirectory(): string`
+- `changeCurrentDirectory(path: string): bool`
+- `pathExists(path: string): bool`
+- `isFile(path: string): bool`
+- `isDirectory(path: string): bool`
+- `createDirectory(path: string): bool`
+- `createDirectories(path: string): bool`
+- `removePath(path: string): bool`
+- `readText(path: string): string`
+- `writeText(path: string, text: string): bool`
+- `appendText(path: string, text: string): bool`
+- `getInfo(path: string): SystemFileInfo`
 
-## Design And Rationale
+这些函数现在只是对象模型之上的兼容薄封装：
 
-### Generic Module Links Instead Of Root-Specific Hardcoding
+- 查询型 API 继续返回 `bool` 或 `SystemFileInfo`
+- 文本 I/O helper 继续保留原返回类型
+- 对会实际执行文件创建、删除、打开或读写的 helper，失败时不再退回裸 `Ptr` 或宿主侧特殊 sentinel，而是统一映射为 `zr.system.exception.IOException`
 
-`ZrLibModuleLinkDescriptor` 只描述三件事：
+### SystemFileInfo
 
-- 根模块中要导出的字段名
-- 被链接的模块路径
-- 文档说明
+`SystemFileInfo` 是 native 导出的 `struct` 值类型，用来承载一次文件系统快照。当前字段固定为：
 
-materializer 在处理一个 native 模块时，会先注册它自己的 types、constants、functions，再处理 `moduleLinks`。对于每个 link，它会确保目标模块已从 native registry 物化并进入 cache，然后把目标模块对象直接作为当前模块的 pub export。这样 `zr.system` 根模块与 `zr.system.console` 叶子模块共享同一个缓存实例，而不是拷贝出一层包装对象。
-
-### Full Metadata Is Required For Compiler Access
-
-`native_binding.c` 在 `__zr_native_module_info` 里新增了 `modules` 数组，与原来的 `functions`、`constants`、`types` 并列。这个数组里的每一项记录：
-
+- `path`
+- `size`
+- `isFile`
+- `isDirectory`
+- `modifiedMilliseconds`
+- `exists`
 - `name`
-- `moduleName`
-- `documentation`
+- `extension`
+- `parentPath`
+- `createdMilliseconds`
+- `accessedMilliseconds`
 
-`type_inference.c` 在 `ensure_native_module_compile_info` 中先创建模块原型，再把 `modules` 数组里的每个 entry 追加成一个模块字段。字段的 `fieldTypeName` 直接使用目标模块路径，例如 `zr.system.console`。这样 `%import("zr.system").console.printLine(...)` 在编译期就能沿着 `zr.system -> zr.system.console -> printLine` 继续推断，而不是退化成不透明 object。
+`fileInfo` 字段和 `refresh()` 返回值都保存这个 struct 的快照副本，而不是懒引用宿主查询结果。
 
-### Prototype Access Rules Stay Explicit
+### FileSystemEntry
 
-模块导出的 type export 依然是 prototype 对象。为了避免 `math.Vector3(...)` 这种普通调用与 prototype 构造混淆：
+`FileSystemEntry` 是路径包装基类，`File` 和 `Folder` 都继承它。构造签名是 `FileSystemEntry(path: string)`，公开字段为：
 
-- `compile_expression.c` 在 member-chain 和 type inference 两边都把 prototype reference 视为不可直接调用
-- 诊断信息统一要求使用 `$target(...)` 或 `new target(...)`
-- 老的 unary `$expr` 构造语法继续报错，不作为兼容入口保留
+- `path`: 构造时传入的原始路径
+- `fullPath`: 归一化后的绝对路径
+- `name`: 最终路径段
+- `extension`: 最终路径段的扩展名，包含前导点
+- `parent`: 归一化后的父目录 `Folder` 对象；如果已经是文件系统根，则为 `null`
+- `fileInfo`: 最近一次刷新得到的 `SystemFileInfo` 快照
 
-这条规则同样适用于通过模块导出的 native 类型，所以 `$math.Vector3(...)` 和 `$math.Vector4(...)` 这类写法仍是合法路径。
+公开方法只有两个：
+
+- `exists(): bool`
+- `refresh(): SystemFileInfo`
+
+构造函数和 `refresh()` 都会立即做一次宿主文件系统查询。`exists()` 也会先刷新快照，再返回 `fileInfo.exists`。
+
+### File
+
+`File` 继承 `FileSystemEntry`，构造签名是 `File(path: string)`，公开方法为：
+
+- `open(mode: string = "r"): FileStream`
+- `create(recursively: bool = true): null`
+- `readText(): string`
+- `writeText(text: string): int`
+- `appendText(text: string): int`
+- `readBytes(): array`
+- `writeBytes(bytes: array): int`
+- `appendBytes(bytes: array): int`
+- `copyTo(targetPath: string, overwrite: bool = false): File`
+- `moveTo(targetPath: string, overwrite: bool = false): File`
+- `delete(): null`
+
+行为约束：
+
+- `create(true)` 会在需要时递归创建父目录
+- 如果同一路径已经存在同类文件，`create` 视为成功
+- 如果同一路径存在异类对象，相关操作会抛 `IOException`
+- `copyTo` 和 `moveTo` 返回新的 `File` 包装对象，原对象不会自动改写为目标路径
+
+### Folder
+
+`Folder` 继承 `FileSystemEntry`，构造签名是 `Folder(path: string)`，公开方法为：
+
+- `create(recursively: bool = true): null`
+- `entries(): array`
+- `files(): array`
+- `folders(): array`
+- `glob(pattern: string, recursively: bool = true): array`
+- `copyTo(targetPath: string, overwrite: bool = false): Folder`
+- `moveTo(targetPath: string, overwrite: bool = false): Folder`
+- `delete(recursively: bool = false): null`
+
+行为约束：
+
+- `entries`、`files`、`folders`、`glob` 的返回结果按 `fullPath` 词法排序，保证测试稳定
+- `glob` 当前支持 `*` 和 `?`
+- `delete(false)` 只允许删除空目录；递归删除必须显式传 `true`
+
+### IStreamReader And IStreamWriter
+
+`IStreamReader` 只描述读接口：
+
+- `readBytes(count: int = -1): array`
+- `readText(count: int = -1): string`
+
+`IStreamWriter` 只描述写接口：
+
+- `writeBytes(bytes: array): int`
+- `writeText(text: string): int`
+- `flush(): null`
+
+`FileStream` 明确实现这两个接口，因此可以在普通 zr 代码里把打开后的流传给接口形参，但这不等价于把它自动转成整数句柄。
+
+### FileStream
+
+`FileStream` 是第一个落地的 native wrapper class。它不是路径对象，而是实际持有宿主文件描述符的资源对象。公开字段为：
+
+- `path`
+- `mode`
+- `position`
+- `length`
+- `closed`
+
+公开方法为：
+
+- `readBytes(count: int = -1): array`
+- `readText(count: int = -1): string`
+- `writeBytes(bytes: array): int`
+- `writeText(text: string): int`
+- `flush(): null`
+- `seek(offset: int, origin: string = "begin"): int`
+- `setLength(length: int): null`
+- `close(): null`
+
+额外还有一个 `@close` 元方法，复用同一个 runtime close 入口，供 `using` / `%using` 自动释放时调用。
+
+`FileStream` 目前在 native metadata 中固定注册为：
+
+- `ffiLoweringKind = "handle_id"`
+- `ffiUnderlyingTypeName = "i32"`
+- `ffiOwnerMode = "owned"`
+- `ffiReleaseHook = "close"`
+
+这意味着：
+
+- 普通 zr 赋值、普通函数调用、数组写入都不会把 `FileStream` 隐式转成整数
+- 只有 extern/native 边界在目标参数是 `i32` handle 时，才会读取 wrapper 里的 handle id 做 lowering
+- wrapper 已经关闭后，再参与 lowering 必须报错，防止把失效 fd 透传给 native
+
+## Stream Modes And Data Conventions
+
+`File.open(mode)` 支持的 canonical mode 是：
+
+- `r`
+- `r+`
+- `w`
+- `w+`
+- `a`
+- `a+`
+- `x`
+- `x+`
+
+可以额外附带 `b` 作为二进制别名，例如 `rb`、`wb+`、`ab`。`FileStream.mode` 字段里保存的是去掉可选 `b` 之后的 canonical 形式。
+
+接口能力不受 `b` 影响：
+
+- `readText` / `writeText` 始终存在，文本按 UTF-8 处理
+- `readBytes` / `writeBytes` 始终存在，字节数组用 `array` 承载 `0..255` 的整数
+- 真正决定是否可读、可写、是否截断、是否追加、是否独占创建的是打开模式本身
+
+`seek` 的 `origin` 只接受：
+
+- `begin`
+- `current`
+- `end`
+
+其它字符串会抛 `IOException`。
+
+## Lifecycle And Error Model
+
+路径对象 `File` / `Folder` 不持有 native 资源，只保存规范化路径和最近一次快照。
+
+`FileStream` 才是真正的 owner：
+
+- 底层保存稳定的宿主文件句柄 id
+- `close()` 幂等
+- `using` / `%using` 会走 `@close`
+- finalizer 只做一次兜底关闭，不会重复释放已经关闭过的句柄
+- 多个 zr 变量复制的是同一个 wrapper 引用，不会复制底层 fd
+
+错误模型统一如下：
+
+- `exists()`、`pathExists()`、`isFile()`、`isDirectory()` 这类探测接口返回 `bool`
+- `open`、`create`、`delete`、`copyTo`、`moveTo`、`entries`、`glob`、`read*`、`write*`、`flush`、`seek`、`setLength` 失败时抛 `zr.system.exception.IOException`
+- 模式不匹配，例如对只读流写入，也抛 `IOException`
+
+## FFI Boundary Rules
+
+`FileStream` 的 lowering 只在 FFI/native binding helper 边界生效。典型例子如下：
+
+```zr
+%extern("ffi_fixture") {
+  #zr.ffi.entry("zr_ffi_tell_fd")# tellFd(fd:i32): i32;
+}
+
+var fs = %import("zr.system.fs");
+var file = new fs.File("sample.txt");
+file.parent.create(true);
+
+var stream = file.open("w+");
+using stream;
+stream.writeText("abc");
+
+if (tellFd(stream) != 3) {
+  throw "unexpected fd position";
+}
+```
+
+这段代码是合法的，因为 `tellFd` 是 extern 入口，目标参数就是 `i32`。
+
+相反，普通 zr 调用点不会触发 lowering：
+
+```zr
+var fs = %import("zr.system.fs");
+
+func acceptFd(fd:i32): i32 {
+  return fd;
+}
+
+var stream = new fs.File("sample.txt").open("w+");
+acceptFd(stream); // 编译期报错
+```
+
+这个约束把 wrapper 生命周期语义和普通类型系统隔开了。上层 API 可以一直使用 `FileStream`，不必退回到裸 `Ptr` 或手工整数句柄。
+
+## Metadata, Compiler Access, And LSP Visibility
+
+`zr_vm_library` 的 native descriptor/materializer 现在不仅要把 `File`、`Folder`、`FileStream` 物化成运行时 prototype，也要把这些元信息写进 `__zr_native_module_info`。
+
+对于 `zr.system.fs`，编译器和 LSP 侧至少可以看到这些事实：
+
+- `File extends FileSystemEntry`
+- `Folder extends FileSystemEntry`
+- `FileStream implements IStreamReader, IStreamWriter`
+- `FileStream` 的 wrapper metadata 是 `handle_id/i32/owned/close`
+- `SystemFileInfo` 是公开 struct
+- `close` 同时存在普通方法与 `@close` 生命周期入口
+
+`type_inference.c` 会读取这些类型、字段、接口和 FFI metadata，把 `new fs.File(...)`、`file.parent.fullPath`、`takeReader(stream)`、以及 extern handle lowering 场景都保留在可推断路径内。
 
 ## Control Flow Or Data Flow
 
-1. CLI 初始化时注册 native 库，包括 `zr.math` 与重构后的 `zr.system`。
-2. `ZrVmLibSystem_Register` 先把 6 个叶子模块注册进 native registry，再注册根模块 `zr.system`。
-3. 运行时 `%import("zr.system")` 触发 root descriptor 物化。
-4. materializer 先创建 root module，再按 descriptor 注册 type、constant、function、module link、`__zr_native_module_info`。
-5. 当处理 `moduleLinks` 时，linked module 会被提前加载并加入 module cache，随后作为 root export 写入当前模块。
-6. 编译期 `%import("zr.system")` 触发 `ensure_native_module_compile_info`。
-7. `type_inference.c` 从 `__zr_native_module_info` 读取 `modules`，把 `console/fs/env/process/gc/vm` 建成模块字段；再继续读取 `types`，把叶子模块里的 struct/class metadata 推入 compiler prototype 表。
-8. 后续表达式推断与字节码发射就可以像处理普通模块和普通 prototype 一样处理 `system.console.printLine(...)`、`system.fs.getInfo(...).modifiedMilliseconds`、`system.vm.state().loadedModuleCount` 这些访问链。
+1. CLI 初始化时注册 `zr.system` 根模块、各个叶子模块，以及独立的 `zr.system.exception` 模块。
+2. `%import("zr.system")` 通过 `moduleLinks` 物化根模块，并把 6 个叶子模块对象直接作为 export 暴露出去。
+3. `%import("zr.system.fs")` 直接物化 `zr.system.fs`，其中类型描述符注册 `File`、`Folder`、`SystemFileInfo`、`FileStream` 和两个 stream interface。
+4. `File` / `Folder` 构造时调用底层 `zr_vm_library/file.c` 查询宿主路径信息，填充 `fullPath`、`parent` 和 `fileInfo`。
+5. `File.open(...)` 通过平台文件句柄接口打开底层资源，再创建 `FileStream` wrapper 对象，并把 handle id 与隐藏 native 指针写入对象字段。
+6. 普通 zr 调用里，`FileStream` 只是一个 class 实例引用。
+7. 遇到 extern/native 边界时，FFI lowering 根据 prototype 上的 wrapper metadata 读取 handle id，把它按 `i32` ABI 参数传给宿主函数。
+8. `close()`、`using` 和 finalizer 最终都收敛到同一条关闭路径，负责置 `closed = true`、把隐藏 handle id 更新为 `-1`，并避免二次释放。
 
 ## Edge Cases And Constraints
 
-- 不保留旧 API 兼容层。`system.println`、`system.writeText`、`system.gcDisable` 这类旧名字不应再出现。
-- `%import("zr.system")` 和 `%import("zr.system.fs")` 必须同时成立，并且两者命中的叶子模块对象必须共享缓存实例。
-- 根模块不应该偷偷重导出叶子类型。类型属于叶子模块，但仍要进入全局类型空间，便于字段查找和构造路径复用。
-- 所有公开 struct/class 都必须带完整 field/method/metaMethod 元信息；否则 parser/type inference 无法把 native 类型当成可推断对象来处理。
-- 模块字段类型使用完整路径名而不是别名，这使 native module object 与普通类型原型在 compiler 内部都能用同一套 `typeName` 机制表示。
+- 根模块仍然只导出 6 个叶子模块，不应把 `IOException` 或 `FileStream` 再次平铺到 `zr.system`。
+- `parent` 基于 `fullPath` 计算，而不是保留相对路径词法语义；因此 `new fs.File("a.txt").parent` 会直接得到归一化后的所属目录对象。
+- 目录对象也允许拥有扩展名，因为 `name` / `extension` 是按最终路径段抽取，不区分文件还是目录。
+- `refresh()` 返回的是当前 `fileInfo` 快照值，不是懒句柄或 view。
+- `FileStream` 的关闭状态必须参与 lowering 诊断；关闭后不得再把它当成有效 `i32` handle 传出。
+- 兼容函数 API 仍然存在，但新的推荐上层写法是 `File` / `Folder` / `FileStream`，而不是字符串路径 + 裸 `Ptr`。
 
 ## Test Coverage
 
-`tests/module/test_module_system.c` 覆盖了：
+`tests/module/test_module_system.c` 继续覆盖：
 
-- 叶子模块直导入，例如 `%import("zr.system.console")`
-- 根聚合访问，例如 `%import("zr.system").console`
-- 根模块只导出 6 个子模块，不包含旧扁平 API
-- `SystemFileInfo`、`SystemVmState`、`SystemLoadedModuleInfo` 的字段与元信息可见性
-- `system.vm.callModuleExport(...)` 的嵌套 native 调用
+- `zr.system` 根模块的 6 个叶子字段
+- 根模块聚合与叶子直导入共享缓存实例
 
-`tests/parser/test_type_inference.c` 覆盖了：
+`tests/parser/test_type_inference.c` 继续覆盖：
 
-- `system.console.printLine(...)`
-- `system.fs.getInfo(...).modifiedMilliseconds`
-- `system.process.arguments`
-- `system.vm.state().loadedModuleCount`
-- `system.vm.loadedModules()[0].sourcePath`
+- `system.console`、`system.fs`、`system.vm` 这类模块字段访问链仍可推断
 
-`tests/fixtures/projects/native_numeric_pipeline` 把项目脚本迁移到新层级 `system.console` 和 `system.vm` API，并在同一回归里继续覆盖 `$math.Vector3(...)`、`$math.Vector4(...)` 与 native module export 交互。
+`tests/system/test_system_fs_module.c` 现在专门覆盖：
 
-`tests/fixtures/projects/native_math_export_probe` 额外验证 `system.vm.callModuleExport(...)` 与 native static method 链路可以一起工作。
+- `File`、`Folder`、`FileStream`、`IStreamReader`、`IStreamWriter` 的 metadata 暴露
+- `SystemFileInfo` 扩展字段与 `refresh()` 行为
+- `File` / `Folder` 的 `create`、`copyTo`、`moveTo`、`delete`、`entries`、`files`、`folders`、`glob`
+- `FileStream` 的 mode、`read*`、`write*`、`seek`、`setLength`、`close`
+- `using` 自动关闭
+- `IOException` 抛出路径
+- `handle_id` lowering 只在 extern 边界生效，且关闭后的流会被拒绝
+
+`tests/ffi/ffi_fixture.c` 提供 `zr_ffi_tell_fd` 等宿主入口，用于验证 `FileStream -> i32` 的实际 lowering 与消费路径。
 
 ## Plan Sources
 
-本实现直接来自 2026-03-29 的用户方案，关键约束包括：
+当前行为来自三条叠加约束：
 
-- `zr.system` 必须拆成 6 个叶子模块和 1 个聚合根模块
-- 命名统一使用完整 lowerCamelCase，不保留缩写式别名
-- 根模块聚合必须走通用 descriptor/materializer 扩展，不允许对 `zr.system` 做专用硬编码
-- 公开 struct/class 必须完整导出元信息
+- 2026-03-29 的 `zr.system` 子模块化计划，要求根模块聚合必须走通用 descriptor/materializer
+- `struct` 值类型与 native wrapper 分层方案，要求值语义聚合和 native resource wrapper 分层实现
+- `zr.system.fs` 对象化文件系统与 `FileStream handle_id wrapper` 计划，要求用文件流把 wrapper metadata/runtime 真正跑通
 
 ## Open Issues Or Follow-up
 
-- `zr.system` 之外的 native 库目前还没有大规模采用 `moduleLinks`，后续如果继续拆分别的 built-in 模块，可以直接复用这套 descriptor 与 metadata 路径。
-- 当前文档只覆盖 `zr.system` 和相关 compiler/runtime 支撑。更宽范围的 native module authoring 规范如果继续演进，建议单独补一篇通用文档，而不是继续把规则堆到本文件里。
+- 当前文件系统实现仍然只覆盖同步 I/O，不包含 async I/O、watcher、ACL 或 memory map。
+- `FileStream` 目前是第一个 `handle_id` wrapper；如果后续把更多系统资源迁移到同一 descriptor 体系，建议继续沿用“路径对象或业务对象 + owned wrapper + FFI boundary lowering”这一分层，而不是重新引入裸 `Ptr` 风格上层 API。

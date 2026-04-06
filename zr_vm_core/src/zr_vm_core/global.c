@@ -4,12 +4,16 @@
 #include "zr_vm_core/global.h"
 
 #include "zr_vm_core/conversion.h"
+#include "zr_vm_core/array.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/module.h"
@@ -94,6 +98,209 @@ static void global_state_register_builtin_array_members(SZrState *state, SZrGlob
     ZrCore_ObjectPrototype_AddProtocol(arrayPrototype, ZR_PROTOCOL_ID_ARRAY_LIKE);
 }
 
+static SZrFunction *global_state_create_native_callable(SZrState *state, FZrNativeFunction nativeFunction) {
+    SZrClosureNative *closure;
+
+    if (state == ZR_NULL || nativeFunction == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    closure = ZrCore_ClosureNative_New(state, 0);
+    if (closure == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    closure->nativeFunction = nativeFunction;
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    return ZR_CAST(SZrFunction *, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+}
+
+static SZrString *global_state_get_string_receiver(SZrState *state) {
+    TZrStackValuePointer base;
+    SZrTypeValue *receiverValue;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverValue = ZrCore_Stack_GetValue(base + 1);
+    if (receiverValue == ZR_NULL ||
+        receiverValue->type != ZR_VALUE_TYPE_STRING ||
+        receiverValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_STRING(state, receiverValue->value.object);
+}
+
+static TZrInt64 global_state_string_length_getter_native(SZrState *state) {
+    TZrStackValuePointer base;
+    SZrString *receiverString;
+    TZrSize codePointLength = 0;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverString = global_state_get_string_receiver(state);
+    if (receiverString == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    if (!ZrCore_String_GetCodePointLength(receiverString, &codePointLength)) {
+        ZrCore_Debug_RunError(state, "invalid UTF-8 string");
+    }
+
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(base), (TZrInt64)codePointLength);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 global_state_string_byte_length_getter_native(SZrState *state) {
+    TZrStackValuePointer base;
+    SZrString *receiverString;
+    TZrSize byteLength;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverString = global_state_get_string_receiver(state);
+    if (receiverString == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    byteLength = ZrCore_String_GetByteLength(receiverString);
+    if (!ZrCore_Utf8_IsValid(ZrCore_String_GetNativeString(receiverString), byteLength)) {
+        ZrCore_Debug_RunError(state, "invalid UTF-8 string");
+    }
+
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(base), (TZrInt64)byteLength);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static TZrInt64 global_state_string_to_array_native(SZrState *state) {
+    TZrStackValuePointer base;
+    SZrString *receiverString;
+    SZrObject *byteArray = ZR_NULL;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    receiverString = global_state_get_string_receiver(state);
+    if (receiverString == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
+        state->stackTop.valuePointer = base + 1;
+        return 1;
+    }
+
+    if (!ZrCore_Utf8_IsValid(ZrCore_String_GetNativeString(receiverString),
+                             ZrCore_String_GetByteLength(receiverString))) {
+        ZrCore_Debug_RunError(state, "invalid UTF-8 string");
+    }
+
+    if (!ZrCore_String_ToByteArray(state, receiverString, &byteArray) || byteArray == ZR_NULL) {
+        ZrCore_Debug_RunError(state, "failed to materialize string byte array");
+    }
+
+    ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(byteArray));
+    ZrCore_Stack_GetValue(base)->type = ZR_VALUE_TYPE_ARRAY;
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
+static void global_state_register_prototype_property(SZrState *state,
+                                                     SZrObjectPrototype *prototype,
+                                                     const TZrChar *memberName,
+                                                     FZrNativeFunction getterFunction) {
+    SZrFunction *getter;
+    SZrString *memberNameString;
+    SZrMemberDescriptor descriptor;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL || getterFunction == ZR_NULL) {
+        return;
+    }
+
+    getter = global_state_create_native_callable(state, getterFunction);
+    memberNameString = global_state_create_permanent_string(state, memberName);
+    if (getter == ZR_NULL || memberNameString == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
+    descriptor.name = memberNameString;
+    descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY;
+    descriptor.getterFunction = getter;
+    ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
+}
+
+static void global_state_register_prototype_method(SZrState *state,
+                                                   SZrObjectPrototype *prototype,
+                                                   const TZrChar *memberName,
+                                                   FZrNativeFunction nativeFunction) {
+    SZrFunction *callable;
+    SZrString *memberNameString;
+    SZrMemberDescriptor descriptor;
+    SZrTypeValue key;
+    SZrTypeValue value;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL || nativeFunction == ZR_NULL) {
+        return;
+    }
+
+    callable = global_state_create_native_callable(state, nativeFunction);
+    memberNameString = global_state_create_permanent_string(state, memberName);
+    if (callable == ZR_NULL || memberNameString == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
+    descriptor.name = memberNameString;
+    descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
+    ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(memberNameString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Value_InitAsRawObject(state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(callable));
+    ZrCore_Object_SetValue(state, &prototype->super, &key, &value);
+}
+
+static void global_state_register_builtin_string_members(SZrState *state, SZrGlobalState *global) {
+    SZrObjectPrototype *stringPrototype;
+
+    if (state == ZR_NULL || global == ZR_NULL) {
+        return;
+    }
+
+    stringPrototype = global->basicTypeObjectPrototype[ZR_VALUE_TYPE_STRING];
+    if (stringPrototype == ZR_NULL) {
+        return;
+    }
+
+    global_state_register_prototype_property(state,
+                                             stringPrototype,
+                                             "length",
+                                             global_state_string_length_getter_native);
+    global_state_register_prototype_property(state,
+                                             stringPrototype,
+                                             "byteLength",
+                                             global_state_string_byte_length_getter_native);
+    global_state_register_prototype_method(state,
+                                           stringPrototype,
+                                           "toArray",
+                                           global_state_string_to_array_native);
+}
+
 static void global_state_init_builtin_exception_types(SZrState *state, SZrGlobalState *global, SZrObject *zrObject) {
     SZrObjectPrototype *errorPrototype;
     SZrStructPrototype *stackFramePrototype;
@@ -157,6 +364,7 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
 
     // io
     global->sourceLoader = ZR_NULL;
+    global->sourceLoaderUserData = ZR_NULL;
     global->aotModuleLoader = ZR_NULL;
     global->aotModuleLoaderUserData = ZR_NULL;
     global->nativeModuleLoader = ZR_NULL;
@@ -171,6 +379,8 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     ZrCore_Value_ResetAsNull(&global->nullValue);
     // init global zr object
     ZrCore_Value_ResetAsNull(&global->zrObject);
+    ZrCore_Array_Construct(&global->importCompileInfoStack);
+    ZrCore_Array_Init(newState, &global->importCompileInfoStack, sizeof(SZrString *), 4);
 
     // exception
     global->panicHandlingFunction = ZR_NULL;
@@ -185,6 +395,7 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
 
     // loader
     global->sourceLoader = ZR_NULL;
+    global->sourceLoaderUserData = ZR_NULL;
     global->aotModuleLoader = ZR_NULL;
     global->aotModuleLoaderUserData = ZR_NULL;
     global->nativeModuleLoader = ZR_NULL;
@@ -296,6 +507,7 @@ void ZrCore_GlobalState_InitRegistry(SZrState *state, SZrGlobalState *global) {
     // 初始化基本类型对象原型
     global_state_init_basic_type_object_prototypes(state, global);
     global_state_register_builtin_array_members(state, global);
+    global_state_register_builtin_string_members(state, global);
     global_state_init_builtin_exception_types(state, global, zrObject);
     
     // 将 zr 对象添加到全局状态（TODO: 需要确认如何访问全局作用域）
@@ -345,6 +557,14 @@ void ZrCore_GlobalState_SetAotModuleLoader(SZrGlobalState *global,
 
 void ZrCore_GlobalState_Free(SZrGlobalState *global) {
     FZrAllocator allocator = global->allocator;
+
+    if (global->importCompileInfoStack.isValid &&
+        global->importCompileInfoStack.head != ZR_NULL &&
+        global->importCompileInfoStack.capacity > 0 &&
+        global->importCompileInfoStack.elementSize > 0 &&
+        global->mainThreadState != ZR_NULL) {
+        ZrCore_Array_Free(global->mainThreadState, &global->importCompileInfoStack);
+    }
 
     ZrCore_StringTable_Free(global, global->stringTable);
     global->stringTable = ZR_NULL;

@@ -4,6 +4,7 @@
 
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/log.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 

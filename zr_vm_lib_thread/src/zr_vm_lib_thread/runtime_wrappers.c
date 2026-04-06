@@ -1,9 +1,5 @@
 #include "runtime_internal.h"
 
-static const TZrChar *kTaskSharedCellField = "__zr_task_shared_cell";
-static const TZrChar *kTaskSharedValueField = "__zr_task_shared_value";
-static const TZrChar *kTaskSharedStrongCountField = "__zr_task_shared_strong_count";
-static const TZrChar *kTaskSharedAliveField = "__zr_task_shared_alive";
 static const TZrChar *kTaskTransferValueField = "__zr_task_transfer_value";
 static const TZrChar *kTaskTransferTakenField = "__zr_task_transfer_taken";
 static const TZrChar *kTaskMutexCellField = "__zr_task_mutex_cell";
@@ -11,86 +7,200 @@ static const TZrChar *kTaskMutexValueField = "__zr_task_mutex_value";
 static const TZrChar *kTaskMutexLockedField = "__zr_task_mutex_locked";
 static const TZrChar *kTaskAtomicValueField = "__zr_task_atomic_value";
 
-static SZrObject *zr_vm_task_shared_cell(SZrState *state, SZrObject *handle) {
-    return zr_vm_task_get_object_field(state, handle, kTaskSharedCellField);
+static ZrVmTaskSharedCell *zr_vm_task_shared_cell_from_handle(SZrState *state, SZrObject *handle) {
+    const SZrTypeValue *fieldValue;
+
+    if (state == ZR_NULL || handle == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    fieldValue = zr_vm_task_get_field_value(state, handle, ZR_VM_TASK_SHARED_NATIVE_CELL_FIELD);
+    if (fieldValue == ZR_NULL || fieldValue->type != ZR_VALUE_TYPE_NATIVE_POINTER ||
+        fieldValue->value.nativeObject.nativePointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return (ZrVmTaskSharedCell *)fieldValue->value.nativeObject.nativePointer;
 }
 
-static TZrBool zr_vm_task_shared_cell_is_alive(SZrState *state, SZrObject *cell) {
-    return cell != ZR_NULL && zr_vm_task_get_bool_field(state, cell, kTaskSharedAliveField, ZR_FALSE) &&
-           zr_vm_task_get_int_field(state, cell, kTaskSharedStrongCountField, 0) > 0;
+static TZrBool zr_vm_task_shared_handle_is_weak(SZrState *state, SZrObject *handle) {
+    return zr_vm_task_get_bool_field(state, handle, ZR_VM_TASK_SHARED_IS_WEAK_FIELD, ZR_FALSE);
 }
 
-static TZrBool zr_vm_task_shared_cell_add_ref(SZrState *state, SZrObject *cell) {
-    TZrInt64 strongCount;
+TZrBool zr_vm_task_shared_cell_is_alive_native(ZrVmTaskSharedCell *cell) {
+    TZrBool alive = ZR_FALSE;
 
-    if (state == ZR_NULL || cell == ZR_NULL || !zr_vm_task_shared_cell_is_alive(state, cell)) {
+    if (cell == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    strongCount = zr_vm_task_get_int_field(state, cell, kTaskSharedStrongCountField, 0);
-    zr_vm_task_set_int_field(state, cell, kTaskSharedStrongCountField, strongCount + 1);
+    zr_vm_task_sync_mutex_lock(&cell->mutex);
+    alive = (TZrBool)(cell->alive && cell->strongCount > 0u);
+    zr_vm_task_sync_mutex_unlock(&cell->mutex);
+    return alive;
+}
+
+TZrBool zr_vm_task_shared_cell_add_strong_ref(ZrVmTaskSharedCell *cell) {
+    TZrBool retained = ZR_FALSE;
+
+    if (cell == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    zr_vm_task_sync_mutex_lock(&cell->mutex);
+    if (cell->alive && cell->strongCount > 0u) {
+        cell->strongCount++;
+        retained = ZR_TRUE;
+    }
+    zr_vm_task_sync_mutex_unlock(&cell->mutex);
+    return retained;
+}
+
+TZrBool zr_vm_task_shared_cell_add_weak_ref(ZrVmTaskSharedCell *cell) {
+    if (cell == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    zr_vm_task_sync_mutex_lock(&cell->mutex);
+    cell->weakCount++;
+    zr_vm_task_sync_mutex_unlock(&cell->mutex);
     return ZR_TRUE;
 }
 
-static void zr_vm_task_shared_cell_release(SZrState *state, SZrObject *cell) {
-    TZrInt64 strongCount;
+void zr_vm_task_shared_cell_release_strong(ZrVmTaskSharedCell *cell) {
+    TZrBool freeCell = ZR_FALSE;
+    ZrVmTaskTransportValue releasedValue;
 
-    if (state == ZR_NULL || cell == ZR_NULL) {
+    if (cell == ZR_NULL) {
         return;
     }
 
-    strongCount = zr_vm_task_get_int_field(state, cell, kTaskSharedStrongCountField, 0);
-    if (strongCount <= 1) {
-        zr_vm_task_set_int_field(state, cell, kTaskSharedStrongCountField, 0);
-        zr_vm_task_set_bool_field(state, cell, kTaskSharedAliveField, ZR_FALSE);
-        zr_vm_task_set_null_field(state, cell, kTaskSharedValueField);
-        return;
+    memset(&releasedValue, 0, sizeof(releasedValue));
+    zr_vm_task_sync_mutex_lock(&cell->mutex);
+    if (cell->strongCount > 0u) {
+        cell->strongCount--;
+        if (cell->strongCount == 0u) {
+            cell->alive = ZR_FALSE;
+            releasedValue = cell->value;
+            memset(&cell->value, 0, sizeof(cell->value));
+            freeCell = cell->weakCount == 0u;
+        }
     }
+    zr_vm_task_sync_mutex_unlock(&cell->mutex);
 
-    zr_vm_task_set_int_field(state, cell, kTaskSharedStrongCountField, strongCount - 1);
+    zr_vm_task_transport_clear(&releasedValue);
+    if (freeCell) {
+        zr_vm_task_sync_mutex_destroy(&cell->mutex);
+        free(cell);
+    }
 }
 
-static TZrBool zr_vm_task_shared_handle_from_cell(SZrState *state, SZrObject *cell, SZrTypeValue *result) {
+void zr_vm_task_shared_cell_release_weak(ZrVmTaskSharedCell *cell) {
+    TZrBool freeCell = ZR_FALSE;
+
+    if (cell == ZR_NULL) {
+        return;
+    }
+
+    zr_vm_task_sync_mutex_lock(&cell->mutex);
+    if (cell->weakCount > 0u) {
+        cell->weakCount--;
+        freeCell = (TZrBool)(cell->weakCount == 0u && cell->strongCount == 0u);
+    }
+    zr_vm_task_sync_mutex_unlock(&cell->mutex);
+
+    if (freeCell) {
+        zr_vm_task_sync_mutex_destroy(&cell->mutex);
+        free(cell);
+    }
+}
+
+static ZrVmTaskSharedCell *zr_vm_task_shared_cell_new(SZrState *state, const SZrTypeValue *value) {
+    ZrVmTaskSharedCell *cell;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cell = (ZrVmTaskSharedCell *)calloc(1, sizeof(*cell));
+    if (cell == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    zr_vm_task_sync_mutex_init(&cell->mutex);
+    cell->strongCount = 1u;
+    cell->weakCount = 0u;
+    cell->alive = ZR_TRUE;
+    if (!zr_vm_task_transport_encode_value(state,
+                                           value,
+                                           &cell->value,
+                                           "Shared only stores sendable values and thread transport handles")) {
+        zr_vm_task_sync_mutex_destroy(&cell->mutex);
+        free(cell);
+        return ZR_NULL;
+    }
+    return cell;
+}
+
+TZrBool zr_vm_task_shared_make_value(SZrState *state,
+                                     ZrVmTaskSharedCell *cell,
+                                     TZrBool isWeak,
+                                     SZrTypeValue *result) {
     SZrObject *handle;
     SZrTypeValue cellValue;
+    const TZrChar *typeName = isWeak ? "WeakShared" : "Shared";
 
     if (state == ZR_NULL || cell == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    handle = zr_vm_task_new_typed_object(state, "Shared");
+    handle = zr_vm_task_new_typed_object(state, typeName);
     if (handle == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    ZrLib_Value_SetObject(state, &cellValue, cell, ZR_VALUE_TYPE_OBJECT);
-    zr_vm_task_set_value_field(state, handle, kTaskSharedCellField, &cellValue);
+    ZrLib_Value_SetNativePointer(state, &cellValue, cell);
+    zr_vm_task_set_value_field(state, handle, ZR_VM_TASK_SHARED_NATIVE_CELL_FIELD, &cellValue);
+    zr_vm_task_set_bool_field(state, handle, ZR_VM_TASK_SHARED_IS_WEAK_FIELD, isWeak);
     return zr_vm_task_finish_object(state, result, handle);
 }
 
-static TZrBool zr_vm_task_weak_handle_from_cell(SZrState *state, SZrObject *cell, SZrTypeValue *result) {
+TZrBool zr_vm_task_shared_try_get_cell(SZrState *state,
+                                       const SZrTypeValue *value,
+                                       ZrVmTaskSharedCell **outCell,
+                                       TZrBool *outIsWeak) {
     SZrObject *handle;
-    SZrTypeValue cellValue;
 
-    if (state == ZR_NULL || cell == ZR_NULL || result == ZR_NULL) {
+    if (outCell != ZR_NULL) {
+        *outCell = ZR_NULL;
+    }
+    if (outIsWeak != ZR_NULL) {
+        *outIsWeak = ZR_FALSE;
+    }
+    if (state == ZR_NULL || value == ZR_NULL ||
+        (value->type != ZR_VALUE_TYPE_OBJECT && value->type != ZR_VALUE_TYPE_ARRAY) ||
+        value->value.object == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    handle = zr_vm_task_new_typed_object(state, "WeakShared");
+    handle = ZR_CAST_OBJECT(state, value->value.object);
     if (handle == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    ZrLib_Value_SetObject(state, &cellValue, cell, ZR_VALUE_TYPE_OBJECT);
-    zr_vm_task_set_value_field(state, handle, kTaskSharedCellField, &cellValue);
-    return zr_vm_task_finish_object(state, result, handle);
+    if (outCell != ZR_NULL) {
+        *outCell = zr_vm_task_shared_cell_from_handle(state, handle);
+    }
+    if (outIsWeak != ZR_NULL) {
+        *outIsWeak = zr_vm_task_shared_handle_is_weak(state, handle);
+    }
+    return outCell == ZR_NULL || *outCell != ZR_NULL;
 }
 
 TZrBool zr_vm_task_shared_construct(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *handle;
-    SZrObject *cell;
     SZrTypeValue *value;
-    SZrTypeValue cellValue;
+    ZrVmTaskSharedCell *cell;
 
     if (context == ZR_NULL || result == ZR_NULL ||
         !zr_vm_task_require_multithread(context->state, "Shared requires supportMultithread = true")) {
@@ -106,103 +216,151 @@ TZrBool zr_vm_task_shared_construct(ZrLibCallContext *context, SZrTypeValue *res
     if (handle == ZR_NULL) {
         handle = zr_vm_task_new_typed_object(context->state, "Shared");
     }
-    cell = ZrLib_Object_New(context->state);
+    cell = zr_vm_task_shared_cell_new(context->state, value);
     if (handle == ZR_NULL || cell == ZR_NULL) {
+        zr_vm_task_shared_cell_release_strong(cell);
         return ZR_FALSE;
     }
 
-    zr_vm_task_set_value_field(context->state, cell, kTaskSharedValueField, value);
-    zr_vm_task_set_int_field(context->state, cell, kTaskSharedStrongCountField, 1);
-    zr_vm_task_set_bool_field(context->state, cell, kTaskSharedAliveField, ZR_TRUE);
-    ZrLib_Value_SetObject(context->state, &cellValue, cell, ZR_VALUE_TYPE_OBJECT);
-    zr_vm_task_set_value_field(context->state, handle, kTaskSharedCellField, &cellValue);
-    return zr_vm_task_finish_object(context->state, result, handle);
+    {
+        SZrTypeValue cellValue;
+
+        ZrLib_Value_SetNativePointer(context->state, &cellValue, cell);
+        zr_vm_task_set_value_field(context->state, handle, ZR_VM_TASK_SHARED_NATIVE_CELL_FIELD, &cellValue);
+        zr_vm_task_set_bool_field(context->state, handle, ZR_VM_TASK_SHARED_IS_WEAK_FIELD, ZR_FALSE);
+    }
+    if (!zr_vm_task_finish_object(context->state, result, handle)) {
+        zr_vm_task_shared_cell_release_strong(cell);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool zr_vm_task_shared_load(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *cell;
+    ZrVmTaskSharedCell *cell;
+    ZrVmTaskTransportValue snapshot;
+    TZrBool alive;
 
     if (context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    cell = zr_vm_task_shared_cell(context->state, zr_vm_task_self_object(context));
-    if (!zr_vm_task_shared_cell_is_alive(context->state, cell)) {
+    cell = zr_vm_task_shared_cell_from_handle(context->state, zr_vm_task_self_object(context));
+    if (cell == ZR_NULL) {
         ZrLib_Value_SetNull(result);
         return ZR_TRUE;
     }
 
-    return zr_vm_task_copy_value_or_null(context->state,
-                                         zr_vm_task_get_field_value(context->state, cell, kTaskSharedValueField),
-                                         result);
+    memset(&snapshot, 0, sizeof(snapshot));
+    zr_vm_task_sync_mutex_lock(&cell->mutex);
+    alive = (TZrBool)(cell->alive && cell->strongCount > 0u);
+    if (alive) {
+        alive = zr_vm_task_transport_clone_value(&cell->value, &snapshot);
+    }
+    zr_vm_task_sync_mutex_unlock(&cell->mutex);
+    if (!alive) {
+        ZrLib_Value_SetNull(result);
+        return ZR_TRUE;
+    }
+
+    if (!zr_vm_task_transport_decode_value(context->state, &snapshot, result)) {
+        zr_vm_task_transport_clear(&snapshot);
+        return ZR_FALSE;
+    }
+    zr_vm_task_transport_clear(&snapshot);
+    return ZR_TRUE;
 }
 
 TZrBool zr_vm_task_shared_store(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *cell;
+    ZrVmTaskSharedCell *cell;
     SZrTypeValue *value;
+    ZrVmTaskTransportValue encodedValue;
+    ZrVmTaskTransportValue previousValue;
+    TZrBool alive;
 
     if (context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    cell = zr_vm_task_shared_cell(context->state, zr_vm_task_self_object(context));
-    if (!zr_vm_task_shared_cell_is_alive(context->state, cell)) {
-        return zr_vm_task_raise_runtime_error(context->state, "Shared handle is no longer alive");
-    }
-
+    cell = zr_vm_task_shared_cell_from_handle(context->state, zr_vm_task_self_object(context));
     value = ZrLib_CallContext_Argument(context, 0);
     if (value == ZR_NULL) {
         ZrLib_CallContext_RaiseArityError(context, 1, 1);
     }
 
-    zr_vm_task_set_value_field(context->state, cell, kTaskSharedValueField, value);
+    memset(&encodedValue, 0, sizeof(encodedValue));
+    memset(&previousValue, 0, sizeof(previousValue));
+    if (!zr_vm_task_transport_encode_value(context->state,
+                                           value,
+                                           &encodedValue,
+                                           "Shared only stores sendable values and thread transport handles")) {
+        return ZR_FALSE;
+    }
+
+    alive = ZR_FALSE;
+    if (cell != ZR_NULL) {
+        zr_vm_task_sync_mutex_lock(&cell->mutex);
+        if (cell->alive && cell->strongCount > 0u) {
+            previousValue = cell->value;
+            cell->value = encodedValue;
+            memset(&encodedValue, 0, sizeof(encodedValue));
+            alive = ZR_TRUE;
+        }
+        zr_vm_task_sync_mutex_unlock(&cell->mutex);
+    }
+    if (!alive) {
+        zr_vm_task_transport_clear(&encodedValue);
+        return zr_vm_task_raise_runtime_error(context->state, "Shared handle is no longer alive");
+    }
+
+    zr_vm_task_transport_clear(&previousValue);
     ZrLib_Value_SetNull(result);
     return ZR_TRUE;
 }
 
 TZrBool zr_vm_task_shared_clone(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *cell;
+    ZrVmTaskSharedCell *cell;
 
     if (context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    cell = zr_vm_task_shared_cell(context->state, zr_vm_task_self_object(context));
-    if (!zr_vm_task_shared_cell_add_ref(context->state, cell)) {
+    cell = zr_vm_task_shared_cell_from_handle(context->state, zr_vm_task_self_object(context));
+    if (!zr_vm_task_shared_cell_add_strong_ref(cell)) {
         return zr_vm_task_raise_runtime_error(context->state, "Shared handle is no longer alive");
     }
 
-    return zr_vm_task_shared_handle_from_cell(context->state, cell, result);
+    return zr_vm_task_shared_make_value(context->state, cell, ZR_FALSE, result);
 }
 
 TZrBool zr_vm_task_shared_downgrade(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *cell;
+    ZrVmTaskSharedCell *cell;
 
     if (context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    cell = zr_vm_task_shared_cell(context->state, zr_vm_task_self_object(context));
-    if (!zr_vm_task_shared_cell_is_alive(context->state, cell)) {
+    cell = zr_vm_task_shared_cell_from_handle(context->state, zr_vm_task_self_object(context));
+    if (!zr_vm_task_shared_cell_is_alive_native(cell) || !zr_vm_task_shared_cell_add_weak_ref(cell)) {
         return zr_vm_task_raise_runtime_error(context->state, "Shared handle is no longer alive");
     }
 
-    return zr_vm_task_weak_handle_from_cell(context->state, cell, result);
+    return zr_vm_task_shared_make_value(context->state, cell, ZR_TRUE, result);
 }
 
 TZrBool zr_vm_task_shared_release(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *self;
-    SZrObject *cell;
+    ZrVmTaskSharedCell *cell;
 
     if (context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
     self = zr_vm_task_self_object(context);
-    cell = zr_vm_task_shared_cell(context->state, self);
+    cell = zr_vm_task_shared_cell_from_handle(context->state, self);
     if (cell != ZR_NULL) {
-        zr_vm_task_shared_cell_release(context->state, cell);
-        zr_vm_task_set_null_field(context->state, self, kTaskSharedCellField);
+        zr_vm_task_shared_cell_release_strong(cell);
+        zr_vm_task_set_null_field(context->state, self, ZR_VM_TASK_SHARED_NATIVE_CELL_FIELD);
     }
 
     ZrLib_Value_SetNull(result);
@@ -216,26 +374,25 @@ TZrBool zr_vm_task_shared_is_alive(ZrLibCallContext *context, SZrTypeValue *resu
 
     ZrLib_Value_SetBool(context->state,
                         result,
-                        zr_vm_task_shared_cell_is_alive(context->state,
-                                                        zr_vm_task_shared_cell(context->state,
-                                                                               zr_vm_task_self_object(context))));
+                        zr_vm_task_shared_cell_is_alive_native(
+                                zr_vm_task_shared_cell_from_handle(context->state, zr_vm_task_self_object(context))));
     return ZR_TRUE;
 }
 
 TZrBool zr_vm_task_weak_shared_upgrade(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *cell;
+    ZrVmTaskSharedCell *cell;
 
     if (context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    cell = zr_vm_task_shared_cell(context->state, zr_vm_task_self_object(context));
-    if (!zr_vm_task_shared_cell_add_ref(context->state, cell)) {
+    cell = zr_vm_task_shared_cell_from_handle(context->state, zr_vm_task_self_object(context));
+    if (!zr_vm_task_shared_cell_add_strong_ref(cell)) {
         ZrLib_Value_SetNull(result);
         return ZR_TRUE;
     }
 
-    return zr_vm_task_shared_handle_from_cell(context->state, cell, result);
+    return zr_vm_task_shared_make_value(context->state, cell, ZR_FALSE, result);
 }
 
 TZrBool zr_vm_task_weak_shared_is_alive(ZrLibCallContext *context, SZrTypeValue *result) {
@@ -245,9 +402,8 @@ TZrBool zr_vm_task_weak_shared_is_alive(ZrLibCallContext *context, SZrTypeValue 
 
     ZrLib_Value_SetBool(context->state,
                         result,
-                        zr_vm_task_shared_cell_is_alive(context->state,
-                                                        zr_vm_task_shared_cell(context->state,
-                                                                               zr_vm_task_self_object(context))));
+                        zr_vm_task_shared_cell_is_alive_native(
+                                zr_vm_task_shared_cell_from_handle(context->state, zr_vm_task_self_object(context))));
     return ZR_TRUE;
 }
 

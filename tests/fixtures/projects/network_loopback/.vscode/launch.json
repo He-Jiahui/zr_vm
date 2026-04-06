@@ -1,0 +1,38 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "zr",
+            "name": "ZR: Launch Project",
+            "request": "launch",
+            "project": "${workspaceFolder}/import_basic.zrp",
+            "cwd": "${workspaceFolder}",
+            "executionMode": "interp",
+            "stopOnEntry": true
+        },
+        {
+            "type": "zr",
+            "name": "ZR: Attach to zrdbg/1 Endpoint",
+            "request": "attach",
+            "endpoint": "127.0.0.1:9000"
+        },
+        {
+            "type": "zr",
+            "name": "ZR: Launch Project",
+            "request": "launch",
+            "project": "d:\\Git\\Github\\zr_vm_mig\\zr_vm\\tests\\fixtures\\projects\\network_loopback\\network_loopback.zrp",
+            "cwd": "d:\\Git\\Github\\zr_vm_mig\\zr_vm\\tests\\fixtures\\projects\\network_loopback",
+            "executionMode": "interp",
+            "stopOnEntry": true
+        },
+        {
+            "type": "zr",
+            "name": "ZR: Attach to zrdbg/1 Endpoint",
+            "request": "attach",
+            "endpoint": "127.0.0.1:9000"
+        }
+    ]
+}

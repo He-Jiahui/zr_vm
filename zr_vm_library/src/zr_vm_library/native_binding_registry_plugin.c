@@ -724,7 +724,8 @@ TZrBool native_binding_make_callable_value(SZrState *state,
         return ZR_FALSE;
     }
 
-    native_binding_trace_import("[zr_native_import] make_callable begin module=%s type=%s kind=%d descriptor=%p bindings=%llu\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] make_callable begin module=%s type=%s kind=%d descriptor=%p bindings=%llu\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor != ZR_NULL && typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
                                 (int)bindingKind,
@@ -733,7 +734,8 @@ TZrBool native_binding_make_callable_value(SZrState *state,
 
     closure = ZrCore_ClosureNative_New(state, 0);
     if (closure == ZR_NULL) {
-        native_binding_trace_import("[zr_native_import] make_callable failed module=%s reason=create_native_closure\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] make_callable failed module=%s reason=create_native_closure\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>");
         return ZR_FALSE;
     }
@@ -761,7 +763,8 @@ TZrBool native_binding_make_callable_value(SZrState *state,
     }
 
     ZrCore_Array_Push(state, &registry->bindingEntries, &entry);
-    native_binding_trace_import("[zr_native_import] make_callable pushed module=%s type=%s kind=%d closure=%p bindings=%llu\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] make_callable pushed module=%s type=%s kind=%d closure=%p bindings=%llu\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor != ZR_NULL && typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
                                 (int)bindingKind,
@@ -820,7 +823,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
         return ZR_NULL;
     }
 
-    native_binding_trace_import("[zr_native_import] materialize start module=%s types=%llu consts=%llu funcs=%llu\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] materialize start module=%s types=%llu consts=%llu funcs=%llu\n",
                                 descriptor->moduleName,
                                 (unsigned long long)descriptor->typeCount,
                                 (unsigned long long)descriptor->constantCount,
@@ -828,7 +832,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
 
     module = ZrCore_Module_Create(state);
     if (module == ZR_NULL) {
-        native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=create_module\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] materialize failed module=%s reason=create_module\n",
                                     descriptor->moduleName);
         return ZR_NULL;
     }
@@ -836,7 +841,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
 
     moduleName = native_binding_create_string(state, descriptor->moduleName);
     if (moduleName == ZR_NULL) {
-        native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=create_module_name\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] materialize failed module=%s reason=create_module_name\n",
                                     descriptor->moduleName);
         return ZR_NULL;
     }
@@ -846,7 +852,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
 
     for (index = 0; index < descriptor->typeCount; index++) {
         if (!native_registry_add_type(state, registry, module, descriptor, &descriptor->types[index])) {
-            native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=register_type index=%llu name=%s\n",
+            native_binding_trace_import(state,
+                                        "[zr_native_import] materialize failed module=%s reason=register_type index=%llu name=%s\n",
                                         descriptor->moduleName,
                                         (unsigned long long)index,
                                         descriptor->types[index].name != ZR_NULL ? descriptor->types[index].name : "<null>");
@@ -858,7 +865,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
 
     for (index = 0; index < descriptor->constantCount; index++) {
         if (!native_registry_add_constant(state, module, &descriptor->constants[index])) {
-            native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=register_constant index=%llu name=%s\n",
+            native_binding_trace_import(state,
+                                        "[zr_native_import] materialize failed module=%s reason=register_constant index=%llu name=%s\n",
                                         descriptor->moduleName,
                                         (unsigned long long)index,
                                         descriptor->constants[index].name != ZR_NULL ? descriptor->constants[index].name : "<null>");
@@ -868,7 +876,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
 
     for (index = 0; index < descriptor->functionCount; index++) {
         if (!native_registry_add_function(state, registry, module, descriptor, &descriptor->functions[index])) {
-            native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=register_function index=%llu name=%s\n",
+            native_binding_trace_import(state,
+                                        "[zr_native_import] materialize failed module=%s reason=register_function index=%llu name=%s\n",
                                         descriptor->moduleName,
                                         (unsigned long long)index,
                                         descriptor->functions[index].name != ZR_NULL ? descriptor->functions[index].name : "<null>");
@@ -878,7 +887,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
 
     for (index = 0; index < descriptor->moduleLinkCount; index++) {
         if (!native_registry_add_module_link(state, registry, module, &descriptor->moduleLinks[index])) {
-            native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=register_module_link index=%llu name=%s target=%s\n",
+            native_binding_trace_import(state,
+                                        "[zr_native_import] materialize failed module=%s reason=register_module_link index=%llu name=%s target=%s\n",
                                         descriptor->moduleName,
                                         (unsigned long long)index,
                                         descriptor->moduleLinks[index].name != ZR_NULL ? descriptor->moduleLinks[index].name : "<null>",
@@ -887,31 +897,37 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
         }
     }
 
-    native_binding_trace_import("[zr_native_import] materialize module_info begin module=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] materialize module_info begin module=%s\n",
                                 descriptor->moduleName);
     moduleInfo = native_metadata_make_module_info(state,
                                                   descriptor,
                                                   native_registry_find_record_by_descriptor(registry, descriptor));
     moduleInfoName = native_binding_create_string(state, ZR_NATIVE_MODULE_INFO_EXPORT_NAME);
     if (moduleInfo == ZR_NULL || moduleInfoName == ZR_NULL) {
-        native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=module_info_export\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] materialize failed module=%s reason=module_info_export\n",
                                     descriptor->moduleName);
         return ZR_NULL;
     }
     ZrLib_Value_SetObject(state, &moduleInfoValue, moduleInfo, ZR_VALUE_TYPE_OBJECT);
-    native_binding_trace_import("[zr_native_import] materialize module_info export module=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] materialize module_info export module=%s\n",
                                 descriptor->moduleName);
     ZrCore_Module_AddPubExport(state, module, moduleInfoName, &moduleInfoValue);
-    native_binding_trace_import("[zr_native_import] materialize module_info success module=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] materialize module_info success module=%s\n",
                                 descriptor->moduleName);
 
     if (descriptor->onMaterialize != ZR_NULL && !descriptor->onMaterialize(state, module, descriptor)) {
-        native_binding_trace_import("[zr_native_import] materialize failed module=%s reason=materialize_hook\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] materialize failed module=%s reason=materialize_hook\n",
                                     descriptor->moduleName);
         return ZR_NULL;
     }
 
-    native_binding_trace_import("[zr_native_import] materialize success module=%s module=%p\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] materialize success module=%s module=%p\n",
                                 descriptor->moduleName,
                                 (void *)module);
     return module;
@@ -931,16 +947,17 @@ struct SZrObjectModule *native_registry_loader(SZrState *state, SZrString *modul
         return ZR_NULL;
     }
 
-    native_binding_trace_import("[zr_native_import] loader request module=%s\n", nativeModuleName);
+    native_binding_trace_import(state, "[zr_native_import] loader request module=%s\n", nativeModuleName);
 
     descriptor = native_registry_find_descriptor_or_plugin(state, registry, nativeModuleName);
 
     if (descriptor == ZR_NULL) {
-        native_binding_trace_import("[zr_native_import] loader miss module=%s\n", nativeModuleName);
+        native_binding_trace_import(state, "[zr_native_import] loader miss module=%s\n", nativeModuleName);
         return ZR_NULL;
     }
 
-    native_binding_trace_import("[zr_native_import] loader hit module=%s descriptor=%p\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] loader hit module=%s descriptor=%p\n",
                                 nativeModuleName,
                                 (const void *)descriptor);
     return native_registry_materialize_module(state, registry, descriptor);

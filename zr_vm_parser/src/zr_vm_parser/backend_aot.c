@@ -9,6 +9,8 @@
 
 #include <stdio.h>
 
+#include "zr_vm_core/log.h"
+
 void backend_aot_write_instruction_listing(FILE *file,
                                            const TZrChar *prefix,
                                            const SZrAotExecIrModule *module) {
@@ -176,14 +178,16 @@ TZrBool backend_aot_report_first_unsupported_instruction(const TZrChar *backendN
                 continue;
             }
 
-            fprintf(stderr,
-                    "%s lowering unsupported: module='%s' function='%s' functionIndex=%u instructionIndex=%u opcode=%u\n",
-                    backendName != ZR_NULL ? backendName : "aot",
-                    moduleName != ZR_NULL ? moduleName : "__entry__",
-                    backend_aot_function_display_name(entry->function),
-                    (unsigned)entry->flatIndex,
-                    (unsigned)instructionIndex,
-                    (unsigned)instruction->instruction.operationCode);
+            ZrCore_Log_Diagnosticf(ZR_NULL,
+                                   ZR_LOG_LEVEL_ERROR,
+                                   ZR_OUTPUT_CHANNEL_STDERR,
+                                   "%s lowering unsupported: module='%s' function='%s' functionIndex=%u instructionIndex=%u opcode=%u\n",
+                                   backendName != ZR_NULL ? backendName : "aot",
+                                   moduleName != ZR_NULL ? moduleName : "__entry__",
+                                   backend_aot_function_display_name(entry->function),
+                                   (unsigned)entry->flatIndex,
+                                   (unsigned)instructionIndex,
+                                   (unsigned)instruction->instruction.operationCode);
             return ZR_TRUE;
         }
     }

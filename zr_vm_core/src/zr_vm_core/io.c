@@ -788,13 +788,47 @@ static void io_read_function_debug_infos(SZrIo *io, SZrIoFunctionDebugInfo *debu
         SZrIoFunctionDebugInfo *debugInfo = &debugInfos[i];
         debugInfo->sourceFile = ZR_NULL;
         debugInfo->sourceHash = ZR_NULL;
+        debugInfo->instructionRanges = ZR_NULL;
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_SOURCE_IDENTITY) {
             debugInfo->sourceFile = io_read_string_with_length(io);
             debugInfo->sourceHash = io_read_string_with_length(io);
         }
         ZR_IO_READ_NATIVE_TYPE(io, debugInfo->instructionsLength, TZrSize);
-        debugInfo->instructionsLine = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(TZrUInt64) * debugInfo->instructionsLength);
-        ZrCore_Io_Read(io, (TZrBytePtr) debugInfo->instructionsLine, sizeof(TZrUInt64) * debugInfo->instructionsLength);
+        debugInfo->instructionsLine = ZR_NULL;
+        if (debugInfo->instructionsLength > 0) {
+            debugInfo->instructionsLine =
+                    ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(TZrUInt64) * debugInfo->instructionsLength);
+            if (debugInfo->instructionsLine != ZR_NULL) {
+                ZrCore_Io_Read(io,
+                               (TZrBytePtr) debugInfo->instructionsLine,
+                               sizeof(TZrUInt64) * debugInfo->instructionsLength);
+            } else {
+                TZrUInt64 ignoredLine = 0;
+                for (TZrSize index = 0; index < debugInfo->instructionsLength; index++) {
+                    ZR_IO_READ_NATIVE_TYPE(io, ignoredLine, TZrUInt64);
+                }
+            }
+        }
+
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_SOURCE_RANGES &&
+            debugInfo->instructionsLength > 0) {
+            debugInfo->instructionRanges = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                                    sizeof(SZrIoInstructionSourceRange) *
+                                                                            debugInfo->instructionsLength);
+            if (debugInfo->instructionRanges != ZR_NULL) {
+                ZrCore_Io_Read(io,
+                               (TZrBytePtr) debugInfo->instructionRanges,
+                               sizeof(SZrIoInstructionSourceRange) * debugInfo->instructionsLength);
+            } else {
+                SZrIoInstructionSourceRange ignoredRange;
+                for (TZrSize index = 0; index < debugInfo->instructionsLength; index++) {
+                    ZR_IO_READ_NATIVE_TYPE(io, ignoredRange.startLine, TZrUInt32);
+                    ZR_IO_READ_NATIVE_TYPE(io, ignoredRange.startColumn, TZrUInt32);
+                    ZR_IO_READ_NATIVE_TYPE(io, ignoredRange.endLine, TZrUInt32);
+                    ZR_IO_READ_NATIVE_TYPE(io, ignoredRange.endColumn, TZrUInt32);
+                }
+            }
+        }
     }
 }
 
@@ -1181,8 +1215,8 @@ static void io_read_module_declares(SZrIo *io, SZrIoModuleDeclare *declares, TZr
         // check type and read
         switch (declare->type) {
             case ZR_IO_MODULE_DECLARE_TYPE_CLASS: {
-                declare->class = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoClass));
-                io_read_classes(io, declare->class, 1);
+                declare->class_ = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoClass));
+                io_read_classes(io, declare->class_, 1);
             } break;
             case ZR_IO_MODULE_DECLARE_TYPE_FUNCTION: {
                 declare->function = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunction));
@@ -1193,8 +1227,8 @@ static void io_read_module_declares(SZrIo *io, SZrIoModuleDeclare *declares, TZr
                 io_read_structs(io, declare->struct_, 1);
             } break;
             case ZR_IO_MODULE_DECLARE_TYPE_INTERFACE: {
-                declare->interface = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoInterface));
-                io_read_interfaces(io, declare->interface, 1);
+                declare->interface_ = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoInterface));
+                io_read_interfaces(io, declare->interface_, 1);
             } break;
             case ZR_IO_MODULE_DECLARE_TYPE_ENUM: {
                 declare->enum_ = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoEnum));

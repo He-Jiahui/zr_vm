@@ -247,6 +247,94 @@ static void test_channel_transports_value_back_from_worker_isolate(void) {
     destroy_thread_test_state(state);
 }
 
+static void test_transfer_moves_value_into_worker_isolate_and_invalidates_source(void) {
+    static const char *source =
+            "var thread = %import(\"zr.thread\");\n"
+            "%async func run(): int {\n"
+            "    var worker = thread.spawnThread();\n"
+            "    var transfer = new thread.Transfer<int>(41);\n"
+            "    %async func consume(): int {\n"
+            "        var moved = transfer.take();\n"
+            "        if (transfer.isTaken() != true) { return 0; }\n"
+            "        return moved + 1;\n"
+            "    }\n"
+            "    var task = worker.start(consume());\n"
+            "    if (%await task != 42) { return 0; }\n"
+            "    if (transfer.isTaken() != true) { return 0; }\n"
+            "    if (transfer.take() != null) { return 0; }\n"
+            "    return 1;\n"
+            "}\n"
+            "return %await run().start();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_thread_source(state, source, "thread_transfer_move_test.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    destroy_thread_test_state(state);
+}
+
+static void test_shared_handle_capture_roundtrips_across_worker_isolate(void) {
+    static const char *source =
+            "var thread = %import(\"zr.thread\");\n"
+            "%async func run(): int {\n"
+            "    var worker = thread.spawnThread();\n"
+            "    var shared = new thread.Shared<int>(41);\n"
+            "    %async func bump(): int {\n"
+            "        var current = shared.load();\n"
+            "        shared.store(current + 1);\n"
+            "        return current;\n"
+            "    }\n"
+            "    var task = worker.start(bump());\n"
+            "    if (%await task != 41) { return 0; }\n"
+            "    return shared.load();\n"
+            "}\n"
+            "return %await run().start();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_thread_source(state, source, "thread_shared_capture_test.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(42, result);
+
+    destroy_thread_test_state(state);
+}
+
+static void test_weak_shared_handle_capture_upgrades_across_worker_isolate(void) {
+    static const char *source =
+            "var thread = %import(\"zr.thread\");\n"
+            "%async func run(): int {\n"
+            "    var worker = thread.spawnThread();\n"
+            "    var shared = new thread.Shared<int>(7);\n"
+            "    var weak = shared.downgrade();\n"
+            "    %async func readWeak(): int {\n"
+            "        var upgraded = weak.upgrade();\n"
+            "        if (upgraded == null) { return 0; }\n"
+            "        return upgraded.load();\n"
+            "    }\n"
+            "    return %await worker.start(readWeak());\n"
+            "}\n"
+            "return %await run().start();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_thread_source(state, source, "thread_weak_shared_capture_test.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(7, result);
+
+    destroy_thread_test_state(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_zr_thread_registers_public_shapes_without_legacy_mutex_or_atomic);
@@ -255,5 +343,8 @@ int main(void) {
     RUN_TEST(test_thread_start_with_precomputed_runner_execute_runner_result);
     RUN_TEST(test_thread_start_and_await_execute_runner_result);
     RUN_TEST(test_channel_transports_value_back_from_worker_isolate);
+    RUN_TEST(test_transfer_moves_value_into_worker_isolate_and_invalidates_source);
+    RUN_TEST(test_shared_handle_capture_roundtrips_across_worker_isolate);
+    RUN_TEST(test_weak_shared_handle_capture_upgrades_across_worker_isolate);
     return UNITY_END();
 }

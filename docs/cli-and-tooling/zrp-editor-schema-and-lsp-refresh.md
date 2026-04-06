@@ -111,12 +111,11 @@ doc_type: module-detail
 
 ## 当前 Watched-Files 行为
 
-extension 侧的 `createFileSystemWatcher('**/*.{zr,zrp,zro,zri,dll,so,dylib}')` 现在不再只是“重启补偿器”。它会把外部文件事件直接同步给 language server，server 当前已经消费：
+extension 侧的 `createFileSystemWatcher('**/*.{zr,zrp,zro,dll,so,dylib}')` 现在不再只是“重启补偿器”。它会把外部文件事件直接同步给 language server，server 当前已经消费：
 
 - `.zr`
 - `.zrp`
 - `.zro`
-- `.zri`
 - `.dll`
 - `.so`
 - `.dylib`
@@ -129,7 +128,7 @@ extension 侧的 `createFileSystemWatcher('**/*.{zr,zrp,zro,zri,dll,so,dylib}')`
 - `.zrp`
   - 重建 project index
   - 重新绑定 project discovery 与 source root
-- `.zro/.zri/.dll/.so/.dylib`
+- `.zro/.dll/.so/.dylib`
   - 定位 owning project
   - 如果该 project 还没进 `projectIndexes`，会沿着变更文件路径向上回溯最近 `.zrp` 并自举 project index
   - 触发 project refresh
@@ -137,7 +136,7 @@ extension 侧的 `createFileSystemWatcher('**/*.{zr,zrp,zro,zri,dll,so,dylib}')`
 
 这意味着未打开文件的 source change、binary metadata change、plugin descriptor change 现在都能走增量 refresh，而不是只能靠手工重启 language server。对于“先发生 metadata 变更、后第一次打开源码”的工程，server 也会先把 owning project 建起来，再让 `workspace/symbol`、后续 hover/completion 直接命中新索引。
 
-## `.zro` / `.zri` / Native Plugin 在 refresh 里的角色
+## `.zro` / Native Plugin / `.zri` Debug Artifact 在 refresh 里的角色
 
 `lsp_module_metadata.c` 现在把 project binary metadata 和 native/plugin descriptor 统一到同一套 source-kind 解析里：
 
@@ -146,22 +145,22 @@ extension 侧的 `createFileSystemWatcher('**/*.{zr,zrp,zro,zri,dll,so,dylib}')`
 - `native builtin`
 - `native descriptor plugin`
 
-其中 binary metadata 继续支持两种载体：
+其中 binary metadata 的正式入口固定为：
 
 - `.zro`
   - 走 binary source loader
+  - 参与 imported member hover / completion / definition / references / document highlight
 - `.zri`
-  - 走 intermediate text metadata reader
-  - 直接解析 `EXPORTED_SYMBOLS` 供 hover / completion 使用
-
-这条分流保证了 `.zri` 变更不会再被错误当成 `.zro` 去做 binary IO 读取，也让 watched-files refresh 能在 `.zri` 变更后立即更新 imported member hover/completion。
+  - 保留为 debug / intermediate artifact
+  - 不再进入 server 的 watched-files semantic refresh 主链
+  - 也不再作为 imported member hover/completion 的结构化事实源
 
 这轮又补了一层导航语义：
 
-- `%import("graph_binary_stage")` 这类 binary-only import 的 definition 现在会落到 `.zri` 文件入口
-- `binaryStage.binarySeed` 这类 imported member definition 会落到 `.zri` 的 `EXPORTED_SYMBOLS` 对应声明行
+- `%import("graph_binary_stage")` 这类 binary-only import 的 definition 现在会落到 `.zro` module entry
+- `binaryStage.binarySeed` 这类 imported member definition 会落到 `.zro` exported declaration span（旧 schema 才回退 module entry）
 
-也就是说，server 不再只把 `.zri` 当“hover/completion 的备用说明文本”，而是把它当成真正可导航的结构化 metadata 文档。
+也就是说，server 的正式 binary metadata 导航链已经统一收窄到 `.zro`；`.zri` 保留给 debug 与人工检查，不再和 `.zro` 并列作为语义源。
 
 ## 验证证据
 
@@ -179,5 +178,5 @@ extension 侧的 `createFileSystemWatcher('**/*.{zr,zrp,zro,zri,dll,so,dylib}')`
 ## 当前限制
 
 - 当前 `.zrp` 仍然是“先以 `zr-project` 打开，再切到 `json`”的两段式路径；这比静态文件关联多一步，但能保证扩展在 `.zrp` 首次打开时就被激活。
-- `.zri` 目前在 server 侧优先覆盖 imported member hover/completion 所需的 `EXPORTED_SYMBOLS` 能力；如果后续要把更多 intermediate section 暴露给 LSP，还需要继续扩展 text metadata reader。
+- `.zri` 不再进入 LSP 语义链；如果后续 debug/link 能力需要消费 `.zri`，应走独立 debug artifact 管线，而不是回到 language server metadata loader。
 - schema 目前只覆盖 `zr_vm_library/project.c` 已知字段；如果 project loader 后续扩展出数组或嵌套对象结构，需要同步升级 schema。

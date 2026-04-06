@@ -72,6 +72,9 @@ extern TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
                                                       SZrArray *result);
 extern TZrSize ZrLanguageServer_Lsp_SemanticTokenTypeCount(void);
 extern const TZrChar *ZrLanguageServer_Lsp_SemanticTokenTypeName(TZrSize index);
+extern TZrBool ZrLanguageServer_Lsp_FileUriToNativePath(SZrString *uri,
+                                                        TZrChar *buffer,
+                                                        TZrSize bufferSize);
 extern TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
                                                                              SZrLspContext *context,
                                                                              SZrString *uri);
@@ -291,6 +294,26 @@ static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrCha
     return ZrCore_String_Create(state, buffer, writeIndex);
 }
 
+static TZrChar *find_last_path_separator(TZrChar *path) {
+    TZrChar *forwardSlash;
+    TZrChar *backSlash;
+
+    if (path == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    forwardSlash = strrchr(path, '/');
+    backSlash = strrchr(path, '\\');
+    if (forwardSlash == ZR_NULL) {
+        return backSlash;
+    }
+    if (backSlash == ZR_NULL) {
+        return forwardSlash;
+    }
+
+    return forwardSlash > backSlash ? forwardSlash : backSlash;
+}
+
 typedef struct SZrGeneratedBinaryMetadataFixture {
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
     TZrChar mainPath[ZR_TESTS_PATH_MAX];
@@ -322,16 +345,46 @@ typedef struct SZrGeneratedSourceMemberRefreshFixture {
     TZrChar modulePath[ZR_TESTS_PATH_MAX];
 } SZrGeneratedSourceMemberRefreshFixture;
 
+typedef struct SZrGeneratedTypeMemberExportFixture {
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    TZrChar modulePath[ZR_TESTS_PATH_MAX];
+} SZrGeneratedTypeMemberExportFixture;
+
 static TZrBool regenerate_binary_metadata_fixture_artifacts(SZrState *state,
                                                             SZrGeneratedBinaryMetadataFixture *fixture,
                                                             const TZrChar *moduleSource) {
     SZrString *sourceName;
     SZrFunction *function;
+    SZrBinaryWriterOptions options;
+    TZrChar moduleNameBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *fileName;
+    const TZrChar *extension;
+    TZrSize moduleNameLength;
     TZrBool success;
 
     if (state == ZR_NULL || fixture == ZR_NULL || moduleSource == ZR_NULL || fixture->binaryPath[0] == '\0') {
         return ZR_FALSE;
     }
+
+    if (!ZrTests_Path_EnsureParentDirectory(fixture->binaryPath)) {
+        return ZR_FALSE;
+    }
+
+    memset(&options, 0, sizeof(options));
+    fileName = strrchr(fixture->binaryPath, '/');
+    if (fileName == ZR_NULL) {
+        fileName = strrchr(fixture->binaryPath, '\\');
+    }
+    fileName = fileName != ZR_NULL ? fileName + 1 : fixture->binaryPath;
+    extension = strrchr(fileName, '.');
+    moduleNameLength = extension != ZR_NULL ? (TZrSize)(extension - fileName) : strlen(fileName);
+    if (moduleNameLength == 0 || moduleNameLength >= sizeof(moduleNameBuffer)) {
+        return ZR_FALSE;
+    }
+    memcpy(moduleNameBuffer, fileName, moduleNameLength);
+    moduleNameBuffer[moduleNameLength] = '\0';
+    options.moduleName = moduleNameBuffer;
 
     sourceName = ZrCore_String_Create(state, fixture->binaryPath, strlen(fixture->binaryPath));
     if (sourceName == ZR_NULL) {
@@ -343,7 +396,7 @@ static TZrBool regenerate_binary_metadata_fixture_artifacts(SZrState *state,
         return ZR_FALSE;
     }
 
-    success = ZrParser_Writer_WriteBinaryFile(state, function, fixture->binaryPath);
+    success = ZrParser_Writer_WriteBinaryFileWithOptions(state, function, fixture->binaryPath, &options);
     ZrCore_Function_Free(state, function);
     return success;
 }
@@ -396,7 +449,7 @@ static TZrBool prepare_generated_binary_metadata_fixture(SZrState *state,
     }
 
     snprintf(rootPath, sizeof(rootPath), "%s", generatedProjectPath);
-    lastSeparator = strrchr(rootPath, ZR_SEPARATOR);
+    lastSeparator = find_last_path_separator(rootPath);
     if (lastSeparator == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -462,7 +515,7 @@ static TZrBool prepare_generated_ffi_wrapper_fixture(const TZrChar *artifactName
     memset(fixture, 0, sizeof(*fixture));
     snprintf(fixture->projectPath, sizeof(fixture->projectPath), "%s", generatedProjectPath);
     snprintf(rootPath, sizeof(rootPath), "%s", generatedProjectPath);
-    lastSeparator = strrchr(rootPath, ZR_SEPARATOR);
+    lastSeparator = find_last_path_separator(rootPath);
     if (lastSeparator == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -516,7 +569,7 @@ static TZrBool prepare_generated_multi_import_source_fixture(const TZrChar *arti
     memset(fixture, 0, sizeof(*fixture));
     snprintf(fixture->projectPath, sizeof(fixture->projectPath), "%s", generatedProjectPath);
     snprintf(rootPath, sizeof(rootPath), "%s", generatedProjectPath);
-    lastSeparator = strrchr(rootPath, ZR_SEPARATOR);
+    lastSeparator = find_last_path_separator(rootPath);
     if (lastSeparator == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -530,6 +583,62 @@ static TZrBool prepare_generated_multi_import_source_fixture(const TZrChar *arti
     return write_text_file(fixture->projectPath, projectContent, strlen(projectContent)) &&
            write_text_file(fixture->mainPath, mainContent, strlen(mainContent)) &&
            write_text_file(fixture->helperPath, helperContent, strlen(helperContent)) &&
+           write_text_file(fixture->modulePath, moduleContent, strlen(moduleContent));
+}
+
+static TZrBool prepare_generated_type_member_export_fixture(const TZrChar *artifactName,
+                                                            SZrGeneratedTypeMemberExportFixture *fixture) {
+    static const TZrChar *projectContent =
+        "{\n"
+        "  \"name\": \"type_member_export\",\n"
+        "  \"source\": \"src\",\n"
+        "  \"binary\": \"bin\",\n"
+        "  \"entry\": \"main\"\n"
+        "}\n";
+    static const TZrChar *mainContent =
+        "var lib = %import(\"lib\");\n"
+        "\n"
+        "lib.a += 5;\n"
+        "var r = lib.Record.newInstance();\n"
+        "lib.\n";
+    static const TZrChar *moduleContent =
+        "pub var a = 1;\n"
+        "\n"
+        "pub class Record {\n"
+        "    pub static newInstance(): i32 {\n"
+        "        return 7;\n"
+        "    }\n"
+        "}\n";
+    TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourceRootPath[ZR_TESTS_PATH_MAX];
+    TZrChar *lastSeparator;
+
+    if (artifactName == ZR_NULL || fixture == ZR_NULL ||
+        !ZrTests_Path_GetGeneratedArtifact("language_server",
+                                           artifactName,
+                                           "type_member_export",
+                                           ".zrp",
+                                           generatedProjectPath,
+                                           sizeof(generatedProjectPath))) {
+        return ZR_FALSE;
+    }
+
+    memset(fixture, 0, sizeof(*fixture));
+    snprintf(fixture->projectPath, sizeof(fixture->projectPath), "%s", generatedProjectPath);
+    snprintf(rootPath, sizeof(rootPath), "%s", generatedProjectPath);
+    lastSeparator = find_last_path_separator(rootPath);
+    if (lastSeparator == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *lastSeparator = '\0';
+
+    ZrLibrary_File_PathJoin(rootPath, "src", sourceRootPath);
+    ZrLibrary_File_PathJoin(sourceRootPath, "main.zr", fixture->mainPath);
+    ZrLibrary_File_PathJoin(sourceRootPath, "lib.zr", fixture->modulePath);
+
+    return write_text_file(fixture->projectPath, projectContent, strlen(projectContent)) &&
+           write_text_file(fixture->mainPath, mainContent, strlen(mainContent)) &&
            write_text_file(fixture->modulePath, moduleContent, strlen(moduleContent));
 }
 
@@ -597,7 +706,7 @@ static TZrBool prepare_generated_descriptor_plugin_fixture(const TZrChar *artifa
     memset(fixture, 0, sizeof(*fixture));
     snprintf(fixture->projectPath, sizeof(fixture->projectPath), "%s", generatedProjectPath);
     snprintf(rootPath, sizeof(rootPath), "%s", generatedProjectPath);
-    lastSeparator = strrchr(rootPath, ZR_SEPARATOR);
+    lastSeparator = find_last_path_separator(rootPath);
     if (lastSeparator == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -650,7 +759,7 @@ static TZrBool prepare_generated_source_member_refresh_fixture(const TZrChar *ar
     memset(fixture, 0, sizeof(*fixture));
     snprintf(fixture->projectPath, sizeof(fixture->projectPath), "%s", generatedProjectPath);
     snprintf(rootPath, sizeof(rootPath), "%s", generatedProjectPath);
-    lastSeparator = strrchr(rootPath, ZR_SEPARATOR);
+    lastSeparator = find_last_path_separator(rootPath);
     if (lastSeparator == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -877,6 +986,27 @@ static TZrBool completion_detail_contains_fragment(SZrArray *completions,
     return detail != ZR_NULL && fragment != ZR_NULL && strstr(detail, fragment) != ZR_NULL;
 }
 
+static const TZrChar *signature_help_first_label(SZrLspSignatureHelp *help) {
+    if (help == ZR_NULL || help->signatures.length == 0) {
+        return ZR_NULL;
+    }
+
+    {
+        SZrLspSignatureInformation **signaturePtr =
+            (SZrLspSignatureInformation **)ZrCore_Array_Get(&help->signatures, 0);
+        if (signaturePtr == ZR_NULL || *signaturePtr == ZR_NULL || (*signaturePtr)->label == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        return test_string_ptr((*signaturePtr)->label);
+    }
+}
+
+static TZrBool signature_help_contains_text(SZrLspSignatureHelp *help, const TZrChar *needle) {
+    const TZrChar *label = signature_help_first_label(help);
+    return label != ZR_NULL && needle != ZR_NULL && strstr(label, needle) != ZR_NULL;
+}
+
 static void describe_completion_labels(SZrArray *completions, TZrChar *buffer, size_t bufferSize) {
     TZrSize offset = 0;
 
@@ -1004,6 +1134,8 @@ static TZrBool semantic_tokens_contain(SZrArray *data,
 }
 
 static void test_lsp_auto_discovers_project_from_source_file(SZrState *state);
+static void test_lsp_imported_type_members_do_not_leak_into_module_completion(SZrState *state);
+static void test_lsp_imported_constructor_and_meta_call_infer_through_module_type(SZrState *state);
 static void test_lsp_uses_nearest_ancestor_project(SZrState *state);
 static void test_lsp_ambiguous_project_directory_stays_standalone(SZrState *state);
 static void test_lsp_native_imports_and_ownership_display(SZrState *state);
@@ -1011,6 +1143,9 @@ static void test_lsp_import_literal_navigation_and_hover(SZrState *state);
 static void test_lsp_import_literal_hover_identifies_native_descriptor_plugin(SZrState *state);
 static void test_lsp_import_literal_definition_targets_native_descriptor_plugin(SZrState *state);
 static void test_lsp_binary_import_literal_definition_targets_metadata(SZrState *state);
+static void test_lsp_network_native_import_chain_surfaces_module_metadata(SZrState *state);
+static void test_lsp_network_native_receiver_members_surface_shared_semantics(SZrState *state);
+static void test_lsp_network_native_members_semantic_tokens_cover_chain_and_receivers(SZrState *state);
 static void test_lsp_descriptor_plugin_member_completion_definition_and_references(SZrState *state);
 static void test_lsp_descriptor_plugin_project_local_definition_overrides_stale_registry(SZrState *state);
 static void test_lsp_binary_import_references_surface_metadata_and_usages(SZrState *state);
@@ -1122,6 +1257,286 @@ static void test_lsp_auto_discovers_project_from_source_file(SZrState *state) {
     ZrCore_Array_Free(state, &workspaceSymbols);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Auto Discovers Project From Source File");
+}
+
+static void test_lsp_imported_type_members_do_not_leak_into_module_completion(SZrState *state) {
+    SZrTestTimer timer;
+    SZrGeneratedTypeMemberExportFixture fixture;
+    TZrSize mainLength = 0;
+    TZrChar *mainContent = ZR_NULL;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrLspPosition moduleCompletionPosition;
+    SZrLspPosition typeCompletionPosition;
+    SZrArray completions;
+
+    ZrCore_Array_Construct(&completions);
+
+    TEST_START("LSP Imported Type Members Do Not Leak Into Module Completion");
+    TEST_INFO("Imported type members stay nested under their owner type",
+              "Source-module completion on lib. should only expose module exports, while lib.Record. should expose the static method");
+
+    if (!prepare_generated_type_member_export_fixture("project_features_type_member_export", &fixture)) {
+        TEST_FAIL(timer,
+                  "LSP Imported Type Members Do Not Leak Into Module Completion",
+                  "Failed to prepare generated type-member export fixture");
+        return;
+    }
+
+    mainContent = read_fixture_text_file(fixture.mainPath, &mainLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (mainContent == ZR_NULL || context == ZR_NULL) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Type Members Do Not Leak Into Module Completion",
+                  "Failed to load generated project fixture or allocate the LSP context");
+        return;
+    }
+
+    mainUri = create_file_uri_from_native_path(state, fixture.mainPath);
+    if (mainUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
+        !lsp_find_position_for_substring(mainContent, "lib.", 1, 0, &moduleCompletionPosition) ||
+        !lsp_find_position_for_substring(mainContent, "newInstance", 0, 0, &typeCompletionPosition)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Type Members Do Not Leak Into Module Completion",
+                  "Failed to open the generated source module fixture or compute completion positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, moduleCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "a") ||
+        !completion_array_contains_label(&completions, "Record") ||
+        completion_array_contains_label(&completions, "newInstance")) {
+        free(mainContent);
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Type Members Do Not Leak Into Module Completion",
+                  "Module completion should expose the class export but not flatten its static methods into lib.*");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, typeCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "newInstance")) {
+        free(mainContent);
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Type Members Do Not Leak Into Module Completion",
+                  "Type completion on lib.Record. should still expose the static method");
+        return;
+    }
+
+    free(mainContent);
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Imported Type Members Do Not Leak Into Module Completion");
+}
+
+static void test_lsp_imported_constructor_and_meta_call_infer_through_module_type(SZrState *state) {
+    static const TZrChar *extraContent =
+        "\n"
+        "r.\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    TZrChar projectPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar libPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar *projectContent = ZR_NULL;
+    TZrChar *mainContent = ZR_NULL;
+    TZrChar *libContent = ZR_NULL;
+    TZrChar *extendedContent = ZR_NULL;
+    TZrSize projectLength = 0;
+    TZrSize mainLength = 0;
+    TZrSize libLength = 0;
+    TZrSize extendedLength = 0;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *libUri = ZR_NULL;
+    SZrLspPosition constructorSignaturePosition;
+    SZrLspPosition receiverHoverPosition;
+    SZrLspPosition sumHoverPosition;
+    SZrLspPosition receiverCompletionPosition;
+    SZrArray diagnostics;
+    SZrArray completions;
+    SZrLspHover *receiverHover = ZR_NULL;
+    SZrLspHover *sumHover = ZR_NULL;
+    SZrLspSignatureHelp *signatureHelp = ZR_NULL;
+    TZrChar completionLabels[256];
+    const TZrChar *signatureLabel;
+
+    ZrCore_Array_Construct(&diagnostics);
+    ZrCore_Array_Construct(&completions);
+    completionLabels[0] = '\0';
+
+    TEST_START("LSP Imported Constructor And Meta Call Infer Through Module Type");
+    TEST_INFO("Imported constructor and @call inference",
+              "Source import module types should remain constructible, expose constructor signatures, infer local receiver types, and flow @call return types back into the document");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/network_loopback/network_loopback.zrp",
+                                   projectPath,
+                                   sizeof(projectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/network_loopback/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/network_loopback/src/lib.zr",
+                                   libPath,
+                                   sizeof(libPath))) {
+        TEST_FAIL(timer,
+                  "LSP Imported Constructor And Meta Call Infer Through Module Type",
+                  "Failed to build network_loopback fixture paths");
+        return;
+    }
+
+    projectContent = read_fixture_text_file(projectPath, &projectLength);
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    libContent = read_fixture_text_file(libPath, &libLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (projectContent == ZR_NULL || mainContent == ZR_NULL || libContent == ZR_NULL || context == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Constructor And Meta Call Infer Through Module Type",
+                  "Failed to load network_loopback fixture content");
+        return;
+    }
+
+    extendedLength = mainLength + strlen(extraContent);
+    extendedContent = (TZrChar *)malloc(extendedLength + 1);
+    if (extendedContent == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Constructor And Meta Call Infer Through Module Type",
+                  "Failed to allocate extended network_loopback source");
+        return;
+    }
+    memcpy(extendedContent, mainContent, mainLength);
+    memcpy(extendedContent + mainLength, extraContent, strlen(extraContent));
+    extendedContent[extendedLength] = '\0';
+
+    projectUri = create_file_uri_from_native_path(state, projectPath);
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    libUri = create_file_uri_from_native_path(state, libPath);
+    if (projectUri == ZR_NULL || mainUri == ZR_NULL || libUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, projectUri, projectContent, projectLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, libUri, libContent, libLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, extendedContent, extendedLength, 1) ||
+        !lsp_find_position_for_substring(extendedContent, "new lib.Record(3, 4)", 0, 15, &constructorSignaturePosition) ||
+        !lsp_find_position_for_substring(extendedContent, "var r = new lib.Record(3, 4);", 0, 4, &receiverHoverPosition) ||
+        !lsp_find_position_for_substring(extendedContent, "var sum = r();", 0, 4, &sumHoverPosition) ||
+        !lsp_find_position_for_substring(extendedContent, "r.", 0, 2, &receiverCompletionPosition)) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Constructor And Meta Call Infer Through Module Type",
+                  "Failed to prepare imported constructor/meta-call fixture positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 8);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, mainUri, &diagnostics) ||
+        diagnostics.length != 0) {
+        ZrCore_Array_Free(state, &diagnostics);
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Constructor And Meta Call Infer Through Module Type",
+                  "Imported Record construction and r() meta-call should analyze without diagnostics");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, mainUri, constructorSignaturePosition, &signatureHelp) ||
+        signatureHelp == ZR_NULL ||
+        !signature_help_contains_text(signatureHelp, "x: i32") ||
+        !signature_help_contains_text(signatureHelp, "y: i32")) {
+        signatureLabel = signature_help_first_label(signatureHelp);
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Constructor And Meta Call Infer Through Module Type",
+                  signatureLabel != ZR_NULL
+                      ? signatureLabel
+                      : "Constructor signature help for new lib.Record(...) should surface the imported @constructor parameters");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, receiverHoverPosition, &receiverHover) ||
+        receiverHover == ZR_NULL ||
+        !hover_contains_text(receiverHover, "Record")) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Constructor And Meta Call Infer Through Module Type",
+                  "Hover on the constructed local r should resolve to the imported Record instance type");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, sumHoverPosition, &sumHover) ||
+        sumHover == ZR_NULL ||
+        (!hover_contains_text(sumHover, "i32") && !hover_contains_text(sumHover, "int"))) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Constructor And Meta Call Infer Through Module Type",
+                  "Hover on sum should reflect the imported Record @call return type");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, receiverCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "x") ||
+        !completion_array_contains_label(&completions, "y") ||
+        completion_array_contains_label(&completions, "newInstance")) {
+        describe_completion_labels(&completions, completionLabels, sizeof(completionLabels));
+        ZrCore_Array_Free(state, &completions);
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Constructor And Meta Call Infer Through Module Type",
+                  completionLabels[0] != '\0'
+                      ? completionLabels
+                      : "Completion on r. should expose Record instance members without leaking static methods");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    free(projectContent);
+    free(mainContent);
+    free(libContent);
+    free(extendedContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Imported Constructor And Meta Call Infer Through Module Type");
 }
 
 static void test_lsp_uses_nearest_ancestor_project(SZrState *state) {
@@ -2940,7 +3355,7 @@ static void test_lsp_external_metadata_declarations_highlight_and_module_entry_n
 
     snprintf(binaryFixture.projectPath, sizeof(binaryFixture.projectPath), "%s", binaryProjectPath);
     snprintf(binaryRootPath, sizeof(binaryRootPath), "%s", binaryProjectPath);
-    lastSeparator = strrchr(binaryRootPath, ZR_SEPARATOR);
+    lastSeparator = find_last_path_separator(binaryRootPath);
     if (lastSeparator == ZR_NULL) {
         TEST_FAIL(timer,
                   "LSP External Metadata Declarations Highlight And Module Entry Navigation",
@@ -2955,7 +3370,7 @@ static void test_lsp_external_metadata_declarations_highlight_and_module_entry_n
 
     snprintf(pluginFixture.projectPath, sizeof(pluginFixture.projectPath), "%s", pluginProjectPath);
     snprintf(pluginRootPath, sizeof(pluginRootPath), "%s", pluginProjectPath);
-    lastSeparator = strrchr(pluginRootPath, ZR_SEPARATOR);
+    lastSeparator = find_last_path_separator(pluginRootPath);
     pluginExtension = plugin_fixture_path_extension(ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_INT_PATH);
     if (lastSeparator == ZR_NULL || pluginExtension == ZR_NULL) {
         TEST_FAIL(timer,
@@ -3844,6 +4259,8 @@ static void test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_ke
     SZrString *moduleNameKey = ZR_NULL;
     SZrString *binaryPathKey = ZR_NULL;
     SZrObjectModule *dummyModule = ZR_NULL;
+    TZrChar normalizedBinaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar binaryUriNativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
     TEST_START("LSP Watched Binary Metadata Refresh Invalidates Module Cache Keys");
     TEST_INFO("Watched binary metadata cache invalidation",
@@ -3870,11 +4287,22 @@ static void test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_ke
 
     mainUri = create_file_uri_from_native_path(state, fixture.mainPath);
     binaryUri = create_file_uri_from_native_path(state, fixture.binaryPath);
+    normalizedBinaryPath[0] = '\0';
+    binaryUriNativePath[0] = '\0';
     moduleNameKey = ZrCore_String_CreateFromNative(state, "graph_binary_stage");
-    binaryPathKey = ZrCore_String_CreateFromNative(state, fixture.binaryPath);
+    if (binaryUri != ZR_NULL) {
+        ZrLanguageServer_Lsp_FileUriToNativePath(binaryUri, binaryUriNativePath, sizeof(binaryUriNativePath));
+    }
+    if (!ZrLibrary_File_NormalizePath(fixture.binaryPath,
+                                      normalizedBinaryPath,
+                                      sizeof(normalizedBinaryPath))) {
+        normalizedBinaryPath[0] = '\0';
+    }
+    binaryPathKey = ZrCore_String_CreateFromNative(state, normalizedBinaryPath);
     dummyModule = ZrCore_Module_Create(state);
     if (mainUri == ZR_NULL || binaryUri == ZR_NULL || moduleNameKey == ZR_NULL || binaryPathKey == ZR_NULL ||
-        dummyModule == ZR_NULL ||
+        dummyModule == ZR_NULL || binaryUriNativePath[0] == '\0' || normalizedBinaryPath[0] == '\0' ||
+        strcmp(binaryUriNativePath, normalizedBinaryPath) != 0 ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1)) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -3896,8 +4324,16 @@ static void test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_ke
         return;
     }
 
-    if (!ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(state, context, binaryUri) ||
-        ZrCore_Module_GetFromCache(state, moduleNameKey) != ZR_NULL ||
+    if (!ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(state, context, binaryUri)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Watched Binary Metadata Refresh Invalidates Module Cache Keys",
+                  "Reloading the watched binary metadata fixture failed");
+        return;
+    }
+
+    if (ZrCore_Module_GetFromCache(state, moduleNameKey) != ZR_NULL ||
         ZrCore_Module_GetFromCache(state, binaryPathKey) != ZR_NULL) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -4823,6 +5259,589 @@ static void test_lsp_semantic_tokens_cover_native_value_constructor_members(SZrS
     TEST_PASS(timer, "LSP Semantic Tokens Cover Native Value Constructor Members");
 }
 
+static TZrChar *build_network_loopback_test_content(const TZrChar *baseContent,
+                                                    TZrSize baseLength,
+                                                    const TZrChar *appendix,
+                                                    TZrSize *outLength) {
+    static const TZrChar *needle =
+        "var r = new lib.Record(3, 4);\n"
+        "var sum = r();\n";
+    static const TZrChar *replacement =
+        "var r = 0;\n"
+        "var sum = r;\n";
+    const TZrChar *match;
+    TZrSize appendixLength = appendix != ZR_NULL ? strlen(appendix) : 0;
+    TZrSize prefixLength = 0;
+    TZrSize suffixOffset = 0;
+    TZrSize suffixLength;
+    TZrSize totalLength;
+    TZrChar *buffer;
+
+    if (outLength != ZR_NULL) {
+        *outLength = 0;
+    }
+    if (baseContent == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    match = strstr(baseContent, needle);
+    if (match != ZR_NULL) {
+        prefixLength = (TZrSize)(match - baseContent);
+        suffixOffset = prefixLength + strlen(needle);
+    } else {
+        prefixLength = baseLength;
+        suffixOffset = baseLength;
+    }
+    suffixLength = baseLength - suffixOffset;
+    totalLength = prefixLength +
+                  (match != ZR_NULL ? strlen(replacement) : 0) +
+                  suffixLength +
+                  appendixLength;
+    buffer = (TZrChar *)malloc(totalLength + 1);
+    if (buffer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    memcpy(buffer, baseContent, prefixLength);
+    if (match != ZR_NULL) {
+        memcpy(buffer + prefixLength, replacement, strlen(replacement));
+        prefixLength += strlen(replacement);
+    }
+    memcpy(buffer + prefixLength, baseContent + suffixOffset, suffixLength);
+    prefixLength += suffixLength;
+    if (appendixLength > 0) {
+        memcpy(buffer + prefixLength, appendix, appendixLength);
+        prefixLength += appendixLength;
+    }
+    buffer[prefixLength] = '\0';
+    if (outLength != ZR_NULL) {
+        *outLength = prefixLength;
+    }
+    return buffer;
+}
+
+static void test_lsp_network_native_import_chain_surfaces_module_metadata(SZrState *state) {
+    static const TZrChar *extraContent =
+        "\n"
+        "network.tcp.listen;\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    TZrChar projectPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar libPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar *projectContent = ZR_NULL;
+    TZrChar *mainContent = ZR_NULL;
+    TZrChar *libContent = ZR_NULL;
+    TZrChar *extendedContent = ZR_NULL;
+    TZrSize projectLength = 0;
+    TZrSize mainLength = 0;
+    TZrSize libLength = 0;
+    TZrSize extendedLength;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *libUri = ZR_NULL;
+    SZrLspPosition importPosition;
+    SZrLspPosition rootCompletionPosition;
+    SZrLspPosition leafCompletionPosition;
+    SZrLspHover *hover = ZR_NULL;
+    SZrArray completions;
+    TZrChar completionLabels[512];
+
+    TEST_START("LSP Network Native Import Chain Surfaces Module Metadata");
+    TEST_INFO("network native import chain",
+              "network_loopback should surface zr.network root and zr.network.tcp leaf metadata through the shared import-chain completion and hover path");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/network_loopback/network_loopback.zrp",
+                                   projectPath,
+                                   sizeof(projectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/network_loopback/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/network_loopback/src/lib.zr",
+                                   libPath,
+                                   sizeof(libPath))) {
+        TEST_FAIL(timer,
+                  "LSP Network Native Import Chain Surfaces Module Metadata",
+                  "Failed to build network_loopback fixture paths");
+        return;
+    }
+
+    projectContent = read_fixture_text_file(projectPath, &projectLength);
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    libContent = read_fixture_text_file(libPath, &libLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (projectContent == ZR_NULL || mainContent == ZR_NULL || libContent == ZR_NULL || context == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Import Chain Surfaces Module Metadata",
+                  "Failed to load network_loopback fixture content");
+        return;
+    }
+
+    extendedContent = build_network_loopback_test_content(mainContent, mainLength, extraContent, &extendedLength);
+    if (extendedContent == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Import Chain Surfaces Module Metadata",
+                  "Failed to allocate extended network_loopback source");
+        return;
+    }
+
+    projectUri = create_file_uri_from_native_path(state, projectPath);
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    libUri = create_file_uri_from_native_path(state, libPath);
+    if (projectUri == ZR_NULL || mainUri == ZR_NULL || libUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, projectUri, projectContent, projectLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, libUri, libContent, libLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, extendedContent, extendedLength, 1) ||
+        !lsp_find_position_for_substring(extendedContent, "\"zr.network\"", 0, 1, &importPosition) ||
+        !lsp_find_position_for_substring(extendedContent, "network.tcp;", 0, 8, &rootCompletionPosition) ||
+        !lsp_find_position_for_substring(extendedContent, "network.tcp.listen", 0, 12, &leafCompletionPosition)) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Import Chain Surfaces Module Metadata",
+                  "Failed to open network_loopback documents or compute import/module-chain positions");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, importPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "module <zr.network>") ||
+        !hover_contains_text(hover, "Source: native builtin")) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Import Chain Surfaces Module Metadata",
+                  "Hover on %import(\"zr.network\") should surface the native builtin module entry");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, rootCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "tcp") ||
+        !completion_array_contains_label(&completions, "udp") ||
+        completion_array_contains_label(&completions, "connect") ||
+        completion_array_contains_label(&completions, "listen")) {
+        describe_completion_labels(&completions, completionLabels, sizeof(completionLabels));
+        ZrCore_Array_Free(state, &completions);
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Import Chain Surfaces Module Metadata",
+                  completionLabels[0] != '\0'
+                      ? completionLabels
+                      : "network. completion should expose only tcp/udp at the root aggregator");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, leafCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "connect") ||
+        !completion_array_contains_label(&completions, "listen") ||
+        !completion_array_contains_label(&completions, "TcpListener") ||
+        !completion_array_contains_label(&completions, "TcpStream")) {
+        describe_completion_labels(&completions, completionLabels, sizeof(completionLabels));
+        ZrCore_Array_Free(state, &completions);
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Import Chain Surfaces Module Metadata",
+                  completionLabels[0] != '\0'
+                      ? completionLabels
+                      : "network.tcp. completion should expose leaf TCP functions and types");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    free(projectContent);
+    free(mainContent);
+    free(libContent);
+    free(extendedContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Network Native Import Chain Surfaces Module Metadata");
+}
+
+static void test_lsp_network_native_receiver_members_surface_shared_semantics(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    TZrChar projectPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar libPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar *projectContent = ZR_NULL;
+    TZrChar *mainContent = ZR_NULL;
+    TZrChar *libContent = ZR_NULL;
+    TZrChar *effectiveContent = ZR_NULL;
+    TZrSize projectLength = 0;
+    TZrSize mainLength = 0;
+    TZrSize libLength = 0;
+    TZrSize effectiveLength = 0;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *libUri = ZR_NULL;
+    SZrLspPosition listenerHoverPosition;
+    SZrLspPosition clientCompletionPosition;
+    SZrLspPosition clientHoverPosition;
+    SZrLspPosition packetCompletionPosition;
+    SZrLspPosition firstPayloadPosition;
+    SZrLspPosition secondPayloadPosition;
+    SZrArray completions;
+    SZrArray references;
+    SZrArray highlights;
+    SZrLspHover *hover = ZR_NULL;
+    TZrChar completionLabels[512];
+
+    TEST_START("LSP Network Native Receiver Members Surface Shared Semantics");
+    TEST_INFO("network native receiver members",
+              "listener/client/packet members in network_loopback should flow through hover/completion/references/highlights on the shared structured metadata path");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/network_loopback/network_loopback.zrp",
+                                   projectPath,
+                                   sizeof(projectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/network_loopback/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/network_loopback/src/lib.zr",
+                                   libPath,
+                                   sizeof(libPath))) {
+        TEST_FAIL(timer,
+                  "LSP Network Native Receiver Members Surface Shared Semantics",
+                  "Failed to build network_loopback fixture paths");
+        return;
+    }
+
+    projectContent = read_fixture_text_file(projectPath, &projectLength);
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    libContent = read_fixture_text_file(libPath, &libLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (projectContent == ZR_NULL || mainContent == ZR_NULL || libContent == ZR_NULL || context == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Receiver Members Surface Shared Semantics",
+                  "Failed to load network_loopback fixture content");
+        return;
+    }
+
+    effectiveContent = build_network_loopback_test_content(mainContent, mainLength, ZR_NULL, &effectiveLength);
+    if (effectiveContent == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Receiver Members Surface Shared Semantics",
+                  "Failed to allocate sanitized network_loopback source");
+        return;
+    }
+
+    projectUri = create_file_uri_from_native_path(state, projectPath);
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    libUri = create_file_uri_from_native_path(state, libPath);
+    if (projectUri == ZR_NULL || mainUri == ZR_NULL || libUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, projectUri, projectContent, projectLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, libUri, libContent, libLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, effectiveContent, effectiveLength, 1) ||
+        !lsp_find_position_for_substring(effectiveContent, "listener.port", 0, 9, &listenerHoverPosition) ||
+        !lsp_find_position_for_substring(effectiveContent, "client.read", 0, 7, &clientCompletionPosition) ||
+        !lsp_find_position_for_substring(effectiveContent, "client.read", 0, 7, &clientHoverPosition) ||
+        !lsp_find_position_for_substring(effectiveContent, "packet.payload", 0, 7, &packetCompletionPosition) ||
+        !lsp_find_position_for_substring(effectiveContent, "packet.payload", 0, 7, &firstPayloadPosition) ||
+        !lsp_find_position_for_substring(effectiveContent, "packet.payload", 1, 7, &secondPayloadPosition)) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(effectiveContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Receiver Members Surface Shared Semantics",
+                  "Failed to open network_loopback documents or compute receiver-member positions");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, listenerHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "port") ||
+        !hover_contains_text(hover, "int") ||
+        !hover_contains_text(hover, "TcpListener")) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(effectiveContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Receiver Members Surface Shared Semantics",
+                  "Hover on listener.port should expose the resolved TcpListener method metadata");
+        return;
+    }
+
+    hover = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, clientHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "read") ||
+        !hover_contains_text(hover, "string") ||
+        !hover_contains_text(hover, "TcpStream")) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(effectiveContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Receiver Members Surface Shared Semantics",
+                  "Hover on client.read should expose the resolved TcpStream method metadata");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, clientCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "read") ||
+        !completion_array_contains_label(&completions, "write") ||
+        !completion_array_contains_label(&completions, "close")) {
+        describe_completion_labels(&completions, completionLabels, sizeof(completionLabels));
+        ZrCore_Array_Free(state, &completions);
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(effectiveContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Receiver Members Surface Shared Semantics",
+                  completionLabels[0] != '\0'
+                      ? completionLabels
+                      : "client. completion should expose TcpStream members through the shared receiver path");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, packetCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "payload") ||
+        !completion_array_contains_label(&completions, "length") ||
+        !completion_array_contains_label(&completions, "host") ||
+        !completion_array_contains_label(&completions, "port")) {
+        describe_completion_labels(&completions, completionLabels, sizeof(completionLabels));
+        ZrCore_Array_Free(state, &completions);
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(effectiveContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Receiver Members Surface Shared Semantics",
+                  completionLabels[0] != '\0'
+                      ? completionLabels
+                      : "packet. completion should expose UdpPacket fields through the shared receiver path");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
+    if (!ZrLanguageServer_Lsp_FindReferences(state, context, mainUri, firstPayloadPosition, ZR_TRUE, &references) ||
+        references.length < 2 ||
+        !location_array_contains_uri_and_range(&references,
+                                               mainUri,
+                                               firstPayloadPosition.line,
+                                               firstPayloadPosition.character,
+                                               firstPayloadPosition.line,
+                                               firstPayloadPosition.character + 7) ||
+        !location_array_contains_uri_and_range(&references,
+                                               mainUri,
+                                               secondPayloadPosition.line,
+                                               secondPayloadPosition.character,
+                                               secondPayloadPosition.line,
+                                               secondPayloadPosition.character + 7)) {
+        ZrCore_Array_Free(state, &references);
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(effectiveContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Receiver Members Surface Shared Semantics",
+                  "References on packet.payload should include every same-document usage through the shared query path");
+        return;
+    }
+    ZrCore_Array_Free(state, &references);
+
+    ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 8);
+    if (!ZrLanguageServer_Lsp_GetDocumentHighlights(state, context, mainUri, firstPayloadPosition, &highlights) ||
+        highlights.length < 2 ||
+        !highlight_array_contains_range(&highlights,
+                                        firstPayloadPosition.line,
+                                        firstPayloadPosition.character,
+                                        firstPayloadPosition.line,
+                                        firstPayloadPosition.character + 7) ||
+        !highlight_array_contains_range(&highlights,
+                                        secondPayloadPosition.line,
+                                        secondPayloadPosition.character,
+                                        secondPayloadPosition.line,
+                                        secondPayloadPosition.character + 7)) {
+        ZrCore_Array_Free(state, &highlights);
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(effectiveContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Receiver Members Surface Shared Semantics",
+                  "Document highlights on packet.payload should include both payload usages");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &highlights);
+    free(projectContent);
+    free(mainContent);
+    free(libContent);
+    free(effectiveContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Network Native Receiver Members Surface Shared Semantics");
+}
+
+static void test_lsp_network_native_members_semantic_tokens_cover_chain_and_receivers(SZrState *state) {
+    static const TZrChar *extraContent =
+        "\n"
+        "network.tcp.listen;\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    TZrChar projectPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar libPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar *projectContent = ZR_NULL;
+    TZrChar *mainContent = ZR_NULL;
+    TZrChar *libContent = ZR_NULL;
+    TZrChar *extendedContent = ZR_NULL;
+    TZrSize projectLength = 0;
+    TZrSize mainLength = 0;
+    TZrSize libLength = 0;
+    TZrSize extendedLength;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *libUri = ZR_NULL;
+    SZrLspPosition tcpPosition;
+    SZrLspPosition listenPosition;
+    SZrLspPosition portPosition;
+    SZrLspPosition payloadPosition;
+    SZrLspPosition lengthPosition;
+    SZrArray tokens;
+
+    TEST_START("LSP Network Native Members Semantic Tokens Cover Chain And Receivers");
+    TEST_INFO("network semantic tokens",
+              "network_loopback should classify linked native submodules, receiver methods, and receiver fields through the shared semantic query path");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/network_loopback/network_loopback.zrp",
+                                   projectPath,
+                                   sizeof(projectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/network_loopback/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/network_loopback/src/lib.zr",
+                                   libPath,
+                                   sizeof(libPath))) {
+        TEST_FAIL(timer,
+                  "LSP Network Native Members Semantic Tokens Cover Chain And Receivers",
+                  "Failed to build network_loopback fixture paths");
+        return;
+    }
+
+    projectContent = read_fixture_text_file(projectPath, &projectLength);
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    libContent = read_fixture_text_file(libPath, &libLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (projectContent == ZR_NULL || mainContent == ZR_NULL || libContent == ZR_NULL || context == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Members Semantic Tokens Cover Chain And Receivers",
+                  "Failed to load network_loopback fixture content");
+        return;
+    }
+
+    extendedContent = build_network_loopback_test_content(mainContent, mainLength, extraContent, &extendedLength);
+    if (extendedContent == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Members Semantic Tokens Cover Chain And Receivers",
+                  "Failed to allocate extended network_loopback source");
+        return;
+    }
+
+    projectUri = create_file_uri_from_native_path(state, projectPath);
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    libUri = create_file_uri_from_native_path(state, libPath);
+    if (projectUri == ZR_NULL || mainUri == ZR_NULL || libUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, projectUri, projectContent, projectLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, libUri, libContent, libLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, extendedContent, extendedLength, 1) ||
+        !lsp_find_position_for_substring(extendedContent, "network.tcp.listen", 0, 8, &tcpPosition) ||
+        !lsp_find_position_for_substring(extendedContent, "network.tcp.listen", 0, 12, &listenPosition) ||
+        !lsp_find_position_for_substring(extendedContent, "listener.port", 0, 9, &portPosition) ||
+        !lsp_find_position_for_substring(extendedContent, "packet.payload", 0, 7, &payloadPosition) ||
+        !lsp_find_position_for_substring(extendedContent, "packet.length", 0, 7, &lengthPosition)) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Members Semantic Tokens Cover Chain And Receivers",
+                  "Failed to open network_loopback documents or compute semantic token positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 64);
+    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, mainUri, &tokens) ||
+        !semantic_tokens_contain(&tokens, tcpPosition.line, tcpPosition.character, 3, "namespace") ||
+        !semantic_tokens_contain(&tokens, listenPosition.line, listenPosition.character, 6, "method") ||
+        !semantic_tokens_contain(&tokens, portPosition.line, portPosition.character, 4, "method") ||
+        !semantic_tokens_contain(&tokens, payloadPosition.line, payloadPosition.character, 7, "property") ||
+        !semantic_tokens_contain(&tokens, lengthPosition.line, lengthPosition.character, 6, "property")) {
+        ZrCore_Array_Free(state, &tokens);
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Network Native Members Semantic Tokens Cover Chain And Receivers",
+                  "Semantic tokens should classify network.tcp as namespace, native methods as methods, and UdpPacket fields as properties");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &tokens);
+    free(projectContent);
+    free(mainContent);
+    free(libContent);
+    free(extendedContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Network Native Members Semantic Tokens Cover Chain And Receivers");
+}
+
 static void test_lsp_native_value_constructor_members_surface_hover_and_completion(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4928,6 +5947,12 @@ int main(void) {
     test_lsp_auto_discovers_project_from_source_file(state);
     TEST_DIVIDER();
 
+    test_lsp_imported_type_members_do_not_leak_into_module_completion(state);
+    TEST_DIVIDER();
+
+    test_lsp_imported_constructor_and_meta_call_infer_through_module_type(state);
+    TEST_DIVIDER();
+
     test_lsp_uses_nearest_ancestor_project(state);
     TEST_DIVIDER();
 
@@ -4950,6 +5975,15 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_binary_import_literal_definition_targets_metadata(state);
+    TEST_DIVIDER();
+
+    test_lsp_network_native_import_chain_surfaces_module_metadata(state);
+    TEST_DIVIDER();
+
+    test_lsp_network_native_receiver_members_surface_shared_semantics(state);
+    TEST_DIVIDER();
+
+    test_lsp_network_native_members_semantic_tokens_cover_chain_and_receivers(state);
     TEST_DIVIDER();
 
     test_lsp_binary_import_metadata_surfaces_hover_and_completion(state);

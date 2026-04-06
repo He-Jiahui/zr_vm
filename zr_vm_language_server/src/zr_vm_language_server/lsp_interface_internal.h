@@ -22,6 +22,9 @@ TZrSize ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(const TZrChar *conten
                                                            TZrSize contentLength,
                                                            TZrInt32 line,
                                                            TZrInt32 column);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_FileUriToNativePath(SZrString *uri,
+                                                                        TZrChar *buffer,
+                                                                        TZrSize bufferSize);
 
 TZrBool ZrLanguageServer_Lsp_StringsEqual(SZrString *left, SZrString *right);
 TZrBool ZrLanguageServer_Lsp_StringContainsCaseInsensitive(SZrString *haystack, SZrString *needle);
@@ -53,8 +56,10 @@ void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZ
 SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformation(SZrState *state,
                                                                       SZrSymbol *symbol);
 TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
+                                                           SZrLspContext *context,
                                                            SZrLspProjectIndex *projectIndex,
                                                            SZrSemanticAnalyzer *analyzer,
+                                                           SZrString *uri,
                                                            SZrAstNode *ast,
                                                            const TZrChar *content,
                                                            TZrSize contentLength,

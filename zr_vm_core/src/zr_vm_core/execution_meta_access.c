@@ -19,21 +19,22 @@ static SZrObjectPrototype *execution_meta_resolve_receiver_prototype(SZrState *s
         return ZR_NULL;
     }
 
-    if ((receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+    if ((receiver->type != ZR_VALUE_TYPE_OBJECT &&
+         receiver->type != ZR_VALUE_TYPE_ARRAY &&
+         receiver->type != ZR_VALUE_TYPE_STRING) ||
         receiver->value.object == ZR_NULL) {
         return ZR_NULL;
     }
 
-    object = ZR_CAST_OBJECT(state, receiver->value.object);
-    if (object == ZR_NULL) {
-        return ZR_NULL;
-    }
+    object = (receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY)
+                     ? ZR_CAST_OBJECT(state, receiver->value.object)
+                     : ZR_NULL;
 
-    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+    if (object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
         return (SZrObjectPrototype *)object;
     }
 
-    if (object->prototype != ZR_NULL) {
+    if (object != ZR_NULL && object->prototype != ZR_NULL) {
         return object->prototype;
     }
 

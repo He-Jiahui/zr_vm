@@ -205,6 +205,22 @@ static TZrUInt32 compiler_resolve_serialized_member_function_constant_index(SZrC
     return add_constant(cs, &functionValue);
 }
 
+static void compiler_log_failure_summary(SZrCompilerState *cs) {
+    const TZrChar *reason = "Unknown error";
+
+    if (cs != ZR_NULL && cs->errorMessage != ZR_NULL) {
+        reason = cs->errorMessage;
+    }
+
+    ZrCore_Log_Diagnosticf(cs != ZR_NULL ? cs->state : ZR_NULL,
+                           ZR_LOG_LEVEL_ERROR,
+                           ZR_OUTPUT_CHANNEL_STDERR,
+                           "\n=== Compilation Summary ===\n"
+                           "Status: FAILED\n"
+                           "Reason: %s\n",
+                           reason);
+}
+
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize) {
     if (cs == ZR_NULL || info == ZR_NULL || info->name == ZR_NULL || outData == ZR_NULL || outSize == ZR_NULL) {
@@ -514,7 +530,10 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 
                 // 如果遇到致命错误，停止编译
                 if (cs->hasFatalError) {
-                    fprintf(stderr, "  Fatal compile-time error encountered, stopping compilation\n");
+                    ZrCore_Log_Diagnosticf(cs->state,
+                                           ZR_LOG_LEVEL_ERROR,
+                                           ZR_OUTPUT_CHANNEL_STDERR,
+                                           "  Fatal compile-time error encountered, stopping compilation\n");
                     return;
                 }
             }
@@ -585,7 +604,11 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                     default:
                         // 其他顶层声明类型（intermediate等）
                         // TODO: 目前先跳过，后续实现
-                        fprintf(stderr, "    Skipping statement type %d (not implemented yet)\n", stmt->type);
+                        ZrCore_Log_Diagnosticf(cs->state,
+                                               ZR_LOG_LEVEL_WARNING,
+                                               ZR_OUTPUT_CHANNEL_STDERR,
+                                               "    Skipping statement type %d (not implemented yet)\n",
+                                               stmt->type);
                         break;
                 }
 
@@ -597,11 +620,18 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 // 即使有错误，也继续编译后续语句（除非是致命错误）
                 // 这样可以尽可能多地编译成功的语句
                 if (cs->hasError && !cs->hasFatalError) {
-                    fprintf(stderr, "    Compilation error at statement %zu, resetting error and continuing...\n", i);
+                    ZrCore_Log_Diagnosticf(cs->state,
+                                           ZR_LOG_LEVEL_WARNING,
+                                           ZR_OUTPUT_CHANNEL_STDERR,
+                                           "    Compilation error at statement %zu, resetting error and continuing...\n",
+                                           i);
                     // 清除当前语句的阻塞状态，保留总体失败标记以继续收集后续错误
                     cs->hasError = ZR_FALSE;
                 } else if (cs->hasFatalError) {
-                    fprintf(stderr, "  Fatal error encountered, stopping compilation\n");
+                    ZrCore_Log_Diagnosticf(cs->state,
+                                           ZR_LOG_LEVEL_ERROR,
+                                           ZR_OUTPUT_CHANNEL_STDERR,
+                                           "  Fatal error encountered, stopping compilation\n");
                     return;
                 }
             }
@@ -615,7 +645,6 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             return;
         }
 
-        fprintf(stderr, "  Finished compiling statements, total instructions: %zu\n", cs->instructionCount);
         exit_scope(cs);
     }
 
@@ -795,9 +824,7 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
 
     if (cs.hasError) {
         // 错误信息已在 ZrParser_Compiler_Error 中输出（包含行列号）
-        fprintf(stderr, "\n=== Compilation Summary ===\n");
-        fprintf(stderr, "Status: FAILED\n");
-        fprintf(stderr, "Reason: %s\n", (cs.errorMessage != ZR_NULL) ? cs.errorMessage : "Unknown error");
+        compiler_log_failure_summary(&cs);
         if (cs.currentFunction != ZR_NULL) {
             ZrCore_Function_Free(state, cs.currentFunction);
         }
@@ -882,9 +909,7 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
 
     if (cs.hasError) {
         // 错误信息已在 ZrParser_Compiler_Error 中输出（包含行列号）
-        fprintf(stderr, "\n=== Compilation Summary ===\n");
-        fprintf(stderr, "Status: FAILED\n");
-        fprintf(stderr, "Reason: %s\n", (cs.errorMessage != ZR_NULL) ? cs.errorMessage : "Unknown error");
+        compiler_log_failure_summary(&cs);
         if (cs.currentFunction != ZR_NULL) {
             ZrCore_Function_Free(state, cs.currentFunction);
         }

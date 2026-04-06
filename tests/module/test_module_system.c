@@ -2188,7 +2188,18 @@ static void test_system_root_exports_only_submodules(void) {
 static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
     SZrTestTimer timer;
     const char *testSummary = "System Leaf Modules Expose New API";
-    static const TZrChar *kConsoleExports[] = {"print", "printLine", "printError", "printErrorLine"};
+    static const TZrChar *kConsoleExports[] = {"print", "printLine", "printError", "printErrorLine", "read", "readLine"};
+    static const struct {
+        const TZrChar *symbolName;
+        const TZrChar *signature;
+    } kConsoleTypeHints[] = {
+            {"print", "print(value: any): null"},
+            {"printLine", "printLine(value: any): null"},
+            {"printError", "printError(value: any): null"},
+            {"printErrorLine", "printErrorLine(value: any): null"},
+            {"read", "read(): string?"},
+            {"readLine", "readLine(): string?"},
+    };
     static const TZrChar *kFsExports[] = {
             "currentDirectory",
             "changeCurrentDirectory",
@@ -2231,7 +2242,11 @@ static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
         SZrObjectModule *gcModule;
         SZrObjectModule *exceptionModule;
         SZrObjectModule *vmModule;
+        const SZrTypeValue *consoleModuleInfoValue;
+        const SZrTypeValue *consoleTypeHintsValue;
         const SZrTypeValue *argumentsValue;
+        SZrObject *consoleModuleInfo;
+        SZrObject *consoleTypeHints;
         TZrSize index;
 
         TEST_ASSERT_NOT_NULL(state);
@@ -2257,6 +2272,34 @@ static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
         }
         for (index = 0; index < ZR_ARRAY_COUNT(kConsoleAbsentExports); index++) {
             TEST_ASSERT_NULL(get_module_export_value(state, consoleModule, kConsoleAbsentExports[index]));
+        }
+
+        consoleModuleInfoValue = get_module_export_value(state, consoleModule, ZR_NATIVE_MODULE_INFO_EXPORT_NAME);
+        TEST_ASSERT_NOT_NULL(consoleModuleInfoValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, consoleModuleInfoValue->type);
+        consoleModuleInfo = ZR_CAST_OBJECT(state, consoleModuleInfoValue->value.object);
+        TEST_ASSERT_NOT_NULL(consoleModuleInfo);
+
+        consoleTypeHintsValue = get_object_field_value(state, consoleModuleInfo, "typeHints");
+        TEST_ASSERT_NOT_NULL(consoleTypeHintsValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, consoleTypeHintsValue->type);
+        consoleTypeHints = ZR_CAST_OBJECT(state, consoleTypeHintsValue->value.object);
+        TEST_ASSERT_NOT_NULL(consoleTypeHints);
+        TEST_ASSERT_EQUAL_UINT64(ZR_ARRAY_COUNT(kConsoleTypeHints), get_array_length(consoleTypeHints));
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kConsoleTypeHints); index++) {
+            SZrObject *hintEntry = find_named_entry_in_array(state,
+                                                             consoleTypeHints,
+                                                             "symbolName",
+                                                             kConsoleTypeHints[index].symbolName);
+            const SZrTypeValue *signatureValue;
+
+            TEST_ASSERT_NOT_NULL(hintEntry);
+            signatureValue = get_object_field_value(state, hintEntry, "signature");
+            TEST_ASSERT_NOT_NULL(signatureValue);
+            TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, signatureValue->type);
+            TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, signatureValue->value.object),
+                                                   kConsoleTypeHints[index].signature));
         }
 
         for (index = 0; index < ZR_ARRAY_COUNT(kFsExports); index++) {
@@ -2677,8 +2720,10 @@ static void test_source_module_wrapper_metadata_exposes_ffi_wrapper_fields_and_r
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "reflect_ffi_wrapper_metadata",
-                    "pub struct ModeHandleView {\n"
-                    "    pub var raw: i32 = 0;\n"
+                    "%extern(\"fixture\") {\n"
+                    "    struct ModeHandleView {\n"
+                    "        var raw: i32;\n"
+                    "    }\n"
                     "}\n"
                     "\n"
                     "#zr.ffi.lowering(\"handle_id\")#\n"

@@ -23,6 +23,11 @@
 #define ZR_TYPE_INFERENCE_GENERIC_START_NOT_FOUND ((TZrSize)-1)
 #define ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE ((TZrInt32)-1)
 
+TZrBool resolve_expression_root_type(SZrCompilerState *cs,
+                                     SZrAstNode *node,
+                                     SZrString **outTypeName,
+                                     TZrBool *outIsTypeReference);
+
 static TZrBool type_inference_copy_generic_parameter_info_array(SZrState *state,
                                                                 SZrArray *dest,
                                                                 const SZrArray *src) {
@@ -1248,6 +1253,21 @@ TZrBool ZrParser_InferredType_SatisfiesNamedConstraint(SZrCompilerState *cs,
                                                        const SZrInferredType *actualType,
                                                        SZrString *constraintTypeName) {
     return inferred_type_satisfies_constraint(cs, actualType, constraintTypeName);
+}
+
+TZrBool inferred_type_can_use_named_constraint_fallback(SZrCompilerState *cs,
+                                                        const SZrInferredType *actualType,
+                                                        const SZrInferredType *expectedType) {
+    if (cs == ZR_NULL || actualType == ZR_NULL || expectedType == ZR_NULL || expectedType->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (actualType->typeName != ZR_NULL &&
+        ZrCore_String_Equal(actualType->typeName, expectedType->typeName)) {
+        return ZR_FALSE;
+    }
+
+    return ZrParser_InferredType_SatisfiesNamedConstraint(cs, actualType, expectedType->typeName);
 }
 
 static TZrBool bind_protocol_argument_from_type_name(SZrCompilerState *cs,
@@ -2541,6 +2561,7 @@ static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
             }
 
             if (!ZrParser_InferredType_IsCompatible(argType, paramType) &&
+                !inferred_type_can_use_named_constraint_fallback(cs, argType, paramType) &&
                 !ffi_function_call_argument_is_native_boundary_compatible(cs, funcType, i, argType, paramType)) {
                 return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
             }
@@ -2895,6 +2916,17 @@ TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
         typeName = inferredType.typeName;
         prototype = find_compiler_type_prototype_inference(cs, typeName);
         ZrParser_InferredType_Free(cs->state, &inferredType);
+    }
+
+    if (prototype == ZR_NULL && targetNode->type == ZR_AST_PRIMARY_EXPRESSION) {
+        TZrBool isTypeReference = ZR_FALSE;
+        SZrString *resolvedRootTypeName = ZR_NULL;
+
+        if (resolve_expression_root_type(cs, targetNode, &resolvedRootTypeName, &isTypeReference) &&
+            resolvedRootTypeName != ZR_NULL) {
+            typeName = resolvedRootTypeName;
+            prototype = find_compiler_type_prototype_inference(cs, typeName);
+        }
     }
 
     if (prototype == ZR_NULL || typeName == ZR_NULL) {

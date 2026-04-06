@@ -13,6 +13,7 @@
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/conversion.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
@@ -195,11 +196,7 @@ static TZrInt64 meta_to_bool_number(SZrState *state) {
 
 // 获取字符串长度的辅助函数
 static TZrSize get_string_length(SZrString *str) {
-    if (str->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-        return str->shortStringLength;
-    } else {
-        return str->longStringLength;
-    }
+    return ZrCore_String_GetByteLength(str);
 }
 
 // 字符串转布尔值（非空为 true）
@@ -427,7 +424,7 @@ static TZrInt64 meta_add_string(SZrState *state) {
             memcpy(buffer + len1, native2, len2);
             buffer[totalLen] = '\0';
 
-            SZrString *result = ZrCore_String_CreateFromNative(state, buffer);
+            SZrString *result = ZrCore_String_Create(state, buffer, totalLen);
             free(buffer);
             ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(result));
             state->stackTop.valuePointer = base + 1;
@@ -763,7 +760,7 @@ static TZrInt64 meta_sub_string_int(SZrState *state) {
                     memcpy(buffer, native1, posOffset);
                     memcpy(buffer + posOffset, pos + len2, len1 - posOffset - len2);
                     buffer[newLength] = '\0';
-                    SZrString *result = ZrCore_String_CreateFromNative(state, buffer);
+                    SZrString *result = ZrCore_String_Create(state, buffer, newLength);
                     free(buffer);
                     ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(result));
                     state->stackTop.valuePointer = base + 1;
@@ -779,24 +776,28 @@ static TZrInt64 meta_sub_string_int(SZrState *state) {
             // 字符串减整数（删除末尾字符）
             SZrString *str = ZR_CAST_STRING(state, self->value.object);
             TZrInt64 count = other->value.nativeObject.nativeInt64;
-            TZrSize length = get_string_length(str);
+            TZrSize codePointLength = 0;
+            TZrSize newLength = 0;
+            TZrNativeString nativeStr = ZrCore_String_GetNativeString(str);
 
+            if (!ZrCore_String_GetCodePointLength(str, &codePointLength)) {
+                ZrCore_Debug_RunError(state, "invalid UTF-8 string");
+            }
             if (count < 0) {
                 count = 0;
             }
-            if ((TZrUInt64) count > length) {
-                count = (TZrInt64) length;
+            if ((TZrUInt64) count > codePointLength) {
+                count = (TZrInt64) codePointLength;
             }
 
-            TZrSize newLength = length - (TZrSize) count;
-            TZrNativeString nativeStr = ZrCore_String_GetNativeString(str);
+            if (!ZrCore_String_CodePointCountToByteOffset(str,
+                                                          codePointLength - (TZrSize)count,
+                                                          &newLength)) {
+                ZrCore_Debug_RunError(state, "invalid UTF-8 string");
+            }
 
-            char *buffer = (char *) malloc(newLength + 1);
-            if (buffer != ZR_NULL) {
-                memcpy(buffer, nativeStr, newLength);
-                buffer[newLength] = '\0';
-                SZrString *result = ZrCore_String_CreateFromNative(state, buffer);
-                free(buffer);
+            {
+                SZrString *result = ZrCore_String_Create(state, nativeStr, newLength);
                 ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(result));
                 state->stackTop.valuePointer = base + 1;
                 return 1;
@@ -838,7 +839,7 @@ static TZrInt64 meta_mul_string_int(SZrState *state) {
                 memcpy(buffer + i * length, nativeStr, length);
             }
             buffer[totalLength] = '\0';
-            SZrString *result = ZrCore_String_CreateFromNative(state, buffer);
+            SZrString *result = ZrCore_String_Create(state, buffer, totalLength);
             free(buffer);
             ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(result));
             state->stackTop.valuePointer = base + 1;

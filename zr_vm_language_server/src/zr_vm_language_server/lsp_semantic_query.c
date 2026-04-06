@@ -273,51 +273,7 @@ static TZrBool semantic_query_append_local_symbol_highlights(SZrState *state,
 }
 
 static TZrBool semantic_query_uri_to_native_path(SZrString *uri, TZrChar *buffer, TZrSize bufferSize) {
-    const TZrChar *uriText;
-    TZrSize uriLength;
-    TZrSize readIndex = 0;
-    TZrSize writeIndex = 0;
-
-    if (uri == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
-        return ZR_FALSE;
-    }
-
-    buffer[0] = '\0';
-    uriText = uri->shortStringLength < ZR_VM_LONG_STRING_FLAG
-                  ? ZrCore_String_GetNativeStringShort(uri)
-                  : ZrCore_String_GetNativeString(uri);
-    uriLength = uriText != ZR_NULL ? strlen(uriText) : 0;
-    if (uriText == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (uriLength >= 7 && memcmp(uriText, "file://", 7) == 0) {
-        readIndex = 7;
-    }
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-    if (readIndex < uriLength &&
-        uriText[readIndex] == '/' &&
-        readIndex + 2 < uriLength &&
-        isalpha((unsigned char)uriText[readIndex + 1]) &&
-        uriText[readIndex + 2] == ':') {
-        readIndex++;
-    }
-#endif
-
-    while (readIndex < uriLength && writeIndex + 1 < bufferSize) {
-        TZrChar current = uriText[readIndex];
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-        buffer[writeIndex++] = current == '/' ? '\\' : current;
-#else
-        buffer[writeIndex++] = current;
-#endif
-        readIndex++;
-    }
-
-    buffer[writeIndex] = '\0';
-    return writeIndex > 0;
+    return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
 }
 
 static TZrBool semantic_query_try_get_analyzer_for_uri(SZrState *state,
@@ -1856,6 +1812,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     SZrFilePosition filePosition;
     SZrArray bindings;
     SZrLspSemanticImportChainHit importChainHit;
+    SZrLspMetadataProvider provider;
+    SZrLspResolvedImportedModuleEntry moduleEntry;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || query == ZR_NULL) {
         return ZR_FALSE;
@@ -1885,14 +1843,46 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
                                                                    &bindings,
                                                                    query->queryRange,
                                                                    &importChainHit)) {
-            query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER;
-            query->moduleName = importChainHit.moduleName;
-            query->memberName = importChainHit.memberName;
-            query->resolvedMember = importChainHit.resolvedMember;
-            query->sourceKind = query->resolvedMember.module.sourceKind;
-            query->resolvedModule = query->resolvedMember.module;
-            query->resolvedTypeInfo.origin = query->sourceKind;
-            semantic_query_copy_resolved_member_type(state, &query->resolvedMember, &query->resolvedTypeInfo);
+            if (importChainHit.memberName == ZR_NULL) {
+                ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
+                memset(&moduleEntry, 0, sizeof(moduleEntry));
+                if (!ZrLanguageServer_LspMetadataProvider_ResolveImportedModule(&provider,
+                                                                                analyzer,
+                                                                                projectIndex,
+                                                                                importChainHit.moduleName,
+                                                                                &query->resolvedModule)) {
+                    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+                    return ZR_FALSE;
+                }
+
+                ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(&provider,
+                                                                                analyzer,
+                                                                                projectIndex,
+                                                                                importChainHit.moduleName,
+                                                                                &moduleEntry);
+
+                query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION;
+                query->moduleName = importChainHit.moduleName;
+                query->memberName = ZR_NULL;
+                query->queryRange = importChainHit.location;
+                query->sourceKind = query->resolvedModule.sourceKind;
+                query->resolvedTypeInfo.origin = query->sourceKind;
+                query->resolvedTypeInfo.valueKind = ZR_LSP_RESOLVED_VALUE_KIND_MODULE;
+                query->resolvedMember.module = query->resolvedModule;
+                query->resolvedMember.memberKind = ZR_LSP_METADATA_MEMBER_MODULE;
+                query->resolvedMember.declarationUri = moduleEntry.declarationUri;
+                query->resolvedMember.declarationRange = moduleEntry.declarationRange;
+                query->resolvedMember.hasDeclaration = moduleEntry.hasDeclaration;
+            } else {
+                query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER;
+                query->moduleName = importChainHit.moduleName;
+                query->memberName = importChainHit.memberName;
+                query->resolvedMember = importChainHit.resolvedMember;
+                query->sourceKind = query->resolvedMember.module.sourceKind;
+                query->resolvedModule = query->resolvedMember.module;
+                query->resolvedTypeInfo.origin = query->sourceKind;
+                semantic_query_copy_resolved_member_type(state, &query->resolvedMember, &query->resolvedTypeInfo);
+            }
             ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
             return ZR_TRUE;
         }
@@ -2135,8 +2125,10 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
         }
         if (!hasStructuredCompletions) {
             hasStructuredCompletions = ZrLanguageServer_Lsp_TryCollectReceiverCompletions(state,
+                                                                                          context,
                                                                                           semanticQuery.projectIndex,
                                                                                           analyzer,
+                                                                                          uri,
                                                                                           analyzer->ast,
                                                                                           fileVersion->content,
                                                                                           fileVersion->contentLength,

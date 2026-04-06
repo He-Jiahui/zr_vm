@@ -23,3 +23,6 @@
 [submodule "zr_vm_lib_network/third_party/zr_libuv/libuv"]
 	path = zr_vm_lib_network/third_party/zr_libuv/libuv
 	url = https://github.com/libuv/libuv
+[submodule "zr_vm_core/third_party/zr_utf8proc/utf8proc"]
+	path = zr_vm_core/third_party/zr_utf8proc/utf8proc
+	url = https://github.com/JuliaStrings/utf8proc

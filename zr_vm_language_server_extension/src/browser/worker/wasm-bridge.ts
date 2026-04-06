@@ -246,7 +246,6 @@ export class ZrWasmBridge {
 
         const rawResponse = this.module.UTF8ToString(pointer);
         this.module._free(pointer);
-
         return JSON.parse(rawResponse) as WasmResponse<T>;
     }
 }

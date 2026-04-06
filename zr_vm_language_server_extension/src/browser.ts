@@ -4,13 +4,23 @@ import {
     LanguageClientOptions,
     Trace,
 } from 'vscode-languageclient/browser';
+import {
+    createTransportAwareLanguageClientLifecycle,
+    isBenignLanguageClientStopError,
+    stopLanguageClientSafely,
+    type TransportAwareLanguageClientLifecycle,
+} from './languageClientLifecycle';
 import { registerWebDebugSupportUnavailable } from './debug/webSupport';
+import { registerWebProjectActionsUnavailable } from './projectActionsWeb';
+import { registerZrStructureViews, ZrStructureController } from './structure';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
 
 const CONFIG_SECTION = 'zr.languageServer';
 const RESTART_COMMAND = 'zr.restartLanguageServer';
 
 let client: LanguageClient | undefined;
+let clientLifecycle: TransportAwareLanguageClientLifecycle<LanguageClient> | undefined;
+let structureController: ZrStructureController | undefined;
 let workerHandle: { terminate: () => void } | undefined;
 let workerScriptUrl: string | undefined;
 let clientResources: vscode.Disposable[] = [];
@@ -19,9 +29,18 @@ const WEB_STARTUP_TIMEOUT_MS = 30000;
 
 type LanguageServerMode = 'auto' | 'native' | 'web';
 
+function refreshStructureViewsAsync(): void {
+    void structureController?.refresh().catch((error) => {
+        console.warn('ZR structure refresh failed.', error);
+    });
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     context.subscriptions.push(registerZrpJsonSupport());
     context.subscriptions.push(...registerWebDebugSupportUnavailable());
+    context.subscriptions.push(...registerWebProjectActionsUnavailable());
+    structureController = registerZrStructureViews(context);
+    context.subscriptions.push(structureController);
 
     context.subscriptions.push(
         vscode.commands.registerCommand(RESTART_COMMAND, async () => {
@@ -42,6 +61,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export async function deactivate(): Promise<void> {
     await stopClient();
+    structureController?.dispose();
+    structureController = undefined;
 }
 
 async function enqueueRestart(context: vscode.ExtensionContext, requestedByUser: boolean): Promise<void> {
@@ -75,7 +96,7 @@ async function startClient(context: vscode.ExtensionContext, requestedByUser: bo
     }
 
     const workerUri = vscode.Uri.joinPath(context.extensionUri, 'out', 'web', 'server-worker.js');
-    const fileEvents = vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp,zro,zri,dll,so,dylib}');
+    const fileEvents = vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp,zro,dll,so,dylib}');
     clientResources = [
         fileEvents,
     ];
@@ -101,20 +122,26 @@ async function startClient(context: vscode.ExtensionContext, requestedByUser: bo
             fileEvents,
         },
     };
+    const lifecycle = createTransportAwareLanguageClientLifecycle<LanguageClient>();
+    clientOptions.errorHandler = lifecycle.errorHandler;
 
-    client = new LanguageClient(
+    const nextClient = new LanguageClient(
         'zr-language-server-web',
         'Zr Language Server',
         clientOptions,
         worker,
     );
+    lifecycle.attachClient(nextClient);
+    client = nextClient;
+    clientLifecycle = lifecycle;
 
     await withTimeout(
-        client.start(),
+        nextClient.start(),
         WEB_STARTUP_TIMEOUT_MS,
         'Timed out while starting the Zr web language server.',
     );
-    await client.setTrace(resolveTrace(config.get<string>('trace.server', 'off')));
+    await nextClient.setTrace(resolveTrace(config.get<string>('trace.server', 'off')));
+    refreshStructureViewsAsync();
 
     if (requestedByUser) {
         void vscode.window.showInformationMessage('Zr language server restarted.');
@@ -129,8 +156,22 @@ async function stopClient(): Promise<void> {
 
     if (client !== undefined) {
         const currentClient = client;
+        const currentLifecycle = clientLifecycle;
         client = undefined;
-        await currentClient.stop();
+        clientLifecycle = undefined;
+        try {
+            if (currentLifecycle !== undefined) {
+                await stopLanguageClientSafely(currentClient, currentLifecycle);
+            } else {
+                await currentClient.stop();
+            }
+        } catch (error) {
+            if (!isBenignLanguageClientStopError(error)) {
+                throw error;
+            }
+        } finally {
+            currentLifecycle?.dispose();
+        }
     }
 
     if (workerHandle !== undefined) {

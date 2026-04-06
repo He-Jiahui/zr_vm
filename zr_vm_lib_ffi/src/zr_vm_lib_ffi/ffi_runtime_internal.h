@@ -56,6 +56,7 @@ typedef intptr_t ZrFfiAbiSignedSlot;
 #endif
 
 #define ZR_FFI_HIDDEN_HANDLE_FIELD "__zr_ffi_handle"
+#define ZR_FFI_HIDDEN_HANDLE_ID_FIELD "__zr_ffi_handleId"
 #define ZR_FFI_HIDDEN_OWNER_FIELD "__zr_ffi_owner"
 #define ZR_FFI_HIDDEN_CALLBACK_FIELD "__zr_ffi_callback"
 

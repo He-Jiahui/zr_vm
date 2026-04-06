@@ -11,6 +11,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/log.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"

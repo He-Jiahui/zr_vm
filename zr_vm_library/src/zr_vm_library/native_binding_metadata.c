@@ -1002,7 +1002,8 @@ TZrBool native_registry_add_function(SZrState *state,
         return ZR_FALSE;
     }
 
-    native_binding_trace_import("[zr_native_import] add_function begin module=%s name=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_function begin module=%s name=%s\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 functionDescriptor->name);
 
@@ -1014,7 +1015,8 @@ TZrBool native_registry_add_function(SZrState *state,
                                             ZR_NULL,
                                             functionDescriptor,
                                             &value)) {
-        native_binding_trace_import("[zr_native_import] add_function failed module=%s name=%s reason=make_callable\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_function failed module=%s name=%s reason=make_callable\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     functionDescriptor->name);
         return ZR_FALSE;
@@ -1022,17 +1024,20 @@ TZrBool native_registry_add_function(SZrState *state,
 
     name = native_binding_create_string(state, functionDescriptor->name);
     if (name == ZR_NULL) {
-        native_binding_trace_import("[zr_native_import] add_function failed module=%s name=%s reason=create_name\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_function failed module=%s name=%s reason=create_name\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     functionDescriptor->name);
         return ZR_FALSE;
     }
 
-    native_binding_trace_import("[zr_native_import] add_function export module=%s name=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_function export module=%s name=%s\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 functionDescriptor->name);
     ZrCore_Module_AddPubExport(state, module, name, &value);
-    native_binding_trace_import("[zr_native_import] add_function success module=%s name=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_function success module=%s name=%s\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 functionDescriptor->name);
     return ZR_TRUE;
@@ -1086,6 +1091,35 @@ static void native_registry_add_declared_protocols(SZrObjectPrototype *prototype
         return;
     }
     native_registry_add_protocol_mask(prototype, typeDescriptor->protocolMask);
+}
+
+static SZrObjectPrototype *native_registry_find_builtin_exception_prototype(
+        SZrState *state,
+        const ZrLibModuleDescriptor *moduleDescriptor,
+        const ZrLibTypeDescriptor *typeDescriptor,
+        EZrObjectPrototypeType expectedPrototypeType) {
+    if (state == ZR_NULL || state->global == ZR_NULL || moduleDescriptor == ZR_NULL || typeDescriptor == ZR_NULL ||
+        moduleDescriptor->moduleName == ZR_NULL || typeDescriptor->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (strcmp(moduleDescriptor->moduleName, "zr.system.exception") != 0) {
+        return ZR_NULL;
+    }
+
+    if (strcmp(typeDescriptor->name, "Error") == 0 &&
+        state->global->errorPrototype != ZR_NULL &&
+        state->global->errorPrototype->type == expectedPrototypeType) {
+        return state->global->errorPrototype;
+    }
+
+    if (strcmp(typeDescriptor->name, "StackFrame") == 0 &&
+        state->global->stackFramePrototype != ZR_NULL &&
+        state->global->stackFramePrototype->type == expectedPrototypeType) {
+        return state->global->stackFramePrototype;
+    }
+
+    return ZR_NULL;
 }
 
 static void native_registry_add_field_descriptors(SZrState *state,
@@ -1157,7 +1191,8 @@ TZrBool native_registry_add_methods(SZrState *state,
         return ZR_FALSE;
     }
 
-    native_binding_trace_import("[zr_native_import] add_methods begin module=%s type=%s methods=%llu meta=%llu prototype=%p\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_methods begin module=%s type=%s methods=%llu meta=%llu prototype=%p\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
                                 (unsigned long long)typeDescriptor->methodCount,
@@ -1174,7 +1209,8 @@ TZrBool native_registry_add_methods(SZrState *state,
             continue;
         }
 
-        native_binding_trace_import("[zr_native_import] add_methods method module=%s type=%s index=%llu name=%s static=%d\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_methods method module=%s type=%s index=%llu name=%s static=%d\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
                                     (unsigned long long)index,
@@ -1227,7 +1263,8 @@ TZrBool native_registry_add_methods(SZrState *state,
             continue;
         }
 
-        native_binding_trace_import("[zr_native_import] add_methods meta module=%s type=%s index=%llu meta=%d\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_methods meta module=%s type=%s index=%llu meta=%d\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
                                     (unsigned long long)index,
@@ -1267,7 +1304,8 @@ TZrBool native_registry_add_methods(SZrState *state,
         }
     }
 
-    native_binding_trace_import("[zr_native_import] add_methods success module=%s type=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_methods success module=%s type=%s\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>");
     return ZR_TRUE;
@@ -1461,7 +1499,8 @@ TZrBool native_registry_add_type(SZrState *state,
         return ZR_FALSE;
     }
 
-    native_binding_trace_import("[zr_native_import] add_type begin module=%s type=%s fields=%llu methods=%llu meta=%llu prototype_type=%d\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_type begin module=%s type=%s fields=%llu methods=%llu meta=%llu prototype_type=%d\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor->name,
                                 (unsigned long long)typeDescriptor->fieldCount,
@@ -1471,7 +1510,8 @@ TZrBool native_registry_add_type(SZrState *state,
 
     typeName = native_binding_create_string(state, typeDescriptor->name);
     if (typeName == ZR_NULL) {
-        native_binding_trace_import("[zr_native_import] add_type failed module=%s type=%s reason=create_type_name\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_type failed module=%s type=%s reason=create_type_name\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     typeDescriptor->name);
         return ZR_FALSE;
@@ -1481,15 +1521,28 @@ TZrBool native_registry_add_type(SZrState *state,
                                     ? typeDescriptor->prototypeType
                                     : ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
     prototype = native_registry_get_module_prototype(state, module, typeDescriptor->name);
-    native_binding_trace_import("[zr_native_import] add_type lookup module=%s type=%s existing_prototype=%p expected_type=%d\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_type lookup module=%s type=%s existing_prototype=%p expected_type=%d\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor->name,
                                 (void *)prototype,
                                 (int)expectedPrototypeType);
+    if (prototype == ZR_NULL) {
+        prototype = native_registry_find_builtin_exception_prototype(state,
+                                                                     moduleDescriptor,
+                                                                     typeDescriptor,
+                                                                     expectedPrototypeType);
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_type builtin_lookup module=%s type=%s prototype=%p\n",
+                                    moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
+                                    typeDescriptor->name,
+                                    (void *)prototype);
+    }
     if (prototype != ZR_NULL &&
         expectedPrototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID &&
         prototype->type != expectedPrototypeType) {
-        native_binding_trace_import("[zr_native_import] add_type failed module=%s type=%s reason=prototype_type_mismatch actual=%d expected=%d\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_type failed module=%s type=%s reason=prototype_type_mismatch actual=%d expected=%d\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     typeDescriptor->name,
                                     (int)prototype->type,
@@ -1499,7 +1552,8 @@ TZrBool native_registry_add_type(SZrState *state,
 
     if (prototype == ZR_NULL && typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
         prototype = (SZrObjectPrototype *)ZrCore_StructPrototype_New(state, typeName);
-        native_binding_trace_import("[zr_native_import] add_type created_struct module=%s type=%s prototype=%p\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_type created_struct module=%s type=%s prototype=%p\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     typeDescriptor->name,
                                     (void *)prototype);
@@ -1519,46 +1573,54 @@ TZrBool native_registry_add_type(SZrState *state,
         prototype = ZrCore_ObjectPrototype_New(state,
                                                typeName,
                                                expectedPrototypeType);
-        native_binding_trace_import("[zr_native_import] add_type created_object module=%s type=%s prototype=%p\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_type created_object module=%s type=%s prototype=%p\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     typeDescriptor->name,
                                     (void *)prototype);
     }
 
     if (prototype == ZR_NULL) {
-        native_binding_trace_import("[zr_native_import] add_type failed module=%s type=%s reason=create_prototype\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_type failed module=%s type=%s reason=create_prototype\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     typeDescriptor->name);
         return ZR_FALSE;
     }
 
-    native_binding_trace_import("[zr_native_import] add_type attach_runtime module=%s type=%s prototype=%p\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_type attach_runtime module=%s type=%s prototype=%p\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor->name,
                                 (void *)prototype);
     native_registry_attach_type_runtime_metadata(state, typeDescriptor, prototype);
-    native_binding_trace_import("[zr_native_import] add_type attach_protocols module=%s type=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_type attach_protocols module=%s type=%s\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor->name);
     native_registry_add_declared_protocols(prototype, typeDescriptor);
-    native_binding_trace_import("[zr_native_import] add_type attach_fields module=%s type=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_type attach_fields module=%s type=%s\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor->name);
     native_registry_add_field_descriptors(state, prototype, typeDescriptor);
-    native_binding_trace_import("[zr_native_import] add_type attach_reflection module=%s type=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_type attach_reflection module=%s type=%s\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor->name);
     ZrCore_Reflection_AttachPrototypeRuntimeMetadata(state, prototype, module, ZR_NULL);
 
     if (!native_registry_add_methods(state, registry, moduleDescriptor, typeDescriptor, prototype)) {
-        native_binding_trace_import("[zr_native_import] add_type failed module=%s type=%s reason=add_methods\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_type failed module=%s type=%s reason=add_methods\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     typeDescriptor->name);
         return ZR_FALSE;
     }
 
     if (!native_registry_add_enum_members(state, prototype, typeDescriptor)) {
-        native_binding_trace_import("[zr_native_import] add_type failed module=%s type=%s reason=add_enum_members\n",
+        native_binding_trace_import(state,
+                                    "[zr_native_import] add_type failed module=%s type=%s reason=add_enum_members\n",
                                     moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                     typeDescriptor->name);
         return ZR_FALSE;
@@ -1566,13 +1628,15 @@ TZrBool native_registry_add_type(SZrState *state,
 
     ZrCore_Value_InitAsRawObject(state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
     prototypeValue.type = ZR_VALUE_TYPE_OBJECT;
-    native_binding_trace_import("[zr_native_import] add_type export module=%s type=%s prototype=%p\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_type export module=%s type=%s prototype=%p\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor->name,
                                 (void *)prototype);
     ZrCore_Module_AddPubExport(state, module, typeName, &prototypeValue);
     native_binding_register_prototype_in_global_scope(state, typeName, &prototypeValue);
-    native_binding_trace_import("[zr_native_import] add_type success module=%s type=%s\n",
+    native_binding_trace_import(state,
+                                "[zr_native_import] add_type success module=%s type=%s\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",
                                 typeDescriptor->name);
     return ZR_TRUE;

@@ -278,6 +278,10 @@ typedef struct SZrTypePrototypeInfo {
     SZrString *constructorSignature;    // 构造签名提示
 } SZrTypePrototypeInfo;
 
+#ifndef ZR_MEMBER_PARAMETER_COUNT_UNKNOWN
+#define ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ((TZrUInt32)-1)
+#endif
+
 // 成员信息（字段、方法、元函数等）
 typedef struct SZrTypeMemberInfo {
     EZrAstNodeType memberType;          // 成员类型（STRUCT_FIELD, STRUCT_METHOD, CLASS_FIELD 等）
@@ -302,6 +306,7 @@ typedef struct SZrTypeMemberInfo {
       SZrFunction *compiledFunction;       // 编译后的函数对象（用于最终序列化时重新落常量池）
     TZrUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
     TZrUInt32 parameterCount;             // 参数数量
+    TZrUInt32 minArgumentCount;           // 允许省略尾部可选参数后的最小实参数量
     SZrArray parameterTypes;              // 参数类型数组（SZrInferredType）
     SZrArray parameterNames;              // 参数名称数组（SZrString*）
     SZrArray parameterHasDefaultValues;   // 参数默认值存在标记（TZrBool）

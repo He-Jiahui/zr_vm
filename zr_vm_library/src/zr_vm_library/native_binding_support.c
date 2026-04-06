@@ -1,5 +1,7 @@
 #include "native_binding_internal.h"
 
+#include "zr_vm_core/log.h"
+
 TZrBool native_binding_trace_import_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -43,17 +45,40 @@ void native_binding_init_call_context_layout(ZrLibCallContext *context,
     context->argumentCount = rawArgumentCount > 0 ? rawArgumentCount - 1 : 0;
 }
 
-void native_binding_trace_import(const TZrChar *format, ...) {
+void native_binding_trace_import(SZrState *state, const TZrChar *format, ...) {
     va_list arguments;
+    va_list copyArguments;
+    int requiredLength;
+    TZrChar stackBuffer[512];
+    TZrChar *heapBuffer = ZR_NULL;
+    TZrNativeString message = stackBuffer;
 
     if (!native_binding_trace_import_enabled() || format == ZR_NULL) {
         return;
     }
 
     va_start(arguments, format);
-    vfprintf(stderr, format, arguments);
+    va_copy(copyArguments, arguments);
+    requiredLength = vsnprintf(stackBuffer, sizeof(stackBuffer), format, copyArguments);
+    va_end(copyArguments);
+    if (requiredLength < 0) {
+        va_end(arguments);
+        return;
+    }
+    if ((size_t)requiredLength >= sizeof(stackBuffer)) {
+        heapBuffer = (TZrChar *)malloc((size_t)requiredLength + 1u);
+        if (heapBuffer == ZR_NULL) {
+            va_end(arguments);
+            return;
+        }
+        vsnprintf(heapBuffer, (size_t)requiredLength + 1u, format, arguments);
+        message = heapBuffer;
+    }
     va_end(arguments);
-    fflush(stderr);
+    ZrCore_Log_Write(state, ZR_LOG_LEVEL_DEBUG, ZR_OUTPUT_CHANNEL_STDERR, ZR_OUTPUT_KIND_DIAGNOSTIC, message);
+    if (heapBuffer != ZR_NULL) {
+        free(heapBuffer);
+    }
 }
 
 void native_registry_clear_error(ZrLibrary_NativeRegistryState *registry) {

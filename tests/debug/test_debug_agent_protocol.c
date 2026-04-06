@@ -233,6 +233,84 @@ static void debug_client_initialize_running(SZrNetworkStream *client, const char
     cJSON_Delete(message);
 }
 
+static void test_debug_agent_initialize_reports_extended_capabilities(void) {
+    const char *sourcePath = "debug_agent_protocol_capabilities_fixture.zr";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    ZrDebugAgentConfig config;
+    ZrDebugAgent *agent = ZR_NULL;
+    SZrNetworkStream client;
+    ZrDebugExecutionThread thread;
+    TZrChar error[256];
+    cJSON *message;
+    cJSON *result;
+    cJSON *capabilities;
+    cJSON *params;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_debug_agent_fixture(state, sourcePath);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&config, 0, sizeof(config));
+    config.address = "127.0.0.1:0";
+    config.suspend_on_start = ZR_TRUE;
+    config.auth_token = "secret";
+    config.stop_on_uncaught_exception = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(
+            ZrDebug_AgentStart(state, function, "tests.debug.protocol_capabilities", &config, &agent, error, sizeof(error)));
+    memset(&client, 0, sizeof(client));
+    debug_client_connect(agent, &client);
+
+    memset(&thread, 0, sizeof(thread));
+    thread.state = state;
+    thread.function = function;
+    TEST_ASSERT_TRUE(debug_execution_thread_start(&thread));
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "authToken", "secret");
+    debug_client_send_request(&client, 1, "initialize", params);
+
+    message = debug_client_expect_response(&client, 1);
+    result = cJSON_GetObjectItemCaseSensitive(message, "result");
+    capabilities = cJSON_GetObjectItemCaseSensitive(result, "capabilities");
+    TEST_ASSERT_EQUAL_STRING("zrdbg/1", debug_json_string(result, "protocol"));
+    TEST_ASSERT_TRUE(cJSON_IsObject(capabilities));
+    TEST_ASSERT_TRUE(debug_json_int(capabilities, "supportsSetBreakpoints") != 0);
+    TEST_ASSERT_TRUE(debug_json_int(capabilities, "supportsFunctionBreakpoints") != 0);
+    TEST_ASSERT_TRUE(debug_json_int(capabilities, "supportsConditionalBreakpoints") != 0);
+    TEST_ASSERT_TRUE(debug_json_int(capabilities, "supportsHitConditionalBreakpoints") != 0);
+    TEST_ASSERT_TRUE(debug_json_int(capabilities, "supportsLogPoints") != 0);
+    TEST_ASSERT_TRUE(debug_json_int(capabilities, "supportsSetExceptionBreakpoints") != 0);
+    TEST_ASSERT_TRUE(debug_json_int(capabilities, "supportsEvaluate") != 0);
+    TEST_ASSERT_TRUE(debug_json_int(capabilities, "supportsPause") != 0);
+    cJSON_Delete(message);
+
+    message = debug_client_expect_event(&client, "initialized");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "moduleLoaded");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("entry", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 2, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 2);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    debug_execution_thread_join(&thread);
+    TEST_ASSERT_TRUE(thread.success);
+    TEST_ASSERT_EQUAL_INT64(7, thread.result);
+
+    ZrNetwork_StreamClose(&client);
+    ZrDebug_AgentStop(agent);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_debug_agent_pause_request_over_tcp_stops_at_next_safepoint(void) {
     const char *sourcePath = "debug_agent_protocol_pause_fixture.zr";
     const char *source =
@@ -549,6 +627,7 @@ void tearDown(void) {}
 
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_debug_agent_initialize_reports_extended_capabilities);
     RUN_TEST(test_debug_agent_pause_request_over_tcp_stops_at_next_safepoint);
     RUN_TEST(test_debug_agent_disconnect_request_while_paused_resumes_target);
     RUN_TEST(test_debug_agent_raw_socket_close_while_paused_resumes_target);

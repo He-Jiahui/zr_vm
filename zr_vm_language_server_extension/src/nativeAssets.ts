@@ -1,9 +1,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { resolvePreferredCliSetting } from './executablePath';
 
 export const LANGUAGE_SERVER_CONFIG_SECTION = 'zr.languageServer';
 export const DEBUG_CONFIG_SECTION = 'zr.debug';
+export const ROOT_CONFIG_SECTION = 'zr';
 
 type NativeBinaryKind = 'languageServer' | 'cli';
 
@@ -70,7 +72,11 @@ export function resolveNativeCliPath(
     context: vscode.ExtensionContext,
     config?: vscode.WorkspaceConfiguration,
 ): string | undefined {
+    const rootConfig = vscode.workspace.getConfiguration(ROOT_CONFIG_SECTION);
     const debugConfig = config ?? vscode.workspace.getConfiguration(DEBUG_CONFIG_SECTION);
-    return resolveNativeExecutable(context, 'cli', debugConfig.get<string>('cli.path', ''));
+    const configuredPath = resolvePreferredCliSetting({
+        executablePath: rootConfig.get<string>('executablePath', ''),
+        legacyDebugCliPath: debugConfig.get<string>('cli.path', ''),
+    });
+    return resolveNativeExecutable(context, 'cli', configuredPath);
 }
-

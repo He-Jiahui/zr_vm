@@ -33,6 +33,8 @@ typedef struct {
     EZrObjectPrototypeType prototypeType;
     EZrAccessModifier accessModifier;
     TZrUInt64 protocolMask;
+    TZrBool hasDecoratorMetadata;
+    SZrTypeValue decoratorMetadataValue;
     SZrArray inheritTypeNames;
     const SZrCompiledMemberInfo *members;
     TZrUInt32 membersCount;

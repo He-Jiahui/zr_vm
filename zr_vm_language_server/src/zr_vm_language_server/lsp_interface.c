@@ -11,6 +11,9 @@
 #include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
+#if defined(ZR_VM_LSP_HAS_NETWORK_LIB)
+#include "zr_vm_lib_network/module.h"
+#endif
 
 static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suffix);
 
@@ -124,6 +127,9 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     ZrVmLibSystem_Register(state->global);
     ZrVmLibContainer_Register(state->global);
     ZrVmLibFfi_Register(state->global);
+#if defined(ZR_VM_LSP_HAS_NETWORK_LIB)
+    ZrVmLibNetwork_Register(state->global);
+#endif
     
     if (context->parser == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));

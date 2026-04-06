@@ -1,9 +1,9 @@
 #ifndef ZR_VM_CLI_COMMAND_H
 #define ZR_VM_CLI_COMMAND_H
 
-#include <stdio.h>
-
 #include "zr_vm_cli/conf.h"
+
+struct SZrState;
 
 typedef enum EZrCliMode {
     ZR_CLI_MODE_HELP = 0,
@@ -42,6 +42,6 @@ TZrBool ZrCli_Command_Parse(int argc,
                             TZrChar *errorBuffer,
                             TZrSize errorBufferSize);
 
-void ZrCli_Command_WriteHelp(FILE *stream, const TZrChar *programName);
+void ZrCli_Command_LogHelp(struct SZrState *state, TZrBool writeToStdErr, const TZrChar *programName);
 
 #endif

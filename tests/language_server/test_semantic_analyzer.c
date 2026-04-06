@@ -2304,9 +2304,24 @@ static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *stat
             "#zr.ffi.underlying(123)#\n"
             "class InvalidWrapper {\n"
             "    var handleId:i32;\n"
+            "}\n"
+            "#zr.ffi.lowering(\"handle_id\")#\n"
+            "#zr.ffi.underlying(\"string\")#\n"
+            "class InvalidUnderlyingWrapper {\n"
+            "    var handleId:i32;\n"
+            "}\n"
+            "struct PlainView {\n"
+            "    var raw:i32;\n"
+            "}\n"
+            "#zr.ffi.lowering(\"value\")#\n"
+            "#zr.ffi.viewType(\"PlainView\")#\n"
+            "class InvalidViewWrapper {\n"
+            "    var raw:i32;\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "invalid_ffi_decorator_test.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *invalidUnderlyingDiagnostic;
+        SZrDiagnostic *invalidViewTypeDiagnostic;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
@@ -2332,12 +2347,18 @@ static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *stat
             return;
         }
 
-        if (count_diagnostics_with_code(analyzer, "invalid_decorator") != 6) {
+        invalidUnderlyingDiagnostic = find_diagnostic_by_code_and_line(analyzer, "invalid_decorator", 22);
+        invalidViewTypeDiagnostic = find_diagnostic_by_code_and_line(analyzer, "invalid_decorator", 30);
+        if (count_diagnostics_with_code(analyzer, "invalid_decorator") != 8 ||
+            invalidUnderlyingDiagnostic == ZR_NULL ||
+            !diagnostic_message_contains(invalidUnderlyingDiagnostic, "supported integer type") ||
+            invalidViewTypeDiagnostic == ZR_NULL ||
+            !diagnostic_message_contains(invalidViewTypeDiagnostic, "source extern struct")) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Reports Invalid FFI Decorators",
-                      "Expected six invalid_decorator diagnostics including invalid wrapper lowering and invalid wrapper underlying arguments");
+                      "Expected eight invalid_decorator diagnostics including invalid wrapper lowering, invalid wrapper underlying arguments, invalid handle_id underlying type names, and non-extern viewType references");
             return;
         }
 

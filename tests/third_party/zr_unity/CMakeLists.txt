@@ -8,8 +8,13 @@ endif ()
 set(zr_unity_src ${zr_unity_source_root}/unity.c)
 
 zr_register_owned_third_party(tests zr_unity ${zr_unity_src})
-target_include_directories(zr_third_party_zr_unity_static PUBLIC ${zr_unity_source_root})
+target_include_directories(zr_third_party_zr_unity_static PUBLIC
+        ${zr_unity_source_root}
+        ${CMAKE_SOURCE_DIR}/tests
+        ${CMAKE_SOURCE_DIR}/tests/harness
+)
 target_compile_definitions(zr_third_party_zr_unity_static PUBLIC
+        UNITY_INCLUDE_CONFIG_H
         UNITY_INCLUDE_DOUBLE
         UNITY_DOUBLE_PRECISION=1e-6
 )

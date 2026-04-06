@@ -14,6 +14,10 @@ set(ZR_VM_TESTS_COMMON_HARNESS_SOURCES
         ${CMAKE_SOURCE_DIR}/tests/harness/path_support.c
 )
 
+set(ZR_VM_TESTS_UNITY_HARNESS_SOURCES
+        ${CMAKE_SOURCE_DIR}/tests/harness/unity_crash_guard.c
+)
+
 set(ZR_VM_TESTS_REFERENCE_HARNESS_SOURCES
         ${CMAKE_SOURCE_DIR}/tests/harness/reference_support.c
 )
@@ -44,9 +48,11 @@ function(zr_vm_add_unity_test_target target_name)
     add_executable(${target_name}
             ${ARGN}
             ${ZR_VM_TESTS_COMMON_HARNESS_SOURCES}
+            ${ZR_VM_TESTS_UNITY_HARNESS_SOURCES}
             ${ZR_VM_TESTS_REFERENCE_HARNESS_SOURCES}
     )
     zr_vm_apply_common_test_settings(${target_name})
+    target_compile_definitions(${target_name} PRIVATE UNITY_INCLUDE_CONFIG_H)
     zr_link_third_party_for_target(${target_name} "zr_unity")
 endfunction()
 
@@ -158,11 +164,21 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             zr_vm_native_closure_value_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_native_closure_value.c
     )
+    zr_vm_add_unity_test_target(
+            zr_vm_runtime_crash_recovery_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_runtime_crash_recovery.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
     target_include_directories(zr_vm_native_closure_value_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_native_closure_value_test)
+    target_include_directories(zr_vm_runtime_crash_recovery_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_runtime_crash_recovery_test)
 endif ()
 
 if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
@@ -409,6 +425,23 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_exceptions_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_system_fs_test
+            ${CMAKE_SOURCE_DIR}/tests/system/test_system_fs_module.c
+    )
+    target_include_directories(zr_vm_system_fs_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+    )
+    target_compile_definitions(zr_vm_system_fs_test PRIVATE
+            ZR_VM_FFI_FIXTURE_PATH="$<TARGET_FILE:zr_vm_ffi_fixture>"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_system_fs_test)
+    add_dependencies(zr_vm_system_fs_test zr_vm_ffi_fixture)
 
     zr_vm_add_unity_test_target(
             zr_vm_module_system_test
@@ -698,6 +731,7 @@ if (TARGET zr_vm_cli_executable AND
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
     )
+    zr_vm_link_core(zr_vm_cli_args_test)
 endif ()
 
 if (TARGET zr_vm_cli_executable AND
@@ -812,12 +846,12 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
 endif ()
 
 set(core_runtime_executables "")
-if (TARGET zr_vm_gc_test AND TARGET zr_vm_instructions_test AND TARGET zr_vm_meta_test AND TARGET zr_vm_native_closure_value_test)
+if (TARGET zr_vm_gc_test AND TARGET zr_vm_instructions_test AND TARGET zr_vm_meta_test AND TARGET zr_vm_native_closure_value_test AND TARGET zr_vm_runtime_crash_recovery_test)
     set(core_runtime_executables
-            "$<TARGET_FILE:zr_vm_gc_test>;$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_native_closure_value_test>"
+            "$<TARGET_FILE:zr_vm_gc_test>;$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_native_closure_value_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>"
     )
     set(core_runtime_smoke_executables
-            "$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>"
+            "$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>"
     )
     set(core_runtime_core_executables "${core_runtime_executables}")
     set(core_runtime_stress_executables "${core_runtime_executables}")
@@ -991,6 +1025,20 @@ if (TARGET zr_vm_debug_trace_test)
             "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_debug_trace_test>"
             "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_debug_trace_test>"
             "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_debug_trace_test>"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_system_fs_test)
+    add_test(
+            NAME system_fs
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=system_fs"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_system_fs_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_system_fs_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_system_fs_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_system_fs_test>"
+            "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
             -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
     )
 endif ()

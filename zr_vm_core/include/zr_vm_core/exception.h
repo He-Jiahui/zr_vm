@@ -56,6 +56,9 @@ ZR_CORE_API void ZrCore_Exception_PrintUnhandled(struct SZrState *state,
                                            const SZrTypeValue *errorValue,
                                            FILE *stream);
 
+ZR_CORE_API void ZrCore_Exception_LogUnhandled(struct SZrState *state,
+                                               const SZrTypeValue *errorValue);
+
 
 ZR_FORCE_INLINE TZrBool ZrCore_Exception_IsStausError(EZrThreadStatus status) {
     return status >= ZR_THREAD_STATUS_RUNTIME_ERROR;

@@ -227,6 +227,7 @@ static TZrBool io_runtime_copy_debug_infos(SZrState *state,
     const SZrIoFunctionDebugInfo *debugInfo;
     SZrGlobalState *global;
     TZrSize debugInstructionCount;
+    SZrIoInstructionSourceRange previousRange;
     TZrUInt32 previousLine = 0;
     TZrBool hasPreviousLine = ZR_FALSE;
 
@@ -239,6 +240,7 @@ static TZrBool io_runtime_copy_debug_infos(SZrState *state,
     }
 
     debugInfo = &source->debugInfos[0];
+    ZrCore_Memory_RawSet(&previousRange, 0, sizeof(previousRange));
     if (debugInfo->instructionsLength == 0 || debugInfo->instructionsLine == ZR_NULL) {
         function->sourceCodeList = debugInfo->sourceFile;
         function->sourceHash = debugInfo->sourceHash;
@@ -266,6 +268,14 @@ static TZrBool io_runtime_copy_debug_infos(SZrState *state,
         TZrUInt32 currentLine = (TZrUInt32)debugInfo->instructionsLine[index];
         function->lineInSourceList[index] = currentLine;
         previousLine = currentLine;
+        if (debugInfo->instructionRanges != ZR_NULL) {
+            previousRange = debugInfo->instructionRanges[index];
+        } else {
+            previousRange.startLine = currentLine;
+            previousRange.endLine = currentLine;
+            previousRange.startColumn = 0;
+            previousRange.endColumn = 0;
+        }
         hasPreviousLine = ZR_TRUE;
     }
 
@@ -289,6 +299,22 @@ static TZrBool io_runtime_copy_debug_infos(SZrState *state,
     for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
         function->executionLocationInfoList[index].currentInstructionOffset = index;
         function->executionLocationInfoList[index].lineInSource = function->lineInSourceList[index];
+        if ((TZrSize)index < debugInstructionCount && debugInfo->instructionRanges != ZR_NULL) {
+            function->executionLocationInfoList[index].columnInSourceStart =
+                    debugInfo->instructionRanges[index].startColumn;
+            function->executionLocationInfoList[index].lineInSourceEnd =
+                    debugInfo->instructionRanges[index].endLine != 0
+                            ? debugInfo->instructionRanges[index].endLine
+                            : function->lineInSourceList[index];
+            function->executionLocationInfoList[index].columnInSourceEnd = debugInfo->instructionRanges[index].endColumn;
+        } else if (hasPreviousLine) {
+            function->executionLocationInfoList[index].columnInSourceStart = previousRange.startColumn;
+            function->executionLocationInfoList[index].lineInSourceEnd =
+                    previousRange.endLine != 0 ? previousRange.endLine : function->lineInSourceList[index];
+            function->executionLocationInfoList[index].columnInSourceEnd = previousRange.endColumn;
+        } else {
+            function->executionLocationInfoList[index].lineInSourceEnd = function->lineInSourceList[index];
+        }
     }
     function->executionLocationInfoLength = function->instructionsLength;
 

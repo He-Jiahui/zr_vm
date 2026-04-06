@@ -5,6 +5,7 @@
 #include "zr_vm_cli/repl.h"
 #include "zr_vm_cli/runtime.h"
 #include "zr_vm_cli/conf.h"
+#include "zr_vm_core/log.h"
 
 #include <stdio.h>
 
@@ -13,14 +14,14 @@ int ZrCli_App_Run(int argc, char **argv) {
     TZrChar error[ZR_CLI_ERROR_BUFFER_LENGTH];
 
     if (!ZrCli_Command_Parse(argc, argv, &command, error, sizeof(error))) {
-        fprintf(stderr, "%s\n", error);
-        ZrCli_Command_WriteHelp(stderr, argc > 0 ? argv[0] : "zr_vm_cli");
+        ZrCore_Log_Error(ZR_NULL, "%s\n", error);
+        ZrCli_Command_LogHelp(ZR_NULL, ZR_TRUE, argc > 0 ? argv[0] : "zr_vm_cli");
         return 1;
     }
 
     switch (command.mode) {
         case ZR_CLI_MODE_HELP:
-            ZrCli_Command_WriteHelp(stdout, argc > 0 ? argv[0] : "zr_vm_cli");
+            ZrCli_Command_LogHelp(ZR_NULL, ZR_FALSE, argc > 0 ? argv[0] : "zr_vm_cli");
             return 0;
 
         case ZR_CLI_MODE_REPL:
@@ -41,7 +42,7 @@ int ZrCli_App_Run(int argc, char **argv) {
         }
 
         default:
-            fprintf(stderr, "unknown CLI mode: %d\n", (int) command.mode);
+            ZrCore_Log_Error(ZR_NULL, "unknown CLI mode: %d\n", (int)command.mode);
             return 1;
     }
 }

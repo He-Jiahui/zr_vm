@@ -546,6 +546,20 @@ TZrBool ZrLib_TempValueRoot_SetValue(ZrLibTempValueRoot *root, const SZrTypeValu
         return ZR_FALSE;
     }
 
+    /*
+     * Temp roots exist to keep a value stable across native helper work.
+     * Plain values must keep their exact identity here; semantic stack copy
+     * would clone struct objects and can silently null the root slot when a
+     * clone path fails under nested native calls.
+     */
+    if (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE) {
+        *slotValue = *value;
+        if (slotValue->isGarbageCollectable) {
+            ZrCore_Gc_ValueStaticAssertIsAlive(root->state, slotValue);
+        }
+        return ZR_TRUE;
+    }
+
     ZrCore_Stack_CopyValue(root->state, native_binding_temp_root_slot(root), value);
     return ZR_TRUE;
 }
@@ -1218,16 +1232,6 @@ TZrBool ZrLib_CallValue(SZrState *state,
         base = native_binding_resolve_call_scratch_base(savedStackTop, savedCallInfo);
     }
 
-    ZrCore_Stack_CopyValue(state, base, &stableCallable);
-    if (receiver != ZR_NULL) {
-        ZrCore_Stack_CopyValue(state, base + 1, &stableReceiver);
-    }
-    for (index = 0; index < argumentCount; index++) {
-        ZrCore_Stack_CopyValue(state,
-                               base + 1 + (receiver != ZR_NULL ? 1 : 0) + index,
-                               &stableArguments[index]);
-    }
-
     state->stackTop.valuePointer = base + scratchSlots;
     if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
@@ -1237,6 +1241,31 @@ TZrBool ZrLib_CallValue(SZrState *state,
             ZrCore_Function_StackAnchorInit(state, savedCallInfo->returnDestination, &callInfoReturnAnchor);
         }
     }
+    if (receiver != ZR_NULL) {
+        ZrCore_Stack_CopyValue(state, base + 1, &stableReceiver);
+        base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+        if (savedCallInfo != ZR_NULL) {
+            savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
+            savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+            if (hasAnchoredReturnDestination) {
+                savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
+            }
+        }
+    }
+    for (index = 0; index < argumentCount; index++) {
+        ZrCore_Stack_CopyValue(state,
+                               base + 1 + (receiver != ZR_NULL ? 1 : 0) + index,
+                               &stableArguments[index]);
+        base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+        if (savedCallInfo != ZR_NULL) {
+            savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
+            savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+            if (hasAnchoredReturnDestination) {
+                savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
+            }
+        }
+    }
+    ZrCore_Stack_CopyValue(state, base, &stableCallable);
     base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     if (savedCallInfo != ZR_NULL) {

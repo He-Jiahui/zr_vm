@@ -126,7 +126,10 @@ connection.onDidOpenTextDocument(async ({ textDocument }) => {
         version: textDocument.version,
     });
 
-    await bridge.updateDocument(textDocument.uri, textDocument.text, textDocument.version);
+    const updateResponse = await bridge.updateDocument(textDocument.uri, textDocument.text, textDocument.version);
+    if (!updateResponse.success) {
+        console.error('[zr-web-worker] updateDocument failed on open:', textDocument.uri, updateResponse.error);
+    }
     await publishDiagnostics(textDocument.uri, textDocument.version);
 });
 
@@ -140,7 +143,10 @@ connection.onDidChangeTextDocument(async ({ textDocument, contentChanges }) => {
         version,
     });
 
-    await bridge.updateDocument(textDocument.uri, updatedText, version);
+    const updateResponse = await bridge.updateDocument(textDocument.uri, updatedText, version);
+    if (!updateResponse.success) {
+        console.error('[zr-web-worker] updateDocument failed on change:', textDocument.uri, updateResponse.error);
+    }
     await publishDiagnostics(textDocument.uri, version);
 });
 
@@ -232,6 +238,7 @@ connection.listen();
 function responseData<T>(response: WasmPayload<T>, fallback: T): T {
     if (!response.success) {
         if (response.error) {
+            console.error('[zr-web-worker] wasm request failed:', response.error);
             connection.console.warn(response.error);
         }
         return fallback;

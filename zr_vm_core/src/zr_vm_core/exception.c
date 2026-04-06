@@ -5,12 +5,15 @@
 #include "zr_vm_core/exception.h"
 
 #include <setjmp.h>
+#include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/log.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -633,24 +636,108 @@ TZrUInt32 ZrCore_Exception_FindSourceLine(struct SZrFunction *function, TZrMemor
     return bestLine;
 }
 
-void ZrCore_Exception_PrintUnhandled(struct SZrState *state, const SZrTypeValue *errorValue, FILE *stream) {
+typedef struct SZrExceptionTextBuilder {
+    TZrChar *buffer;
+    TZrSize length;
+    TZrSize capacity;
+} SZrExceptionTextBuilder;
+
+static TZrBool exception_text_builder_reserve(SZrExceptionTextBuilder *builder, TZrSize requiredLength) {
+    TZrChar *newBuffer;
+    TZrSize newCapacity;
+
+    if (builder == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (requiredLength <= builder->capacity) {
+        return ZR_TRUE;
+    }
+
+    newCapacity = builder->capacity > 0 ? builder->capacity : 256;
+    while (newCapacity < requiredLength) {
+        newCapacity *= 2;
+    }
+
+    newBuffer = (TZrChar *)realloc(builder->buffer, newCapacity);
+    if (newBuffer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    builder->buffer = newBuffer;
+    builder->capacity = newCapacity;
+    return ZR_TRUE;
+}
+
+static TZrBool exception_text_builder_append(SZrExceptionTextBuilder *builder, const TZrChar *text) {
+    TZrSize textLength;
+
+    if (builder == ZR_NULL || text == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    textLength = strlen(text);
+    if (!exception_text_builder_reserve(builder, builder->length + textLength + 1)) {
+        return ZR_FALSE;
+    }
+
+    memcpy(builder->buffer + builder->length, text, textLength);
+    builder->length += textLength;
+    builder->buffer[builder->length] = '\0';
+    return ZR_TRUE;
+}
+
+static TZrBool exception_text_builder_appendf(SZrExceptionTextBuilder *builder, const TZrChar *format, ...) {
+    va_list args;
+    va_list copyArgs;
+    int requiredLength;
+
+    if (builder == ZR_NULL || format == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    va_start(args, format);
+    va_copy(copyArgs, args);
+    requiredLength = vsnprintf(ZR_NULL, 0, format, copyArgs);
+    va_end(copyArgs);
+    if (requiredLength < 0 ||
+        !exception_text_builder_reserve(builder, builder->length + (TZrSize)requiredLength + 1)) {
+        va_end(args);
+        return ZR_FALSE;
+    }
+
+    vsnprintf(builder->buffer + builder->length,
+              builder->capacity - builder->length,
+              format,
+              args);
+    va_end(args);
+    builder->length += (TZrSize)requiredLength;
+    return ZR_TRUE;
+}
+
+static TZrChar *exception_format_unhandled_text(struct SZrState *state, const SZrTypeValue *errorValue) {
     SZrObject *errorObject;
     const SZrTypeValue *messageValue;
     const SZrTypeValue *payloadValue;
     const SZrTypeValue *stacksValue;
     const TZrChar *typeName = "Error";
     SZrString *payloadSummary = ZR_NULL;
-    FILE *output = stream != ZR_NULL ? stream : stderr;
+    SZrExceptionTextBuilder builder;
 
-    if (state == ZR_NULL || errorValue == ZR_NULL || output == ZR_NULL) {
-        return;
+    memset(&builder, 0, sizeof(builder));
+    if (state == ZR_NULL || errorValue == ZR_NULL) {
+        return ZR_NULL;
     }
 
     if (!exception_value_is_error_object(state, errorValue)) {
         payloadSummary = ZrCore_Value_ConvertToString(state, (SZrTypeValue *)errorValue);
-        fprintf(output, "Unhandled exception: %s\n", payloadSummary != ZR_NULL ? ZrCore_String_GetNativeString(payloadSummary) : "<unknown>");
-        fflush(output);
-        return;
+        if (!exception_text_builder_appendf(&builder,
+                                            "Unhandled exception: %s\n",
+                                            payloadSummary != ZR_NULL ? ZrCore_String_GetNativeString(payloadSummary) : "<unknown>")) {
+            free(builder.buffer);
+            return ZR_NULL;
+        }
+        return builder.buffer;
     }
 
     errorObject = ZR_CAST_OBJECT(state, errorValue->value.object);
@@ -665,13 +752,29 @@ void ZrCore_Exception_PrintUnhandled(struct SZrState *state, const SZrTypeValue 
         payloadSummary = ZrCore_Value_ConvertToString(state, (SZrTypeValue *)payloadValue);
     }
 
-    fprintf(output, "%s", typeName != ZR_NULL ? typeName : "Error");
-    if (messageValue != ZR_NULL && messageValue->type == ZR_VALUE_TYPE_STRING && messageValue->value.object != ZR_NULL) {
-        fprintf(output, ": %s", ZrCore_String_GetNativeString(ZR_CAST_STRING(state, messageValue->value.object)));
+    if (!exception_text_builder_append(&builder, typeName != ZR_NULL ? typeName : "Error")) {
+        free(builder.buffer);
+        return ZR_NULL;
     }
-    fprintf(output, "\n");
+    if (messageValue != ZR_NULL && messageValue->type == ZR_VALUE_TYPE_STRING && messageValue->value.object != ZR_NULL) {
+        if (!exception_text_builder_appendf(&builder,
+                                            ": %s",
+                                            ZrCore_String_GetNativeString(ZR_CAST_STRING(state, messageValue->value.object)))) {
+            free(builder.buffer);
+            return ZR_NULL;
+        }
+    }
+    if (!exception_text_builder_append(&builder, "\n")) {
+        free(builder.buffer);
+        return ZR_NULL;
+    }
     if (payloadSummary != ZR_NULL) {
-        fprintf(output, "payload: %s\n", ZrCore_String_GetNativeString(payloadSummary));
+        if (!exception_text_builder_appendf(&builder,
+                                            "payload: %s\n",
+                                            ZrCore_String_GetNativeString(payloadSummary))) {
+            free(builder.buffer);
+            return ZR_NULL;
+        }
     }
 
     if (stacksValue != ZR_NULL && stacksValue->type == ZR_VALUE_TYPE_ARRAY && stacksValue->value.object != ZR_NULL) {
@@ -714,13 +817,45 @@ void ZrCore_Exception_PrintUnhandled(struct SZrState *state, const SZrTypeValue 
                 instructionOffset = instructionOffsetValue->value.nativeObject.nativeInt64;
             }
 
-            fprintf(output, "  at %s (%s:%lld, ip=%lld)\n",
-                    functionName != ZR_NULL ? functionName : "<anonymous>",
-                    sourceFile != ZR_NULL ? sourceFile : "<unknown>",
-                    (long long)sourceLine,
-                    (long long)instructionOffset);
+            if (!exception_text_builder_appendf(&builder,
+                                                "  at %s (%s:%lld, ip=%lld)\n",
+                                                functionName != ZR_NULL ? functionName : "<anonymous>",
+                                                sourceFile != ZR_NULL ? sourceFile : "<unknown>",
+                                                (long long)sourceLine,
+                                                (long long)instructionOffset)) {
+                free(builder.buffer);
+                return ZR_NULL;
+            }
         }
     }
 
+    return builder.buffer;
+}
+
+void ZrCore_Exception_PrintUnhandled(struct SZrState *state, const SZrTypeValue *errorValue, FILE *stream) {
+    FILE *output = stream != ZR_NULL ? stream : stderr;
+    TZrChar *text = exception_format_unhandled_text(state, errorValue);
+
+    if (output == ZR_NULL || text == ZR_NULL) {
+        return;
+    }
+
+    fputs(text, output);
     fflush(output);
+    free(text);
+}
+
+void ZrCore_Exception_LogUnhandled(struct SZrState *state, const SZrTypeValue *errorValue) {
+    TZrChar *text = exception_format_unhandled_text(state, errorValue);
+
+    if (text == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Log_Write(state,
+                     ZR_LOG_LEVEL_EXCEPTION,
+                     ZR_OUTPUT_CHANNEL_STDERR,
+                     ZR_OUTPUT_KIND_DIAGNOSTIC,
+                     text);
+    free(text);
 }

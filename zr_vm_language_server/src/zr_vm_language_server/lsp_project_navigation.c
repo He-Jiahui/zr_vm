@@ -11,78 +11,8 @@
 #include <dirent.h>
 #endif
 
-static TZrInt32 project_navigation_hex_digit_to_value(TZrChar value) {
-    if (value >= '0' && value <= '9') {
-        return value - '0';
-    }
-
-    if (value >= 'a' && value <= 'f') {
-        return value - 'a' + 10;
-    }
-
-    if (value >= 'A' && value <= 'F') {
-        return value - 'A' + 10;
-    }
-
-    return -1;
-}
-
 static TZrBool project_navigation_uri_to_native_path(SZrString *uri, TZrChar *buffer, TZrSize bufferSize) {
-    const TZrChar *uriText;
-    TZrSize uriLength;
-    TZrSize readIndex = 0;
-    TZrSize writeIndex = 0;
-
-    if (uri == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
-        return ZR_FALSE;
-    }
-
-    buffer[0] = '\0';
-    uriText = ZrCore_String_GetNativeString(uri);
-    uriLength = uriText != ZR_NULL ? strlen(uriText) : 0;
-    if (uriText == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (uriLength >= 7 && memcmp(uriText, "file://", 7) == 0) {
-        readIndex = 7;
-    }
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-    if (readIndex < uriLength &&
-        uriText[readIndex] == '/' &&
-        readIndex + 2 < uriLength &&
-        isalpha((unsigned char)uriText[readIndex + 1]) &&
-        uriText[readIndex + 2] == ':') {
-        readIndex++;
-    }
-#endif
-
-    while (readIndex < uriLength && writeIndex + 1 < bufferSize) {
-        TZrChar current = uriText[readIndex];
-        TZrInt32 highNibble;
-        TZrInt32 lowNibble;
-
-        if (current == '%' && readIndex + 2 < uriLength) {
-            highNibble = project_navigation_hex_digit_to_value(uriText[readIndex + 1]);
-            lowNibble = project_navigation_hex_digit_to_value(uriText[readIndex + 2]);
-            if (highNibble >= 0 && lowNibble >= 0) {
-                buffer[writeIndex++] = (TZrChar)((highNibble << 4) | lowNibble);
-                readIndex += 3;
-                continue;
-            }
-        }
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-        buffer[writeIndex++] = current == '/' ? '\\' : current;
-#else
-        buffer[writeIndex++] = current;
-#endif
-        readIndex++;
-    }
-
-    buffer[writeIndex] = '\0';
-    return writeIndex > 0;
+    return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
 }
 
 static const TZrChar *project_navigation_string_text(SZrString *value) {

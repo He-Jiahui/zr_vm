@@ -1321,6 +1321,63 @@ static void test_zr_ffi_handle_id_lowering_does_not_apply_to_ordinary_calls(void
     ZR_TEST_DIVIDER();
 }
 
+static void test_zr_ffi_handle_id_wrapper_rejects_unsupported_underlying_type(void) {
+    static const TZrChar *kSourceTemplate =
+            "#zr.ffi.lowering(\"handle_id\")#\n"
+            "#zr.ffi.underlying(\"string\")#\n"
+            "class ModeHandle {\n"
+            "  var handleId:i32;\n"
+            "}\n"
+            "return 0;\n";
+    SZrTestTimer timer;
+    SZrState *state;
+    SZrFunction *entryFunction;
+
+    ZR_TEST_START("zr.ffi handle_id wrapper rejects unsupported underlying type");
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_source(state, kSourceTemplate, "ffi_handle_id_invalid_underlying.zr");
+    TEST_ASSERT_NULL(entryFunction);
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "zr.ffi handle_id wrapper rejects unsupported underlying type");
+    ZR_TEST_DIVIDER();
+}
+
+static void test_zr_ffi_wrapper_view_type_rejects_non_extern_struct(void) {
+    static const TZrChar *kSourceTemplate =
+            "struct PlainView {\n"
+            "  var raw:i32;\n"
+            "}\n"
+            "#zr.ffi.lowering(\"value\")#\n"
+            "#zr.ffi.viewType(\"PlainView\")#\n"
+            "class PlainViewWrapper {\n"
+            "  var raw:i32;\n"
+            "}\n"
+            "return 0;\n";
+    SZrTestTimer timer;
+    SZrState *state;
+    SZrFunction *entryFunction;
+
+    ZR_TEST_START("zr.ffi wrapper viewType rejects non-extern struct");
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_source(state, kSourceTemplate, "ffi_wrapper_invalid_view_type.zr");
+    TEST_ASSERT_NULL(entryFunction);
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "zr.ffi wrapper viewType rejects non-extern struct");
+    ZR_TEST_DIVIDER();
+}
+
 static void test_zr_ffi_source_extern_system_callconv_uses_platform_default(void) {
     static const TZrChar *kSourceTemplate =
             "%%extern(\"%s\") {\n"
@@ -1471,6 +1528,8 @@ int main(void) {
     test_zr_ffi_wrapper_lowering_does_not_apply_to_ordinary_calls();
     test_zr_ffi_source_extern_handle_id_parameter_accepts_source_wrapper();
     test_zr_ffi_handle_id_lowering_does_not_apply_to_ordinary_calls();
+    test_zr_ffi_handle_id_wrapper_rejects_unsupported_underlying_type();
+    test_zr_ffi_wrapper_view_type_rejects_non_extern_struct();
     test_zr_ffi_source_extern_system_callconv_uses_platform_default();
     test_zr_ffi_source_extern_struct_pack_affects_sizeof_and_alignof();
     test_zr_ffi_source_extern_struct_offset_overlay_controls_pointer_read();

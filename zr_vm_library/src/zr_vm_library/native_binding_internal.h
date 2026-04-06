@@ -112,7 +112,7 @@ TZrBool native_binding_trace_import_enabled(void);
 void native_binding_init_call_context_layout(ZrLibCallContext *context,
                                                     TZrStackValuePointer functionBase,
                                                     TZrSize rawArgumentCount);
-void native_binding_trace_import(const TZrChar *format, ...);
+void native_binding_trace_import(SZrState *state, const TZrChar *format, ...);
 void native_registry_clear_error(ZrLibrary_NativeRegistryState *registry);
 void native_registry_set_error(ZrLibrary_NativeRegistryState *registry,
                                       EZrLibNativeRegistryErrorCode errorCode,

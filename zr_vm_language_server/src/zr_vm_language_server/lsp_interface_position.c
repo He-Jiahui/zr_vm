@@ -4,6 +4,54 @@
 
 #include "lsp_interface_internal.h"
 
+static TZrInt32 lsp_hex_digit_value(TZrChar value) {
+    if (value >= '0' && value <= '9') {
+        return value - '0';
+    }
+
+    value = (TZrChar)tolower((unsigned char)value);
+    if (value >= 'a' && value <= 'f') {
+        return value - 'a' + 10;
+    }
+
+    return -1;
+}
+
+static TZrBool lsp_uri_supports_native_path(const TZrChar *uriText, TZrSize uriLength) {
+    TZrSize index;
+
+    if (uriText == ZR_NULL || uriLength == 0) {
+        return ZR_FALSE;
+    }
+
+    if (uriLength >= 7 && memcmp(uriText, "file://", 7) == 0) {
+        return ZR_TRUE;
+    }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    if (uriLength >= 2 && isalpha((unsigned char)uriText[0]) && uriText[1] == ':') {
+        return ZR_TRUE;
+    }
+#endif
+
+    if (uriText[0] == '/' || uriText[0] == '\\' || uriText[0] == '.') {
+        return ZR_TRUE;
+    }
+
+    for (index = 0; index < uriLength; index++) {
+        if (uriText[index] == ':' && index + 2 < uriLength &&
+            uriText[index + 1] == '/' && uriText[index + 2] == '/') {
+            return ZR_FALSE;
+        }
+
+        if (uriText[index] == ':' || uriText[index] == '/' || uriText[index] == '\\') {
+            break;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrInt32 file_line_to_lsp_line(TZrInt32 fileLine) {
     return fileLine > 0 ? fileLine - 1 : 0;
 }
@@ -66,6 +114,81 @@ TZrSize ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(const TZrChar *conten
     }
     
     return offset;
+}
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_FileUriToNativePath(SZrString *uri,
+                                                                        TZrChar *buffer,
+                                                                        TZrSize bufferSize) {
+    const TZrChar *uriText;
+    TZrSize uriLength;
+    TZrSize readIndex = 0;
+    TZrSize writeIndex = 0;
+
+    if (uri == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    buffer[0] = '\0';
+    uriText = uri->shortStringLength < ZR_VM_LONG_STRING_FLAG
+                  ? ZrCore_String_GetNativeStringShort(uri)
+                  : ZrCore_String_GetNativeString(uri);
+    if (uriText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    uriLength = strlen(uriText);
+    if (!lsp_uri_supports_native_path(uriText, uriLength)) {
+        return ZR_FALSE;
+    }
+
+    if (uriLength >= 7 && memcmp(uriText, "file://", 7) == 0) {
+        readIndex = 7;
+    }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    if (readIndex < uriLength && uriText[readIndex] == '/' && readIndex + 1 < uriLength &&
+        isalpha((unsigned char)uriText[readIndex + 1])) {
+        TZrBool hasDriveSeparator = ZR_FALSE;
+
+        if (readIndex + 2 < uriLength && uriText[readIndex + 2] == ':') {
+            hasDriveSeparator = ZR_TRUE;
+        } else if (readIndex + 4 < uriLength && uriText[readIndex + 2] == '%' &&
+                   uriText[readIndex + 3] == '3' &&
+                   ((TZrChar)tolower((unsigned char)uriText[readIndex + 4])) == 'a') {
+            hasDriveSeparator = ZR_TRUE;
+        }
+
+        if (hasDriveSeparator) {
+            readIndex++;
+        }
+    }
+#endif
+
+    while (readIndex < uriLength && writeIndex + 1 < bufferSize) {
+        TZrChar current = uriText[readIndex];
+
+        if (current == '%' && readIndex + 2 < uriLength) {
+            TZrInt32 high = lsp_hex_digit_value(uriText[readIndex + 1]);
+            TZrInt32 low = lsp_hex_digit_value(uriText[readIndex + 2]);
+            if (high >= 0 && low >= 0) {
+                current = (TZrChar)((high << 4) | low);
+                readIndex += 3;
+            } else {
+                readIndex++;
+            }
+        } else {
+            readIndex++;
+        }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+        buffer[writeIndex++] = current == '/' ? '\\' : current;
+#else
+        buffer[writeIndex++] = current;
+#endif
+    }
+
+    buffer[writeIndex] = '\0';
+    return writeIndex > 0;
 }
 
 // 转换 LspRange 到 FileRange

@@ -1,5 +1,6 @@
 #include "type_inference_internal.h"
 
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
 
 #include <string.h>

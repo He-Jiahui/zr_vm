@@ -14,12 +14,16 @@ const ZrLibModuleDescriptor *ZrSystem_ConsoleRegistry_GetModule(void) {
             {"printLine", 1, 1, ZrSystem_Console_PrintLine, "null", "Print text to stdout with a trailing newline.", ZR_NULL, 0},
             {"printError", 1, 1, ZrSystem_Console_PrintError, "null", "Print text to stderr without a trailing newline.", ZR_NULL, 0},
             {"printErrorLine", 1, 1, ZrSystem_Console_PrintErrorLine, "null", "Print text to stderr with a trailing newline.", ZR_NULL, 0},
+            {"read", 0, 0, ZrSystem_Console_Read, "string?", "Read one UTF-8 code point from stdin and return null on EOF.", ZR_NULL, 0},
+            {"readLine", 0, 0, ZrSystem_Console_ReadLine, "string?", "Read one UTF-8 line from stdin and return null on EOF before any bytes.", ZR_NULL, 0},
     };
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"print", "function", "print(value: any): null", "Print text to stdout without a trailing newline."},
             {"printLine", "function", "printLine(value: any): null", "Print text to stdout with a trailing newline."},
             {"printError", "function", "printError(value: any): null", "Print text to stderr without a trailing newline."},
             {"printErrorLine", "function", "printErrorLine(value: any): null", "Print text to stderr with a trailing newline."},
+            {"read", "function", "read(): string?", "Read one UTF-8 code point from stdin and return null on EOF."},
+            {"readLine", "function", "readLine(): string?", "Read one UTF-8 line from stdin and return null on EOF before any bytes."},
     };
     static const TZrChar kHintsJson[] =
             "{\n"
@@ -38,7 +42,7 @@ const ZrLibModuleDescriptor *ZrSystem_ConsoleRegistry_GetModule(void) {
             kHints,
             ZR_ARRAY_COUNT(kHints),
             kHintsJson,
-            "Console output helpers.",
+            "Console I/O helpers.",
             ZR_NULL,
             0,
             "1.0.0",

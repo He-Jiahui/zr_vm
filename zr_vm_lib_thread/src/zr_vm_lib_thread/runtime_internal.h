@@ -31,8 +31,14 @@ typedef enum EZrVmTaskTransportKind {
     ZR_VM_TASK_TRANSPORT_KIND_UINT = 4,
     ZR_VM_TASK_TRANSPORT_KIND_FLOAT = 5,
     ZR_VM_TASK_TRANSPORT_KIND_STRING = 6,
-    ZR_VM_TASK_TRANSPORT_KIND_CHANNEL = 7
+    ZR_VM_TASK_TRANSPORT_KIND_CHANNEL = 7,
+    ZR_VM_TASK_TRANSPORT_KIND_TRANSFER = 8,
+    ZR_VM_TASK_TRANSPORT_KIND_SHARED = 9,
+    ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED = 10
 } EZrVmTaskTransportKind;
+
+#define ZR_VM_TASK_SHARED_NATIVE_CELL_FIELD "__zr_task_shared_native_cell"
+#define ZR_VM_TASK_SHARED_IS_WEAK_FIELD "__zr_task_shared_is_weak"
 
 #if defined(ZR_PLATFORM_WIN)
 typedef CRITICAL_SECTION ZrVmTaskMutex;
@@ -54,6 +60,15 @@ typedef struct ZrVmTaskTransportValue {
         TZrPtr pointerValue;
     } as;
 } ZrVmTaskTransportValue;
+
+typedef struct ZrVmTaskSharedCell {
+    ZrVmTaskMutex mutex;
+    TZrUInt64 strongCount;
+    TZrUInt64 weakCount;
+    TZrBool alive;
+    TZrUInt8 reserved[7];
+    ZrVmTaskTransportValue value;
+} ZrVmTaskSharedCell;
 
 enum {
     ZR_VM_TASK_SCHEDULER_MESSAGE_COMPLETE = 1,
@@ -108,6 +123,7 @@ static ZR_FORCE_INLINE TZrBool zr_vm_task_sync_condition_wait(ZrVmTaskCondition 
                                                               TZrUInt32 timeoutMs) {
     return SleepConditionVariableCS(condition, mutex, timeoutMs) ? ZR_TRUE : ZR_FALSE;
 }
+static ZR_FORCE_INLINE void zr_vm_task_sync_sleep_ms(TZrUInt32 timeoutMs) { Sleep(timeoutMs); }
 #else
 static ZR_FORCE_INLINE void zr_vm_task_sync_mutex_init(ZrVmTaskMutex *mutex) { pthread_mutex_init(mutex, ZR_NULL); }
 static ZR_FORCE_INLINE void zr_vm_task_sync_mutex_destroy(ZrVmTaskMutex *mutex) { pthread_mutex_destroy(mutex); }
@@ -128,6 +144,13 @@ static ZR_FORCE_INLINE TZrBool zr_vm_task_sync_condition_wait(ZrVmTaskCondition 
         ts.tv_nsec -= 1000000000L;
     }
     return pthread_cond_timedwait(condition, mutex, &ts) == 0 ? ZR_TRUE : ZR_FALSE;
+}
+static ZR_FORCE_INLINE void zr_vm_task_sync_sleep_ms(TZrUInt32 timeoutMs) {
+    struct timespec ts;
+
+    ts.tv_sec = timeoutMs / 1000u;
+    ts.tv_nsec = (long)(timeoutMs % 1000u) * 1000000L;
+    nanosleep(&ts, ZR_NULL);
 }
 #endif
 
@@ -177,6 +200,7 @@ TZrBool zr_vm_task_transport_encode_value(SZrState *state,
                                           const SZrTypeValue *value,
                                           ZrVmTaskTransportValue *outValue,
                                           const TZrChar *contextMessage);
+TZrBool zr_vm_task_transport_clone_value(const ZrVmTaskTransportValue *value, ZrVmTaskTransportValue *outValue);
 TZrBool zr_vm_task_transport_decode_value(SZrState *state,
                                           const ZrVmTaskTransportValue *value,
                                           SZrTypeValue *result);
@@ -185,6 +209,19 @@ TZrBool zr_vm_task_channel_try_get_transport(SZrState *state,
                                              const SZrTypeValue *value,
                                              ZrVmTaskChannelTransport **outTransport);
 TZrBool zr_vm_task_channel_make_value(SZrState *state, ZrVmTaskChannelTransport *transport, SZrTypeValue *result);
+TZrBool zr_vm_task_shared_try_get_cell(SZrState *state,
+                                       const SZrTypeValue *value,
+                                       ZrVmTaskSharedCell **outCell,
+                                       TZrBool *outIsWeak);
+TZrBool zr_vm_task_shared_make_value(SZrState *state,
+                                     ZrVmTaskSharedCell *cell,
+                                     TZrBool isWeak,
+                                     SZrTypeValue *result);
+TZrBool zr_vm_task_shared_cell_is_alive_native(ZrVmTaskSharedCell *cell);
+TZrBool zr_vm_task_shared_cell_add_strong_ref(ZrVmTaskSharedCell *cell);
+TZrBool zr_vm_task_shared_cell_add_weak_ref(ZrVmTaskSharedCell *cell);
+void zr_vm_task_shared_cell_release_strong(ZrVmTaskSharedCell *cell);
+void zr_vm_task_shared_cell_release_weak(ZrVmTaskSharedCell *cell);
 TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context,
                                        const SZrTypeValue *callable,
                                        SZrTypeValue *result,

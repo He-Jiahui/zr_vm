@@ -9,6 +9,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/log.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -17,10 +18,11 @@
 #include "zr_vm_parser/compiler.h"
 
 static void zr_cli_repl_write_help(void) {
-    printf("Available commands:\n");
-    printf("  :help   Show this help text.\n");
-    printf("  :reset  Clear the pending input buffer.\n");
-    printf("  :quit   Exit the REPL.\n");
+    ZrCore_Log_Helpf(ZR_NULL,
+                     "Available commands:\n"
+                     "  :help   Show this help text.\n"
+                     "  :reset  Clear the pending input buffer.\n"
+                     "  :quit   Exit the REPL.\n");
 }
 
 typedef struct ZrCliReplExecuteRequest {
@@ -46,18 +48,18 @@ static TZrBool zr_cli_repl_handle_failure(SZrState *state, EZrThreadStatus statu
     if (!state->hasCurrentException &&
         !ZrCore_Exception_NormalizeStatus(state,
                                           state->threadStatus != ZR_THREAD_STATUS_FINE ? state->threadStatus : status)) {
-        fprintf(stderr, "repl execution failed with status %d\n", (int) status);
+        ZrCore_Log_Error(state, "repl execution failed with status %d\n", (int)status);
         ZrCore_State_ResetThread(state, status);
         return ZR_FALSE;
     }
 
     if (state->hasCurrentException) {
-        ZrCore_Exception_PrintUnhandled(state, &state->currentException, stderr);
+        ZrCore_Exception_LogUnhandled(state, &state->currentException);
         ZrCore_State_ResetThread(state, state->currentExceptionStatus);
         return ZR_FALSE;
     }
 
-    fprintf(stderr, "repl execution failed with status %d\n", (int) status);
+    ZrCore_Log_Error(state, "repl execution failed with status %d\n", (int)status);
     ZrCore_State_ResetThread(state, status);
     return ZR_FALSE;
 }
@@ -115,12 +117,12 @@ static int zr_cli_repl_submit(const TZrChar *code) {
 
     global = ZrCli_Project_CreateBareGlobal();
     if (global == ZR_NULL) {
-        fprintf(stderr, "failed to initialize REPL runtime\n");
+        ZrCore_Log_Error(ZR_NULL, "failed to initialize REPL runtime\n");
         return 1;
     }
 
     if (!ZrCli_Project_RegisterStandardModules(global)) {
-        fprintf(stderr, "failed to register REPL standard modules\n");
+        ZrCore_Log_Error(global->mainThreadState, "failed to register REPL standard modules\n");
         zr_cli_repl_free_global(global);
         return 1;
     }
@@ -159,9 +161,9 @@ static int zr_cli_repl_submit(const TZrChar *code) {
 
     resultString = ZrCore_Value_ConvertToString(state, &result);
     if (resultString != ZR_NULL) {
-        printf("%s\n", ZrCore_String_GetNativeString(resultString));
+        ZrCore_Log_Resultf(state, "%s\n", ZrCore_String_GetNativeString(resultString));
     } else {
-        fprintf(stderr, "failed to stringify REPL result\n");
+        ZrCore_Log_Error(state, "failed to stringify REPL result\n");
     }
 
     ZrCore_Function_Free(state, function);
@@ -175,8 +177,9 @@ int ZrCli_Repl_Run(void) {
     TZrSize bufferLength = 0;
     TZrSize bufferCapacity = 0;
 
-    printf("ZR VM REPL\n");
-    printf("Enter code, then submit with an empty line. Type :help for commands.\n");
+    ZrCore_Log_Helpf(ZR_NULL,
+                     "ZR VM REPL\n"
+                     "Enter code, then submit with an empty line. Type :help for commands.\n");
 
     while (fgets(line, sizeof(line), stdin) != ZR_NULL) {
         TZrSize lineLength = strlen(line);
@@ -197,7 +200,7 @@ int ZrCli_Repl_Run(void) {
                     buffer[0] = '\0';
                 }
             } else {
-                fprintf(stderr, "unknown REPL command: %s\n", line);
+                ZrCore_Log_Error(ZR_NULL, "unknown REPL command: %s\n", line);
             }
             continue;
         }
@@ -225,7 +228,7 @@ int ZrCli_Repl_Run(void) {
             newBuffer = (TZrChar *) realloc(buffer, newCapacity);
             if (newBuffer == ZR_NULL) {
                 free(buffer);
-                fprintf(stderr, "out of memory\n");
+                ZrCore_Log_Error(ZR_NULL, "out of memory\n");
                 return 1;
             }
 

@@ -417,8 +417,14 @@ SZrAstNode *parse_test_declaration(SZrParserState *ps) {
             }
             const TZrChar *tokenStr = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
             if (!ps->suppressErrorOutput) {
-                fprintf(stderr, "  [%s:%d:%d] Expected 'test' after '%%' (遇到 token: '%s')\n", fileName, percentLine,
-                        percentColumn, tokenStr);
+                ZrCore_Log_Diagnosticf(ps->state,
+                                       ZR_LOG_LEVEL_ERROR,
+                                       ZR_OUTPUT_CHANNEL_STDERR,
+                                       "  [%s:%d:%d] Expected 'test' after '%%' (遇到 token: '%s')\n",
+                                       fileName,
+                                       percentLine,
+                                       percentColumn,
+                                       tokenStr);
             }
             report_error(ps, "Expected 'test' after '%'");
             return ZR_NULL;

@@ -6,6 +6,7 @@ add_subdirectory(third_party)
 zr_declare_module(${zr_curr_module_name} ON)
 
 zr_link_third_party_for_module(${zr_curr_module_name} "zr_xx_hash")
+zr_link_third_party_for_module(${zr_curr_module_name} "zr_utf8proc")
 
 if (NOT WIN32)
     zr_link_internal_for_module(${zr_curr_module_name} m)

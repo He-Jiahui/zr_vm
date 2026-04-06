@@ -39,7 +39,7 @@ doc_type: category-index
 - `typed-module-metadata.md`
   - `SZrFunction` / `SZrIoFunction` 的统一 typed metadata 载体
   - native / source / binary import 的编译期归一化装载
-  - `.zri` / `.zro` 共用同一份 typed metadata 源
+  - `.zro` 作为正式 typed metadata 语义源，`.zri` 仅保留 debug / intermediate 职责
   - typed opcode 选择与 imported typed call 运行时约束
 
 ## 阅读顺序

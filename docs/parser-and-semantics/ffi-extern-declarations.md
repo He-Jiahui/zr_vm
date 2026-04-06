@@ -4,36 +4,47 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
   - zr_vm_parser/src/zr_vm_parser/type_inference_ffi.c
+  - zr_vm_core/src/zr_vm_core/module_prototype.c
   - zr_vm_core/src/zr_vm_core/object.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_library/src/zr_vm_library/native_binding_metadata.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_internal.h
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
   - zr_vm_parser/src/zr_vm_parser/type_inference_ffi.c
+  - zr_vm_core/src/zr_vm_core/module_prototype.c
   - zr_vm_core/src/zr_vm_core/object.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_library/src/zr_vm_library/native_binding_metadata.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_internal.h
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
 plan_sources:
   - user: 2026-03-29 实现“zr %extern 源级 FFI 声明计划”
   - user: 2026-03-29 extern 语法用于注册外部 ffi
   - user: 2026-04-06 struct 值类型与 native wrapper 分层方案
+  - user: 2026-04-06 新的 source-level wrapper decorator surface 和具体 handle_id lowering runtime 完善
 tests:
   - tests/parser/test_parser.c
   - tests/parser/test_type_inference.c
@@ -41,6 +52,7 @@ tests:
   - tests/ffi/test_ffi_module.c
   - tests/ffi/ffi_fixture.c
   - tests/module/test_module_system.c
+  - tests/language_server/test_semantic_analyzer.c
 doc_type: module-detail
 ---
 
@@ -185,8 +197,59 @@ native resource 不再要求上层透出裸 `Ptr`。当前 v1 采用“wrapper o
 
 - extern `delegate` 参数接受 `CallbackHandle`
 - extern `pointer<T>` 参数接受 `BufferHandle` / `PointerHandle` 风格 wrapper
+- extern 整数 handle 参数接受 `#zr.ffi.lowering("handle_id")#` + `#zr.ffi.underlying("...")#` 标注过的 source wrapper class
 
 这条兼容只在 `%extern` 函数 overload 选择和参数检查里生效；普通类型系统仍把 wrapper 当普通对象类型处理。
+
+## Source Wrapper Decorator Surface
+
+v1 没有新增 `userdata` 关键字，而是直接复用 class declaration：
+
+```zr
+#zr.ffi.lowering("handle_id")#
+#zr.ffi.underlying("i32")#
+class ModeHandle {
+    var handleId: i32;
+}
+```
+
+当前 source-level wrapper decorator surface 只对 `class` 合法，支持：
+
+- `#zr.ffi.lowering("value"|"pointer"|"handle_id")#`
+- `#zr.ffi.viewType("ExternStructName")#`
+- `#zr.ffi.underlying("i8"|"u8"|"i16"|"u16"|"i32"|"u32"|"i64"|"u64")#`
+- `#zr.ffi.ownerMode("borrowed"|"owned")#`
+- `#zr.ffi.releaseHook("native_symbol")#`
+
+实现约束：
+
+- parser 现在允许顶层声明前连续出现多条 decorator，再统一绑定到后续 class / struct / function
+- `compiler_class.c` 会把这些 `zr.ffi.*` wrapper decorators 直接编译成 type decorator metadata，而不是走普通 runtime decorator expression 执行路径
+- LSP semantic analyzer 会在 class declaration 上校验这些 decorator 的参数和值域
+- `zr.ffi.viewType(...)` 当前要求名字解析到同一 source file 里的 `%extern struct`
+
+`zr.ffi.underlying(...)` 当前只在 `lowering("handle_id")` 下有语义。它描述 wrapper 过 FFI 边界时应该降到哪种整数 ABI 类型；source-level decorator 目前只接受固定宽度整数名 `i8/u8/i16/u16/i32/u32/i64/u64`，与 runtime ABI lowering 支持集保持一致。
+
+## `handle_id` Lowering Runtime
+
+`handle_id` lowering 现在走和 pointer wrapper 一样的“prototype hidden metadata + boundary-only marshalling”模型：
+
+- source class wrapper 的 compile-time metadata 会在 module prototype materialization 时桥接成 runtime hidden fields：
+  - `__zr_ffiLoweringKind`
+  - `__zr_ffiUnderlyingTypeName`
+  - 以及可选的 `__zr_ffiViewTypeName` / `__zr_ffiOwnerMode` / `__zr_ffiReleaseHook`
+- `zr_vm_lib_ffi` marshalling 只在构建 FFI scalar argument 时读取这些 hidden fields
+- 当目标 ABI 参数是整数标量且 underlying 名称匹配时，runtime 会优先从 wrapper 对象的：
+  - `__zr_ffi_handleId`
+  - 或公开字段 `handleId`
+  读取值，再降成 ABI 整数
+
+这条 lowering 不会泄漏到普通 zr 调用：
+
+- 普通函数 `func FlipLocal(mode: i32)` 仍然不能接受 `ModeHandle`
+- 普通赋值、容器写入、非 FFI member call 也不会自动把 wrapper 当整数 handle 用
+
+因此 `%extern` / `zr.ffi` 边界继续是唯一发生 implicit lowering 的地方。
 
 ## Lowering To `zr.ffi`
 

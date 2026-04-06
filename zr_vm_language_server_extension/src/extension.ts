@@ -7,23 +7,42 @@ import {
     ServerOptions,
     Trace,
 } from 'vscode-languageclient/node';
+import {
+    createTransportAwareLanguageClientLifecycle,
+    isBenignLanguageClientStopError,
+    stopLanguageClientSafely,
+    type TransportAwareLanguageClientLifecycle,
+} from './languageClientLifecycle';
 import { registerDesktopDebugSupport } from './debug/configProvider';
 import { LANGUAGE_SERVER_CONFIG_SECTION, resolveNativeLanguageServerPath } from './nativeAssets';
+import { registerDesktopProjectActions } from './projectActions';
+import { registerZrStructureViews, ZrStructureController } from './structure';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
 
 const CONFIG_SECTION = LANGUAGE_SERVER_CONFIG_SECTION;
 const RESTART_COMMAND = 'zr.restartLanguageServer';
 
 let client: LanguageClient | undefined;
+let clientLifecycle: TransportAwareLanguageClientLifecycle<LanguageClient> | undefined;
+let structureController: ZrStructureController | undefined;
 let clientResources: vscode.Disposable[] = [];
 let restartChain: Promise<void> = Promise.resolve();
 let restartSequence = 0;
 
 type LanguageServerMode = 'auto' | 'native' | 'web';
 
+function refreshStructureViewsAsync(): void {
+    void structureController?.refresh().catch((error) => {
+        console.warn('[zr-extension] structure.refresh:failed', error);
+    });
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     context.subscriptions.push(registerZrpJsonSupport());
     context.subscriptions.push(...registerDesktopDebugSupport(context));
+    context.subscriptions.push(...registerDesktopProjectActions(context));
+    structureController = registerZrStructureViews(context);
+    context.subscriptions.push(structureController);
 
     context.subscriptions.push(
         vscode.commands.registerCommand(RESTART_COMMAND, async () => {
@@ -44,6 +63,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export async function deactivate(): Promise<void> {
     await stopClient();
+    structureController?.dispose();
+    structureController = undefined;
 }
 
 async function enqueueRestart(context: vscode.ExtensionContext, requestedByUser: boolean): Promise<void> {
@@ -109,7 +130,7 @@ async function startClient(
         },
     };
 
-    const fileEvents = vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp,zro,zri,dll,so,dylib}');
+    const fileEvents = vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp,zro,dll,so,dylib}');
     clientResources = [
         fileEvents,
     ];
@@ -122,15 +143,22 @@ async function startClient(
             fileEvents,
         },
     };
+    const lifecycle = createTransportAwareLanguageClientLifecycle<LanguageClient>();
+    clientOptions.errorHandler = lifecycle.errorHandler;
 
-    client = new LanguageClient(
+    const nextClient = new LanguageClient(
         'zr-language-server',
         'Zr Language Server',
         serverOptions,
         clientOptions,
     );
-    await client.start();
-    await client.setTrace(resolveTrace(config.get<string>('trace.server', 'off')));
+    lifecycle.attachClient(nextClient);
+    client = nextClient;
+    clientLifecycle = lifecycle;
+
+    await nextClient.start();
+    await nextClient.setTrace(resolveTrace(config.get<string>('trace.server', 'off')));
+    refreshStructureViewsAsync();
 
     if (requestedByUser) {
         void vscode.window.showInformationMessage('Zr language server restarted.');
@@ -145,8 +173,22 @@ async function stopClient(): Promise<void> {
 
     if (client !== undefined) {
         const currentClient = client;
+        const currentLifecycle = clientLifecycle;
         client = undefined;
-        await currentClient.stop();
+        clientLifecycle = undefined;
+        try {
+            if (currentLifecycle !== undefined) {
+                await stopLanguageClientSafely(currentClient, currentLifecycle);
+            } else {
+                await currentClient.stop();
+            }
+        } catch (error) {
+            if (!isBenignLanguageClientStopError(error)) {
+                throw error;
+            }
+        } finally {
+            currentLifecycle?.dispose();
+        }
     }
 }
 

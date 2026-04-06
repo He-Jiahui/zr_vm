@@ -1280,6 +1280,12 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             }
 
             if (classDecl->members != ZR_NULL) {
+                ZrLanguageServer_SymbolTable_EnterScope(state,
+                                                        analyzer->symbolTable,
+                                                        node->location,
+                                                        ZR_FALSE,
+                                                        ZR_TRUE,
+                                                        ZR_FALSE);
                 ownerRegionId = analyzer->semanticContext != ZR_NULL
                                     ? ZrParser_Semantic_ReserveLifetimeRegionId(analyzer->semanticContext)
                                     : 0;
@@ -1424,6 +1430,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                         }
                     }
                 }
+
+                ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
             }
             break;
         }
@@ -1452,6 +1460,12 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             }
 
             if (structDecl->members != ZR_NULL) {
+                ZrLanguageServer_SymbolTable_EnterScope(state,
+                                                        analyzer->symbolTable,
+                                                        node->location,
+                                                        ZR_FALSE,
+                                                        ZR_FALSE,
+                                                        ZR_TRUE);
                 ownerRegionId = analyzer->semanticContext != ZR_NULL
                                     ? ZrParser_Semantic_ReserveLifetimeRegionId(analyzer->semanticContext)
                                     : 0;
@@ -1533,6 +1547,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                     ZR_NULL);
                     }
                 }
+
+                ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
             }
             break;
         }

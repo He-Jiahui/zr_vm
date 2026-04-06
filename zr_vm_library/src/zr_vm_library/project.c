@@ -387,7 +387,10 @@ TZrBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TZrNativeStr
         return ZR_FALSE;
     }
 
-    SZrLibrary_Project *project = state->global->userData;
+    SZrLibrary_Project *project =
+            state->global->sourceLoaderUserData != ZR_NULL
+                    ? (SZrLibrary_Project *)state->global->sourceLoaderUserData
+                    : (SZrLibrary_Project *)state->global->userData;
     if (project == ZR_NULL || path == ZR_NULL) {
         return ZR_FALSE;
     }

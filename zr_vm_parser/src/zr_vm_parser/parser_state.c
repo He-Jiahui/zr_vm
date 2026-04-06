@@ -548,16 +548,31 @@ void report_error_with_token(SZrParserState *ps, const TZrChar *msg, EZrToken to
         // 输出详细的错误信息
         // 使用 lastLine 而不是 lineNumber，因为 lastLine 是当前 token 的行号
         TZrInt32 errorLine = ps->lexer->lastLine > 0 ? ps->lexer->lastLine : ps->lexer->lineNumber;
-        fprintf(stderr, "  [%s:%d:%d] %s (遇到 token: '%s')\n", fileName, errorLine, column, msg, tokenStr);
-
-        // 输出代码片段和错误位置标记
         if (snippet[0] != '\0') {
-            fprintf(stderr, "    %s\n", snippet);
-            // 输出错误位置标记（^）
-            for (TZrInt32 i = 0; i < displayColumn - 1; i++) {
-                fputc(' ', stderr);
-            }
-            fprintf(stderr, "^\n");
+            ZrCore_Log_Diagnosticf(ps->state,
+                                   ZR_LOG_LEVEL_ERROR,
+                                   ZR_OUTPUT_CHANNEL_STDERR,
+                                   "  [%s:%d:%d] %s (遇到 token: '%s')\n"
+                                   "    %s\n"
+                                   "%*s^\n",
+                                   fileName,
+                                   errorLine,
+                                   column,
+                                   msg,
+                                   tokenStr,
+                                   snippet,
+                                   displayColumn > 0 ? displayColumn - 1 : 0,
+                                   "");
+        } else {
+            ZrCore_Log_Diagnosticf(ps->state,
+                                   ZR_LOG_LEVEL_ERROR,
+                                   ZR_OUTPUT_CHANNEL_STDERR,
+                                   "  [%s:%d:%d] %s (遇到 token: '%s')\n",
+                                   fileName,
+                                   errorLine,
+                                   column,
+                                   msg,
+                                   tokenStr);
         }
     }
 }

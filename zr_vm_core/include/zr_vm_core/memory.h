@@ -55,12 +55,18 @@ ZR_FORCE_INLINE void ZrCore_Memory_RawFreeWithType(SZrGlobalState *global, TZrPt
     ZrCore_Memory_RawFreeWithType((GLOBAL), (POINTER), (SIZE) * sizeof(*(POINTER)), ZR_MEMORY_NATIVE_TYPE_FUNCTION)
 
 ZR_FORCE_INLINE void ZrCore_Memory_RawCopy(TZrPtr destination, TZrPtr source, TZrSize size) {
-    ZR_ASSERT(destination != ZR_NULL && source != ZR_NULL && size != 0);
+    if (size == 0) {
+        return;
+    }
+    ZR_ASSERT(destination != ZR_NULL && source != ZR_NULL);
     memcpy(destination, source, size);
 }
 
 ZR_FORCE_INLINE TZrInt32 ZrCore_Memory_RawCompare(TZrPtr destination, TZrPtr source, TZrSize size) {
-    ZR_ASSERT(destination != ZR_NULL && source != ZR_NULL && size != 0);
+    if (size == 0) {
+        return 0;
+    }
+    ZR_ASSERT(destination != ZR_NULL && source != ZR_NULL);
     return memcmp(destination, source, size);
 }
 

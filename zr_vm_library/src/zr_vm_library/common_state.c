@@ -76,6 +76,7 @@ SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TZrNativeString conf
     }
     global->userData = project;
     global->sourceLoader = ZrLibrary_Project_SourceLoadImplementation;
+    global->sourceLoaderUserData = project;
     ZrLibrary_NativeRegistry_Attach(global);
     return global;
 }
@@ -86,6 +87,7 @@ void ZrLibrary_CommonState_CommonGlobalState_Free(SZrGlobalState *globalState) {
     }
     ZrLibrary_Project_Free(globalState->mainThreadState, ZR_CAST(SZrLibrary_Project *, globalState->userData));
     globalState->userData = ZR_NULL;
+    globalState->sourceLoaderUserData = ZR_NULL;
     ZrLibrary_NativeRegistry_Free(globalState);
 
     ZrCore_GlobalState_Free(globalState);

@@ -1,8 +1,11 @@
 #include "zr_vm_cli/command.h"
 
+#include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "zr_vm_core/log.h"
 
 static void zr_cli_write_error(TZrChar *buffer, TZrSize bufferSize, const TZrChar *format, ...) {
     va_list args;
@@ -46,53 +49,118 @@ static TZrBool zr_cli_command_execution_mode_is_aot(EZrCliExecutionMode mode) {
     return (TZrBool)(mode == ZR_CLI_EXECUTION_MODE_AOT_C || mode == ZR_CLI_EXECUTION_MODE_AOT_LLVM);
 }
 
-void ZrCli_Command_WriteHelp(FILE *stream, const TZrChar *programName) {
+static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
     const TZrChar *name = programName != ZR_NULL ? programName : "zr_vm_cli";
+    int requiredLength;
+    TZrChar *buffer;
 
-    if (stream == ZR_NULL) {
+    requiredLength = snprintf(ZR_NULL,
+                              0,
+                              "Usage:\n"
+                              "  %s\n"
+                              "  %s <project.zrp> [--execution-mode interp|binary|aot_c|aot_llvm] [--require-aot-path] [--emit-executed-via] [--debug] [--debug-address host:port] [--debug-wait] [--debug-print-endpoint]\n"
+                              "  %s --compile <project.zrp> [--intermediate] [--incremental] [--emit-aot-c] [--emit-aot-llvm] [--run] [--execution-mode interp|binary|aot_c|aot_llvm] [--require-aot-path] [--emit-executed-via] [--debug] [--debug-address host:port] [--debug-wait] [--debug-print-endpoint]\n"
+                              "  %s --help\n"
+                              "\n"
+                              "Modes:\n"
+                              "  no arguments               Start the minimal REPL.\n"
+                              "  <project.zrp>             Run the project with source-first loading.\n"
+                              "  --compile <project.zrp>   Compile reachable project-local modules to .zro.\n"
+                              "\n"
+                              "Options:\n"
+                              "  --intermediate            Also emit .zri files next to .zro outputs.\n"
+                              "  --incremental             Use manifest-based incremental compilation.\n"
+                              "  --emit-aot-c              Also emit project-local AOT C sources/artifacts.\n"
+                              "  --emit-aot-llvm           Also emit project-local AOT LLVM IR artifacts.\n"
+                              "  --run                     Run the compiled project with binary-first loading.\n"
+                              "  --execution-mode <mode>   Select interp, binary, aot_c, or aot_llvm for run paths.\n"
+                              "  --require-aot-path        Fail if an aot_* run cannot prove the requested AOT path.\n"
+                              "  --emit-executed-via       Print executed_via=<mode> after a successful run.\n"
+                              "  --debug                   Start the project under the ZR debugger agent.\n"
+                              "  --debug-address <addr>    Bind the debugger agent to the given host:port.\n"
+                              "  --debug-wait              Wait for the debugger client before running user code.\n"
+                              "  --debug-print-endpoint    Print the resolved debugger endpoint after startup.\n"
+                              "  --help                    Show this help text.\n"
+                              "\n"
+                              "Examples:\n"
+                              "  %s\n"
+                              "  %s hello_world.zrp\n"
+                              "  %s --compile hello_world.zrp --intermediate\n"
+                              "  %s --compile hello_world.zrp --incremental --emit-aot-c --run --execution-mode aot_c\n",
+                              name,
+                              name,
+                              name,
+                              name,
+                              name,
+                              name,
+                              name,
+                              name);
+    if (requiredLength < 0) {
+        return ZR_NULL;
+    }
+
+    buffer = (TZrChar *)malloc((size_t)requiredLength + 1u);
+    if (buffer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    snprintf(buffer,
+             (size_t)requiredLength + 1u,
+             "Usage:\n"
+             "  %s\n"
+             "  %s <project.zrp> [--execution-mode interp|binary|aot_c|aot_llvm] [--require-aot-path] [--emit-executed-via] [--debug] [--debug-address host:port] [--debug-wait] [--debug-print-endpoint]\n"
+             "  %s --compile <project.zrp> [--intermediate] [--incremental] [--emit-aot-c] [--emit-aot-llvm] [--run] [--execution-mode interp|binary|aot_c|aot_llvm] [--require-aot-path] [--emit-executed-via] [--debug] [--debug-address host:port] [--debug-wait] [--debug-print-endpoint]\n"
+             "  %s --help\n"
+             "\n"
+             "Modes:\n"
+             "  no arguments               Start the minimal REPL.\n"
+             "  <project.zrp>             Run the project with source-first loading.\n"
+             "  --compile <project.zrp>   Compile reachable project-local modules to .zro.\n"
+             "\n"
+             "Options:\n"
+             "  --intermediate            Also emit .zri files next to .zro outputs.\n"
+             "  --incremental             Use manifest-based incremental compilation.\n"
+             "  --emit-aot-c              Also emit project-local AOT C sources/artifacts.\n"
+             "  --emit-aot-llvm           Also emit project-local AOT LLVM IR artifacts.\n"
+             "  --run                     Run the compiled project with binary-first loading.\n"
+             "  --execution-mode <mode>   Select interp, binary, aot_c, or aot_llvm for run paths.\n"
+             "  --require-aot-path        Fail if an aot_* run cannot prove the requested AOT path.\n"
+             "  --emit-executed-via       Print executed_via=<mode> after a successful run.\n"
+             "  --debug                   Start the project under the ZR debugger agent.\n"
+             "  --debug-address <addr>    Bind the debugger agent to the given host:port.\n"
+             "  --debug-wait              Wait for the debugger client before running user code.\n"
+             "  --debug-print-endpoint    Print the resolved debugger endpoint after startup.\n"
+             "  --help                    Show this help text.\n"
+             "\n"
+             "Examples:\n"
+             "  %s\n"
+             "  %s hello_world.zrp\n"
+             "  %s --compile hello_world.zrp --intermediate\n"
+             "  %s --compile hello_world.zrp --incremental --emit-aot-c --run --execution-mode aot_c\n",
+             name,
+             name,
+             name,
+             name,
+             name,
+             name,
+             name,
+             name);
+    return buffer;
+}
+
+void ZrCli_Command_LogHelp(struct SZrState *state, TZrBool writeToStdErr, const TZrChar *programName) {
+    TZrChar *text = zr_cli_command_format_help_text(programName);
+
+    if (text == ZR_NULL) {
         return;
     }
 
-    fprintf(stream,
-            "Usage:\n"
-            "  %s\n"
-            "  %s <project.zrp> [--execution-mode interp|binary|aot_c|aot_llvm] [--require-aot-path] [--emit-executed-via] [--debug] [--debug-address host:port] [--debug-wait] [--debug-print-endpoint]\n"
-            "  %s --compile <project.zrp> [--intermediate] [--incremental] [--emit-aot-c] [--emit-aot-llvm] [--run] [--execution-mode interp|binary|aot_c|aot_llvm] [--require-aot-path] [--emit-executed-via] [--debug] [--debug-address host:port] [--debug-wait] [--debug-print-endpoint]\n"
-            "  %s --help\n"
-            "\n"
-            "Modes:\n"
-            "  no arguments               Start the minimal REPL.\n"
-            "  <project.zrp>             Run the project with source-first loading.\n"
-            "  --compile <project.zrp>   Compile reachable project-local modules to .zro.\n"
-            "\n"
-            "Options:\n"
-            "  --intermediate            Also emit .zri files next to .zro outputs.\n"
-            "  --incremental             Use manifest-based incremental compilation.\n"
-            "  --emit-aot-c              Also emit project-local AOT C sources/artifacts.\n"
-            "  --emit-aot-llvm           Also emit project-local AOT LLVM IR artifacts.\n"
-            "  --run                     Run the compiled project with binary-first loading.\n"
-            "  --execution-mode <mode>   Select interp, binary, aot_c, or aot_llvm for run paths.\n"
-            "  --require-aot-path        Fail if an aot_* run cannot prove the requested AOT path.\n"
-            "  --emit-executed-via       Print executed_via=<mode> after a successful run.\n"
-            "  --debug                   Start the project under the ZR debugger agent.\n"
-            "  --debug-address <addr>    Bind the debugger agent to the given host:port.\n"
-            "  --debug-wait              Wait for the debugger client before running user code.\n"
-            "  --debug-print-endpoint    Print the resolved debugger endpoint after startup.\n"
-            "  --help                    Show this help text.\n"
-            "\n"
-            "Examples:\n"
-            "  %s\n"
-            "  %s hello_world.zrp\n"
-            "  %s --compile hello_world.zrp --intermediate\n"
-            "  %s --compile hello_world.zrp --incremental --emit-aot-c --run --execution-mode aot_c\n",
-            name,
-            name,
-            name,
-            name,
-            name,
-            name,
-            name,
-            name);
+    ZrCore_Log_Write(state,
+                     ZR_LOG_LEVEL_INFO,
+                     writeToStdErr ? ZR_OUTPUT_CHANNEL_STDERR : ZR_OUTPUT_CHANNEL_STDOUT,
+                     ZR_OUTPUT_KIND_HELP,
+                     text);
+    free(text);
 }
 
 TZrBool ZrCli_Command_Parse(int argc,

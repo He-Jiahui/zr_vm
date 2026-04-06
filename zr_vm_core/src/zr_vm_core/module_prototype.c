@@ -6,6 +6,19 @@
 #include "zr_vm_core/reflection.h"
 #include <string.h>
 
+typedef struct SZrPrototypeMetadataFieldMapping {
+    const TZrChar *metadataFieldName;
+    const TZrChar *hiddenFieldName;
+} SZrPrototypeMetadataFieldMapping;
+
+static const SZrPrototypeMetadataFieldMapping kModulePrototypeFfiMetadataFieldMappings[] = {
+        {"ffiLoweringKind", "__zr_ffiLoweringKind"},
+        {"ffiViewTypeName", "__zr_ffiViewTypeName"},
+        {"ffiUnderlyingTypeName", "__zr_ffiUnderlyingTypeName"},
+        {"ffiOwnerMode", "__zr_ffiOwnerMode"},
+        {"ffiReleaseHook", "__zr_ffiReleaseHook"},
+};
+
 static void register_prototype_in_global_scope(SZrState *state,
                                                SZrString *typeName,
                                                const SZrTypeValue *prototypeValue) {
@@ -258,6 +271,153 @@ static SZrObjectPrototype *find_local_created_prototype_by_name(SZrArray *protot
     return ZR_NULL;
 }
 
+static SZrString *module_prototype_extract_open_generic_base_name(SZrState *state, SZrString *typeName) {
+    TZrNativeString typeNameText;
+    TZrSize typeNameLength;
+    const TZrChar *genericStart;
+
+    if (state == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        typeNameText = (TZrNativeString)ZrCore_String_GetNativeStringShort(typeName);
+        typeNameLength = typeName->shortStringLength;
+    } else {
+        typeNameText = (TZrNativeString)ZrCore_String_GetNativeString(typeName);
+        typeNameLength = typeName->longStringLength;
+    }
+
+    if (typeNameText == ZR_NULL || typeNameLength == 0) {
+        return ZR_NULL;
+    }
+
+    genericStart = (const TZrChar *)memchr(typeNameText, '<', typeNameLength);
+    if (genericStart == ZR_NULL || genericStart == typeNameText) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(state, typeNameText, (TZrSize)(genericStart - typeNameText));
+}
+
+static void module_prototype_attach_open_generic_super(SZrState *state,
+                                                       struct SZrObjectModule *module,
+                                                       SZrPrototypeCreationInfo *protoInfo,
+                                                       SZrArray *prototypeInfos) {
+    SZrString *openGenericBaseName;
+    SZrObjectPrototype *superPrototype;
+
+    if (state == ZR_NULL || protoInfo == ZR_NULL || protoInfo->prototype == ZR_NULL || protoInfo->typeName == ZR_NULL ||
+        protoInfo->inheritTypeNames.length > 0 || protoInfo->prototype->superPrototype != ZR_NULL) {
+        return;
+    }
+
+    openGenericBaseName = module_prototype_extract_open_generic_base_name(state, protoInfo->typeName);
+    if (openGenericBaseName == ZR_NULL || ZrCore_String_Equal(openGenericBaseName, protoInfo->typeName)) {
+        return;
+    }
+
+    superPrototype = find_local_created_prototype_by_name(prototypeInfos, openGenericBaseName);
+    if (superPrototype == ZR_NULL) {
+        superPrototype = find_prototype_by_name(state, module, openGenericBaseName);
+    }
+
+    if (superPrototype == ZR_NULL || superPrototype == protoInfo->prototype ||
+        superPrototype->type != protoInfo->prototypeType) {
+        return;
+    }
+
+    ZrCore_ObjectPrototype_SetSuper(state, protoInfo->prototype, superPrototype);
+}
+
+static TZrBool module_prototype_read_metadata_string_field(SZrState *state,
+                                                           const SZrTypeValue *metadataValue,
+                                                           const TZrChar *fieldName,
+                                                           const TZrChar **outText) {
+    SZrObject *metadataObject;
+    SZrString *fieldNameString;
+    SZrTypeValue key;
+    const SZrTypeValue *fieldValue;
+
+    if (outText != ZR_NULL) {
+        *outText = ZR_NULL;
+    }
+
+    if (state == ZR_NULL || metadataValue == ZR_NULL || fieldName == ZR_NULL || outText == ZR_NULL ||
+        metadataValue->type != ZR_VALUE_TYPE_OBJECT || metadataValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    metadataObject = ZR_CAST_OBJECT(state, metadataValue->value.object);
+    if (metadataObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fieldNameString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
+    if (fieldNameString == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    zr_module_init_string_key(state, &key, fieldNameString);
+    fieldValue = ZrCore_Object_GetValue(state, metadataObject, &key);
+    if (fieldValue == ZR_NULL || fieldValue->type != ZR_VALUE_TYPE_STRING || fieldValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outText = ZrCore_String_GetNativeString(ZR_CAST_STRING(state, fieldValue->value.object));
+    return *outText != ZR_NULL;
+}
+
+static void module_prototype_set_hidden_string_metadata(SZrState *state,
+                                                        SZrObjectPrototype *prototype,
+                                                        const TZrChar *fieldName,
+                                                        const TZrChar *value) {
+    SZrString *fieldNameString;
+    SZrString *valueString;
+    SZrTypeValue key;
+    SZrTypeValue fieldValue;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL) {
+        return;
+    }
+
+    fieldNameString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
+    valueString = ZrCore_String_CreateFromNative(state, (TZrNativeString)value);
+    if (fieldNameString == ZR_NULL || valueString == ZR_NULL) {
+        return;
+    }
+
+    zr_module_init_string_key(state, &key, fieldNameString);
+    ZrCore_Value_InitAsRawObject(state, &fieldValue, ZR_CAST_RAW_OBJECT_AS_SUPER(valueString));
+    fieldValue.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Object_SetValue(state, &prototype->super, &key, &fieldValue);
+}
+
+static void module_prototype_attach_ffi_wrapper_hidden_metadata(SZrState *state,
+                                                                SZrObjectPrototype *prototype,
+                                                                const SZrPrototypeCreationInfo *protoInfo) {
+    if (state == ZR_NULL || prototype == ZR_NULL || protoInfo == ZR_NULL || !protoInfo->hasDecoratorMetadata) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(kModulePrototypeFfiMetadataFieldMappings); index++) {
+        const SZrPrototypeMetadataFieldMapping *mapping = &kModulePrototypeFfiMetadataFieldMappings[index];
+        const TZrChar *fieldValue = ZR_NULL;
+
+        if (mapping->metadataFieldName == ZR_NULL || mapping->hiddenFieldName == ZR_NULL) {
+            continue;
+        }
+
+        if (module_prototype_read_metadata_string_field(state,
+                                                        &protoInfo->decoratorMetadataValue,
+                                                        mapping->metadataFieldName,
+                                                        &fieldValue) &&
+            fieldValue != ZR_NULL) {
+            module_prototype_set_hidden_string_metadata(state, prototype, mapping->hiddenFieldName, fieldValue);
+        }
+    }
+}
+
 TZrInt64 ZrCore_PrototypeNativeFunction_Create(SZrState *state) {
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argBase;
@@ -413,9 +573,18 @@ static TZrBool parse_compiled_prototype_info(SZrState *state,
     protoInfo->prototypeType = (EZrObjectPrototypeType)type;
     protoInfo->accessModifier = (EZrAccessModifier)accessModifier;
     protoInfo->protocolMask = protoInfoHeader->protocolMask;
+    protoInfo->hasDecoratorMetadata = ZR_FALSE;
+    ZrCore_Value_ResetAsNull(&protoInfo->decoratorMetadataValue);
     protoInfo->prototype = ZR_NULL;
     protoInfo->membersCount = membersCount;
     protoInfo->needsPostCreateSetup = ZR_FALSE;
+
+    if (protoInfoHeader->hasDecoratorMetadata &&
+        protoInfoHeader->decoratorMetadataConstantIndex < entryFunction->constantValueLength) {
+        protoInfo->decoratorMetadataValue =
+                entryFunction->constantValueList[protoInfoHeader->decoratorMetadataConstantIndex];
+        protoInfo->hasDecoratorMetadata = ZR_TRUE;
+    }
 
     ZrCore_Array_Init(state, &protoInfo->inheritTypeNames, sizeof(SZrString *), inheritsCount);
 
@@ -505,6 +674,8 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                 protoInfoData.prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
                 protoInfoData.accessModifier = ZR_ACCESS_CONSTANT_PRIVATE;
                 protoInfoData.protocolMask = 0;
+                protoInfoData.hasDecoratorMetadata = ZR_FALSE;
+                ZrCore_Value_ResetAsNull(&protoInfoData.decoratorMetadataValue);
                 ZrCore_Array_Init(state,
                                   &protoInfoData.inheritTypeNames,
                                   sizeof(SZrString *),
@@ -539,6 +710,7 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                             protoInfoData.prototype = prototype;
                             protoInfoData.needsPostCreateSetup = prototypeWasCreated;
                             ZrCore_Reflection_AttachPrototypeRuntimeMetadata(state, prototype, module, entryFunction);
+                            module_prototype_attach_ffi_wrapper_hidden_metadata(state, prototype, &protoInfoData);
 
                             zr_module_init_object_value(
                                     state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
@@ -574,6 +746,8 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
         if (protoInfo == ZR_NULL || protoInfo->prototype == ZR_NULL) {
             continue;
         }
+
+        module_prototype_attach_open_generic_super(state, module, protoInfo, &prototypeInfos);
 
         if (!protoInfo->needsPostCreateSetup) {
             ZrCore_Array_Free(state, &protoInfo->inheritTypeNames);

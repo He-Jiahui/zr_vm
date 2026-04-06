@@ -1,5 +1,7 @@
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { parseProjectManifestText } from '../projectSupport';
 import { ZrCliLauncher } from './cliLauncher';
 import {
     ZR_DEBUG_MAIN_THREAD_ID,
@@ -20,14 +22,22 @@ import type {
 } from './types';
 import { ZrDbgClient } from './zrdbgClient';
 
-type ScopeHandle = {
-    scopeId: number;
+type VariablesHandle = {
+    handleId: number;
     stateId: number;
+};
+
+type LaunchSourceContext = {
+    projectPath: string;
+    projectRoot: string;
+    sourceRoot: string;
+    binaryRoot: string;
+    cwd: string;
 };
 
 export class ZrDebugAdapter implements vscode.DebugAdapter {
     private readonly emitter = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
-    private readonly scopeHandles = new Map<number, ScopeHandle>();
+    private readonly variableHandles = new Map<number, VariablesHandle>();
     private readonly runtimeSourcePaths = new Map<string, string>();
     private readonly debugConsole = vscode.debug.activeDebugConsole;
     private readonly sessionOutputPrefix: string;
@@ -41,6 +51,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
     private currentStateId = 0;
     private terminated = false;
     private launchMode = false;
+    private launchSourceContext: LaunchSourceContext | undefined;
 
     readonly onDidSendMessage = this.emitter.event;
 
@@ -78,6 +89,12 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
             case 'setBreakpoints':
                 await this.handleSetBreakpoints(request);
                 return;
+            case 'setFunctionBreakpoints':
+                await this.handleSetFunctionBreakpoints(request);
+                return;
+            case 'setExceptionBreakpoints':
+                await this.handleSetExceptionBreakpoints(request);
+                return;
             case 'configurationDone':
                 await this.handleConfigurationDone(request);
                 return;
@@ -94,6 +111,12 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 return;
             case 'variables':
                 await this.handleVariables(request);
+                return;
+            case 'evaluate':
+                await this.handleEvaluate(request);
+                return;
+            case 'source':
+                await this.handleSource(request);
                 return;
             case 'continue':
                 await this.handleSimpleControl(request, 'continue', { allThreadsContinued: true });
@@ -123,6 +146,23 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.sendResponse(request, {
             supportsConfigurationDoneRequest: true,
             supportsPauseRequest: true,
+            supportsFunctionBreakpoints: true,
+            supportsConditionalBreakpoints: true,
+            supportsHitConditionalBreakpoints: true,
+            supportsLogPoints: true,
+            supportsEvaluateForHovers: true,
+            exceptionBreakpointFilters: [
+                {
+                    filter: 'caught',
+                    label: 'Caught Exceptions',
+                    default: false,
+                },
+                {
+                    filter: 'uncaught',
+                    label: 'Uncaught Exceptions',
+                    default: true,
+                },
+            ],
         });
     }
 
@@ -135,6 +175,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         }
 
         this.launchMode = true;
+        this.launchSourceContext = await this.createLaunchSourceContext(args.project, args.cwd);
         this.stopOnEntry = args.stopOnEntry !== false;
         this.launcher = new ZrCliLauncher((channel, text) => {
             this.sendOutput(text, channel === 'stderr' ? 'stderr' : 'stdout');
@@ -160,6 +201,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         const authToken = typeof args.authToken === 'string' ? args.authToken : undefined;
 
         this.launchMode = false;
+        this.launchSourceContext = undefined;
         this.stopOnEntry = true;
         await this.connectRuntime(args.endpoint, authToken);
         this.sendResponse(request);
@@ -199,7 +241,14 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
 
         const result = await client.request('setBreakpoints', {
             sourceFile: runtimeSourcePath,
-            lines: breakpoints.map((item) => Number(item.line)).filter((line) => Number.isInteger(line) && line > 0),
+            breakpoints: breakpoints
+                .map((item) => ({
+                    line: Number(item.line),
+                    condition: typeof item.condition === 'string' ? item.condition : undefined,
+                    hitCondition: typeof item.hitCondition === 'string' ? item.hitCondition : undefined,
+                    logMessage: typeof item.logMessage === 'string' ? item.logMessage : undefined,
+                }))
+                .filter((item) => Number.isInteger(item.line) && item.line > 0),
         });
         const resolvedBreakpoints = Array.isArray(result.breakpoints) ? result.breakpoints as ZrDbgBreakpoint[] : [];
 
@@ -211,6 +260,39 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 source: { path: pathText, name: path.basename(pathText) },
             })),
         });
+    }
+
+    private async handleSetFunctionBreakpoints(request: DapRequest): Promise<void> {
+        const args = request.arguments ?? {};
+        const breakpoints = Array.isArray(args.breakpoints) ? args.breakpoints : [];
+        const result = await this.requireClient().request('setFunctionBreakpoints', {
+            breakpoints: breakpoints.map((item) => ({
+                name: typeof item.name === 'string' ? item.name : '',
+                condition: typeof item.condition === 'string' ? item.condition : undefined,
+                hitCondition: typeof item.hitCondition === 'string' ? item.hitCondition : undefined,
+                logMessage: typeof item.logMessage === 'string' ? item.logMessage : undefined,
+            })),
+        });
+        const resolvedBreakpoints = Array.isArray(result.breakpoints) ? result.breakpoints as ZrDbgBreakpoint[] : [];
+
+        this.sendResponse(request, {
+            breakpoints: resolvedBreakpoints.map((item, index) => ({
+                id: index + 1,
+                verified: item.verified !== false,
+                line: typeof item.line === 'number' ? item.line : undefined,
+            })),
+        });
+    }
+
+    private async handleSetExceptionBreakpoints(request: DapRequest): Promise<void> {
+        const args = request.arguments ?? {};
+        const filters = Array.isArray(args.filters) ? args.filters.filter((item): item is string => typeof item === 'string') : [];
+        await this.requireClient().request('setExceptionBreakpoints', {
+            filters,
+            caught: filters.includes('caught'),
+            uncaught: filters.includes('uncaught'),
+        });
+        this.sendResponse(request);
     }
 
     private async handleConfigurationDone(request: DapRequest): Promise<void> {
@@ -229,22 +311,17 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
     private async handleStackTrace(request: DapRequest): Promise<void> {
         const result = await this.requireClient().request('stackTrace');
         const frames = Array.isArray(result.frames) ? result.frames as ZrDbgFrame[] : [];
-        for (const frame of frames) {
-            this.rememberRuntimeSourcePath(frame.sourceFile);
-        }
+        const stackFrames = await Promise.all(frames.map(async (frame) => ({
+            id: frame.frameId,
+            name: this.formatFrameName(frame),
+            line: frame.line || 1,
+            column: 1,
+            source: await this.toSource(frame.sourceFile, frame.moduleName),
+            instructionPointerReference: String(frame.instructionIndex),
+        })));
 
         this.sendResponse(request, {
-            stackFrames: frames.map((frame) => ({
-                id: frame.frameId,
-                name: frame.functionName,
-                line: frame.line || 1,
-                column: 1,
-                source: {
-                    name: path.basename(frame.sourceFile),
-                    path: frame.sourceFile,
-                },
-                instructionPointerReference: String(frame.instructionIndex),
-            })),
+            stackFrames,
             totalFrames: frames.length,
         });
     }
@@ -254,10 +331,9 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         const result = await this.requireClient().request('scopes', { frameId });
         const scopes = Array.isArray(result.scopes) ? result.scopes as ZrDbgScope[] : [];
 
-        this.scopeHandles.clear();
         for (const scope of scopes) {
-            this.scopeHandles.set(scope.scopeId, {
-                scopeId: scope.scopeId,
+            this.variableHandles.set(scope.scopeId, {
+                handleId: scope.scopeId,
                 stateId: this.currentStateId,
             });
         }
@@ -273,21 +349,74 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
 
     private async handleVariables(request: DapRequest): Promise<void> {
         const variablesReference = Number((request.arguments ?? {}).variablesReference);
-        const scopeHandle = this.scopeHandles.get(variablesReference);
-        if (!scopeHandle || scopeHandle.stateId !== this.currentStateId) {
+        const handle = this.variableHandles.get(variablesReference);
+        if (!handle || handle.stateId !== this.currentStateId) {
             throw new Error(`Unknown or stale variablesReference ${variablesReference}.`);
         }
 
-        const result = await this.requireClient().request('variables', { scopeId: scopeHandle.scopeId });
+        const result = await this.requireClient().request('variables', { scopeId: handle.handleId });
         const variables = Array.isArray(result.variables) ? result.variables as ZrDbgVariable[] : [];
+
+        for (const item of variables) {
+            if (typeof item.variablesReference === 'number' && item.variablesReference > 0) {
+                this.variableHandles.set(item.variablesReference, {
+                    handleId: item.variablesReference,
+                    stateId: this.currentStateId,
+                });
+            }
+        }
 
         this.sendResponse(request, {
             variables: variables.map((item) => ({
                 name: item.name,
                 type: item.type,
                 value: item.value,
-                variablesReference: 0,
+                variablesReference: typeof item.variablesReference === 'number' ? item.variablesReference : 0,
             })),
+        });
+    }
+
+    private async handleEvaluate(request: DapRequest): Promise<void> {
+        const args = request.arguments ?? {};
+        const expression = typeof args.expression === 'string' ? args.expression : '';
+        const rawFrameId = args.frameId;
+        const frameId = typeof rawFrameId === 'number' && Number.isInteger(rawFrameId) ? rawFrameId : 1;
+        const result = await this.requireClient().request('evaluate', {
+            expression,
+            frameId,
+        });
+        const variablesReference = typeof result.variablesReference === 'number' ? result.variablesReference : 0;
+        if (variablesReference > 0) {
+            this.variableHandles.set(variablesReference, {
+                handleId: variablesReference,
+                stateId: this.currentStateId,
+            });
+        }
+
+        this.sendResponse(request, {
+            result: typeof result.value === 'string' ? result.value : '',
+            type: typeof result.type === 'string' ? result.type : '',
+            variablesReference,
+        });
+    }
+
+    private async handleSource(request: DapRequest): Promise<void> {
+        const source = (request.arguments ?? {}).source as { path?: unknown; name?: unknown } | undefined;
+        const sourcePath = typeof source?.path === 'string' ? source.path : undefined;
+        const sourceName = typeof source?.name === 'string' ? source.name : undefined;
+        const resolvedPath = await this.resolveSourceReference(sourcePath, {
+            moduleName: sourceName,
+            allowModuleInference: this.launchMode,
+        });
+
+        if (!resolvedPath) {
+            throw new Error(`cannot resolve source: ${this.describeSourceRequest(sourcePath, sourceName)}`);
+        }
+
+        const content = await fs.readFile(resolvedPath, 'utf8');
+        this.sendResponse(request, {
+            content,
+            mimeType: 'text/plain',
         });
     }
 
@@ -311,6 +440,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
 
         this.client = undefined;
         this.launcher = undefined;
+        this.launchSourceContext = undefined;
 
         if (client) {
             try {
@@ -332,19 +462,31 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 this.sendEvent('initialized');
                 break;
             case 'breakpointResolved':
-                this.rememberRuntimeSourcePath(String(message.params?.sourceFile ?? ''));
+                await this.rememberRuntimeSourcePath(
+                    String(message.params?.sourceFile ?? ''),
+                    typeof message.params?.moduleName === 'string' ? message.params.moduleName : undefined,
+                );
                 this.sendEvent('breakpoint', {
                     reason: 'changed',
                     breakpoint: {
                         verified: Boolean(message.params?.resolved),
                         line: Number(message.params?.line ?? 0) || 1,
-                        source: this.toSource(message.params?.sourceFile),
+                        source: await this.toSource(message.params?.sourceFile, message.params?.moduleName),
                     },
                 });
                 break;
             case 'stopped':
-                this.rememberRuntimeSourcePath(String(message.params?.sourceFile ?? ''));
-                this.currentStateId = Number(message.params?.stateId ?? 0);
+                await this.rememberRuntimeSourcePath(
+                    String(message.params?.sourceFile ?? ''),
+                    typeof message.params?.moduleName === 'string' ? message.params.moduleName : undefined,
+                );
+                {
+                    const nextStateId = Number(message.params?.stateId ?? 0);
+                    if (nextStateId !== this.currentStateId) {
+                        this.variableHandles.clear();
+                    }
+                    this.currentStateId = nextStateId;
+                }
                 this.initialStopSeen = true;
                 if (!this.stopOnEntry && String(message.params?.reason ?? '') === 'entry') {
                     if (this.configurationDone) {
@@ -361,9 +503,15 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                     text: typeof message.params?.functionName === 'string' ? message.params.functionName : undefined,
                 });
                 break;
+            case 'output':
+                this.sendEvent('output', {
+                    category: typeof message.params?.category === 'string' ? message.params.category : 'console',
+                    output: typeof message.params?.output === 'string' ? message.params.output : '',
+                });
+                break;
             case 'continued':
                 this.currentStateId = 0;
-                this.scopeHandles.clear();
+                this.variableHandles.clear();
                 this.sendEvent('continued', {
                     threadId: ZR_DEBUG_MAIN_THREAD_ID,
                     allThreadsContinued: true,
@@ -373,7 +521,10 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 this.sendTerminatedEvent();
                 break;
             case 'moduleLoaded':
-                this.rememberRuntimeSourcePath(String(message.params?.sourceFile ?? ''));
+                await this.rememberRuntimeSourcePath(
+                    String(message.params?.sourceFile ?? ''),
+                    typeof message.params?.moduleName === 'string' ? message.params.moduleName : undefined,
+                );
             default:
                 break;
         }
@@ -394,6 +545,30 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         }
 
         return this.client;
+    }
+
+    private formatFrameName(frame: ZrDbgFrame): string {
+        const receiverName = typeof frame.receiver?.name === 'string' && frame.receiver.name.length > 0
+            ? `${frame.receiver.name}.`
+            : '';
+        const argumentsPreview = Array.isArray(frame.arguments) && frame.arguments.length > 0
+            ? `(${frame.arguments.map((item) => `${item.name}=${item.value}`).join(', ')})`
+            : '';
+        const callKind = typeof frame.callKind === 'string' && frame.callKind.length > 0
+            ? `[${frame.callKind}] `
+            : '';
+        const moduleName = typeof frame.moduleName === 'string' && frame.moduleName.length > 0
+            ? ` @${frame.moduleName}`
+            : '';
+        const frameDepth = typeof frame.frameDepth === 'number'
+            ? ` depth=${frame.frameDepth}`
+            : '';
+        const returnSlot = typeof frame.returnSlot === 'number' && frame.returnSlot >= 0
+            ? ` return=r${frame.returnSlot}`
+            : '';
+        const exceptionMarker = frame.isExceptionFrame ? ' exception' : '';
+
+        return `${callKind}${receiverName}${frame.functionName}${argumentsPreview}${moduleName}${frameDepth}${returnSlot}${exceptionMarker}`;
     }
 
     private sendResponse(request: DapRequest, body?: Record<string, unknown>): void {
@@ -456,29 +631,217 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.sendEvent('terminated');
     }
 
-    private toSource(sourceFile: unknown): { path: string; name: string } | undefined {
+    private async createLaunchSourceContext(projectPath: string, cwd?: string): Promise<LaunchSourceContext> {
+        const resolvedProjectPath = path.resolve(projectPath);
+        const projectRoot = path.dirname(resolvedProjectPath);
+        const resolvedCwd = cwd && cwd.trim().length > 0
+            ? path.resolve(cwd)
+            : projectRoot;
+        const fallbackSourceRoot = path.resolve(projectRoot, 'src');
+        const fallbackBinaryRoot = path.resolve(projectRoot, 'bin');
+
+        try {
+            const manifestText = await fs.readFile(resolvedProjectPath, 'utf8');
+            const manifest = parseProjectManifestText(manifestText, resolvedProjectPath);
+            if (manifest) {
+                return {
+                    projectPath: resolvedProjectPath,
+                    projectRoot,
+                    sourceRoot: path.resolve(projectRoot, manifest.source),
+                    binaryRoot: path.resolve(projectRoot, manifest.binary),
+                    cwd: resolvedCwd,
+                };
+            }
+        } catch {
+            // Keep launch debugging working even if the adapter cannot parse the manifest locally.
+        }
+
+        return {
+            projectPath: resolvedProjectPath,
+            projectRoot,
+            sourceRoot: fallbackSourceRoot,
+            binaryRoot: fallbackBinaryRoot,
+            cwd: resolvedCwd,
+        };
+    }
+
+    private async toSource(sourceFile: unknown, moduleName?: unknown): Promise<{ path: string; name: string } | undefined> {
         if (typeof sourceFile !== 'string' || sourceFile.length === 0) {
             return undefined;
         }
 
-        this.rememberRuntimeSourcePath(sourceFile);
+        const resolvedPath = await this.rememberRuntimeSourcePath(
+            sourceFile,
+            typeof moduleName === 'string' ? moduleName : undefined,
+        );
+        const effectivePath = resolvedPath ?? sourceFile;
 
         return {
-            path: sourceFile,
-            name: path.basename(sourceFile),
+            path: effectivePath,
+            name: path.basename(effectivePath),
         };
     }
 
-    private rememberRuntimeSourcePath(sourceFile: string): void {
+    private async rememberRuntimeSourcePath(sourceFile: string, moduleName?: string): Promise<string | undefined> {
         if (!sourceFile) {
-            return;
+            return undefined;
         }
 
         this.runtimeSourcePaths.set(canonicalSourcePath(sourceFile), sourceFile);
+        const resolvedPath = await this.resolveSourceReference(sourceFile, {
+            moduleName,
+            allowModuleInference: this.launchMode,
+        });
+        if (resolvedPath) {
+            this.runtimeSourcePaths.set(canonicalSourcePath(resolvedPath), sourceFile);
+        }
+
+        return resolvedPath;
+    }
+
+    private async resolveSourceReference(
+        sourceLike: string | undefined,
+        options?: {
+            moduleName?: string;
+            allowModuleInference?: boolean;
+        },
+    ): Promise<string | undefined> {
+        const candidates = collectSourceCandidates(sourceLike, options?.moduleName);
+
+        for (const candidate of candidates) {
+            const absolutePath = await this.resolveAbsoluteSourcePath(candidate);
+            if (absolutePath) {
+                return absolutePath;
+            }
+        }
+
+        const context = this.launchSourceContext;
+        if (context) {
+            for (const candidate of candidates) {
+                const relativePath = await this.resolveRelativeSourcePath(candidate, context);
+                if (relativePath) {
+                    return relativePath;
+                }
+            }
+        }
+
+        if (context && options?.allowModuleInference) {
+            for (const candidate of candidates) {
+                const modulePath = await this.resolveModuleSourcePath(candidate, context);
+                if (modulePath) {
+                    return modulePath;
+                }
+            }
+        }
+
+        return undefined;
+    }
+
+    private async resolveAbsoluteSourcePath(sourceLike: string): Promise<string | undefined> {
+        if (!sourceLike || !path.isAbsolute(sourceLike)) {
+            return undefined;
+        }
+
+        return await existingFilePath(sourceLike);
+    }
+
+    private async resolveRelativeSourcePath(
+        sourceLike: string,
+        context: LaunchSourceContext,
+    ): Promise<string | undefined> {
+        if (!sourceLike || path.isAbsolute(sourceLike)) {
+            return undefined;
+        }
+
+        const bases = dedupeStrings([context.cwd, context.projectRoot]);
+        for (const basePath of bases) {
+            const resolvedPath = await existingFilePath(path.resolve(basePath, sourceLike));
+            if (resolvedPath) {
+                return resolvedPath;
+            }
+        }
+
+        return undefined;
+    }
+
+    private async resolveModuleSourcePath(
+        sourceLike: string,
+        context: LaunchSourceContext,
+    ): Promise<string | undefined> {
+        const moduleName = normalizeModuleName(sourceLike);
+        if (!moduleName) {
+            return undefined;
+        }
+
+        return await existingFilePath(path.resolve(context.sourceRoot, `${moduleName}.zr`));
+    }
+
+    private describeSourceRequest(sourcePath: string | undefined, sourceName: string | undefined): string {
+        const description = collectSourceCandidates(sourcePath, sourceName);
+        return description.length > 0 ? description.join(', ') : 'unknown';
     }
 }
 
 function canonicalSourcePath(sourceFile: string): string {
     const normalized = sourceFile.replace(/[\\/]+/g, '/');
     return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function collectSourceCandidates(...values: Array<string | undefined>): string[] {
+    return dedupeStrings(
+        values
+            .filter((value): value is string => typeof value === 'string')
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0),
+    );
+}
+
+function dedupeStrings(values: string[]): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+
+    for (const value of values) {
+        const key = canonicalSourcePath(value);
+        if (seen.has(key)) {
+            continue;
+        }
+
+        seen.add(key);
+        result.push(value);
+    }
+
+    return result;
+}
+
+function normalizeModuleName(modulePath: string): string | undefined {
+    let normalized = modulePath.trim();
+    if (!normalized) {
+        return undefined;
+    }
+
+    normalized = normalized.replace(/[\\/]+$/g, '');
+    if (normalized.length === 0) {
+        return undefined;
+    }
+
+    const lowerCasePath = normalized.toLowerCase();
+    if (lowerCasePath.endsWith('.zro')) {
+        normalized = normalized.slice(0, -4);
+    } else if (lowerCasePath.endsWith('.zri')) {
+        normalized = normalized.slice(0, -4);
+    } else if (lowerCasePath.endsWith('.zr')) {
+        normalized = normalized.slice(0, -3);
+    }
+
+    normalized = normalized.replace(/^[\\/]+/g, '').replace(/[\\]+/g, '/');
+    return normalized.length > 0 ? normalized : undefined;
+}
+
+async function existingFilePath(filePath: string): Promise<string | undefined> {
+    try {
+        const stat = await fs.stat(filePath);
+        return stat.isFile() ? path.normalize(filePath) : undefined;
+    } catch {
+        return undefined;
+    }
 }

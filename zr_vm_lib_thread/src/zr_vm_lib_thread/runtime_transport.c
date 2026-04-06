@@ -3,6 +3,8 @@
 #include <stdio.h>
 
 static const TZrChar *kTaskChannelTransportField = "__zr_task_channel_transport";
+static const TZrChar *kTaskTransferValueField = "__zr_task_transfer_value";
+static const TZrChar *kTaskTransferTakenField = "__zr_task_transfer_taken";
 
 static TZrChar *zr_vm_task_duplicate_native_string(const TZrChar *text) {
     TZrSize length;
@@ -22,6 +24,77 @@ static TZrChar *zr_vm_task_duplicate_native_string(const TZrChar *text) {
     return copy;
 }
 
+TZrBool zr_vm_task_transport_clone_value(const ZrVmTaskTransportValue *value, ZrVmTaskTransportValue *outValue) {
+    if (value == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(outValue, 0, sizeof(*outValue));
+    outValue->kind = value->kind;
+    switch ((EZrVmTaskTransportKind)value->kind) {
+        case ZR_VM_TASK_TRANSPORT_KIND_NONE:
+        case ZR_VM_TASK_TRANSPORT_KIND_NULL:
+            return ZR_TRUE;
+        case ZR_VM_TASK_TRANSPORT_KIND_BOOL:
+            outValue->as.boolValue = value->as.boolValue;
+            return ZR_TRUE;
+        case ZR_VM_TASK_TRANSPORT_KIND_INT:
+            outValue->as.intValue = value->as.intValue;
+            return ZR_TRUE;
+        case ZR_VM_TASK_TRANSPORT_KIND_UINT:
+            outValue->as.uintValue = value->as.uintValue;
+            return ZR_TRUE;
+        case ZR_VM_TASK_TRANSPORT_KIND_FLOAT:
+            outValue->as.floatValue = value->as.floatValue;
+            return ZR_TRUE;
+        case ZR_VM_TASK_TRANSPORT_KIND_STRING:
+            outValue->as.stringValue = zr_vm_task_duplicate_native_string(value->as.stringValue);
+            return outValue->as.stringValue != ZR_NULL;
+        case ZR_VM_TASK_TRANSPORT_KIND_CHANNEL:
+            outValue->as.pointerValue = value->as.pointerValue;
+            return ZR_TRUE;
+        case ZR_VM_TASK_TRANSPORT_KIND_TRANSFER: {
+            ZrVmTaskTransportValue *payload = (ZrVmTaskTransportValue *)value->as.pointerValue;
+            ZrVmTaskTransportValue *clonedPayload;
+
+            if (payload == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            clonedPayload = (ZrVmTaskTransportValue *)calloc(1, sizeof(*clonedPayload));
+            if (clonedPayload == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            if (!zr_vm_task_transport_clone_value(payload, clonedPayload)) {
+                free(clonedPayload);
+                return ZR_FALSE;
+            }
+            outValue->as.pointerValue = clonedPayload;
+            return ZR_TRUE;
+        }
+        case ZR_VM_TASK_TRANSPORT_KIND_SHARED: {
+            ZrVmTaskSharedCell *cell = (ZrVmTaskSharedCell *)value->as.pointerValue;
+
+            if (!zr_vm_task_shared_cell_add_strong_ref(cell)) {
+                return ZR_FALSE;
+            }
+            outValue->as.pointerValue = cell;
+            return ZR_TRUE;
+        }
+        case ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED: {
+            ZrVmTaskSharedCell *cell = (ZrVmTaskSharedCell *)value->as.pointerValue;
+
+            if (!zr_vm_task_shared_cell_add_weak_ref(cell)) {
+                return ZR_FALSE;
+            }
+            outValue->as.pointerValue = cell;
+            return ZR_TRUE;
+        }
+        default:
+            memset(outValue, 0, sizeof(*outValue));
+            return ZR_FALSE;
+    }
+}
+
 void zr_vm_task_transport_clear(ZrVmTaskTransportValue *value) {
     if (value == ZR_NULL) {
         return;
@@ -29,6 +102,14 @@ void zr_vm_task_transport_clear(ZrVmTaskTransportValue *value) {
 
     if (value->kind == ZR_VM_TASK_TRANSPORT_KIND_STRING && value->as.stringValue != ZR_NULL) {
         free(value->as.stringValue);
+    } else if (value->kind == ZR_VM_TASK_TRANSPORT_KIND_TRANSFER && value->as.pointerValue != ZR_NULL) {
+        ZrVmTaskTransportValue *payload = (ZrVmTaskTransportValue *)value->as.pointerValue;
+        zr_vm_task_transport_clear(payload);
+        free(payload);
+    } else if (value->kind == ZR_VM_TASK_TRANSPORT_KIND_SHARED && value->as.pointerValue != ZR_NULL) {
+        zr_vm_task_shared_cell_release_strong((ZrVmTaskSharedCell *)value->as.pointerValue);
+    } else if (value->kind == ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED && value->as.pointerValue != ZR_NULL) {
+        zr_vm_task_shared_cell_release_weak((ZrVmTaskSharedCell *)value->as.pointerValue);
     }
 
     memset(value, 0, sizeof(*value));
@@ -84,6 +165,98 @@ TZrBool zr_vm_task_channel_make_value(SZrState *state, ZrVmTaskChannelTransport 
     return zr_vm_task_finish_object(state, result, handle);
 }
 
+static TZrBool zr_vm_task_transfer_try_encode(SZrState *state,
+                                              const SZrTypeValue *value,
+                                              ZrVmTaskTransportValue *outValue,
+                                              const TZrChar *contextMessage) {
+    SZrObject *object;
+    const SZrTypeValue *transferValue;
+    ZrVmTaskTransportValue *payload;
+
+    if (state == ZR_NULL || value == ZR_NULL || outValue == ZR_NULL ||
+        (value->type != ZR_VALUE_TYPE_OBJECT && value->type != ZR_VALUE_TYPE_ARRAY) ||
+        value->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object = ZR_CAST_OBJECT(state, value->value.object);
+    if (object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (zr_vm_task_get_bool_field(state, object, kTaskTransferTakenField, ZR_FALSE)) {
+        return zr_vm_task_raise_runtime_error(state, "Transfer has already been taken");
+    }
+
+    payload = (ZrVmTaskTransportValue *)calloc(1, sizeof(*payload));
+    if (payload == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    transferValue = zr_vm_task_get_field_value(state, object, kTaskTransferValueField);
+    if (!zr_vm_task_transport_encode_value(state, transferValue, payload, contextMessage)) {
+        free(payload);
+        return ZR_FALSE;
+    }
+
+    zr_vm_task_set_bool_field(state, object, kTaskTransferTakenField, ZR_TRUE);
+    zr_vm_task_set_null_field(state, object, kTaskTransferValueField);
+    outValue->kind = ZR_VM_TASK_TRANSPORT_KIND_TRANSFER;
+    outValue->as.pointerValue = payload;
+    return ZR_TRUE;
+}
+
+static TZrBool zr_vm_task_transfer_make_value(SZrState *state,
+                                              const ZrVmTaskTransportValue *value,
+                                              SZrTypeValue *result) {
+    SZrObject *handle;
+    ZrVmTaskTransportValue *payload;
+    SZrTypeValue decodedValue;
+
+    if (state == ZR_NULL || value == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    payload = (ZrVmTaskTransportValue *)value->as.pointerValue;
+    if (payload == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    handle = zr_vm_task_new_typed_object(state, "Transfer");
+    if (handle == ZR_NULL || !zr_vm_task_transport_decode_value(state, payload, &decodedValue)) {
+        return ZR_FALSE;
+    }
+
+    zr_vm_task_set_value_field(state, handle, kTaskTransferValueField, &decodedValue);
+    zr_vm_task_set_bool_field(state, handle, kTaskTransferTakenField, ZR_FALSE);
+    return zr_vm_task_finish_object(state, result, handle);
+}
+
+static TZrBool zr_vm_task_shared_try_encode(SZrState *state,
+                                            const SZrTypeValue *value,
+                                            ZrVmTaskTransportValue *outValue) {
+    ZrVmTaskSharedCell *cell = ZR_NULL;
+    TZrBool isWeak = ZR_FALSE;
+
+    if (!zr_vm_task_shared_try_get_cell(state, value, &cell, &isWeak) || cell == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (isWeak) {
+        if (!zr_vm_task_shared_cell_add_weak_ref(cell)) {
+            return ZR_FALSE;
+        }
+        outValue->kind = ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED;
+    } else {
+        if (!zr_vm_task_shared_cell_add_strong_ref(cell)) {
+            return ZR_FALSE;
+        }
+        outValue->kind = ZR_VM_TASK_TRANSPORT_KIND_SHARED;
+    }
+    outValue->as.pointerValue = cell;
+    return ZR_TRUE;
+}
+
 TZrBool zr_vm_task_transport_encode_value(SZrState *state,
                                           const SZrTypeValue *value,
                                           ZrVmTaskTransportValue *outValue,
@@ -132,6 +305,16 @@ TZrBool zr_vm_task_transport_encode_value(SZrState *state,
         outValue->as.pointerValue = channelTransport;
         return ZR_TRUE;
     }
+    if (zr_vm_task_shared_try_encode(state, value, outValue)) {
+        return ZR_TRUE;
+    }
+    if (value != ZR_NULL && (value->type == ZR_VALUE_TYPE_OBJECT || value->type == ZR_VALUE_TYPE_ARRAY) &&
+        value->value.object != ZR_NULL) {
+        SZrObject *object = ZR_CAST_OBJECT(state, value->value.object);
+        if (object != ZR_NULL && zr_vm_task_get_field_value(state, object, kTaskTransferTakenField) != ZR_NULL) {
+            return zr_vm_task_transfer_try_encode(state, value, outValue, contextMessage);
+        }
+    }
 
     if (contextMessage != ZR_NULL && state != ZR_NULL) {
         snprintf(message, sizeof(message), "%s", contextMessage);
@@ -168,6 +351,24 @@ TZrBool zr_vm_task_transport_decode_value(SZrState *state,
             return ZR_TRUE;
         case ZR_VM_TASK_TRANSPORT_KIND_CHANNEL:
             return zr_vm_task_channel_make_value(state, (ZrVmTaskChannelTransport *)value->as.pointerValue, result);
+        case ZR_VM_TASK_TRANSPORT_KIND_TRANSFER:
+            return zr_vm_task_transfer_make_value(state, value, result);
+        case ZR_VM_TASK_TRANSPORT_KIND_SHARED: {
+            ZrVmTaskSharedCell *cell = (ZrVmTaskSharedCell *)value->as.pointerValue;
+
+            if (!zr_vm_task_shared_cell_add_strong_ref(cell)) {
+                return ZR_FALSE;
+            }
+            return zr_vm_task_shared_make_value(state, cell, ZR_FALSE, result);
+        }
+        case ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED: {
+            ZrVmTaskSharedCell *cell = (ZrVmTaskSharedCell *)value->as.pointerValue;
+
+            if (!zr_vm_task_shared_cell_add_weak_ref(cell)) {
+                return ZR_FALSE;
+            }
+            return zr_vm_task_shared_make_value(state, cell, ZR_TRUE, result);
+        }
         case ZR_VM_TASK_TRANSPORT_KIND_NONE:
         default:
             ZrLib_Value_SetNull(result);
@@ -245,14 +446,14 @@ TZrBool zr_vm_task_channel_send(ZrLibCallContext *context, SZrTypeValue *result)
     if (message == ZR_NULL) {
         return ZR_FALSE;
     }
-    memset(message, 0, sizeof(*message));
-    if (!zr_vm_task_transport_encode_value(context->state,
-                                           value,
-                                           &message->value,
-                                           "Channel only transports sendable scalar values or Channel handles")) {
-        free(message);
-        return ZR_FALSE;
-    }
+	    memset(message, 0, sizeof(*message));
+	    if (!zr_vm_task_transport_encode_value(context->state,
+	                                           value,
+	                                           &message->value,
+	                                           "Channel only transports sendable values and thread transport handles")) {
+	        free(message);
+	        return ZR_FALSE;
+	    }
 
     zr_vm_task_sync_mutex_lock(&transport->mutex);
     if (transport->closed) {

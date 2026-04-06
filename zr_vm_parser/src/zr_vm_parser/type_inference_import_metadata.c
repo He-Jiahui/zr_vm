@@ -189,6 +189,21 @@ static TZrBool import_prototype_has_member(SZrTypePrototypeInfo *info, SZrString
     return ZR_FALSE;
 }
 
+static TZrBool import_compile_info_stack_contains(SZrGlobalState *global, SZrString *moduleName) {
+    if (global == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < global->importCompileInfoStack.length; index++) {
+        SZrString **entryPtr = (SZrString **)ZrCore_Array_Get(&global->importCompileInfoStack, index);
+        if (entryPtr != ZR_NULL && *entryPtr != ZR_NULL && ZrCore_String_Equal(*entryPtr, moduleName)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static void register_imported_type_name(SZrCompilerState *cs, SZrString *typeName) {
     if (cs == ZR_NULL || typeName == ZR_NULL) {
         return;
@@ -517,6 +532,7 @@ static void import_add_field_member(SZrState *state,
     }
 
     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     ZrCore_Array_Construct(&memberInfo.parameterTypes);
     ZrCore_Array_Construct(&memberInfo.parameterNames);
     ZrCore_Array_Construct(&memberInfo.parameterHasDefaultValues);
@@ -546,6 +562,7 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
     }
 
     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     ZrCore_Array_Construct(&memberInfo.parameterTypes);
     ZrCore_Array_Construct(&memberInfo.parameterNames);
     ZrCore_Array_Construct(&memberInfo.parameterHasDefaultValues);
@@ -591,6 +608,7 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
     }
 
     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     ZrCore_Array_Construct(&memberInfo.parameterTypes);
     ZrCore_Array_Construct(&memberInfo.parameterNames);
     ZrCore_Array_Construct(&memberInfo.parameterHasDefaultValues);
@@ -791,6 +809,7 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                     SZrTypeMemberInfo memberInfo;
 
                     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
+                    memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
                     ZrCore_Array_Construct(&memberInfo.parameterTypes);
                     ZrCore_Array_Construct(&memberInfo.parameterNames);
                     ZrCore_Array_Construct(&memberInfo.parameterHasDefaultValues);
@@ -966,6 +985,8 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
     TZrSize moduleNameLength;
     SZrIo io;
     TZrBool loaderSuccess;
+    TZrBool pushedImportStack = ZR_FALSE;
+    TZrBool result = ZR_FALSE;
 
     if (cs == ZR_NULL || cs->state == ZR_NULL || cs->state->global == ZR_NULL || moduleName == ZR_NULL) {
         return ZR_FALSE;
@@ -979,25 +1000,31 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
         return ZR_TRUE;
     }
 
+    if (import_compile_info_stack_contains(cs->state->global, moduleName)) {
+        return ZR_TRUE;
+    }
+
+    ZrCore_Array_Push(cs->state, &cs->state->global->importCompileInfoStack, &moduleName);
+    pushedImportStack = ZR_TRUE;
+
     global = cs->state->global;
     if (global->sourceLoader == ZR_NULL) {
-        return ZR_FALSE;
+        goto cleanup;
     }
 
     moduleNameText = ZrCore_String_GetNativeString(moduleName);
     if (moduleNameText == ZR_NULL) {
-        return ZR_FALSE;
+        goto cleanup;
     }
     moduleNameLength = strlen(moduleNameText);
     ZrCore_Io_Init(cs->state, &io, ZR_NULL, ZR_NULL, ZR_NULL);
     loaderSuccess = global->sourceLoader(cs->state, moduleNameText, ZR_NULL, &io);
     if (!loaderSuccess) {
-        return ZR_FALSE;
+        goto cleanup;
     }
 
     if (io.isBinary) {
         SZrIoSource *source = ZrCore_Io_ReadSourceNew(&io);
-        TZrBool success = ZR_FALSE;
 
         if (io.close != ZR_NULL) {
             io.close(cs->state, io.customData);
@@ -1007,17 +1034,16 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
             source->modulesLength > 0 &&
             source->modules != ZR_NULL &&
             source->modules[0].entryFunction != ZR_NULL) {
-            success = register_binary_import_metadata(cs, moduleName, source->modules[0].entryFunction);
+            result = register_binary_import_metadata(cs, moduleName, source->modules[0].entryFunction);
         }
 
-        return success;
+        goto cleanup;
     }
 
     if (global->compileSource != ZR_NULL) {
         TZrSize sourceSize = 0;
         TZrBytePtr sourceBuffer = read_all_import_bytes(cs->state, &io, &sourceSize);
         SZrFunction *compiledFunction = ZR_NULL;
-        TZrBool success = ZR_FALSE;
 
         if (io.close != ZR_NULL) {
             io.close(cs->state, io.customData);
@@ -1030,7 +1056,7 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
                                               sourceSize + 1,
                                               ZR_MEMORY_NATIVE_TYPE_GLOBAL);
             }
-            return ZR_FALSE;
+            goto cleanup;
         }
 
         compiledFunction = global->compileSource(cs->state,
@@ -1042,16 +1068,21 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
                                       sourceSize + 1,
                                       ZR_MEMORY_NATIVE_TYPE_GLOBAL);
         if (compiledFunction == ZR_NULL) {
-            return ZR_FALSE;
+            goto cleanup;
         }
 
-        success = register_runtime_import_metadata(cs, moduleName, compiledFunction);
+        result = register_runtime_import_metadata(cs, moduleName, compiledFunction);
         ZrCore_Function_Free(cs->state, compiledFunction);
-        return success;
+        goto cleanup;
     }
 
     if (io.close != ZR_NULL) {
         io.close(cs->state, io.customData);
     }
-    return ZR_FALSE;
+
+cleanup:
+    if (pushedImportStack && cs->state->global != ZR_NULL && cs->state->global->importCompileInfoStack.length > 0) {
+        cs->state->global->importCompileInfoStack.length--;
+    }
+    return result;
 }

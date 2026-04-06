@@ -25,6 +25,16 @@ static TZrBool compile_inferred_type_is_task_handle(const SZrInferredType *type)
     return strcmp(typeName, "Task") == 0 || strncmp(typeName, "Task<", 5) == 0;
 }
 
+static void compile_expression_ensure_imported_module_runtime_metadata(SZrCompilerState *cs, SZrString *moduleName) {
+    if (cs == ZR_NULL || moduleName == ZR_NULL) {
+        return;
+    }
+
+    if (find_compiler_type_prototype(cs, moduleName) == ZR_NULL) {
+        ensure_import_module_compile_info(cs, moduleName);
+    }
+}
+
 SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeName) {
     if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
@@ -449,6 +459,10 @@ static TZrBool resolve_primary_expression_root_type(SZrCompilerState *cs,
 
             memberInfo = find_compiler_type_member(cs, currentTypeName, memberLookupName);
             if (memberInfo == ZR_NULL) {
+                compile_expression_ensure_imported_module_runtime_metadata(cs, currentTypeName);
+                memberInfo = find_compiler_type_member(cs, currentTypeName, memberLookupName);
+            }
+            if (memberInfo == ZR_NULL) {
                 break;
             }
 
@@ -605,9 +619,20 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
     TZrUInt32 receiverSlot;
     TZrUInt32 argCount = 1;
     TZrUInt32 constructorMemberId;
+    TZrBool syncStructReceiver = ZR_FALSE;
 
     if (cs == ZR_NULL || cs->hasError || typeName == ZR_NULL || !type_has_constructor(cs, typeName)) {
         return ZR_TRUE;
+    }
+
+    {
+        SZrTypePrototypeInfo *prototypeInfo = find_compiler_type_prototype(cs, typeName);
+        if (prototypeInfo != ZR_NULL) {
+            syncStructReceiver = prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
+        } else {
+            SZrAstNode *typeDecl = find_type_declaration(cs, typeName);
+            syncStructReceiver = typeDecl != ZR_NULL && typeDecl->type == ZR_AST_STRUCT_DECLARATION;
+        }
     }
 
     {
@@ -646,6 +671,13 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
                                           (TZrUInt16)functionSlot,
                                           (TZrUInt16)functionSlot,
                                           (TZrUInt16)argCount));
+    if (syncStructReceiver) {
+        /* Struct constructors may mutate the bound receiver without returning it. */
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)instanceSlot,
+                                              (TZrInt32)receiverSlot));
+    }
     collapse_stack_to_slot(cs, instanceSlot);
     if (cs->hasError) {
         ZrParser_Compiler_Error(cs, "Failed to invoke prototype constructor", location);
@@ -938,6 +970,31 @@ static TZrBool member_call_parameter_has_default_at(const SZrTypeMemberInfo *mem
 #define ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ((TZrUInt32)-1)
 #endif
 
+static TZrUInt32 member_call_min_argument_count(const SZrTypeMemberInfo *memberInfo) {
+    if (memberInfo == ZR_NULL) {
+        return 0;
+    }
+
+    if (memberInfo->minArgumentCount != ZR_MEMBER_PARAMETER_COUNT_UNKNOWN) {
+        return memberInfo->minArgumentCount;
+    }
+
+    if (memberInfo->parameterCount == ZR_MEMBER_PARAMETER_COUNT_UNKNOWN) {
+        return 0;
+    }
+
+    if (memberInfo->parameterHasDefaultValues.length > 0) {
+        TZrUInt32 minArgumentCount = memberInfo->parameterCount;
+        while (minArgumentCount > 0 &&
+               member_call_parameter_has_default_at(memberInfo, (TZrSize)minArgumentCount - 1U)) {
+            minArgumentCount--;
+        }
+        return minArgumentCount;
+    }
+
+    return memberInfo->parameterCount;
+}
+
 static const SZrTypeValue *member_call_parameter_default_value_at(const SZrTypeMemberInfo *memberInfo, TZrSize index) {
     if (memberInfo == ZR_NULL || index >= memberInfo->parameterDefaultValues.length) {
         return ZR_NULL;
@@ -1004,6 +1061,8 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
     TZrBool success = ZR_FALSE;
     TZrBool hasNamedArguments = ZR_FALSE;
     TZrBool requireTaskHandleArgument = ZR_FALSE;
+    TZrUInt32 minArgumentCount = 0;
+    TZrSize compiledSlotCount = 0;
 
     if (outArgCount != ZR_NULL) {
         *outArgCount = 0;
@@ -1013,6 +1072,7 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
     }
 
     requireTaskHandleArgument = zr_string_equals_cstr(memberInfo->name, "__awaitTask");
+    minArgumentCount = member_call_min_argument_count(memberInfo);
 
     if (memberInfo->parameterCount != ZR_MEMBER_PARAMETER_COUNT_UNKNOWN) {
         slotCount = memberInfo->parameterCount;
@@ -1138,7 +1198,22 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
         }
     }
 
-    for (TZrSize index = 0; index < slotCount; index++) {
+    compiledSlotCount = slotCount;
+    while (compiledSlotCount > 0) {
+        TZrSize trailingIndex = compiledSlotCount - 1U;
+        EZrParameterPassingMode passingMode =
+                member_call_parameter_passing_mode_at(parameterPassingModes, trailingIndex);
+        if (argumentNodes[trailingIndex] != ZR_NULL ||
+            member_call_parameter_has_default_at(memberInfo, trailingIndex) ||
+            passingMode == ZR_PARAMETER_PASSING_MODE_OUT ||
+            passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
+            trailingIndex < (TZrSize)minArgumentCount) {
+            break;
+        }
+        compiledSlotCount--;
+    }
+
+    for (TZrSize index = 0; index < compiledSlotCount; index++) {
         SZrAstNode *argNode = argumentNodes[index];
         SZrInferredType *expectedType =
                 (parameterTypes != ZR_NULL && index < parameterTypes->length)
@@ -1207,7 +1282,7 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
     }
 
     if (outArgCount != ZR_NULL) {
-        *outArgCount = (TZrUInt32)slotCount;
+        *outArgCount = (TZrUInt32)compiledSlotCount;
     }
     success = ZR_TRUE;
 

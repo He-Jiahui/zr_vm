@@ -59,6 +59,28 @@ static TZrBool zr_ffi_object_uses_pointer_lowering(SZrState *state, SZrObject *o
            strcmp(loweringKind, "pointer") == 0;
 }
 
+static TZrBool zr_ffi_object_uses_handle_id_lowering(SZrState *state,
+                                                     SZrObject *object,
+                                                     const char **outUnderlyingTypeName) {
+    const char *loweringKind = ZR_NULL;
+
+    if (outUnderlyingTypeName != ZR_NULL) {
+        *outUnderlyingTypeName = ZR_NULL;
+    }
+
+    if (state == ZR_NULL || object == ZR_NULL || object->prototype == ZR_NULL ||
+        !zr_ffi_read_object_string_field(state, &object->prototype->super, "__zr_ffiLoweringKind", &loweringKind) ||
+        loweringKind == ZR_NULL || strcmp(loweringKind, "handle_id") != 0) {
+        return ZR_FALSE;
+    }
+
+    return outUnderlyingTypeName == ZR_NULL ||
+           zr_ffi_read_object_string_field(state,
+                                           &object->prototype->super,
+                                           "__zr_ffiUnderlyingTypeName",
+                                           outUnderlyingTypeName);
+}
+
 static TZrBool zr_ffi_try_lower_pointer_wrapper(SZrState *state, const SZrTypeValue *value, void **outPointer) {
     SZrObject *wrapperObject = ZR_NULL;
     ZrFfiHandleData *handleData = ZR_NULL;
@@ -99,85 +121,169 @@ static TZrBool zr_ffi_try_lower_pointer_wrapper(SZrState *state, const SZrTypeVa
     }
 }
 
+static const char *zr_ffi_integer_type_name_for_layout(const ZrFfiTypeLayout *type) {
+    if (type == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (type->kind) {
+        case ZR_FFI_TYPE_I8:
+            return "i8";
+        case ZR_FFI_TYPE_U8:
+            return "u8";
+        case ZR_FFI_TYPE_I16:
+            return "i16";
+        case ZR_FFI_TYPE_U16:
+            return "u16";
+        case ZR_FFI_TYPE_I32:
+            return "i32";
+        case ZR_FFI_TYPE_U32:
+            return "u32";
+        case ZR_FFI_TYPE_I64:
+            return "i64";
+        case ZR_FFI_TYPE_U64:
+            return "u64";
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool zr_ffi_try_read_handle_id_field(SZrState *state, SZrObject *wrapperObject, SZrTypeValue *outValue) {
+    const SZrTypeValue *fieldValue;
+    TZrBool closed = ZR_FALSE;
+
+    if (outValue != ZR_NULL) {
+        ZrLib_Value_SetNull(outValue);
+    }
+
+    if (state == ZR_NULL || wrapperObject == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (zr_ffi_read_object_bool_field(state, wrapperObject, "closed", &closed) && closed) {
+        return ZR_FALSE;
+    }
+
+    fieldValue = zr_ffi_find_field_raw(state, wrapperObject, ZR_FFI_HIDDEN_HANDLE_ID_FIELD);
+    if (fieldValue == ZR_NULL) {
+        fieldValue = zr_ffi_find_field_raw(state, wrapperObject, "handleId");
+    }
+    if (fieldValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outValue = *fieldValue;
+    return ZR_TRUE;
+}
+
+static TZrBool zr_ffi_try_lower_handle_id_wrapper(SZrState *state,
+                                                  const SZrTypeValue *value,
+                                                  const ZrFfiTypeLayout *type,
+                                                  SZrTypeValue *outLoweredValue) {
+    SZrObject *wrapperObject = ZR_NULL;
+    const char *underlyingTypeName = ZR_NULL;
+    const char *targetTypeName;
+
+    if (outLoweredValue != ZR_NULL) {
+        ZrLib_Value_SetNull(outLoweredValue);
+    }
+
+    targetTypeName = zr_ffi_integer_type_name_for_layout(type);
+    if (state == ZR_NULL || value == ZR_NULL || outLoweredValue == ZR_NULL || targetTypeName == ZR_NULL ||
+        !zr_ffi_value_is_object(value, &wrapperObject) ||
+        !zr_ffi_object_uses_handle_id_lowering(state, wrapperObject, &underlyingTypeName) ||
+        underlyingTypeName == ZR_NULL || strcmp(targetTypeName, underlyingTypeName) != 0) {
+        return ZR_FALSE;
+    }
+
+    return zr_ffi_try_read_handle_id_field(state, wrapperObject, outLoweredValue);
+}
+
 TZrBool zr_ffi_build_scalar_argument(SZrState *state, const SZrTypeValue *value, ZrFfiTypeLayout *type,
                                             void *buffer, char *errorBuffer, TZrSize errorBufferSize) {
     double numericValue = 0.0;
+    SZrTypeValue loweredValue;
+    const SZrTypeValue *effectiveValue = value;
 
     if (type == ZR_NULL || buffer == ZR_NULL) {
         snprintf(errorBuffer, errorBufferSize, "invalid scalar argument target");
         return ZR_FALSE;
     }
 
+    if (zr_ffi_try_lower_handle_id_wrapper(state, value, type, &loweredValue)) {
+        effectiveValue = &loweredValue;
+    }
+
     switch (type->kind) {
         case ZR_FFI_TYPE_BOOL:
-            if (!zr_ffi_read_bool_value(value, (TZrBool *) buffer)) {
+            if (!zr_ffi_read_bool_value(effectiveValue, (TZrBool *) buffer)) {
                 snprintf(errorBuffer, errorBufferSize, "expected bool-compatible value");
                 return ZR_FALSE;
             }
             return ZR_TRUE;
         case ZR_FFI_TYPE_I8:
-            if (!zr_ffi_extract_numeric_value(value, &numericValue)) {
+            if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(int8_t *) buffer = (int8_t) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_U8:
-            if (!zr_ffi_extract_numeric_value(value, &numericValue)) {
+            if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(uint8_t *) buffer = (uint8_t) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_I16:
-            if (!zr_ffi_extract_numeric_value(value, &numericValue)) {
+            if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(int16_t *) buffer = (int16_t) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_U16:
-            if (!zr_ffi_extract_numeric_value(value, &numericValue)) {
+            if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(uint16_t *) buffer = (uint16_t) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_I32:
-            if (!zr_ffi_extract_numeric_value(value, &numericValue)) {
+            if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(int32_t *) buffer = (int32_t) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_U32:
-            if (!zr_ffi_extract_numeric_value(value, &numericValue)) {
+            if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(uint32_t *) buffer = (uint32_t) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_I64:
-            if (!zr_ffi_extract_numeric_value(value, &numericValue)) {
+            if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(int64_t *) buffer = (int64_t) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_U64:
-            if (!zr_ffi_extract_numeric_value(value, &numericValue)) {
+            if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(uint64_t *) buffer = (uint64_t) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_F32:
-            if (!zr_ffi_extract_numeric_value(value, &numericValue)) {
+            if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(float *) buffer = (float) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_F64:
-            if (!zr_ffi_extract_numeric_value(value, &numericValue)) {
+            if (!zr_ffi_extract_numeric_value(effectiveValue, &numericValue)) {
                 break;
             }
             *(double *) buffer = (double) numericValue;
             return ZR_TRUE;
         case ZR_FFI_TYPE_STRING: {
             const char *text = ZR_NULL;
-            if (!zr_ffi_read_string_value(state, value, &text)) {
+            if (!zr_ffi_read_string_value(state, effectiveValue, &text)) {
                 break;
             }
             *(const char **) buffer = text;

@@ -131,8 +131,7 @@ TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferred
         return ZR_TRUE;
     }
 
-    if (toType->typeName != ZR_NULL &&
-        ZrParser_InferredType_SatisfiesNamedConstraint(cs, fromType, toType->typeName)) {
+    if (inferred_type_can_use_named_constraint_fallback(cs, fromType, toType)) {
         return ZR_TRUE;
     }
     
@@ -253,6 +252,7 @@ TZrBool ZrParser_FunctionCallCompatibility_Check(SZrCompilerState *cs,
         }
 
         if (!ZrParser_InferredType_IsCompatible(argType, paramType) &&
+            !inferred_type_can_use_named_constraint_fallback(cs, argType, paramType) &&
             !ffi_function_call_argument_is_native_boundary_compatible(cs, funcType, i, argType, paramType)) {
             ZrParser_TypeError_Report(cs, "Argument type mismatch", paramType, argType, location);
             free_inferred_type_array(cs->state, &argTypes);
@@ -866,6 +866,33 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                     free_resolved_call_signature(cs->state, &resolvedSignature);
                     return ZR_FALSE;
                 }
+
+                if (primary->property != ZR_NULL) {
+                    SZrTypePrototypeInfo *basePrototype = ZR_NULL;
+                    SZrString *basePrototypeTypeName = ZR_NULL;
+                    TZrBool baseIsPrototypeReference = ZR_FALSE;
+
+                    if (ZrParser_ExpressionType_Infer(cs, primary->property, &baseType)) {
+                        baseIsPrototypeReference =
+                                resolve_prototype_target_inference(cs,
+                                                                   primary->property,
+                                                                   &basePrototype,
+                                                                   &basePrototypeTypeName);
+                        ZR_UNUSED_PARAMETER(basePrototype);
+                        ZR_UNUSED_PARAMETER(basePrototypeTypeName);
+                        if (infer_primary_member_chain_type(cs,
+                                                            &baseType,
+                                                            primary->members,
+                                                            0,
+                                                            baseIsPrototypeReference,
+                                                            result)) {
+                            ZrParser_InferredType_Free(cs->state, &baseType);
+                            free_resolved_call_signature(cs->state, &resolvedSignature);
+                            return ZR_TRUE;
+                        }
+                    }
+                }
+
                 // 函数和类型都未找到时，保持动态 object fallback。
                 ZrParser_InferredType_Free(cs->state, &baseType);
                 free_resolved_call_signature(cs->state, &resolvedSignature);

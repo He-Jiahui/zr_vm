@@ -253,6 +253,15 @@ void emit_instruction(SZrCompilerState *cs, TZrInstruction instruction) {
     locationInfo.lineInSource = (cs->currentAst != ZR_NULL && cs->currentAst->location.start.line > 0)
                                         ? (TZrUInt32)cs->currentAst->location.start.line
                                         : 0;
+    locationInfo.columnInSourceStart = (cs->currentAst != ZR_NULL && cs->currentAst->location.start.column > 0)
+                                               ? (TZrUInt32)cs->currentAst->location.start.column
+                                               : 0;
+    locationInfo.lineInSourceEnd = (cs->currentAst != ZR_NULL && cs->currentAst->location.end.line > 0)
+                                           ? (TZrUInt32)cs->currentAst->location.end.line
+                                           : locationInfo.lineInSource;
+    locationInfo.columnInSourceEnd = (cs->currentAst != ZR_NULL && cs->currentAst->location.end.column > 0)
+                                             ? (TZrUInt32)cs->currentAst->location.end.column
+                                             : locationInfo.columnInSourceStart;
     ZrCore_Array_Push(cs->state, &cs->executionLocations, &locationInfo);
 }
 

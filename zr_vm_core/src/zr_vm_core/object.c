@@ -364,16 +364,6 @@ static TZrBool object_call_value(SZrState *state,
         base = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
     }
 
-    ZrCore_Stack_CopyValue(state, base, &stableCallable);
-    if (receiver != ZR_NULL) {
-        ZrCore_Stack_CopyValue(state, base + 1, &stableReceiver);
-    }
-    for (index = 0; index < argumentCount; index++) {
-        ZrCore_Stack_CopyValue(state,
-                               base + 1 + (receiver != ZR_NULL ? 1 : 0) + index,
-                               &stableArguments[index]);
-    }
-
     state->stackTop.valuePointer = base + scratchSlots;
     if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
@@ -383,6 +373,31 @@ static TZrBool object_call_value(SZrState *state,
             ZrCore_Function_StackAnchorInit(state, savedCallInfo->returnDestination, &callInfoReturnAnchor);
         }
     }
+    if (receiver != ZR_NULL) {
+        ZrCore_Stack_CopyValue(state, base + 1, &stableReceiver);
+        base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+        if (savedCallInfo != ZR_NULL) {
+            savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
+            savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+            if (hasAnchoredReturnDestination) {
+                savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
+            }
+        }
+    }
+    for (index = 0; index < argumentCount; index++) {
+        ZrCore_Stack_CopyValue(state,
+                               base + 1 + (receiver != ZR_NULL ? 1 : 0) + index,
+                               &stableArguments[index]);
+        base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+        if (savedCallInfo != ZR_NULL) {
+            savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
+            savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+            if (hasAnchoredReturnDestination) {
+                savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
+            }
+        }
+    }
+    ZrCore_Stack_CopyValue(state, base, &stableCallable);
 
     for (index = argumentCount; index > 0; index--) {
         object_unpin_value_object(state->global,
@@ -451,13 +466,18 @@ static SZrObjectPrototype *object_value_resolve_prototype(SZrState *state, const
         return ZR_NULL;
     }
 
-    if ((value->type != ZR_VALUE_TYPE_OBJECT && value->type != ZR_VALUE_TYPE_ARRAY) || value->value.object == ZR_NULL) {
+    if ((value->type != ZR_VALUE_TYPE_OBJECT &&
+         value->type != ZR_VALUE_TYPE_ARRAY &&
+         value->type != ZR_VALUE_TYPE_STRING) ||
+        value->value.object == ZR_NULL) {
         return ZR_NULL;
     }
 
-    object = ZR_CAST_OBJECT(state, value->value.object);
-    if (object != ZR_NULL && object->prototype != ZR_NULL) {
-        return object->prototype;
+    if (value->type == ZR_VALUE_TYPE_OBJECT || value->type == ZR_VALUE_TYPE_ARRAY) {
+        object = ZR_CAST_OBJECT(state, value->value.object);
+        if (object != ZR_NULL && object->prototype != ZR_NULL) {
+            return object->prototype;
+        }
     }
 
     if (state->global == ZR_NULL || value->type >= ZR_VALUE_TYPE_ENUM_MAX) {
@@ -607,71 +627,39 @@ void ZrCore_Object_Init(struct SZrState *state, SZrObject *object) {
 }
 
 SZrObject *ZrCore_Object_CloneStruct(struct SZrState *state, const SZrObject *source) {
-    TZrStackValuePointer savedStackTop;
-    TZrStackValuePointer scratchBase;
-    SZrCallInfo *savedCallInfo;
-    SZrFunctionStackAnchor savedStackTopAnchor;
-    SZrFunctionStackAnchor scratchBaseAnchor;
-    SZrFunctionStackAnchor callInfoBaseAnchor;
-    SZrFunctionStackAnchor callInfoTopAnchor;
-    TZrBool hasCallInfoAnchors = ZR_FALSE;
     SZrObject *clone = ZR_NULL;
+    TZrBool failed = ZR_FALSE;
+    TZrBool cloneIgnored = ZR_FALSE;
 
-    if (state == ZR_NULL || source == ZR_NULL || source->internalType != ZR_OBJECT_INTERNAL_TYPE_STRUCT) {
+    if (state == ZR_NULL ||
+        source == ZR_NULL ||
+        source->internalType != ZR_OBJECT_INTERNAL_TYPE_STRUCT ||
+        source->prototype == ZR_NULL) {
         return ZR_NULL;
     }
 
-    savedStackTop = state->stackTop.valuePointer;
-    savedCallInfo = state->callInfoList;
-    scratchBase = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
-
-    ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
-    ZrCore_Function_StackAnchorInit(state, scratchBase, &scratchBaseAnchor);
-    if (savedCallInfo != ZR_NULL) {
-        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &callInfoBaseAnchor);
-        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &callInfoTopAnchor);
-        hasCallInfoAnchors = ZR_TRUE;
-    }
-
-    scratchBase = ZrCore_Function_ReserveScratchSlots(state, 2, scratchBase);
-    savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
-    scratchBase = ZrCore_Function_StackAnchorRestore(state, &scratchBaseAnchor);
-    if (hasCallInfoAnchors) {
-        savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
-        scratchBase = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
-    }
-    if (scratchBase == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    ZrCore_Stack_SetRawObjectValue(state, scratchBase, ZR_CAST_RAW_OBJECT_AS_SUPER((SZrObject *)source));
-    state->stackTop.valuePointer = scratchBase + 1;
-    if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
-        savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
-    }
-
-    clone = ZrCore_Object_New(state, source->prototype);
+    clone = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_STRUCT);
     if (clone == ZR_NULL) {
-        goto cleanup;
+        return ZR_NULL;
     }
-
-    ZrCore_Stack_SetRawObjectValue(state, scratchBase + 1, ZR_CAST_RAW_OBJECT_AS_SUPER(clone));
-    state->stackTop.valuePointer = scratchBase + 2;
-    if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
-        savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
-    }
-
+    clone->prototype = source->prototype;
     ZrCore_Object_Init(state, clone);
-    clone->internalType = ZR_OBJECT_INTERNAL_TYPE_STRUCT;
     clone->memberVersion = source->memberVersion;
+
+    if (state->global != ZR_NULL &&
+        !ZrCore_GarbageCollector_IsObjectIgnored(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(clone))) {
+        if (!ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(clone))) {
+            return ZR_NULL;
+        }
+        cloneIgnored = ZR_TRUE;
+    }
 
     if (object_node_map_is_ready(source)) {
         for (TZrSize bucketIndex = 0; bucketIndex < source->nodeMap.capacity; bucketIndex++) {
             for (SZrHashKeyValuePair *pair = source->nodeMap.buckets[bucketIndex]; pair != ZR_NULL; pair = pair->next) {
                 ZrCore_Object_SetValue(state, clone, &pair->key, &pair->value);
                 if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
-                    clone = ZR_NULL;
+                    failed = ZR_TRUE;
                     goto cleanup;
                 }
             }
@@ -679,13 +667,10 @@ SZrObject *ZrCore_Object_CloneStruct(struct SZrState *state, const SZrObject *so
     }
 
 cleanup:
-    state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
-    if (hasCallInfoAnchors) {
-        savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+    if (cloneIgnored && state->global != ZR_NULL && clone != ZR_NULL) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(clone));
     }
-    state->callInfoList = savedCallInfo;
-    return clone;
+    return failed ? ZR_NULL : clone;
 }
 
 TZrBool ZrCore_Object_CompareWithAddress(struct SZrState *state, SZrObject *object1, SZrObject *object2) {
@@ -1036,28 +1021,33 @@ TZrBool ZrCore_Object_GetMember(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    if (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) {
+    if (receiver->type != ZR_VALUE_TYPE_OBJECT &&
+        receiver->type != ZR_VALUE_TYPE_ARRAY &&
+        receiver->type != ZR_VALUE_TYPE_STRING) {
         return ZR_FALSE;
     }
 
-    object = ZR_CAST_OBJECT(state, receiver->value.object);
-    if (object == ZR_NULL || !object_make_string_key(state, memberName, &key)) {
+    object = (receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY)
+                     ? ZR_CAST_OBJECT(state, receiver->value.object)
+                     : ZR_NULL;
+    if (!object_make_string_key(state, memberName, &key)) {
         return ZR_FALSE;
     }
 
-    resolvedValue = object_get_own_value(state, object, &key);
+    resolvedValue = object != ZR_NULL ? object_get_own_value(state, object, &key) : ZR_NULL;
     if (resolvedValue != ZR_NULL) {
         ZrCore_Value_Copy(state, result, resolvedValue);
         return ZR_TRUE;
     }
 
-    prototype = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE
+    prototype = (object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE)
                          ? (SZrObjectPrototype *)object
                          : object_value_resolve_prototype(state, receiver);
     descriptor = prototype != ZR_NULL
                          ? ZrCore_ObjectPrototype_FindMemberDescriptor(prototype, memberName, ZR_TRUE)
                          : ZR_NULL;
-    isPrototypeReceiver = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE ? ZR_TRUE : ZR_FALSE;
+    isPrototypeReceiver =
+            (TZrBool)(object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE);
 
     if (descriptor != ZR_NULL) {
         if (descriptor->isStatic && !isPrototypeReceiver) {
@@ -1194,16 +1184,17 @@ TZrBool ZrCore_Object_InvokeMember(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    if (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) {
+    if (receiver->type != ZR_VALUE_TYPE_OBJECT &&
+        receiver->type != ZR_VALUE_TYPE_ARRAY &&
+        receiver->type != ZR_VALUE_TYPE_STRING) {
         return ZR_FALSE;
     }
 
-    object = ZR_CAST_OBJECT(state, receiver->value.object);
-    if (object == ZR_NULL) {
-        return ZR_FALSE;
-    }
+    object = (receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY)
+                     ? ZR_CAST_OBJECT(state, receiver->value.object)
+                     : ZR_NULL;
 
-    prototype = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE
+    prototype = (object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE)
                          ? (SZrObjectPrototype *)object
                          : object_value_resolve_prototype(state, receiver);
     descriptor = prototype != ZR_NULL
@@ -1248,16 +1239,21 @@ TZrBool ZrCore_Object_ResolveMemberCallable(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    if (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) {
+    if (receiver->type != ZR_VALUE_TYPE_OBJECT &&
+        receiver->type != ZR_VALUE_TYPE_ARRAY &&
+        receiver->type != ZR_VALUE_TYPE_STRING) {
         return ZR_FALSE;
     }
 
-    object = ZR_CAST_OBJECT(state, receiver->value.object);
-    if (object == ZR_NULL || !object_make_string_key(state, memberName, &key)) {
+    object = (receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY)
+                     ? ZR_CAST_OBJECT(state, receiver->value.object)
+                     : ZR_NULL;
+    if (!object_make_string_key(state, memberName, &key)) {
         return ZR_FALSE;
     }
 
-    isPrototypeReceiver = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE ? ZR_TRUE : ZR_FALSE;
+    isPrototypeReceiver =
+            (TZrBool)(object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE);
     prototype = isPrototypeReceiver ? (SZrObjectPrototype *)object : object_value_resolve_prototype(state, receiver);
     while (prototype != ZR_NULL) {
         const SZrMemberDescriptor *descriptor =

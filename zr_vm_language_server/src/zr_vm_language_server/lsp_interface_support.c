@@ -6,6 +6,7 @@
 #include "lsp_metadata_provider.h"
 #include "lsp_module_metadata.h"
 #include "lsp_project_internal.h"
+#include "lsp_semantic_import_chain.h"
 
 #include "zr_vm_parser/type_inference.h"
 
@@ -33,6 +34,32 @@ static TZrBool receiver_type_text_is_specific(const TZrChar *text) {
     return text != ZR_NULL && text[0] != '\0' &&
            strcmp(text, "object") != 0 &&
            strcmp(text, "unknown") != 0;
+}
+
+static SZrFilePosition lsp_interface_support_file_position_from_offset(const TZrChar *content,
+                                                                       TZrSize contentLength,
+                                                                       TZrSize offset) {
+    TZrInt32 line = 1;
+    TZrInt32 column = 1;
+
+    if (content == ZR_NULL) {
+        return ZrParser_FilePosition_Create(offset, line, column);
+    }
+
+    if (offset > contentLength) {
+        offset = contentLength;
+    }
+
+    for (TZrSize index = 0; index < offset; index++) {
+        if (content[index] == '\n') {
+            line++;
+            column = 1;
+        } else if (content[index] != '\r') {
+            column++;
+        }
+    }
+
+    return ZrParser_FilePosition_Create(offset, line, column);
 }
 
 TZrBool ZrLanguageServer_Lsp_StringsEqual(SZrString *left, SZrString *right) {
@@ -938,6 +965,59 @@ static const ZrLibTypeDescriptor *find_native_type_descriptor_in_module(const Zr
     return ZR_NULL;
 }
 
+static const ZrLibTypeDescriptor *find_native_type_descriptor_in_module_graph(
+    SZrState *state,
+    const ZrLibModuleDescriptor *module,
+    const TZrChar *typeName,
+    const ZrLibModuleDescriptor **outModule,
+    TZrSize depth) {
+    const ZrLibTypeDescriptor *typeDescriptor;
+
+    if (outModule != ZR_NULL) {
+        *outModule = ZR_NULL;
+    }
+    if (state == ZR_NULL || module == ZR_NULL || typeName == ZR_NULL ||
+        depth > ZR_LSP_MEMBER_RECURSION_MAX_DEPTH) {
+        return ZR_NULL;
+    }
+
+    typeDescriptor = find_native_type_descriptor_in_module(module, typeName);
+    if (typeDescriptor != ZR_NULL) {
+        if (outModule != ZR_NULL) {
+            *outModule = module;
+        }
+        return typeDescriptor;
+    }
+
+    for (TZrSize index = 0; index < module->moduleLinkCount; index++) {
+        const ZrLibModuleLinkDescriptor *link = &module->moduleLinks[index];
+        const ZrLibModuleDescriptor *linkedModule;
+        const ZrLibTypeDescriptor *linkedTypeDescriptor;
+
+        if (link->moduleName == ZR_NULL || link->moduleName[0] == '\0') {
+            continue;
+        }
+
+        linkedModule = ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleDescriptor(state,
+                                                                                        link->moduleName,
+                                                                                        ZR_NULL);
+        if (linkedModule == ZR_NULL || linkedModule == module) {
+            continue;
+        }
+
+        linkedTypeDescriptor = find_native_type_descriptor_in_module_graph(state,
+                                                                           linkedModule,
+                                                                           typeName,
+                                                                           outModule,
+                                                                           depth + 1);
+        if (linkedTypeDescriptor != ZR_NULL) {
+            return linkedTypeDescriptor;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static const ZrLibTypeDescriptor *find_native_type_descriptor_across_modules(SZrState *state,
                                                                              SZrLspProjectIndex *projectIndex,
                                                                              SZrSemanticAnalyzer *analyzer,
@@ -975,11 +1055,12 @@ static const ZrLibTypeDescriptor *find_native_type_descriptor_across_modules(SZr
                 continue;
             }
 
-            typeDescriptor = find_native_type_descriptor_in_module(resolvedModule.nativeDescriptor, typeName);
+            typeDescriptor = find_native_type_descriptor_in_module_graph(state,
+                                                                         resolvedModule.nativeDescriptor,
+                                                                         typeName,
+                                                                         outModule,
+                                                                         0);
             if (typeDescriptor != ZR_NULL) {
-                if (outModule != ZR_NULL) {
-                    *outModule = resolvedModule.nativeDescriptor;
-                }
                 ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
                 return typeDescriptor;
             }
@@ -2126,6 +2207,84 @@ static TZrBool append_receiver_name_type_env_completions(SZrState *state,
     return result->length > 0;
 }
 
+static TZrBool append_imported_type_receiver_completions(SZrState *state,
+                                                         SZrLspContext *context,
+                                                         SZrLspProjectIndex *projectIndex,
+                                                         SZrSemanticAnalyzer *analyzer,
+                                                         SZrAstNode *ast,
+                                                         SZrString *uri,
+                                                         const TZrChar *content,
+                                                         TZrSize contentLength,
+                                                         TZrSize receiverStart,
+                                                         SZrArray *result) {
+    SZrArray bindings;
+    SZrFilePosition queryPosition;
+    SZrFileRange queryRange;
+    SZrLspSemanticImportChainHit hit;
+    const SZrTypePrototypeInfo *prototype;
+    TZrBool appended = ZR_FALSE;
+
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL ||
+        uri == ZR_NULL || content == ZR_NULL || result == ZR_NULL || receiverStart == 0 ||
+        content[receiverStart - 1] != '.') {
+        return ZR_FALSE;
+    }
+
+    if (projectIndex == ZR_NULL) {
+        projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
+    }
+    if (projectIndex == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    ZrLanguageServer_LspProject_CollectImportBindings(state, ast, &bindings);
+
+    queryPosition = lsp_interface_support_file_position_from_offset(content, contentLength, receiverStart);
+    queryRange = ZrParser_FileRange_Create(queryPosition, queryPosition, uri);
+    memset(&hit, 0, sizeof(hit));
+    if (!ZrLanguageServer_LspSemanticImportChain_ResolveAtRange(state,
+                                                                context,
+                                                                projectIndex,
+                                                                analyzer,
+                                                                &bindings,
+                                                                queryRange,
+                                                                &hit) ||
+        hit.resolvedMember.memberKind != ZR_LSP_METADATA_MEMBER_TYPE ||
+        hit.resolvedMember.declarationAnalyzer == ZR_NULL ||
+        hit.resolvedMember.declarationSymbol == ZR_NULL) {
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        return ZR_FALSE;
+    }
+
+    if (hit.resolvedMember.declarationSymbol->type == ZR_SYMBOL_CLASS) {
+        append_class_member_completions_recursive(state,
+                                                  hit.resolvedMember.declarationAnalyzer,
+                                                  hit.resolvedMember.declarationSymbol,
+                                                  ZR_TRUE,
+                                                  0,
+                                                  result);
+        appended = result->length > 0;
+    } else if (hit.resolvedMember.declarationSymbol->type == ZR_SYMBOL_STRUCT &&
+               hit.resolvedMember.declarationSymbol->name != ZR_NULL) {
+        prototype = find_type_prototype_by_text(hit.resolvedMember.declarationAnalyzer,
+                                                ZrCore_String_GetNativeString(
+                                                    hit.resolvedMember.declarationSymbol->name));
+        if (prototype != ZR_NULL) {
+            append_type_prototype_member_completions(state,
+                                                     hit.resolvedMember.declarationAnalyzer,
+                                                     prototype,
+                                                     ZR_TRUE,
+                                                     0,
+                                                     result);
+            appended = result->length > 0;
+        }
+    }
+
+    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+    return appended;
+}
+
 static void find_receiver_variable_prototype_recursive(SZrState *state,
                                                        SZrSemanticAnalyzer *analyzer,
                                                        SZrAstNode *node,
@@ -2535,8 +2694,10 @@ static void find_construct_initialized_class_symbol_recursive(SZrState *state,
 }
 
 TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
+                                                           SZrLspContext *context,
                                                            SZrLspProjectIndex *projectIndex,
                                                            SZrSemanticAnalyzer *analyzer,
+                                                           SZrString *uri,
                                                            SZrAstNode *ast,
                                                            const TZrChar *content,
                                                            TZrSize contentLength,
@@ -2693,6 +2854,19 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
         TZrSize resolvedBestOffset = bestOffset;
 
         if (resolvedClassSymbol == ZR_NULL) {
+            if (append_imported_type_receiver_completions(state,
+                                                          context,
+                                                          projectIndex,
+                                                          analyzer,
+                                                          ast,
+                                                          uri,
+                                                          content,
+                                                          contentLength,
+                                                          receiverStart,
+                                                          result)) {
+                return ZR_TRUE;
+            }
+
             find_construct_initialized_class_symbol_recursive(state,
                                                               analyzer,
                                                               ast,

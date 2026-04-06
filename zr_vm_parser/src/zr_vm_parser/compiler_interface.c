@@ -46,6 +46,7 @@ static void compiler_interface_init_member_defaults(SZrTypeMemberInfo *memberInf
     }
 
     memset(memberInfo, 0, sizeof(*memberInfo));
+    memberInfo->minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo->accessModifier = ZR_ACCESS_PRIVATE;
     memberInfo->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     memberInfo->receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;

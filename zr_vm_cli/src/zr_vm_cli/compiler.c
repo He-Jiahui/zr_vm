@@ -8,6 +8,7 @@
 #include "zr_vm_cli/project.h"
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/log.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/file.h"
@@ -309,7 +310,7 @@ static TZrBool zr_cli_compile_aot_c_shared_library(const SZrCliModuleRecord *rec
     hostCompiler[0] = '\0';
     if (!zr_cli_windows_find_program("cl", hostCompiler, sizeof(hostCompiler)) &&
         !zr_cli_windows_path_exists(ZR_VM_HOST_C_COMPILER)) {
-        fprintf(stderr, "AOT C host adapter unavailable: cl host toolchain not found\n");
+        ZrCore_Log_Error(ZR_NULL, "AOT C host adapter unavailable: cl host toolchain not found\n");
         return ZR_FALSE;
     }
     if (hostCompiler[0] == '\0') {
@@ -432,7 +433,7 @@ static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *
     }
 
     if (!zr_cli_resolve_aot_llvm_toolchain(toolCommand, sizeof(toolCommand), &useClangCl)) {
-        fprintf(stderr, "AOT LLVM host adapter unavailable: clang host toolchain not found\n");
+        ZrCore_Log_Error(ZR_NULL, "AOT LLVM host adapter unavailable: clang host toolchain not found\n");
         return ZR_FALSE;
     }
 
@@ -481,7 +482,7 @@ static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *
 #endif
 
     if (system(command) != 0) {
-        fprintf(stderr, "failed to compile AOT LLVM shared library: %s\n", record->moduleName);
+        ZrCore_Log_Error(ZR_NULL, "failed to compile AOT LLVM shared library: %s\n", record->moduleName);
         return ZR_FALSE;
     }
 
@@ -1037,12 +1038,12 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
 
     global = ZrCli_Project_CreateProjectGlobal(project->projectPath);
     if (global == ZR_NULL) {
-        fprintf(stderr, "failed to load project: %s\n", project->projectPath);
+        ZrCore_Log_Error(ZR_NULL, "failed to load project: %s\n", project->projectPath);
         return ZR_FALSE;
     }
 
     if (!ZrCli_Project_RegisterStandardModules(global)) {
-        fprintf(stderr, "failed to register standard modules\n");
+        ZrCore_Log_Error(global->mainThreadState, "failed to register standard modules\n");
         ZrLibrary_CommonState_CommonGlobalState_Free(global);
         return ZR_FALSE;
     }
@@ -1055,7 +1056,7 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
         TZrBool oldEmitCompileTimeRuntimeSupport = ZR_FALSE;
 
         if (!ZrCli_Project_ReadTextFile(record->sourcePath, &source, &sourceLength)) {
-            fprintf(stderr, "failed to read source: %s\n", record->sourcePath);
+            ZrCore_Log_Error(state, "failed to read source: %s\n", record->sourcePath);
             ZrLibrary_CommonState_CommonGlobalState_Free(global);
             return ZR_FALSE;
         }
@@ -1069,7 +1070,7 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
         source = ZR_NULL;
 
         if (function == ZR_NULL) {
-            fprintf(stderr, "failed to compile module: %s\n", record->moduleName);
+            ZrCore_Log_Error(state, "failed to compile module: %s\n", record->moduleName);
             ZrLibrary_CommonState_CommonGlobalState_Free(global);
             return ZR_FALSE;
         }
@@ -1087,7 +1088,7 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
         }
     } else {
         if (!zr_cli_load_binary_function(state, record->zroPath, &function)) {
-            fprintf(stderr, "failed to load binary module: %s\n", record->zroPath);
+            ZrCore_Log_Error(state, "failed to load binary module: %s\n", record->zroPath);
             ZrLibrary_CommonState_CommonGlobalState_Free(global);
             return ZR_FALSE;
         }
@@ -1126,10 +1127,10 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
     if (function != ZR_NULL) {
         ZrCore_Function_Free(state, function);
     }
-    ZrLibrary_CommonState_CommonGlobalState_Free(global);
     if (!success) {
-        fprintf(stderr, "failed to write outputs for module: %s\n", record->moduleName);
+        ZrCore_Log_Error(state, "failed to write outputs for module: %s\n", record->moduleName);
     }
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
     return success;
 }
 
@@ -1259,7 +1260,7 @@ int ZrCli_Compiler_CompileProject(const SZrCliCommand *command) {
     TZrBool emitAotLlvm;
 
     if (command == ZR_NULL || command->projectPath == ZR_NULL) {
-        fprintf(stderr, "compile mode requires a project path\n");
+        ZrCore_Log_Error(ZR_NULL, "compile mode requires a project path\n");
         return 1;
     }
 
@@ -1270,12 +1271,12 @@ int ZrCli_Compiler_CompileProject(const SZrCliCommand *command) {
 
     scanGlobal = ZrCli_Project_CreateProjectGlobal(command->projectPath);
     if (scanGlobal == ZR_NULL) {
-        fprintf(stderr, "failed to load project: %s\n", command->projectPath);
+        ZrCore_Log_Error(ZR_NULL, "failed to load project: %s\n", command->projectPath);
         return 1;
     }
 
     if (!ZrCli_ProjectContext_FromGlobal(&project, scanGlobal, command->projectPath)) {
-        fprintf(stderr, "failed to resolve project context: %s\n", command->projectPath);
+        ZrCore_Log_Error(scanGlobal->mainThreadState, "failed to resolve project context: %s\n", command->projectPath);
         ZrLibrary_CommonState_CommonGlobalState_Free(scanGlobal);
         return 1;
     }
@@ -1292,13 +1293,15 @@ int ZrCli_Compiler_CompileProject(const SZrCliCommand *command) {
                                          emitAotC || emitAotLlvm,
                                          error,
                                          sizeof(error))) {
-        fprintf(stderr, "%s\n", error[0] != '\0' ? error : "failed to collect compile graph");
+        ZrCore_Log_Error(scanGlobal->mainThreadState,
+                         "%s\n",
+                         error[0] != '\0' ? error : "failed to collect compile graph");
         success = ZR_FALSE;
         goto cleanup;
     }
 
     if (command->incremental && !ZrCli_Project_LoadManifest(&project, &previousManifest)) {
-        fprintf(stderr, "failed to load manifest: %s\n", project.manifestPath);
+        ZrCore_Log_Error(scanGlobal->mainThreadState, "failed to load manifest: %s\n", project.manifestPath);
         success = ZR_FALSE;
         goto cleanup;
     }
@@ -1371,7 +1374,7 @@ int ZrCli_Compiler_CompileProject(const SZrCliCommand *command) {
         }
 
         if (!zr_cli_build_next_manifest(&modules, &nextManifest) || !ZrCli_Project_SaveManifest(&project, &nextManifest)) {
-            fprintf(stderr, "failed to update manifest: %s\n", project.manifestPath);
+            ZrCore_Log_Error(scanGlobal->mainThreadState, "failed to update manifest: %s\n", project.manifestPath);
             success = ZR_FALSE;
             goto cleanup;
         }
@@ -1379,11 +1382,11 @@ int ZrCli_Compiler_CompileProject(const SZrCliCommand *command) {
 
 cleanup:
     if (success) {
-        fprintf(stdout,
-                "compile summary: compiled=%llu skipped=%llu removed=%llu\n",
-                (unsigned long long) summary.compiledCount,
-                (unsigned long long) summary.skippedCount,
-                (unsigned long long) summary.removedCount);
+        ZrCore_Log_Metaf(scanGlobal != ZR_NULL ? scanGlobal->mainThreadState : ZR_NULL,
+                         "compile summary: compiled=%llu skipped=%llu removed=%llu\n",
+                         (unsigned long long)summary.compiledCount,
+                         (unsigned long long)summary.skippedCount,
+                         (unsigned long long)summary.removedCount);
     }
 
     zr_cli_module_collection_free(&modules);

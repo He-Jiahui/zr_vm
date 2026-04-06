@@ -1,1 +1,2 @@
 add_subdirectory(zr_xx_hash)
+add_subdirectory(zr_utf8proc)

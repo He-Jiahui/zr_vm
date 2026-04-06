@@ -333,6 +333,170 @@ static void semantic_validate_extern_enum_member_decorators(SZrState *state,
     }
 }
 
+static TZrBool semantic_ffi_integer_type_name_supported(const TZrChar *typeName) {
+    static const TZrChar *const kSupportedIntegerTypeNames[] = {
+            "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64",
+    };
+
+    if (typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return semantic_text_in_set(typeName, kSupportedIntegerTypeNames, ZR_ARRAY_COUNT(kSupportedIntegerTypeNames));
+}
+
+static TZrBool semantic_view_type_is_source_extern_struct(SZrSemanticAnalyzer *analyzer, const TZrChar *typeName) {
+    SZrScript *script;
+
+    if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL || typeName == ZR_NULL ||
+        analyzer->ast->type != ZR_AST_SCRIPT) {
+        return ZR_FALSE;
+    }
+
+    script = &analyzer->ast->data.script;
+    if (script->statements == ZR_NULL || script->statements->nodes == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize statementIndex = 0; statementIndex < script->statements->count; statementIndex++) {
+        SZrAstNode *statement = script->statements->nodes[statementIndex];
+
+        if (statement == ZR_NULL || statement->type != ZR_AST_EXTERN_BLOCK ||
+            statement->data.externBlock.declarations == ZR_NULL ||
+            statement->data.externBlock.declarations->nodes == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrSize declarationIndex = 0;
+             declarationIndex < statement->data.externBlock.declarations->count;
+             declarationIndex++) {
+            SZrAstNode *declaration = statement->data.externBlock.declarations->nodes[declarationIndex];
+
+            if (declaration == ZR_NULL || declaration->type != ZR_AST_STRUCT_DECLARATION ||
+                declaration->data.structDeclaration.name == ZR_NULL ||
+                declaration->data.structDeclaration.name->name == ZR_NULL) {
+                continue;
+            }
+
+            if (semantic_text_equals(semantic_string_native(declaration->data.structDeclaration.name->name), typeName)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void semantic_validate_class_wrapper_decorators(SZrState *state,
+                                                       SZrSemanticAnalyzer *analyzer,
+                                                       SZrAstNodeArray *decorators) {
+    static const TZrChar *const allowedLowerings[] = {"value", "pointer", "handle_id"};
+    static const TZrChar *const allowedOwnerModes[] = {"borrowed", "owned"};
+    SZrAstNode *loweringDecoratorNode = ZR_NULL;
+    SZrAstNode *viewTypeDecoratorNode = ZR_NULL;
+    SZrAstNode *underlyingDecoratorNode = ZR_NULL;
+    const TZrChar *viewTypeName = ZR_NULL;
+    const TZrChar *underlyingTypeName = ZR_NULL;
+    TZrBool loweringIsHandleId = ZR_FALSE;
+    TZrBool loweringWasValid = ZR_FALSE;
+    TZrBool viewTypeWasValid = ZR_FALSE;
+    TZrBool underlyingWasValid = ZR_FALSE;
+    TZrSize index;
+
+    if (decorators == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < decorators->count; index++) {
+        const TZrChar *leafName = ZR_NULL;
+        TZrBool hasCall = ZR_FALSE;
+        SZrFunctionCall *call = ZR_NULL;
+        const TZrChar *stringArg = ZR_NULL;
+        SZrAstNode *decoratorNode = decorators->nodes[index];
+
+        if (!semantic_extract_ffi_decorator(decoratorNode, &leafName, &hasCall, &call) || leafName == ZR_NULL) {
+            continue;
+        }
+
+        if (semantic_text_equals(leafName, "lowering")) {
+            loweringDecoratorNode = decoratorNode;
+            if (!hasCall || !semantic_call_has_single_string_arg(call, &stringArg) ||
+                !semantic_text_in_set(stringArg, allowedLowerings, ZR_ARRAY_COUNT(allowedLowerings))) {
+                semantic_add_invalid_decorator(state,
+                                               analyzer,
+                                               decoratorNode,
+                                               "zr.ffi.lowering requires one of: value, pointer, handle_id");
+            } else {
+                loweringWasValid = ZR_TRUE;
+                loweringIsHandleId = semantic_text_equals(stringArg, "handle_id");
+            }
+        } else if (semantic_text_equals(leafName, "viewType")) {
+            viewTypeDecoratorNode = decoratorNode;
+            if (!hasCall || !semantic_call_has_single_string_arg(call, &stringArg)) {
+                semantic_add_invalid_decorator(state, analyzer, decoratorNode,
+                                               "zr.ffi.viewType requires a single string argument");
+            } else {
+                viewTypeWasValid = ZR_TRUE;
+                viewTypeName = stringArg;
+            }
+        } else if (semantic_text_equals(leafName, "underlying")) {
+            underlyingDecoratorNode = decoratorNode;
+            if (!hasCall || !semantic_call_has_single_string_arg(call, &stringArg)) {
+                semantic_add_invalid_decorator(state, analyzer, decoratorNode,
+                                               "zr.ffi.underlying requires a single string argument");
+            } else {
+                underlyingWasValid = ZR_TRUE;
+                underlyingTypeName = stringArg;
+            }
+        } else if (semantic_text_equals(leafName, "ownerMode")) {
+            if (!hasCall || !semantic_call_has_single_string_arg(call, &stringArg) ||
+                !semantic_text_in_set(stringArg, allowedOwnerModes, ZR_ARRAY_COUNT(allowedOwnerModes))) {
+                semantic_add_invalid_decorator(state, analyzer, decoratorNode,
+                                               "zr.ffi.ownerMode requires one of: borrowed, owned");
+            }
+        } else if (semantic_text_equals(leafName, "releaseHook")) {
+            if (!hasCall || !semantic_call_has_single_string_arg(call, ZR_NULL)) {
+                semantic_add_invalid_decorator(state, analyzer, decoratorNode,
+                                               "zr.ffi.releaseHook requires a single string argument");
+            }
+        } else {
+            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+            snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on class declarations", leafName);
+            semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
+        }
+    }
+
+    if (underlyingWasValid && (!loweringWasValid || !loweringIsHandleId) && underlyingDecoratorNode != ZR_NULL) {
+        semantic_add_invalid_decorator(state,
+                                       analyzer,
+                                       underlyingDecoratorNode,
+                                       "zr.ffi.underlying on class wrappers requires zr.ffi.lowering(\"handle_id\")");
+    }
+
+    if (loweringWasValid && loweringIsHandleId && !underlyingWasValid && loweringDecoratorNode != ZR_NULL) {
+        semantic_add_invalid_decorator(state,
+                                       analyzer,
+                                       loweringDecoratorNode,
+                                       "zr.ffi.lowering(\"handle_id\") requires zr.ffi.underlying(...)");
+    }
+
+    if (loweringWasValid && loweringIsHandleId && underlyingWasValid &&
+        !semantic_ffi_integer_type_name_supported(underlyingTypeName) && underlyingDecoratorNode != ZR_NULL) {
+        semantic_add_invalid_decorator(state,
+                                       analyzer,
+                                       underlyingDecoratorNode,
+                                       "zr.ffi.underlying on class wrappers requires a supported integer type name: i8, u8, i16, u16, i32, u32, i64, u64");
+    }
+
+    if (viewTypeWasValid && !semantic_view_type_is_source_extern_struct(analyzer, viewTypeName) &&
+        viewTypeDecoratorNode != ZR_NULL) {
+        semantic_add_invalid_decorator(state,
+                                       analyzer,
+                                       viewTypeDecoratorNode,
+                                       "zr.ffi.viewType on class wrappers requires a source extern struct name");
+    }
+}
+
 static void semantic_validate_extern_parameter_decorators(SZrState *state,
                                                           SZrSemanticAnalyzer *analyzer,
                                                           SZrAstNode *parameterNode) {
@@ -1253,6 +1417,12 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                          analyzer,
                                                          node->data.externDelegateDeclaration.decorators,
                                                          "extern delegates");
+            break;
+
+        case ZR_AST_CLASS_DECLARATION:
+            semantic_validate_class_wrapper_decorators(state,
+                                                       analyzer,
+                                                       node->data.classDeclaration.decorators);
             break;
 
         case ZR_AST_STRUCT_DECLARATION:

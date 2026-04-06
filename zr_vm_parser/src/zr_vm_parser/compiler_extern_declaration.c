@@ -58,6 +58,7 @@ void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode 
             }
 
             memset(&memberInfo, 0, sizeof(memberInfo));
+            memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
             memberInfo.memberType = ZR_AST_STRUCT_FIELD;
             memberInfo.name = member->data.structField.name->name;
             memberInfo.accessModifier = member->data.structField.access;
@@ -141,6 +142,7 @@ void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *d
             }
 
             memset(&memberInfo, 0, sizeof(memberInfo));
+            memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
             memberInfo.memberType = ZR_AST_CLASS_FIELD;
             memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
             memberInfo.isStatic = ZR_TRUE;

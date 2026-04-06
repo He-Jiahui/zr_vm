@@ -58,6 +58,9 @@ typedef struct SZrFunctionLocalVariable SZrFunctionLocalVariable;
 struct ZR_STRUCT_ALIGN SZrFunctionExecutionLocationInfo {
     TZrMemoryOffset currentInstructionOffset;
     TZrUInt32 lineInSource;
+    TZrUInt32 columnInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+    TZrUInt32 columnInSourceEnd;
 };
 
 typedef struct SZrFunctionExecutionLocationInfo SZrFunctionExecutionLocationInfo;

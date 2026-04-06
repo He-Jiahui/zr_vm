@@ -15,8 +15,12 @@
     "onLanguage:zr",
     "onLanguage:zr-project",
     "onCommand:zr.restartLanguageServer",
+    "onCommand:zr.structure.refresh",
+    "onCommand:zr.runCurrentProject",
     "onCommand:zr.debugCurrentProject",
     "onCommand:zr.attachDebugEndpoint",
+    "onView:zrFiles",
+    "onView:zrImports",
     "onDebugResolve:zr"
   ],
   "main": "./out/extension.js",
@@ -67,6 +71,17 @@
         "command": "zr.restartLanguageServer",
         "title": "Restart Language Server",
         "category": "Zr"
+      },
+      {
+        "command": "zr.runCurrentProject",
+        "title": "Run Current Project",
+        "category": "Zr"
+      },
+      {
+        "command": "zr.structure.refresh",
+        "title": "Refresh Structure Views",
+        "category": "Zr",
+        "icon": "$(refresh)"
       },
       {
         "command": "zr.debugCurrentProject",
@@ -126,6 +141,10 @@
                 "default": "127.0.0.1:0",
                 "description": "Loopback endpoint requested from the embedded debugger agent."
               },
+              "authToken": {
+                "type": "string",
+                "description": "Optional auth token forwarded to zrdbg/1 initialize."
+              },
               "stopOnEntry": {
                 "type": "boolean",
                 "default": true,
@@ -168,9 +187,61 @@
         ]
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "zr",
+          "title": "ZR",
+          "icon": "media/zr-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "zr": [
+        {
+          "id": "zrFiles",
+          "name": "ZR Files"
+        },
+        {
+          "id": "zrImports",
+          "name": "ZR Imports"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "zr.structure.refresh",
+          "when": "view == zrFiles",
+          "group": "navigation"
+        },
+        {
+          "command": "zr.structure.refresh",
+          "when": "view == zrImports",
+          "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "zr.runCurrentProject",
+          "when": "resourceExtname == .zrp",
+          "group": "navigation"
+        },
+        {
+          "command": "zr.debugCurrentProject",
+          "when": "resourceExtname == .zrp",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Zr Language Server",
       "properties": {
+        "zr.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the default zr_vm_cli executable used for running and debugging .zrp projects."
+        },
         "zr.languageServer.enable": {
           "type": "boolean",
           "default": true,
@@ -204,7 +275,8 @@
         "zr.debug.cli.path": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to a custom zr_vm_cli executable used for ZR desktop debugging."
+          "description": "Absolute path to a custom zr_vm_cli executable used for ZR desktop debugging.",
+          "deprecationMessage": "Use zr.executablePath instead. This setting remains as a backward-compatible fallback."
         }
       }
     }

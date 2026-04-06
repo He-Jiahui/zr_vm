@@ -250,11 +250,19 @@ struct SZrIoFunctionClosure {
 
 typedef struct SZrIoFunctionClosure SZrIoFunctionClosure;
 
+typedef struct SZrIoInstructionSourceRange {
+    TZrUInt32 startLine;
+    TZrUInt32 startColumn;
+    TZrUInt32 endLine;
+    TZrUInt32 endColumn;
+} SZrIoInstructionSourceRange;
+
 struct SZrIoFunctionDebugInfo {
     struct SZrString *sourceFile;
     struct SZrString *sourceHash;
     TZrSize instructionsLength;
     TZrUInt64 *instructionsLine;
+    SZrIoInstructionSourceRange *instructionRanges;
 };
 
 typedef struct SZrIoFunctionDebugInfo SZrIoFunctionDebugInfo;
@@ -431,13 +439,9 @@ struct SZrIoModuleDeclare {
     EZrIoModuleDeclareType type;
 
     union {
-#ifdef __cplusplus
         SZrIoClass *class_;
-#else
-        SZrIoClass *class;
-#endif
         SZrIoStruct *struct_;
-        SZrIoInterface *interface;
+        SZrIoInterface *interface_;
         SZrIoFunction *function;
         SZrIoEnum *enum_;
         SZrIoField *field;

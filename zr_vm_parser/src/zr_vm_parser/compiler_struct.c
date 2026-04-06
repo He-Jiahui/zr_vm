@@ -618,6 +618,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             
             SZrTypeMemberInfo memberInfo;
             memset(&memberInfo, 0, sizeof(memberInfo));
+            memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
 
             // 初始化所有字段
             memberInfo.memberType = member->type;

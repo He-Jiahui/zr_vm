@@ -44,6 +44,8 @@ typedef struct SZrBinaryFixtureReader {
     TZrBool consumed;
 } SZrBinaryFixtureReader;
 
+TZrBool ZrVmLibNetwork_Register(SZrGlobalState *global);
+
 static SZrFunction *compile_debug_agent_source(SZrState *state, const char *sourceLabel, const char *source) {
     SZrString *sourceName;
 
@@ -697,6 +699,977 @@ static void test_debug_agent_breakpoint_step_and_variable_snapshots_over_tcp(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_debug_agent_expands_object_members_and_runtime_globals(void) {
+    const char *sourcePath = "debug_agent_object_globals_fixture.zr";
+    const char *source =
+            "var system = %import(\"zr.system\");\n"
+            "func makeProfile(): object {\n"
+            "    var profile = { name: \"alice\", score: 7, nested: { enabled: true } };\n"
+            "    return profile;\n"
+            "}\n"
+            "var user = makeProfile();\n"
+            "return 1;";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    ZrDebugAgentConfig config;
+    ZrDebugAgent *agent = ZR_NULL;
+    SZrNetworkStream client;
+    ZrDebugExecutionThread thread;
+    TZrChar error[256];
+    cJSON *message;
+    cJSON *params;
+    cJSON *scopes;
+    cJSON *values;
+    cJSON *localsScope;
+    cJSON *globalsScope;
+    cJSON *profileItem;
+    cJSON *nestedItem;
+    cJSON *globalsZrStateItem;
+    cJSON *globalsLoadedModulesItem;
+    int localsScopeId;
+    int globalsScopeId;
+    int profileHandle;
+    int nestedHandle;
+    int zrStateHandle;
+    int loadedModulesHandle;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_debug_agent_source(state, sourcePath, source);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&config, 0, sizeof(config));
+    config.address = "127.0.0.1:0";
+    config.suspend_on_start = ZR_TRUE;
+    config.auth_token = "secret";
+    config.stop_on_uncaught_exception = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(
+            ZrDebug_AgentStart(state, function, "tests.debug.object_globals", &config, &agent, error, sizeof(error)));
+    memset(&client, 0, sizeof(client));
+    debug_client_connect(agent, &client);
+
+    memset(&thread, 0, sizeof(thread));
+    thread.state = state;
+    thread.function = function;
+    TEST_ASSERT_TRUE(debug_execution_thread_start(&thread));
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "authToken", "secret");
+    debug_client_send_request(&client, 1, "initialize", params);
+
+    message = debug_client_expect_response(&client, 1);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "initialized");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "moduleLoaded");
+    TEST_ASSERT_EQUAL_STRING("tests.debug.object_globals",
+                             debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "moduleName"));
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("entry", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "moduleName", "tests.debug.object_globals");
+    cJSON_AddStringToObject(params, "sourceFile", sourcePath);
+    cJSON_AddItemToObject(params, "lines", cJSON_CreateIntArray((const int[]){4}, 1));
+    debug_client_send_request(&client, 2, "setBreakpoints", params);
+
+    message = debug_client_expect_event(&client, "breakpointResolved");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
+    TEST_ASSERT_EQUAL_INT(4, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    cJSON_Delete(message);
+    message = debug_client_expect_response(&client, 2);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 3, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 3);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("breakpoint", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    TEST_ASSERT_EQUAL_STRING("makeProfile", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
+    TEST_ASSERT_EQUAL_INT(4, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 4, "scopes", params);
+    message = debug_client_expect_response(&client, 4);
+    scopes = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "scopes");
+    TEST_ASSERT_TRUE(cJSON_IsArray(scopes));
+    localsScope = debug_find_named_object(scopes, "Locals");
+    globalsScope = debug_find_named_object(scopes, "Globals");
+    TEST_ASSERT_NOT_NULL(localsScope);
+    TEST_ASSERT_NOT_NULL(globalsScope);
+    localsScopeId = debug_json_int(localsScope, "scopeId");
+    globalsScopeId = debug_json_int(globalsScope, "scopeId");
+    TEST_ASSERT_TRUE(localsScopeId > 0);
+    TEST_ASSERT_TRUE(globalsScopeId > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", localsScopeId);
+    debug_client_send_request(&client, 5, "variables", params);
+    message = debug_client_expect_response(&client, 5);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    profileItem = debug_find_named_object(values, "profile");
+    TEST_ASSERT_NOT_NULL(profileItem);
+    profileHandle = debug_json_int(profileItem, "variablesReference");
+    TEST_ASSERT_TRUE(profileHandle > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", profileHandle);
+    debug_client_send_request(&client, 6, "variables", params);
+    message = debug_client_expect_response(&client, 6);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    TEST_ASSERT_NOT_NULL(debug_find_named_object(values, "name"));
+    TEST_ASSERT_EQUAL_STRING("alice", debug_json_string(debug_find_named_object(values, "name"), "value"));
+    TEST_ASSERT_NOT_NULL(debug_find_named_object(values, "score"));
+    TEST_ASSERT_EQUAL_STRING("7", debug_json_string(debug_find_named_object(values, "score"), "value"));
+    nestedItem = debug_find_named_object(values, "nested");
+    TEST_ASSERT_NOT_NULL(nestedItem);
+    nestedHandle = debug_json_int(nestedItem, "variablesReference");
+    TEST_ASSERT_TRUE(nestedHandle > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", nestedHandle);
+    debug_client_send_request(&client, 7, "variables", params);
+    message = debug_client_expect_response(&client, 7);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    TEST_ASSERT_NOT_NULL(debug_find_named_object(values, "enabled"));
+    TEST_ASSERT_EQUAL_STRING("true", debug_json_string(debug_find_named_object(values, "enabled"), "value"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", globalsScopeId);
+    debug_client_send_request(&client, 8, "variables", params);
+    message = debug_client_expect_response(&client, 8);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    globalsZrStateItem = debug_find_named_object(values, "zrState");
+    globalsLoadedModulesItem = debug_find_named_object(values, "loadedModules");
+    TEST_ASSERT_NOT_NULL(globalsZrStateItem);
+    TEST_ASSERT_NOT_NULL(globalsLoadedModulesItem);
+    zrStateHandle = debug_json_int(globalsZrStateItem, "variablesReference");
+    loadedModulesHandle = debug_json_int(globalsLoadedModulesItem, "variablesReference");
+    TEST_ASSERT_TRUE(zrStateHandle > 0);
+    TEST_ASSERT_TRUE(loadedModulesHandle > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", zrStateHandle);
+    debug_client_send_request(&client, 9, "variables", params);
+    message = debug_client_expect_response(&client, 9);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    TEST_ASSERT_NOT_NULL(debug_find_named_object(values, "loadedModuleCount"));
+    TEST_ASSERT_NOT_NULL(debug_find_named_object(values, "frameDepth"));
+    TEST_ASSERT_NOT_NULL(debug_find_named_object(values, "hasCurrentException"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", loadedModulesHandle);
+    debug_client_send_request(&client, 10, "variables", params);
+    message = debug_client_expect_response(&client, 10);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    if (cJSON_GetArraySize(values) > 0) {
+        TEST_ASSERT_TRUE(debug_json_string(cJSON_GetArrayItem(values, 0), "name")[0] != '\0');
+    }
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 11, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 11);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    debug_execution_thread_join(&thread);
+    TEST_ASSERT_TRUE(thread.success);
+    TEST_ASSERT_EQUAL_INT64(1, thread.result);
+    ZrDebug_NotifyTerminated(agent, thread.success);
+
+    message = debug_client_expect_event(&client, "terminated");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "success") != 0);
+    cJSON_Delete(message);
+
+    ZrNetwork_StreamClose(&client);
+    ZrDebug_AgentStop(agent);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_debug_agent_expands_native_network_methods_without_asserting(void) {
+    const char *sourcePath = "debug_agent_native_network_methods_fixture.zr";
+    const char *source =
+            "var network = %import(\"zr.network\");\n"
+            "var tcp = network.tcp;\n"
+            "func openListener(): int {\n"
+            "    var listener = tcp.listen(\"127.0.0.1\", 0);\n"
+            "    var port = listener.port();\n"
+            "    listener.close();\n"
+            "    return port;\n"
+            "}\n"
+            "return openListener();";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    ZrDebugAgentConfig config;
+    ZrDebugAgent *agent = ZR_NULL;
+    SZrNetworkStream client;
+    ZrDebugExecutionThread thread;
+    TZrChar error[256];
+    cJSON *message;
+    cJSON *params;
+    cJSON *scopes;
+    cJSON *values;
+    cJSON *localsScope;
+    cJSON *listenerItem;
+    cJSON *methodsItem;
+    cJSON *closeItem;
+    cJSON *portItem;
+    int localsScopeId;
+    int listenerHandle;
+    int methodsHandle;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmLibNetwork_Register(state->global));
+    function = compile_debug_agent_source(state, sourcePath, source);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&config, 0, sizeof(config));
+    config.address = "127.0.0.1:0";
+    config.suspend_on_start = ZR_TRUE;
+    config.auth_token = "secret";
+    config.stop_on_uncaught_exception = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(
+            ZrDebug_AgentStart(state, function, "tests.debug.native_network_methods", &config, &agent, error, sizeof(error)));
+    memset(&client, 0, sizeof(client));
+    debug_client_connect(agent, &client);
+
+    memset(&thread, 0, sizeof(thread));
+    thread.state = state;
+    thread.function = function;
+    TEST_ASSERT_TRUE(debug_execution_thread_start(&thread));
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "authToken", "secret");
+    debug_client_send_request(&client, 1, "initialize", params);
+
+    message = debug_client_expect_response(&client, 1);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "initialized");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "moduleLoaded");
+    TEST_ASSERT_EQUAL_STRING("tests.debug.native_network_methods",
+                             debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "moduleName"));
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("entry", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "moduleName", "tests.debug.native_network_methods");
+    cJSON_AddStringToObject(params, "sourceFile", sourcePath);
+    cJSON_AddItemToObject(params, "lines", cJSON_CreateIntArray((const int[]){5}, 1));
+    debug_client_send_request(&client, 2, "setBreakpoints", params);
+
+    message = debug_client_expect_event(&client, "breakpointResolved");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
+    TEST_ASSERT_EQUAL_INT(5, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    cJSON_Delete(message);
+    message = debug_client_expect_response(&client, 2);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 3, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 3);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("breakpoint", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    TEST_ASSERT_EQUAL_STRING("openListener", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
+    TEST_ASSERT_EQUAL_INT(5, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 4, "scopes", params);
+    message = debug_client_expect_response(&client, 4);
+    scopes = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "scopes");
+    TEST_ASSERT_TRUE(cJSON_IsArray(scopes));
+    localsScope = debug_find_named_object(scopes, "Locals");
+    TEST_ASSERT_NOT_NULL(localsScope);
+    localsScopeId = debug_json_int(localsScope, "scopeId");
+    TEST_ASSERT_TRUE(localsScopeId > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", localsScopeId);
+    debug_client_send_request(&client, 5, "variables", params);
+    message = debug_client_expect_response(&client, 5);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    listenerItem = debug_find_named_object(values, "listener");
+    TEST_ASSERT_NOT_NULL(listenerItem);
+    listenerHandle = debug_json_int(listenerItem, "variablesReference");
+    TEST_ASSERT_TRUE(listenerHandle > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", listenerHandle);
+    debug_client_send_request(&client, 6, "variables", params);
+    message = debug_client_expect_response(&client, 6);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    methodsItem = debug_find_named_object(values, "__methods");
+    TEST_ASSERT_NOT_NULL(methodsItem);
+    methodsHandle = debug_json_int(methodsItem, "variablesReference");
+    TEST_ASSERT_TRUE(methodsHandle > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", methodsHandle);
+    debug_client_send_request(&client, 7, "variables", params);
+    message = debug_client_expect_response(&client, 7);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    closeItem = debug_find_named_object(values, "close");
+    portItem = debug_find_named_object(values, "port");
+    TEST_ASSERT_NOT_NULL(closeItem);
+    TEST_ASSERT_NOT_NULL(portItem);
+    TEST_ASSERT_TRUE(debug_json_string(closeItem, "value")[0] != '\0');
+    TEST_ASSERT_TRUE(debug_json_string(portItem, "value")[0] != '\0');
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 8, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 8);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    debug_execution_thread_join(&thread);
+    TEST_ASSERT_TRUE(thread.success);
+    TEST_ASSERT_TRUE(thread.result > 0);
+    ZrDebug_NotifyTerminated(agent, thread.success);
+
+    message = debug_client_expect_event(&client, "terminated");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "success") != 0);
+    cJSON_Delete(message);
+
+    ZrNetwork_StreamClose(&client);
+    ZrDebug_AgentStop(agent);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_debug_agent_reports_richer_stack_scopes_and_safe_evaluate(void) {
+    const char *sourcePath = "debug_agent_rich_inspection_fixture.zr";
+    const char *source =
+            "class BossHero {\n"
+            "    pub static var created: int = 0;\n"
+            "    pri var _hp: int = 0;\n"
+            "\n"
+            "    pub @constructor(seed: int) {\n"
+            "        this._hp = seed;\n"
+            "        BossHero.created = BossHero.created + 1;\n"
+            "    }\n"
+            "\n"
+            "    pub total(delta: int): int {\n"
+            "        var profile = { name: \"alice\", nested: { enabled: true } };\n"
+            "        var total = this._hp + delta;\n"
+            "        return total + BossHero.created;\n"
+            "    }\n"
+            "}\n"
+            "var boss = new BossHero(30);\n"
+            "return boss.total(7);";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    ZrDebugAgentConfig config;
+    ZrDebugAgent *agent = ZR_NULL;
+    SZrNetworkStream client;
+    ZrDebugExecutionThread thread;
+    TZrChar error[256];
+    cJSON *message;
+    cJSON *params;
+    cJSON *frames;
+    cJSON *topFrame;
+    cJSON *receiver;
+    cJSON *arguments;
+    cJSON *firstArgument;
+    cJSON *scopes;
+    cJSON *argumentsScope;
+    cJSON *localsScope;
+    cJSON *prototypeScope;
+    cJSON *staticsScope;
+    cJSON *values;
+    cJSON *profileItem;
+    cJSON *createdItem;
+    cJSON *typeItem;
+    cJSON *prototypeItem;
+    cJSON *membersItem;
+    cJSON *methodsItem;
+    cJSON *propertiesItem;
+    cJSON *staticMembersItem;
+    cJSON *protocolsItem;
+    int argumentsScopeId;
+    int localsScopeId;
+    int prototypeScopeId;
+    int staticsScopeId;
+    int profileHandle;
+    int evaluateHandle;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_debug_agent_source(state, sourcePath, source);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&config, 0, sizeof(config));
+    config.address = "127.0.0.1:0";
+    config.suspend_on_start = ZR_TRUE;
+    config.auth_token = "secret";
+    config.stop_on_uncaught_exception = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(
+            ZrDebug_AgentStart(state, function, "tests.debug.rich_inspection", &config, &agent, error, sizeof(error)));
+    memset(&client, 0, sizeof(client));
+    debug_client_connect(agent, &client);
+
+    memset(&thread, 0, sizeof(thread));
+    thread.state = state;
+    thread.function = function;
+    TEST_ASSERT_TRUE(debug_execution_thread_start(&thread));
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "authToken", "secret");
+    debug_client_send_request(&client, 1, "initialize", params);
+    message = debug_client_expect_response(&client, 1);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "initialized");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "moduleLoaded");
+    TEST_ASSERT_EQUAL_STRING("tests.debug.rich_inspection",
+                             debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "moduleName"));
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("entry", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "moduleName", "tests.debug.rich_inspection");
+    cJSON_AddStringToObject(params, "sourceFile", sourcePath);
+    {
+        cJSON *breakpoints = cJSON_CreateArray();
+        cJSON *breakpoint = cJSON_CreateObject();
+        TEST_ASSERT_NOT_NULL(breakpoints);
+        TEST_ASSERT_NOT_NULL(breakpoint);
+        cJSON_AddNumberToObject(breakpoint, "line", 13);
+        cJSON_AddItemToArray(breakpoints, breakpoint);
+        cJSON_AddItemToObject(params, "breakpoints", breakpoints);
+    }
+    debug_client_send_request(&client, 2, "setBreakpoints", params);
+    message = debug_client_expect_event(&client, "breakpointResolved");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
+    TEST_ASSERT_EQUAL_INT(13, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    cJSON_Delete(message);
+    message = debug_client_expect_response(&client, 2);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 3, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 3);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("breakpoint", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    TEST_ASSERT_EQUAL_STRING("total", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
+    TEST_ASSERT_EQUAL_INT(13, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 4, "stackTrace", ZR_NULL);
+    message = debug_client_expect_response(&client, 4);
+    frames = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "frames");
+    TEST_ASSERT_TRUE(cJSON_IsArray(frames));
+    TEST_ASSERT_TRUE(cJSON_GetArraySize(frames) >= 2);
+    topFrame = cJSON_GetArrayItem(frames, 0);
+    TEST_ASSERT_EQUAL_STRING("tests.debug.rich_inspection", debug_json_string(topFrame, "moduleName"));
+    TEST_ASSERT_EQUAL_STRING("total", debug_json_string(topFrame, "functionName"));
+    TEST_ASSERT_EQUAL_INT(0, debug_json_int(topFrame, "frameDepth"));
+    TEST_ASSERT_EQUAL_STRING("method", debug_json_string(topFrame, "callKind"));
+    TEST_ASSERT_TRUE(debug_json_int(topFrame, "returnSlot") >= 0);
+    TEST_ASSERT_FALSE(debug_json_int(topFrame, "isExceptionFrame") != 0);
+    receiver = cJSON_GetObjectItemCaseSensitive(topFrame, "receiver");
+    TEST_ASSERT_TRUE(cJSON_IsObject(receiver));
+    TEST_ASSERT_EQUAL_STRING("this", debug_json_string(receiver, "name"));
+    TEST_ASSERT_TRUE(debug_json_int(receiver, "variablesReference") > 0);
+    arguments = cJSON_GetObjectItemCaseSensitive(topFrame, "arguments");
+    TEST_ASSERT_TRUE(cJSON_IsArray(arguments));
+    TEST_ASSERT_EQUAL_INT(1, cJSON_GetArraySize(arguments));
+    firstArgument = cJSON_GetArrayItem(arguments, 0);
+    TEST_ASSERT_EQUAL_STRING("delta", debug_json_string(firstArgument, "name"));
+    TEST_ASSERT_EQUAL_STRING("7", debug_json_string(firstArgument, "value"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 5, "scopes", params);
+    message = debug_client_expect_response(&client, 5);
+    scopes = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "scopes");
+    TEST_ASSERT_TRUE(cJSON_IsArray(scopes));
+    argumentsScope = debug_find_named_object(scopes, "Arguments");
+    localsScope = debug_find_named_object(scopes, "Locals");
+    prototypeScope = debug_find_named_object(scopes, "Prototype");
+    staticsScope = debug_find_named_object(scopes, "Statics");
+    TEST_ASSERT_NOT_NULL(argumentsScope);
+    TEST_ASSERT_NOT_NULL(localsScope);
+    TEST_ASSERT_NOT_NULL(prototypeScope);
+    TEST_ASSERT_NOT_NULL(staticsScope);
+    argumentsScopeId = debug_json_int(argumentsScope, "scopeId");
+    localsScopeId = debug_json_int(localsScope, "scopeId");
+    prototypeScopeId = debug_json_int(prototypeScope, "scopeId");
+    staticsScopeId = debug_json_int(staticsScope, "scopeId");
+    TEST_ASSERT_TRUE(argumentsScopeId > 0);
+    TEST_ASSERT_TRUE(localsScopeId > 0);
+    TEST_ASSERT_TRUE(prototypeScopeId > 0);
+    TEST_ASSERT_TRUE(staticsScopeId > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", argumentsScopeId);
+    debug_client_send_request(&client, 6, "variables", params);
+    message = debug_client_expect_response(&client, 6);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    TEST_ASSERT_EQUAL_STRING("7", debug_json_string(debug_find_named_object(values, "delta"), "value"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", localsScopeId);
+    debug_client_send_request(&client, 7, "variables", params);
+    message = debug_client_expect_response(&client, 7);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    TEST_ASSERT_EQUAL_STRING("37", debug_json_string(debug_find_named_object(values, "total"), "value"));
+    profileItem = debug_find_named_object(values, "profile");
+    TEST_ASSERT_NOT_NULL(profileItem);
+    profileHandle = debug_json_int(profileItem, "variablesReference");
+    TEST_ASSERT_TRUE(profileHandle > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", profileHandle);
+    debug_client_send_request(&client, 8, "variables", params);
+    message = debug_client_expect_response(&client, 8);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    TEST_ASSERT_NOT_NULL(debug_find_named_object(values, "name"));
+    typeItem = debug_find_named_object(values, "__type");
+    prototypeItem = debug_find_named_object(values, "__prototype");
+    membersItem = debug_find_named_object(values, "__members");
+    methodsItem = debug_find_named_object(values, "__methods");
+    propertiesItem = debug_find_named_object(values, "__properties");
+    staticMembersItem = debug_find_named_object(values, "__staticMembers");
+    protocolsItem = debug_find_named_object(values, "__protocols");
+    TEST_ASSERT_NOT_NULL(typeItem);
+    TEST_ASSERT_NOT_NULL(prototypeItem);
+    TEST_ASSERT_NOT_NULL(membersItem);
+    TEST_ASSERT_NOT_NULL(methodsItem);
+    TEST_ASSERT_NOT_NULL(propertiesItem);
+    TEST_ASSERT_NOT_NULL(staticMembersItem);
+    TEST_ASSERT_NOT_NULL(protocolsItem);
+    TEST_ASSERT_TRUE(debug_json_int(typeItem, "variablesReference") > 0);
+    TEST_ASSERT_TRUE(debug_json_int(prototypeItem, "variablesReference") > 0);
+    TEST_ASSERT_TRUE(debug_json_int(membersItem, "variablesReference") > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", prototypeScopeId);
+    debug_client_send_request(&client, 9, "variables", params);
+    message = debug_client_expect_response(&client, 9);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    TEST_ASSERT_NOT_NULL(debug_find_named_object(values, "memberDescriptorCount"));
+    TEST_ASSERT_NOT_NULL(debug_find_named_object(values, "managedFieldCount"));
+    TEST_ASSERT_NOT_NULL(debug_find_named_object(values, "indexContract"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", staticsScopeId);
+    debug_client_send_request(&client, 10, "variables", params);
+    message = debug_client_expect_response(&client, 10);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    createdItem = debug_find_named_object(values, "created");
+    TEST_ASSERT_NOT_NULL(createdItem);
+    TEST_ASSERT_EQUAL_STRING("1", debug_json_string(createdItem, "value"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "expression", "delta + 1");
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 11, "evaluate", params);
+    message = debug_client_expect_response(&client, 11);
+    TEST_ASSERT_EQUAL_STRING("8", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "result"), "value"));
+    TEST_ASSERT_EQUAL_STRING("int", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "result"), "type"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "expression", "this._hp + delta");
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 12, "evaluate", params);
+    message = debug_client_expect_response(&client, 12);
+    TEST_ASSERT_EQUAL_STRING("37", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "result"), "value"));
+    evaluateHandle = debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "result"), "variablesReference");
+    TEST_ASSERT_TRUE(evaluateHandle == 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "expression", "this.hp");
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 13, "evaluate", params);
+    message = debug_client_expect_error_response(&client, 13, -32003);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 14, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 14);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    debug_execution_thread_join(&thread);
+    TEST_ASSERT_TRUE(thread.success);
+    TEST_ASSERT_EQUAL_INT64(38, thread.result);
+    ZrDebug_NotifyTerminated(agent, thread.success);
+
+    message = debug_client_expect_event(&client, "terminated");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "success") != 0);
+    cJSON_Delete(message);
+
+    ZrNetwork_StreamClose(&client);
+    ZrDebug_AgentStop(agent);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_debug_agent_supports_function_hit_condition_and_log_breakpoints(void) {
+    const char *sourcePath = "debug_agent_control_fixture.zr";
+    const char *source =
+            "func addOne(value: int): int {\n"
+            "    return value + 1;\n"
+            "}\n"
+            "func run(): int {\n"
+            "    var total = 0;\n"
+            "    var index = 0;\n"
+            "    while (index < 4) {\n"
+            "        total = total + addOne(index);\n"
+            "        index = index + 1;\n"
+            "    }\n"
+            "    return total;\n"
+            "}\n"
+            "return run();";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    ZrDebugAgentConfig config;
+    ZrDebugAgent *agent = ZR_NULL;
+    SZrNetworkStream client;
+    ZrDebugExecutionThread thread;
+    TZrChar error[256];
+    cJSON *message;
+    cJSON *params;
+    cJSON *breakpoints;
+    cJSON *breakpoint;
+    cJSON *functionBreakpoints;
+    cJSON *functionBreakpoint;
+    cJSON *outputParams;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_debug_agent_source(state, sourcePath, source);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&config, 0, sizeof(config));
+    config.address = "127.0.0.1:0";
+    config.suspend_on_start = ZR_TRUE;
+    config.auth_token = "secret";
+    config.stop_on_uncaught_exception = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrDebug_AgentStart(state, function, "tests.debug.control", &config, &agent, error, sizeof(error)));
+    memset(&client, 0, sizeof(client));
+    debug_client_connect(agent, &client);
+
+    memset(&thread, 0, sizeof(thread));
+    thread.state = state;
+    thread.function = function;
+    TEST_ASSERT_TRUE(debug_execution_thread_start(&thread));
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "authToken", "secret");
+    debug_client_send_request(&client, 1, "initialize", params);
+    message = debug_client_expect_response(&client, 1);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "initialized");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "moduleLoaded");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("entry", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "moduleName", "tests.debug.control");
+    cJSON_AddStringToObject(params, "sourceFile", sourcePath);
+    breakpoints = cJSON_CreateArray();
+    TEST_ASSERT_NOT_NULL(breakpoints);
+    breakpoint = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(breakpoint);
+    cJSON_AddNumberToObject(breakpoint, "line", 2);
+    cJSON_AddStringToObject(breakpoint, "hitCondition", "2");
+    cJSON_AddItemToArray(breakpoints, breakpoint);
+    breakpoint = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(breakpoint);
+    cJSON_AddNumberToObject(breakpoint, "line", 2);
+    cJSON_AddStringToObject(breakpoint, "condition", "value == 0");
+    cJSON_AddStringToObject(breakpoint, "logMessage", "log value={value}");
+    cJSON_AddItemToArray(breakpoints, breakpoint);
+    cJSON_AddItemToObject(params, "breakpoints", breakpoints);
+    debug_client_send_request(&client, 2, "setBreakpoints", params);
+    message = debug_client_expect_event(&client, "breakpointResolved");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "breakpointResolved");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
+    cJSON_Delete(message);
+    message = debug_client_expect_response(&client, 2);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    functionBreakpoints = cJSON_CreateArray();
+    TEST_ASSERT_NOT_NULL(functionBreakpoints);
+    functionBreakpoint = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(functionBreakpoint);
+    cJSON_AddStringToObject(functionBreakpoint, "name", "addOne");
+    cJSON_AddStringToObject(functionBreakpoint, "condition", "value == 2");
+    cJSON_AddItemToArray(functionBreakpoints, functionBreakpoint);
+    cJSON_AddItemToObject(params, "breakpoints", functionBreakpoints);
+    debug_client_send_request(&client, 3, "setFunctionBreakpoints", params);
+    message = debug_client_expect_event(&client, "breakpointResolved");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
+    TEST_ASSERT_EQUAL_STRING("addOne", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
+    cJSON_Delete(message);
+    message = debug_client_expect_response(&client, 3);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 4, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 4);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    message = debug_client_expect_event(&client, "output");
+    outputParams = cJSON_GetObjectItemCaseSensitive(message, "params");
+    TEST_ASSERT_EQUAL_STRING("console", debug_json_string(outputParams, "category"));
+    TEST_ASSERT_TRUE(strstr(debug_json_string(outputParams, "output"), "log value=0") != ZR_NULL);
+    cJSON_Delete(message);
+
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("breakpoint", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    TEST_ASSERT_EQUAL_STRING("addOne", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
+    TEST_ASSERT_EQUAL_INT(2, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "expression", "value");
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 5, "evaluate", params);
+    message = debug_client_expect_response(&client, 5);
+    TEST_ASSERT_EQUAL_STRING("1", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "result"), "value"));
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 6, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 6);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("breakpoint", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    TEST_ASSERT_EQUAL_STRING("addOne", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "expression", "value");
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 7, "evaluate", params);
+    message = debug_client_expect_response(&client, 7);
+    TEST_ASSERT_EQUAL_STRING("2", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "result"), "value"));
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 8, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 8);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    debug_execution_thread_join(&thread);
+    TEST_ASSERT_TRUE(thread.success);
+    TEST_ASSERT_EQUAL_INT64(10, thread.result);
+    ZrDebug_NotifyTerminated(agent, thread.success);
+
+    message = debug_client_expect_event(&client, "terminated");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "success") != 0);
+    cJSON_Delete(message);
+
+    ZrNetwork_StreamClose(&client);
+    ZrDebug_AgentStop(agent);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_debug_agent_supports_caught_exception_breakpoints(void) {
+    const char *sourcePath = "debug_agent_caught_exception_fixture.zr";
+    const char *source =
+            "func handle(flag: bool): int {\n"
+            "    try {\n"
+            "        if (flag) { throw \"boom\"; }\n"
+            "    } catch (error) {\n"
+            "        var message = error;\n"
+            "        return 41;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return handle(true);";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    ZrDebugAgentConfig config;
+    ZrDebugAgent *agent = ZR_NULL;
+    SZrNetworkStream client;
+    ZrDebugExecutionThread thread;
+    TZrChar error[256];
+    cJSON *message;
+    cJSON *params;
+    cJSON *scopes;
+    cJSON *exceptionScope;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_debug_agent_source(state, sourcePath, source);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&config, 0, sizeof(config));
+    config.address = "127.0.0.1:0";
+    config.suspend_on_start = ZR_TRUE;
+    config.auth_token = "secret";
+    config.stop_on_uncaught_exception = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(
+            ZrDebug_AgentStart(state, function, "tests.debug.caught_exception", &config, &agent, error, sizeof(error)));
+    memset(&client, 0, sizeof(client));
+    debug_client_connect(agent, &client);
+
+    memset(&thread, 0, sizeof(thread));
+    thread.state = state;
+    thread.function = function;
+    TEST_ASSERT_TRUE(debug_execution_thread_start(&thread));
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "authToken", "secret");
+    debug_client_send_request(&client, 1, "initialize", params);
+    message = debug_client_expect_response(&client, 1);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "initialized");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "moduleLoaded");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("entry", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddBoolToObject(params, "caught", 1);
+    cJSON_AddBoolToObject(params, "uncaught", 0);
+    debug_client_send_request(&client, 2, "setExceptionBreakpoints", params);
+    message = debug_client_expect_response(&client, 2);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 3, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 3);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("exception", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    TEST_ASSERT_EQUAL_STRING("caught", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "exceptionKind"));
+    TEST_ASSERT_EQUAL_STRING("handle", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 4, "scopes", params);
+    message = debug_client_expect_response(&client, 4);
+    scopes = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "scopes");
+    TEST_ASSERT_TRUE(cJSON_IsArray(scopes));
+    exceptionScope = debug_find_named_object(scopes, "Exception");
+    TEST_ASSERT_NOT_NULL(exceptionScope);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 5, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 5);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    debug_execution_thread_join(&thread);
+    TEST_ASSERT_TRUE(thread.success);
+    TEST_ASSERT_EQUAL_INT64(41, thread.result);
+    ZrDebug_NotifyTerminated(agent, thread.success);
+
+    message = debug_client_expect_event(&client, "terminated");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "success") != 0);
+    cJSON_Delete(message);
+
+    ZrNetwork_StreamClose(&client);
+    ZrDebug_AgentStop(agent);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_debug_agent_step_in_and_out_cross_call_boundaries(void) {
     const char *sourcePath = "debug_agent_step_boundaries_fixture.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -1216,6 +2189,11 @@ int main(void) {
     RUN_TEST(test_debug_agent_wait_for_client_accepts_initialize_without_auth_token);
     RUN_TEST(test_debug_agent_wait_for_client_stays_paused_after_invalid_auth);
     RUN_TEST(test_debug_agent_breakpoint_step_and_variable_snapshots_over_tcp);
+    RUN_TEST(test_debug_agent_expands_object_members_and_runtime_globals);
+    RUN_TEST(test_debug_agent_expands_native_network_methods_without_asserting);
+    RUN_TEST(test_debug_agent_reports_richer_stack_scopes_and_safe_evaluate);
+    RUN_TEST(test_debug_agent_supports_function_hit_condition_and_log_breakpoints);
+    RUN_TEST(test_debug_agent_supports_caught_exception_breakpoints);
     RUN_TEST(test_debug_agent_step_in_and_out_cross_call_boundaries);
     RUN_TEST(test_debug_agent_pause_stops_at_next_safepoint_and_preserves_stack);
     RUN_TEST(test_debug_agent_reports_uncaught_exception_from_runtime_without_cli_bridge);

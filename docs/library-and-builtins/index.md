@@ -42,14 +42,18 @@ doc_type: category-index
 - `zr-coroutine-runtime.md`
   - `zr.coroutine` builtin 提供 isolate 级 `coroutineScheduler`
   - 手动 `step/pump` 与 `autoCoroutine` 的当前行为边界
+- `zr-thread-runtime.md`
+  - `zr.thread` 提供 worker isolate、thread scheduler，以及 `Channel/Shared/WeakShared/Transfer`
+  - 跨 isolate transport 只允许 sendable values 与 thread transport handles
 - `zr-system-submodules.md`
   - `zr.system` 从扁平模块拆成 6 个叶子模块和 1 个聚合根模块
-  - native descriptor 新增 `moduleLinks`，根模块通过通用物化逻辑导出子模块对象
-  - parser/type inference 读取 native module info 里的 `modules` 数组，把 `system.console` 这类访问识别成模块字段
+  - `zr.system.fs` 现在提供 `File` / `Folder` / `FileStream` 对象模型、`SystemFileInfo` 快照 struct，以及兼容函数薄封装
+  - `FileStream` 作为 owned `handle_id` wrapper，只在 extern/native 边界自动 lowering 到 `i32`
 
 ## 阅读顺序
 
 1. 先看 `zr-task-runtime.md`，了解 `TaskRunner/Task/defaultScheduler` 这条新的 builtin 任务抽象。
 2. 再看 `zr-coroutine-runtime.md`，了解 isolate 内建协程调度器和手动 pump 路径。
-3. 然后看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
-4. 最后看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
+3. 接着看 `zr-thread-runtime.md`，了解 worker isolate、thread scheduler 和跨 isolate transport 白名单。
+4. 然后看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
+5. 最后看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。

@@ -93,4 +93,4 @@ dkms.conf
 *.pyc
 /tests/fixtures/projects/.fixture_prepare/
 /tests/fixtures/projects/.run_backup/
-
+/.vscode-test

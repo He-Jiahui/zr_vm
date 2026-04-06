@@ -90,7 +90,11 @@ SZrAstNode *parse_script(SZrParserState *ps) {
                 // 如果连续错误太多，停止解析
                 if (errorCount >= ZR_PARSER_MAX_CONSECUTIVE_ERRORS) {
                     if (!ps->suppressErrorOutput) {
-                        fprintf(stderr, "  Too many consecutive errors (%zu), stopping parse\n", errorCount);
+                        ZrCore_Log_Diagnosticf(ps->state,
+                                               ZR_LOG_LEVEL_ERROR,
+                                               ZR_OUTPUT_CHANNEL_STDERR,
+                                               "  Too many consecutive errors (%zu), stopping parse\n",
+                                               errorCount);
                     }
                     break;
                 }
@@ -133,8 +137,12 @@ SZrAstNode *parse_script(SZrParserState *ps) {
                 // 没有错误但返回 NULL，可能是遇到了不支持的语法
                 EZrToken currentToken = ps->lexer->t.token;
                 if (!ps->suppressErrorOutput) {
-                    fprintf(stderr, "  Warning: Failed to parse statement %zu (token: %d), skipping\n", stmtCount,
-                            currentToken);
+                    ZrCore_Log_Diagnosticf(ps->state,
+                                           ZR_LOG_LEVEL_WARNING,
+                                           ZR_OUTPUT_CHANNEL_STDERR,
+                                           "  Warning: Failed to parse statement %zu (token: %d), skipping\n",
+                                           stmtCount,
+                                           currentToken);
                 }
                 // 尝试跳过当前 token 继续解析
                 if (currentToken != ZR_TK_EOS) {

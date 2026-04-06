@@ -12,6 +12,7 @@ const targets = (process.env.ZR_NATIVE_BUILD_TARGET || 'zr_vm_language_server_st
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
 const jobs = process.env.ZR_BUILD_JOBS || '8';
+const helloWorldProject = path.join(repositoryRoot, 'tests', 'fixtures', 'projects', 'hello_world', 'hello_world.zrp');
 
 function findVsDevCmd() {
     const candidates = [];
@@ -104,29 +105,15 @@ function importVsDevCmdEnvironment() {
     return importedEnv;
 }
 
-const args = ['--build', buildDir];
-if (process.platform === 'win32') {
-    args.push('--config', buildConfig);
-}
-if (targets.length > 0) {
-    args.push('--target', ...targets);
-}
-args.push('--parallel', jobs);
-
 const env = process.platform === 'win32' && !process.env.VSCMD_VER
     ? importVsDevCmdEnvironment()
     : process.env;
 
-ensureBuildDirectory(env);
-
-const result = spawnSync('cmake', args, {
-    cwd: repositoryRoot,
-    stdio: 'inherit',
-    env,
-});
-
-if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+try {
+    buildAndVerifyNativeAssets(env);
+} catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
 }
 
 function ensureBuildDirectory(env) {
@@ -159,4 +146,136 @@ function ensureBuildDirectory(env) {
     if (configureResult.status !== 0) {
         process.exit(configureResult.status ?? 1);
     }
+}
+
+function buildAndVerifyNativeAssets(env) {
+    let verification = runConfiguredBuildAndVerify(env);
+    if (verification.ok) {
+        return;
+    }
+
+    console.warn(`Native asset verification failed after incremental build.\n${verification.message}`);
+    console.warn(`Rebuilding ${buildDir} from a clean tree.`);
+    fs.rmSync(buildDir, { recursive: true, force: true });
+
+    verification = runConfiguredBuildAndVerify(env);
+    if (!verification.ok) {
+        throw new Error(`Native asset verification failed after clean rebuild.\n${verification.message}`);
+    }
+}
+
+function runConfiguredBuildAndVerify(env) {
+    ensureBuildDirectory(env);
+    runBuild(env);
+    return verifyNativeAssets(env);
+}
+
+function runBuild(env) {
+    const args = ['--build', buildDir];
+    if (process.platform === 'win32') {
+        args.push('--config', buildConfig);
+    }
+    if (targets.length > 0) {
+        args.push('--target', ...targets);
+    }
+    args.push('--parallel', jobs);
+
+    const result = spawnSync('cmake', args, {
+        cwd: repositoryRoot,
+        stdio: 'inherit',
+        env,
+    });
+
+    if (result.status !== 0) {
+        process.exit(result.status ?? 1);
+    }
+}
+
+function verifyNativeAssets(env) {
+    const cliExecutable = path.join(buildDir, 'bin', process.platform === 'win32' ? 'zr_vm_cli.exe' : 'zr_vm_cli');
+    const lspExecutable = path.join(
+        buildDir,
+        'bin',
+        process.platform === 'win32' ? 'zr_vm_language_server_stdio.exe' : 'zr_vm_language_server_stdio',
+    );
+
+    if (!fs.existsSync(cliExecutable)) {
+        return {
+            ok: false,
+            message: `Missing zr_vm_cli at ${cliExecutable}`,
+        };
+    }
+    if (!fs.existsSync(lspExecutable)) {
+        return {
+            ok: false,
+            message: `Missing zr_vm_language_server_stdio at ${lspExecutable}`,
+        };
+    }
+
+    return verifyCliSmoke(cliExecutable, env);
+}
+
+function verifyCliSmoke(cliExecutable, env) {
+    const helpResult = spawnSync(cliExecutable, ['--help'], {
+        cwd: repositoryRoot,
+        env,
+        encoding: 'utf8',
+        timeout: 5000,
+        windowsHide: true,
+    });
+    if (helpResult.status !== 0 || !String(helpResult.stdout || '').includes('Usage:')) {
+        return {
+            ok: false,
+            message: formatSpawnFailure('zr_vm_cli --help', helpResult),
+        };
+    }
+
+    if (!fs.existsSync(helloWorldProject)) {
+        return {
+            ok: false,
+            message: `Missing hello_world project fixture at ${helloWorldProject}`,
+        };
+    }
+
+    const runResult = spawnSync(
+        cliExecutable,
+        [
+            helloWorldProject,
+            '--debug',
+            '--debug-address',
+            '127.0.0.1:0',
+            '--debug-print-endpoint',
+        ],
+        {
+            cwd: path.dirname(helloWorldProject),
+            env,
+            encoding: 'utf8',
+            timeout: 10000,
+            windowsHide: true,
+        },
+    );
+    const stdout = String(runResult.stdout || '');
+    if (runResult.status !== 0 ||
+        !stdout.includes('debug_endpoint=') ||
+        !stdout.includes('hello world')) {
+        return {
+            ok: false,
+            message: formatSpawnFailure('zr_vm_cli hello_world.zrp --debug --debug-print-endpoint', runResult),
+        };
+    }
+
+    return { ok: true, message: '' };
+}
+
+function formatSpawnFailure(label, result) {
+    const stdout = String(result.stdout || '');
+    const stderr = String(result.stderr || '');
+    return [
+        `${label} failed.`,
+        `status=${result.status ?? 'null'}`,
+        `signal=${result.signal ?? 'null'}`,
+        `error=${result.error instanceof Error ? result.error.message : 'none'}`,
+        `stdout:\n${stdout}`,
+        `stderr:\n${stderr}`,
+    ].join('\n');
 }

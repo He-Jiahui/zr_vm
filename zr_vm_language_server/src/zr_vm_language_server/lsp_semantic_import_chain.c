@@ -8,51 +8,7 @@
 #include <string.h>
 
 static TZrBool semantic_import_chain_uri_to_native_path(SZrString *uri, TZrChar *buffer, TZrSize bufferSize) {
-    const TZrChar *uriText;
-    TZrSize uriLength;
-    TZrSize readIndex = 0;
-    TZrSize writeIndex = 0;
-
-    if (uri == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
-        return ZR_FALSE;
-    }
-
-    buffer[0] = '\0';
-    uriText = uri->shortStringLength < ZR_VM_LONG_STRING_FLAG
-                  ? ZrCore_String_GetNativeStringShort(uri)
-                  : ZrCore_String_GetNativeString(uri);
-    uriLength = uriText != ZR_NULL ? strlen(uriText) : 0;
-    if (uriText == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (uriLength >= 7 && memcmp(uriText, "file://", 7) == 0) {
-        readIndex = 7;
-    }
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-    if (readIndex < uriLength &&
-        uriText[readIndex] == '/' &&
-        readIndex + 2 < uriLength &&
-        isalpha((unsigned char)uriText[readIndex + 1]) &&
-        uriText[readIndex + 2] == ':') {
-        readIndex++;
-    }
-#endif
-
-    while (readIndex < uriLength && writeIndex + 1 < bufferSize) {
-        TZrChar current = uriText[readIndex];
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-        buffer[writeIndex++] = current == '/' ? '\\' : current;
-#else
-        buffer[writeIndex++] = current;
-#endif
-        readIndex++;
-    }
-
-    buffer[writeIndex] = '\0';
-    return writeIndex > 0;
+    return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
 }
 
 static TZrBool semantic_import_chain_try_get_analyzer_for_uri(SZrState *state,
@@ -256,6 +212,13 @@ static TZrBool semantic_import_chain_resolve_primary_expression(SZrState *state,
     }
 
     currentModuleName = binding->moduleName;
+    if (semantic_import_chain_range_contains_position(receiverNode->location, queryRange)) {
+        outHit->moduleName = currentModuleName;
+        outHit->memberName = ZR_NULL;
+        outHit->location = receiverNode->location;
+        return ZR_TRUE;
+    }
+
     for (TZrSize index = 0; index < node->data.primaryExpression.members->count; index++) {
         SZrAstNode *memberNode = node->data.primaryExpression.members->nodes[index];
         SZrLspResolvedMetadataMember resolvedMember;

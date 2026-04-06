@@ -772,6 +772,43 @@ static void test_meta_sub_string_int(void) {
     TEST_DIVIDER();
 }
 
+static void test_meta_sub_string_int_truncates_utf8_by_code_point(void) {
+    TEST_START("SUB meta method for STRING type truncates UTF-8 by code point");
+    SZrTestTimer timer;
+    const char *input = "\xE4\xB8\xAD\xF0\x9F\x99\x82";
+    const char *expected = "\xE4\xB8\xAD";
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    SZrString *str = ZrCore_String_Create(state, (TZrNativeString)input, 7);
+    SZrTypeValue value1;
+    ZrCore_Value_InitAsRawObject(state, &value1, ZR_CAST_RAW_OBJECT_AS_SUPER(str));
+
+    SZrTypeValue value2;
+    ZrCore_Value_InitAsInt(state, &value2, 1);
+
+    SZrTypeValue result;
+    TZrBool success = call_meta_method(state, &value1, ZR_META_SUB, &result, &value2);
+
+    timer.endTime = clock();
+
+    if (success && result.type == ZR_VALUE_TYPE_STRING) {
+        SZrString *resultStr = ZR_CAST_STRING(state, result.value.object);
+        TZrNativeString resultNative = ZrCore_String_GetNativeString(resultStr);
+        TEST_ASSERT_EQUAL_STRING(expected, resultNative);
+        TEST_PASS_CUSTOM(timer, "SUB meta method for STRING type truncates UTF-8 by code point");
+    } else {
+        TEST_FAIL_CUSTOM(timer,
+                         "SUB meta method for STRING type truncates UTF-8 by code point",
+                         "Failed to call meta method");
+    }
+
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 static void test_meta_sub_string_string(void) {
     TEST_START("SUB meta method for STRING type (subtract string)");
     SZrTestTimer timer;
@@ -1399,6 +1436,7 @@ int main(void) {
     RUN_TEST(test_meta_sub_uint);
     RUN_TEST(test_meta_sub_float);
     RUN_TEST(test_meta_sub_string_int);
+    RUN_TEST(test_meta_sub_string_int_truncates_utf8_by_code_point);
     RUN_TEST(test_meta_sub_string_string);
     RUN_TEST(test_meta_sub_bool);
 

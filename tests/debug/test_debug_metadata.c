@@ -228,6 +228,85 @@ static void test_binary_roundtrip_preserves_full_debug_source_path_without_write
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_binary_roundtrip_preserves_instruction_debug_ranges(void) {
+    const char *binaryPath = "debug_metadata_instruction_ranges_test.zro";
+    const char *sourcePath = "fixtures/debug/debug_metadata_instruction_ranges_test.zr";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrByte *buffer = ZR_NULL;
+    TZrSize bufferLength = 0;
+    SZrBinaryFixtureReader reader;
+    SZrIo io;
+    SZrIoSource *sourceObject = ZR_NULL;
+    SZrFunction *runtimeFunction = ZR_NULL;
+    TZrBool foundSerializedRange = ZR_FALSE;
+    TZrBool foundRuntimeRange = ZR_FALSE;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = compile_debug_metadata_fixture(state, sourcePath);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+
+    buffer = read_binary_file_owned(binaryPath, &bufferLength);
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE(bufferLength > 0);
+
+    memset(&reader, 0, sizeof(reader));
+    reader.bytes = buffer;
+    reader.length = bufferLength;
+
+    ZrCore_Io_Init(state, &io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+    sourceObject = ZrCore_Io_ReadSourceNew(&io);
+    TEST_ASSERT_NOT_NULL(sourceObject);
+    TEST_ASSERT_EQUAL_UINT32(1u, sourceObject->modulesLength);
+    TEST_ASSERT_NOT_NULL(sourceObject->modules[0].entryFunction);
+    TEST_ASSERT_TRUE(sourceObject->modules[0].entryFunction->debugInfosLength > 0);
+    TEST_ASSERT_NOT_NULL(sourceObject->modules[0].entryFunction->debugInfos[0].instructionRanges);
+    TEST_ASSERT_TRUE(sourceObject->modules[0].entryFunction->debugInfos[0].instructionsLength > 0);
+
+    for (TZrSize index = 0; index < sourceObject->modules[0].entryFunction->debugInfos[0].instructionsLength; index++) {
+        const SZrIoInstructionSourceRange *range =
+                &sourceObject->modules[0].entryFunction->debugInfos[0].instructionRanges[index];
+        if (range->startLine == 0 || range->startColumn == 0 || range->endLine == 0 || range->endColumn == 0) {
+            continue;
+        }
+
+        TEST_ASSERT_TRUE(range->endLine > range->startLine ||
+                         (range->endLine == range->startLine && range->endColumn >= range->startColumn));
+        foundSerializedRange = ZR_TRUE;
+        break;
+    }
+    TEST_ASSERT_TRUE(foundSerializedRange);
+
+    runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+    TEST_ASSERT_NOT_NULL(runtimeFunction->executionLocationInfoList);
+    TEST_ASSERT_TRUE(runtimeFunction->executionLocationInfoLength > 0);
+
+    for (TZrUInt32 index = 0; index < runtimeFunction->executionLocationInfoLength; index++) {
+        const SZrFunctionExecutionLocationInfo *location = &runtimeFunction->executionLocationInfoList[index];
+        if (location->lineInSource == 0 || location->columnInSourceStart == 0 || location->lineInSourceEnd == 0 ||
+            location->columnInSourceEnd == 0) {
+            continue;
+        }
+
+        TEST_ASSERT_TRUE(location->lineInSourceEnd > location->lineInSource ||
+                         (location->lineInSourceEnd == location->lineInSource &&
+                          location->columnInSourceEnd >= location->columnInSourceStart));
+        foundRuntimeRange = ZR_TRUE;
+        break;
+    }
+    TEST_ASSERT_TRUE(foundRuntimeRange);
+
+    remove(binaryPath);
+    free(buffer);
+    ZrCore_Function_Free(state, function);
+    ZrCore_Function_Free(state, runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -236,5 +315,6 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_binary_roundtrip_preserves_debug_source_identity_and_module_name);
     RUN_TEST(test_binary_roundtrip_preserves_full_debug_source_path_without_writer_options);
+    RUN_TEST(test_binary_roundtrip_preserves_instruction_debug_ranges);
     return UNITY_END();
 }

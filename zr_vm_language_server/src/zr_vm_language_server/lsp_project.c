@@ -8,6 +8,8 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -22,6 +24,7 @@
 typedef struct SZrLspProjectSourceLoaderContext {
     SZrLspProjectIndex *projectIndex;
     FZrIoLoadSource fallbackSourceLoader;
+    TZrPtr fallbackSourceLoaderUserData;
     TZrPtr fallbackUserData;
 } SZrLspProjectSourceLoaderContext;
 
@@ -59,6 +62,32 @@ static SZrString *create_string_from_const_text(SZrState *state, const TZrChar *
     }
 
     return ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
+}
+
+static TZrBool lsp_project_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_LSP_PROJECT_TRACE");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void lsp_project_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!lsp_project_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    vfprintf(stderr, format, arguments);
+    va_end(arguments);
+    fflush(stderr);
 }
 
 static void project_index_free(SZrState *state, SZrLspProjectIndex *projectIndex);
@@ -101,6 +130,7 @@ static TZrBool project_source_loader_invoke_fallback(SZrState *state,
                                                      TZrNativeString md5,
                                                      SZrIo *io) {
     TZrPtr previousUserData;
+    TZrPtr previousSourceLoaderUserData;
     TZrBool success;
 
     if (state == ZR_NULL || state->global == ZR_NULL || context == ZR_NULL || context->fallbackSourceLoader == ZR_NULL) {
@@ -108,9 +138,12 @@ static TZrBool project_source_loader_invoke_fallback(SZrState *state,
     }
 
     previousUserData = state->global->userData;
+    previousSourceLoaderUserData = state->global->sourceLoaderUserData;
     state->global->userData = context->fallbackUserData;
+    state->global->sourceLoaderUserData = context->fallbackSourceLoaderUserData;
     success = context->fallbackSourceLoader(state, sourcePath, md5, io);
     state->global->userData = previousUserData;
+    state->global->sourceLoaderUserData = previousSourceLoaderUserData;
     return success;
 }
 
@@ -125,7 +158,7 @@ static TZrBool project_source_loader(SZrState *state,
         return ZR_FALSE;
     }
 
-    context = (SZrLspProjectSourceLoaderContext *)state->global->userData;
+    context = (SZrLspProjectSourceLoaderContext *)state->global->sourceLoaderUserData;
     if (context == ZR_NULL || context->projectIndex == ZR_NULL || sourcePath == ZR_NULL) {
         return project_source_loader_invoke_fallback(state, context, sourcePath, md5, io);
     }
@@ -212,80 +245,8 @@ static TZrBool native_path_has_dynamic_library_extension(const TZrChar *path) {
            (length >= 6 && strcmp(path + length - 6, ".dylib") == 0);
 }
 
-static TZrBool is_hex_digit_char(TZrChar value) {
-    return (value >= '0' && value <= '9') ||
-           (value >= 'a' && value <= 'f') ||
-           (value >= 'A' && value <= 'F');
-}
-
-static TZrInt32 hex_digit_to_value(TZrChar value) {
-    if (value >= '0' && value <= '9') {
-        return value - '0';
-    }
-
-    if (value >= 'a' && value <= 'f') {
-        return value - 'a' + 10;
-    }
-
-    if (value >= 'A' && value <= 'F') {
-        return value - 'A' + 10;
-    }
-
-    return ZR_LSP_PROJECT_HEX_DIGIT_INVALID;
-}
-
 static TZrBool lsp_uri_to_native_path(SZrString *uri, TZrChar *buffer, TZrSize bufferSize) {
-    TZrNativeString uriText;
-    TZrSize uriLength;
-    TZrSize readIndex = 0;
-    TZrSize writeIndex = 0;
-
-    if (buffer == ZR_NULL || bufferSize == 0) {
-        return ZR_FALSE;
-    }
-
-    buffer[0] = '\0';
-    get_string_view(uri, &uriText, &uriLength);
-    if (uriText == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (uriLength >= 7 && memcmp(uriText, "file://", 7) == 0) {
-        readIndex = 7;
-    }
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-    if (readIndex < uriLength &&
-        uriText[readIndex] == '/' &&
-        readIndex + 2 < uriLength &&
-        isalpha((unsigned char)uriText[readIndex + 1]) &&
-        uriText[readIndex + 2] == ':') {
-        readIndex++;
-    }
-#endif
-
-    while (readIndex < uriLength && writeIndex + 1 < bufferSize) {
-        TZrChar current = uriText[readIndex];
-        if (current == '%' &&
-            readIndex + 2 < uriLength &&
-            is_hex_digit_char(uriText[readIndex + 1]) &&
-            is_hex_digit_char(uriText[readIndex + 2])) {
-            buffer[writeIndex++] = (TZrChar)((hex_digit_to_value(uriText[readIndex + 1]) << 4) |
-                                             hex_digit_to_value(uriText[readIndex + 2]));
-            readIndex += 3;
-            continue;
-        }
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-        buffer[writeIndex++] = current == '/' ? '\\' : current;
-#else
-        buffer[writeIndex++] = current;
-#endif
-        readIndex++;
-    }
-
-    buffer[writeIndex] = '\0';
-    return writeIndex > 0;
+    return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
 }
 
 static SZrString *native_path_to_file_uri(SZrState *state, const TZrChar *path) {
@@ -551,30 +512,78 @@ TZrBool ZrLanguageServer_LspProject_DeriveBinaryModuleNameFromPath(SZrLspProject
     return derive_binary_module_name_from_path(projectIndex, path, buffer, bufferSize);
 }
 
+static void project_remove_module_cache_key_text(SZrState *state, const TZrChar *cacheKeyText) {
+    SZrString *cacheKey;
+
+    if (state == ZR_NULL || cacheKeyText == ZR_NULL || cacheKeyText[0] == '\0') {
+        return;
+    }
+
+    cacheKey = ZrCore_String_Create(state, (TZrNativeString)cacheKeyText, strlen(cacheKeyText));
+    if (cacheKey != ZR_NULL) {
+        ZrCore_Module_RemoveFromCache(state, cacheKey);
+    }
+}
+
+static void project_remove_path_cache_key_variants(SZrState *state, const TZrChar *path) {
+    TZrChar normalizedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar separatorVariant[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrBool hasSeparatorVariant = ZR_FALSE;
+
+    if (state == ZR_NULL || path == ZR_NULL || path[0] == '\0') {
+        return;
+    }
+
+    project_remove_module_cache_key_text(state, path);
+    if (ZrLibrary_File_NormalizePath((TZrNativeString)path, normalizedPath, sizeof(normalizedPath)) &&
+        strcmp(normalizedPath, path) != 0) {
+        project_remove_module_cache_key_text(state, normalizedPath);
+    }
+
+    for (TZrSize index = 0; path[index] != '\0' && index + 1 < sizeof(separatorVariant); index++) {
+        separatorVariant[index] = path[index] == '\\' ? '/' : (path[index] == '/' ? '\\' : path[index]);
+        separatorVariant[index + 1] = '\0';
+        if (separatorVariant[index] != path[index]) {
+            hasSeparatorVariant = ZR_TRUE;
+        }
+    }
+
+    if (hasSeparatorVariant && strcmp(separatorVariant, path) != 0) {
+        project_remove_module_cache_key_text(state, separatorVariant);
+        if (ZrLibrary_File_NormalizePath(separatorVariant, normalizedPath, sizeof(normalizedPath)) &&
+            strcmp(normalizedPath, separatorVariant) != 0) {
+            project_remove_module_cache_key_text(state, normalizedPath);
+        }
+    }
+}
+
 static void project_invalidate_module_cache_for_watched_path(SZrState *state,
                                                              SZrLspProjectIndex *projectIndex,
                                                              const TZrChar *affectedPath) {
-    SZrString *cacheKey;
+    TZrChar resolvedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar moduleName[ZR_LIBRARY_MAX_PATH_LENGTH];
 
     if (state == ZR_NULL || affectedPath == ZR_NULL) {
         return;
     }
 
-    cacheKey = ZrCore_String_Create(state, (TZrNativeString)affectedPath, strlen(affectedPath));
-    if (cacheKey != ZR_NULL) {
-        ZrCore_Module_RemoveFromCache(state, cacheKey);
-    }
+    project_remove_path_cache_key_variants(state, affectedPath);
 
     if (projectIndex == ZR_NULL) {
         return;
     }
 
-    if (derive_module_name_from_path(projectIndex, affectedPath, moduleName, sizeof(moduleName)) ||
-        derive_binary_module_name_from_path(projectIndex, affectedPath, moduleName, sizeof(moduleName))) {
-        cacheKey = ZrCore_String_Create(state, moduleName, strlen(moduleName));
-        if (cacheKey != ZR_NULL) {
-            ZrCore_Module_RemoveFromCache(state, cacheKey);
+    if (derive_module_name_from_path(projectIndex, affectedPath, moduleName, sizeof(moduleName))) {
+        project_remove_module_cache_key_text(state, moduleName);
+        if (project_resolve_source_path(projectIndex, moduleName, resolvedPath, sizeof(resolvedPath))) {
+            project_remove_path_cache_key_variants(state, resolvedPath);
+        }
+    }
+
+    if (derive_binary_module_name_from_path(projectIndex, affectedPath, moduleName, sizeof(moduleName))) {
+        project_remove_module_cache_key_text(state, moduleName);
+        if (project_resolve_binary_path(projectIndex, moduleName, resolvedPath, sizeof(resolvedPath))) {
+            project_remove_path_cache_key_variants(state, resolvedPath);
         }
     }
 }
@@ -1062,6 +1071,17 @@ static TZrBool path_get_parent_directory_in_place(TZrChar *path) {
         path[--length] = '\0';
     }
 
+    if (length == 1 && (path[0] == '/' || path[0] == '\\')) {
+        return ZR_FALSE;
+    }
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    if (length == 3 && isalpha((unsigned char)path[0]) && path[1] == ':' &&
+        (path[2] == '/' || path[2] == '\\')) {
+        return ZR_FALSE;
+    }
+#endif
+
     while (length > 0 && path[length - 1] != '/' && path[length - 1] != '\\') {
         length--;
     }
@@ -1213,6 +1233,7 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
     SZrSemanticAnalyzer *analyzer;
     FZrIoLoadSource previousSourceLoader = ZR_NULL;
     TZrPtr previousUserData = ZR_NULL;
+    TZrPtr previousSourceLoaderUserData = ZR_NULL;
     SZrLspProjectSourceLoaderContext sourceLoaderContext;
     TZrBool analyzeSuccess;
 
@@ -1220,8 +1241,13 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
         return ZR_FALSE;
     }
 
+    lsp_project_trace("[lsp_project] load imports uri=%s\n", get_string_text(uri));
+
+    lsp_project_trace("[lsp_project] reanalyze begin uri=%s\n", get_string_text(uri));
+
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL) {
+        lsp_project_trace("[lsp_project] reanalyze missing-ast uri=%s\n", get_string_text(uri));
         return ZR_FALSE;
     }
 
@@ -1236,17 +1262,23 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
         sourceLoaderContext.projectIndex = projectIndex;
         sourceLoaderContext.fallbackSourceLoader = state->global->sourceLoader;
         previousUserData = state->global->userData;
+        previousSourceLoaderUserData = state->global->sourceLoaderUserData;
         sourceLoaderContext.fallbackUserData = previousUserData;
+        sourceLoaderContext.fallbackSourceLoaderUserData = previousSourceLoaderUserData;
         previousSourceLoader = state->global->sourceLoader;
-        state->global->userData = &sourceLoaderContext;
+        state->global->sourceLoaderUserData = &sourceLoaderContext;
         state->global->sourceLoader = project_source_loader;
     }
     analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, fileVersion->ast);
     if (state->global != ZR_NULL) {
         state->global->userData = previousUserData;
+        state->global->sourceLoaderUserData = previousSourceLoaderUserData;
         state->global->sourceLoader = previousSourceLoader;
     }
 
+    lsp_project_trace("[lsp_project] reanalyze end uri=%s success=%d\n",
+                      get_string_text(uri),
+                      (int)analyzeSuccess);
     return analyzeSuccess;
 }
 
@@ -1365,12 +1397,16 @@ static TZrBool project_ensure_module_loaded(SZrState *state,
         return ZR_FALSE;
     }
 
+    lsp_project_trace("[lsp_project] ensure module=%s\n", get_string_text(moduleName));
+
     if (ZrLanguageServer_LspProject_FindRecordByModuleName(projectIndex, moduleName) != ZR_NULL) {
+        lsp_project_trace("[lsp_project] ensure cached module=%s\n", get_string_text(moduleName));
         return ZR_TRUE;
     }
 
     if (!project_resolve_source_path(projectIndex, get_string_text(moduleName), resolvedPath, sizeof(resolvedPath)) ||
         ZrLibrary_File_Exist(resolvedPath) != ZR_LIBRARY_FILE_IS_FILE) {
+        lsp_project_trace("[lsp_project] ensure no-source module=%s\n", get_string_text(moduleName));
         return ZR_FALSE;
     }
 
@@ -1431,6 +1467,9 @@ static TZrBool project_load_imports_from_uri(SZrState *state,
         SZrLspImportBinding **bindingPtr =
             (SZrLspImportBinding **)ZrCore_Array_Get(&bindings, index);
         if (bindingPtr != ZR_NULL && *bindingPtr != ZR_NULL) {
+            lsp_project_trace("[lsp_project] load import module=%s uri=%s\n",
+                              get_string_text((*bindingPtr)->moduleName),
+                              get_string_text(uri));
             project_ensure_module_loaded(state, context, projectIndex, (*bindingPtr)->moduleName);
         }
     }
@@ -1512,6 +1551,10 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
         return ZR_FALSE;
     }
 
+    lsp_project_trace("[lsp_project] refresh begin uri=%s length=%llu\n",
+                      get_string_text(uri),
+                      (unsigned long long)contentLength);
+
     if (string_ends_with(uri, ".zrp")) {
         projectIndex = project_index_new_from_document(state, uri, content, contentLength);
         if (projectIndex == ZR_NULL) {
@@ -1559,6 +1602,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
 
     projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     if (projectIndex == ZR_NULL) {
+        lsp_project_trace("[lsp_project] refresh no-project uri=%s\n", get_string_text(uri));
         return ZR_TRUE;
     }
 
@@ -1566,6 +1610,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
         !project_register_loaded_document(state, context, projectIndex, uri) ||
         !project_load_imports_from_uri(state, context, projectIndex, uri) ||
         !project_collect_loaded_source_uris(state, context, projectIndex, &loadedUris)) {
+        lsp_project_trace("[lsp_project] refresh primary-failed uri=%s\n", get_string_text(uri));
         ZrCore_Array_Free(state, &loadedUris);
         return ZR_FALSE;
     }
@@ -1581,12 +1626,16 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
         if (!project_reanalyze_loaded_document(state, context, projectIndex, *loadedUriPtr) ||
             !project_register_loaded_document(state, context, projectIndex, *loadedUriPtr) ||
             !project_load_imports_from_uri(state, context, projectIndex, *loadedUriPtr)) {
+            lsp_project_trace("[lsp_project] refresh secondary-failed uri=%s loaded=%s\n",
+                              get_string_text(uri),
+                              get_string_text(*loadedUriPtr));
             ZrCore_Array_Free(state, &loadedUris);
             return ZR_FALSE;
         }
     }
 
     ZrCore_Array_Free(state, &loadedUris);
+    lsp_project_trace("[lsp_project] refresh end uri=%s\n", get_string_text(uri));
     return ZR_TRUE;
 }
 

@@ -37,6 +37,18 @@ ZR_CORE_API void ZrCore_HashSet_Deconstruct(struct SZrState *state, SZrHashSet *
 
 ZR_CORE_API TZrBool ZrCore_HashSet_Rehash(struct SZrState *state, SZrHashSet *set, TZrSize newCapacity);
 
+ZR_FORCE_INLINE SZrTypeValue ZrCore_HashSet_MakeNullValueFallback(void) {
+    SZrTypeValue value;
+    value.type = ZR_VALUE_TYPE_NULL;
+    value.value.nativeObject.nativeUInt64 = 0;
+    value.isGarbageCollectable = ZR_FALSE;
+    value.isNative = ZR_TRUE;
+    value.ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+    value.ownershipControl = ZR_NULL;
+    value.ownershipWeakRef = ZR_NULL;
+    return value;
+}
+
 ZR_FORCE_INLINE void ZrCore_HashSet_Init(struct SZrState *state, SZrHashSet *set, TZrSize capacityLog2) {
     ZR_ASSERT(set != NULL && capacityLog2 != 0);
     const TZrSize capacity = (TZrSize) 1 << capacityLog2;
@@ -121,7 +133,9 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_AddRawObject(struct SZrState
 ZR_FORCE_INLINE SZrTypeValue ZrCore_HashSet_Remove(struct SZrState *state, SZrHashSet *set, const SZrTypeValue *element) {
     if (state == ZR_NULL || set == ZR_NULL || element == ZR_NULL || !set->isValid || set->buckets == ZR_NULL ||
         set->capacity == 0) {
-        return state != ZR_NULL && state->global != ZR_NULL ? state->global->nullValue : (SZrTypeValue){0};
+        return state != ZR_NULL && state->global != ZR_NULL
+            ? state->global->nullValue
+            : ZrCore_HashSet_MakeNullValueFallback();
     }
     TZrUInt64 hash = ZrCore_Value_GetHash(state, element);
     SZrHashKeyValuePair *object = ZrCore_HashSet_GetBucket(set, hash);

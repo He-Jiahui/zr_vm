@@ -11,8 +11,10 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/hash_set.h"
+#include "zr_vm_core/utf8.h"
 struct SZrGlobalState;
 struct SZrState;
+struct SZrObject;
 struct SZrTypeValue;
 #define ZR_STRING_LITERAL(STATE, STR) (ZrCore_String_Create((STATE), "" STR, (sizeof(STR) / sizeof(char) - 1)))
 
@@ -78,24 +80,15 @@ ZR_FORCE_INLINE TZrSize ZrCore_NativeString_Concat(TZrNativeString string1, TZrN
 
 
 ZR_FORCE_INLINE TZrSize ZrCore_NativeString_Utf8CharLength(TZrChar *buffer, TZrUInt64 uChar) {
-    ZR_ASSERT(uChar <= 0x7fffffffu);
-    TZrSize length = 1;
-    if (uChar <= 0x7fu) {
-        // 0xxxxxxx
-        buffer[ZR_STRING_UTF8_SIZE - 1] = ZR_CAST_CHAR(uChar);
-    } else {
-        TZrUInt64 maxFirstByte = 0x3fu;
-        // convert uChar to:
-        // 110xxxxx 10xxxxxx  (11)
-        // 1110xxxx 10xxxxxx 10xxxxxx  (16)
-        // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx (21)
-        do {
-            buffer[ZR_STRING_UTF8_SIZE - (length++)] = ZR_CAST_CHAR(0x80u | (uChar & 0x3fu));
-            uChar >>= 6;
-            maxFirstByte >>= 1;
-        } while (uChar > maxFirstByte);
-        buffer[ZR_STRING_UTF8_SIZE - length] = ZR_CAST_CHAR((~maxFirstByte << 1) | uChar);
+    TZrChar encoded[ZR_STRING_UTF8_SIZE];
+    TZrSize length = 0;
+
+    ZR_ASSERT(uChar <= 0xffffffffu);
+    if (buffer == ZR_NULL || !ZrCore_Utf8_EncodeCodePoint((TZrUInt32)uChar, encoded, &length)) {
+        return 0;
     }
+
+    memcpy(buffer + ZR_STRING_UTF8_SIZE - length, encoded, length);
     return length;
 }
 
@@ -137,6 +130,26 @@ ZR_FORCE_INLINE TZrNativeString ZrCore_String_GetNativeString(const SZrString *s
         return *ZrCore_String_GetNativeStringLong(string);
     }
 }
+
+ZR_FORCE_INLINE TZrSize ZrCore_String_GetByteLength(const SZrString *string) {
+    if (string == ZR_NULL) {
+        return 0;
+    }
+
+    return string->shortStringLength < ZR_VM_LONG_STRING_FLAG
+                   ? (TZrSize)string->shortStringLength
+                   : string->longStringLength;
+}
+
+ZR_CORE_API TZrBool ZrCore_String_GetCodePointLength(const SZrString *string, TZrSize *outLength);
+
+ZR_CORE_API TZrBool ZrCore_String_CodePointCountToByteOffset(const SZrString *string,
+                                                             TZrSize codePointCount,
+                                                             TZrSize *outOffset);
+
+ZR_CORE_API TZrBool ZrCore_String_ToByteArray(struct SZrState *state,
+                                              const SZrString *string,
+                                              struct SZrObject **outArray);
 
 ZR_CORE_API TZrBool ZrCore_String_Equal(SZrString *string1, SZrString *string2);
 

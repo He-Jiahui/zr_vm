@@ -178,34 +178,39 @@ static TZrBool function_validate_create_closure_targets_in_child_graph_recursive
             if (targetFunction == ZR_NULL || !function_child_graph_contains_target(function, targetFunction)) {
                 for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
                     const SZrFunction *childFunction = &function->childFunctionList[childIndex];
-                    fprintf(stderr,
-                            "[closure-graph]   child[%u]=%p name=%s params=%u instr=%u lines=%u-%u\n",
-                            (unsigned)childIndex,
-                            (const void *)childFunction,
-                            childFunction->functionName != ZR_NULL
-                                    ? ZrCore_String_GetNativeString(childFunction->functionName)
-                                    : "<anonymous>",
-                            (unsigned)childFunction->parameterCount,
-                            (unsigned)childFunction->instructionsLength,
-                            (unsigned)childFunction->lineInSourceStart,
-                            (unsigned)childFunction->lineInSourceEnd);
+                    ZrCore_Log_Diagnosticf(ZR_NULL,
+                                           ZR_LOG_LEVEL_ERROR,
+                                           ZR_OUTPUT_CHANNEL_STDERR,
+                                           "[closure-graph]   child[%u]=%p name=%s params=%u instr=%u lines=%u-%u\n",
+                                           (unsigned)childIndex,
+                                           (const void *)childFunction,
+                                           childFunction->functionName != ZR_NULL
+                                                   ? ZrCore_String_GetNativeString(childFunction->functionName)
+                                                   : "<anonymous>",
+                                           (unsigned)childFunction->parameterCount,
+                                           (unsigned)childFunction->instructionsLength,
+                                           (unsigned)childFunction->lineInSourceStart,
+                                           (unsigned)childFunction->lineInSourceEnd);
                 }
-                fprintf(stderr,
-                        "[closure-graph] function=%s ptr=%p instr=%u const=%u target=%p targetName=%s params=%u instrs=%u lines=%u-%u childCount=%u\n",
-                        function->functionName != ZR_NULL ? ZrCore_String_GetNativeString(function->functionName)
-                                                         : "<anonymous>",
-                        (const void *)function,
-                        (unsigned)instructionIndex,
-                        (unsigned)constantIndex,
-                        (const void *)targetFunction,
-                        (targetFunction != ZR_NULL && targetFunction->functionName != ZR_NULL)
-                                ? ZrCore_String_GetNativeString(targetFunction->functionName)
-                                : "<anonymous>",
-                        targetFunction != ZR_NULL ? (unsigned)targetFunction->parameterCount : 0u,
-                        targetFunction != ZR_NULL ? (unsigned)targetFunction->instructionsLength : 0u,
-                        targetFunction != ZR_NULL ? (unsigned)targetFunction->lineInSourceStart : 0u,
-                        targetFunction != ZR_NULL ? (unsigned)targetFunction->lineInSourceEnd : 0u,
-                        (unsigned)function->childFunctionLength);
+                ZrCore_Log_Diagnosticf(ZR_NULL,
+                                       ZR_LOG_LEVEL_ERROR,
+                                       ZR_OUTPUT_CHANNEL_STDERR,
+                                       "[closure-graph] function=%s ptr=%p instr=%u const=%u target=%p targetName=%s params=%u instrs=%u lines=%u-%u childCount=%u\n",
+                                       function->functionName != ZR_NULL
+                                               ? ZrCore_String_GetNativeString(function->functionName)
+                                               : "<anonymous>",
+                                       (const void *)function,
+                                       (unsigned)instructionIndex,
+                                       (unsigned)constantIndex,
+                                       (const void *)targetFunction,
+                                       (targetFunction != ZR_NULL && targetFunction->functionName != ZR_NULL)
+                                               ? ZrCore_String_GetNativeString(targetFunction->functionName)
+                                               : "<anonymous>",
+                                       targetFunction != ZR_NULL ? (unsigned)targetFunction->parameterCount : 0u,
+                                       targetFunction != ZR_NULL ? (unsigned)targetFunction->instructionsLength : 0u,
+                                       targetFunction != ZR_NULL ? (unsigned)targetFunction->lineInSourceStart : 0u,
+                                       targetFunction != ZR_NULL ? (unsigned)targetFunction->lineInSourceEnd : 0u,
+                                       (unsigned)function->childFunctionLength);
                 return ZR_FALSE;
             }
         }

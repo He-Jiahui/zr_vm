@@ -80,6 +80,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
 
     // IO
     FZrIoLoadSource sourceLoader;
+    TZrPtr sourceLoaderUserData;
     FZrAotModuleLoader aotModuleLoader;
     TZrPtr aotModuleLoaderUserData;
     FZrNativeModuleLoader nativeModuleLoader;
@@ -90,6 +91,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // 封装了从源代码解析到编译的全流程
     struct SZrFunction *(*compileSource)(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);
     TZrBool emitCompileTimeRuntimeSupport;
+    SZrArray importCompileInfoStack;
 
 
     // exceptions

@@ -109,9 +109,9 @@ doc_type: module-detail
 
 native binding descriptor 现在支持模块 materialize 回调。`zr.task` 与 `zr.coroutine` 利用这条路径把状态相关的根属性挂到每个 isolate 的模块对象上，而不是把 `defaultScheduler` / `coroutineScheduler` 硬编码成静态常量。
 
-这条 hook 目前先用于：
+这条 hook 当前用于：
 
 - `zr.task.defaultScheduler`
 - `zr.coroutine.coroutineScheduler`
 
-后续 thread 模块接入时，也会复用这条机制做 isolate 相关对象的根导出初始化。
+`zr.thread` 的 worker isolate 调度和跨线程 transport 另见 `zr-thread-runtime.md`。

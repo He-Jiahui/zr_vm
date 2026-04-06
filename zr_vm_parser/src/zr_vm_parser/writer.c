@@ -173,12 +173,14 @@ TZrBool ZrParser_Writer_FunctionTreeHasDebugInfo(const SZrFunction *function) {
     return ZR_FALSE;
 }
 
-static TZrUInt64 function_find_debug_line_for_instruction(const SZrFunction *function, TZrUInt32 instructionIndex) {
-    TZrUInt64 bestLine = 0;
+static SZrFunctionExecutionLocationInfo function_find_debug_location_for_instruction(const SZrFunction *function,
+                                                                                     TZrUInt32 instructionIndex) {
+    SZrFunctionExecutionLocationInfo bestLocation;
     TZrUInt32 index;
 
+    ZrCore_Memory_RawSet(&bestLocation, 0, sizeof(bestLocation));
     if (function == ZR_NULL || function->executionLocationInfoList == ZR_NULL || function->executionLocationInfoLength == 0) {
-        return 0;
+        return bestLocation;
     }
 
     for (index = 0; index < function->executionLocationInfoLength; index++) {
@@ -186,14 +188,16 @@ static TZrUInt64 function_find_debug_line_for_instruction(const SZrFunction *fun
         if (info->currentInstructionOffset > instructionIndex) {
             break;
         }
-        bestLine = info->lineInSource;
+        bestLocation = *info;
     }
 
-    if (bestLine == 0 && function->lineInSourceStart > 0) {
-        bestLine = function->lineInSourceStart;
+    if (bestLocation.lineInSource == 0 && function->lineInSourceStart > 0) {
+        bestLocation.lineInSource = function->lineInSourceStart;
+        bestLocation.lineInSourceEnd =
+                function->lineInSourceEnd > 0 ? function->lineInSourceEnd : function->lineInSourceStart;
     }
 
-    return bestLine;
+    return bestLocation;
 }
 
 static void write_native_string_with_length(FILE *file, const TZrChar *text) {
@@ -268,8 +272,17 @@ static void write_function_debug_infos(FILE *file,
         TZrUInt64 instructionsLength = function->instructionsLength;
         fwrite(&instructionsLength, sizeof(TZrUInt64), 1, file);
         for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
-            TZrUInt64 line = function_find_debug_line_for_instruction(function, index);
+            SZrFunctionExecutionLocationInfo location = function_find_debug_location_for_instruction(function, index);
+            TZrUInt64 line = location.lineInSource;
             fwrite(&line, sizeof(TZrUInt64), 1, file);
+        }
+
+        for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+            SZrFunctionExecutionLocationInfo location = function_find_debug_location_for_instruction(function, index);
+            fwrite(&location.lineInSource, sizeof(TZrUInt32), 1, file);
+            fwrite(&location.columnInSourceStart, sizeof(TZrUInt32), 1, file);
+            fwrite(&location.lineInSourceEnd, sizeof(TZrUInt32), 1, file);
+            fwrite(&location.columnInSourceEnd, sizeof(TZrUInt32), 1, file);
         }
     }
 }

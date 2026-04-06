@@ -1,5 +1,9 @@
 var network = %import("zr.network");
+var lib = %import("lib");
 
+lib.a += 5;
+var r = new lib.Record(3, 4);
+var sum = r();
 var tcp = network.tcp;
 var udp = network.udp;
 

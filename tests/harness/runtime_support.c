@@ -8,12 +8,207 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/stack.h"
 
+#if defined(_MSC_VER)
+    #define ZR_TESTS_THREAD_LOCAL __declspec(thread)
+#else
+    #define ZR_TESTS_THREAD_LOCAL _Thread_local
+#endif
+
+#define ZR_TESTS_CRASH_SCOPE_STACK_CAPACITY 16u
+
 typedef struct ZrTestsRuntimeExecuteRequest {
     SZrFunction *function;
     SZrClosure *closure;
     TZrStackValuePointer resultBase;
     TZrBool callCompleted;
 } ZrTestsRuntimeExecuteRequest;
+
+typedef struct ZrTestsRuntimePanicHandlerRegistration {
+    SZrGlobalState *global;
+    FZrPanicHandlingFunction userHandler;
+    struct ZrTestsRuntimePanicHandlerRegistration *next;
+} ZrTestsRuntimePanicHandlerRegistration;
+
+static ZrTestsRuntimePanicHandlerRegistration *g_zr_tests_runtime_panic_handlers = ZR_NULL;
+static ZR_TESTS_THREAD_LOCAL SZrState *g_zr_tests_runtime_crash_scope_stack[ZR_TESTS_CRASH_SCOPE_STACK_CAPACITY];
+static ZR_TESTS_THREAD_LOCAL TZrUInt32 g_zr_tests_runtime_crash_scope_depth = 0;
+static ZR_TESTS_THREAD_LOCAL SZrState *g_zr_tests_runtime_last_panic_state = ZR_NULL;
+static FZrTestsRuntimeFatalCrashHook g_zr_tests_runtime_fatal_crash_hook = ZR_NULL;
+
+static FZrPanicHandlingFunction zr_tests_runtime_lookup_user_panic_handler(SZrGlobalState *global) {
+    ZrTestsRuntimePanicHandlerRegistration *registration = g_zr_tests_runtime_panic_handlers;
+
+    while (registration != ZR_NULL) {
+        if (registration->global == global) {
+            return registration->userHandler;
+        }
+        registration = registration->next;
+    }
+
+    return ZR_NULL;
+}
+
+static void zr_tests_runtime_register_panic_handler(SZrGlobalState *global, FZrPanicHandlingFunction handler) {
+    ZrTestsRuntimePanicHandlerRegistration *registration;
+
+    if (global == ZR_NULL) {
+        return;
+    }
+
+    registration = (ZrTestsRuntimePanicHandlerRegistration *)malloc(sizeof(*registration));
+    if (registration == ZR_NULL) {
+        return;
+    }
+
+    registration->global = global;
+    registration->userHandler = handler;
+    registration->next = g_zr_tests_runtime_panic_handlers;
+    g_zr_tests_runtime_panic_handlers = registration;
+}
+
+static void zr_tests_runtime_unregister_panic_handler(SZrGlobalState *global) {
+    ZrTestsRuntimePanicHandlerRegistration *current = g_zr_tests_runtime_panic_handlers;
+    ZrTestsRuntimePanicHandlerRegistration *previous = ZR_NULL;
+
+    while (current != ZR_NULL) {
+        if (current->global == global) {
+            if (previous == ZR_NULL) {
+                g_zr_tests_runtime_panic_handlers = current->next;
+            } else {
+                previous->next = current->next;
+            }
+            free(current);
+            return;
+        }
+        previous = current;
+        current = current->next;
+    }
+}
+
+static void zr_tests_runtime_forget_state_from_crash_scopes(SZrState *state) {
+    TZrUInt32 writeIndex = 0;
+    TZrUInt32 readIndex;
+
+    if (state == ZR_NULL) {
+        return;
+    }
+
+    for (readIndex = 0; readIndex < g_zr_tests_runtime_crash_scope_depth; ++readIndex) {
+        if (g_zr_tests_runtime_crash_scope_stack[readIndex] == state) {
+            continue;
+        }
+        g_zr_tests_runtime_crash_scope_stack[writeIndex++] = g_zr_tests_runtime_crash_scope_stack[readIndex];
+    }
+
+    g_zr_tests_runtime_crash_scope_depth = writeIndex;
+    if (g_zr_tests_runtime_last_panic_state == state) {
+        g_zr_tests_runtime_last_panic_state = ZR_NULL;
+    }
+}
+
+static void zr_tests_runtime_panic_handler_dispatch(SZrState *state) {
+    FZrPanicHandlingFunction userHandler = ZR_NULL;
+
+    if (state != ZR_NULL) {
+        g_zr_tests_runtime_last_panic_state = state;
+        if (g_zr_tests_runtime_crash_scope_depth == 0) {
+            g_zr_tests_runtime_crash_scope_stack[0] = state;
+            g_zr_tests_runtime_crash_scope_depth = 1;
+        }
+        if (state->global != ZR_NULL) {
+            userHandler = zr_tests_runtime_lookup_user_panic_handler(state->global);
+        }
+    }
+
+    if (userHandler != ZR_NULL) {
+        userHandler(state);
+    }
+
+    if (g_zr_tests_runtime_fatal_crash_hook != ZR_NULL) {
+        g_zr_tests_runtime_fatal_crash_hook(state);
+    }
+}
+
+void ZrTests_Runtime_SetFatalCrashHook(FZrTestsRuntimeFatalCrashHook hook) {
+    g_zr_tests_runtime_fatal_crash_hook = hook;
+}
+
+void ZrTests_Runtime_CrashScope_Begin(SZrState *state) {
+    if (state == ZR_NULL) {
+        return;
+    }
+
+    if (g_zr_tests_runtime_crash_scope_depth < ZR_TESTS_CRASH_SCOPE_STACK_CAPACITY) {
+        g_zr_tests_runtime_crash_scope_stack[g_zr_tests_runtime_crash_scope_depth++] = state;
+    } else {
+        g_zr_tests_runtime_crash_scope_stack[ZR_TESTS_CRASH_SCOPE_STACK_CAPACITY - 1u] = state;
+    }
+}
+
+void ZrTests_Runtime_CrashScope_End(SZrState *state) {
+    TZrUInt32 index;
+
+    if (state == ZR_NULL || g_zr_tests_runtime_crash_scope_depth == 0) {
+        if (g_zr_tests_runtime_last_panic_state == state) {
+            g_zr_tests_runtime_last_panic_state = ZR_NULL;
+        }
+        return;
+    }
+
+    for (index = g_zr_tests_runtime_crash_scope_depth; index > 0; --index) {
+        if (g_zr_tests_runtime_crash_scope_stack[index - 1u] == state) {
+            TZrUInt32 moveIndex;
+            for (moveIndex = index; moveIndex < g_zr_tests_runtime_crash_scope_depth; ++moveIndex) {
+                g_zr_tests_runtime_crash_scope_stack[moveIndex - 1u] = g_zr_tests_runtime_crash_scope_stack[moveIndex];
+            }
+            g_zr_tests_runtime_crash_scope_depth--;
+            break;
+        }
+    }
+
+    if (g_zr_tests_runtime_last_panic_state == state) {
+        g_zr_tests_runtime_last_panic_state = ZR_NULL;
+    }
+}
+
+SZrState *ZrTests_Runtime_CrashState_Current(void) {
+    if (g_zr_tests_runtime_crash_scope_depth > 0) {
+        return g_zr_tests_runtime_crash_scope_stack[g_zr_tests_runtime_crash_scope_depth - 1u];
+    }
+
+    return g_zr_tests_runtime_last_panic_state;
+}
+
+void ZrTests_Runtime_ClearCrashState(void) {
+    g_zr_tests_runtime_crash_scope_depth = 0;
+    g_zr_tests_runtime_last_panic_state = ZR_NULL;
+}
+
+TZrBool ZrTests_Runtime_ReportCrashState(FILE *stream, TZrBool *printedExceptionStack) {
+    SZrState *state = ZrTests_Runtime_CrashState_Current();
+    FILE *output = stream != ZR_NULL ? stream : stderr;
+
+    if (printedExceptionStack != ZR_NULL) {
+        *printedExceptionStack = ZR_FALSE;
+    }
+
+    if (state == ZR_NULL || output == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fputs("[zr-tests] active zr vm state detected during fatal crash.\n", output);
+    if (state->hasCurrentException) {
+        if (printedExceptionStack != ZR_NULL) {
+            *printedExceptionStack = ZR_TRUE;
+        }
+        ZrCore_Exception_PrintUnhandled(state, &state->currentException, output);
+    } else {
+        fputs("[zr-tests] active zr vm state had no normalized current exception to print.\n", output);
+        fflush(output);
+    }
+
+    return ZR_TRUE;
+}
 
 static TZrBool zr_tests_runtime_try_invoke_unhandled_handler(SZrState *state, TZrBool *handled) {
     SZrGlobalState *global;
@@ -188,7 +383,8 @@ SZrState *ZrTests_Runtime_State_Create(FZrPanicHandlingFunction panicHandler) {
     SZrState *mainState = global->mainThreadState;
     if (mainState != ZR_NULL) {
         ZrCore_GlobalState_InitRegistry(mainState, global);
-        global->panicHandlingFunction = panicHandler;
+        zr_tests_runtime_register_panic_handler(global, panicHandler);
+        global->panicHandlingFunction = zr_tests_runtime_panic_handler_dispatch;
     }
 
     return mainState;
@@ -199,6 +395,8 @@ void ZrTests_Runtime_State_Destroy(SZrState *state) {
         return;
     }
 
+    zr_tests_runtime_forget_state_from_crash_scopes(state);
+    zr_tests_runtime_unregister_panic_handler(state->global);
     ZrCore_GlobalState_Free(state->global);
 }
 
@@ -223,7 +421,9 @@ TZrBool ZrTests_Runtime_Function_ExecuteCaptureFailure(SZrState *state, SZrFunct
     request.closure = ZR_NULL;
     request.resultBase = ZR_NULL;
     request.callCompleted = ZR_FALSE;
+    ZrTests_Runtime_CrashScope_Begin(state);
     status = ZrCore_Exception_TryRun(state, zr_tests_runtime_execute_body, &request);
+    ZrTests_Runtime_CrashScope_End(state);
     if (status != ZR_THREAD_STATUS_FINE) {
         if (request.closure != ZR_NULL) {
             request.closure->function = ZR_NULL;

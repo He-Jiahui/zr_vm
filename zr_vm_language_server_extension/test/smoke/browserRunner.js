@@ -60,6 +60,42 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '',
 ].join('\n');
 
+const STRUCTURE_SMOKE_MAIN_SOURCE = [
+    'var helper = %import("structure_helper");',
+    'var system = %import("zr.system");',
+    '',
+    'class StructureHero {',
+    '    pub total(): int {',
+    '        return helper.value();',
+    '    }',
+    '}',
+    '',
+    '%test("structureViewSmoke") {',
+    '    return helper.value();',
+    '}',
+    '',
+    'return helper.value();',
+    '',
+].join('\n');
+
+const STRUCTURE_SMOKE_HELPER_SOURCE = [
+    'var cycle = %import("structure_cycle");',
+    '',
+    'pub var value = () => {',
+    '    return cycle.answer();',
+    '};',
+    '',
+].join('\n');
+
+const STRUCTURE_SMOKE_CYCLE_SOURCE = [
+    'var helper = %import("structure_helper");',
+    '',
+    'pub var answer = () => {',
+    '    return 42;',
+    '};',
+    '',
+].join('\n');
+
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
@@ -70,13 +106,35 @@ async function sleep(milliseconds) {
     await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+async function withActionTimeout(promise, timeoutMs, label) {
+    let timeoutHandle;
+
+    try {
+        return await Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                timeoutHandle = setTimeout(() => {
+                    reject(new Error(`Timed out executing ${label}`));
+                }, timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+        }
+    }
+}
+
 async function withRetry(action, predicate, timeoutMs, label) {
     const deadline = Date.now() + timeoutMs;
     let lastError;
+    let lastValue;
 
     while (Date.now() < deadline) {
         try {
-            const value = await action();
+            const attemptTimeoutMs = Math.min(15000, Math.max(1000, timeoutMs));
+            const value = await withActionTimeout(action(), attemptTimeoutMs, label);
+            lastValue = value;
             if (predicate(value)) {
                 return value;
             }
@@ -91,7 +149,28 @@ async function withRetry(action, predicate, timeoutMs, label) {
         throw lastError;
     }
 
-    throw new Error(`Timed out waiting for ${label}`);
+    throw new Error(`Timed out waiting for ${label}${summarizeRetryValue(lastValue)}`);
+}
+
+function summarizeRetryValue(value) {
+    if (value === undefined) {
+        return '';
+    }
+
+    if (Array.isArray(value)) {
+        return ` (last value: array length ${value.length})`;
+    }
+
+    if (value && Array.isArray(value.items)) {
+        return ` (last value: items length ${value.items.length})`;
+    }
+
+    if (value && typeof value === 'object') {
+        const keys = Object.keys(value);
+        return ` (last value keys: ${keys.join(', ')})`;
+    }
+
+    return ` (last value: ${String(value)})`;
 }
 
 function findPositionBySubstring(document, substring, occurrence = 0, offset = 0) {
@@ -116,7 +195,26 @@ async function openDocument(filePath) {
     return document;
 }
 
+async function deleteDocumentFile(uri, fallbackUri) {
+    const workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+    const fallbackTarget = fallbackUri ?? vscode.Uri.joinPath(workspaceFolder.uri, 'src', 'main.zr');
+
+    if (vscode.window.activeTextEditor?.document?.uri?.toString() === uri.toString()) {
+        const fallbackDocument = await vscode.workspace.openTextDocument(fallbackTarget);
+        await vscode.window.showTextDocument(fallbackDocument, { preview: false });
+    }
+
+    // vscode-test-web may emit ENOPRO noise after delete events while the smoke host shuts down.
+    // Leaving the temporary files in the ephemeral web workspace keeps the run deterministic.
+    if (uri.scheme === 'vscode-test-web') {
+        return;
+    }
+
+    await vscode.workspace.fs.delete(uri, { useTrash: false });
+}
+
 async function verifyDiagnostics(workspaceRoot) {
+    console.log('[zr-web-smoke] verifyDiagnostics:start');
     const diagnosticUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'diagnostics_smoke.zr');
     await vscode.workspace.fs.writeFile(
         diagnosticUri,
@@ -134,10 +232,12 @@ async function verifyDiagnostics(workspaceRoot) {
 
     assert(diagnostics[0].message.length > 0, 'Expected syntax diagnostics to include a message');
 
-    await vscode.workspace.fs.delete(diagnosticUri, { useTrash: false });
+    await deleteDocumentFile(diagnosticUri);
+    console.log('[zr-web-smoke] verifyDiagnostics:done');
 }
 
 async function verifyLanguageFeatures(workspaceRoot) {
+    console.log('[zr-web-smoke] verifyLanguageFeatures:start');
     const smokeUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'lsp_smoke.zr');
     await vscode.workspace.fs.writeFile(
         smokeUri,
@@ -145,7 +245,7 @@ async function verifyLanguageFeatures(workspaceRoot) {
     );
 
     const mainDocument = await openDocument(smokeUri);
-    const definitionPosition = findPositionBySubstring(mainDocument, 'x', 0);
+    const definitionPosition = findPositionBySubstring(mainDocument, 'x', 1);
     const definition = await withRetry(
         async () => vscode.commands.executeCommand(
             'vscode.executeDefinitionProvider',
@@ -237,7 +337,8 @@ async function verifyLanguageFeatures(workspaceRoot) {
     assert(renameEntries.some(([uri]) => uriPath(uri).endsWith('/src/lsp_smoke.zr')),
         'Rename should include lsp_smoke.zr edits');
 
-    await vscode.workspace.fs.delete(smokeUri, { useTrash: false });
+    await deleteDocumentFile(smokeUri);
+    console.log('[zr-web-smoke] verifyLanguageFeatures:done');
 }
 
 function completionEntries(items) {
@@ -316,7 +417,58 @@ function hasDocumentSymbol(items, name) {
         (item.name === name || hasDocumentSymbol(item.children, name)));
 }
 
+function structureChildren(node) {
+    return Array.isArray(node?.children) ? node.children : [];
+}
+
+function findImmediateStructureNode(items, predicate) {
+    return Array.isArray(items) ? items.find((item) => item && predicate(item)) : undefined;
+}
+
+function findStructureNode(items, predicate) {
+    if (!Array.isArray(items)) {
+        return undefined;
+    }
+
+    for (const item of items) {
+        if (!item) {
+            continue;
+        }
+        if (predicate(item)) {
+            return item;
+        }
+
+        const nested = findStructureNode(structureChildren(item), predicate);
+        if (nested) {
+            return nested;
+        }
+    }
+
+    return undefined;
+}
+
+function commandArguments(node) {
+    return Array.isArray(node?.commandArguments) ? node.commandArguments : [];
+}
+
+async function verifyActiveSelection(uriSuffix, line, character, label) {
+    await withRetry(
+        async () => vscode.window.activeTextEditor,
+        (editor) => {
+            const active = editor?.selection?.active;
+            return Boolean(editor) &&
+                uriPath(editor.document.uri).endsWith(uriSuffix) &&
+                Boolean(active) &&
+                active.line === line &&
+                active.character === character;
+        },
+        15000,
+        label,
+    );
+}
+
 async function verifyClassLanguageFeatures(workspaceRoot) {
+    console.log('[zr-web-smoke] verifyClassLanguageFeatures:start');
     const smokeUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'classes_full_smoke.zr');
     await vscode.workspace.fs.writeFile(
         smokeUri,
@@ -486,21 +638,226 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     assert(hasDocumentSymbol(documentSymbols, 'total'),
         'Document symbols should include method total');
 
-    await vscode.workspace.fs.delete(smokeUri, { useTrash: false });
+    await deleteDocumentFile(smokeUri);
+    console.log('[zr-web-smoke] verifyClassLanguageFeatures:done');
+}
+
+async function verifyStructureViews(workspaceRoot) {
+    console.log('[zr-web-smoke] verifyStructureViews:start');
+    const mainUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_smoke_main.zr');
+    const helperUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_helper.zr');
+    const cycleUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_cycle.zr');
+
+    await vscode.workspace.fs.writeFile(mainUri, new TextEncoder().encode(STRUCTURE_SMOKE_MAIN_SOURCE));
+    await vscode.workspace.fs.writeFile(helperUri, new TextEncoder().encode(STRUCTURE_SMOKE_HELPER_SOURCE));
+    await vscode.workspace.fs.writeFile(cycleUri, new TextEncoder().encode(STRUCTURE_SMOKE_CYCLE_SOURCE));
+
+    try {
+        const mainDocument = await openDocument(mainUri);
+        const totalDefinitionPosition = findPositionBySubstring(mainDocument, 'pub total(): int {', 0, 4);
+        const helperImportPosition = findPositionBySubstring(
+            mainDocument,
+            'var helper = %import("structure_helper");',
+            0,
+            0,
+        );
+        const helperDocument = await vscode.workspace.openTextDocument(helperUri);
+        const helperValuePosition = findPositionBySubstring(helperDocument, 'pub var value = () => {', 0, 8);
+
+        await vscode.commands.executeCommand('zr.structure.refresh');
+        const snapshot = await withRetry(
+            async () => vscode.commands.executeCommand('zr.__inspectStructureViews'),
+            (value) => Array.isArray(value?.files) && Array.isArray(value?.imports),
+            15000,
+            'structure view snapshot',
+        );
+
+        const projectNode = findStructureNode(
+            snapshot.files,
+            (node) => node.nodeType === 'project' && node.label === 'import_basic',
+        );
+        assert(projectNode, 'Expected structure views to group files under the owning .zrp project');
+
+        const mainFileNode = findStructureNode(
+            snapshot.files,
+            (node) => node.nodeType === 'file' && node.moduleName === 'structure_smoke_main',
+        );
+        assert(mainFileNode, 'Expected ZR Files view to include structure_smoke_main');
+
+        const mainImportsGroup = findStructureNode(
+            structureChildren(mainFileNode),
+            (node) => node.nodeType === 'imports',
+        );
+        const mainDeclarationsGroup = findImmediateStructureNode(
+            structureChildren(mainFileNode),
+            (node) => node.nodeType === 'declarations',
+        );
+        assert(mainImportsGroup, 'Expected structure_smoke_main to include an Imports group');
+        assert(mainDeclarationsGroup, 'Expected structure_smoke_main to include a Declarations group');
+        assert(
+            findStructureNode(
+                structureChildren(mainImportsGroup),
+                (node) => node.nodeType === 'import' && node.moduleName === 'structure_helper',
+            ),
+            'Expected Imports group to include workspace import structure_helper',
+        );
+        assert(
+            findStructureNode(
+                structureChildren(mainImportsGroup),
+                (node) => node.nodeType === 'import' && node.moduleName === 'zr.system' && node.description === 'builtin',
+            ),
+            'Expected Imports group to include builtin import zr.system',
+        );
+        const builtinSystemImportNode = findStructureNode(
+            structureChildren(mainImportsGroup),
+            (node) => node.nodeType === 'import' && node.moduleName === 'zr.system',
+        );
+        assert(
+            findStructureNode(
+                structureChildren(builtinSystemImportNode),
+                (node) => node.nodeType === 'module' && node.moduleName === 'zr.system.fs',
+            ),
+            'Expected builtin import zr.system to expose builtin child modules',
+        );
+        assert(
+            findStructureNode(
+                structureChildren(mainDeclarationsGroup),
+                (node) => node.nodeType === 'declaration' && node.label === 'StructureHero',
+            ),
+            'Expected Declarations group to include StructureHero',
+        );
+        assert(
+            findStructureNode(
+                structureChildren(mainDeclarationsGroup),
+                (node) => node.nodeType === 'declaration' && node.label === 'total',
+            ),
+            'Expected Declarations group to include total',
+        );
+        assert(
+            findStructureNode(
+                structureChildren(mainDeclarationsGroup),
+                (node) => node.nodeType === 'declaration' && node.label === 'structureViewSmoke',
+            ),
+            'Expected Declarations group to include %test symbol structureViewSmoke',
+        );
+
+        const mainImportRoot = findStructureNode(
+            snapshot.imports,
+            (node) => node.nodeType === 'module' && node.moduleName === 'structure_smoke_main',
+        );
+        assert(mainImportRoot, 'Expected ZR Imports view to include structure_smoke_main root module');
+
+        const helperModuleNode = findStructureNode(
+            structureChildren(mainImportRoot),
+            (node) => node.nodeType === 'module' && node.moduleName === 'structure_helper',
+        );
+        assert(helperModuleNode, 'Expected import tree to include structure_helper module');
+        const builtinSystemModuleNode = findStructureNode(
+            structureChildren(mainImportRoot),
+            (node) => node.nodeType === 'module' && node.moduleName === 'zr.system',
+        );
+        assert(
+            findStructureNode(
+                structureChildren(builtinSystemModuleNode),
+                (node) => node.nodeType === 'module' && node.moduleName === 'zr.system.vm',
+            ),
+            'Expected import tree to expand builtin modules such as zr.system',
+        );
+
+        const helperDeclarationsGroup = findImmediateStructureNode(
+            structureChildren(helperModuleNode),
+            (node) => node.nodeType === 'declarations',
+        );
+        assert(helperDeclarationsGroup, 'Expected structure_helper module to expose a Declarations group');
+        assert(
+            findStructureNode(
+                structureChildren(helperDeclarationsGroup),
+                (node) => node.nodeType === 'declaration' && node.label === 'value',
+            ),
+            'Expected helper module Declarations group to include value',
+        );
+
+        const cycleModuleNode = findStructureNode(
+            structureChildren(helperModuleNode),
+            (node) => node.nodeType === 'module' && node.moduleName === 'structure_cycle',
+        );
+        assert(cycleModuleNode, 'Expected import tree to include structure_cycle under structure_helper');
+        assert(
+            findStructureNode(
+                structureChildren(cycleModuleNode),
+                (node) => node.nodeType === 'module' &&
+                    node.moduleName === 'structure_helper' &&
+                    node.isRecursiveReference === true,
+            ),
+            'Expected cycle back-edge to structure_helper to be marked as a recursive reference',
+        );
+
+        const totalNode = findStructureNode(
+            structureChildren(mainDeclarationsGroup),
+            (node) => node.nodeType === 'declaration' && node.label === 'total',
+        );
+        assert(totalNode?.commandId, 'Expected declaration node total to expose a navigation command');
+        await vscode.commands.executeCommand(totalNode.commandId, ...commandArguments(totalNode));
+        await verifyActiveSelection(
+            '/src/structure_smoke_main.zr',
+            totalDefinitionPosition.line,
+            totalDefinitionPosition.character,
+            'structure declaration navigation',
+        );
+
+        const helperImportNode = findStructureNode(
+            structureChildren(mainImportsGroup),
+            (node) => node.nodeType === 'import' && node.moduleName === 'structure_helper',
+        );
+        assert(helperImportNode?.commandId, 'Expected import node structure_helper to expose a navigation command');
+        await vscode.commands.executeCommand(helperImportNode.commandId, ...commandArguments(helperImportNode));
+        await verifyActiveSelection(
+            '/src/structure_smoke_main.zr',
+            helperImportPosition.line,
+            helperImportPosition.character,
+            'structure import navigation',
+        );
+
+        assert(helperModuleNode?.commandId, 'Expected helper module node to expose a navigation command');
+        await vscode.commands.executeCommand(helperModuleNode.commandId, ...commandArguments(helperModuleNode));
+        await verifyActiveSelection(
+            '/src/structure_helper.zr',
+            helperValuePosition.line,
+            helperValuePosition.character,
+            'structure module navigation',
+        );
+    } finally {
+        await deleteDocumentFile(mainUri);
+        await deleteDocumentFile(helperUri);
+        await deleteDocumentFile(cycleUri);
+        await vscode.commands.executeCommand('zr.structure.refresh');
+    }
+    console.log('[zr-web-smoke] verifyStructureViews:done');
 }
 
 async function run() {
     const workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+    const focus = typeof process !== 'undefined' && process?.env?.ZR_TEST_SMOKE_FOCUS
+        ? process.env.ZR_TEST_SMOKE_FOCUS
+        : 'all';
     assert(workspaceFolder, 'Expected a workspace folder for smoke test');
     const extension = vscode.extensions.all.find((item) => item.packageJSON?.name === 'zr-vm-language-server');
     assert(extension, 'Expected Zr extension to be present in extension host');
 
+    console.log(`[zr-web-smoke] run:start focus=${focus}`);
     await extension.activate();
     assert(extension.isActive, 'Expected Zr extension to remain active after activation');
+    console.log('[zr-web-smoke] extension:activated');
 
-    await verifyLanguageFeatures(workspaceFolder.uri);
-    await verifyClassLanguageFeatures(workspaceFolder.uri);
-    await verifyDiagnostics(workspaceFolder.uri);
+    if (focus === 'all' || focus === 'lsp') {
+        await verifyLanguageFeatures(workspaceFolder.uri);
+        await verifyClassLanguageFeatures(workspaceFolder.uri);
+        await verifyStructureViews(workspaceFolder.uri);
+        await verifyDiagnostics(workspaceFolder.uri);
+    } else if (focus === 'structure') {
+        await verifyStructureViews(workspaceFolder.uri);
+    }
+    console.log('[zr-web-smoke] run:done');
 }
 
 function uriPath(uri) {

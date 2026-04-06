@@ -2,6 +2,12 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { resolveNativeCliPath } from '../nativeAssets';
 import {
+    activeWorkspaceFolder,
+    findProjectFile,
+    resolveProjectUri as resolveWorkspaceProjectUri,
+    resolveRelativePath,
+} from '../workspaceProjects';
+import {
     ZR_DEBUG_ATTACH_COMMAND,
     ZR_DEBUG_CURRENT_PROJECT_COMMAND,
     ZR_DEBUG_TYPE,
@@ -72,7 +78,7 @@ class ZrDebugConfigurationProvider implements vscode.DebugConfigurationProvider 
             };
         }
 
-        const projectUri = await resolveProjectUri(folder, config.project);
+        const projectUri = await resolveWorkspaceProjectUri(folder, config.project);
         if (!projectUri) {
             void vscode.window.showErrorMessage('Unable to resolve a ZR project (.zrp) to debug.');
             return undefined;
@@ -81,7 +87,7 @@ class ZrDebugConfigurationProvider implements vscode.DebugConfigurationProvider 
         const cliPath = resolveNativeCliPath(this.context);
         if (!cliPath) {
             void vscode.window.showErrorMessage(
-                'Unable to locate zr_vm_cli. Set zr.debug.cli.path or build/sync the native assets.',
+                'Unable to locate zr_vm_cli. Set zr.executablePath or build/sync the native assets.',
             );
             return undefined;
         }
@@ -101,6 +107,9 @@ class ZrDebugConfigurationProvider implements vscode.DebugConfigurationProvider 
             debugAddress: typeof config.debugAddress === 'string' && config.debugAddress.length > 0
                 ? config.debugAddress
                 : '127.0.0.1:0',
+            authToken: typeof config.authToken === 'string' && config.authToken.length > 0
+                ? config.authToken
+                : undefined,
             stopOnEntry: config.stopOnEntry !== false,
         };
     }
@@ -155,68 +164,4 @@ export function registerDesktopDebugSupport(
             }
         }),
     ];
-}
-
-async function resolveProjectUri(
-    folder: vscode.WorkspaceFolder | undefined,
-    projectPath: unknown,
-): Promise<vscode.Uri | undefined> {
-    if (typeof projectPath === 'string' && projectPath.trim().length > 0) {
-        const resolved = resolveRelativePath(folder, projectPath.trim());
-        return vscode.Uri.file(resolved);
-    }
-
-    return findProjectFile(folder);
-}
-
-async function findProjectFile(folder: vscode.WorkspaceFolder | undefined): Promise<vscode.Uri | undefined> {
-    const activeUri = vscode.window.activeTextEditor?.document.uri;
-    if (activeUri && activeUri.scheme === 'file' && activeUri.fsPath.toLowerCase().endsWith('.zrp')) {
-        return activeUri;
-    }
-
-    const searchRoots = folder ? [folder] : (vscode.workspace.workspaceFolders ?? []);
-    const candidates: vscode.Uri[] = [];
-
-    for (const searchRoot of searchRoots) {
-        const found = await vscode.workspace.findFiles(
-            new vscode.RelativePattern(searchRoot, '*.zrp'),
-            undefined,
-            10,
-        );
-        candidates.push(...found);
-    }
-
-    if (candidates.length === 1) {
-        return candidates[0];
-    }
-    if (candidates.length > 1) {
-        const picked = await vscode.window.showQuickPick(
-            candidates.map((uri) => ({
-                label: path.basename(uri.fsPath),
-                description: uri.fsPath,
-                uri,
-            })),
-            {
-                title: 'Select ZR project to debug',
-            },
-        );
-        return picked?.uri;
-    }
-
-    return undefined;
-}
-
-function activeWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
-    const activeDocument = vscode.window.activeTextEditor?.document.uri;
-    return activeDocument ? vscode.workspace.getWorkspaceFolder(activeDocument) : vscode.workspace.workspaceFolders?.[0];
-}
-
-function resolveRelativePath(folder: vscode.WorkspaceFolder | undefined, value: string): string {
-    if (path.isAbsolute(value)) {
-        return path.normalize(value);
-    }
-
-    const base = folder?.uri.fsPath ?? process.cwd();
-    return path.normalize(path.join(base, value));
 }
