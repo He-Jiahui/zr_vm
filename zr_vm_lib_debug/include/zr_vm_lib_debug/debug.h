@@ -132,8 +132,14 @@ ZR_DEBUG_API TZrBool ZrDebug_ReadStack(ZrDebugAgent *agent, ZrDebugFrameSnapshot
 ZR_DEBUG_API TZrBool ZrDebug_ReadScopes(ZrDebugAgent *agent, TZrUInt32 frameId, ZrDebugScopeSnapshot **outScopes,
                                         TZrSize *outCount);
 
-ZR_DEBUG_API TZrBool ZrDebug_ReadVariables(ZrDebugAgent *agent, TZrUInt32 scopeId, ZrDebugValuePreview **outValues,
-                                           TZrSize *outCount);
+ZR_DEBUG_API TZrBool ZrDebug_ReadVariables(ZrDebugAgent *agent,
+                                           TZrUInt32 scopeId,
+                                           TZrSize start,
+                                           TZrSize count,
+                                           ZrDebugValuePreview **outValues,
+                                           TZrSize *outCount,
+                                           TZrSize *outNamedVariables,
+                                           TZrSize *outIndexedVariables);
 ZR_DEBUG_API TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
                                       TZrUInt32 frameId,
                                       const TZrChar *expression,

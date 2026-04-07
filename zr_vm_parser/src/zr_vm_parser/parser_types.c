@@ -171,35 +171,6 @@ static SZrType *wrap_type_in_task_identifier(SZrParserState *ps,
     return wrappedType;
 }
 
-static const TZrChar *classify_atomic_wrapper_name(SZrType *type) {
-    const TZrChar *typeName;
-
-    if (type == ZR_NULL || type->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE || type->subType != ZR_NULL ||
-        type->dimensions != 0 || type->hasArraySizeConstraint || type->name == ZR_NULL ||
-        type->name->type != ZR_AST_IDENTIFIER_LITERAL || type->name->data.identifier.name == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    typeName = ZrCore_String_GetNativeString(type->name->data.identifier.name);
-    if (typeName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (strcmp(typeName, "bool") == 0) {
-        return "AtomicBool";
-    }
-    if (strcmp(typeName, "int") == 0 || strcmp(typeName, "i8") == 0 || strcmp(typeName, "i16") == 0 ||
-        strcmp(typeName, "i32") == 0 || strcmp(typeName, "i64") == 0) {
-        return "AtomicInt";
-    }
-    if (strcmp(typeName, "uint") == 0 || strcmp(typeName, "u8") == 0 || strcmp(typeName, "u16") == 0 ||
-        strcmp(typeName, "u32") == 0 || strcmp(typeName, "u64") == 0) {
-        return "AtomicUInt";
-    }
-
-    return ZR_NULL;
-}
-
 static TZrBool token_can_start_type_expression(EZrToken token) {
     return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST || token == ZR_TK_LBRACKET ||
            token == ZR_TK_LPAREN || token == ZR_TK_PERCENT;
@@ -728,7 +699,7 @@ static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
         if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
             try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier) &&
             peek_token(ps) == ZR_TK_LESS_THAN) {
-            report_error(ps, "Legacy ownership type syntax is removed; use '%unique Type', '%shared Type', '%weak Type' or '%borrowed Type'");
+            report_error(ps, "Legacy ownership type syntax is removed; use '%unique Type', '%shared Type', '%weak Type', '%borrowed Type' or '%loaned Type'");
             ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
             return ZR_NULL;
         }

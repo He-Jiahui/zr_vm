@@ -960,41 +960,36 @@ ZR_PARSER_API TZrBool resolve_source_type_declaration_target_inference(SZrCompil
     return ZR_FALSE;
 }
 
-static TZrBool protocol_id_from_base_name(SZrString *baseName, EZrProtocolId *outProtocolId) {
+static TZrBool protocol_id_from_mask(TZrUInt64 protocolMask, EZrProtocolId *outProtocolId) {
+    EZrProtocolId matched = ZR_PROTOCOL_ID_NONE;
+
     if (outProtocolId != ZR_NULL) {
         *outProtocolId = ZR_PROTOCOL_ID_NONE;
     }
 
-    if (baseName == ZR_NULL || outProtocolId == ZR_NULL) {
+    if (outProtocolId == ZR_NULL || protocolMask == 0) {
         return ZR_FALSE;
     }
 
-    if (zr_string_equals_cstr(baseName, "Equatable")) {
-        *outProtocolId = ZR_PROTOCOL_ID_EQUATABLE;
-        return ZR_TRUE;
-    }
-    if (zr_string_equals_cstr(baseName, "Hashable")) {
-        *outProtocolId = ZR_PROTOCOL_ID_HASHABLE;
-        return ZR_TRUE;
-    }
-    if (zr_string_equals_cstr(baseName, "Comparable")) {
-        *outProtocolId = ZR_PROTOCOL_ID_COMPARABLE;
-        return ZR_TRUE;
-    }
-    if (zr_string_equals_cstr(baseName, "Iterable")) {
-        *outProtocolId = ZR_PROTOCOL_ID_ITERABLE;
-        return ZR_TRUE;
-    }
-    if (zr_string_equals_cstr(baseName, "Iterator")) {
-        *outProtocolId = ZR_PROTOCOL_ID_ITERATOR;
-        return ZR_TRUE;
-    }
-    if (zr_string_equals_cstr(baseName, "ArrayLike")) {
-        *outProtocolId = ZR_PROTOCOL_ID_ARRAY_LIKE;
-        return ZR_TRUE;
+    for (EZrProtocolId protocolId = (EZrProtocolId)(ZR_PROTOCOL_ID_NONE + 1);
+         protocolId <= ZR_PROTOCOL_ID_ARRAY_LIKE;
+         protocolId = (EZrProtocolId)(protocolId + 1)) {
+        if ((protocolMask & ZR_PROTOCOL_BIT(protocolId)) == 0) {
+            continue;
+        }
+
+        if (matched != ZR_PROTOCOL_ID_NONE) {
+            return ZR_FALSE;
+        }
+        matched = protocolId;
     }
 
-    return ZR_FALSE;
+    if (matched == ZR_PROTOCOL_ID_NONE) {
+        return ZR_FALSE;
+    }
+
+    *outProtocolId = matched;
+    return ZR_TRUE;
 }
 
 static TZrBool try_parse_protocol_type_name(SZrCompilerState *cs,
@@ -1002,6 +997,7 @@ static TZrBool try_parse_protocol_type_name(SZrCompilerState *cs,
                                             EZrProtocolId *outProtocolId,
                                             SZrArray *outArgumentTypeNames) {
     SZrString *baseName = ZR_NULL;
+    SZrTypePrototypeInfo *prototype = ZR_NULL;
 
     if (outProtocolId != ZR_NULL) {
         *outProtocolId = ZR_PROTOCOL_ID_NONE;
@@ -1015,9 +1011,12 @@ static TZrBool try_parse_protocol_type_name(SZrCompilerState *cs,
         ZrCore_Array_Construct(outArgumentTypeNames);
         if (!try_parse_generic_instance_type_name(cs->state, typeName, &baseName, outArgumentTypeNames)) {
             ZrCore_Array_Free(cs->state, outArgumentTypeNames);
-            return protocol_id_from_base_name(typeName, outProtocolId);
+            ZrCore_Array_Construct(outArgumentTypeNames);
+            baseName = typeName;
         }
-        if (!protocol_id_from_base_name(baseName, outProtocolId)) {
+        ensure_generic_instance_type_prototype(cs, baseName != ZR_NULL ? baseName : typeName);
+        prototype = find_compiler_type_prototype_inference_exact(cs, baseName != ZR_NULL ? baseName : typeName);
+        if (prototype == ZR_NULL || !protocol_id_from_mask(prototype->protocolMask, outProtocolId)) {
             ZrCore_Array_Free(cs->state, outArgumentTypeNames);
             return ZR_FALSE;
         }
@@ -1025,10 +1024,13 @@ static TZrBool try_parse_protocol_type_name(SZrCompilerState *cs,
     }
 
     if (try_parse_generic_instance_type_name(cs->state, typeName, &baseName, ZR_NULL)) {
-        return protocol_id_from_base_name(baseName, outProtocolId);
+        ensure_generic_instance_type_prototype(cs, baseName);
+        prototype = find_compiler_type_prototype_inference_exact(cs, baseName);
+    } else {
+        ensure_generic_instance_type_prototype(cs, typeName);
+        prototype = find_compiler_type_prototype_inference_exact(cs, typeName);
     }
-
-    return protocol_id_from_base_name(typeName, outProtocolId);
+    return prototype != ZR_NULL && protocol_id_from_mask(prototype->protocolMask, outProtocolId);
 }
 
 static TZrBool protocol_argument_type_names_match(SZrCompilerState *cs,
@@ -1167,6 +1169,11 @@ static TZrBool prototype_implements_protocol_recursive(SZrCompilerState *cs,
     if (cs == ZR_NULL || prototype == ZR_NULL || protocolId == ZR_PROTOCOL_ID_NONE ||
         depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
         return ZR_FALSE;
+    }
+
+    if ((prototype->protocolMask & ZR_PROTOCOL_BIT(protocolId)) != 0 &&
+        (constraintArgumentTypeNames == ZR_NULL || constraintArgumentTypeNames->length == 0)) {
+        return ZR_TRUE;
     }
 
     implementsSnapshot = prototype->implements;
@@ -1319,6 +1326,50 @@ static TZrBool inferred_type_is_primitive_value_type(const SZrInferredType *actu
            ZR_VALUE_IS_TYPE_FLOAT(actualType->baseType);
 }
 
+static TZrBool inferred_type_is_thread_marker_constraint(SZrString *constraintTypeName,
+                                                         const TZrChar *shortName,
+                                                         const TZrChar *qualifiedName) {
+    const TZrChar *constraintText;
+
+    if (constraintTypeName == ZR_NULL || shortName == ZR_NULL || qualifiedName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    constraintText = ZrCore_String_GetNativeString(constraintTypeName);
+    if (constraintText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return strcmp(constraintText, shortName) == 0 || strcmp(constraintText, qualifiedName) == 0;
+}
+
+static TZrBool inferred_type_satisfies_thread_marker_primitive(const SZrInferredType *actualType,
+                                                               TZrBool requireSync) {
+    SZrInferredType *elementType;
+
+    ZR_UNUSED_PARAMETER(requireSync);
+    if (actualType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (actualType->baseType == ZR_VALUE_TYPE_NULL ||
+        actualType->baseType == ZR_VALUE_TYPE_STRING ||
+        inferred_type_is_primitive_value_type(actualType)) {
+        return ZR_TRUE;
+    }
+
+    if (actualType->baseType == ZR_VALUE_TYPE_ARRAY) {
+        if (actualType->elementTypes.length == 0) {
+            return ZR_TRUE;
+        }
+
+        elementType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&actualType->elementTypes, 0);
+        return inferred_type_satisfies_thread_marker_primitive(elementType, requireSync);
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool inferred_type_satisfies_class_constraint(SZrCompilerState *cs,
                                                         const SZrInferredType *actualType) {
     SZrTypePrototypeInfo *actualPrototype;
@@ -1421,9 +1472,18 @@ static TZrBool inferred_type_satisfies_constraint(SZrCompilerState *cs,
     SZrArray constraintArgumentTypeNames;
     TZrBool isProtocolConstraint;
     TZrBool primitiveMatches;
+    TZrBool isSendConstraint;
+    TZrBool isSyncConstraint;
 
     if (cs == ZR_NULL || actualType == ZR_NULL || constraintTypeName == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    isSendConstraint = inferred_type_is_thread_marker_constraint(constraintTypeName, "Send", "zr.thread.Send");
+    isSyncConstraint = inferred_type_is_thread_marker_constraint(constraintTypeName, "Sync", "zr.thread.Sync");
+    if ((isSendConstraint || isSyncConstraint) &&
+        inferred_type_satisfies_thread_marker_primitive(actualType, isSyncConstraint)) {
+        return ZR_TRUE;
     }
 
     ZrCore_Array_Construct(&constraintArgumentTypeNames);
@@ -1886,6 +1946,7 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
         closedPrototype.accessModifier = openPrototypeSnapshot.accessModifier;
         closedPrototype.modifierFlags = openPrototypeSnapshot.modifierFlags;
         closedPrototype.isImportedNative = openPrototypeSnapshot.isImportedNative;
+        closedPrototype.protocolMask = openPrototypeSnapshot.protocolMask;
         closedPrototype.extendsTypeName = substitute_generic_type_name(cs->state,
                                                                        openPrototypeSnapshot.extendsTypeName,
                                                                        &openPrototypeSnapshot.genericParameters,
@@ -3236,9 +3297,7 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
     construct = &node->data.constructExpression;
     builtinKind = construct->builtinKind;
     if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
-        if (construct->isUsing) {
-            builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_USING;
-        } else if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
+        if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
             builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE;
         } else if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
             builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_SHARED;
@@ -3268,13 +3327,23 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
             return ZR_FALSE;
         }
 
-        if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE) {
-            result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
-            result->isNullable = ZR_TRUE;
-        } else {
-            result->ownershipQualifier = construct->isUsing
-                                                 ? ZR_OWNERSHIP_QUALIFIER_UNIQUE
-                                                 : construct->ownershipQualifier;
+        switch (builtinKind) {
+            case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
+                result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
+                break;
+            case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+                result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
+                break;
+            case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
+                result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                break;
+            case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+                result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+                result->isNullable = ZR_TRUE;
+                break;
+            default:
+                result->ownershipQualifier = construct->ownershipQualifier;
+                break;
         }
         return ZR_TRUE;
     }
@@ -3324,8 +3393,6 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    result->ownershipQualifier = construct->isUsing
-                                     ? ZR_OWNERSHIP_QUALIFIER_UNIQUE
-                                     : construct->ownershipQualifier;
+    result->ownershipQualifier = construct->ownershipQualifier;
     return ZR_TRUE;
 }

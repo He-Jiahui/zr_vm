@@ -10,6 +10,7 @@ import {
 
 const ZR_PROJECT_GLOB = '**/*.zrp';
 const ZR_PROJECT_EXCLUDE_GLOB = '**/{build,bin,node_modules,.git,.vscode-test}/**';
+const ZR_SELECTED_PROJECT_KEY = 'zr.selectedProjectUri';
 
 export interface WorkspaceProject {
     id: string;
@@ -86,6 +87,81 @@ export async function resolveProjectUri(
     }
 
     return findProjectFile(folder);
+}
+
+export async function resolveSelectedProjectUri(
+    context: vscode.ExtensionContext,
+    folder: vscode.WorkspaceFolder | undefined,
+    allowPrompt: boolean,
+): Promise<vscode.Uri | undefined> {
+    const projects = await discoverWorkspaceProjects();
+    const storedId = context.workspaceState.get<string>(ZR_SELECTED_PROJECT_KEY);
+
+    if (projects.length === 0) {
+        await context.workspaceState.update(ZR_SELECTED_PROJECT_KEY, undefined);
+        return undefined;
+    }
+
+    if (projects.length === 1) {
+        await context.workspaceState.update(ZR_SELECTED_PROJECT_KEY, projects[0].id);
+        return projects[0].uri;
+    }
+
+    if (storedId) {
+        const storedProject = projects.find((project) => project.id === storedId);
+        if (storedProject) {
+            return storedProject.uri;
+        }
+    }
+
+    if (!allowPrompt) {
+        return undefined;
+    }
+
+    return selectWorkspaceProject(context, folder, projects);
+}
+
+export async function selectWorkspaceProject(
+    context: vscode.ExtensionContext,
+    folder: vscode.WorkspaceFolder | undefined,
+    preloadedProjects?: WorkspaceProject[],
+): Promise<vscode.Uri | undefined> {
+    const projects = preloadedProjects ?? await discoverWorkspaceProjects();
+    let selectedProject: WorkspaceProject | undefined;
+
+    void folder;
+
+    if (projects.length === 0) {
+        await context.workspaceState.update(ZR_SELECTED_PROJECT_KEY, undefined);
+        return undefined;
+    }
+
+    if (projects.length === 1) {
+        selectedProject = projects[0];
+    } else {
+        const picked = await vscode.window.showQuickPick(
+            projects.map((project) => ({
+                label: project.label,
+                description: project.relativePath,
+                uri: project.uri,
+            })),
+            {
+                title: 'Select ZR project',
+            },
+        );
+        selectedProject = projects.find((project) => project.uri.toString() === picked?.uri.toString());
+    }
+
+    if (!selectedProject) {
+        return undefined;
+    }
+
+    await context.workspaceState.update(ZR_SELECTED_PROJECT_KEY, selectedProject.id);
+    return selectedProject.uri;
+}
+
+export async function hasWorkspaceProjects(): Promise<boolean> {
+    return (await discoverWorkspaceProjects()).length > 0;
 }
 
 export async function findProjectFile(folder: vscode.WorkspaceFolder | undefined): Promise<vscode.Uri | undefined> {

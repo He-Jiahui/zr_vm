@@ -1176,29 +1176,37 @@ async function verifyRichDebugInspection(session, expectedSourcePath) {
         'Expected paused readonly evaluate(this) to expose an expandable object');
 
     const objectVariables = await readDebugVariables(session, evaluateThis.variablesReference);
-    const syntheticNames = ['__type', '__prototype', '__members', '__methods', '__properties', '__staticMembers', '__protocols'];
-    for (const syntheticName of syntheticNames) {
-        assert(debugVariableByName(objectVariables, syntheticName)?.variablesReference > 0,
-            `Expected object expansion to expose ${syntheticName}`);
-    }
-
-    const membersEntry = debugVariableByName(objectVariables, '__members');
-    const typeEntry = debugVariableByName(objectVariables, '__type');
+    const prototypeEntry = debugVariableByName(objectVariables, '$prototype');
     const stateEntry = debugVariableByName(globalsVariables, 'zrState');
     const loadedModulesEntry = debugVariableByName(globalsVariables, 'loadedModules');
+    assert(typeof prototypeEntry?.variablesReference === 'number' && prototypeEntry.variablesReference > 0,
+        'Expected instance expansion to expose $prototype');
+    assert(!debugVariableByName(objectVariables, '$metadata'),
+        'Expected ordinary instances to hide $metadata');
+    assert(!debugVariableByName(objectVariables, '$methods'),
+        'Expected ordinary instances to hide $methods');
 
-    const typeVariables = await readDebugVariables(session, typeEntry.variablesReference);
+    const typeVariables = await readDebugVariables(session, prototypeEntry.variablesReference);
     const zrStateVariables = await readDebugVariables(session, stateEntry.variablesReference);
     const loadedModuleVariables = await readDebugVariables(session, loadedModulesEntry.variablesReference);
+    const metadataEntry = debugVariableByName(typeVariables, '$metadata');
+    const membersEntry = debugVariableByName(typeVariables, '$members');
+    const methodsEntry = debugVariableByName(typeVariables, '$methods');
 
+    assert(typeof metadataEntry?.variablesReference === 'number' && metadataEntry.variablesReference > 0,
+        'Expected type-object expansion to expose $metadata');
     assert(typeof membersEntry?.variablesReference === 'number' && membersEntry.variablesReference > 0,
-        'Expected object __members expansion to remain expandable');
-    assert(debugVariableByName(typeVariables, 'prototype') || debugVariableByName(typeVariables, 'name'),
-        'Expected __type expansion to expose type metadata');
+        'Expected type-object $members expansion to remain expandable');
+    assert(typeof methodsEntry?.variablesReference === 'number' && methodsEntry.variablesReference > 0,
+        'Expected type-object expansion to expose $methods');
     assert(zrStateVariables.length > 0,
         'Expected zrState expansion to expose runtime state metadata');
     assert(loadedModuleVariables.length > 0,
         'Expected loadedModules expansion to expose at least one loaded module');
+
+    const metadataVariables = await readDebugVariables(session, metadataEntry.variablesReference);
+    assert(debugVariableByName(metadataVariables, 'name') || debugVariableByName(metadataVariables, 'memberDescriptorCount'),
+        'Expected $metadata expansion to expose prototype metadata');
 }
 
 async function withPatchedWindowMethod(methodName, replacement, action) {
@@ -1252,16 +1260,16 @@ async function verifyProjectActions(workspaceRoot, bundledCliPath, debugProjectU
     );
 
     await openDocument(vscode.Uri.joinPath(workspaceRoot, 'src', 'main.zr'));
-    const hiddenState = await withRetry(
+    const zrEditorState = await withRetry(
         async () => vscode.commands.executeCommand('zr.__inspectProjectActions'),
-        (value) => value?.isVisible === false,
+        (value) => value?.isVisible === true && String(value?.projectPath ?? '').endsWith('import_basic.zrp'),
         15000,
-        'project actions hidden on zr editor',
+        'project actions remain visible on zr editor',
     );
-    assert(hiddenState?.isVisible === false,
-        'Expected zrp project actions to hide when the active editor is not a .zrp file');
-
-    await openDocument(debugDocument.uri);
+    assert(zrEditorState?.isVisible === true,
+        'Expected selected-project actions to remain visible when the active editor is a .zr file');
+    assert(String(zrEditorState?.projectPath ?? '').endsWith('import_basic.zrp'),
+        'Expected selected-project actions to keep targeting the selected .zrp project');
 
     try {
         await zrConfig.update('executablePath', bundledCliPath, vscode.ConfigurationTarget.Workspace);
@@ -1289,7 +1297,7 @@ async function verifyProjectActions(workspaceRoot, bundledCliPath, debugProjectU
         assert(capturedTask.execution?.process === bundledCliPath,
             'Expected zr.runCurrentProject to use the configured zr_vm_cli executable');
         assert(Array.isArray(capturedTask.execution?.args) && capturedTask.execution.args[0] === debugProjectUri.fsPath,
-            'Expected zr.runCurrentProject to launch the active .zrp file');
+            'Expected zr.runCurrentProject to launch the selected .zrp project');
 
         const debugStopped = waitForDebugEvent('stopped', 15000, undefined, 'project-actions:debug-current-project');
         await vscode.commands.executeCommand('zr.debugCurrentProject');
@@ -1301,7 +1309,7 @@ async function verifyProjectActions(workspaceRoot, bundledCliPath, debugProjectU
         );
         const debugStoppedEvent = await debugStopped;
         assert(debugStoppedEvent?.body?.reason === 'entry',
-            'Expected zr.debugCurrentProject to stop on entry when launched from the active .zrp tab');
+            'Expected zr.debugCurrentProject to stop on entry for the selected .zrp project');
     } finally {
         if (debugSession) {
             await vscode.debug.stopDebugging(debugSession);
@@ -1328,6 +1336,10 @@ async function verifyProjectActionIntegration(workspaceRoot) {
     assert(extension, 'Expected Zr extension to be present before project action verification');
     assert((await vscode.commands.getCommands(true)).includes('zr.runCurrentProject'),
         'Expected zr.runCurrentProject to be registered');
+    assert((await vscode.commands.getCommands(true)).includes('zr.runSelectedProject'),
+        'Expected zr.runSelectedProject to be registered');
+    assert((await vscode.commands.getCommands(true)).includes('zr.selectProject'),
+        'Expected zr.selectProject to be registered');
     assert(fs.existsSync(bundledCliPath),
         `Expected bundled zr_vm_cli at ${bundledCliPath}`);
 
@@ -1508,6 +1520,8 @@ async function verifyDebugIntegration(workspaceRoot) {
     assert(extension, 'Expected Zr extension to be present before debug verification');
     assert((await vscode.commands.getCommands(true)).includes('zr.debugCurrentProject'),
         'Expected zr.debugCurrentProject to be registered');
+    assert((await vscode.commands.getCommands(true)).includes('zr.debugSelectedProject'),
+        'Expected zr.debugSelectedProject to be registered');
     assert((await vscode.commands.getCommands(true)).includes('zr.attachDebugEndpoint'),
         'Expected zr.attachDebugEndpoint to be registered');
     assert((await vscode.commands.getCommands(true)).includes('zr.runCurrentProject'),

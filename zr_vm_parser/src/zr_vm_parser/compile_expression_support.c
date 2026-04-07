@@ -30,10 +30,6 @@ static EZrOwnershipBuiltinKind resolve_construct_expression_builtin_kind(
         return constructExpr->builtinKind;
     }
 
-    if (constructExpr->isUsing) {
-        return ZR_OWNERSHIP_BUILTIN_KIND_USING;
-    }
-
     switch (constructExpr->ownershipQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
             return ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE;
@@ -43,6 +39,7 @@ static EZrOwnershipBuiltinKind resolve_construct_expression_builtin_kind(
             return ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
         case ZR_OWNERSHIP_QUALIFIER_NONE:
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+        case ZR_OWNERSHIP_QUALIFIER_LOANED:
         default:
             return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
     }
@@ -65,12 +62,16 @@ static EZrInstructionCode resolve_ownership_builtin_opcode(const SZrConstructExp
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
             return ZR_INSTRUCTION_ENUM(OWN_UNIQUE);
+        case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
+            return ZR_INSTRUCTION_ENUM(OWN_BORROW);
+        case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+            return ZR_INSTRUCTION_ENUM(OWN_LOAN);
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
             return ZR_INSTRUCTION_ENUM(OWN_SHARE);
         case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
             return ZR_INSTRUCTION_ENUM(OWN_WEAK);
-        case ZR_OWNERSHIP_BUILTIN_KIND_USING:
-            return ZR_INSTRUCTION_ENUM(OWN_USING);
+        case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
+            return ZR_INSTRUCTION_ENUM(OWN_DETACH);
         case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
             return ZR_INSTRUCTION_ENUM(OWN_UPGRADE);
         case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
@@ -103,17 +104,26 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
 
     resultSlot = allocate_stack_slot(cs);
 
-    if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE) {
+    if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE ||
+        builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DETACH) {
         TZrUInt32 sourceSlot;
 
         if (constructExpr->target == ZR_NULL || constructExpr->target->type != ZR_AST_IDENTIFIER_LITERAL) {
-            ZrParser_Compiler_Error(cs, "'%release' currently requires a local identifier binding", location);
+            ZrParser_Compiler_Error(cs,
+                                    builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE
+                                            ? "'%release' currently requires a local identifier binding"
+                                            : "'%detach' currently requires a local identifier binding",
+                                    location);
             return ZR_FALSE;
         }
 
         sourceSlot = find_local_var(cs, constructExpr->target->data.identifier.name);
         if (sourceSlot == ZR_PARSER_SLOT_NONE) {
-            ZrParser_Compiler_Error(cs, "'%release' currently only supports local identifier bindings", location);
+            ZrParser_Compiler_Error(cs,
+                                    builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE
+                                            ? "'%release' currently only supports local identifier bindings"
+                                            : "'%detach' currently only supports local identifier bindings",
+                                    location);
             return ZR_FALSE;
         }
 
@@ -129,7 +139,8 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
     argumentSlot = allocate_stack_slot(cs);
 
     shouldResetConsumedIdentifier =
-            builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_SHARED &&
+            (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_SHARED ||
+             builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_LOAN) &&
             constructExpr->target != ZR_NULL &&
             constructExpr->target->type == ZR_AST_IDENTIFIER_LITERAL &&
             infer_expression_ownership_qualifier_local(cs, constructExpr->target) ==
@@ -410,6 +421,9 @@ TZrBool receiver_ownership_can_call_member_local(EZrOwnershipQualifier receiverQ
                    memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
             return memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        case ZR_OWNERSHIP_QUALIFIER_LOANED:
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED ||
+                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
             return memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
         default:
@@ -425,6 +439,8 @@ const TZrChar *receiver_ownership_call_error_local(EZrOwnershipQualifier receive
             return "Shared-owned receivers can only call %shared or %borrowed methods";
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
             return "Unique-owned receivers can only call %borrowed methods";
+        case ZR_OWNERSHIP_QUALIFIER_LOANED:
+            return "Loaned receivers can only call %loaned or %borrowed methods";
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
             return "Borrowed receivers can only call %borrowed methods";
         case ZR_OWNERSHIP_QUALIFIER_NONE:

@@ -3955,14 +3955,8 @@ static void test_container_module_exports_generic_interfaces_and_constraints(voi
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, typesValue->type);
         typesArray = ZR_CAST_OBJECT(state, typesValue->value.object);
         TEST_ASSERT_NOT_NULL(typesArray);
-        TEST_ASSERT_EQUAL_UINT64(12, get_array_length(typesArray));
+        TEST_ASSERT_EQUAL_UINT64(6, get_array_length(typesArray));
 
-        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Iterable"));
-        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Iterator"));
-        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "ArrayLike"));
-        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Equatable"));
-        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Comparable"));
-        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Hashable"));
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Array"));
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Map"));
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Set"));
@@ -3970,20 +3964,22 @@ static void test_container_module_exports_generic_interfaces_and_constraints(voi
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "LinkedList"));
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "LinkedNode"));
 
-        arrayLikeEntry = find_named_entry_in_array(state, typesArray, "name", "ArrayLike");
+        arrayLikeEntry = find_named_entry_in_array(state, typesArray, "name", "Array");
         TEST_ASSERT_NOT_NULL(arrayLikeEntry);
-        metaMethodsValue = get_object_field_value(state, arrayLikeEntry, "metaMethods");
+        metaMethodsValue = get_object_field_value(state, arrayLikeEntry, "implements");
         TEST_ASSERT_NOT_NULL(metaMethodsValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, metaMethodsValue->type);
         metaMethodsArray = ZR_CAST_OBJECT(state, metaMethodsValue->value.object);
         TEST_ASSERT_NOT_NULL(metaMethodsArray);
         TEST_ASSERT_EQUAL_UINT64(2, get_array_length(metaMethodsArray));
-        firstMetaTypeValue = get_object_field_value(state, get_array_entry_object(state, metaMethodsArray, 0), "metaType");
-        secondMetaTypeValue = get_object_field_value(state, get_array_entry_object(state, metaMethodsArray, 1), "metaType");
+        firstMetaTypeValue = get_array_entry_value(state, metaMethodsArray, 0);
+        secondMetaTypeValue = get_array_entry_value(state, metaMethodsArray, 1);
         TEST_ASSERT_NOT_NULL(firstMetaTypeValue);
         TEST_ASSERT_NOT_NULL(secondMetaTypeValue);
-        TEST_ASSERT_EQUAL_INT64(ZR_META_GET_ITEM, firstMetaTypeValue->value.nativeObject.nativeInt64);
-        TEST_ASSERT_EQUAL_INT64(ZR_META_SET_ITEM, secondMetaTypeValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstMetaTypeValue->value.object),
+                                              "zr.builtin.IArrayLike<T>"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, secondMetaTypeValue->value.object),
+                                              "zr.builtin.IEnumerable<T>"));
 
         mapEntry = find_named_entry_in_array(state, typesArray, "name", "Map");
         TEST_ASSERT_NOT_NULL(mapEntry);
@@ -4003,8 +3999,10 @@ static void test_container_module_exports_generic_interfaces_and_constraints(voi
         secondConstraintValue = get_array_entry_value(state, ZR_CAST_OBJECT(state, constraintsValue->value.object), 1);
         TEST_ASSERT_NOT_NULL(firstConstraintValue);
         TEST_ASSERT_NOT_NULL(secondConstraintValue);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstConstraintValue->value.object), "Hashable"));
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, secondConstraintValue->value.object), "Equatable"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstConstraintValue->value.object),
+                                              "zr.builtin.IHashable"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, secondConstraintValue->value.object),
+                                              "zr.builtin.IEquatable<K>"));
 
         setEntry = find_named_entry_in_array(state, typesArray, "name", "Set");
         TEST_ASSERT_NOT_NULL(setEntry);
@@ -4020,6 +4018,66 @@ static void test_container_module_exports_generic_interfaces_and_constraints(voi
         TEST_ASSERT_NOT_NULL(constraintsValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, constraintsValue->type);
         TEST_ASSERT_EQUAL_UINT64(2, get_array_length(ZR_CAST_OBJECT(state, constraintsValue->value.object)));
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_builtin_module_exports_protocols_roots_and_wrappers(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Builtin Module Exports Protocols Roots And Wrappers";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *module;
+        const SZrTypeValue *moduleInfoValue;
+        const SZrTypeValue *typesValue;
+        SZrObject *moduleInfo;
+        SZrObject *typesArray;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        module = import_native_module(state, "zr.builtin");
+        TEST_ASSERT_NOT_NULL(module);
+
+        moduleInfoValue = get_module_export_value(state, module, ZR_NATIVE_MODULE_INFO_EXPORT_NAME);
+        TEST_ASSERT_NOT_NULL(moduleInfoValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, moduleInfoValue->type);
+
+        moduleInfo = ZR_CAST_OBJECT(state, moduleInfoValue->value.object);
+        TEST_ASSERT_NOT_NULL(moduleInfo);
+
+        typesValue = get_object_field_value(state, moduleInfo, "types");
+        TEST_ASSERT_NOT_NULL(typesValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, typesValue->type);
+        typesArray = ZR_CAST_OBJECT(state, typesValue->value.object);
+        TEST_ASSERT_NOT_NULL(typesArray);
+
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IEnumerable"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IEnumerator"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IArrayLike"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IEquatable"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IHashable"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IComparable"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IComparer"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Object"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Module"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "TypeInfo"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Integer"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Float"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Double"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "String"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Bool"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Byte"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Char"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "UInt64"));
 
         destroy_test_state(state);
     }
@@ -8263,6 +8321,9 @@ int main(void) {
 
     // 26. zr.container 导出泛型接口/类型以及约束元数据
     RUN_TEST(test_container_module_exports_generic_interfaces_and_constraints);
+
+    // 26.1 zr.builtin 导出协议、根类型与 primitive wrappers
+    RUN_TEST(test_builtin_module_exports_protocols_roots_and_wrappers);
 
     // 27. zr.container Array runtime 支持 add 和 [] 访问
     RUN_TEST(test_container_array_runtime_supports_add_and_computed_index_access);

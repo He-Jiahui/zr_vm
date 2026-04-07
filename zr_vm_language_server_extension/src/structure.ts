@@ -188,9 +188,6 @@ class ZrStructureService implements ZrStructureController {
             vscode.commands.registerCommand(ZR_STRUCTURE_OPEN_TARGET_COMMAND, async (payload: OpenTargetPayload) => {
                 await openTarget(payload);
             }),
-            vscode.window.onDidChangeActiveTextEditor(() => {
-                void this.revealActiveEditor();
-            }),
             vscode.workspace.onDidChangeTextDocument((event) => {
                 if (event.document.languageId === 'zr') {
                     this.scheduleRefresh();
@@ -304,8 +301,6 @@ class ZrStructureService implements ZrStructureController {
                 this.importRootByUri.set(node.uri.toString(), node);
             }
         }
-
-        await this.revealActiveEditor();
     }
 
     private async collectSnapshots(projects: WorkspaceProject[]): Promise<FileSnapshot[]> {

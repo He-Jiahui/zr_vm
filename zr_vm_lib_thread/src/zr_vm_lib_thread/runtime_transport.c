@@ -89,6 +89,16 @@ TZrBool zr_vm_task_transport_clone_value(const ZrVmTaskTransportValue *value, Zr
             outValue->as.pointerValue = cell;
             return ZR_TRUE;
         }
+        case ZR_VM_TASK_TRANSPORT_KIND_UNIQUE_MUTEX:
+        case ZR_VM_TASK_TRANSPORT_KIND_SHARED_MUTEX: {
+            ZrVmTaskMutexCell *cell = (ZrVmTaskMutexCell *)value->as.pointerValue;
+
+            if (!zr_vm_task_mutex_cell_add_ref(cell)) {
+                return ZR_FALSE;
+            }
+            outValue->as.pointerValue = cell;
+            return ZR_TRUE;
+        }
         default:
             memset(outValue, 0, sizeof(*outValue));
             return ZR_FALSE;
@@ -110,6 +120,10 @@ void zr_vm_task_transport_clear(ZrVmTaskTransportValue *value) {
         zr_vm_task_shared_cell_release_strong((ZrVmTaskSharedCell *)value->as.pointerValue);
     } else if (value->kind == ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED && value->as.pointerValue != ZR_NULL) {
         zr_vm_task_shared_cell_release_weak((ZrVmTaskSharedCell *)value->as.pointerValue);
+    } else if ((value->kind == ZR_VM_TASK_TRANSPORT_KIND_UNIQUE_MUTEX ||
+                value->kind == ZR_VM_TASK_TRANSPORT_KIND_SHARED_MUTEX) &&
+               value->as.pointerValue != ZR_NULL) {
+        zr_vm_task_mutex_cell_release((ZrVmTaskMutexCell *)value->as.pointerValue);
     }
 
     memset(value, 0, sizeof(*value));
@@ -257,6 +271,26 @@ static TZrBool zr_vm_task_shared_try_encode(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool zr_vm_task_mutex_try_encode(SZrState *state,
+                                           const SZrTypeValue *value,
+                                           ZrVmTaskTransportValue *outValue) {
+    ZrVmTaskMutexCell *cell = ZR_NULL;
+    TZrUInt32 kind = 0u;
+
+    if (!zr_vm_task_mutex_try_get_cell(state, value, &cell, &kind) || cell == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!zr_vm_task_mutex_cell_add_ref(cell)) {
+        return ZR_FALSE;
+    }
+
+    outValue->kind = kind == ZR_VM_TASK_MUTEX_KIND_SHARED ? ZR_VM_TASK_TRANSPORT_KIND_SHARED_MUTEX
+                                                          : ZR_VM_TASK_TRANSPORT_KIND_UNIQUE_MUTEX;
+    outValue->as.pointerValue = cell;
+    return ZR_TRUE;
+}
+
 TZrBool zr_vm_task_transport_encode_value(SZrState *state,
                                           const SZrTypeValue *value,
                                           ZrVmTaskTransportValue *outValue,
@@ -306,6 +340,9 @@ TZrBool zr_vm_task_transport_encode_value(SZrState *state,
         return ZR_TRUE;
     }
     if (zr_vm_task_shared_try_encode(state, value, outValue)) {
+        return ZR_TRUE;
+    }
+    if (zr_vm_task_mutex_try_encode(state, value, outValue)) {
         return ZR_TRUE;
     }
     if (value != ZR_NULL && (value->type == ZR_VALUE_TYPE_OBJECT || value->type == ZR_VALUE_TYPE_ARRAY) &&
@@ -368,6 +405,22 @@ TZrBool zr_vm_task_transport_decode_value(SZrState *state,
                 return ZR_FALSE;
             }
             return zr_vm_task_shared_make_value(state, cell, ZR_TRUE, result);
+        }
+        case ZR_VM_TASK_TRANSPORT_KIND_UNIQUE_MUTEX: {
+            ZrVmTaskMutexCell *cell = (ZrVmTaskMutexCell *)value->as.pointerValue;
+
+            if (!zr_vm_task_mutex_cell_add_ref(cell)) {
+                return ZR_FALSE;
+            }
+            return zr_vm_task_mutex_make_value(state, cell, ZR_VM_TASK_MUTEX_KIND_UNIQUE, result);
+        }
+        case ZR_VM_TASK_TRANSPORT_KIND_SHARED_MUTEX: {
+            ZrVmTaskMutexCell *cell = (ZrVmTaskMutexCell *)value->as.pointerValue;
+
+            if (!zr_vm_task_mutex_cell_add_ref(cell)) {
+                return ZR_FALSE;
+            }
+            return zr_vm_task_mutex_make_value(state, cell, ZR_VM_TASK_MUTEX_KIND_SHARED, result);
         }
         case ZR_VM_TASK_TRANSPORT_KIND_NONE:
         default:

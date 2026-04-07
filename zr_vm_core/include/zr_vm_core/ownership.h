@@ -38,6 +38,14 @@ ZR_CORE_API TZrBool ZrCore_Ownership_UniqueValue(struct SZrState *state,
                                                  SZrTypeValue *destination,
                                                  SZrTypeValue *source);
 
+ZR_CORE_API TZrBool ZrCore_Ownership_BorrowValue(struct SZrState *state,
+                                                 SZrTypeValue *destination,
+                                                 SZrTypeValue *source);
+
+ZR_CORE_API TZrBool ZrCore_Ownership_LoanValue(struct SZrState *state,
+                                               SZrTypeValue *destination,
+                                               SZrTypeValue *source);
+
 ZR_CORE_API TZrBool ZrCore_Ownership_UsingValue(struct SZrState *state,
                                                 SZrTypeValue *destination,
                                                 SZrTypeValue *source);
@@ -53,6 +61,10 @@ ZR_CORE_API TZrBool ZrCore_Ownership_WeakValue(struct SZrState *state,
 ZR_CORE_API TZrBool ZrCore_Ownership_UpgradeValue(struct SZrState *state,
                                                   SZrTypeValue *destination,
                                                   SZrTypeValue *source);
+
+ZR_CORE_API TZrBool ZrCore_Ownership_DetachValue(struct SZrState *state,
+                                                 SZrTypeValue *destination,
+                                                 SZrTypeValue *source);
 
 ZR_CORE_API TZrBool ZrCore_Ownership_ReturnToGcValue(struct SZrState *state,
                                                      SZrTypeValue *destination,

@@ -26,15 +26,17 @@ TZrBool try_get_ownership_qualifier(SZrString *name, EZrOwnershipQualifier *qual
         *qualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
         return ZR_TRUE;
     }
+    if (zr_string_equals_literal(name, "loaned")) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
+        return ZR_TRUE;
+    }
 
     return ZR_FALSE;
 }
 
 static EZrOwnershipBuiltinKind ownership_builtin_kind_from_flags(EZrOwnershipQualifier ownershipQualifier,
                                                                  TZrBool isUsing) {
-    if (isUsing) {
-        return ZR_OWNERSHIP_BUILTIN_KIND_USING;
-    }
+    ZR_UNUSED_PARAMETER(isUsing);
 
     switch (ownershipQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
@@ -45,6 +47,7 @@ static EZrOwnershipBuiltinKind ownership_builtin_kind_from_flags(EZrOwnershipQua
             return ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
         case ZR_OWNERSHIP_QUALIFIER_NONE:
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+        case ZR_OWNERSHIP_QUALIFIER_LOANED:
         default:
             return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
     }
@@ -603,6 +606,11 @@ EZrOwnershipQualifier parse_optional_method_receiver_qualifier(SZrParserState *p
         return ZR_OWNERSHIP_QUALIFIER_NONE;
     }
 
+    if (qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
+        report_error(ps, "'%weak' is not a valid method receiver qualifier");
+        return ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+
     ZrParser_Lexer_Next(ps->lexer);
     return qualifier;
 }
@@ -625,16 +633,28 @@ SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps) {
     ZrParser_Lexer_Next(ps->lexer);
 
     if (ps->lexer->t.token == ZR_TK_USING) {
-        isUsing = ZR_TRUE;
-        builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_USING;
+        report_error(ps, "Ownership '%using' expressions are removed; keep '%using' as a statement or block lifetime fence only");
+        return ZR_NULL;
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+               zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "borrow")) {
+        builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_BORROW;
+        ZrParser_Lexer_Next(ps->lexer);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+               zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "loan")) {
+        builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_LOAN;
         ZrParser_Lexer_Next(ps->lexer);
     } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
                try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier)) {
-        if (ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
-            report_error(ps, "'%borrowed' is only valid in type and method-receiver positions");
+        if (ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+            ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
+            report_error(ps, "'%borrowed' and '%loaned' are only valid in type and method-receiver positions");
             return ZR_NULL;
         }
         builtinKind = ownership_builtin_kind_from_flags(ownershipQualifier, ZR_FALSE);
+        ZrParser_Lexer_Next(ps->lexer);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+               zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "detach")) {
+        builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_DETACH;
         ZrParser_Lexer_Next(ps->lexer);
     } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
                zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "upgrade")) {
@@ -650,13 +670,8 @@ SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps) {
     }
 
     if (ps->lexer->t.token == ZR_TK_NEW) {
-        if (ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
-            report_error(ps, "'%weak new' is not supported; use '%unique new' or '%shared new'");
-            return ZR_NULL;
-        }
-        if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE ||
-            builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE) {
-            report_error(ps, "'%upgrade' and '%release' do not support 'new' construction");
+        if (builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE) {
+            report_error(ps, "Only '%unique new ...' is supported in the ownership surface");
             return ZR_NULL;
         }
         return parse_construct_expression(ps, startLoc, ownershipQualifier, isUsing, builtinKind);

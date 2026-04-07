@@ -2511,9 +2511,16 @@ LZrReturning: {
                 }
             }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(OWN_USING) {
+            ZR_INSTRUCTION_LABEL(OWN_BORROW) {
                 opA = &BASE(A1(instruction))->value;
-                if (!ZrCore_Ownership_UsingValue(state, destination, opA)) {
+                if (!ZrCore_Ownership_BorrowValue(state, destination, opA)) {
+                    ZrCore_Value_ResetAsNull(destination);
+                }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(OWN_LOAN) {
+                opA = &BASE(A1(instruction))->value;
+                if (!ZrCore_Ownership_LoanValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
             }
@@ -2528,6 +2535,13 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(OWN_WEAK) {
                 opA = &BASE(A1(instruction))->value;
                 if (!ZrCore_Ownership_WeakValue(state, destination, opA)) {
+                    ZrCore_Value_ResetAsNull(destination);
+                }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(OWN_DETACH) {
+                opA = &BASE(A1(instruction))->value;
+                if (!ZrCore_Ownership_DetachValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
             }

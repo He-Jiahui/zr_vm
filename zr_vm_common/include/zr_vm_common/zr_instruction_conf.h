@@ -101,7 +101,8 @@
     Z(CREATE_OBJECT)                                                                                                   \
     Z(CREATE_ARRAY)                                                                                                    \
     Z(OWN_UNIQUE)                                                                                                      \
-    Z(OWN_USING)                                                                                                       \
+    Z(OWN_BORROW)                                                                                                      \
+    Z(OWN_LOAN)                                                                                                        \
     Z(OWN_SHARE)                                                                                                       \
     Z(OWN_WEAK)                                                                                                        \
     Z(MARK_TO_BE_CLOSED)                                                                                               \
@@ -134,6 +135,7 @@
     Z(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE)                                                                          \
     Z(SUPER_META_GET_CACHED)                                                                                           \
     Z(SUPER_META_SET_CACHED)                                                                                           \
+    Z(OWN_DETACH)                                                                                                      \
     Z(OWN_UPGRADE)                                                                                                     \
     Z(OWN_RELEASE)                                                                                                     \
     Z(META_GET)                                                                                                        \

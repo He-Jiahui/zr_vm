@@ -1072,6 +1072,14 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             }
         }
     }
+    if (primarySuperTypeName == ZR_NULL) {
+        primarySuperTypeName = ZrCore_String_Create(cs->state,
+                                                    "zr.builtin.Object",
+                                                    strlen("zr.builtin.Object"));
+        if (primarySuperTypeName != ZR_NULL) {
+            ZrCore_Array_Push(cs->state, &info.inherits, &primarySuperTypeName);
+        }
+    }
     info.extendsTypeName = primarySuperTypeName;
     if (info.extendsTypeName != ZR_NULL) {
         SZrTypePrototypeInfo *superPrototype = find_compiler_type_prototype(cs, info.extendsTypeName);
@@ -1200,8 +1208,10 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         memberInfo.fieldSize = sizeof(TZrPtr);
                     }
 
-                    if (memberInfo.isUsingManaged &&
-                        memberInfo.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_WEAK) {
+                    if ((memberInfo.isUsingManaged &&
+                         memberInfo.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_WEAK) ||
+                        memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+                        memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
                         memberInfo.callsClose = ZR_TRUE;
                         memberInfo.callsDestructor = ZR_TRUE;
                     }

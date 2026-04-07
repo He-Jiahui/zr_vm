@@ -32,7 +32,7 @@ meter.value = 6;
 var second = meter.value;
 var third = apply(meter, 3);
 
-var owner = %using new Meter(10);
+var owner = %unique new Meter(10);
 var shared = %shared(owner);
 var weak = %weak(shared);
 var alias = %upgrade(weak);

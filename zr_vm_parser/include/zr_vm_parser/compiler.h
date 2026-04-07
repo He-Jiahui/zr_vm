@@ -269,6 +269,7 @@ typedef struct SZrTypePrototypeInfo {
     EZrAccessModifier accessModifier;   // 访问修饰符
     TZrUInt32 modifierFlags;            // abstract/final 等类型修饰符
     TZrBool isImportedNative;           // 是否为仅用于编译期解析的导入类型 stub（native/source/binary）
+    TZrUInt64 protocolMask;             // 稳定 protocol bit mask
     SZrArray inherits;                  // 继承的类型引用（SZrString* 数组，存储类型名称字符串）
     SZrString *extendsTypeName;         // 单继承目标（如有）
     SZrArray implements;                // 实现/扩展的接口引用（SZrString* 数组）

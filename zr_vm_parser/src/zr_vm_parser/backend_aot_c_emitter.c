@@ -12,11 +12,20 @@ static void backend_aot_write_c_contracts(FILE *file, TZrUInt32 runtimeContracts
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_FUNCTION_PRECALL) {
         fprintf(file, "/* runtime contract: ZrCore_Function_PreCall */\n");
     }
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_BORROW) {
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_BorrowValue */\n");
+    }
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_LOAN) {
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_LoanValue */\n");
+    }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE) {
         fprintf(file, "/* runtime contract: ZrCore_Ownership_NativeShared */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WEAK) {
         fprintf(file, "/* runtime contract: ZrCore_Ownership_NativeWeak */\n");
+    }
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH) {
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_DetachValue */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE) {
         fprintf(file, "/* runtime contract: ZrCore_Ownership_UpgradeValue */\n");

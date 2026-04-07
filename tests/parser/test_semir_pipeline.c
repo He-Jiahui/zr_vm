@@ -199,6 +199,22 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
+static TZrBool function_contains_semir_opcode(const SZrFunction *function, EZrSemIrOpcode opcode) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->semIrInstructions == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < function->semIrInstructionLength; index++) {
+        if ((EZrSemIrOpcode)function->semIrInstructions[index].opcode == opcode) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool function_contains_native_helper_constant(const SZrFunction *function, TZrUInt64 helperId) {
     TZrUInt32 index;
 
@@ -248,7 +264,7 @@ static void test_intermediate_writer_emits_semir_sections(void) {
         SZrState *state = create_test_state();
         const char *source =
                 "class Box {}\n"
-                "var owner = %using new Box();\n"
+                "var owner = %unique new Box();\n"
                 "var alias = %shared(owner);\n"
                 "var watcher = %weak(alias);";
         const char *intermediatePath = "semir_sections_test.zri";
@@ -277,6 +293,7 @@ static void test_intermediate_writer_emits_semir_sections(void) {
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SEMIR"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "DEOPT_MAP"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "EH_TABLE"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_UNIQUE"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_SHARE"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_WEAK"));
 
@@ -304,7 +321,7 @@ static void test_ownership_builtins_lower_to_ownership_opcodes(void) {
         SZrState *state = create_test_state();
         const char *source =
                 "class Box {}\n"
-                "var owner = %using new Box();\n"
+                "var owner = %unique new Box();\n"
                 "var alias = %shared(owner);\n"
                 "var watcher = %weak(alias);";
         SZrString *sourceName;
@@ -321,14 +338,12 @@ static void test_ownership_builtins_lower_to_ownership_opcodes(void) {
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_USING)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
         TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_UNIQUE));
         TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED));
         TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK));
-        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_USING));
-
         ZrCore_Function_Free(state, func);
         destroy_test_state(state);
     }
@@ -351,7 +366,7 @@ static void test_binary_roundtrip_preserves_semir_metadata(void) {
         SZrState *state = create_test_state();
         const char *source =
                 "class Box {}\n"
-                "var owner = %using new Box();\n"
+                "var owner = %unique new Box();\n"
                 "var alias = %shared(owner);\n"
                 "var watcher = %weak(alias);";
         const char *binaryPath = "semir_roundtrip_test.zro";
@@ -397,7 +412,7 @@ static void test_binary_roundtrip_preserves_semir_metadata(void) {
         TEST_ASSERT_TRUE(runtimeFunction->semIrEffectTableLength > 0);
         TEST_ASSERT_TRUE(runtimeFunction->semIrTypeTableLength > 0);
         TEST_ASSERT_TRUE(runtimeFunction->semIrBlockTableLength > 0);
-        TEST_ASSERT_EQUAL_UINT32(ZR_SEMIR_OPCODE_OWN_USING, runtimeFunction->semIrInstructions[0].opcode);
+        TEST_ASSERT_TRUE(function_contains_semir_opcode(runtimeFunction, ZR_SEMIR_OPCODE_OWN_UNIQUE));
         TEST_ASSERT_EQUAL_UINT32(ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION,
                                  runtimeFunction->semIrEffectTable[0].kind);
 

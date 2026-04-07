@@ -84,6 +84,7 @@ static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruc
         case ZR_INSTRUCTION_ENUM(NEG):
         case ZR_INSTRUCTION_ENUM(TO_STRUCT):
         case ZR_INSTRUCTION_ENUM(TO_OBJECT):
+        case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS):
@@ -103,9 +104,11 @@ static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruc
         case ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):
-        case ZR_INSTRUCTION_ENUM(OWN_USING):
+        case ZR_INSTRUCTION_ENUM(OWN_BORROW):
+        case ZR_INSTRUCTION_ENUM(OWN_LOAN):
         case ZR_INSTRUCTION_ENUM(OWN_SHARE):
         case ZR_INSTRUCTION_ENUM(OWN_WEAK):
+        case ZR_INSTRUCTION_ENUM(OWN_DETACH):
         case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
         case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
         case ZR_INSTRUCTION_ENUM(TRY):

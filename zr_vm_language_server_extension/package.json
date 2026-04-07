@@ -16,8 +16,11 @@
     "onLanguage:zr-project",
     "onCommand:zr.restartLanguageServer",
     "onCommand:zr.structure.refresh",
+    "onCommand:zr.selectProject",
     "onCommand:zr.runCurrentProject",
+    "onCommand:zr.runSelectedProject",
     "onCommand:zr.debugCurrentProject",
+    "onCommand:zr.debugSelectedProject",
     "onCommand:zr.attachDebugEndpoint",
     "onView:zrFiles",
     "onView:zrImports",
@@ -78,6 +81,11 @@
         "category": "Zr"
       },
       {
+        "command": "zr.runSelectedProject",
+        "title": "Run Selected Project",
+        "category": "Zr"
+      },
+      {
         "command": "zr.structure.refresh",
         "title": "Refresh Structure Views",
         "category": "Zr",
@@ -86,6 +94,16 @@
       {
         "command": "zr.debugCurrentProject",
         "title": "Debug Current Project",
+        "category": "Zr"
+      },
+      {
+        "command": "zr.debugSelectedProject",
+        "title": "Debug Selected Project",
+        "category": "Zr"
+      },
+      {
+        "command": "zr.selectProject",
+        "title": "Select Project",
         "category": "Zr"
       },
       {
@@ -228,8 +246,18 @@
           "group": "navigation"
         },
         {
+          "command": "zr.runSelectedProject",
+          "when": "resourceExtname == .zr || resourceExtname == .zrp",
+          "group": "navigation"
+        },
+        {
           "command": "zr.debugCurrentProject",
           "when": "resourceExtname == .zrp",
+          "group": "navigation"
+        },
+        {
+          "command": "zr.debugSelectedProject",
+          "when": "resourceExtname == .zr || resourceExtname == .zrp",
           "group": "navigation"
         }
       ]

@@ -59,12 +59,13 @@ typedef enum EZrDebugRunMode {
 
 typedef enum EZrDebugPrototypeViewKind {
     ZR_DEBUG_PROTOTYPE_VIEW_NONE = 0,
-    ZR_DEBUG_PROTOTYPE_VIEW_MEMBERS = 1,
-    ZR_DEBUG_PROTOTYPE_VIEW_METHODS = 2,
-    ZR_DEBUG_PROTOTYPE_VIEW_PROPERTIES = 3,
-    ZR_DEBUG_PROTOTYPE_VIEW_STATICS = 4,
-    ZR_DEBUG_PROTOTYPE_VIEW_PROTOCOLS = 5,
-    ZR_DEBUG_PROTOTYPE_VIEW_MANAGED_FIELDS = 6
+    ZR_DEBUG_PROTOTYPE_VIEW_METADATA = 1,
+    ZR_DEBUG_PROTOTYPE_VIEW_MEMBERS = 2,
+    ZR_DEBUG_PROTOTYPE_VIEW_METHODS = 3,
+    ZR_DEBUG_PROTOTYPE_VIEW_PROPERTIES = 4,
+    ZR_DEBUG_PROTOTYPE_VIEW_STATICS = 5,
+    ZR_DEBUG_PROTOTYPE_VIEW_PROTOCOLS = 6,
+    ZR_DEBUG_PROTOTYPE_VIEW_MANAGED_FIELDS = 7
 } EZrDebugPrototypeViewKind;
 
 typedef struct ZrDebugBreakpoint {
@@ -88,7 +89,8 @@ typedef enum EZrDebugVariableHandleKind {
     ZR_DEBUG_VARIABLE_HANDLE_KIND_GLOBAL_STATE = 2,
     ZR_DEBUG_VARIABLE_HANDLE_KIND_PROTOTYPE = 3,
     ZR_DEBUG_VARIABLE_HANDLE_KIND_PROTOTYPE_VIEW = 4,
-    ZR_DEBUG_VARIABLE_HANDLE_KIND_EXCEPTION = 5
+    ZR_DEBUG_VARIABLE_HANDLE_KIND_EXCEPTION = 5,
+    ZR_DEBUG_VARIABLE_HANDLE_KIND_INDEX_WINDOW = 6
 } EZrDebugVariableHandleKind;
 
 typedef struct ZrDebugVariableHandle {
@@ -96,6 +98,8 @@ typedef struct ZrDebugVariableHandle {
     TZrUInt64 state_id;
     EZrDebugVariableHandleKind kind;
     EZrDebugPrototypeViewKind prototype_view_kind;
+    TZrSize window_start;
+    TZrSize window_count;
     SZrTypeValue value;
     SZrObjectPrototype *prototype;
 } ZrDebugVariableHandle;
@@ -167,6 +171,11 @@ TZrBool zr_debug_safe_get_member_value(ZrDebugAgent *agent,
                                        SZrTypeValue *outValue,
                                        TZrChar *errorBuffer,
                                        TZrSize errorBufferSize);
+TZrBool zr_debug_try_resolve_indexed_storage(SZrState *state,
+                                             const SZrTypeValue *value,
+                                             SZrObject **outStorage,
+                                             const TZrChar **outSyntheticName,
+                                             TZrSize *outLength);
 TZrBool zr_debug_safe_get_index_value(ZrDebugAgent *agent,
                                       const SZrTypeValue *receiver,
                                       const SZrTypeValue *key,

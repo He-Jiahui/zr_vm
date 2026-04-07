@@ -1,0 +1,7 @@
+%module "provider";
+
+%compileTime var BASE = 5;
+
+%compileTime compute(seed: int, bonus: int = BASE, factor: int = 2): int {
+    return seed * factor + bonus;
+}

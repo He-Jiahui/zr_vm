@@ -619,6 +619,66 @@ static void test_semantic_analyzer_avoids_false_binary_type_mismatch_diagnostics
     TEST_PASS(timer, "Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics");
 }
 
+static void test_semantic_analyzer_avoids_false_numeric_initializer_type_mismatch_diagnostics(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics");
+
+    TEST_INFO("Variable initializer diagnostics",
+              "Analyzing explicit numeric initializers that the compiler accepts should not emit type_mismatch diagnostics");
+
+    SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    if (analyzer == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics",
+                  "Failed to create semantic analyzer");
+        return;
+    }
+
+    {
+        const TZrChar *testCode =
+            "validateNumericAssignments(left: int, right: int) {\n"
+            "    var sum: int = left + right;\n"
+            "    var widenedFromZero: float = left + 0;\n"
+            "    var widenedFromFloatLiteral: float = left + 0.0;\n"
+            "    return widenedFromZero + widenedFromFloatLiteral + sum;\n"
+            "}";
+        SZrString *sourceName =
+            ZrCore_String_Create(state, "numeric_initializer_diagnostics_test.zr", 37);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (has_diagnostic_code(analyzer, "type_mismatch")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics",
+                      "Unexpected type_mismatch diagnostic for valid numeric initializers");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    TEST_PASS(timer, "Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics");
+}
+
 static void test_semantic_analyzer_populates_semantic_context(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Populates Semantic Context");
@@ -2787,6 +2847,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_avoids_false_binary_type_mismatch_diagnostics(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_avoids_false_numeric_initializer_type_mismatch_diagnostics(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_populates_semantic_context(state);

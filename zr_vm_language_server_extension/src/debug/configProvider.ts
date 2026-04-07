@@ -6,10 +6,12 @@ import {
     findProjectFile,
     resolveProjectUri as resolveWorkspaceProjectUri,
     resolveRelativePath,
+    resolveSelectedProjectUri,
 } from '../workspaceProjects';
 import {
     ZR_DEBUG_ATTACH_COMMAND,
     ZR_DEBUG_CURRENT_PROJECT_COMMAND,
+    ZR_DEBUG_SELECTED_PROJECT_COMMAND,
     ZR_DEBUG_TYPE,
 } from './constants';
 import { ZrDebugAdapter } from './dapSession';
@@ -78,7 +80,9 @@ class ZrDebugConfigurationProvider implements vscode.DebugConfigurationProvider 
             };
         }
 
-        const projectUri = await resolveWorkspaceProjectUri(folder, config.project);
+        const projectUri = typeof config.project === 'string' && config.project.trim().length > 0
+            ? await resolveWorkspaceProjectUri(folder, config.project)
+            : await resolveSelectedProjectUri(this.context, folder, true);
         if (!projectUri) {
             void vscode.window.showErrorMessage('Unable to resolve a ZR project (.zrp) to debug.');
             return undefined;
@@ -130,6 +134,18 @@ export function registerDesktopDebugSupport(
     return [
         vscode.debug.registerDebugConfigurationProvider(ZR_DEBUG_TYPE, provider),
         vscode.debug.registerDebugAdapterDescriptorFactory(ZR_DEBUG_TYPE, factory),
+        vscode.commands.registerCommand(ZR_DEBUG_SELECTED_PROJECT_COMMAND, async () => {
+            const workspaceFolder = activeWorkspaceFolder();
+            const configuration = await provider.resolveDebugConfiguration(workspaceFolder, {
+                type: ZR_DEBUG_TYPE,
+                name: 'ZR: Debug Selected Project',
+                request: 'launch',
+            });
+
+            if (configuration) {
+                await vscode.debug.startDebugging(workspaceFolder, configuration);
+            }
+        }),
         vscode.commands.registerCommand(ZR_DEBUG_CURRENT_PROJECT_COMMAND, async () => {
             const workspaceFolder = activeWorkspaceFolder();
             const configuration = await provider.resolveDebugConfiguration(workspaceFolder, {

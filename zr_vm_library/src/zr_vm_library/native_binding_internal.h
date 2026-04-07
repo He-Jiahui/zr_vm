@@ -108,6 +108,7 @@ typedef struct ZrLibrary_NativeRegistryState {
 
 typedef const ZrLibModuleDescriptor *(*FZrVmGetNativeModuleV1)(void);
 
+const ZrLibModuleDescriptor *ZrLibrary_BuiltinModule_GetDescriptor(void);
 TZrBool native_binding_trace_import_enabled(void);
 void native_binding_init_call_context_layout(ZrLibCallContext *context,
                                                     TZrStackValuePointer functionBase,

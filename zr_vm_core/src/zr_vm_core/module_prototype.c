@@ -79,6 +79,66 @@ static SZrObjectPrototype *find_prototype_in_global_scope(SZrState *state, SZrSt
     return prototype;
 }
 
+static SZrObjectPrototype *find_prototype_in_qualified_module(SZrState *state, const TZrChar *typeNameText) {
+    const TZrChar *genericStart;
+    const TZrChar *lastDot;
+    TZrSize moduleNameLength;
+    TZrSize exportNameLength;
+    TZrChar moduleNameBuffer[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+    TZrChar exportNameBuffer[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+    SZrString *moduleName;
+    SZrString *exportName;
+    struct SZrObjectModule *qualifiedModule;
+    const SZrTypeValue *exportedValue;
+
+    if (state == ZR_NULL || typeNameText == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    genericStart = strchr(typeNameText, '<');
+    lastDot = strrchr(typeNameText, '.');
+    if (lastDot == ZR_NULL || lastDot == typeNameText || lastDot[1] == '\0' ||
+        (genericStart != ZR_NULL && lastDot > genericStart)) {
+        return ZR_NULL;
+    }
+
+    moduleNameLength = (TZrSize)(lastDot - typeNameText);
+    exportNameLength = genericStart != ZR_NULL
+                               ? (TZrSize)(genericStart - (lastDot + 1))
+                               : strlen(lastDot + 1);
+    if (moduleNameLength == 0 || exportNameLength == 0 ||
+        moduleNameLength >= sizeof(moduleNameBuffer) ||
+        exportNameLength >= sizeof(exportNameBuffer)) {
+        return ZR_NULL;
+    }
+
+    memcpy(moduleNameBuffer, typeNameText, moduleNameLength);
+    moduleNameBuffer[moduleNameLength] = '\0';
+    memcpy(exportNameBuffer, lastDot + 1, exportNameLength);
+    exportNameBuffer[exportNameLength] = '\0';
+
+    moduleName = ZrCore_String_Create(state, moduleNameBuffer, moduleNameLength);
+    exportName = ZrCore_String_Create(state, exportNameBuffer, exportNameLength);
+    if (moduleName == ZR_NULL || exportName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    qualifiedModule = ZrCore_Module_GetFromCache(state, moduleName);
+    if (qualifiedModule == ZR_NULL) {
+        qualifiedModule = ZrCore_Module_Import(state, moduleName);
+    }
+    if (qualifiedModule == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    exportedValue = ZrCore_Module_GetPubExport(state, qualifiedModule, exportName);
+    if (exportedValue == ZR_NULL || exportedValue->type != ZR_VALUE_TYPE_OBJECT || exportedValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return (SZrObjectPrototype *)ZR_CAST_OBJECT(state, exportedValue->value.object);
+}
+
 static TZrBool ensure_prototype_instance_storage(SZrState *state, SZrFunction *entryFunction) {
     struct SZrObjectPrototype **newStorage;
     TZrSize storageBytes;
@@ -226,8 +286,18 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
 static SZrObjectPrototype *find_prototype_by_name(SZrState *state,
                                                   struct SZrObjectModule *module,
                                                   SZrString *typeName) {
+    const TZrChar *typeNameText;
+
     if (state == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
+    }
+
+    typeNameText = ZrCore_String_GetNativeString(typeName);
+    if (typeNameText != ZR_NULL && strchr(typeNameText, '.') != ZR_NULL) {
+        SZrObjectPrototype *qualifiedPrototype = find_prototype_in_qualified_module(state, typeNameText);
+        if (qualifiedPrototype != ZR_NULL) {
+            return qualifiedPrototype;
+        }
     }
 
     if (module != ZR_NULL) {
@@ -281,6 +351,21 @@ static SZrObjectPrototype *find_prototype_by_name(SZrState *state,
                 }
             }
         }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrString *module_prototype_default_builtin_super_name(SZrState *state, EZrObjectPrototypeType type) {
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (type == ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
+        return ZrCore_String_Create(state, "zr.builtin.Module", strlen("zr.builtin.Module"));
+    }
+    if (type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+        return ZrCore_String_Create(state, "zr.builtin.Object", strlen("zr.builtin.Object"));
     }
 
     return ZR_NULL;
@@ -950,6 +1035,16 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                 }
             }
         }
+        if (protoInfo->prototype->superPrototype == ZR_NULL) {
+            SZrString *defaultSuperName =
+                    module_prototype_default_builtin_super_name(state, protoInfo->prototypeType);
+            if (defaultSuperName != ZR_NULL) {
+                SZrObjectPrototype *defaultSuperPrototype = find_prototype_by_name(state, module, defaultSuperName);
+                if (defaultSuperPrototype != ZR_NULL && defaultSuperPrototype != protoInfo->prototype) {
+                    ZrCore_ObjectPrototype_SetSuper(state, protoInfo->prototype, defaultSuperPrototype);
+                }
+            }
+        }
 
         module_prototype_apply_protocol_mask(protoInfo->prototype, protoInfo->protocolMask);
 
@@ -1008,7 +1103,8 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                                                                 member->fieldOffset);
                             }
 
-                            if (member->isUsingManaged) {
+                            if (member->isUsingManaged ||
+                                member->ownershipQualifier != 0) {
                                 ZrCore_ObjectPrototype_AddManagedField(state,
                                                                        protoInfo->prototype,
                                                                        memberName,

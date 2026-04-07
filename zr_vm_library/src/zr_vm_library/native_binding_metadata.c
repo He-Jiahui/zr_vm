@@ -1685,7 +1685,7 @@ void native_registry_resolve_type_relationships(SZrState *state,
         SZrObjectPrototype *prototype;
         SZrObjectPrototype *superPrototype;
 
-        if (typeDescriptor->name == ZR_NULL || typeDescriptor->extendsTypeName == ZR_NULL) {
+        if (typeDescriptor->name == ZR_NULL) {
             continue;
         }
 
@@ -1694,7 +1694,16 @@ void native_registry_resolve_type_relationships(SZrState *state,
             continue;
         }
 
-        superPrototype = ZrLib_Type_FindPrototype(state, typeDescriptor->extendsTypeName);
+        superPrototype = typeDescriptor->extendsTypeName != ZR_NULL
+                                 ? ZrLib_Type_FindPrototype(state, typeDescriptor->extendsTypeName)
+                                 : ZR_NULL;
+        if (superPrototype == ZR_NULL &&
+            typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS &&
+            !(descriptor->moduleName != ZR_NULL &&
+              strcmp(descriptor->moduleName, "zr.builtin") == 0 &&
+              strcmp(typeDescriptor->name, "Object") == 0)) {
+            superPrototype = ZrLib_Type_FindPrototype(state, "zr.builtin.Object");
+        }
         if (superPrototype == ZR_NULL || superPrototype == prototype) {
             continue;
         }

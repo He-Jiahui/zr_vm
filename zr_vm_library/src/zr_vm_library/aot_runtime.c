@@ -2976,11 +2976,25 @@ static TZrBool aot_runtime_own_value(SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool ZrLibrary_AotRuntime_OwnUsing(SZrState *state,
-                                      ZrAotGeneratedFrame *frame,
-                                      TZrUInt32 destinationSlot,
-                                      TZrUInt32 sourceSlot) {
-    return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_UsingValue);
+TZrBool ZrLibrary_AotRuntime_OwnUnique(SZrState *state,
+                                       ZrAotGeneratedFrame *frame,
+                                       TZrUInt32 destinationSlot,
+                                       TZrUInt32 sourceSlot) {
+    return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_UniqueValue);
+}
+
+TZrBool ZrLibrary_AotRuntime_OwnBorrow(SZrState *state,
+                                       ZrAotGeneratedFrame *frame,
+                                       TZrUInt32 destinationSlot,
+                                       TZrUInt32 sourceSlot) {
+    return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_BorrowValue);
+}
+
+TZrBool ZrLibrary_AotRuntime_OwnLoan(SZrState *state,
+                                     ZrAotGeneratedFrame *frame,
+                                     TZrUInt32 destinationSlot,
+                                     TZrUInt32 sourceSlot) {
+    return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_LoanValue);
 }
 
 TZrBool ZrLibrary_AotRuntime_OwnShare(SZrState *state,
@@ -2995,6 +3009,13 @@ TZrBool ZrLibrary_AotRuntime_OwnWeak(SZrState *state,
                                      TZrUInt32 destinationSlot,
                                      TZrUInt32 sourceSlot) {
     return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_WeakValue);
+}
+
+TZrBool ZrLibrary_AotRuntime_OwnDetach(SZrState *state,
+                                       ZrAotGeneratedFrame *frame,
+                                       TZrUInt32 destinationSlot,
+                                       TZrUInt32 sourceSlot) {
+    return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_DetachValue);
 }
 
 TZrBool ZrLibrary_AotRuntime_OwnUpgrade(SZrState *state,

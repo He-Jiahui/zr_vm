@@ -681,8 +681,12 @@ static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent) {
             TZrSize argumentIndex;
             if (ZrDebug_ReadVariables(agent,
                                       zr_debug_scope_id(frames[index].frame_id, ZR_DEBUG_SCOPE_KIND_ARGUMENTS),
+                                      0,
+                                      0,
                                       &argumentValues,
-                                      &argumentCount)) {
+                                      &argumentCount,
+                                      ZR_NULL,
+                                      ZR_NULL)) {
                 for (argumentIndex = 0; argumentIndex < argumentCount; argumentIndex++) {
                     cJSON *argumentObject = cJSON_CreateObject();
                     if (argumentObject == ZR_NULL) {
@@ -774,14 +778,26 @@ static cJSON *zr_debug_agent_make_scopes_result(ZrDebugAgent *agent, TZrUInt32 f
     return result;
 }
 
-static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent, TZrUInt32 scopeId) {
+static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent,
+                                                   TZrUInt32 scopeId,
+                                                   TZrSize start,
+                                                   TZrSize countLimit) {
     ZrDebugValuePreview *values = ZR_NULL;
-    TZrSize count = 0;
+    TZrSize valueCount = 0;
+    TZrSize namedVariables = 0;
+    TZrSize indexedVariables = 0;
     cJSON *result = ZR_NULL;
     cJSON *valuesArray = ZR_NULL;
     TZrSize index;
 
-    if (!ZrDebug_ReadVariables(agent, scopeId, &values, &count)) {
+    if (!ZrDebug_ReadVariables(agent,
+                               scopeId,
+                               start,
+                               countLimit,
+                               &values,
+                               &valueCount,
+                               &namedVariables,
+                               &indexedVariables)) {
         return ZR_NULL;
     }
 
@@ -798,7 +814,7 @@ static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent, TZrUInt3
         return ZR_NULL;
     }
 
-    for (index = 0; index < count; index++) {
+    for (index = 0; index < valueCount; index++) {
         cJSON *valueObject = cJSON_CreateObject();
         if (valueObject == ZR_NULL) {
             continue;
@@ -812,6 +828,8 @@ static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent, TZrUInt3
     }
 
     cJSON_AddItemToObject(result, "variables", valuesArray);
+    cJSON_AddNumberToObject(result, "namedVariables", (double)namedVariables);
+    cJSON_AddNumberToObject(result, "indexedVariables", (double)indexedVariables);
     ZrDebug_Free(values);
     return result;
 }
@@ -846,6 +864,10 @@ static void zr_debug_agent_process_scopes(ZrDebugAgent *agent, const cJSON *requ
 
 static void zr_debug_agent_process_variables(ZrDebugAgent *agent, const cJSON *requestId, const cJSON *params) {
     cJSON *scopeIdItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "scopeId") : ZR_NULL;
+    cJSON *startItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "start") : ZR_NULL;
+    cJSON *countItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "count") : ZR_NULL;
+    TZrSize start = cJSON_IsNumber(startItem) && startItem->valuedouble > 0 ? (TZrSize)startItem->valuedouble : 0;
+    TZrSize countLimit = cJSON_IsNumber(countItem) && countItem->valuedouble > 0 ? (TZrSize)countItem->valuedouble : 0;
     cJSON *result;
 
     if (!cJSON_IsNumber(scopeIdItem)) {
@@ -853,7 +875,10 @@ static void zr_debug_agent_process_variables(ZrDebugAgent *agent, const cJSON *r
         return;
     }
 
-    result = zr_debug_agent_make_variables_result(agent, (TZrUInt32)scopeIdItem->valuedouble);
+    result = zr_debug_agent_make_variables_result(agent,
+                                                  (TZrUInt32)scopeIdItem->valuedouble,
+                                                  start,
+                                                  countLimit);
     if (result == ZR_NULL) {
         zr_debug_agent_send_error(agent, requestId, -32002, "failed to read variables");
         return;

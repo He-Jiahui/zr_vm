@@ -1550,13 +1550,17 @@ static const ZrLibParameterDescriptor kPairParameters[] = {{"first", "K", ZR_NUL
 static const ZrLibParameterDescriptor kPairOtherParameter[] = {{"other", "Pair<K,V>", ZR_NULL}};
 static const ZrLibParameterDescriptor kLinkedNodeValueParameter[] = {{"value", "T", ZR_NULL}};
 
-static const TZrChar *kMapKeyConstraints[] = {"Hashable", "Equatable"};
-static const TZrChar *kSetValueConstraints[] = {"Hashable", "Equatable"};
-static const TZrChar *kArrayImplements[] = {"ArrayLike<T>", "Iterable<T>"};
-static const TZrChar *kMapImplements[] = {"Iterable<Pair<K,V>>"};
-static const TZrChar *kSetImplements[] = {"Iterable<T>"};
-static const TZrChar *kPairImplements[] = {"Equatable<Pair<K,V>>", "Comparable<Pair<K,V>>", "Hashable"};
-static const TZrChar *kLinkedListImplements[] = {"Iterable<T>"};
+static const TZrChar *kMapKeyConstraints[] = {"zr.builtin.IHashable", "zr.builtin.IEquatable<K>"};
+static const TZrChar *kSetValueConstraints[] = {"zr.builtin.IHashable", "zr.builtin.IEquatable<T>"};
+static const TZrChar *kArrayImplements[] = {"zr.builtin.IArrayLike<T>", "zr.builtin.IEnumerable<T>"};
+static const TZrChar *kMapImplements[] = {"zr.builtin.IEnumerable<Pair<K,V>>"};
+static const TZrChar *kSetImplements[] = {"zr.builtin.IEnumerable<T>"};
+static const TZrChar *kPairImplements[] = {
+        "zr.builtin.IEquatable<Pair<K,V>>",
+        "zr.builtin.IComparable<Pair<K,V>>",
+        "zr.builtin.IHashable"
+};
+static const TZrChar *kLinkedListImplements[] = {"zr.builtin.IEnumerable<T>"};
 
 static const ZrLibGenericParameterDescriptor kSingleGenericT[] = {{"T", ZR_NULL, ZR_NULL, 0}};
 static const ZrLibGenericParameterDescriptor kGenericKV[] = {{"K", ZR_NULL, ZR_NULL, 0}, {"V", ZR_NULL, ZR_NULL, 0}};
@@ -1576,7 +1580,7 @@ static const ZrLibMethodDescriptor kIteratorMethods[] = {
                                            ZR_MEMBER_CONTRACT_ROLE_ITERATOR_MOVE_NEXT),
 };
 static const ZrLibMethodDescriptor kIterableMethods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, ZR_NULL, "Iterator<T>", ZR_NULL, ZR_FALSE, ZR_NULL,
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, ZR_NULL, "zr.builtin.IEnumerator<T>", ZR_NULL, ZR_FALSE, ZR_NULL,
                                            0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibFieldDescriptor kArrayLikeFields[] = {
@@ -1614,7 +1618,7 @@ static const ZrLibMethodDescriptor kArrayMethods[] = {
                                       kArrayValueParameter, ZR_ARRAY_COUNT(kArrayValueParameter)),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("indexOf", 1, 1, zr_container_array_index_of, "int", ZR_NULL, ZR_FALSE,
                                       kArrayValueParameter, ZR_ARRAY_COUNT(kArrayValueParameter)),
-        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_array_get_iterator, "Iterator<T>", ZR_NULL,
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_array_get_iterator, "zr.builtin.IEnumerator<T>", ZR_NULL,
                                            ZR_FALSE, ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibMetaMethodDescriptor kArrayMetaMethods[] = {
@@ -1632,7 +1636,7 @@ static const ZrLibMethodDescriptor kMapMethods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("remove", 1, 1, zr_container_map_remove, "bool", ZR_NULL, ZR_FALSE,
                                       kMapKeyParameter, ZR_ARRAY_COUNT(kMapKeyParameter)),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("clear", 0, 0, zr_container_map_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_map_get_iterator, "Iterator<Pair<K,V>>",
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_map_get_iterator, "zr.builtin.IEnumerator<Pair<K,V>>",
                                            ZR_NULL, ZR_FALSE, ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibMetaMethodDescriptor kMapMetaMethods[] = {
@@ -1652,7 +1656,7 @@ static const ZrLibMethodDescriptor kSetMethods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("remove", 1, 1, zr_container_set_remove, "bool", ZR_NULL, ZR_FALSE,
                                       kSetValueParameter, ZR_ARRAY_COUNT(kSetValueParameter)),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("clear", 0, 0, zr_container_set_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_set_get_iterator, "Iterator<T>", ZR_NULL,
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_set_get_iterator, "zr.builtin.IEnumerator<T>", ZR_NULL,
                                            ZR_FALSE, ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibMetaMethodDescriptor kSetMetaMethods[] = {
@@ -1694,7 +1698,7 @@ static const ZrLibMethodDescriptor kLinkedListMethods[] = {
                                       kLinkedNodeValueParameter, ZR_ARRAY_COUNT(kLinkedNodeValueParameter)),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("clear", 0, 0, zr_container_linked_list_clear, "null", ZR_NULL, ZR_FALSE, ZR_NULL,
                                       0),
-        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_linked_list_get_iterator, "Iterator<T>",
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, zr_container_linked_list_get_iterator, "zr.builtin.IEnumerator<T>",
                                            ZR_NULL, ZR_FALSE, ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibMetaMethodDescriptor kLinkedListMetaMethods[] = {
@@ -1711,12 +1715,6 @@ static const ZrLibMetaMethodDescriptor kLinkedNodeMetaMethods[] = {
 };
 
 static const ZrLibTypeDescriptor g_container_types[] = {
-        {"Iterable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kIterableMethods, ZR_ARRAY_COUNT(kIterableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Iterable<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
-        {"Iterator", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, kIteratorFields, ZR_ARRAY_COUNT(kIteratorFields), kIteratorMethods, ZR_ARRAY_COUNT(kIteratorMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Iterator<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
-        {"ArrayLike", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, kArrayLikeFields, ZR_ARRAY_COUNT(kArrayLikeFields), ZR_NULL, 0, kArrayLikeMetaMethods, ZR_ARRAY_COUNT(kArrayLikeMetaMethods), ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "ArrayLike<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
-        {"Equatable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kEquatableMethods, ZR_ARRAY_COUNT(kEquatableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Equatable<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
-        {"Comparable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kComparableMethods, ZR_ARRAY_COUNT(kComparableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Comparable<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
-        {"Hashable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, kHashableMethods, ZR_ARRAY_COUNT(kHashableMethods), ZR_NULL, 0, ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "Hashable()", ZR_NULL, 0, 0},
         {"Array", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kArrayFields, ZR_ARRAY_COUNT(kArrayFields), kArrayMethods, ZR_ARRAY_COUNT(kArrayMethods), kArrayMetaMethods, ZR_ARRAY_COUNT(kArrayMetaMethods), ZR_NULL, ZR_NULL, kArrayImplements, ZR_ARRAY_COUNT(kArrayImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Array<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ARRAY_LIKE) | ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},
         {"Map", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kMapFields, ZR_ARRAY_COUNT(kMapFields), kMapMethods, ZR_ARRAY_COUNT(kMapMethods), kMapMetaMethods, ZR_ARRAY_COUNT(kMapMetaMethods), ZR_NULL, ZR_NULL, kMapImplements, ZR_ARRAY_COUNT(kMapImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Map<K,V>()", kMapGenericParameters, ZR_ARRAY_COUNT(kMapGenericParameters), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},
         {"Set", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kSetFields, ZR_ARRAY_COUNT(kSetFields), kSetMethods, ZR_ARRAY_COUNT(kSetMethods), kSetMetaMethods, ZR_ARRAY_COUNT(kSetMetaMethods), ZR_NULL, ZR_NULL, kSetImplements, ZR_ARRAY_COUNT(kSetImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Set<T>()", kSetGenericParameters, ZR_ARRAY_COUNT(kSetGenericParameters), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},

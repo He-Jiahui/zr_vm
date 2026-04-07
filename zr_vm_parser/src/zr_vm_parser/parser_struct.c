@@ -24,20 +24,15 @@ SZrAstNode *parse_struct_field(SZrParserState *ps) {
     }
 
     if (ps->lexer->t.token == ZR_TK_USING) {
-        report_error(ps, "Field-scoped lifecycle management requires '%using'");
+        report_error(ps, "Field-scoped '%using' is no longer supported; express ownership on the field type directly");
         skip_to_semicolon_or_eos(ps);
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
     }
 
-    // 解析 %using 关键字（可选，field-scoped 生命周期管理）
     TZrBool isUsingManaged = ZR_FALSE;
     if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
-        isUsingManaged = ZR_TRUE;
-    }
-
-    if (isUsingManaged && ps->lexer->t.token != ZR_TK_CONST && ps->lexer->t.token != ZR_TK_VAR) {
-        report_error(ps, "Field-scoped '%using' must prefix a field declaration");
+        report_error(ps, "Field-scoped '%using' is removed; write '%unique field: T' or '%shared field: T' directly in the type");
         skip_to_semicolon_or_eos(ps);
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;

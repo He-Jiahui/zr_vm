@@ -291,6 +291,7 @@ static TZrBool ownership_qualifier_is_compatible(EZrOwnershipQualifier fromQuali
 
     if (toQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
         return fromQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+               fromQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED ||
                fromQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
                fromQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
     }
@@ -302,6 +303,11 @@ static TZrBool ownership_qualifier_is_compatible(EZrOwnershipQualifier fromQuali
 
     if (fromQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE &&
         toQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
+        return ZR_TRUE;
+    }
+
+    if (fromQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED &&
+        toQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
         return ZR_TRUE;
     }
 

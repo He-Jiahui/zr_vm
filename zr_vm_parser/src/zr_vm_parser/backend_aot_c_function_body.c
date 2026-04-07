@@ -459,8 +459,22 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
-            case ZR_INSTRUCTION_ENUM(OWN_USING):
-                backend_aot_write_c_direct_own_using(file, destinationSlot, operandA1);
+            case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
+                backend_aot_write_c_direct_own_unique(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(OWN_BORROW):
+                backend_aot_write_c_direct_own_borrow(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(OWN_LOAN):
+                backend_aot_write_c_direct_own_loan(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -475,6 +489,13 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(OWN_WEAK):
                 backend_aot_write_c_direct_own_weak(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(OWN_DETACH):
+                backend_aot_write_c_direct_own_detach(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,

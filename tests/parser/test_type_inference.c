@@ -2381,7 +2381,7 @@ static void test_type_inference_type_query_returns_reflection_type(void) {
         TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
         TEST_ASSERT_NOT_NULL(result.typeName);
-        TEST_ASSERT_EQUAL_STRING("zr.system.reflect.Type", ZrCore_String_GetNativeString(result.typeName));
+        TEST_ASSERT_EQUAL_STRING("zr.builtin.TypeInfo", ZrCore_String_GetNativeString(result.typeName));
 
         ZrParser_InferredType_Free(state, &result);
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -2508,9 +2508,86 @@ static void test_type_inference_type_query_function_type_returns_callable_reflec
         TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
         TEST_ASSERT_NOT_NULL(result.typeName);
-        TEST_ASSERT_EQUAL_STRING("zr.system.reflect.CallableType", ZrCore_String_GetNativeString(result.typeName));
+        TEST_ASSERT_EQUAL_STRING("zr.builtin.TypeInfo", ZrCore_String_GetNativeString(result.typeName));
 
         ZrParser_InferredType_Free(state, &result);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_builtin_names_require_explicit_import(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Builtin Names Require Explicit Import";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var iter: IEnumerable<int> = null;\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "builtin_names_require_import_test.zr", 37);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "IEnumerable"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "zr.builtin"));
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_builtin_names_accept_module_qualified_and_destructured_imports(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Builtin Names Accept Module Qualified And Destructured Imports";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var builtin = %import(\"zr.builtin\");\n"
+                "var iter: builtin.IEnumerable<int> = null;\n"
+                "var {TypeInfo, Integer} = %import(\"zr.builtin\");\n"
+                "var meta: TypeInfo = %type(int);\n"
+                "var boxed: Integer = null;\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "builtin_names_explicit_import_ok_test.zr", 41);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        for (TZrSize index = 0; index < 5; index++) {
+            compile_test_top_level_statement(cs, ast->data.script.statements->nodes[index]);
+            TEST_ASSERT_FALSE(cs->hasError);
+        }
+
         ZrParser_Ast_Free(state, ast);
         destroy_test_compiler_state(cs);
         destroy_test_state(state);
@@ -6408,6 +6485,8 @@ int main(void) {
     RUN_TEST(test_convert_function_ast_type_to_callable_inferred_type);
     RUN_TEST(test_type_inference_function_type_annotation_accepts_lambda_assignment);
     RUN_TEST(test_type_inference_type_query_function_type_returns_callable_reflection_type);
+    RUN_TEST(test_type_inference_builtin_names_require_explicit_import);
+    RUN_TEST(test_type_inference_builtin_names_accept_module_qualified_and_destructured_imports);
     RUN_TEST(test_type_inference_type_value_alias_can_be_used_in_type_position);
     RUN_TEST(test_type_inference_array_type_value_alias_can_be_used_in_type_position);
     RUN_TEST(test_type_inference_native_prototype_construction_returns_native_type);

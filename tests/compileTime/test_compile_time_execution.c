@@ -1503,7 +1503,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_funct
         const TZrChar* source =
                 "%module \"test\";\n"
                 "var provider = %import(\"provider\");\n"
-                "%compileTime markFunction(target: %type Function, bonus: int = 0): DecoratorPatch {\n"
+                "%compileTime markFunction(target: %type Function, bonus: int = 0) {\n"
                 "    return { metadata: { instrumented: bonus } };\n"
                 "}\n"
                 "#markFunction(bonus: compute(seed: 10, factor: 3))#\n"
@@ -1577,7 +1577,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_impor
     static const TZrChar* decoratedUserSource =
             "%module \"decorated_user\";\n"
             "var provider = %import(\"provider\");\n"
-            "%compileTime markFunction(target: %type Function, bonus: int = 0): DecoratorPatch {\n"
+            "%compileTime markFunction(target: %type Function, bonus: int = 0) {\n"
             "    return { metadata: { instrumented: bonus } };\n"
             "}\n"
             "#markFunction(bonus: compute(seed: 10, factor: 3))#\n"
@@ -1675,7 +1675,7 @@ static void test_compile_time_imported_decorator_member_chain(void) {
                     "        return { metadata: { serializable: true } };\n"
                     "    }\n"
                     "}\n"
-                    "%compileTime markFunction(target: %type Function, bonus: int = 16): DecoratorPatch {\n"
+                    "%compileTime markFunction(target: %type Function, bonus: int = 16) {\n"
                     "    return { metadata: { instrumented: bonus } };\n"
                     "}\n",
                     ZR_NULL,
@@ -1743,7 +1743,7 @@ static void test_compile_time_imported_decorator_deep_member_chain(void) {
             {
                     "decorators",
                     "%module \"decorators\";\n"
-                    "%compileTime markFunction(target: %type Function, bonus: int = 16): DecoratorPatch {\n"
+                    "%compileTime markFunction(target: %type Function, bonus: int = 16) {\n"
                     "    return { metadata: { instrumented: bonus } };\n"
                     "}\n"
                     "%compileTime var registry = {\n"
@@ -1815,7 +1815,7 @@ static void test_compile_time_imported_decorator_deep_member_chain(void) {
 static void test_compile_time_binary_imported_decorator_deep_member_chain(void) {
     static const TZrChar *decoratorSource =
             "%module \"decorators\";\n"
-            "%compileTime markFunction(target: %type Function, bonus: int = 16): DecoratorPatch {\n"
+            "%compileTime markFunction(target: %type Function, bonus: int = 16) {\n"
             "    return { metadata: { instrumented: bonus } };\n"
             "}\n"
             "%compileTime var registry = {\n"
@@ -1909,7 +1909,7 @@ static void test_compile_time_object_decorator_member_chain(void) {
         SZrState *state = create_test_state();
         const TZrChar *source =
                 "%module \"test\";\n"
-                "%compileTime markFunction(target: %type Function, bonus: int = 11): DecoratorPatch {\n"
+                "%compileTime markFunction(target: %type Function, bonus: int = 11) {\n"
                 "    return { metadata: { instrumented: bonus } };\n"
                 "}\n"
                 "%compileTime var decorators = { markFunction: markFunction };\n"
@@ -1955,7 +1955,7 @@ static void test_compile_time_object_member_assignment_projects_mutation(void) {
         SZrState *state = create_test_state();
         const TZrChar *source =
                 "%module \"test\";\n"
-                "%compileTime mark(target: Object): void {\n"
+                "%compileTime mark(target): void {\n"
                 "    target.metadata.instrumented = true;\n"
                 "}\n"
                 "%compileTime var target = { metadata: {} };\n"
@@ -2051,7 +2051,7 @@ static void test_compile_time_function_decorator_projects_metadata_to_runtime_re
         SZrState *state = create_test_state();
         const TZrChar *source =
                 "%module \"test\";\n"
-                "%compileTime decorate(target: %type Class, version: int = 7): DecoratorPatch {\n"
+                "%compileTime decorate(target: %type Class, version: int = 7) {\n"
                 "    return { metadata: { version: version } };\n"
                 "}\n"
                 "#decorate#\n"

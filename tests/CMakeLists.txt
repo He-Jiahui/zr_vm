@@ -312,7 +312,9 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core(zr_vm_debug_trace_test)
 
     if ((TARGET zr_vm_debug_shared OR TARGET zr_vm_debug_static) AND
-            (TARGET zr_vm_lib_network_shared OR TARGET zr_vm_lib_network_static))
+            (TARGET zr_vm_lib_network_shared OR TARGET zr_vm_lib_network_static) AND
+            (TARGET zr_vm_lib_system_shared OR TARGET zr_vm_lib_system_static) AND
+            (TARGET zr_vm_lib_container_shared OR TARGET zr_vm_lib_container_static))
         zr_vm_add_unity_test_target(
                 zr_vm_debug_agent_test
                 ${CMAKE_SOURCE_DIR}/tests/debug/test_debug_agent.c
@@ -322,12 +324,23 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
                 ${CMAKE_SOURCE_DIR}/zr_vm_core/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_lib_debug/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
         )
         zr_vm_link_parser_core(zr_vm_debug_agent_test)
         if (BUILD_SHARED_LIB)
-            target_link_libraries(zr_vm_debug_agent_test PRIVATE zr_vm_debug_shared zr_vm_lib_network_shared)
+            target_link_libraries(zr_vm_debug_agent_test PRIVATE
+                    zr_vm_debug_shared
+                    zr_vm_lib_network_shared
+                    zr_vm_lib_system_shared
+                    zr_vm_lib_container_shared
+            )
         else ()
-            target_link_libraries(zr_vm_debug_agent_test PRIVATE zr_vm_debug_static zr_vm_lib_network_static)
+            target_link_libraries(zr_vm_debug_agent_test PRIVATE
+                    zr_vm_debug_static
+                    zr_vm_lib_network_static
+                    zr_vm_lib_system_static
+                    zr_vm_lib_container_static
+            )
         endif ()
         zr_link_third_party_for_target(zr_vm_debug_agent_test "zr_c_json")
         target_link_libraries(zr_vm_debug_agent_test PRIVATE Threads::Threads)

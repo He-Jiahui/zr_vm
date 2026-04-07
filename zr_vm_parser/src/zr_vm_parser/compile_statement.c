@@ -83,6 +83,63 @@ static TZrBool compile_statement_has_type_value_alias(SZrCompilerState *cs, SZrS
     return ZR_FALSE;
 }
 
+static void compile_statement_register_type_binding_alias(SZrCompilerState *cs,
+                                                          SZrString *name,
+                                                          SZrString *qualifiedTypeName) {
+    SZrInferredType aliasType;
+
+    if (cs == ZR_NULL || name == ZR_NULL || qualifiedTypeName == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_InitFull(cs->state, &aliasType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, qualifiedTypeName);
+    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
+        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
+        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
+            ZrParser_InferredType_Free(cs->state, &binding->type);
+            ZrParser_InferredType_Copy(cs->state, &binding->type, &aliasType);
+            ZrParser_InferredType_Free(cs->state, &aliasType);
+            return;
+        }
+    }
+
+    {
+        SZrTypeBinding binding;
+        binding.name = name;
+        ZrParser_InferredType_Init(cs->state, &binding.type, ZR_VALUE_TYPE_OBJECT);
+        ZrParser_InferredType_Copy(cs->state, &binding.type, &aliasType);
+        ZrCore_Array_Push(cs->state, &cs->typeValueAliases, &binding);
+    }
+
+    ZrParser_InferredType_Free(cs->state, &aliasType);
+}
+
+static SZrString *compile_statement_build_qualified_type_name(SZrCompilerState *cs,
+                                                              SZrString *moduleName,
+                                                              SZrString *typeName) {
+    TZrNativeString moduleNameText;
+    TZrNativeString typeNameText;
+    TZrChar buffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    TZrInt32 written;
+
+    if (cs == ZR_NULL || moduleName == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    moduleNameText = compile_statement_get_native_string(moduleName);
+    typeNameText = compile_statement_get_native_string(typeName);
+    if (moduleNameText == ZR_NULL || typeNameText == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    written = snprintf(buffer, sizeof(buffer), "%s.%s", moduleNameText, typeNameText);
+    if (written <= 0 || (TZrSize)written >= sizeof(buffer)) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(cs->state, buffer, (TZrSize)written);
+}
+
 static TZrBool compile_statement_report_duplicate_type_name(SZrCompilerState *cs,
                                                             SZrString *name,
                                                             SZrFileRange location) {
@@ -183,6 +240,13 @@ static TZrBool compile_statement_try_register_imported_destructured_type_aliases
 
         if (!compile_statement_register_explicit_type_name(cs, keyName, keyNode->location)) {
             return ZR_FALSE;
+        }
+
+        {
+            SZrString *qualifiedTypeName = compile_statement_build_qualified_type_name(cs, moduleName, keyName);
+            if (qualifiedTypeName != ZR_NULL) {
+                compile_statement_register_type_binding_alias(cs, keyName, qualifiedTypeName);
+            }
         }
     }
 

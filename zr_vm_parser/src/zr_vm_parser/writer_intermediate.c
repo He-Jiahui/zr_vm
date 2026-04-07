@@ -396,12 +396,16 @@ static const TZrChar *writer_intermediate_semir_opcode_name(TZrUInt32 opcode) {
     switch ((EZrSemIrOpcode)opcode) {
         case ZR_SEMIR_OPCODE_OWN_UNIQUE:
             return "OWN_UNIQUE";
-        case ZR_SEMIR_OPCODE_OWN_USING:
-            return "OWN_USING";
+        case ZR_SEMIR_OPCODE_OWN_BORROW:
+            return "OWN_BORROW";
+        case ZR_SEMIR_OPCODE_OWN_LOAN:
+            return "OWN_LOAN";
         case ZR_SEMIR_OPCODE_OWN_SHARE:
             return "OWN_SHARE";
         case ZR_SEMIR_OPCODE_OWN_WEAK:
             return "OWN_WEAK";
+        case ZR_SEMIR_OPCODE_OWN_DETACH:
+            return "OWN_DETACH";
         case ZR_SEMIR_OPCODE_OWN_UPGRADE:
             return "OWN_UPGRADE";
         case ZR_SEMIR_OPCODE_OWN_RELEASE:
@@ -821,9 +825,11 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(CREATE_OBJECT): fprintf(file, "CREATE_OBJECT"); break;
             case ZR_INSTRUCTION_ENUM(CREATE_ARRAY): fprintf(file, "CREATE_ARRAY"); break;
             case ZR_INSTRUCTION_ENUM(OWN_UNIQUE): fprintf(file, "OWN_UNIQUE"); break;
-            case ZR_INSTRUCTION_ENUM(OWN_USING): fprintf(file, "OWN_USING"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_BORROW): fprintf(file, "OWN_BORROW"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_LOAN): fprintf(file, "OWN_LOAN"); break;
             case ZR_INSTRUCTION_ENUM(OWN_SHARE): fprintf(file, "OWN_SHARE"); break;
             case ZR_INSTRUCTION_ENUM(OWN_WEAK): fprintf(file, "OWN_WEAK"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_DETACH): fprintf(file, "OWN_DETACH"); break;
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE): fprintf(file, "OWN_UPGRADE"); break;
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE): fprintf(file, "OWN_RELEASE"); break;
             case ZR_INSTRUCTION_ENUM(TYPEOF): fprintf(file, "TYPEOF"); break;
@@ -895,9 +901,11 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(DYN_ITER_MOVE_NEXT):
             case ZR_INSTRUCTION_ENUM(ITER_CURRENT):
             case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
-            case ZR_INSTRUCTION_ENUM(OWN_USING):
+            case ZR_INSTRUCTION_ENUM(OWN_BORROW):
+            case ZR_INSTRUCTION_ENUM(OWN_LOAN):
             case ZR_INSTRUCTION_ENUM(OWN_SHARE):
             case ZR_INSTRUCTION_ENUM(OWN_WEAK):
+            case ZR_INSTRUCTION_ENUM(OWN_DETACH):
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
             case ZR_INSTRUCTION_ENUM(TYPEOF):
@@ -1380,14 +1388,20 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
                 fprintf(file, "OWN_UNIQUE");
                 break;
-            case ZR_INSTRUCTION_ENUM(OWN_USING):
-                fprintf(file, "OWN_USING");
+            case ZR_INSTRUCTION_ENUM(OWN_BORROW):
+                fprintf(file, "OWN_BORROW");
+                break;
+            case ZR_INSTRUCTION_ENUM(OWN_LOAN):
+                fprintf(file, "OWN_LOAN");
                 break;
             case ZR_INSTRUCTION_ENUM(OWN_SHARE):
                 fprintf(file, "OWN_SHARE");
                 break;
             case ZR_INSTRUCTION_ENUM(OWN_WEAK):
                 fprintf(file, "OWN_WEAK");
+                break;
+            case ZR_INSTRUCTION_ENUM(OWN_DETACH):
+                fprintf(file, "OWN_DETACH");
                 break;
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
                 fprintf(file, "OWN_UPGRADE");
@@ -1464,9 +1478,11 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
             case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
             case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
-            case ZR_INSTRUCTION_ENUM(OWN_USING):
+            case ZR_INSTRUCTION_ENUM(OWN_BORROW):
+            case ZR_INSTRUCTION_ENUM(OWN_LOAN):
             case ZR_INSTRUCTION_ENUM(OWN_SHARE):
             case ZR_INSTRUCTION_ENUM(OWN_WEAK):
+            case ZR_INSTRUCTION_ENUM(OWN_DETACH):
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
                 fprintf(file, ", operand1=%u", inst->instruction.operand.operand1[0]);

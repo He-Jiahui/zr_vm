@@ -289,11 +289,17 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_PLAIN_GC;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_UNIQUE;
             return ZR_TRUE;
-        case ZR_INSTRUCTION_ENUM(OWN_USING):
-            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_USING;
+        case ZR_INSTRUCTION_ENUM(OWN_BORROW):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_BORROW;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
-            outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_PLAIN_GC;
-            outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_UNIQUE;
+            outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
+            outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_BORROW_SHARED;
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(OWN_LOAN):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_LOAN;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
+            outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_UNIQUE;
+            outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_BORROW_MUT;
             return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(OWN_SHARE):
             outMapped->opcode = ZR_SEMIR_OPCODE_OWN_SHARE;
@@ -306,6 +312,12 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_WEAK;
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(OWN_DETACH):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_DETACH;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
+            outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
+            outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_PLAIN_GC;
             return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
             outMapped->opcode = ZR_SEMIR_OPCODE_OWN_UPGRADE;

@@ -815,15 +815,18 @@ if (run_compile_aot_c_unsupported_lowering)
             "--compile"
             "${unsupported_aot_c_dir}/hello_world.zrp"
             "--emit-aot-c")
-    cli_assert_failure("compile_aot_c_unsupported_lowering"
+    cli_assert_success("compile_aot_c_unsupported_lowering"
                        compile_aot_c_unsupported_lowering_result
                        compile_aot_c_unsupported_lowering_output)
-    if (EXISTS "${unsupported_aot_c_dir}/bin/aot_c/src/main.c")
-        message(FATAL_ERROR "compile_aot_c_unsupported_lowering unexpectedly created main AOT C source")
+    if (NOT EXISTS "${unsupported_aot_c_dir}/bin/main.zro")
+        message(FATAL_ERROR "compile_aot_c_unsupported_lowering did not create main.zro")
     endif()
-    cli_assert_contains("compile_aot_c_unsupported_lowering"
-                        compile_aot_c_unsupported_lowering_output
-                        "aot_c lowering unsupported")
+    if (NOT EXISTS "${unsupported_aot_c_dir}/bin/aot_c/src/main.c")
+        message(FATAL_ERROR "compile_aot_c_unsupported_lowering did not create main AOT C source")
+    endif()
+    if (NOT EXISTS "${unsupported_aot_c_dir}/bin/aot_c/lib/zrvm_aot_main${CLI_SHARED_LIB_SUFFIX}")
+        message(FATAL_ERROR "compile_aot_c_unsupported_lowering did not create main AOT shared library")
+    endif()
 endif()
 
 cli_case_matches_tier("core;stress" run_aot_c_missing_artifacts)

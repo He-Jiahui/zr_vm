@@ -25,12 +25,18 @@ static TZrBool backend_aot_llvm_lower_pair_slot_ownership_call(const SZrAotLlvmL
 
 static const TZrChar *backend_aot_llvm_ownership_helper_name(TZrUInt32 opcode) {
     switch (opcode) {
-        case ZR_INSTRUCTION_ENUM(OWN_USING):
-            return "ZrLibrary_AotRuntime_OwnUsing";
+        case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
+            return "ZrLibrary_AotRuntime_OwnUnique";
+        case ZR_INSTRUCTION_ENUM(OWN_BORROW):
+            return "ZrLibrary_AotRuntime_OwnBorrow";
+        case ZR_INSTRUCTION_ENUM(OWN_LOAN):
+            return "ZrLibrary_AotRuntime_OwnLoan";
         case ZR_INSTRUCTION_ENUM(OWN_SHARE):
             return "ZrLibrary_AotRuntime_OwnShare";
         case ZR_INSTRUCTION_ENUM(OWN_WEAK):
             return "ZrLibrary_AotRuntime_OwnWeak";
+        case ZR_INSTRUCTION_ENUM(OWN_DETACH):
+            return "ZrLibrary_AotRuntime_OwnDetach";
         case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
             return "ZrLibrary_AotRuntime_OwnUpgrade";
         case ZR_INSTRUCTION_ENUM(OWN_RELEASE):

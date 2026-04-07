@@ -69,6 +69,7 @@ static void assert_runtime_function_matches_source_function(const SZrFunction *e
 static SZrFunction *compile_cached_meta_and_dynamic_callsite_fixture(SZrState *state);
 static SZrFunction *compile_fixed_array_helper_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state);
+static SZrFunction *compile_array_int_index_quickening_fixture(SZrState *state);
 static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state);
@@ -5187,18 +5188,22 @@ static SZrFunction *compile_cached_meta_and_dynamic_callsite_fixture(SZrState *s
 static SZrFunction *compile_ownership_upgrade_release_fixture(SZrState *state) {
     const char *source =
             "class Box {}\n"
-            "var owner = %using new Box();\n"
-            "var ownerMirror = owner;\n"
-            "var droppedOwner = %release(ownerMirror);\n"
-            "var watcher = %weak(owner);\n"
-            "var alias = %upgrade(watcher);\n"
+            "var owner = %unique new Box();\n"
             "var shared = %shared(owner);\n"
+            "var watcher = %weak(shared);\n"
+            "var borrowed = %borrow(shared);\n"
+            "var borrowedAlive = borrowed != null;\n"
+            "var upgraded = %upgrade(watcher);\n"
+            "var droppedUpgraded = %release(upgraded);\n"
+            "var loanSource = %unique new Box();\n"
+            "var loaned = %loan(loanSource);\n"
+            "var loanedAlive = loaned != null;\n"
+            "var detachSource = %unique new Box();\n"
+            "var detached = %detach(detachSource);\n"
+            "var detachedAlive = detached != null;\n"
             "var droppedShared = %release(shared);\n"
-            "var stillAlive = %upgrade(watcher);\n"
-            "var droppedAlias = %release(alias);\n"
-            "var droppedStillAlive = %release(stillAlive);\n"
             "var after = %upgrade(watcher);\n"
-            "if (droppedOwner == null && droppedShared == null && droppedAlias == null && droppedStillAlive == null && owner == null && alias == null && stillAlive == null && after == null) {\n"
+            "if (borrowedAlive && loanedAlive && detachedAlive && droppedUpgraded == null && droppedShared == null && after == null) {\n"
             "    return 1;\n"
             "}\n"
             "return 0;\n";
@@ -5330,6 +5335,38 @@ static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state) 
     sourceName = ZrCore_String_Create(state,
                                       "container_matrix_roundtrip_fixture.zr",
                                       strlen("container_matrix_roundtrip_fixture.zr"));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_array_int_index_quickening_fixture(SZrState *state) {
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var xs = new container.Array<int>();\n"
+            "xs.add(10);\n"
+            "xs.add(20);\n"
+            "xs.add(30);\n"
+            "var index = 1;\n"
+            "var value = xs[index];\n"
+            "xs[index] = value + 5;\n"
+            "return xs[index] + xs[0];\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (state->global == ZR_NULL || !ZrVmLibContainer_Register(state->global) || !ZrVmLibMath_Register(state->global) ||
+        !ZrVmLibSystem_Register(state->global) || !ZrVmLibFfi_Register(state->global)) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "array_int_index_quickening_fixture.zr",
+                                      strlen("array_int_index_quickening_fixture.zr"));
     if (sourceName == ZR_NULL) {
         return ZR_NULL;
     }
@@ -6051,14 +6088,117 @@ static void test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir
     ZR_TEST_DIVIDER();
 }
 
-static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicated_opcodes(void) {
+static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_specialized_helpers(void) {
     SZrExecBcAotTestTimer timer;
-    const char *testSummary = "Ownership Upgrade Release SemIR And True AOT C Preserve Dedicated Opcodes";
+    const char *testSummary = "ExecBC Quickens Array Int Index Sites And True AOT Lowers Specialized Helpers";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("ownership upgrade/release semantic pipeline",
-                 "Testing that %using/%shared/%weak/%upgrade/%release keep dedicated ExecBC and SemIR ownership opcodes, and that true AOT C plus AOT LLVM lower them to explicit runtime helpers without shim fallback");
+    ZR_TEST_INFO("array int index quickening",
+                 "Testing that statically typed container.Array<int> bracket access quickens to dedicated ExecBC opcodes and that AOT C plus LLVM lower them to specialized runtime helpers");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *intermediatePath = "array_int_index_quickening_test.zri";
+        const char *cPath = "array_int_index_quickening_test.c";
+        const char *llvmPath = "array_int_index_quickening_test.ll";
+        const char *binaryPath = "array_int_index_quickening_test.zro";
+        SZrFunction *function;
+        char *intermediateText;
+        char *cText;
+        char *llvmText;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_array_int_index_quickening_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SET_BY_INDEX)));
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFile(state, function, cPath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFile(state, function, llvmPath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+
+        intermediateText = read_text_file_owned(intermediatePath);
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_ARRAY_GET_INT"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_ARRAY_SET_INT"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SuperArrayGetInt"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SuperArraySetInt"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArrayGetInt("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArraySetInt("));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(35, result);
+
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
+
+        result = 0;
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(35, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        free(intermediateText);
+        free(cText);
+        free(llvmText);
+        remove(intermediatePath);
+        remove(cPath);
+        remove(llvmPath);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicated_opcodes(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Ownership Borrow Loan Detach Upgrade Release SemIR And True AOT C Preserve Dedicated Opcodes";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("ownership borrow/loan/detach semantic pipeline",
+                 "Testing that %shared/%weak/%borrow/%loan/%detach/%upgrade/%release keep dedicated ExecBC and SemIR ownership opcodes, and that true AOT C plus AOT LLVM lower them to explicit runtime helpers without shim fallback");
 
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -6075,14 +6215,18 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
 
         function = compile_ownership_upgrade_release_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_USING)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_USING));
         TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_SHARE));
         TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_WEAK));
+        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_BORROW));
+        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_LOAN));
+        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_DETACH));
         TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_UPGRADE));
         TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_RELEASE));
 
@@ -6097,25 +6241,33 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(llvmText);
 
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_USING"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_SHARE"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_WEAK"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_BORROW"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_LOAN"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_DETACH"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_UPGRADE"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_RELEASE"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnUsing"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnShare"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnWeak"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnBorrow"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnLoan"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnDetach"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnUpgrade"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnRelease"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnUsing("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnShare("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnWeak("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnBorrow("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnLoan("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnDetach("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnUpgrade("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnRelease("));
-        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_USING)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
 
@@ -6262,6 +6414,7 @@ int main(void) {
     RUN_TEST(test_binary_roundtrip_preserves_container_matrix_native_call_arguments);
     RUN_TEST(test_benchmark_string_build_binary_roundtrip_loads_runtime_entry);
     RUN_TEST(test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir_contracts);
+    RUN_TEST(test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_specialized_helpers);
     RUN_TEST(test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_set_opcodes);
     RUN_TEST(test_static_meta_access_quickens_to_static_callsite_cache_variants);
     RUN_TEST(test_super_member_dispatch_uses_direct_base_lookup_for_methods_properties_and_meta_calls);

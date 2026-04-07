@@ -205,10 +205,20 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MetaSetStaticCached(struct SZrState 
                                                                 TZrUInt32 assignedValueSlot,
                                                                 TZrUInt32 cacheIndex);
 
-ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnUsing(struct SZrState *state,
-                                                     ZrAotGeneratedFrame *frame,
-                                                     TZrUInt32 destinationSlot,
-                                                     TZrUInt32 sourceSlot);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnUnique(struct SZrState *state,
+                                                      ZrAotGeneratedFrame *frame,
+                                                      TZrUInt32 destinationSlot,
+                                                      TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnBorrow(struct SZrState *state,
+                                                      ZrAotGeneratedFrame *frame,
+                                                      TZrUInt32 destinationSlot,
+                                                      TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnLoan(struct SZrState *state,
+                                                    ZrAotGeneratedFrame *frame,
+                                                    TZrUInt32 destinationSlot,
+                                                    TZrUInt32 sourceSlot);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnShare(struct SZrState *state,
                                                      ZrAotGeneratedFrame *frame,
@@ -219,6 +229,11 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnWeak(struct SZrState *state,
                                                     ZrAotGeneratedFrame *frame,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnDetach(struct SZrState *state,
+                                                      ZrAotGeneratedFrame *frame,
+                                                      TZrUInt32 destinationSlot,
+                                                      TZrUInt32 sourceSlot);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnUpgrade(struct SZrState *state,
                                                        ZrAotGeneratedFrame *frame,

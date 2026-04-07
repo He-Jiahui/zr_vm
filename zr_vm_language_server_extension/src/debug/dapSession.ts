@@ -150,6 +150,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
             supportsConditionalBreakpoints: true,
             supportsHitConditionalBreakpoints: true,
             supportsLogPoints: true,
+            supportsVariablePaging: true,
             supportsEvaluateForHovers: true,
             exceptionBreakpointFilters: [
                 {
@@ -348,13 +349,20 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
     }
 
     private async handleVariables(request: DapRequest): Promise<void> {
-        const variablesReference = Number((request.arguments ?? {}).variablesReference);
+        const args = request.arguments ?? {};
+        const variablesReference = Number(args.variablesReference);
+        const start = Number(args.start);
+        const count = Number(args.count);
         const handle = this.variableHandles.get(variablesReference);
         if (!handle || handle.stateId !== this.currentStateId) {
             throw new Error(`Unknown or stale variablesReference ${variablesReference}.`);
         }
 
-        const result = await this.requireClient().request('variables', { scopeId: handle.handleId });
+        const result = await this.requireClient().request('variables', {
+            scopeId: handle.handleId,
+            ...(Number.isInteger(start) && start >= 0 ? { start } : {}),
+            ...(Number.isInteger(count) && count > 0 ? { count } : {}),
+        });
         const variables = Array.isArray(result.variables) ? result.variables as ZrDbgVariable[] : [];
 
         for (const item of variables) {

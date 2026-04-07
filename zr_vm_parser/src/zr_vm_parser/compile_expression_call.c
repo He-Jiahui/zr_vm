@@ -726,7 +726,8 @@ void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    if ((constructExpr->isUsing ||
+    if ((constructExpr->builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
+         constructExpr->isUsing ||
          constructExpr->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) &&
         constructExpr->isNew) {
         if (!wrap_constructed_result_with_ownership_builtin(cs, constructExpr, node->location) && !cs->hasError) {

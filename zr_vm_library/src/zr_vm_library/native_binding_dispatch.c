@@ -1064,14 +1064,72 @@ static SZrString *native_binding_extract_open_generic_base_name(SZrState *state,
     return ZrCore_String_Create(state, (TZrNativeString)typeName, (TZrSize)(genericStart - typeName));
 }
 
+static SZrObjectPrototype *native_binding_find_qualified_module_export_prototype(SZrState *state, const TZrChar *typeName) {
+    const TZrChar *genericStart;
+    const TZrChar *lastDot;
+    TZrSize moduleNameLength;
+    TZrSize exportNameLength;
+    TZrChar moduleNameBuffer[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+    TZrChar exportNameBuffer[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+    SZrObjectModule *module;
+    const SZrTypeValue *exportedValue;
+
+    if (state == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    genericStart = strchr(typeName, '<');
+    lastDot = strrchr(typeName, '.');
+    if (lastDot == ZR_NULL || lastDot == typeName || lastDot[1] == '\0' ||
+        (genericStart != ZR_NULL && lastDot > genericStart)) {
+        return ZR_NULL;
+    }
+
+    moduleNameLength = (TZrSize)(lastDot - typeName);
+    exportNameLength = genericStart != ZR_NULL
+                               ? (TZrSize)(genericStart - (lastDot + 1))
+                               : strlen(lastDot + 1);
+    if (moduleNameLength == 0 || exportNameLength == 0 ||
+        moduleNameLength >= sizeof(moduleNameBuffer) ||
+        exportNameLength >= sizeof(exportNameBuffer)) {
+        return ZR_NULL;
+    }
+
+    memcpy(moduleNameBuffer, typeName, moduleNameLength);
+    moduleNameBuffer[moduleNameLength] = '\0';
+    memcpy(exportNameBuffer, lastDot + 1, exportNameLength);
+    exportNameBuffer[exportNameLength] = '\0';
+
+    module = ZrLib_Module_GetLoaded(state, moduleNameBuffer);
+    if (module == ZR_NULL) {
+        module = native_binding_import_module(state, moduleNameBuffer);
+    }
+    if (module == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    exportedValue = ZrLib_Module_GetExport(state, moduleNameBuffer, exportNameBuffer);
+    if (exportedValue == ZR_NULL || exportedValue->type != ZR_VALUE_TYPE_OBJECT || exportedValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return (SZrObjectPrototype *)ZR_CAST_OBJECT(state, exportedValue->value.object);
+}
+
 SZrObjectPrototype *ZrLib_Type_FindPrototype(SZrState *state, const TZrChar *typeName) {
     SZrTypeValue key;
     SZrString *typeString;
     const SZrTypeValue *value;
+    SZrObjectPrototype *qualifiedPrototype;
 
     if (state == ZR_NULL || state->global == ZR_NULL || typeName == ZR_NULL ||
         state->global->zrObject.type != ZR_VALUE_TYPE_OBJECT) {
         return ZR_NULL;
+    }
+
+    qualifiedPrototype = native_binding_find_qualified_module_export_prototype(state, typeName);
+    if (qualifiedPrototype != ZR_NULL) {
+        return qualifiedPrototype;
     }
 
     typeString = native_binding_create_string(state, typeName);

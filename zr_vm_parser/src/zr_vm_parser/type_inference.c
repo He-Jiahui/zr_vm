@@ -880,6 +880,7 @@ static TZrBool infer_type_literal_expression_type(SZrCompilerState *cs,
                                                   SZrAstNode *node,
                                                   SZrInferredType *result) {
     SZrString *typeName;
+    static const TZrChar *kBuiltinTypeInfoName = "zr.builtin.TypeInfo";
 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
         node->type != ZR_AST_TYPE_LITERAL_EXPRESSION ||
@@ -887,15 +888,7 @@ static TZrBool infer_type_literal_expression_type(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    typeName = ZrCore_String_Create(cs->state,
-                                    node->data.typeLiteralExpression.typeInfo->name != ZR_NULL &&
-                                            node->data.typeLiteralExpression.typeInfo->name->type == ZR_AST_FUNCTION_TYPE
-                                            ? "zr.system.reflect.CallableType"
-                                            : "zr.system.reflect.Type",
-                                    node->data.typeLiteralExpression.typeInfo->name != ZR_NULL &&
-                                            node->data.typeLiteralExpression.typeInfo->name->type == ZR_AST_FUNCTION_TYPE
-                                            ? 30
-                                            : 22);
+    typeName = ZrCore_String_Create(cs->state, kBuiltinTypeInfoName, strlen(kBuiltinTypeInfoName));
     if (typeName == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1535,6 +1528,59 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
 static TZrBool ast_type_should_preserve_primitive_alias(const TZrNativeString nameStr,
                                                         TZrSize nameLen);
 
+static const TZrChar *ast_type_builtin_canonical_name(const TZrChar *typeNameText) {
+    if (typeNameText == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (strcmp(typeNameText, "Iterable") == 0) {
+        return "zr.builtin.IEnumerable";
+    }
+    if (strcmp(typeNameText, "Iterator") == 0) {
+        return "zr.builtin.IEnumerator";
+    }
+    if (strcmp(typeNameText, "ArrayLike") == 0) {
+        return "zr.builtin.IArrayLike";
+    }
+    if (strcmp(typeNameText, "Equatable") == 0) {
+        return "zr.builtin.IEquatable";
+    }
+    if (strcmp(typeNameText, "Hashable") == 0) {
+        return "zr.builtin.IHashable";
+    }
+    if (strcmp(typeNameText, "Comparable") == 0) {
+        return "zr.builtin.IComparable";
+    }
+    if (strcmp(typeNameText, "zr.system.reflect.Type") == 0 ||
+        strcmp(typeNameText, "zr.system.reflect.CallableType") == 0 ||
+        strcmp(typeNameText, "TypeInfo") == 0) {
+        return "zr.builtin.TypeInfo";
+    }
+    if (strcmp(typeNameText, "IEnumerable") == 0 ||
+        strcmp(typeNameText, "IEnumerator") == 0 ||
+        strcmp(typeNameText, "IArrayLike") == 0 ||
+        strcmp(typeNameText, "IEquatable") == 0 ||
+        strcmp(typeNameText, "IHashable") == 0 ||
+        strcmp(typeNameText, "IComparable") == 0 ||
+        strcmp(typeNameText, "IComparer") == 0 ||
+        strcmp(typeNameText, "Object") == 0 ||
+        strcmp(typeNameText, "Module") == 0 ||
+        strcmp(typeNameText, "Integer") == 0 ||
+        strcmp(typeNameText, "Float") == 0 ||
+        strcmp(typeNameText, "Double") == 0 ||
+        strcmp(typeNameText, "String") == 0 ||
+        strcmp(typeNameText, "Bool") == 0 ||
+        strcmp(typeNameText, "Byte") == 0 ||
+        strcmp(typeNameText, "Char") == 0 ||
+        strcmp(typeNameText, "UInt64") == 0) {
+        static TZrChar buffer[64];
+        snprintf(buffer, sizeof(buffer), "zr.builtin.%s", typeNameText);
+        return buffer;
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool ast_type_is_reserved_decorator_pseudo_type_name(const TZrNativeString nameStr,
                                                                TZrSize nameLen) {
     if (nameStr == ZR_NULL) {
@@ -1574,6 +1620,7 @@ static TZrBool ast_type_report_missing_explicit_binding(SZrCompilerState *cs,
                                                         SZrFileRange location) {
     TZrNativeString typeNameText = ZR_NULL;
     TZrChar errorBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    const TZrChar *canonicalBuiltinName;
 
     if (cs == ZR_NULL || typeName == ZR_NULL) {
         return ZR_FALSE;
@@ -1585,7 +1632,14 @@ static TZrBool ast_type_report_missing_explicit_binding(SZrCompilerState *cs,
         typeNameText = ZrCore_String_GetNativeString(typeName);
     }
 
-    if (typeNameText != ZR_NULL) {
+    canonicalBuiltinName = ast_type_builtin_canonical_name(typeNameText);
+    if (typeNameText != ZR_NULL && canonicalBuiltinName != ZR_NULL) {
+        snprintf(errorBuffer,
+                 sizeof(errorBuffer),
+                 "Type name '%s' is not implicitly visible; use '%s' via explicit import or module qualifier",
+                 typeNameText,
+                 canonicalBuiltinName);
+    } else if (typeNameText != ZR_NULL) {
         snprintf(errorBuffer,
                  sizeof(errorBuffer),
                  "Unqualified type name '%s' requires an explicit module qualifier or destructuring import",
@@ -1863,9 +1917,7 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
                                                 astType->name->data.identifier.name,
                                                 &currentType) &&
         currentType.typeName != ZR_NULL) {
-        if (!type_name_is_module_prototype_inference(cs, currentType.typeName)) {
-            ensure_import_module_compile_info(cs, currentType.typeName);
-        }
+        ensure_import_module_compile_info(cs, currentType.typeName);
         resolvedRootFromModuleAlias = type_name_is_module_prototype_inference(cs, currentType.typeName);
     }
 

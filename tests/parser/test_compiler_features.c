@@ -1663,14 +1663,14 @@ static void test_using_statement_compiles_through_frontend(void) {
     TEST_DIVIDER();
 }
 
-static void test_field_scoped_using_metadata_serializes_into_prototype_data(void) {
+static void test_owned_field_metadata_serializes_into_prototype_data(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Field-Scoped Using Prototype Metadata";
+    const char *testSummary = "Owned Field Prototype Metadata";
 
     timer.startTime = clock();
     TEST_START(testSummary);
-    TEST_INFO("Field-scoped using prototype metadata",
-              "Testing that compiler prototypeData preserves managed-field metadata for explicit `%using var` fields");
+    TEST_INFO("Owned field prototype metadata",
+              "Testing that direct %unique/%shared fields serialize ownership metadata and teardown flags without field-scoped `%using var`");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -1681,8 +1681,8 @@ static void test_field_scoped_using_metadata_serializes_into_prototype_data(void
 
     {
         const char *source =
-            "pub struct HandleBox { %using var handle: %unique Resource; var count: int; }\n"
-            "pub class Holder { %using var resource: %shared Resource; var version: int; }";
+            "pub struct HandleBox { handle: %unique Resource; var count: int; }\n"
+            "pub class Holder { resource: %shared Resource; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_using_meta.zr", 19);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
@@ -1725,7 +1725,7 @@ static void test_field_scoped_using_metadata_serializes_into_prototype_data(void
         TEST_ASSERT_NOT_NULL(resourceMember);
         TEST_ASSERT_NOT_NULL(versionMember);
 
-        TEST_ASSERT_TRUE(handleMember->isUsingManaged);
+        TEST_ASSERT_FALSE(handleMember->isUsingManaged);
         TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_UNIQUE, handleMember->ownershipQualifier);
         TEST_ASSERT_TRUE(handleMember->callsClose);
         TEST_ASSERT_TRUE(handleMember->callsDestructor);
@@ -1734,7 +1734,7 @@ static void test_field_scoped_using_metadata_serializes_into_prototype_data(void
         TEST_ASSERT_FALSE(countMember->isUsingManaged);
         TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_NONE, countMember->ownershipQualifier);
 
-        TEST_ASSERT_TRUE(resourceMember->isUsingManaged);
+        TEST_ASSERT_FALSE(resourceMember->isUsingManaged);
         TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_SHARED, resourceMember->ownershipQualifier);
         TEST_ASSERT_TRUE(resourceMember->callsClose);
         TEST_ASSERT_TRUE(resourceMember->callsDestructor);
@@ -1752,14 +1752,14 @@ static void test_field_scoped_using_metadata_serializes_into_prototype_data(void
     TEST_DIVIDER();
 }
 
-static void test_static_using_field_is_rejected_by_compiler(void) {
+static void test_removed_field_scoped_using_does_not_serialize_metadata(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Static Using Field Compile-Time Rejection";
+    const char *testSummary = "Removed Field-Scoped Using Does Not Serialize Metadata";
 
     timer.startTime = clock();
     TEST_START(testSummary);
-    TEST_INFO("Static using rejection",
-              "Testing that `static %using var` is rejected as a compile-time error by the compiler frontend");
+    TEST_INFO("Removed field-scoped using metadata",
+              "Testing that deprecated `%using var` fields do not survive into compiled prototype metadata now that owner fields carry lifecycle directly");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -1769,20 +1769,36 @@ static void test_static_using_field_is_rejected_by_compiler(void) {
     }
 
     {
-        const char *source = "class Holder { static %using var resource: %unique Resource; }";
+        const char *source = "class Holder { %using var resource: %unique Resource; }";
         SZrString *sourceName = ZrCore_String_Create(state, "static_using_compile_error.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
+        const SZrCompiledPrototypeInfoView *classProto;
+        const SZrCompiledMemberInfoView *resourceMember;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse static using field source");
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse removed field-scoped using source");
             destroy_test_state(state);
             return;
         }
 
         func = ZrParser_Compiler_Compile(state, ast);
-        TEST_ASSERT_NULL(func);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile removed field-scoped using source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_NOT_NULL(func->prototypeData);
+        TEST_ASSERT_EQUAL_UINT32(1, func->prototypeCount);
+        classProto = find_compiled_prototype_by_name(state, func, "Holder");
+        TEST_ASSERT_NOT_NULL(classProto);
+        resourceMember = find_compiled_member_by_name(state, func, classProto, "resource");
+        TEST_ASSERT_NULL(resourceMember);
+
+        ZrCore_Function_Free(state, func);
     }
 
     timer.endTime = clock();
@@ -2225,14 +2241,14 @@ static void test_interface_missing_member_is_rejected_by_compiler(void) {
     TEST_DIVIDER();
 }
 
-static void test_ownership_builtin_shared_expression_compiles_without_prototype_target(void) {
+static void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Builtin Shared Expression Compiles Without Prototype Target";
+    const char *testSummary = "Ownership Builtin Shared Expression Consumes Unique Owner";
 
     timer.startTime = clock();
     TEST_START(testSummary);
     TEST_INFO("Ownership builtin expression lowering",
-              "Testing that %shared(expr) compiles to OWN_SHARE without serialized native helper constants");
+              "Testing that %shared(owner) compiles from a %unique owner into OWN_SHARE without serialized native helper constants");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -2244,9 +2260,11 @@ static void test_ownership_builtin_shared_expression_compiles_without_prototype_
     {
         const char *source =
             "class Box {}\n"
-            "var box = new Box();\n"
-            "var alias = %shared(box);";
-        SZrString *sourceName = ZrCore_String_Create(state, "ownership_builtin_shared_expr.zr", 32);
+            "var owner = %unique new Box();\n"
+            "var alias = %shared(owner);";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_builtin_shared_expr.zr",
+                                                     strlen("ownership_builtin_shared_expr.zr"));
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
 
@@ -2277,14 +2295,14 @@ static void test_ownership_builtin_shared_expression_compiles_without_prototype_
     TEST_DIVIDER();
 }
 
-static void test_ownership_builtin_shared_new_wraps_constructed_result(void) {
+static void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Builtin Shared New Wraps Constructed Result";
+    const char *testSummary = "Ownership Borrow Loan And Detach Emit Dedicated Opcodes";
 
     timer.startTime = clock();
     TEST_START(testSummary);
-    TEST_INFO("Ownership builtin new lowering",
-              "Testing that %shared new Box() emits OWN_SHARE after construction instead of a serialized helper wrapper");
+    TEST_INFO("Ownership borrow/loan/detach lowering",
+              "Testing that %borrow/%loan/%detach emit dedicated ownership opcodes on top of the Rust-first owner surface");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -2296,14 +2314,20 @@ static void test_ownership_builtin_shared_new_wraps_constructed_result(void) {
     {
         const char *source =
             "class Box {}\n"
-            "var box = %shared new Box();";
-        SZrString *sourceName = ZrCore_String_Create(state, "ownership_builtin_shared_new.zr", 31);
+            "var owner = %unique new Box();\n"
+            "var loaned = %loan(owner);\n"
+            "var borrowed = %borrow(loaned);\n"
+            "var detachSource = %unique new Box();\n"
+            "var detached = %detach(detachSource);";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_borrow_loan_detach.zr",
+                                                     strlen("ownership_borrow_loan_detach.zr"));
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership builtin new source");
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership borrow/loan/detach source");
             destroy_test_state(state);
             return;
         }
@@ -2311,13 +2335,15 @@ static void test_ownership_builtin_shared_new_wraps_constructed_result(void) {
         func = ZrParser_Compiler_Compile(state, ast);
         if (func == ZR_NULL) {
             timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership builtin new source");
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership borrow/loan/detach source");
             destroy_test_state(state);
             return;
         }
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
-        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
 
         ZrCore_Function_Free(state, func);
     }
@@ -2388,14 +2414,14 @@ static void test_ownership_unique_share_runtime_moves_source_to_null(void) {
     TEST_DIVIDER();
 }
 
-static void test_ownership_using_share_runtime_moves_source_to_null(void) {
+static void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Using Share Runtime Moves Source To Null";
+    const char *testSummary = "Ownership Borrow Loan And Detach Runtime Follow Surface Contract";
 
     timer.startTime = clock();
     TEST_START(testSummary);
-    TEST_INFO("Ownership runtime using->shared move",
-              "Testing that %shared(owner) consumes a %using owner during execution and leaves the source variable null");
+    TEST_INFO("Ownership runtime borrow/loan/detach",
+              "Testing that %loan(owner) nulls the source, %borrow(loaned) yields a live alias, and %detach(unique) returns a plain GC value while clearing the source");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -2407,22 +2433,26 @@ static void test_ownership_using_share_runtime_moves_source_to_null(void) {
     {
         const char *source =
             "class Box {}\n"
-            "var owner = %using new Box();\n"
-            "var alias = %shared(owner);\n"
-            "if (owner == null && alias != null) {\n"
-            "    return 1;\n"
+            "var owner = %unique new Box();\n"
+            "var loaned = %loan(owner);\n"
+            "var borrowed = %borrow(loaned);\n"
+            "var borrowedAlive = borrowed != null;\n"
+            "var detachSource = %unique new Box();\n"
+            "var detached = %detach(detachSource);\n"
+            "if (owner == null && loaned != null && borrowedAlive && detachSource == null && detached != null) {\n"
+                "    return 1;\n"
             "}\n"
             "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "ownership_using_share_runtime.zr",
-                                                     strlen("ownership_using_share_runtime.zr"));
+                                                     "ownership_borrow_loan_detach_runtime.zr",
+                                                     strlen("ownership_borrow_loan_detach_runtime.zr"));
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
         TZrInt64 result = 0;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership using/share runtime source");
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership borrow/loan/detach runtime source");
             destroy_test_state(state);
             return;
         }
@@ -2430,11 +2460,14 @@ static void test_ownership_using_share_runtime_moves_source_to_null(void) {
         func = ZrParser_Compiler_Compile(state, ast);
         if (func == ZR_NULL) {
             timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership using/share runtime source");
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership borrow/loan/detach runtime source");
             destroy_test_state(state);
             return;
         }
 
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
         TEST_ASSERT_EQUAL_INT64(1, result);
 
@@ -2466,7 +2499,8 @@ static void test_ownership_weak_runtime_expires_to_null_after_last_shared_releas
     {
         const char *source =
             "class Box {}\n"
-            "var owner = %shared new Box();\n"
+            "var seed = %unique new Box();\n"
+            "var owner = %shared(seed);\n"
             "var watcher = %weak(owner);\n"
             "owner = null;\n"
             "if (watcher == null) {\n"
@@ -2527,7 +2561,8 @@ static void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract
     {
         const char *source =
             "class Box {}\n"
-            "var owner = %shared new Box();\n"
+            "var seed = %unique new Box();\n"
+            "var owner = %shared(seed);\n"
             "var watcher = %weak(owner);\n"
             "var alias = %upgrade(watcher);\n"
             "var releasedOwner = %release(owner);\n"
@@ -3176,8 +3211,8 @@ int main(void) {
     RUN_TEST(test_variable_arguments_function);
     RUN_TEST(test_template_string_compilation_emits_string_pipeline);
     RUN_TEST(test_using_statement_compiles_through_frontend);
-    RUN_TEST(test_field_scoped_using_metadata_serializes_into_prototype_data);
-    RUN_TEST(test_static_using_field_is_rejected_by_compiler);
+    RUN_TEST(test_owned_field_metadata_serializes_into_prototype_data);
+    RUN_TEST(test_removed_field_scoped_using_does_not_serialize_metadata);
     RUN_TEST(test_advanced_oop_metadata_serializes_override_and_property_chains);
     RUN_TEST(test_abstract_class_construction_is_rejected_by_compiler);
     RUN_TEST(test_final_class_inheritance_is_rejected_by_compiler);
@@ -3186,10 +3221,10 @@ int main(void) {
     RUN_TEST(test_shadow_does_not_satisfy_abstract_base_member);
     RUN_TEST(test_interface_plain_member_serializes_interface_contract_slot);
     RUN_TEST(test_interface_missing_member_is_rejected_by_compiler);
-    RUN_TEST(test_ownership_builtin_shared_expression_compiles_without_prototype_target);
-    RUN_TEST(test_ownership_builtin_shared_new_wraps_constructed_result);
+    RUN_TEST(test_ownership_builtin_shared_expression_consumes_unique_owner);
+    RUN_TEST(test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes);
     RUN_TEST(test_ownership_unique_share_runtime_moves_source_to_null);
-    RUN_TEST(test_ownership_using_share_runtime_moves_source_to_null);
+    RUN_TEST(test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract);
     RUN_TEST(test_ownership_weak_runtime_expires_to_null_after_last_shared_release);
     RUN_TEST(test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract);
 

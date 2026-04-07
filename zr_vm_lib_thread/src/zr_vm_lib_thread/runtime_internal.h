@@ -34,11 +34,28 @@ typedef enum EZrVmTaskTransportKind {
     ZR_VM_TASK_TRANSPORT_KIND_CHANNEL = 7,
     ZR_VM_TASK_TRANSPORT_KIND_TRANSFER = 8,
     ZR_VM_TASK_TRANSPORT_KIND_SHARED = 9,
-    ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED = 10
+    ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED = 10,
+    ZR_VM_TASK_TRANSPORT_KIND_UNIQUE_MUTEX = 11,
+    ZR_VM_TASK_TRANSPORT_KIND_SHARED_MUTEX = 12
 } EZrVmTaskTransportKind;
 
 #define ZR_VM_TASK_SHARED_NATIVE_CELL_FIELD "__zr_task_shared_native_cell"
 #define ZR_VM_TASK_SHARED_IS_WEAK_FIELD "__zr_task_shared_is_weak"
+#define ZR_VM_TASK_MUTEX_NATIVE_CELL_FIELD "__zr_task_mutex_native_cell"
+#define ZR_VM_TASK_MUTEX_KIND_FIELD "__zr_task_mutex_kind"
+#define ZR_VM_TASK_LOCK_MUTEX_CELL_FIELD "__zr_task_lock_mutex_cell"
+#define ZR_VM_TASK_LOCK_KIND_FIELD "__zr_task_lock_kind"
+#define ZR_VM_TASK_LOCK_ACTIVE_FIELD "__zr_task_lock_active"
+
+typedef enum EZrVmTaskMutexKind {
+    ZR_VM_TASK_MUTEX_KIND_UNIQUE = 1,
+    ZR_VM_TASK_MUTEX_KIND_SHARED = 2
+} EZrVmTaskMutexKind;
+
+typedef enum EZrVmTaskLockKind {
+    ZR_VM_TASK_LOCK_KIND_EXCLUSIVE = 1,
+    ZR_VM_TASK_LOCK_KIND_SHARED = 2
+} EZrVmTaskLockKind;
 
 #if defined(ZR_PLATFORM_WIN)
 typedef CRITICAL_SECTION ZrVmTaskMutex;
@@ -69,6 +86,17 @@ typedef struct ZrVmTaskSharedCell {
     TZrUInt8 reserved[7];
     ZrVmTaskTransportValue value;
 } ZrVmTaskSharedCell;
+
+typedef struct ZrVmTaskMutexCell {
+    ZrVmTaskMutex mutex;
+    ZrVmTaskCondition condition;
+    TZrUInt64 refCount;
+    TZrUInt64 readerCount;
+    TZrBool writerActive;
+    TZrUInt8 kind;
+    TZrUInt8 reserved[6];
+    ZrVmTaskTransportValue value;
+} ZrVmTaskMutexCell;
 
 enum {
     ZR_VM_TASK_SCHEDULER_MESSAGE_COMPLETE = 1,
@@ -209,6 +237,16 @@ TZrBool zr_vm_task_channel_try_get_transport(SZrState *state,
                                              const SZrTypeValue *value,
                                              ZrVmTaskChannelTransport **outTransport);
 TZrBool zr_vm_task_channel_make_value(SZrState *state, ZrVmTaskChannelTransport *transport, SZrTypeValue *result);
+TZrBool zr_vm_task_mutex_try_get_cell(SZrState *state,
+                                      const SZrTypeValue *value,
+                                      ZrVmTaskMutexCell **outCell,
+                                      TZrUInt32 *outKind);
+TZrBool zr_vm_task_mutex_make_value(SZrState *state,
+                                    ZrVmTaskMutexCell *cell,
+                                    TZrUInt32 kind,
+                                    SZrTypeValue *result);
+TZrBool zr_vm_task_mutex_cell_add_ref(ZrVmTaskMutexCell *cell);
+void zr_vm_task_mutex_cell_release(ZrVmTaskMutexCell *cell);
 TZrBool zr_vm_task_shared_try_get_cell(SZrState *state,
                                        const SZrTypeValue *value,
                                        ZrVmTaskSharedCell **outCell,
@@ -245,26 +283,15 @@ TZrBool zr_vm_task_weak_shared_is_alive(ZrLibCallContext *context, SZrTypeValue 
 TZrBool zr_vm_task_transfer_construct(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool zr_vm_task_transfer_take(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool zr_vm_task_transfer_is_taken(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_mutex_construct(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_mutex_load(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_mutex_lock(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_mutex_unlock(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_mutex_is_locked(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_bool_construct(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_bool_load(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_bool_store(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_bool_compare_exchange(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_int_construct(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_int_load(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_int_store(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_int_compare_exchange(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_int_fetch_add(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_int_fetch_sub(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_uint_construct(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_uint_load(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_uint_store(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_uint_compare_exchange(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_uint_fetch_add(ZrLibCallContext *context, SZrTypeValue *result);
-TZrBool zr_vm_task_atomic_uint_fetch_sub(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool zr_vm_task_unique_mutex_construct(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool zr_vm_task_unique_mutex_lock(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool zr_vm_task_shared_mutex_construct(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool zr_vm_task_shared_mutex_read(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool zr_vm_task_shared_mutex_write(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool zr_vm_task_lock_load(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool zr_vm_task_lock_store(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool zr_vm_task_lock_unlock(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool zr_vm_task_shared_lock_load(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool zr_vm_task_shared_lock_unlock(ZrLibCallContext *context, SZrTypeValue *result);
 
 #endif

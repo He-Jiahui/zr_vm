@@ -17,9 +17,23 @@ static void backend_aot_write_c_direct_ownership_call(FILE *file,
             (unsigned)sourceSlot);
 }
 
-void backend_aot_write_c_direct_own_using(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+void backend_aot_write_c_direct_own_unique(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     backend_aot_write_c_direct_ownership_call(file,
-                                              "ZrLibrary_AotRuntime_OwnUsing",
+                                              "ZrLibrary_AotRuntime_OwnUnique",
+                                              destinationSlot,
+                                              sourceSlot);
+}
+
+void backend_aot_write_c_direct_own_borrow(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+    backend_aot_write_c_direct_ownership_call(file,
+                                              "ZrLibrary_AotRuntime_OwnBorrow",
+                                              destinationSlot,
+                                              sourceSlot);
+}
+
+void backend_aot_write_c_direct_own_loan(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+    backend_aot_write_c_direct_ownership_call(file,
+                                              "ZrLibrary_AotRuntime_OwnLoan",
                                               destinationSlot,
                                               sourceSlot);
 }
@@ -34,6 +48,13 @@ void backend_aot_write_c_direct_own_share(FILE *file, TZrUInt32 destinationSlot,
 void backend_aot_write_c_direct_own_weak(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     backend_aot_write_c_direct_ownership_call(file,
                                               "ZrLibrary_AotRuntime_OwnWeak",
+                                              destinationSlot,
+                                              sourceSlot);
+}
+
+void backend_aot_write_c_direct_own_detach(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+    backend_aot_write_c_direct_ownership_call(file,
+                                              "ZrLibrary_AotRuntime_OwnDetach",
                                               destinationSlot,
                                               sourceSlot);
 }

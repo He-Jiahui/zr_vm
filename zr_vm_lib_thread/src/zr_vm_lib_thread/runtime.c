@@ -1129,6 +1129,42 @@ static const ZrLibFunctionDescriptor g_task_functions[] = {
          "Return the current isolate's zr.thread scheduler wrapper.", ZR_NULL, 0},
 };
 
+static const ZrLibGenericParameterDescriptor g_task_single_generic_parameter[] = {
+        {
+                .name = "T",
+                .documentation = "The payload type carried by the task or transport handle.",
+        },
+};
+
+static const TZrChar *g_send_constraints[] = {"zr.thread.Send"};
+static const TZrChar *g_send_sync_constraints[] = {"zr.thread.Send", "zr.thread.Sync"};
+
+static const ZrLibGenericParameterDescriptor g_send_generic_parameter[] = {
+        {
+                .name = "T",
+                .documentation = "The payload must be movable between thread isolates.",
+                .constraintTypeNames = g_send_constraints,
+                .constraintTypeCount = ZR_ARRAY_COUNT(g_send_constraints),
+        },
+};
+
+static const ZrLibGenericParameterDescriptor g_send_sync_generic_parameter[] = {
+        {
+                .name = "T",
+                .documentation = "The payload must be movable and safe to share between thread isolates.",
+                .constraintTypeNames = g_send_sync_constraints,
+                .constraintTypeCount = ZR_ARRAY_COUNT(g_send_sync_constraints),
+        },
+};
+
+static const ZrLibParameterDescriptor g_thread_start_parameters[] = {
+        {"runner", "zr.task.TaskRunner<T>", "The task runner to launch on the target thread scheduler."},
+};
+
+static const TZrChar *g_scheduler_implements[] = {"IScheduler"};
+static const TZrChar *g_send_sync_implements[] = {"Send", "Sync"};
+static const TZrChar *g_send_implements[] = {"Send"};
+
 static const ZrLibMethodDescriptor g_async_methods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("result", 0, 0, zr_vm_task_async_result, "value",
                                       "Resolve the async handle and return its result.", ZR_FALSE, ZR_NULL, 0),
@@ -1138,8 +1174,10 @@ static const ZrLibMethodDescriptor g_async_methods[] = {
 };
 
 static const ZrLibMethodDescriptor g_scheduler_methods[] = {
-        {"start", 1, 1, zr_vm_thread_scheduler_start, "Task<T>",
-         "Launch a TaskRunner on this thread scheduler.", ZR_FALSE, ZR_NULL, 0, 0U, ZR_NULL, 0},
+        {"start", 1, 1, zr_vm_thread_scheduler_start, "zr.task.Task<T>",
+         "Launch a Send TaskRunner on this thread scheduler.", ZR_FALSE, g_thread_start_parameters,
+         ZR_ARRAY_COUNT(g_thread_start_parameters), 0U, g_send_generic_parameter,
+         ZR_ARRAY_COUNT(g_send_generic_parameter)},
         ZR_LIB_METHOD_DESCRIPTOR_INIT("pump", 0, 0, zr_vm_task_scheduler_pump, "int",
                                       "Drain worker completions and queued work for this scheduler.", ZR_FALSE,
                                       ZR_NULL, 0),
@@ -1152,8 +1190,10 @@ static const ZrLibMethodDescriptor g_scheduler_methods[] = {
 };
 
 static const ZrLibMethodDescriptor g_thread_methods[] = {
-        {"start", 1, 1, zr_vm_thread_thread_start, "Task<T>",
-         "Launch a TaskRunner on this thread.", ZR_FALSE, ZR_NULL, 0, 0U, ZR_NULL, 0},
+        {"start", 1, 1, zr_vm_thread_thread_start, "zr.task.Task<T>",
+         "Launch a Send TaskRunner on this thread.", ZR_FALSE, g_thread_start_parameters,
+         ZR_ARRAY_COUNT(g_thread_start_parameters), 0U, g_send_generic_parameter,
+         ZR_ARRAY_COUNT(g_send_generic_parameter)},
 };
 
 static const ZrLibMethodDescriptor g_channel_methods[] = {
@@ -1204,50 +1244,34 @@ static const ZrLibMethodDescriptor g_transfer_methods[] = {
                                       ZR_NULL, 0),
 };
 
-static const ZrLibMethodDescriptor g_mutex_methods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("load", 0, 0, zr_vm_task_mutex_load, "T",
-                                      "Return the current mutex-protected value.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("lock", 0, 0, zr_vm_task_mutex_lock, "T",
-                                      "Acquire the mutex and return the current value.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("unlock", 1, 1, zr_vm_task_mutex_unlock, "null",
-                                      "Replace the value and release the mutex.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("isLocked", 0, 0, zr_vm_task_mutex_is_locked, "bool",
-                                      "Return whether the mutex is currently locked.", ZR_FALSE, ZR_NULL, 0),
+static const ZrLibMethodDescriptor g_unique_mutex_methods[] = {
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("lock", 0, 0, zr_vm_task_unique_mutex_lock, "Lock<T>",
+                                      "Acquire an exclusive lock guard for this mutex.", ZR_FALSE, ZR_NULL, 0),
 };
 
-static const ZrLibMethodDescriptor g_atomic_bool_methods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("load", 0, 0, zr_vm_task_atomic_bool_load, "bool",
-                                      "Load the current atomic bool value.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("store", 1, 1, zr_vm_task_atomic_bool_store, "null",
-                                      "Store a new atomic bool value.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("compareExchange", 2, 2, zr_vm_task_atomic_bool_compare_exchange, "bool",
-                                      "Compare the current value and replace it when equal.", ZR_FALSE, ZR_NULL, 0),
+static const ZrLibMethodDescriptor g_shared_mutex_methods[] = {
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("read", 0, 0, zr_vm_task_shared_mutex_read, "SharedLock<T>",
+                                      "Acquire a shared read guard for this mutex.", ZR_FALSE, ZR_NULL, 0),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("write", 0, 0, zr_vm_task_shared_mutex_write, "Lock<T>",
+                                      "Acquire an exclusive write guard for this mutex.", ZR_FALSE, ZR_NULL, 0),
 };
 
-static const ZrLibMethodDescriptor g_atomic_int_methods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("load", 0, 0, zr_vm_task_atomic_int_load, "T",
-                                      "Load the current atomic integer value.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("store", 1, 1, zr_vm_task_atomic_int_store, "null",
-                                      "Store a new atomic integer value.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("compareExchange", 2, 2, zr_vm_task_atomic_int_compare_exchange, "bool",
-                                      "Compare the current value and replace it when equal.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("fetchAdd", 1, 1, zr_vm_task_atomic_int_fetch_add, "T",
-                                      "Add a delta and return the previous value.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("fetchSub", 1, 1, zr_vm_task_atomic_int_fetch_sub, "T",
-                                      "Subtract a delta and return the previous value.", ZR_FALSE, ZR_NULL, 0),
+static const ZrLibMethodDescriptor g_lock_methods[] = {
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("load", 0, 0, zr_vm_task_lock_load, "T",
+                                      "Read the guarded value while the exclusive lock is held.", ZR_FALSE, ZR_NULL,
+                                      0),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("store", 1, 1, zr_vm_task_lock_store, "null",
+                                      "Replace the guarded value while the exclusive lock is held.", ZR_FALSE,
+                                      ZR_NULL, 0),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("unlock", 0, 0, zr_vm_task_lock_unlock, "null",
+                                      "Release this exclusive lock guard.", ZR_FALSE, ZR_NULL, 0),
 };
 
-static const ZrLibMethodDescriptor g_atomic_uint_methods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("load", 0, 0, zr_vm_task_atomic_uint_load, "T",
-                                      "Load the current atomic unsigned integer value.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("store", 1, 1, zr_vm_task_atomic_uint_store, "null",
-                                      "Store a new atomic unsigned integer value.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("compareExchange", 2, 2, zr_vm_task_atomic_uint_compare_exchange, "bool",
-                                      "Compare the current value and replace it when equal.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("fetchAdd", 1, 1, zr_vm_task_atomic_uint_fetch_add, "T",
-                                      "Add a delta and return the previous value.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("fetchSub", 1, 1, zr_vm_task_atomic_uint_fetch_sub, "T",
-                                      "Subtract a delta and return the previous value.", ZR_FALSE, ZR_NULL, 0),
+static const ZrLibMethodDescriptor g_shared_lock_methods[] = {
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("load", 0, 0, zr_vm_task_shared_lock_load, "T",
+                                      "Read the guarded value while the shared lock is held.", ZR_FALSE, ZR_NULL, 0),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("unlock", 0, 0, zr_vm_task_shared_lock_unlock, "null",
+                                      "Release this shared lock guard.", ZR_FALSE, ZR_NULL, 0),
 };
 
 static const ZrLibMetaMethodDescriptor g_shared_meta_methods[] = {
@@ -1265,36 +1289,24 @@ static const ZrLibMetaMethodDescriptor g_transfer_meta_methods[] = {
          "Construct a single-consumer transfer wrapper from a value.", ZR_NULL, 0},
 };
 
-static const ZrLibMetaMethodDescriptor g_mutex_meta_methods[] = {
-        {ZR_META_CONSTRUCTOR, 1, 1, zr_vm_task_mutex_construct, "Mutex<T>",
-         "Construct a mutex wrapper around a value.", ZR_NULL, 0},
+static const ZrLibMetaMethodDescriptor g_unique_mutex_meta_methods[] = {
+        {ZR_META_CONSTRUCTOR, 1, 1, zr_vm_task_unique_mutex_construct, "UniqueMutex<T>",
+         "Construct an exclusive mutex wrapper from a Send payload.", ZR_NULL, 0},
 };
 
-static const ZrLibMetaMethodDescriptor g_atomic_bool_meta_methods[] = {
-        {ZR_META_CONSTRUCTOR, 1, 1, zr_vm_task_atomic_bool_construct, "AtomicBool",
-         "Construct an atomic bool wrapper.", ZR_NULL, 0},
+static const ZrLibMetaMethodDescriptor g_shared_mutex_meta_methods[] = {
+        {ZR_META_CONSTRUCTOR, 1, 1, zr_vm_task_shared_mutex_construct, "SharedMutex<T>",
+         "Construct a read/write mutex wrapper from a Send + Sync payload.", ZR_NULL, 0},
 };
-
-static const ZrLibMetaMethodDescriptor g_atomic_int_meta_methods[] = {
-        {ZR_META_CONSTRUCTOR, 1, 1, zr_vm_task_atomic_int_construct, "AtomicInt<T>",
-         "Construct an atomic integer wrapper.", ZR_NULL, 0},
-};
-
-static const ZrLibMetaMethodDescriptor g_atomic_uint_meta_methods[] = {
-        {ZR_META_CONSTRUCTOR, 1, 1, zr_vm_task_atomic_uint_construct, "AtomicUInt<T>",
-         "Construct an atomic unsigned integer wrapper.", ZR_NULL, 0},
-};
-
-static const ZrLibGenericParameterDescriptor g_task_single_generic_parameter[] = {
-        {
-                .name = "T",
-                .documentation = "The payload type carried by the task or transport handle.",
-        },
-};
-
-static const TZrChar *g_scheduler_implements[] = {"IScheduler"};
 
 static const ZrLibTypeDescriptor g_task_types[] = {
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("Send", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
+                                    "Marker contract for values that can move between thread isolates.", ZR_NULL,
+                                    ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("Sync", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
+                                    "Marker contract for values that can be safely shared across thread isolates.",
+                                    ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL,
+                                    0),
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Scheduler", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_scheduler_methods,
                                     ZR_ARRAY_COUNT(g_scheduler_methods), ZR_NULL, 0,
                                     "Worker-backed scheduler that integrates with zr.task.Task awaiting.", ZR_NULL,
@@ -1308,24 +1320,52 @@ static const ZrLibTypeDescriptor g_task_types[] = {
                                     ZR_ARRAY_COUNT(g_channel_methods), g_channel_meta_methods,
                                     ZR_ARRAY_COUNT(g_channel_meta_methods),
                                     "Cross-isolate FIFO channel wrapper with scheduler wakeups.", ZR_NULL,
-                                    ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Channel()",
-                                    g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter)),
+                                    g_send_sync_implements, ZR_ARRAY_COUNT(g_send_sync_implements), ZR_NULL, 0,
+                                    ZR_NULL, ZR_TRUE, ZR_TRUE, "Channel()", g_send_generic_parameter,
+                                    ZR_ARRAY_COUNT(g_send_generic_parameter)),
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Shared", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_shared_methods,
                                     ZR_ARRAY_COUNT(g_shared_methods), g_shared_meta_methods,
                                     ZR_ARRAY_COUNT(g_shared_meta_methods),
                                     "Shared wrapper with strong and weak handle semantics for cross-isolate cells.",
-                                    ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Shared(value: T)",
-                                    g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter)),
+                                    ZR_NULL, g_send_sync_implements, ZR_ARRAY_COUNT(g_send_sync_implements), ZR_NULL,
+                                    0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Shared(value: T)", g_send_sync_generic_parameter,
+                                    ZR_ARRAY_COUNT(g_send_sync_generic_parameter)),
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Transfer", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_transfer_methods,
                                     ZR_ARRAY_COUNT(g_transfer_methods), g_transfer_meta_methods,
                                     ZR_ARRAY_COUNT(g_transfer_meta_methods),
                                     "Single-consumer transfer wrapper used to hand off a value once.", ZR_NULL,
-                                    ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Transfer(value: T)",
-                                    g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter)),
+                                    g_send_implements, ZR_ARRAY_COUNT(g_send_implements), ZR_NULL, 0, ZR_NULL,
+                                    ZR_TRUE, ZR_TRUE, "Transfer(value: T)", g_send_generic_parameter,
+                                    ZR_ARRAY_COUNT(g_send_generic_parameter)),
         ZR_LIB_TYPE_DESCRIPTOR_INIT("WeakShared", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_weak_shared_methods,
                                     ZR_ARRAY_COUNT(g_weak_shared_methods), ZR_NULL, 0,
                                     "Weak shared wrapper that can upgrade back to a live Shared handle.", ZR_NULL,
-                                    ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
+                                    g_send_sync_implements, ZR_ARRAY_COUNT(g_send_sync_implements), ZR_NULL, 0,
+                                    ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, g_send_sync_generic_parameter,
+                                    ZR_ARRAY_COUNT(g_send_sync_generic_parameter)),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("UniqueMutex", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0,
+                                    g_unique_mutex_methods, ZR_ARRAY_COUNT(g_unique_mutex_methods),
+                                    g_unique_mutex_meta_methods, ZR_ARRAY_COUNT(g_unique_mutex_meta_methods),
+                                    "Exclusive mutex wrapper used as synchronized shared payload.", ZR_NULL,
+                                    g_send_sync_implements, ZR_ARRAY_COUNT(g_send_sync_implements), ZR_NULL, 0,
+                                    ZR_NULL, ZR_TRUE, ZR_TRUE, "UniqueMutex(value: T)", g_send_generic_parameter,
+                                    ZR_ARRAY_COUNT(g_send_generic_parameter)),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("SharedMutex", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0,
+                                    g_shared_mutex_methods, ZR_ARRAY_COUNT(g_shared_mutex_methods),
+                                    g_shared_mutex_meta_methods, ZR_ARRAY_COUNT(g_shared_mutex_meta_methods),
+                                    "Read/write mutex wrapper used as synchronized shared payload.", ZR_NULL,
+                                    g_send_sync_implements, ZR_ARRAY_COUNT(g_send_sync_implements), ZR_NULL, 0,
+                                    ZR_NULL, ZR_TRUE, ZR_TRUE, "SharedMutex(value: T)",
+                                    g_send_sync_generic_parameter, ZR_ARRAY_COUNT(g_send_sync_generic_parameter)),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("Lock", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_lock_methods,
+                                    ZR_ARRAY_COUNT(g_lock_methods), ZR_NULL, 0,
+                                    "Affine exclusive lock guard. This guard must not cross awaits or threads.",
+                                    ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
+                                    g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter)),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("SharedLock", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0,
+                                    g_shared_lock_methods, ZR_ARRAY_COUNT(g_shared_lock_methods), ZR_NULL, 0,
+                                    "Affine shared-read lock guard. This guard must not cross awaits or threads.",
+                                    ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
                                     g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter)),
 };
 
@@ -1333,6 +1373,8 @@ static const ZrLibTypeHintDescriptor g_task_hints[] = {
         {"spawnThread", "function", "spawnThread(): Thread", "Create a worker thread launcher."},
         {"getCurrentThreadScheduler", "function", "getCurrentThreadScheduler(): Scheduler",
          "Return the current isolate's zr.thread scheduler wrapper."},
+        {"Send", "type", "interface Send", "Marker contract for values that can move between threads."},
+        {"Sync", "type", "interface Sync", "Marker contract for values that can be shared between threads."},
         {"Scheduler", "type", "class Scheduler implements zr.task.IScheduler",
          "Worker-backed scheduler that can start TaskRunner<T> instances."},
         {"Thread", "type", "class Thread", "Worker thread launcher with a start(runner) method."},
@@ -1340,6 +1382,10 @@ static const ZrLibTypeHintDescriptor g_task_hints[] = {
         {"Shared", "type", "class Shared<T>", "Shared-value wrapper with strong and weak handles."},
         {"Transfer", "type", "class Transfer<T>", "Single-consumer transfer wrapper."},
         {"WeakShared", "type", "class WeakShared<T>", "Weak shared handle that can upgrade to Shared<T>."},
+        {"UniqueMutex", "type", "class UniqueMutex<T>", "Exclusive mutex wrapper for synchronized access."},
+        {"SharedMutex", "type", "class SharedMutex<T>", "Read/write mutex wrapper for synchronized access."},
+        {"Lock", "type", "class Lock<T>", "Exclusive lock guard that exposes load/store/unlock."},
+        {"SharedLock", "type", "class SharedLock<T>", "Shared-read lock guard that exposes load/unlock."},
 };
 
 static const TZrChar g_task_hints_json[] =

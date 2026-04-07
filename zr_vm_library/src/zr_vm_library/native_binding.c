@@ -41,6 +41,10 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     native_registry_clear_error(registry);
 
     ZrCore_GlobalState_SetNativeModuleLoader(global, native_registry_loader, registry);
+    if (!ZrLibrary_NativeRegistry_RegisterModule(global, ZrLibrary_BuiltinModule_GetDescriptor())) {
+        ZrLibrary_NativeRegistry_Free(global);
+        return ZR_FALSE;
+    }
     return ZR_TRUE;
 }
 

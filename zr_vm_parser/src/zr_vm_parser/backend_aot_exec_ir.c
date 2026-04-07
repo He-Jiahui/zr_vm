@@ -51,12 +51,16 @@ const TZrChar *backend_aot_exec_ir_semir_opcode_name(TZrUInt32 opcode) {
     switch ((EZrSemIrOpcode)opcode) {
         case ZR_SEMIR_OPCODE_OWN_UNIQUE:
             return "OWN_UNIQUE";
-        case ZR_SEMIR_OPCODE_OWN_USING:
-            return "OWN_USING";
+        case ZR_SEMIR_OPCODE_OWN_BORROW:
+            return "OWN_BORROW";
+        case ZR_SEMIR_OPCODE_OWN_LOAN:
+            return "OWN_LOAN";
         case ZR_SEMIR_OPCODE_OWN_SHARE:
             return "OWN_SHARE";
         case ZR_SEMIR_OPCODE_OWN_WEAK:
             return "OWN_WEAK";
+        case ZR_SEMIR_OPCODE_OWN_DETACH:
+            return "OWN_DETACH";
         case ZR_SEMIR_OPCODE_OWN_UPGRADE:
             return "OWN_UPGRADE";
         case ZR_SEMIR_OPCODE_OWN_RELEASE:
@@ -100,16 +104,21 @@ static TZrUInt32 backend_aot_exec_ir_runtime_contracts_for_opcode(TZrUInt32 opco
             return ZR_AOT_RUNTIME_CONTRACT_ITER_INIT;
         case ZR_SEMIR_OPCODE_DYN_ITER_MOVE_NEXT:
             return ZR_AOT_RUNTIME_CONTRACT_ITER_MOVE_NEXT;
+        case ZR_SEMIR_OPCODE_OWN_BORROW:
+            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_BORROW;
+        case ZR_SEMIR_OPCODE_OWN_LOAN:
+            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_LOAN;
         case ZR_SEMIR_OPCODE_OWN_SHARE:
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE;
         case ZR_SEMIR_OPCODE_OWN_WEAK:
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WEAK;
+        case ZR_SEMIR_OPCODE_OWN_DETACH:
+            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH;
         case ZR_SEMIR_OPCODE_OWN_UPGRADE:
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE;
         case ZR_SEMIR_OPCODE_OWN_RELEASE:
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE;
         case ZR_SEMIR_OPCODE_OWN_UNIQUE:
-        case ZR_SEMIR_OPCODE_OWN_USING:
         case ZR_SEMIR_OPCODE_NOP:
         default:
             return ZR_AOT_RUNTIME_CONTRACT_NONE;
@@ -122,6 +131,10 @@ const TZrChar *backend_aot_exec_ir_runtime_contract_name(TZrUInt32 contractBit) 
             return "reflection.typeof";
         case ZR_AOT_RUNTIME_CONTRACT_FUNCTION_PRECALL:
             return "dispatch.precall";
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_BORROW:
+            return "ownership.borrow";
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_LOAN:
+            return "ownership.loan";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE:
             return "ownership.share";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WEAK:
@@ -130,6 +143,8 @@ const TZrChar *backend_aot_exec_ir_runtime_contract_name(TZrUInt32 contractBit) 
             return "iter.init";
         case ZR_AOT_RUNTIME_CONTRACT_ITER_MOVE_NEXT:
             return "iter.move_next";
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH:
+            return "ownership.detach";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE:
             return "ownership.upgrade";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE:

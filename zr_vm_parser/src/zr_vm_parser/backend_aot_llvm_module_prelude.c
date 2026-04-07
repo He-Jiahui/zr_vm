@@ -17,11 +17,20 @@ void backend_aot_write_llvm_contracts(FILE *file, TZrUInt32 runtimeContracts) {
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_FUNCTION_PRECALL) {
         fprintf(file, "declare ptr @ZrCore_Function_PreCall(ptr, ptr, i64, ptr)\n");
     }
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_BORROW) {
+        fprintf(file, "declare i1 @ZrCore_Ownership_BorrowValue(ptr, ptr, ptr)\n");
+    }
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_LOAN) {
+        fprintf(file, "declare i1 @ZrCore_Ownership_LoanValue(ptr, ptr, ptr)\n");
+    }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE) {
         fprintf(file, "declare i1 @ZrCore_Ownership_NativeShared(ptr)\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WEAK) {
         fprintf(file, "declare i1 @ZrCore_Ownership_NativeWeak(ptr)\n");
+    }
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH) {
+        fprintf(file, "declare i1 @ZrCore_Ownership_DetachValue(ptr, ptr, ptr)\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE) {
         fprintf(file, "declare i1 @ZrCore_Ownership_UpgradeValue(ptr, ptr, ptr)\n");
@@ -142,9 +151,12 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_MetaSetCached(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_MetaGetStaticCached(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_MetaSetStaticCached(ptr, ptr, i32, i32, i32)\n");
-    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnUsing(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnUnique(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnBorrow(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnLoan(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnShare(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnWeak(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnDetach(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnUpgrade(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnRelease(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_LogicalEqual(ptr, ptr, i32, i32, i32)\n");

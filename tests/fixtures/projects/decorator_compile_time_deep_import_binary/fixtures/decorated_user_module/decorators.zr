@@ -6,6 +6,6 @@
     }
 }
 
-%compileTime markFunction(target: %type Function, bonus: int = 7): DecoratorPatch {
+%compileTime markFunction(target: %type Function, bonus: int = 7) {
     return { metadata: { instrumented: bonus } };
 }

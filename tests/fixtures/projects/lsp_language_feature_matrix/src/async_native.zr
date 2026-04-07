@@ -21,7 +21,7 @@ pub nativeScore(): int {
     var handle = ffi.BufferHandle.allocate(8);
     var tcp = network.tcp;
     var list = new container.LinkedList<int>();
-    var owner = %using new Holder();
+    var owner = %unique new Holder();
     var shared = %shared(owner);
     var weak = %weak(shared);
     var upgraded = %upgrade(weak);

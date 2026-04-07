@@ -4,6 +4,7 @@
 
 #include "compiler_internal.h"
 #include "module_init_analysis.h"
+#include "type_inference_internal.h"
 
 EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) {
     if (node == ZR_NULL) {
@@ -22,7 +23,8 @@ EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) {
 
 EZrOwnershipQualifier get_implicit_this_ownership_qualifier(EZrOwnershipQualifier receiverQualifier) {
     if (receiverQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
-        receiverQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
+        receiverQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+        receiverQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
         return ZR_OWNERSHIP_QUALIFIER_BORROWED;
     }
 
@@ -31,74 +33,39 @@ EZrOwnershipQualifier get_implicit_this_ownership_qualifier(EZrOwnershipQualifie
 
 // 初始化编译器状态
 
-static EZrProtocolId compiler_protocol_id_from_type_name(SZrString *typeName) {
-    const TZrChar *nativeName;
-    TZrSize length = 0;
-
-    if (typeName == ZR_NULL) {
-        return ZR_PROTOCOL_ID_NONE;
-    }
-
-    nativeName = ZrCore_String_GetNativeString(typeName);
-    if (nativeName == ZR_NULL) {
-        return ZR_PROTOCOL_ID_NONE;
-    }
-
-    while (nativeName[length] != '\0' && nativeName[length] != '<') {
-        length++;
-    }
-
-    if (length == 9 && strncmp(nativeName, "Equatable", length) == 0) {
-        return ZR_PROTOCOL_ID_EQUATABLE;
-    }
-    if (length == 8 && strncmp(nativeName, "Hashable", length) == 0) {
-        return ZR_PROTOCOL_ID_HASHABLE;
-    }
-    if (length == 10 && strncmp(nativeName, "Comparable", length) == 0) {
-        return ZR_PROTOCOL_ID_COMPARABLE;
-    }
-    if (length == 8 && strncmp(nativeName, "Iterable", length) == 0) {
-        return ZR_PROTOCOL_ID_ITERABLE;
-    }
-    if (length == 8 && strncmp(nativeName, "Iterator", length) == 0) {
-        return ZR_PROTOCOL_ID_ITERATOR;
-    }
-    if (length == 9 && strncmp(nativeName, "ArrayLike", length) == 0) {
-        return ZR_PROTOCOL_ID_ARRAY_LIKE;
-    }
-
-    return ZR_PROTOCOL_ID_NONE;
-}
-
-static void compiler_accumulate_protocol_mask_from_type_names(const SZrArray *typeNames, TZrUInt64 *protocolMask) {
-    if (typeNames == ZR_NULL || protocolMask == ZR_NULL) {
+static void compiler_accumulate_protocol_mask_from_type_names(SZrCompilerState *cs,
+                                                              const SZrArray *typeNames,
+                                                              TZrUInt64 *protocolMask) {
+    if (cs == ZR_NULL || typeNames == ZR_NULL || protocolMask == ZR_NULL) {
         return;
     }
 
     for (TZrSize index = 0; index < typeNames->length; index++) {
         SZrString **typeNamePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)typeNames, index);
-        EZrProtocolId protocolId;
+        SZrTypePrototypeInfo *prototype;
 
         if (typeNamePtr == ZR_NULL || *typeNamePtr == ZR_NULL) {
             continue;
         }
 
-        protocolId = compiler_protocol_id_from_type_name(*typeNamePtr);
-        if (protocolId != ZR_PROTOCOL_ID_NONE) {
-            *protocolMask |= ZR_PROTOCOL_BIT(protocolId);
+        ensure_generic_instance_type_prototype(cs, *typeNamePtr);
+        prototype = find_compiler_type_prototype_inference(cs, *typeNamePtr);
+        if (prototype != ZR_NULL) {
+            *protocolMask |= prototype->protocolMask;
         }
     }
 }
 
-static TZrUInt64 compiler_protocol_mask_from_prototype_info(SZrTypePrototypeInfo *info) {
+static TZrUInt64 compiler_protocol_mask_from_prototype_info(SZrCompilerState *cs, SZrTypePrototypeInfo *info) {
     TZrUInt64 protocolMask = 0;
 
-    if (info == ZR_NULL) {
+    if (cs == ZR_NULL || info == ZR_NULL) {
         return 0;
     }
 
-    compiler_accumulate_protocol_mask_from_type_names(&info->inherits, &protocolMask);
-    compiler_accumulate_protocol_mask_from_type_names(&info->implements, &protocolMask);
+    protocolMask = info->protocolMask;
+    compiler_accumulate_protocol_mask_from_type_names(cs, &info->inherits, &protocolMask);
+    compiler_accumulate_protocol_mask_from_type_names(cs, &info->implements, &protocolMask);
     return protocolMask;
 }
 
@@ -325,7 +292,7 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     protoInfo->accessModifier = (TZrUInt32)info->accessModifier;
     protoInfo->inheritsCount = inheritsCount;
     protoInfo->membersCount = membersCount;
-    protoInfo->protocolMask = compiler_protocol_mask_from_prototype_info(info);
+    protoInfo->protocolMask = compiler_protocol_mask_from_prototype_info(cs, info);
     protoInfo->hasDecoratorMetadata = info->hasDecoratorMetadata ? ZR_TRUE : ZR_FALSE;
     protoInfo->decoratorMetadataConstantIndex =
             info->hasDecoratorMetadata ? add_constant(cs, &info->decoratorMetadataValue) : 0;

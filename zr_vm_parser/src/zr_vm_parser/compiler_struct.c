@@ -227,6 +227,7 @@ static TZrBool compiler_report_missing_explicit_type_binding(SZrCompilerState *c
                                                              SZrFileRange location) {
     TZrNativeString typeNameText = ZR_NULL;
     TZrChar errorBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    const TZrChar *canonicalBuiltinName = ZR_NULL;
 
     if (cs == ZR_NULL || typeName == ZR_NULL) {
         return ZR_FALSE;
@@ -239,6 +240,52 @@ static TZrBool compiler_report_missing_explicit_type_binding(SZrCompilerState *c
     }
 
     if (typeNameText != ZR_NULL) {
+        if (strcmp(typeNameText, "Iterable") == 0) {
+            canonicalBuiltinName = "zr.builtin.IEnumerable";
+        } else if (strcmp(typeNameText, "Iterator") == 0) {
+            canonicalBuiltinName = "zr.builtin.IEnumerator";
+        } else if (strcmp(typeNameText, "ArrayLike") == 0) {
+            canonicalBuiltinName = "zr.builtin.IArrayLike";
+        } else if (strcmp(typeNameText, "Equatable") == 0) {
+            canonicalBuiltinName = "zr.builtin.IEquatable";
+        } else if (strcmp(typeNameText, "Hashable") == 0) {
+            canonicalBuiltinName = "zr.builtin.IHashable";
+        } else if (strcmp(typeNameText, "Comparable") == 0) {
+            canonicalBuiltinName = "zr.builtin.IComparable";
+        } else if (strcmp(typeNameText, "zr.system.reflect.Type") == 0 ||
+                   strcmp(typeNameText, "zr.system.reflect.CallableType") == 0 ||
+                   strcmp(typeNameText, "TypeInfo") == 0) {
+            canonicalBuiltinName = "zr.builtin.TypeInfo";
+        } else if (strcmp(typeNameText, "IEnumerable") == 0) {
+            canonicalBuiltinName = "zr.builtin.IEnumerable";
+        } else if (strcmp(typeNameText, "IEnumerator") == 0) {
+            canonicalBuiltinName = "zr.builtin.IEnumerator";
+        } else if (strcmp(typeNameText, "IArrayLike") == 0) {
+            canonicalBuiltinName = "zr.builtin.IArrayLike";
+        } else if (strcmp(typeNameText, "IEquatable") == 0) {
+            canonicalBuiltinName = "zr.builtin.IEquatable";
+        } else if (strcmp(typeNameText, "IHashable") == 0) {
+            canonicalBuiltinName = "zr.builtin.IHashable";
+        } else if (strcmp(typeNameText, "IComparable") == 0) {
+            canonicalBuiltinName = "zr.builtin.IComparable";
+        } else if (strcmp(typeNameText, "IComparer") == 0) {
+            canonicalBuiltinName = "zr.builtin.IComparer";
+        } else if (strcmp(typeNameText, "Object") == 0) {
+            canonicalBuiltinName = "zr.builtin.Object";
+        } else if (strcmp(typeNameText, "Module") == 0) {
+            canonicalBuiltinName = "zr.builtin.Module";
+        } else if (strcmp(typeNameText, "Integer") == 0) {
+            canonicalBuiltinName = "zr.builtin.Integer";
+        }
+    }
+
+    if (typeNameText != ZR_NULL && canonicalBuiltinName != ZR_NULL) {
+        snprintf(errorBuffer,
+                 sizeof(errorBuffer),
+                 "Type name '%s' is not implicitly visible; use '%s' via explicit import or module qualifier",
+                 typeNameText,
+                 canonicalBuiltinName);
+    } else if (typeNameText != ZR_NULL) {
         snprintf(errorBuffer,
                  sizeof(errorBuffer),
                  "Unqualified type name '%s' requires an explicit module qualifier or destructuring import",
@@ -847,8 +894,10 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         memberInfo.fieldSize = sizeof(TZrPtr);
                     }
 
-                    if (memberInfo.isUsingManaged &&
-                        memberInfo.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_WEAK) {
+                    if ((memberInfo.isUsingManaged &&
+                         memberInfo.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_WEAK) ||
+                        memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+                        memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
                         memberInfo.callsClose = ZR_TRUE;
                         memberInfo.callsDestructor = ZR_TRUE;
                     }
